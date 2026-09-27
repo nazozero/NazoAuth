@@ -33,7 +33,7 @@ const mint = oauth.slice(oauth.indexOf('const CAP_SUBJECT_AT_MAX_AGE_MS'),
   oauth.indexOf('function capUserinfoOp('));
 const results = {};
 (async () => {
-  for (const mode of ['success', 'unexpected', 'local', 'sut', 'unknown', 'mixed_sut']) {
+  for (const mode of ['success', 'unexpected', 'check_failed', 'local', 'sut', 'unknown', 'mixed_sut']) {
     const points = [];
     let now = 1015000;
     class Metric {
@@ -44,6 +44,7 @@ const results = {};
       }
     }
     const context = vm.createContext({
+      failedChecks: 0,
       Counter: Metric, Gauge: Metric, Trend: Metric,
       exec: {scenario: {startTime: 1000000}}, Date: {now: () => now},
       capPhase: () => 'measure', sleep: () => {},
@@ -74,7 +75,9 @@ const results = {};
         measureOffsetMs: 15000, bucketMs: 60000, vuInitMs: 1000000});
     `, context);
     await vm.runInContext(`
-      mode === 'success' || mode === 'unexpected'
+      mode === 'check_failed'
+        ? capRun(async () => {}, async () => { advance(5); failedChecks += 1; return true; })
+        : mode === 'success' || mode === 'unexpected'
         ? capRun(async () => advance(10), async () => { advance(5); return mode === 'success'; })
         : mode === 'mixed_sut'
           ? capRun(async () => {}, async () => capMintSubjectTokens(false))
@@ -99,6 +102,7 @@ class ProducerConsumerContractTest(unittest.TestCase):
     def test_real_labels_named_counters_and_stream_agree(self):
         for mode, expected in (
                 ('success', 'success'), ('unexpected', 'unexpected'),
+                ('check_failed', 'unexpected'),
                 ('local', 'prepare_local_failed'), ('sut', 'prepare_sut_failed'),
                 ('unknown', 'prepare_failed'), ('mixed_sut', 'prepare_sut_failed')):
             with self.subTest(mode=mode):
@@ -115,7 +119,7 @@ class ProducerConsumerContractTest(unittest.TestCase):
                 self.assertEqual(sum(b[expected] for b in flattened), 1)
 
     def test_preparation_failures_and_success_include_entry_to_end_latency(self):
-        for mode, expected_ms in (('success', 15), ('local', 10), ('sut', 15),
+        for mode, expected_ms in (('success', 15), ('check_failed', 5), ('local', 10), ('sut', 15),
                                   ('unknown', 15), ('mixed_sut', 15)):
             with self.subTest(mode=mode):
                 latency = [p['data']['value'] for p in self.produced[mode]

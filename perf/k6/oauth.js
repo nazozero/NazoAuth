@@ -255,6 +255,7 @@ function requestTags(step, extra = {}) {
 // is counted once with bounded tags {step,status,err} so saturation causes are
 // attributable (HTTP status, OAuth error code, timeout, limiter rejection).
 const errClassified = new Counter('err_classified');
+let failedChecks = 0;
 // oauth_invalid_grant on the refresh path is an expected business outcome of
 // the bounded-family model (capacity eviction / spent-token replay). Count it
 // separately so capacity gates evaluate unexpected errors only.
@@ -296,6 +297,7 @@ function classifyError(res) {
 function checkErr(res, conds, stepHint) {
   const ok = check(res, conds);
   if (!ok) {
+    failedChecks += 1;
     // res.request.tags is not populated in k6 v2; derive the step from the
     // check name ("<step> <condition>") unless the caller passes it.
     const name = Object.keys(conds)[0] || '';
@@ -909,7 +911,11 @@ export function token_only_client_credentials() {
   token_client_credentials();
 }
 
-export function mtls_client_credentials() {
+export async function mtls_client_credentials() {
+  return capRun(async () => {}, mtlsClientCredentialsOp);
+}
+
+function mtlsClientCredentialsOp() {
   const response = http.post(
     `${BASE_URL}/token`,
     form({
@@ -926,7 +932,7 @@ export function mtls_client_credentials() {
       sender_constraint: 'mtls',
     })),
   );
-  checkErr(response, {
+  return checkErr(response, {
     'mtls client_credentials status is 200': (r) => r.status === 200,
     'mtls client_credentials access token returned': (r) => Boolean(r.json('access_token')),
   });
@@ -936,7 +942,11 @@ export async function introspect_opaque_refresh_token() {
   await introspectOpaqueRefreshToken(false);
 }
 
-export function metadata_jwks() {
+export async function metadata_jwks() {
+  return capRun(async () => {}, metadataJwksOp);
+}
+
+function metadataJwksOp() {
   const metadata = http.get(
     `${BASE_URL}/.well-known/openid-configuration`,
     {
@@ -972,6 +982,7 @@ export function metadata_jwks() {
   if (jwks.status !== 200) {
     fail(`jwks failed: ${jwks.status} ${jwks.body}`);
   }
+  return true;
 }
 
 async function introspectOpaqueRefreshToken(sharedUser) {
@@ -1013,7 +1024,7 @@ async function refreshTokenRotation(sharedUser) {
   const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
   if (!requestId) {
-    return;
+    return false;
   }
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
@@ -1031,14 +1042,14 @@ async function refreshTokenRotation(sharedUser) {
       client_profile: 'oidc',
     })),
   );
-  checkErr(response, {
+  return checkErr(response, {
     'refresh_token rotation status is 200': (r) => r.status === 200,
     'refresh_token rotation returns new refresh token': (r) => Boolean(r.json('refresh_token')),
   });
 }
 
 export async function oidc_cold_login_refresh() {
-  await refreshTokenRotation(false);
+  return capRun(async () => {}, () => refreshTokenRotation(false));
 }
 
 export async function revoke_refresh_token() {
@@ -1123,7 +1134,7 @@ export async function oidc_refresh_only() {
 }
 
 export async function par_signed_request_object() {
-  await oidcPar(vector());
+  return capRun(async () => {}, () => oidcPar(capVector()));
 }
 
 export async function authorize_par_session() {
@@ -1182,12 +1193,16 @@ export async function fapi2_full_security() {
 }
 
 export async function fapi2_logged_in_high_security() {
+  return capRun(async () => {}, fapiLoggedInHighSecurityOp);
+}
+
+async function fapiLoggedInHighSecurityOp() {
   const user = selectedUser(false);
-  const v = vector();
+  const v = capVector();
   const requestUri = await fapiPar(v);
   const requestId = authorizePar(secrets.clients.fapi, requestUri, user, true);
   if (!requestId) {
-    return;
+    return false;
   }
   const code = approveAuthorization(requestId, v.fapi_state);
   const tokens = await fapiTokenAuthorizationCode(v, code);
@@ -1209,13 +1224,14 @@ export async function fapi2_logged_in_high_security() {
       sender_constraint: 'dpop',
     })),
   );
-  checkErr(response, {
+  const ok = checkErr(response, {
     'fapi logged-in DPoP refresh status is 200': (r) => r.status === 200,
     'fapi logged-in DPoP refresh returns DPoP token': (r) => r.json('token_type') === 'DPoP',
   });
   if (response.status !== 200) {
     fail(`fapi logged-in refresh failed: ${response.status} ${response.body}`);
   }
+  return ok;
 }
 
 export async function ciba_private_key_jwt_dpop_poll() {
@@ -1374,6 +1390,7 @@ async function capRun(prepare, op) {
     return;
   }
   const measuring = cohort === COHORT_MEASURE;
+  const checksBefore = failedChecks;
   try {
     await prepare();
   } catch (e) {
@@ -1395,7 +1412,7 @@ async function capRun(prepare, op) {
     threw = true;
   }
   const endMs = Date.now();
-  const outcome = capOutcomeOf(result, threw);
+  const outcome = capOutcomeOf(result, threw || failedChecks !== checksBefore);
   capClock.end(cohort, lw, outcome);
   if (!measuring) {
     return;
