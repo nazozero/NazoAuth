@@ -120,6 +120,15 @@ happy-path session:
 
 ## Capacity Curve Model
 
+Capacity measurements for mTLS issuance, signed PAR, logged-in FAPI, cold
+Argon2 login, and metadata/JWKS use the same scenario-clock cohort as `cap_*`.
+Their `cap_iter_ms` covers the complete operation, including signing and all
+HTTP steps. Any failed response check makes that operation unsuccessful even
+when a later step succeeds. Historical results retain their original accounting.
+`point_runner.stack_up_pinned` accepts optional `postgres_cpus` and
+`valkey_cpus` sets to separate those components from the generator's
+`infra_cpus`; application affinity is applied before the runtime starts.
+
 `perf/capacity.py` runs one fixed-arrival-rate point at a time, tears down the
 compose stack, and repeats for each selected replica count, scenario, and rate.
 The default long matrix covers:

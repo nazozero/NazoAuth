@@ -525,10 +525,13 @@ def stack_up_pinned(point: dict) -> dict:
     evidence["pin"] = {
         "app_exec_mode": "pinset-exec",
         "app_cpus": app_cpus,
-        "postgres": sis.pin_container(sis.POSTGRES, infra_cpus),
-        "valkey": sis.pin_container(sis.VALKEY, infra_cpus),
+        "postgres": sis.pin_container(sis.POSTGRES, sis.format_cpu_list(
+            point.get("postgres_cpus", point["infra_cpus"]))),
+        "valkey": sis.pin_container(sis.VALKEY, sis.format_cpu_list(
+            point.get("valkey_cpus", point["infra_cpus"]))),
         "keyset": sis.pin_container(sis.KEYSET, infra_cpus),
-        "pg_verified": sis.verify_pin(sis.POSTGRES, infra_cpus),
+        "pg_verified": sis.verify_pin(sis.POSTGRES, sis.format_cpu_list(
+            point.get("postgres_cpus", point["infra_cpus"]))),
     }
     # Record the proc masks after exec-pinning for the thread/CPU evidence.
     evidence["pin"]["app"] = sis.pin_container(sis.APP, app_cpus)
