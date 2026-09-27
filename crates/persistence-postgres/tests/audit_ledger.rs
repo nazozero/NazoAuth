@@ -1035,6 +1035,14 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
             .await
             .expect("fixture cleanup should delete prior rows");
     }
+    // This scale fixture must not lend millions of dead index entries to
+    // the next test. Its own clean-state plans and all backlog depths have
+    // already been checked. The dead-prefix test below creates and observes
+    // its own ack-deleted rows without manually vacuuming that lifecycle.
+    sql_query("VACUUM public.security_audit_events, public.security_audit_chain_entries")
+        .execute(&mut connection)
+        .await
+        .expect("scale fixture cleanup should reclaim its dead index entries");
 }
 
 /// The pending-order index accumulates dead entries at its queue head as
