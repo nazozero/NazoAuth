@@ -42,7 +42,7 @@
 
 ## 原始证据
 
-资源发现原文位于 CNB `/tmp/pr222-acceptance-kMhxkB/evidence/resource-discovery.txt`，SHA256 `b6eedffe17776529b74b1ad41cdddec3a9fbe4e4861f5dae46d1e3d033def941`。准备日志位于 `/tmp/pr222-acceptance-kMhxkB/logs/prepare.log`，SHA256 `b079838e4d523800abf3560efb764f2e0fe2897ae0edece662920545fca67de0`。两者的留存归档为 `D:\self\artifacts\pr222-acceptance-20260927-kmhxkb\resource-evidence.zip`，SHA256 `4ddd84a2bacf251ea746e79342f28a25f64a42bf648dd69081afd5924f395d5b`。
+资源发现原文位于 CNB `/tmp/pr222-acceptance-kMhxkB/evidence/resource-discovery.txt`，SHA256 `b6eedffe17776529b74b1ad41cdddec3a9fbe4e4861f5dae46d1e3d033def941`。准备日志位于 `/tmp/pr222-acceptance-kMhxkB/logs/prepare.log`，SHA256 `b079838e4d523800abf3560efb764f2e0fe2897ae0edece662920545fca67de0`。两者的留存归档名为 `resource-evidence.zip`，SHA256 `4ddd84a2bacf251ea746e79342f28a25f64a42bf648dd69081afd5924f395d5b`；该归档保存在执行者的外部证据目录中，未入库，不能从仓库独立取得。
 
 补充拓扑与 `.cnb.yml` 证据：CNB `/tmp/pr222-acceptance-kMhxkB/evidence/cnb-config-and-topology.txt`，SHA256 `3d547527d7f8ab2576cf80b6361eed7ba54cd73c6c1e89478333c30b407ebcf7`。结构化检查点：`perf/results/diagnostics/pr222-acceptance-kmhxkb/resource-gate.json`。
 
