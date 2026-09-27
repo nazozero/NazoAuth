@@ -1,0 +1,73 @@
+{
+  "evaluator": "capacity_search.evaluate",
+  "gate": "FAIL",
+  "metrics": {
+    "capacity_gate_contract": "successful-ops-v1",
+    "classified_errors": 0,
+    "drop_fraction": 0.01783331809118112,
+    "dropped": 20865,
+    "error_rate": 0.0,
+    "expected_invalid_grant": 0,
+    "forensic_diag": {
+      "budget_exceeded_points": 17091161,
+      "file": "/tmp/pr222-high-rate-20260927-051325/results/acceptance/formal-a-3200-steady/refresh/cap-cap-refresh-token.diag.jsonl.gz",
+      "logical_bytes_cap": 536870912,
+      "overflow_dropped_points": 11148039,
+      "status": "TRUNCATED",
+      "truncated": true
+    },
+    "gate_p95": 436.0,
+    "gate_p99": 666.0,
+    "gate_population": "measurement_cohort",
+    "load_generator_evidence": "absent",
+    "measure": {
+      "cohort_source": "k6_stream_exact",
+      "drops_pending_unclassified": 0,
+      "drops_post_window": 0,
+      "drops_pre_window": 0,
+      "late_vu_fraction": 0.0,
+      "measure_completed_exact": 1077136,
+      "measure_drop_fraction": 0.019003,
+      "measure_dropped_exact": 20865,
+      "measure_outcome_sum": 1077136,
+      "measure_outcomes": {
+        "success": 1077136
+      },
+      "measure_scheduled_observed": 1098001,
+      "measure_started_exact": 1077136,
+      "observed_schedule_rate": 600.001,
+      "pending_drops_overflow": false,
+      "problems": [],
+      "rational_planned_arrivals": 1098000,
+      "schedule_delta_vs_rational": 1,
+      "valid": true,
+      "window_end_s": 1790504103.65,
+      "window_start_s": 1790502273.65
+    },
+    "measured_ops_s": 588.599,
+    "measurement_contract": "cap-scenario-window-v1",
+    "p50": 8.092,
+    "p95": 404.795,
+    "p99": 659.323,
+    "prepare_failures": {
+      "prepare_failed": 0,
+      "prepare_local_failed": 0,
+      "prepare_sut_failed": 0
+    },
+    "rate_basis": "scenario_window_stream",
+    "rate_for_gate": 588.599,
+    "rps": 589.828,
+    "status": "target_miss",
+    "subject_lifecycle": {
+      "expired_reauth": 0,
+      "initial_mint": 258,
+      "refresh_update": 1149136
+    },
+    "successful_ops_s": 588.599,
+    "threshold_status_diagnostic": "target_miss",
+    "unexpected_errors": 0,
+    "window_seconds": 1830.0
+  },
+  "target_ops_s": 600,
+  "window_argument_s": 1830
+}

@@ -53,9 +53,9 @@ The following attempts produced no business load and are retained as `INVALID_TO
 
 **Completed since the calibration checkpoint:** all six prescribed 600-second points and the B3000 steady point (120 seconds warmup + 1800 seconds measured). The six short main gates and B3000 main/refresh gates passed. The B3000 result and its WAL evidence are recorded below. A3200 steady completed as a valid FAIL: 3187.346 successful ops/s, complete-iteration P95/P99 283/985 ms, 0.3954% measured drops, refresh/Argon2/FAPI gate misses, 1748 audit queue full/drops, and issuance expiry age up to 608.5 seconds against the predeclared 120-second SLO. Required audit drops remained zero and the journal reconciled, but the all-queue health gate failed.
 
-**Current run state:** no load is running while the A3200 failure evidence is being checkpointed. Under the fixed taskbook, B3200 steady is NOT_RUN after the A3200 audit/issuance constraints failed; no higher pressure will be started. The next allowed point is A3000 steady with the same profile, to compare with the already passing B3000 steady point.
+**Current run state (10:37:30 UTC):** A3000 steady is running with the unchanged common profile, 120 s warmup plus 1800 s effective measurement, to compare against the already passing B3000 steady point. B3200 steady is NOT_RUN after A3200 audit/issuance constraints failed; no higher-pressure run was started.
 
-**Remaining NOT_RUN at this checkpoint:** A3200 sanitized evidence commit; A3000 1800-second lower-rate steady point; B3200 1800-second steady point (NOT_RUN for the safety-gate reason above); final evidence archive and report. PGSS statement Top10 remains INVALID/INCOMPLETE for short and B3000 long snapshots.
+**Remaining at this checkpoint:** A3200 sanitized evidence/report checkpoint; A3000 1800-second steady point is in progress; B3200 1800-second steady point is NOT_RUN for the safety-gate reason above; final archive and report remain. PGSS statement Top10 remains INVALID/INCOMPLETE for short, B3000 long and A3200 long snapshots.
 
 ## Six-point formal short matrix
 
@@ -110,6 +110,43 @@ Process-detail samples within the effective window show average CPU use of app 6
 
 Per-table sampled counter and size deltas, the minute correlation series, refresh gate, issuance helper output, PG18 WAL snapshots, and source hashes are in diagnostics/pr222-high-rate-2026-09-27/steady-b-3000/. The raw per-second histogram is included; PGSS SQL text, raw audit material, and unsanitized soak rows are not.
 
+## A3200 1800-second steady point: valid FAIL and WAL evidence
+
+A3200 used the same frozen common profile and all fixed sidecars as B3000. The 120-second warmup was excluded from the 1800-second effective measurement. This is a valid evaluator FAIL, not an invalid generator run.
+
+| Target success ops/s | Effective measurement | Successful logical ops/s | Successful ops | HTTP req/s | Complete-iteration P95/P99 ms | Drops / scheduled | Main gate |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 3200 | 1800 s | 3187.346 | 5,737,223 | 4624.455 | 283 / 985 | 22,777 / 5,760,000 (0.3954%) | FAIL |
+
+The successful rate met the 99.5% rate floor (3184/s), but full-iteration P95/P99 and measured drop gates failed. Unexpected errors, SUT preparation failures and unfinished iterations were zero; there was no OOM or app restart. HTTP request throughput is reported separately and is not the logical-operation rate.
+
+The metadata sidecar passed at 400.001/s with zero drops. Argon2 cold login had 176 drops and raw `target_miss`; FAPI had 8 drops and `target_miss`. Refresh independently failed its capacity evaluator at 588.599/s against 600/s, 20,865 / 1,098,001 drops (1.9003%), P95/P99 404.795/659.323 ms. These sidecar outcomes are retained separately from the main gate.
+
+Audit queue health failed: 1,748 queue-full events and 1,748 dropped queue entries. Required audit drops remained zero; enqueued=persisted 1,006,707 and post-drain pending=0. The 8,559,715-event journal was contiguous with no gaps, duplicates, malformed records or foreign batches. Thus journal reconciliation passed while the independent all-queue health gate failed. Issuance maintenance also failed its predeclared 360 s retention / 120 s expiry-age SLO: 680 mature-window samples, maximum expired age 608.546 s and final age 588.910 s; due count reached 1,730,084. This is why no higher-pressure steady point was started.
+
+During the exact 1800 s effective window, database-wide WAL generated was 26,381,077,238 bytes. WAL write operations accumulated 47,675,232,975 bytes over 1,719,683.744 writes (mean 27,723.3 bytes/write), with 1,714,890.077 fsyncs. Write/generated was 1.8072. WAL write-time and fsync-time deltas were raw zero and are N/A, not evidence of zero wait. These global counters include all fixed sidecars and database background work; write bytes are not net disk growth or SSD media writes.
+
+The full-identity PG18 `pg_stat_io` comparison had 28/28 consistent rows and no missing/reset/negative deltas, but spans 2003.634 s (setup, warmup, measurement and drain). Its largest WAL writer categories were:
+
+| Backend / context | WAL write bytes | Writes | Fsyncs |
+| --- | ---: | ---: | ---: |
+| client backend / normal | 43,817,828,352 | 1,858,167 | 1,853,043 |
+| client backend / init | 8,522,825,728 | 508 | 508 |
+| autovacuum worker / normal | 21,299,200 | 676 | 675 |
+| walwriter / normal | 10,780,672 | 260 | 255 |
+| checkpointer / normal | 540,672 | 17 | 17 |
+| background writer / normal | 98,304 | 2 | 2 |
+
+Client backend rows contributed 52,340,654,080 of 52,373,372,928 bytes (99.94%) in that wider snapshot interval. The full-snapshot `pg_stat_wal` delta was 28,257,228,002 bytes, 262,156,271 records and 293,179 FPI, with `wal_buffers_full=0`; these are not relabeled as exact effective-window deltas.
+
+Exact SQL Top10 remains INVALID/INCOMPLETE. PGSS pre/post had 3/172 rows, with 3 matching the full `(dbid, userid, toplevel, queryid)` identity and identical `stats_since`; their WAL-byte delta was zero. All 169 post-only rows were excluded. No statement ranking is inferred from top-level/nested rows or post-only counters.
+
+The 31 complete-iteration minute buckets had P99 brackets: 22 at [20,50) ms, 2 at [50,100), 1 at [100,200), 1 at [200,500), and 5 at [1000,2000); the whole-window P99 was 985 ms. The five highest-tail minutes were 10:01–10:05 UTC, with sampled pool-waiting maxima of 1817–1835; the whole-window pool wait/acquisition average was 7.622 ms. A checkpoint completed in the first such minute, but none completed in the following four. Sampled IO concurrency stayed at 1–2 sessions, with LWLock concurrency 33–75 and Lock 1–2; the sampler does not record WALWrite/WALSync event names or durations. The queue/P99 overlap is observed, while WAL/checkpoint causation is not established.
+
+During the 1795.522 s process-detail sampling interval, average CPU use was app 7.362 cores, PostgreSQL 9.635, Valkey 0.459, task worker 0.100 and receiver 0.066. Peak process-summed RSS was app 329,392 KiB, PostgreSQL 15,538,560 KiB, Valkey 103,852 KiB, worker 22,640 KiB and receiver 10,444 KiB; PostgreSQL RSS sums repeat shared mappings and are not physical memory. PSS and useful Docker stats were unavailable; generator post-cleanup CPU/RSS is N/A. No OOM or restart was observed.
+
+The sanitized evidence archive is in `diagnostics/pr222-high-rate-2026-09-27/steady-a-3200/`; SHA-256 `72477b9780627e5bb72bda8923db6b7d42e9e5202b2fd00ab372d9f3886951ee`. Raw PGSS SQL rows, request diagnostics, soak rows and raw audit material are excluded.
+
 ## Global WAL counters from the six effective windows
 
 The WAL counters below are concurrent database-wide observations across the exact point's effective 600-second window, including the fixed sidecars and database background work; they are not per-main-operation attribution. Byte units are GiB (2^30 bytes). PostgreSQL's reported write-time and fsync-time counters were raw zero in every snapshot and are therefore N/A, not zero wait. The write-to-generated ratio is not itself an attribution or disk-usage measure.
@@ -129,7 +166,7 @@ These global counters show WAL writes averaging about 2.30–2.50 times generate
 
 The captured A3200/B3200 PGSS intervals are 781.454 seconds (2026-09-27 08:17:50.271Z to 08:30:51.725Z) and 781.534 seconds (08:33:37.116Z to 08:46:38.651Z). In both, stats_reset was unchanged and dealloc stayed 0. However, the pre snapshots contain only 3 statement identities while post contains 172/171. Only 3 rows per point had both the full identity (dbid, userid, toplevel, queryid) and identical stats_since; their combined WAL-bytes delta was 0. The remaining 169/168 post-only rows are excluded, not assigned a zero baseline.
 
-Therefore the short-point PGSS Top10 is INVALID/INCOMPLETE under the fixed taskbook's same-stats_since rule. The earlier interim ranking based on post-only counters is withdrawn and must not be used as a WAL delta or accepted attribution. This is an attribution-evidence limitation; the six short business points and their independent health/audit/sidecar gates remain valid. The sanitized evidence records the exact row coverage and raw snapshot hashes without storing normalized SQL text. The B3000 long-point snapshots were also checked by the same strict rule and are INVALID/INCOMPLETE as detailed below; A3200 long-point attribution is being analyzed without changing the running harness.
+Therefore the short-point PGSS Top10 is INVALID/INCOMPLETE under the fixed taskbook's same-stats_since rule. The earlier interim ranking based on post-only counters is withdrawn and must not be used as a WAL delta or accepted attribution. This is an attribution-evidence limitation; the six short business points and their independent health/audit/sidecar gates remain valid. The sanitized evidence records the exact row coverage and raw snapshot hashes without storing normalized SQL text. The B3000 long-point snapshots were also checked by the same strict rule and are INVALID/INCOMPLETE as detailed below; A3200 long-point attribution is INVALID/INCOMPLETE under the strict full-identity and identical-stats_since rule; no SQL Top10 is claimed.
 ## Queue, wait and checkpoint observations from the 3200/s short windows
 
 | Point | Complete P95/P99 ms | Pool wait per acquire ms | Wait samples | Max IO-type sessions sampled | Max Lock-type sessions sampled | Checkpointer delta: timed/done/requested | Checkpointer write/sync time ms |
@@ -143,7 +180,7 @@ The sanitized PGSS/wait evidence and checksums are in diagnostics/pr222-high-rat
 
 ## Current evidence and remaining attribution
 
-The six short points are preserved under diagnostics/pr222-high-rate-2026-09-27/short-points/. B3000 1800-second steady passed main and refresh gates; its sanitized raw histogram/WAL bundle is under diagnostics/pr222-high-rate-2026-09-27/steady-b-3000/. A3200 1800-second steady is a valid FAIL across main latency/drop, sidecars, audit queue full/drop, and issuance expiry-age SLO. Its detailed attribution and evidence checkpoint are in progress. B3200 steady is NOT_RUN because the A3200 safety/retention gates failed; the taskbook permits reducing the main target with the same profile, so A3000 steady is next. The short A/B 3200 PGSS baseline and B3000 long PGSS baseline are INVALID/INCOMPLETE, so no SQL Top10 is available. PG18 pg_stat_io shows client backends dominate broad WAL write bytes, but exact SQL attribution and WALWrite/WALSync waits remain unresolved.
+The six short points are preserved under `diagnostics/pr222-high-rate-2026-09-27/short-points/`. B3000 steady passed the main and refresh gates with evidence under `steady-b-3000/`. A3200 steady is a valid FAIL across main latency/drop, sidecars, queue health and issuance expiry-age SLO; its complete sanitized attribution bundle is under `steady-a-3200/`. B3200 steady is NOT_RUN after the A3200 safety/retention failures. The unchanged-profile A3000 steady comparison is currently running. PGSS Top10 remains INVALID/INCOMPLETE for short, B3000 and A3200 snapshots; PG18 pg_stat_io shows client backends dominate broad WAL write bytes, but exact SQL identity and WALWrite/WALSync wait timing remain unresolved.
 
 ## Evidence
 
