@@ -82,13 +82,15 @@ def main():
               "sidecars": {m: sidecars(len(cpus[m]), 180) for m in ("single", "multi")},
               "stop_at": args.stop_at, "gate": "successful-ops-v1",
               "vector_counts": {"default": 48000, "fapi2_logged_in_high_security": 49200},
+              "exploration_window_seconds": 60, "candidate_window_seconds": 180,
+              "mixed_confirmation_window_seconds": 660,
               "hash_policy": "unchanged application defaults", "source_sha": os.environ["SIS_APP_SHA"],
               "harness_sha": sis.sh(["git", "-C", sis.WORKSPACE, "rev-parse", "HEAD"]).stdout.strip()}
     save(sis.RESULTS / "registered-config.json", config)
     state_path = sis.RESULTS / "search-state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
-    def run(mode, scenario, rate, window=90, confirmation=False):
+    def run(mode, scenario, rate, window=60, confirmation=False):
         if time.time() + window + 240 >= stop_at:
             raise TimeoutError("reserved finalization time reached")
         warmup = 60 if scenario == "cap_mixed" else 15
