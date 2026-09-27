@@ -257,7 +257,11 @@ def main():
         # spending the remaining deadline budget on additional narrowing.
         for scenario in list(SCENARIOS)[4:]:
             for mode in ("single", "multi"):
-                search(mode, scenario, extra=1)
+                lower, _ = bounds(state, f"{mode}/{scenario}")
+                # Initial failure-only scenes need a lower probe first.
+                # Otherwise verify the existing candidate before optional
+                # higher probes spend time reserved for matrix coverage.
+                search(mode, scenario, extra=0 if lower else 1)
         for scenario in list(SCENARIOS)[4:]:
             for mode in ("single", "multi"):
                 search(mode, scenario, extra=2)
