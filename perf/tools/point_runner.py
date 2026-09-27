@@ -8,8 +8,7 @@ contiguity, per-second CPU accounting, and post-run point health checks.
 This module carries the point-orchestration code that used to live in
 the one-shot A/B experiment drivers (prepared_rsa_ab, audit_batch_ab,
 group_commit_ab, token_audit_preflight_ab, residency_run). Those drivers
-are gone; the formal capacity/stability runner (pool_size_ab) is the
-sole consumer of what remains.
+are gone; pool_size_ab and the short current_capacity search reuse this lifecycle.
 """
 from __future__ import annotations
 
