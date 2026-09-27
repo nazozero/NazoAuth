@@ -35,4 +35,4 @@ jobs:
 
       - name: Smoke test image
         shell: bash
-        run: docker run --rm --entrypoint python "${{ matrix.image }}" -c 'import argon2, blake3, cryptography, psycopg, redis; print("performance dependencies import successfully")'
+        run: docker run --rm --entrypoint python "${{ matrix.image }}" -c 'import argon2, blake3, cryptography, orjson, psycopg, redis; print("performance dependencies import successfully")'

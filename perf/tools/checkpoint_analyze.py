@@ -42,7 +42,7 @@ Revision-2 corrections over revision-1:
   * Analyzer health (parse errors, reader errors, missing required input)
     propagates into validity; nothing emits a clean verdict on bad input.
 
-Stdlib only; compatible with the perf image python.
+The streaming decoder uses the pinned orjson dependency in the perf image.
 """
 from __future__ import annotations
 
@@ -53,6 +53,7 @@ import math
 import os
 import re
 import sys
+import orjson
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -627,7 +628,7 @@ class StreamingSeries:
 def cmd_stream(args) -> int:
     series = StreamingSeries()
     diag_path = args.diag_out
-    series.diag_fh = gzip.open(diag_path, "wt", encoding="utf-8")
+    series.diag_fh = gzip.open(diag_path, "wt", encoding="utf-8", compresslevel=1)
     last_progress = time_now()
     try:
         for line in sys.stdin:
@@ -635,8 +636,8 @@ def cmd_stream(args) -> int:
             if not line:
                 continue
             try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
+                obj = orjson.loads(line)
+            except orjson.JSONDecodeError:
                 series.parse_errors += 1
                 continue
             if obj.get("type") == "Point":

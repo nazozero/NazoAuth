@@ -3,6 +3,12 @@
 This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
+The runner image pins `orjson==3.12.0` for the streaming evidence decoder.
+Install that same binary package when invoking its Python tools on the host:
+`python -m pip install --only-binary=:all: orjson==3.12.0`.
+Streaming evidence retains the existing cohort, diagnostic-selection and
+five-second consumer-lag rules; forensic gzip output uses compression level 1.
+
 ## Run
 
 Run the full matrix:
