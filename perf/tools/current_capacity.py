@@ -215,9 +215,17 @@ def main():
         # before spending the remaining budget narrowing the priority paths.
         for scenario in SCENARIOS:
             for mode in ("single", "multi"):
-                if not any(r["verdict"] in ("PASS", "FAIL")
-                           for r in state.get(f"{mode}/{scenario}", [])):
-                    run(mode, scenario, SCENARIOS[scenario] * len(cpus[mode]))
+                key = f"{mode}/{scenario}"
+                for _ in range(3):
+                    records = state.get(key, [])
+                    if any(r["verdict"] in ("PASS", "FAIL") for r in records):
+                        break
+                    # Invalid observer evidence is not a service upper bound.
+                    # Lower the offered rate to obtain a valid observation,
+                    # while preserving the failed evidence and every gate.
+                    rate = (max(1, records[-1]["rate"] // 2) if records
+                            else SCENARIOS[scenario] * len(cpus[mode]))
+                    run(mode, scenario, rate)
         for mode in ("single", "multi"):
             for scenario in PRIMARY:
                 search(mode, scenario)
