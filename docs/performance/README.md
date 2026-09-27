@@ -12,9 +12,10 @@ the current release or an unmeasured deployment.
 
 | Document | Role |
 | --- | --- |
-| [performance-benchmarks.md](performance-benchmarks.md) | Canonical current baseline: refresh-storage steady state, WAL, audit, stability (Sept 2026 redesign era). |
+| [performance-benchmarks.md](performance-benchmarks.md) | Canonical current-B benchmark summary and evidence boundaries (28 Sept 2026). |
 | [performance-capacity-curve.md](performance-capacity-curve.md) | **Current release capacity matrix** — the only current capacity table; machine-readable form at `perf/results/data/capacity/current-capacity.json`. |
-| [reports/2026-09-22-current-capacity](reports/2026-09-22-current-capacity/report.md) | Current capacity evidence report (matrix points, 30m sustained runs, refresh bounds, audit reconciliation). |
+| [reports/2026-09-28-current-b](reports/2026-09-28-current-b/report.md) | Current-B single-instance capacity, mixed maintenance, audit, WAL and CI evidence. |
+| [reports/2026-09-22-current-capacity](reports/2026-09-22-current-capacity/report.md) | Historical capacity evidence (matrix points, 30m sustained runs, refresh bounds, audit reconciliation). |
 | [measurement-accounting.md](measurement-accounting.md) | Successful-operation accounting, prepare-failure classification and observer clock validity. |
 | [issuance-maintenance-evidence.md](issuance-maintenance-evidence.md) | Required mature-window expiry-age evidence for single-instance phase-3 acceptance. |
 | [PR #222 performance audit](reports/special/2026-09-26-pr222-performance-audit.md) | Source-linked bottleneck review, implementation checkpoints and validation limits; not a new capacity baseline. |
