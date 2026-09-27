@@ -72,3 +72,22 @@
 - 多核 `cap_mixed` ABBA 已进入执行：A1 主点与 sidecar gate 通过；B1 主 capacity gate 通过，但 sidecar gate 未通过（Argon2/FAPI/refresh 报告调度 drop，详情见保留的原始点证据）。B2 当前运行，配置冻结；不据候选表现单独调整负载。
 - 多核 ABBA 尚未完成；共同负载 A/B 各1800秒有效稳态、容量搜索、完整 WAL/锁等待汇总尚未运行，整体验收仍为 `IN_PROGRESS`。
 - 宿主物理拓扑、宿主总资源及隐藏父级限制属于 `OUT_OF_SCOPE`。本报告只记录本部署逻辑CPU affinity 与各组件自身可得指标；缺失项标记 N/A/未知，不阻止已开始的运行，也不被解释为零。
+
+## 2026-09-27 03:09 UTC 续跑：多逻辑 CPU mixed ABBA
+
+配置沿用冻结 profile `d00ecf53ce2ec9f825a3616fbcdd60c2f6c8e0d4518265b03a11b98b591e3723`：应用 affinity 集合32个逻辑CPU，mixed 主负载1024 ops/s；120秒预热、120秒有效窗口；pool90、users64、vectors12288；sidecar 为 Argon2 3/s、metadata 68/s、FAPI 10/s、refresh 205/s，VU 与pilot配置一致。每点主负载正式窗口均完成122880个成功逻辑操作，测量窗口丢弃/拒绝/意外错误均为0，主 capacity gate、审计校验、健康检查与sidecar时序均通过。HTTP 请求数为完整点预热+测量计数，与逻辑操作分开列出。
+
+| 点 | 主成功 ops/s | 主逻辑 P50/P95/P99（ms） | 主 HTTP 请求（全点） | 主窗口丢弃 | 审计事件增量 | Sidecar gate |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| A1 | 1024.000 | 3.429 / 10.920 / 28.968 | 358310 | 0 | 353823 | PASS |
+| B1 | 1024.000 | 3.372 / 11.958 / 146.862 | 357298 | 0 | 352872 | NOT_PASS |
+| B2 | 1024.000 | 3.228 / 9.109 / 28.660 | 358086 | 0 | 353663 | PASS |
+| A2 | 1024.000 | 3.355 / 9.860 / 26.509 | 357874 | 0 | 353351 | PASS |
+
+B1 主 load 的 full-run dropped 计数为666，但完整测量窗口队列仍为0；该主点 capacity gate 通过。B1 sidecars 的全程摘要分别为 Argon2 3 drops、FAPI 1 drop、refresh 204 drops，状态 `target_miss`；均自然结束、summary完整、k6 exit0、无协议错误。refresh 测量窗口单独有效，205 ops/s，完整逻辑迭代 P95/P99=10/22ms，窗口内drop/error=0。由于固定sidecar gate要求全程零drop，B1 sidecar gate未通过；不把它改写为业务容量失败，也不调整本组参数。A1/B2/A2 四个sidecar均自然结束、summary完整、exit0、全程零drop并通过gate。因此本ABBA主负载四点通过，但混合组整体为 `NOT_PASS_SIDECAR_GATE`，B1原始证据保留。
+
+四点安全/审计检查均 PASS：receiver与DB锚点一致、checkpoint推进、journal事件数与审计链范围相等，journal连续，无malformed/foreign deployment/sequence gap/duplicate；审计队列 `enqueued=persisted`，pending=0、dropped=0。单点事件增量和队列统计见脱敏JSON。审计链原始journal仅留在任务证据目录，不提交PR。
+
+有效共同短点包括 A1 与 B2 的相同1024 ops/s配置，故已按计划启动 A 版共同mixed稳态：预热120秒、有效窗口1800秒；证据目录 `results/acceptance/steady-common-a/`，日志 `logs/formal-steady-common-a.log`。B 版稳态待A点完整结束后启动，并受原04:20 UTC停止新负载时间约束。
+
+多核ABBA原始点在测试容器 `/tmp/pr222-acceptance-kMhxkB/results/acceptance/multi-mixed-{a1,b1,b2,a2}/`；每点摘要文件SHA256与精简统计见旁侧 `multi-mixed-abba.json`。整体验收仍为 `IN_PROGRESS`，尚未完成1800秒A/B稳态或容量搜索。
