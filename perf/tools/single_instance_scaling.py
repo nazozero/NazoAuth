@@ -988,21 +988,27 @@ def pgss_snapshot(tag: str, out_dir: Path) -> dict:
     Identity for a delta is (dbid, userid, toplevel, queryid) — queryid
     alone does not distinguish roles or nested vs top-level execution.
     `stats_reset` is captured per snapshot; a changed reset epoch makes
-    any cross-snapshot subtraction invalid."""
+    any cross-snapshot subtraction invalid. Preserve WAL counters for
+    attribution, without truncating infrequent, write-heavy statements.
+    Top-level and nested WAL must not be added together."""
     snap = {
         "tag": tag, "ts": time.time(),
         "stats_reset": psql(
             "SELECT extract(epoch from stats_reset) "
             "FROM pg_stat_statements_info", check=False),
+        "dealloc": psql(
+            "SELECT dealloc FROM pg_stat_statements_info", check=False),
         "statements": json.loads(psql(
             "SELECT COALESCE(json_agg(t),'[]') FROM ("
             "SELECT s.dbid, d.datname, s.userid, r.rolname,"
             " s.toplevel, s.queryid, s.calls, s.total_exec_time, s.rows,"
+            " s.wal_records, s.wal_fpi, s.wal_bytes, s.stats_since,"
+            " s.shared_blks_dirtied, s.shared_blks_written,"
             " left(s.query,160) AS q"
             " FROM pg_stat_statements s"
             " JOIN pg_database d ON d.oid = s.dbid"
             " JOIN pg_roles r ON r.oid = s.userid"
-            " ORDER BY s.calls DESC LIMIT 800) t", check=False) or "[]"),
+            " ORDER BY s.calls DESC) t", check=False) or "[]"),
         "wal": psql("SELECT wal_bytes::bigint FROM pg_stat_wal", check=False),
         "checkpointer": psql(
             "SELECT row_to_json(pg_stat_checkpointer) "
