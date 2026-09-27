@@ -81,6 +81,7 @@ def main():
               "binary_sha256": binary, "pool_connections": 32,
               "sidecars": {m: sidecars(len(cpus[m]), 180) for m in ("single", "multi")},
               "stop_at": args.stop_at, "gate": "successful-ops-v1",
+              "vector_counts": {"default": 48000, "fapi2_logged_in_high_security": 49200},
               "hash_policy": "unchanged application defaults", "source_sha": os.environ["SIS_APP_SHA"],
               "harness_sha": sis.sh(["git", "-C", sis.WORKSPACE, "rev-parse", "HEAD"]).stdout.strip()}
     save(sis.RESULTS / "registered-config.json", config)
@@ -102,7 +103,11 @@ def main():
                  "pre_vus": 64 if mode == "single" else 256,
                  "max_vus": 64 if mode == "single" else 256,
                  "user_count": 64 if mode == "single" else 256,
-                 "vector_count": 48000, "stream_evidence": True,
+                 # FAPI reserves offset 12 * 100 before its bounded 48k
+                 # replay pool. Freeze the whole pool before its search so
+                 # the runner cannot silently grow it at higher rates.
+                 "vector_count": 49200 if scenario == "fapi2_logged_in_high_security" else 48000,
+                 "stream_evidence": True,
                  "formal_preflight": True, "grace_s": 300,
                  "expected_binary_sha256": binary,
                  "app_env_overrides": {"DATABASE_MAX_CONNECTIONS": 32},
