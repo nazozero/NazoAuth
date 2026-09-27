@@ -108,7 +108,6 @@ jobs:
       FEDERATION_SAML_GATEWAY_SECRET: ci-saml-gateway-secret-000000000000
       RUST_TEST_THREADS: "1"
       CARGO_TERM_COLOR: never
-      CARGO_BUILD_JOBS: "1"
       RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,6 +121,22 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: workspace-quality
+
+      - name: Budget build concurrency from runner resources
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          cpus = len(os.sched_getaffinity(0))
+          memory = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))) * 1024
+          limit = Path('/sys/fs/cgroup/memory.max')
+          if limit.exists() and limit.read_text().strip() != 'max':
+              memory = min(memory, int(limit.read_text()))
+          jobs = max(1, min(cpus, memory // (3 * 1024**3)))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'CARGO_BUILD_JOBS={jobs}\n')
+          print(f'available CPUs={cpus}, memory budget={memory}, cargo jobs={jobs}; shared-state test threads=1')
+          PY
 
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev postgresql-client
@@ -179,7 +194,7 @@ jobs:
 
       - name: Materialize the isolated CI schema through the persistence owner
         run: >-
-          cargo test --locked -p nazo-postgres --test migrations
+          cargo test --all-features --locked -p nazo-postgres --test migrations
           pending_migrations_create_all_runtime_module_state_tables
 
       - name: Test workspace with PostgreSQL and Valkey

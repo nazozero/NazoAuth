@@ -102,7 +102,7 @@ python scripts/verify_static_contracts.py --check
 python scripts/check_persistence_dependency_graph.py
 cargo fmt --check
 cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
-cargo test --locked -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables
+cargo test --all-features --locked -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables
 cargo test --workspace --all-features --locked --no-fail-fast
 ```
 
@@ -114,6 +114,13 @@ validation when the change crosses boundaries or leaves an unresolved risk.
 Documentation-only changes need source/example/reference checks, not a Rust
 build. A passed unit suite does not replace required HTTP, migration, recovery,
 conformance, deployment, or performance evidence.
+
+CI budgets Cargo build concurrency from the runner's available logical CPUs
+and memory (3 GiB per build job). Shared-state tests remain serial. Schema
+materialization uses the workspace suite's feature set to reuse its artifacts.
+The audit backlog scale fixture vacuums its deleted rows at handoff; the
+separate dead-prefix regression still creates its own ack-deleted prefix and
+requires natural autovacuum recovery without manual vacuum of that lifecycle.
 
 Targeted suites with their own entry points:
 
