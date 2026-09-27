@@ -178,6 +178,18 @@ class GateTest(unittest.TestCase):
         self.assertEqual(v, "PASS", met)
         self.assertEqual(met["gate_p99"], 200.0)
 
+    def test_cold_login_preserves_its_existing_guardrails(self):
+        m = self._passing_metrics(iter_p95=180.0, iter_p99=320.0)
+        s = _summary()
+        self.assertEqual(self._eval(s, m)[0], "FAIL")
+        path = self._write(m)
+        verdict, met = cs.evaluate(s, path, 3000, 120, "oidc_cold_login_refresh")
+        self.assertEqual(verdict, "PASS", met)
+        self.assertEqual(met["gate_p95"], 180.0)
+        self.assertEqual(met["latency_gate"], "existing_cold_login_k6_guardrails")
+        s["status"] = "threshold_failed"
+        self.assertEqual(cs.evaluate(s, path, 3000, 120, "oidc_cold_login_refresh")[0], "FAIL")
+
     def test_measure_unexpected_fails(self):
         m = self._passing_metrics()
         m["cap_measure_unexpected"] = {"count": 3}

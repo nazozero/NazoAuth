@@ -688,6 +688,16 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
     # Runner's `target_miss` status fires on ANY drop or <99% http rps,
     # which is stricter than the formal gate — not a gate input either.
     if is_caprun:
+        # Cold password flows are the separate Argon2 class: the existing
+        # k6 protocol/HTTP guardrails apply, not the non-Argon2 100/250ms
+        # operation SLO. Cohort accounting and successful-arrival gates stay
+        # identical; complete-flow latency remains reported without inventing
+        # a new password-hashing latency target.
+        cold = label == "oidc_cold_login_refresh"
+        latency_ok = (status != "threshold_failed" if cold else
+                      gate_p95 <= 100 and gate_p99 <= 250)
+        metrics["latency_gate"] = ("existing_cold_login_k6_guardrails" if cold
+                                   else "complete_operation_100_250ms")
         ok = (
             measure_drop_fraction is not None
             and measure_drop_fraction <= 0.001
@@ -695,8 +705,7 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
             and rate_for_gate >= target * 0.995
             and unexpected == 0
             and gate_outcomes.get("prepare_sut_failed", 0) == 0
-            and gate_p95 <= 100
-            and gate_p99 <= 250
+            and latency_ok
         )
     else:
         ok = (

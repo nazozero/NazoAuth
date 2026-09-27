@@ -156,6 +156,8 @@ def main():
         state.setdefault(key, []).append(result)
         save(state_path, state)
         print(json.dumps(result), flush=True)
+        if (sis.RESULTS / "stop-after-point").exists():
+            raise TimeoutError("operator requested stop after completed point")
         return result
 
     def bounds(key):
@@ -213,7 +215,8 @@ def main():
         # before spending the remaining budget narrowing the priority paths.
         for scenario in SCENARIOS:
             for mode in ("single", "multi"):
-                if f"{mode}/{scenario}" not in state:
+                if not any(r["verdict"] in ("PASS", "FAIL")
+                           for r in state.get(f"{mode}/{scenario}", [])):
                     run(mode, scenario, SCENARIOS[scenario] * len(cpus[mode]))
         for mode in ("single", "multi"):
             for scenario in PRIMARY:
