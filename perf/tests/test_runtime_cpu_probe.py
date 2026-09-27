@@ -44,8 +44,8 @@ class RuntimeCpuProbeTests(unittest.TestCase):
                 raise OSError("denied")
             state["mask"] = set(mask)
 
-        with patch.object(probe.os, "sched_getaffinity", side_effect=lambda pid: state["mask"]), \
-             patch.object(probe.os, "sched_setaffinity", side_effect=pin), \
+        with patch.object(probe.os, "sched_getaffinity", side_effect=lambda pid: state["mask"], create=True), \
+             patch.object(probe.os, "sched_setaffinity", side_effect=pin, create=True), \
              patch.object(probe.ctypes, "CDLL", return_value=object()), \
              patch.object(Path, "read_text", side_effect=AssertionError("no file inspection")):
             result = probe.probe()
