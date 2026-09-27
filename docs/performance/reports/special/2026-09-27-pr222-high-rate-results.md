@@ -195,3 +195,9 @@ Sanitized stage evidence and its checksum manifest are in `diagnostics/pr222-hig
 
 The prior A3000 BLOCKED/UNVERIFIED availability record is superseded by the retry2 attempt: the full scheduled load ran and exited 0, but required main/sidecar summary artifacts were not captured, so the formal performance and audit gates remain INVALID/NOT_VERIFIED. See [`2026-09-27-pr222-a3000-rerun.md`](2026-09-27-pr222-a3000-rerun.md) and the sanitized evidence bundle under `diagnostics/pr222-high-rate-2026-09-27/a3000-retry2-20260927-125155/`. This is a tooling output-capture failure, not a capacity PASS or FAIL; a valid A3000 retest remains NOT_RUN pending volume-backed main/sidecar output collection.
 
+
+## Retry3 output-capture repair in progress
+
+The A3000 retry2 output-capture gap has a task-local harness repair: main and sidecar `/out` files are copied through the Docker API before their runner containers are removed. A minimal bind-mounted `docker cp` probe passed. Retry3 is running with the same fixed A3000 profile and full 120 s warmup + 1,800 s measurement; no performance conclusion is available yet. The task-local patch and its hashes are in `diagnostics/pr222-high-rate-2026-09-27/a3000-retry3-tooling/`.
+
+
