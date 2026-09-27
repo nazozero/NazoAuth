@@ -1,6 +1,6 @@
 # PR #222 high-rate follow-up — short-matrix checkpoint
 
-Timestamp: 2026-09-27 09:03 UTC. New-stage T0: 2026-09-27 05:13:25 UTC. Stop starting load at 11:43:25 UTC; delivery deadline 12:13:25 UTC.
+Timestamp: 2026-09-27 09:28 UTC. New-stage T0: 2026-09-27 05:13:25 UTC. Stop starting load at 11:43:25 UTC; delivery deadline 12:13:25 UTC.
 
 ## Scope and frozen configuration
 
@@ -49,9 +49,9 @@ The following attempts produced no business load and are retained as `INVALID_TO
 
 **Completed since the calibration checkpoint:** all six prescribed 600-second points, in order A2400 → B2400 → B3000 → A3000 → A3200 → B3200. Every point used 120 seconds warmup plus 600 seconds effective measurement. All six main gates passed. The requested target range is validated through 3200 successful logical operations/s; a maximum-capacity boundary was not searched or established.
 
-**Currently running:** B3000 steady-state, 120 seconds warmup plus 1800 seconds effective measurement. After it completes, the planned remaining steady points are A3200 and B3200 at the highest common short-point pass; the completed short B3200 is not a substitute for its separately required steady-state point. Issuance maturity checks, statement-level PGSS Top10, lock/WAL correlation, final evidence archive, and final report remain pending.
+**Currently running:** B3000 steady-state, 120 seconds warmup plus 1800 seconds effective measurement. After it completes, the planned remaining steady points are A3200 and B3200 at the highest common short-point pass; the completed short B3200 is not a substitute for its separately required steady-state point. Short-point PGSS Top10 and sampled wait/checkpoint evidence are recorded below; long-point PGSS attribution, issuance maturity checks, and the final evidence archive/report remain pending.
 
-**Remaining NOT_RUN at this checkpoint:** B3000 1800-second steady-state completion; A3200/B3200 1800-second steady-state pair; issuance maturity/reclamation evidence; final PGSS Top10 and WAL attribution; final evidence archive. No evidence is claimed for those items yet.
+**Remaining NOT_RUN at this checkpoint:** B3000 1800-second steady-state completion; A3200/B3200 1800-second steady-state pair; issuance maturity/reclamation evidence; long-point PGSS attribution and final WAL/lock analysis; final evidence archive. The short-point Top10 below is an interim attribution, not a substitute for long-point evidence.
 
 ## Six-point formal short matrix
 
@@ -87,9 +87,51 @@ The WAL counters below are concurrent database-wide observations across the exac
 
 These global counters show WAL writes averaging about 2.30–2.50 times generated WAL bytes over each sampled interval. This is an observed ratio only; the cause remains open pending full-identity PGSS deltas and checkpoint/lock correlation. PGSS pre/post snapshots span setup/warmup/drain as recorded in the raw evidence, so statement rankings will use their own actual timestamp interval and reset/stats_since checks rather than being mislabeled as the exact 600-second window. Top-level and nested statement rows will remain separate.
 
+## PGSS statement WAL attribution from A3200/B3200 short points
+
+The full statement identity used for deltas is (dbid, userid, toplevel, queryid). For both points, stats_reset matched between pre/post snapshots, pg_stat_statements dealloc remained 0, every included stats_since was at or after reset, and no identity/counter validation failed. The pre/post PGSS intervals were 781.454 seconds for A3200 (2026-09-27 08:17:50.271Z to 08:30:51.725Z) and 781.534 seconds for B3200 (08:33:37.116Z to 08:46:38.651Z). They include setup, warmup and drain; they are not the exact effective 600-second interval. Rows below are ranked independently by validated statement wal_bytes delta. Targets are sanitized function/table identifiers; normalized SQL text and literals are not included.
+
+Top-level and nested rows are deliberately kept separate. PostgreSQL may attribute work performed within a top-level function to both the top-level row and nested statement rows; these rankings are not additive.
+
+| Point | Rank | Level | Category / target | Query ID | Calls | WAL bytes |
+| --- | ---: | --- | --- | ---: | ---: | ---: |
+| A3200 | 1 | top | audit / public.nazo_persist_security_audit_event | 7937354421020446243 | 3239902 | 3521711965 |
+| A3200 | 2 | nested | audit / public.security_audit_events | -7247551828350762117 | 3239902 | 2520091883 |
+| A3200 | 3 | top | audit / public.nazo_append_security_audit_chain | -6871906609541267958 | 21333 | 1526826530 |
+| A3200 | 4 | nested | audit / public.security_audit_chain_entries | -2565421133935146987 | 3239902 | 1524280289 |
+| A3200 | 5 | top | issuance / oauth_token_issuances | -2887139335912015367 | 1746630 | 1273076890 |
+| A3200 | 6 | nested | audit / public.security_audit_event_outbox | -8141536737647953945 | 3239902 | 1001620082 |
+| A3200 | 7 | top | audit / public.nazo_ack_security_audit_batch | 7702997900265701813 | 21333 | 887807236 |
+| A3200 | 8 | nested | tenant lookup/lock / public.tenants | 3175560230803026983 | 8998287 | 787564465 |
+| A3200 | 9 | top | refresh / oauth_refresh_families | -4627606135148110578 | 802186 | 551588555 |
+| A3200 | 10 | top | refresh / oauth_refresh_spent_tokens | -11707619807080382 | 802186 | 431339510 |
+| B3200 | 1 | nested | audit / public.security_audit_events | -7247551828350762117 | 3239483 | 2790665087 |
+| B3200 | 2 | top | audit / public.nazo_persist_security_audit_event | 7937354421020446243 | 3032289 | 2633539460 |
+| B3200 | 3 | top | audit / public.nazo_append_security_audit_chain | -6871906609541267958 | 28615 | 1535140053 |
+| B3200 | 4 | nested | audit / public.security_audit_chain_entries | -2565421133935146987 | 3239483 | 1531712523 |
+| B3200 | 5 | top | issuance / oauth_token_issuances | -2887139335912015367 | 1745166 | 1256659501 |
+| B3200 | 6 | top | audit / public.nazo_ack_security_audit_batch | 7702997900265701813 | 28615 | 720527445 |
+| B3200 | 7 | top | refresh / oauth_refresh_families | -4627606135148110578 | 801233 | 646862640 |
+| B3200 | 8 | nested | tenant lookup/lock / public.tenants | 3175560230803026983 | 5757025 | 566211315 |
+| B3200 | 9 | top | refresh / oauth_refresh_spent_tokens | -11707619807080382 | 801233 | 430660764 |
+| B3200 | 10 | top | issuance / oauth_token_issuances | 7076455219069621783 | 375844 | 412960037 |
+
+Across both independent 3200/s samples, audit persistence/chain/outbox identities dominate the ranked statements; issuance and refresh writes also appear among the top 10. The exact share attributable to each business path cannot be obtained by summing these overlapping statement levels. Background issuance reclamation is separately checked in the long steady points.
+
+## Queue, wait and checkpoint observations from the 3200/s short windows
+
+| Point | Complete P95/P99 ms | Pool wait per acquire ms | Wait samples | Max IO-type sessions sampled | Max Lock-type sessions sampled | Checkpointer delta: timed/done/requested | Checkpointer write/sync time ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A3200 | 26 / 40 | 0.008 | 286 over 599s | 3 | 1 | +2 / +1 / 0 | +269999 / +323 |
+| B3200 | 21 / 32 | 0.011 | 287 over 597s | 3 | 2 | +2 / +1 / 0 | +269490 / +242 |
+
+The sampler exposes pg_stat_activity wait_event_type counts per snapshot, not event names or accumulated wait duration. IO and Lock maxima above are simultaneous sessions observed at a sampling instant, not totals. It therefore cannot distinguish WALWrite from WALSync. PostgreSQL WAL write/fsync timing counters were raw zero and remain N/A. The observed pool wait per acquisition was under 0.012 ms, but this alone does not rule out other causes of latency. One completed checkpoint and two timed-checkpoint counter increments were observed over the sampled boundary interval; no time-bucketed complete-iteration latency series is available, so the short-point data cannot prove or rule out point-in-time correlation between checkpoint activity, WAL waits, and P99. Do not interpret checkpointer cumulative write time as request latency or CPU.
+
+The sanitized PGSS/wait evidence and checksums are in diagnostics/pr222-high-rate-2026-09-27/short-wal-3200/. Raw PGSS snapshots remain with their point results in the CNB task directory and are excluded from the repository archive because they contain normalized statement text. The exact source hashes and snapshot times are recorded in the sanitized JSON.
+
 ## Current evidence and remaining attribution
 
-The sanitized short-point bundle is under diagnostics/pr222-high-rate-2026-09-27/short-points/, including the six point summaries, frozen profile/provenance hashes, issuance retention declaration, checksum manifest, and retrievable tar archive. No SQL text, request query strings, credentials, keys, or audit journal contents are included. The detailed PGSS Top10, statement categories (audit/issuance/refresh/maintenance), WALWrite/WALSync and checkpoint correlation, 1800-second steady results, issuance maturity check, and final archive remain pending.
+The sanitized short-point bundle is under diagnostics/pr222-high-rate-2026-09-27/short-points/; the short WAL attribution bundle is under diagnostics/pr222-high-rate-2026-09-27/short-wal-3200/. The A/B 3200/s PGSS Top10 and available wait/checkpoint evidence are now recorded. Exact WALWrite/WALSync event correlation remains unobservable with the existing wait-event-type-only sampler. The B3000 and A3200/B3200 1800-second steady points, issuance maturity check, and final archive remain pending.
 ## Evidence
 
 Sanitized stage evidence and its checksum manifest are in `diagnostics/pr222-high-rate-2026-09-27/calibration/`. The evidence includes the exact common resource profile, gate/sidecar/audit summaries, process-sampler summary, and hashes tying these summaries to the retained CNB raw point artifacts. Raw SQL text, request diagnostics, credentials, key material, and audit journal contents are excluded.

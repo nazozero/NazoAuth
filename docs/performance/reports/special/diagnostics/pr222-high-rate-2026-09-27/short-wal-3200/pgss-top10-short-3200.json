@@ -1,0 +1,445 @@
+{
+  "aggregation_rule": "Rows rank by validated wal_bytes delta. Top-level and nested statement rows can overlap; never sum them.",
+  "created_utc": "2026-09-27T09:23:58.128547+00:00",
+  "exec_time_note": "PGSS total_exec_time is accumulated statement elapsed time, not CPU.",
+  "identity_fields": [
+    "dbid",
+    "userid",
+    "toplevel",
+    "queryid"
+  ],
+  "points": [
+    {
+      "invalid_reasons": [],
+      "pgss_dealloc_post": "0",
+      "pgss_dealloc_pre": "0",
+      "pgss_interval": {
+        "end_epoch_s": 1790497851.7252707,
+        "end_utc": "2026-09-27T08:30:51.725271+00:00",
+        "seconds": 781.454,
+        "start_epoch_s": 1790497070.2712266,
+        "start_utc": "2026-09-27T08:17:50.271227+00:00"
+      },
+      "post_rows": 172,
+      "pre_only_rows": 0,
+      "pre_rows": 3,
+      "raw_sha256": {
+        "pgss_post": "a9f36983017929934dbcf3ff264990dc72e99ff1d863b8ed413860ae8cffea24",
+        "pgss_pre": "f28af705b2a51d646d5b5628d641735e1277dc47f0f9f07c68b0e81e3d3a6f06"
+      },
+      "run": "formal-a-3200",
+      "stats_reset": "1790497070.266558",
+      "stats_reset_unchanged": true,
+      "stats_since_valid_rows": 172,
+      "top10": [
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 3239902.0,
+            "rows": 3239902.0,
+            "total_exec_time": 547885.424771043,
+            "wal_bytes": 3521711965.0,
+            "wal_fpi": 452.0,
+            "wal_records": 23158258.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": 7937354421020446243,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:17:59.259362+00:00",
+          "target": "function:public.nazo_persist_security_audit_event"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 3239902.0,
+            "rows": 3239902.0,
+            "total_exec_time": 212094.4494639976,
+            "wal_bytes": 2520091883.0,
+            "wal_fpi": 189.0,
+            "wal_records": 9744048.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -7247551828350762117,
+            "toplevel": false,
+            "userid": "10"
+          },
+          "stats_since": "2026-09-27T08:17:59.261022+00:00",
+          "target": "relation:public.security_audit_events"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 21333.0,
+            "rows": 21333.0,
+            "total_exec_time": 98859.15235899983,
+            "wal_bytes": 1526826530.0,
+            "wal_fpi": 2067.0,
+            "wal_records": 16304354.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -6871906609541267958,
+            "toplevel": true,
+            "userid": "18659"
+          },
+          "stats_since": "2026-09-27T08:17:59.924085+00:00",
+          "target": "function:public.nazo_append_security_audit_chain"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 3239902.0,
+            "rows": 3239902.0,
+            "total_exec_time": 83822.29262501474,
+            "wal_bytes": 1524280289.0,
+            "wal_fpi": 2065.0,
+            "wal_records": 16283006.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -2565421133935146987,
+            "toplevel": false,
+            "userid": "10"
+          },
+          "stats_since": "2026-09-27T08:17:59.925165+00:00",
+          "target": "relation:public.security_audit_chain_entries"
+        },
+        {
+          "category": "issuance",
+          "delta": {
+            "calls": 1746630.0,
+            "rows": 1746630.0,
+            "total_exec_time": 230258.9872609992,
+            "wal_bytes": 1273076890.0,
+            "wal_fpi": 1924.0,
+            "wal_records": 11745331.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -2887139335912015367,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:17:59.309603+00:00",
+          "target": "relation:oauth_token_issuances"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 3239902.0,
+            "rows": 3239902.0,
+            "total_exec_time": 145543.90500901136,
+            "wal_bytes": 1001620082.0,
+            "wal_fpi": 263.0,
+            "wal_records": 13414210.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -8141536737647953945,
+            "toplevel": false,
+            "userid": "10"
+          },
+          "stats_since": "2026-09-27T08:17:59.26173+00:00",
+          "target": "relation:public.security_audit_event_outbox"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 21333.0,
+            "rows": 21333.0,
+            "total_exec_time": 143006.92509700014,
+            "wal_bytes": 887807236.0,
+            "wal_fpi": 114.0,
+            "wal_records": 16292071.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": 7702997900265701813,
+            "toplevel": true,
+            "userid": "18659"
+          },
+          "stats_since": "2026-09-27T08:17:59.95618+00:00",
+          "target": "function:public.nazo_ack_security_audit_batch"
+        },
+        {
+          "category": "tenant_lookup_or_lock",
+          "delta": {
+            "calls": 8998287.0,
+            "rows": 8998287.0,
+            "total_exec_time": 86530.03364492494,
+            "wal_bytes": 787564465.0,
+            "wal_fpi": 39.0,
+            "wal_records": 11142101.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": 3175560230803026983,
+            "toplevel": false,
+            "userid": "10"
+          },
+          "stats_since": "2026-09-27T08:17:55.234422+00:00",
+          "target": "relation:public.tenants"
+        },
+        {
+          "category": "refresh",
+          "delta": {
+            "calls": 802186.0,
+            "rows": 802186.0,
+            "total_exec_time": 83351.89140500381,
+            "wal_bytes": 551588555.0,
+            "wal_fpi": 3612.0,
+            "wal_records": 4893139.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -4627606135148110578,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:17:59.312268+00:00",
+          "target": "relation:oauth_refresh_families"
+        },
+        {
+          "category": "refresh",
+          "delta": {
+            "calls": 802186.0,
+            "rows": 802186.0,
+            "total_exec_time": 69909.2065319968,
+            "wal_bytes": 431339510.0,
+            "wal_fpi": 4111.0,
+            "wal_records": 4037526.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -11707619807080382,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:17:59.310814+00:00",
+          "target": "relation:oauth_refresh_spent_tokens"
+        }
+      ]
+    },
+    {
+      "invalid_reasons": [],
+      "pgss_dealloc_post": "0",
+      "pgss_dealloc_pre": "0",
+      "pgss_interval": {
+        "end_epoch_s": 1790498798.6506093,
+        "end_utc": "2026-09-27T08:46:38.650609+00:00",
+        "seconds": 781.534,
+        "start_epoch_s": 1790498017.1163452,
+        "start_utc": "2026-09-27T08:33:37.116345+00:00"
+      },
+      "post_rows": 171,
+      "pre_only_rows": 0,
+      "pre_rows": 3,
+      "raw_sha256": {
+        "pgss_post": "10334fa60abdc45bf037477aa1b0cae6fc3f4b54db2c763e11ad52e5d6316442",
+        "pgss_pre": "09870ebcdcdf472215d1c24c35716654ad3a86412663cd0cfee7b39813dbb5fa"
+      },
+      "run": "formal-b-3200",
+      "stats_reset": "1790498017.113714",
+      "stats_reset_unchanged": true,
+      "stats_since_valid_rows": 171,
+      "top10": [
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 3239483.0,
+            "rows": 3239483.0,
+            "total_exec_time": 218340.53493199847,
+            "wal_bytes": 2790665087.0,
+            "wal_fpi": 608.0,
+            "wal_records": 13016793.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -7247551828350762117,
+            "toplevel": false,
+            "userid": "10"
+          },
+          "stats_since": "2026-09-27T08:33:46.03801+00:00",
+          "target": "relation:public.security_audit_events"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 3032289.0,
+            "rows": 3032289.0,
+            "total_exec_time": 352073.6428579716,
+            "wal_bytes": 2633539460.0,
+            "wal_fpi": 539.0,
+            "wal_records": 12184261.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": 7937354421020446243,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:33:46.037387+00:00",
+          "target": "function:public.nazo_persist_security_audit_event"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 28615.0,
+            "rows": 28615.0,
+            "total_exec_time": 95588.82635699947,
+            "wal_bytes": 1535140053.0,
+            "wal_fpi": 2237.0,
+            "wal_records": 16337348.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -6871906609541267958,
+            "toplevel": true,
+            "userid": "18668"
+          },
+          "stats_since": "2026-09-27T08:33:46.667302+00:00",
+          "target": "function:public.nazo_append_security_audit_chain"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 3239483.0,
+            "rows": 3239483.0,
+            "total_exec_time": 80085.03013101144,
+            "wal_bytes": 1531712523.0,
+            "wal_fpi": 2233.0,
+            "wal_records": 16308698.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -2565421133935146987,
+            "toplevel": false,
+            "userid": "10"
+          },
+          "stats_since": "2026-09-27T08:33:46.668405+00:00",
+          "target": "relation:public.security_audit_chain_entries"
+        },
+        {
+          "category": "issuance",
+          "delta": {
+            "calls": 1745166.0,
+            "rows": 1745166.0,
+            "total_exec_time": 223035.38306000392,
+            "wal_bytes": 1256659501.0,
+            "wal_fpi": 1987.0,
+            "wal_records": 11733959.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -2887139335912015367,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:33:46.077342+00:00",
+          "target": "relation:oauth_token_issuances"
+        },
+        {
+          "category": "audit",
+          "delta": {
+            "calls": 28615.0,
+            "rows": 28615.0,
+            "total_exec_time": 87703.41986100044,
+            "wal_bytes": 720527445.0,
+            "wal_fpi": 39.0,
+            "wal_records": 13201833.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": 7702997900265701813,
+            "toplevel": true,
+            "userid": "18668"
+          },
+          "stats_since": "2026-09-27T08:33:46.681199+00:00",
+          "target": "function:public.nazo_ack_security_audit_batch"
+        },
+        {
+          "category": "refresh",
+          "delta": {
+            "calls": 801233.0,
+            "rows": 801233.0,
+            "total_exec_time": 87128.6381939987,
+            "wal_bytes": 646862640.0,
+            "wal_fpi": 3810.0,
+            "wal_records": 5724321.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -4627606135148110578,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:33:46.081377+00:00",
+          "target": "relation:oauth_refresh_families"
+        },
+        {
+          "category": "tenant_lookup_or_lock",
+          "delta": {
+            "calls": 5757025.0,
+            "rows": 5757025.0,
+            "total_exec_time": 51242.50272495261,
+            "wal_bytes": 566211315.0,
+            "wal_fpi": 75.0,
+            "wal_records": 7527817.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": 3175560230803026983,
+            "toplevel": false,
+            "userid": "10"
+          },
+          "stats_since": "2026-09-27T08:33:42.068561+00:00",
+          "target": "relation:public.tenants"
+        },
+        {
+          "category": "refresh",
+          "delta": {
+            "calls": 801233.0,
+            "rows": 801233.0,
+            "total_exec_time": 64806.99775500187,
+            "wal_bytes": 430660764.0,
+            "wal_fpi": 4002.0,
+            "wal_records": 4032110.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": -11707619807080382,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:33:46.079872+00:00",
+          "target": "relation:oauth_refresh_spent_tokens"
+        },
+        {
+          "category": "issuance",
+          "delta": {
+            "calls": 375844.0,
+            "rows": 375844.0,
+            "total_exec_time": 66630.28304199978,
+            "wal_bytes": 412960037.0,
+            "wal_fpi": 6544.0,
+            "wal_records": 3411874.0
+          },
+          "identity": {
+            "dbid": "16384",
+            "queryid": 7076455219069621783,
+            "toplevel": true,
+            "userid": "16385"
+          },
+          "stats_since": "2026-09-27T08:33:46.064487+00:00",
+          "target": "relation:oauth_token_issuances"
+        }
+      ]
+    }
+  ],
+  "query_text_included": false,
+  "stage": "pgss-top10-short-3200"
+}
