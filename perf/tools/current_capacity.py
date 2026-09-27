@@ -230,11 +230,20 @@ def main():
             for scenario in PRIMARY:
                 search(mode, scenario)
             lower, _ = bounds(f"{mode}/cap_mixed")
-            if lower:
+            confirmed = any(r["verdict"] == "PASS" and r["rate"] == lower
+                            and r.get("confirmation")
+                            and r["metrics"].get("window_seconds", 0) >= 660
+                            for r in state.get(f"{mode}/cap_mixed", []))
+            if lower and not confirmed:
                 run(mode, "cap_mixed", lower, window=660, confirmation=True)
+        # Give all secondary candidates a three-minute verification before
+        # spending the remaining deadline budget on additional narrowing.
         for scenario in list(SCENARIOS)[4:]:
             for mode in ("single", "multi"):
-                search(mode, scenario, extra=3)
+                search(mode, scenario, extra=1)
+        for scenario in list(SCENARIOS)[4:]:
+            for mode in ("single", "multi"):
+                search(mode, scenario, extra=2)
     except TimeoutError as exc:
         print(str(exc), flush=True)
     finally:
