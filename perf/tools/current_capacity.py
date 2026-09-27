@@ -33,6 +33,24 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
+def bounds(state, key):
+    chosen = {}
+    for record in state.get(key, []):
+        rate = record["rate"]
+        priority = (record["verdict"] in ("PASS", "FAIL"),
+                    record["metrics"].get("window_seconds") or 0)
+        previous = chosen.get(rate)
+        previous_priority = ((previous["verdict"] in ("PASS", "FAIL"),
+                              previous["metrics"].get("window_seconds") or 0)
+                             if previous else None)
+        if previous_priority is None or priority >= previous_priority:
+            chosen[rate] = record
+    records = list(chosen.values())
+    lower = max((r["rate"] for r in records if r["verdict"] == "PASS"), default=0)
+    upper = min((r["rate"] for r in records if r["verdict"] == "FAIL" and r["rate"] > lower), default=None)
+    return lower, upper
+
+
 def allocations():
     allowed = sorted(os.sched_getaffinity(0))
     if len(allowed) < 4:
@@ -167,24 +185,10 @@ def main():
             raise TimeoutError("operator requested stop after completed point")
         return result
 
-    def bounds(key):
-        records = state.get(key, [])
-        chosen = {}
-        for record in records:
-            rate = record["rate"]
-            window = record["metrics"].get("window_seconds", 0)
-            if rate not in chosen or window >= chosen[rate]["metrics"].get("window_seconds", 0):
-                chosen[rate] = record
-        records = list(chosen.values())
-        passed = [r["rate"] for r in records if r["verdict"] == "PASS"]
-        lower = max(passed, default=0)
-        upper = min((r["rate"] for r in records if r["verdict"] == "FAIL" and r["rate"] > lower), default=None)
-        return lower, upper
-
     def search(mode, scenario, extra=8):
         key = f"{mode}/{scenario}"
         for _ in range(extra):
-            lower, upper = bounds(key)
+            lower, upper = bounds(state, key)
             records = state.get(key, [])
             if lower and upper and upper / lower <= 1.25:
                 break
@@ -201,16 +205,16 @@ def main():
             else:
                 rate = SCENARIOS[scenario] * len(cpus[mode])
             run(mode, scenario, rate)
-        lower, _ = bounds(key)
+        lower, _ = bounds(state, key)
         for _ in range(3):
-            lower, upper = bounds(key)
+            lower, upper = bounds(state, key)
             if not lower or any(r["verdict"] == "PASS" and r["rate"] == lower
                                 and r["metrics"].get("window_seconds", 0) >= 180
                                 for r in state.get(key, [])):
                 break
-            if run(mode, scenario, lower, window=180)["verdict"] == "PASS":
+            if run(mode, scenario, lower, window=180)["verdict"] != "FAIL":
                 break
-            lower, upper = bounds(key)
+            lower, upper = bounds(state, key)
             if upper and not lower:
                 run(mode, scenario, max(1, upper * 3 // 4), window=180)
 
@@ -236,7 +240,7 @@ def main():
         for mode in ("single", "multi"):
             for scenario in PRIMARY:
                 search(mode, scenario)
-            lower, _ = bounds(f"{mode}/cap_mixed")
+            lower, _ = bounds(state, f"{mode}/cap_mixed")
             confirmed = any(r["verdict"] == "PASS" and r["rate"] == lower
                             and r.get("confirmation")
                             and r["metrics"].get("window_seconds", 0) >= 660
