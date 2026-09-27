@@ -174,7 +174,7 @@ def main():
         upper = min((r["rate"] for r in records if r["verdict"] == "FAIL" and r["rate"] > lower), default=None)
         return lower, upper
 
-    def search(mode, scenario, extra=4):
+    def search(mode, scenario, extra=8):
         key = f"{mode}/{scenario}"
         for _ in range(extra):
             lower, upper = bounds(key)
