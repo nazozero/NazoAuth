@@ -191,5 +191,7 @@ The six short points are preserved under `diagnostics/pr222-high-rate-2026-09-27
 ## Evidence
 
 Sanitized stage evidence and its checksum manifest are in `diagnostics/pr222-high-rate-2026-09-27/calibration/`. The evidence includes the exact common resource profile, gate/sidecar/audit summaries, process-sampler summary, and hashes tying these summaries to the retained CNB raw point artifacts. Raw SQL text, request diagnostics, credentials, key material, and audit journal contents are excluded.
+## A3000 rerun update — INVALID_TOOLING
 
+The prior A3000 BLOCKED/UNVERIFIED availability record is superseded by the retry2 attempt: the full scheduled load ran and exited 0, but required main/sidecar summary artifacts were not captured, so the formal performance and audit gates remain INVALID/NOT_VERIFIED. See [`2026-09-27-pr222-a3000-rerun.md`](2026-09-27-pr222-a3000-rerun.md) and the sanitized evidence bundle under `diagnostics/pr222-high-rate-2026-09-27/a3000-retry2-20260927-125155/`. This is a tooling output-capture failure, not a capacity PASS or FAIL; a valid A3000 retest remains NOT_RUN pending volume-backed main/sidecar output collection.
 

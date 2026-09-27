@@ -1,0 +1,52 @@
+[
+  {
+    "file": "README.md",
+    "sha256": "71522d223fd23b0a3f5f07bde4c8c9319c23cd8292b1b6312ce7ecf9260ecd4f",
+    "bytes": 1068
+  },
+  {
+    "file": "build-provenance.json",
+    "sha256": "18d9cf5b4b2b87fd1a67f03fea7f0b994e73666a8d49ce0a5ba880f73c7c0451",
+    "bytes": 4355
+  },
+  {
+    "file": "cpu-plan.json",
+    "sha256": "195943d404d1d0486d2b24119b2e5f1899124257d50c8807a501de1393f8cb10",
+    "bytes": 1361
+  },
+  {
+    "file": "formal-a-3000-retry2-public-summary.json",
+    "sha256": "a00eea62438292d1443cbeb2bf37ec8fbbf17dab360721f2ad349561c0f08bda",
+    "bytes": 12962
+  },
+  {
+    "file": "issuance-maintenance-evidence.json",
+    "sha256": "8a681f514c9b865d10d92840477916c9ca0dc653b756bba6b48ce173965bc2e4",
+    "bytes": 223
+  },
+  {
+    "file": "provenance.json",
+    "sha256": "cf3d7f2a0ac5b5c1a6c5b0ec8e79c4697cf3b91bd85c9d5b63d68b6863a92888",
+    "bytes": 965
+  },
+  {
+    "file": "raw-input-hashes.json",
+    "sha256": "bf69210da168dbbf24549a3c74f8a81537616fcac03313b30a2726e064ca8814",
+    "bytes": 1163
+  },
+  {
+    "file": "refresh-capacity-gate.json",
+    "sha256": "50eb9691f907409e13cbc5b0bb5ab02f8c4dd42423558a6726711310fceadbc0",
+    "bytes": 423
+  },
+  {
+    "file": "resource-profile.json",
+    "sha256": "ed27ed0646648566994771166980c2a76c9bdd8b8dbcd72017cce50a75808b5a",
+    "bytes": 2893
+  },
+  {
+    "file": "wal-attribution.json",
+    "sha256": "858fd8905ba72b372fb3834c724e4a8fec0be151c7f93ba3e501a35fa2ffdbbf",
+    "bytes": 4024
+  }
+]
