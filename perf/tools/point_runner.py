@@ -837,7 +837,8 @@ def run_ab_point(point: dict) -> dict:
         if point.get("capture_audit_journal"):
             journal_path = out_dir / "audit-journal.jsonl"
             sis.dc("cp", f"sis-rcv-{run_id}:/data/journal.jsonl", str(journal_path))
-            digest = hashlib.sha256(journal_path.read_bytes()).hexdigest()
+            with journal_path.open("rb") as journal_file:
+                digest = hashlib.file_digest(journal_file, "sha256").hexdigest()
             if digest != rec["journal_stats"].get("journal_sha256"):
                 raise RuntimeError("archived audit journal differs from reconciled journal")
             rec["audit_journal_archive"] = {
