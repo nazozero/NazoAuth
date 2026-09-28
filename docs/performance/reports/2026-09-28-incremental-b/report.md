@@ -416,6 +416,18 @@ passing does not make the latency failure pass. The short passing point is
 not promoted to a successful long confirmation. A lower frozen-load
 confirmation is required and remains in progress.
 
+The 6000/s client-credentials control with 2048 VUs remains INVALID after
+increasing stream workers from four to eight: only eight stale samples cross
+five seconds. Native forensic member prefixes show VU gauges starting at
+12:53:10.515 UTC while business/window samples begin at 12:53:19.082 UTC.
+The native stdout writer is buffered but its periodic flusher does not flush
+that buffer. Sparse initialization rows therefore wait for 4 KiB or shutdown.
+The repair flushes that existing buffer at each periodic boundary, preserving
+every emitted sample and the unchanged validity gate. A two-batch native
+regression fails on the old implementation and passes after the repair; both
+native JSON and metrics packages pass. Live affected-point validation is
+pending and the invalid point has not been promoted to a backend upper.
+
 The reporting repair at `6e0eeafb` has eleven applicable CI checks successful,
 with the two existing PR-event conditional skips. Its
 [Rust job](https://github.com/nazozero/NazoAuth/actions/runs/36417493911/job/108912021942)

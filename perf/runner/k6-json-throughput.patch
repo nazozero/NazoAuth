@@ -1,39 +1,32 @@
 --- a/internal/output/json/json.go
 +++ b/internal/output/json/json.go
-@@ -8,6 +8,8 @@
- 	"fmt"
- 	"io"
- 	"maps"
+@@ -10,0 +11,2 @@
 +	"math"
 +	"strconv"
- 	"strings"
- 	"time"
- 
-@@ -34,6 +36,11 @@
- 	closeFn     func() error
- 	seenMetrics map[string]struct{}
- 	thresholds  map[string]metrics.Thresholds
+@@ -36,0 +39,5 @@
 +	// Tag sets are immutable and interned by k6. Bound retained encodings so
 +	// dynamic user tags cannot turn the output into an unbounded cache.
 +	tagJSON      map[*metrics.TagSet][]byte
 +	metricJSON   map[string][]byte
 +	sampleBuffer []byte
- }
- 
- // New returns a new JSON output.
-@@ -138,7 +145,7 @@
- 					firstErr = err
- 				}
- 			}
+@@ -141 +148 @@
 -			if err := enc.Encode(wrapSample(sample)); err != nil {
 +			if err := o.writeSample(sample, enc); err != nil {
- 				errCount++
- 				if firstErr == nil {
- 					firstErr = err
-@@ -155,6 +162,70 @@
- 	}
- }
- 
+@@ -148,0 +156,11 @@
++	// stdout is buffered. A sparse batch must leave that buffer at the
++	// periodic boundary, rather than waiting for 4 KiB or Stop().
++	if buffered, ok := o.out.(*bufio.Writer); ok {
++		if err := buffered.Flush(); err != nil {
++			errCount++
++			if firstErr == nil {
++				firstErr = err
++			}
++		}
++	}
++
+@@ -155,0 +174,64 @@
++}
++
 +// writeSample preserves the stock sample envelope and all fields. Avoid
 +// repeatedly reflecting the fixed frame and encoding an immutable tag set
 +// for every metric in the same request. Uncommon metadata/error cases retain
@@ -96,28 +89,14 @@
 +	_, err = o.out.Write(b)
 +	o.sampleBuffer = b
 +	return err
-+}
-+
- func (o *Output) handleMetric(m *metrics.Metric, enc *json.Encoder) error {
- 	if _, ok := o.seenMetrics[m.Name]; ok {
- 		return nil
 --- a/internal/output/json/json_test.go
 +++ b/internal/output/json/json_test.go
-@@ -4,7 +4,10 @@
- 	"bufio"
- 	"bytes"
- 	"compress/gzip"
+@@ -6,0 +7 @@
 +	stdjson "encoding/json"
- 	"io"
+@@ -7,0 +9,2 @@
 +	"math"
 +	"strconv"
- 	"testing"
- 	"time"
- 
-@@ -16,6 +19,125 @@
- 	"go.k6.io/k6/v2/metrics"
- 	"go.k6.io/k6/v2/output"
- )
+@@ -18,0 +22,119 @@
 +
 +func TestOptionalAuxiliaryTimingsPreserveCapacitySamples(t *testing.T) {
 +	r := metrics.NewRegistry()
@@ -237,6 +216,40 @@
 +	assert.Len(t, o.tagJSON, 4096)
 +	assert.Len(t, o.metricJSON, 1)
 +}
- 
- func getValidator(t testing.TB, expected []string) func(io.Reader) {
- 	return func(rawJSONLines io.Reader) {
+@@ -227,0 +350,36 @@
++
++func TestPeriodicFlushDrainsBufferedStdout(t *testing.T) {
++	r := metrics.NewRegistry()
++	m, err := r.NewMetric("vus", metrics.Gauge)
++	require.NoError(t, err)
++	out, err := New(output.Params{Logger: testutils.NewLogger(t)})
++	require.NoError(t, err)
++	o := out.(*Output)
++	var stdout bytes.Buffer
++	o.out = bufio.NewWriter(&stdout)
++	for i := 0; i < 2; i++ {
++		sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m,
++			Tags: r.RootTagSet()}, Time: time.Now(), Value: float64(i)}
++		o.AddMetricSamples([]metrics.SampleContainer{metrics.Samples{sample}})
++		o.flushMetrics()
++		// A sparse periodic batch must arrive before another batch or Stop.
++		require.NotEmpty(t, stdout.Bytes())
++		require.Less(t, stdout.Len(), 4096)
++		scanner := bufio.NewScanner(bytes.NewReader(stdout.Bytes()))
++		var points []string
++		for scanner.Scan() {
++			var frame struct {
++				Type string `json:"type"`
++			}
++			require.NoError(t, stdjson.Unmarshal(scanner.Bytes(), &frame))
++			if frame.Type == "Point" {
++				points = append(points, scanner.Text())
++			}
++		}
++		require.NoError(t, scanner.Err())
++		require.Len(t, points, i+1)
++		expected, err := stdjson.Marshal(wrapSample(sample))
++		require.NoError(t, err)
++		assert.JSONEq(t, string(expected), points[i])
++	}
++}

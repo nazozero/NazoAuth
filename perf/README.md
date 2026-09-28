@@ -4,12 +4,20 @@ This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
 The runner image pins `orjson==3.12.0` for the streaming evidence decoder.
-Checkpoint evidence uses stock k6's buffered `--quiet --out json=-` output,
+Checkpoint evidence uses k6's buffered `--quiet --out json=-` output,
 redirected to the analyzer FIFO. The script writes summaries only to files;
 the runner closes its FIFO descriptor before sampler shutdown and waiting
 for the analyzer. This
 retains all metric points and flushes the final buffered batch without a
 relaxed lag gate.
+
+The native JSON periodic flusher also flushes its stdout buffer after each
+batch. Sparse initialization gauges must arrive at that boundary, before a
+later workload fills 4 KiB or `Stop()` closes output. Otherwise old VU samples
+can appear late although business samples are timely. A native regression
+feeds two sub-4-KiB batches and verifies their complete envelopes arrive before
+the next batch or shutdown. All samples and the five-second lag gate remain
+unchanged.
 
 The runner builds exact k6 v2.2.0 source `00a9a1b7f552d6bb4337278b10ae25aac0f4e666`
 from a checksum-verified archive. Its [small JSON output patch](runner/k6-json-throughput.patch)
