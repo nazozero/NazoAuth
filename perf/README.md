@@ -262,6 +262,12 @@ evidence. A naturally finished sidecar with a terminal summary is not by itself
 a business pass. Each sidecar retains its own rate, scenario-specific latency
 rules (including the separate cold-login class) and measurement cohort; the
 existing common-window check must also cover the main measurement.
+Offline reassessment exposes `complete_operation_latency_ms` from each
+sidecar's native `cap_iter_ms` cohort. A sidecar without that cohort reports
+`null`, never zero or an HTTP-duration substitute. The existing metadata/JWKS
+sidecar retains its whole-scenario iteration accounting and request-latency
+gate; its HTTP quantiles are labeled separately from complete-operation
+quantiles. This reporting field does not alter any verdict.
 
 Invalid measurement or local preparation takes precedence over a service
 failure when combining business, sidecar, health and maintenance verdicts.
