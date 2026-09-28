@@ -381,6 +381,17 @@ CPU and pool data are observed costs, not proof of a specific SQL cause. Fixed V
 
 ## Retained evidence and limits
 
+An incremental offline reassessment at evaluator commit
+`04146234c578e61797aacee7ef7c4687b75653a1` rechecked all 28 selected points
+against the shared main/sidecar, health and maintenance verdict path. The
+[reassessment](../../../../perf/results/diagnostics/2026-09-28-current-b-reassessment.json)
+retains original point SHA-256 identities and separate evaluator results.
+Both mixed confirmations and all four sidecar gates pass. The eight original
+upper points remain valid measured FAILs; the multicore mixed 2400/s point
+also fails FAPI and refresh sidecar gates. These observations do not by
+themselves establish a backend maximum: targeted VU calibration and remaining
+scenario boundary measurements are being recorded separately by recipe.
+
 The [current authority](../../../../perf/results/data/capacity/current-capacity.json),
 [selected point snapshots](../../../../perf/results/diagnostics/2026-09-28-current-b-selected.json),
 [invalid tester probes](../../../../perf/results/diagnostics/2026-09-28-current-b-tester-diagnostics.json),
