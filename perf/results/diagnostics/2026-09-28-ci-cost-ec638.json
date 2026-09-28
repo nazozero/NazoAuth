@@ -1,0 +1,129 @@
+{
+  "commit": "ec638ce76cca15411d9b0d6e3c617dcd1e17b684",
+  "job_url": "https://github.com/nazozero/NazoAuth/actions/runs/36409414900/job/108885814020",
+  "job_seconds": 1110.0,
+  "steps": [
+    {
+      "name": "Set up job",
+      "seconds": 2.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Initialize containers",
+      "seconds": 20.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "seconds": 2.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Run dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1",
+      "seconds": 8.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+      "seconds": 26.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Budget build concurrency from runner resources",
+      "seconds": 0.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Install native dependencies",
+      "seconds": 11.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Prepare runtime directories",
+      "seconds": 0.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Prepare isolated avatar object storage",
+      "seconds": 10.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Create isolated audit ledger test database",
+      "seconds": 0.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Verify compatibility contracts",
+      "seconds": 4.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Verify persistence dependency isolation",
+      "seconds": 3.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Verify crypto boundary",
+      "seconds": 0.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Test crypto boundary guard",
+      "seconds": 1.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Verify perf results layout",
+      "seconds": 0.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Format",
+      "seconds": 1.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Clippy all targets",
+      "seconds": 38.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Materialize the isolated CI schema through the persistence owner",
+      "seconds": 27.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Test workspace with PostgreSQL and Valkey",
+      "seconds": 951.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+      "seconds": 1.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "seconds": 0.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Stop containers",
+      "seconds": 1.0,
+      "conclusion": "success"
+    },
+    {
+      "name": "Complete job",
+      "seconds": 0.0,
+      "conclusion": "success"
+    }
+  ],
+  "nested_costs_seconds": {
+    "workspace_compile": 176,
+    "audit_ledger_13_tests": 374.16
+  },
+  "build_jobs": 4,
+  "test_threads": 1,
+  "scope": "Nested costs overlap their enclosing step. Runner/cache variation prevents causal speedup attribution. All thirteen audit tests retain their assertions; shared-state tests remain serial."
+}

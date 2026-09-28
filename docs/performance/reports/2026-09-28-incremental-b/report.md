@@ -66,7 +66,7 @@ The 2048-VU injector reached about 18.2 GiB RSS versus about 5.4 GiB at 1024;
 the visible deployment memory limit is 128 GiB. Increasing VUs indefinitely
 would add cost without proving a backend ceiling.
 
-## Accepted multicore mixed boundary
+## Original-container multicore mixed boundary
 
 The frozen 1024-VU/pool-64/side-VU-64,16,32,256 recipe has an observed
 **[3750, 4000) complete operations/s** interval. Both endpoints were verified
@@ -348,6 +348,32 @@ publication commit's CI proof.
 
 The remaining scene boundaries and their VU controls continue as targeted
 incremental tests. This checkpoint is not the final 20-row current baseline.
+
+## Retained evidence checkpoint after migration
+
+All eighteen retained original-container endpoint/confirmation/control records
+have been [reassessed again](../../../../perf/results/diagnostics/2026-09-28-retained-reassessment.json)
+with the current shared evaluator at `ec638ce7`. Their verdicts are unchanged;
+the recovered single-core mixed maintenance confirmation remains PASS.
+The superseded old multicore mixed confirmation is excluded from this set.
+
+The [selected retained archive](../../../../perf/results/diagnostics/2026-09-28-incremental-retained-archive.json)
+preserves 463 available files, including complete native gate inputs and the
+recovered single-core mixed journal. It contains 522743064 uncompressed bytes;
+`20260928-incremental-retained-evidence.tar.gz` is 121025108 bytes with SHA-256
+`45143b887df5a2008d2321dcc93078597523560d924e81886c7265af577e2b7c`.
+Its embedded manifest hashes every archived file. Seventeen unavailable
+auxiliary raw logs are listed explicitly; their absence is not presented as
+complete raw preservation. The archive is held outside Git in the task workspace.
+
+Checkpoint `ec638ce7` has all eleven applicable checks successful and the two
+existing PR-event conditional skips. Its [Rust job](https://github.com/nazozero/NazoAuth/actions/runs/36409414900/job/108885814020)
+takes 1110 seconds, with workspace compilation 176 seconds and all thirteen
+audit-ledger tests 374.16 seconds. Cache restore takes 26 seconds, native
+dependencies eleven, avatar setup ten, schema setup 27, clippy 38 and the
+workspace step 951. These [nested timings](../../../../perf/results/diagnostics/2026-09-28-ci-cost-ec638.json)
+overlap enclosing steps and do not support a causal speedup percentage.
+The final current-baseline publication will still require its own exact-head CI.
 
 ## Reproduction and verification
 
