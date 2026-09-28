@@ -43,6 +43,27 @@ class CapacityAllocationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 cc.allocations(1)
 
+    def test_database_override_releases_idle_budget_without_overlapping_roles(self):
+        visible = set(range(17, 49)) | set(range(130, 162))
+        with patch.object(cc.os, 'sched_getaffinity', return_value=visible, create=True):
+            tuned = cc.allocations(4, 8)
+        self.assertEqual(len(tuned['multi']), 4)
+        self.assertEqual(len(tuned['postgres']), 8)
+        self.assertEqual(len(tuned['generator']), 51)
+        groups = [set(tuned[key]) for key in ('multi', 'postgres', 'valkey', 'generator')]
+        self.assertEqual(set.union(*groups), visible)
+        self.assertEqual(sum(map(len, groups)), len(visible))
+
+    def test_database_override_cannot_exhaust_generator_or_claim_shared_isolation(self):
+        with patch.object(cc.os, 'sched_getaffinity', return_value={7, 9, 11, 13}, create=True):
+            self.assertEqual(cc.allocations(1, 1)['generator'], [13])
+            for count in (0, 2, 5):
+                with self.assertRaises(ValueError):
+                    cc.allocations(1, count)
+        with patch.object(cc.os, 'sched_getaffinity', return_value={7, 9, 11}, create=True):
+            with self.assertRaises(ValueError):
+                cc.allocations(database_cpus=1)
+
 
 class CapacityBoundsTests(unittest.TestCase):
     def bound(self, *records):
