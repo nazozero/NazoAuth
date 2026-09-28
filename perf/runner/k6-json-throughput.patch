@@ -1,0 +1,174 @@
+--- a/internal/output/json/json.go
++++ b/internal/output/json/json.go
+@@ -8,6 +8,8 @@
+ 	"fmt"
+ 	"io"
+ 	"maps"
++	"math"
++	"strconv"
+ 	"strings"
+ 	"time"
+ 
+@@ -34,6 +36,11 @@
+ 	closeFn     func() error
+ 	seenMetrics map[string]struct{}
+ 	thresholds  map[string]metrics.Thresholds
++	// Tag sets are immutable and interned by k6. Bound retained encodings so
++	// dynamic user tags cannot turn the output into an unbounded cache.
++	tagJSON      map[*metrics.TagSet][]byte
++	metricJSON   map[string][]byte
++	sampleBuffer []byte
+ }
+ 
+ // New returns a new JSON output.
+@@ -138,7 +145,7 @@
+ 					firstErr = err
+ 				}
+ 			}
+-			if err := enc.Encode(wrapSample(sample)); err != nil {
++			if err := o.writeSample(sample, enc); err != nil {
+ 				errCount++
+ 				if firstErr == nil {
+ 					firstErr = err
+@@ -155,6 +162,60 @@
+ 	}
+ }
+ 
++// writeSample preserves the stock sample envelope and all fields. Avoid
++// repeatedly reflecting the fixed frame and encoding an immutable tag set
++// for every metric in the same request. Uncommon metadata/error cases retain
++// the stock encoder. The periodic flusher owns these buffers and caches.
++func (o *Output) writeSample(sample metrics.Sample, enc *json.Encoder) error {
++	if sample.Metadata != nil || math.IsNaN(sample.Value) || math.IsInf(sample.Value, 0) {
++		return enc.Encode(wrapSample(sample))
++	}
++	timestamp, err := sample.Time.MarshalJSON()
++	if err != nil {
++		return enc.Encode(wrapSample(sample))
++	}
++	if o.tagJSON == nil {
++		o.tagJSON = make(map[*metrics.TagSet][]byte)
++		o.metricJSON = make(map[string][]byte)
++	}
++	tags, ok := o.tagJSON[sample.Tags]
++	if !ok {
++		tags = []byte("null")
++		if sample.Tags != nil {
++			tags, err = sample.Tags.MarshalJSON()
++			if err != nil {
++				return err
++			}
++		}
++		if len(o.tagJSON) < 4096 {
++			o.tagJSON[sample.Tags] = tags
++		}
++	}
++	metric, ok := o.metricJSON[sample.Metric.Name]
++	if !ok {
++		metric, err = metrics.MarshalJSONWithoutHTMLEscape(sample.Metric.Name)
++		if err != nil {
++			return err
++		}
++		if len(o.metricJSON) < 4096 {
++			o.metricJSON[sample.Metric.Name] = metric
++		}
++	}
++	b := o.sampleBuffer[:0]
++	b = append(b, `{"metric":`...)
++	b = append(b, metric...)
++	b = append(b, `,"type":"Point","data":{"time":`...)
++	b = append(b, timestamp...)
++	b = append(b, `,"value":`...)
++	b = strconv.AppendFloat(b, sample.Value, 'g', -1, 64)
++	b = append(b, `,"tags":`...)
++	b = append(b, tags...)
++	b = append(b, '}', '}', '\n')
++	_, err = o.out.Write(b)
++	o.sampleBuffer = b
++	return err
++}
++
+ func (o *Output) handleMetric(m *metrics.Metric, enc *json.Encoder) error {
+ 	if _, ok := o.seenMetrics[m.Name]; ok {
+ 		return nil
+--- a/internal/output/json/json_test.go
++++ b/internal/output/json/json_test.go
+@@ -4,7 +4,10 @@
+ 	"bufio"
+ 	"bytes"
+ 	"compress/gzip"
++	stdjson "encoding/json"
+ 	"io"
++	"math"
++	"strconv"
+ 	"testing"
+ 	"time"
+ 
+@@ -16,6 +19,67 @@
+ 	"go.k6.io/k6/v2/metrics"
+ 	"go.k6.io/k6/v2/output"
+ )
++
++func TestSampleWriterMatchesStockEnvelope(t *testing.T) {
++	r := metrics.NewRegistry()
++	m, err := r.NewMetric("fixture_metric", metrics.Trend)
++	require.NoError(t, err)
++	tags := r.RootTagSet().With("escaped", "<>&\"\\\n雪").With("cohort", "measure")
++	values := []float64{0, math.Copysign(0, -1), 1.25, 1e-10, 1e22, math.MaxFloat64, math.SmallestNonzeroFloat64}
++	var optimized bytes.Buffer
++	o := &Output{out: &optimized}
++	enc := stdjson.NewEncoder(&optimized)
++	enc.SetEscapeHTML(false)
++	for _, value := range values {
++		for _, metadata := range []map[string]string{nil, {}, {"detail": "<>&\"\\\n雪"}} {
++			for _, tagSet := range []*metrics.TagSet{nil, r.RootTagSet(), tags} {
++				sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m, Tags: tagSet},
++					Time:  time.Date(2026, 9, 28, 10, 11, 12, 123456789, time.FixedZone("fixture", 8*3600)),
++					Value: value, Metadata: metadata}
++				var stock bytes.Buffer
++				stockEncoder := stdjson.NewEncoder(&stock)
++				stockEncoder.SetEscapeHTML(false)
++				require.NoError(t, stockEncoder.Encode(wrapSample(sample)))
++				optimized.Reset()
++				require.NoError(t, o.writeSample(sample, enc))
++				assert.JSONEq(t, stock.String(), optimized.String())
++				assert.Equal(t, byte('\n'), optimized.Bytes()[optimized.Len()-1])
++			}
++		}
++	}
++	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
++		sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m, Tags: tags}, Time: time.Now(), Value: value}
++		optimized.Reset()
++		assert.Error(t, o.writeSample(sample, enc))
++		assert.Empty(t, optimized.Bytes())
++	}
++	sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m, Tags: tags}, Time: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}
++	optimized.Reset()
++	assert.Error(t, o.writeSample(sample, enc))
++	assert.Empty(t, optimized.Bytes())
++}
++
++func TestSampleWriterBoundsImmutableTagCache(t *testing.T) {
++	r := metrics.NewRegistry()
++	m, err := r.NewMetric("fixture_metric", metrics.Counter)
++	require.NoError(t, err)
++	var output bytes.Buffer
++	o := &Output{out: &output}
++	enc := stdjson.NewEncoder(&output)
++	for i := 0; i < 4200; i++ {
++		sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m,
++			Tags: r.RootTagSet().With("dynamic", strconv.Itoa(i))}, Time: time.Now(), Value: float64(i)}
++		output.Reset()
++		require.NoError(t, o.writeSample(sample, enc))
++		// TagSet cannot be unmarshaled outside its registry; inspect generic JSON.
++		var fields map[string]interface{}
++		require.NoError(t, stdjson.Unmarshal(output.Bytes(), &fields))
++		assert.Equal(t, float64(i), fields["data"].(map[string]interface{})["value"])
++		assert.Equal(t, strconv.Itoa(i), fields["data"].(map[string]interface{})["tags"].(map[string]interface{})["dynamic"])
++	}
++	assert.Len(t, o.tagJSON, 4096)
++	assert.Len(t, o.metricJSON, 1)
++}
+ 
+ func getValidator(t testing.TB, expected []string) func(io.Reader) {
+ 	return func(rawJSONLines io.Reader) {

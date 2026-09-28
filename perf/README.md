@@ -8,7 +8,16 @@ Checkpoint evidence uses stock k6's buffered `--quiet --out json=-` output,
 redirected to the analyzer FIFO. The script writes summaries only to files;
 the runner closes its FIFO descriptor before waiting for the analyzer. This
 retains all metric points and flushes the final buffered batch without a
-separate k6 build or a relaxed lag gate.
+relaxed lag gate.
+
+The runner builds exact k6 v2.2.0 source `00a9a1b7f552d6bb4337278b10ae25aac0f4e666`
+from a checksum-verified archive. Its [small JSON output patch](runner/k6-json-throughput.patch)
+reuses bounded encodings of immutable tag sets and writes the same complete
+sample envelope without repeated reflection. Every metric, timestamp, value,
+tag and metadata field is retained; metadata and invalid-value cases use the
+stock encoder. Upstream output/metrics tests and added envelope equivalence,
+invalid-value and bounded-cache tests run during the image build. Per-point
+provenance records the resulting k6 binary hash and runner image.
 Install that same binary package when invoking its Python tools on the host:
 `python -m pip install --only-binary=:all: orjson==3.12.0`.
 Streaming evidence retains the existing cohort, diagnostic-selection and
