@@ -124,11 +124,77 @@ The original receiver journal is retained externally: 3,296,382,335 bytes,
 SHA-256 `91d1f43c46433c271c25dd220534f0784f8db77d4ed3d669262c84852c1e2f43`,
 equal to the runtime reconciliation hash. It is not committed to Git.
 
-The early multicore introspect probe now validly passes 8000/s for 60 seconds,
-8000 successful operations/s, complete P95/P99 1/1 ms, zero drops and analyzer
-lag 1.105 s. It remains a short probe while its upper boundary and both
-180-second endpoints are being established. Other scenes continue with explicit
-targeted adaptive steps; this checkpoint does not replace the final 20-row table.
+## Accepted single-core mixed boundary
+
+The original 600/s, 660-second confirmation remains PASS under the updated
+main, four-sidecar, maintenance and audit evaluator. Its effective deployment
+and workload recipe matches the new 64-VU upper points: application binary,
+runner image, workload hash, CPU sets, 64 users, pool 32, seed cardinality,
+60-second warmup, expiry policy and all sidecar rates/resources. The retained
+raw point is unchanged; its schema predates recipe IDs, so the
+[checkpoint evidence](../../../../perf/results/diagnostics/2026-09-28-mixed-cold-boundary-acceptance.json)
+includes explicit equivalence and input-hash proof. Journal capture differs
+between a confirmation and a short point; application audit remains enabled.
+
+The observed frozen 64-VU interval is **[600, 650) operations/s**. At 650/s for
+180 effective seconds, main success is 644.15/s with 1053 drops (0.9%) and
+complete P95/P99 130/233 ms. FAPI completes every 2/s operation with zero drops
+but P95/P99 181.2/273.82 ms; refresh completes every 38/s operation with zero
+drops but P95 131 ms. At 675/s these sidecar failures also occur.
+
+The one-factor 128-VU control at 650/s holds users, pool, images and sidecars
+constant. Main success increases to 649.572/s with 77 drops (0.066%), satisfying
+the offered-success and drop gates, but main P95 remains 130 ms. FAPI completes
+every operation with zero drops and P95/P99 309/436.5 ms; refresh also has zero
+drops and P95 135 ms. The latency failure therefore survives removal of the
+main-VU delivery constraint. This separate control is not used as a bound in
+the 64-VU interval. App/PG/load mean CPU is 0.801/1.347/0.833; mean pool wait
+1.538 ms and maximum analyzer lag 0.253 s. No specific SQL or continuously
+saturated CPU is inferred from these averages.
+
+## Accepted multicore cold Argon2 boundary
+
+Cold login is reported under its existing protocol/HTTP guard and exact
+operation/health/audit gates, separately from the ordinary 100/250-ms latency
+gate. The frozen C3 runner recipe uses 1024 VUs, 256 users, pool 64, one
+stream worker and 16 application CPUs. Both endpoints have 180 effective
+seconds: **[52, 56) operations/s**.
+
+At 52/s, all arrivals complete successfully with zero drops and complete
+P95/P99 179/187 ms. At 56/s, all 10080 arrivals start and complete with zero
+drops; 12 measurement-cohort outcomes are unexpected, giving 55.933 successful
+operations/s and P95/P99 239/263 ms. Retained failed HTTP samples are
+`POST /auth/login` 503 responses. No VU warning occurs, analyzer lag is 0.270 s,
+load CPU is 0.273 and application CPU 8.053/16; pool wait is 0.001 ms. This
+establishes a server-response upper failure. The exact response body is absent,
+so the eight-permit hash-admission queue is not claimed as a proven root cause.
+Password strength and admission policy are unchanged.
+
+## Observer experiments and checkpoint CI
+
+The native metric-partition experiment preserved its equivalence tests but
+regressed in the actual high-rate pipeline. Its points are INVALID because
+observer lag exceeds the unchanged five-second gate, and they are excluded
+from capacity intervals. The experiment was removed in `286ab34a`; its
+[compact diagnostic](../../../../perf/results/diagnostics/2026-09-28-native-partition-probe.json)
+retains the evidence. Remaining measurements use their explicitly recorded
+known-valid runner images; the application image is reused.
+
+Checkpoint `60d46dff` has 11 successful checks and two conditional skips:
+Rust advisory audit runs outside pull requests, and official-source fetching
+runs outside pull requests. The
+[Rust quality job](https://github.com/nazozero/NazoAuth/actions/runs/36388420548/job/108818684745)
+passes in 1115 seconds with a two-second queue. Its resource-derived build
+concurrency is four; shared-state test threads remain one. Compilation inside
+the workspace step takes 166 seconds, and all 13 audit-ledger tests pass in
+375.54 seconds. Clippy takes 43 seconds, schema setup 31 seconds, cache restore
+25 seconds and avatar setup nine seconds. These costs overlap their enclosing
+job/step totals; cache and runner variation prevent causal speedup percentages.
+[Recorded timings](../../../../perf/results/diagnostics/2026-09-28-ci-cost-60d.json)
+do not substitute for the final publication commit's checks.
+
+The remaining scene boundaries and their VU controls continue as targeted
+incremental tests. This checkpoint is not the final 20-row current baseline.
 
 ## Reproduction and verification
 
