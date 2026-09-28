@@ -127,6 +127,39 @@ class DiagOverflowInvariance(unittest.TestCase):
 
 
 class StreamHotPathEquivalence(unittest.TestCase):
+    def test_native_blocks_keep_order_across_chunks_and_fallback_layouts(self):
+        try:
+            from test_checkpoint_measurement import run_stream
+        except ImportError:
+            from perf.tests.test_checkpoint_measurement import run_stream
+
+        points = _mixed_stream()
+        metrics = ['http_reqs', 'http_req_duration', 'http_req_failed',
+                   'data_received', 'iterations', 'custom_"escaped']
+        rows = [json.dumps({'type': 'Metric', 'metric': name, 'data': {}})
+                for name in metrics]
+        for point in points:
+            rows.append(json.dumps({'metric': point['metric'], 'type': 'Point',
+                                    'data': point['data']}, separators=(',', ':')))
+        for i in range(4000):
+            point = _point(metrics[i % len(metrics)], _ts(1016 + i % 3), i % 13)
+            if i % 71 == 0:
+                rows.append('  ' + json.dumps(point))
+            else:
+                rows.append(json.dumps({'metric': point['metric'], 'type': 'Point',
+                                        'data': point['data']}, separators=(',', ':')))
+        rows.append(json.dumps(_point('cap_window_clock_ok', _ts(1017), 1)))
+        baseline, sharded = run_stream(rows), run_stream(rows, workers=4)
+        self.assertEqual(baseline['series'], sharded['series'])
+        self.assertEqual(baseline['window'], sharded['window'])
+        for field in ('points', 'parse_errors', 'diag_budget_exceeded', 'diag_overflow_dropped'):
+            self.assertEqual(baseline['stats'][field], sharded['stats'][field])
+        def population(result):
+            return sorted(json.dumps(json.loads(row), sort_keys=True)
+                          for row in result['diag_lines'].splitlines()
+                          if json.loads(row).get('type') == 'Point')
+        self.assertEqual(population(baseline), population(sharded))
+
     def test_shards_preserve_authoritative_outputs_and_forensic_population(self):
         try:
             from test_checkpoint_measurement import run_stream
