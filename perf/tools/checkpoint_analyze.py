@@ -684,26 +684,12 @@ def _metric_shard(metric: bytes, workers: int) -> int:
     return int.from_bytes(hashlib.sha256(metric).digest()[:4], "big") % workers
 
 
-def _stream_blocks(read):
-    pending = b""
-    while chunk := read():
-        block = pending + chunk
-        edge = block.rfind(b"\n")
-        if edge < 0:
-            pending = block
-            continue
-        pending = block[edge + 1:]
-        yield block[:edge + 1]
-    if pending:
-        yield pending + b"\n"
-
-
 def _owned_stream_rows(connection, index, workers):
     # Native k6 puts the root metric first. C regex scans skip known rows
     # owned by other shards without decoding them in each worker. Contracts,
     # new metrics and other valid JSON layouts use the existing decoder.
     names, pattern = set(), None
-    for chunk in _stream_blocks(connection.recv_bytes):
+    while chunk := connection.recv_bytes():
         if pattern is None:
             ordinary = sorted(name for name in names
                               if not name.startswith(b"cap_window_"))
@@ -734,22 +720,14 @@ def _owned_stream_rows(connection, index, workers):
             pattern = None
 
 
-def _stream_shard(connection, index, workers, diag_path, input_path=None):
+def _stream_shard(connection, index, workers, diag_path):
     global MAX_DIAG_BYTES
     MAX_DIAG_BYTES //= workers
     series = StreamingSeries()
     series.diag_fh = gzip.open(diag_path, "wt", encoding="utf-8", compresslevel=1)
     unowned_points = unowned_late = unowned_errors = 0
-    source = None
     try:
-        if input_path is None:
-            rows = _owned_stream_rows(connection, index, workers)
-        else:
-            source = open(input_path, "rb")
-            rows = ((bool((_stream_metric(raw) or b"").startswith(b"cap_window_")), raw)
-                    for block in _stream_blocks(lambda: source.read1(65536))
-                    for raw in block.splitlines(keepends=True) if not raw.isspace())
-        for broadcast, raw in rows:
+        for broadcast, raw in _owned_stream_rows(connection, index, workers):
             try:
                 obj = orjson.loads(raw)
             except orjson.JSONDecodeError:
@@ -781,8 +759,6 @@ def _stream_shard(connection, index, workers, diag_path, input_path=None):
     except Exception as error:
         series.reader_error = f"{type(error).__name__}: {error}"
     finally:
-        if source is not None:
-            source.close()
         series.diag_fh.close()
         series.diag_fh = None
     series.points -= unowned_points
@@ -829,7 +805,7 @@ def _merge_stream_shard(total, part):
                 target[key] += value
 
 
-def _consume_sharded_stream(workers, diag_path, fifo_prefix=None):
+def _consume_sharded_stream(workers, diag_path):
     context = multiprocessing.get_context("spawn")
     series = StreamingSeries()
     series.shard_points = []
@@ -840,38 +816,36 @@ def _consume_sharded_stream(workers, diag_path, fifo_prefix=None):
                 parent, child = context.Pipe()
                 path = os.path.join(temporary, f"{index}.jsonl.gz")
                 process = context.Process(target=_stream_shard,
-                    args=(child, index, workers, path,
-                          f"{fifo_prefix}.{index}" if fifo_prefix else None))
+                    args=(child, index, workers, path))
                 process.start()
                 child.close()
                 children.append(process); connections.append(parent)
                 buffers.append(bytearray()); diagnostics.append(path)
             # All shards see complete blocks. Each worker selects its owned
             # metric rows, so the dispatcher does no per-Point Python work.
-            if fifo_prefix:
-                # Native k6 feeds each worker directly. stdin is only a
-                # lifetime pipe: EOF starts the bounded final drain, never
-                # a 60-second timeout while the producer is still running.
-                if sys.stdin.buffer.read(1):
-                    raise ValueError("native partition control input must be empty")
-            else:
-                for block in _stream_blocks(lambda: sys.stdin.buffer.read1(65536)):
-                    for index, connection in enumerate(connections):
-                        buffers[index].extend(block)
-                        if len(buffers[index]) >= 65536:
-                            connection.send_bytes(buffers[index]); buffers[index].clear()
-                for connection, buffer in zip(connections, buffers):
-                    if buffer:
-                        connection.send_bytes(buffer)
-                    connection.send_bytes(b"")
-            contracts = None
+            pending = b""
+            while chunk := sys.stdin.buffer.read1(65536):
+                block = pending + chunk
+                edge = block.rfind(b"\n")
+                if edge < 0:
+                    pending = block
+                    continue
+                pending = block[edge + 1:]
+                for index, connection in enumerate(connections):
+                    buffers[index].extend(block[:edge + 1])
+                    if len(buffers[index]) >= 65536:
+                        connection.send_bytes(buffers[index]); buffers[index].clear()
+            if pending:
+                for buffer in buffers:
+                    buffer.extend(pending + b"\n")
+            for connection, buffer in zip(connections, buffers):
+                if buffer:
+                    connection.send_bytes(buffer)
+                connection.send_bytes(b"")
             for process, connection in zip(children, connections):
                 if not connection.poll(60):
                     raise TimeoutError("stream shard did not drain within 60 seconds")
                 part = connection.recv()
-                if contracts is not None and part.contract_vals != contracts:
-                    raise ValueError("stream shards received different window contracts")
-                contracts = part.contract_vals
                 series.shard_points.append(part.points)
                 _merge_stream_shard(series, part)
                 process.join(timeout=10)
@@ -898,12 +872,9 @@ def cmd_stream(args) -> int:
     series.diag_fh = gzip.open(diag_path, "wt", encoding="utf-8", compresslevel=1)
     last_progress = time_now()
     try:
-        if getattr(args, "fifo_prefix", None) and args.workers == 1:
-            raise ValueError("native partitions require more than one stream worker")
         if getattr(args, "workers", 1) > 1:
             series.diag_fh.close()
-            series = _consume_sharded_stream(args.workers, diag_path,
-                                             getattr(args, "fifo_prefix", None))
+            series = _consume_sharded_stream(args.workers, diag_path)
         for line in (() if getattr(args, "workers", 1) > 1 else sys.stdin.buffer):
             if line.isspace():
                 continue
@@ -2255,7 +2226,6 @@ def main() -> int:
     sp.add_argument("--window-out", required=True)
     sp.add_argument("--stats-out", required=True)
     sp.add_argument("--workers", type=int, choices=range(1, 9), default=1)
-    sp.add_argument("--fifo-prefix", help="native k6 metric partition FIFOs (workers > 1)")
     sp = sub.add_parser("report")
     sp.add_argument("--series", required=True)
     sp.add_argument("--observer")

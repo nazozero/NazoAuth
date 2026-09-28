@@ -728,8 +728,6 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     env["PERF_SUMMARY_EXPORT"] = str(k6_summary_path)
     env["PERF_ERR_DETAIL"] = str(err_detail_path)
     stream_fifo = None
-    stream_fifos = []
-    stream_partitions = False
     stream_proc = None
     stream_stdout = None
     if os.environ.get("PERF_CHECKPOINT_EVIDENCE") == "1":
@@ -738,30 +736,20 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         # a filtered compressed sample — raw request detail never lands on
         # disk. Evidence-only flag; measurement semantics are unchanged.
         stream_fifo = RESULTS_DIR / f"{safe_name}.k6points.fifo"
+        os.mkfifo(stream_fifo)
         analyzer = Path(__file__).resolve().parent / "tools" / "checkpoint_analyze.py"
-        workers = int(os.environ.get("PERF_CHECKPOINT_STREAM_WORKERS", "1"))
-        stream_partitions = workers > 1
-        stream_fifos = ([Path(f"{stream_fifo}.{index}") for index in range(workers)]
-                        if stream_partitions else [stream_fifo])
-        for fifo in stream_fifos:
-            os.mkfifo(fifo)
-        stream_args = [sys.executable, str(analyzer), "stream",
-            "--diag-out", str(RESULTS_DIR / (safe_name + ".diag.jsonl.gz")),
-            "--series-out", str(RESULTS_DIR / (safe_name + ".series.json")),
-            "--window-out", str(RESULTS_DIR / (safe_name + ".window.json")),
-            "--stats-out", str(RESULTS_DIR / (safe_name + ".analyzer-stats.json")),
-            "--workers", str(workers)]
         # The child opens the FIFO for reading itself: a blocking open() here
         # would deadlock the runner (no writer until k6 starts).
-        if stream_partitions:
-            env["K6_JSON_PARTITIONS"] = str(workers)
-            stream_proc = subprocess.Popen(
-                [*stream_args, "--fifo-prefix", str(stream_fifo)],
-                stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        else:
-            stream_proc = subprocess.Popen(
-                ["sh", "-c", 'exec "$@" < "$0"', str(stream_fifo), *stream_args],
-                stderr=subprocess.DEVNULL)
+        stream_proc = subprocess.Popen(
+            ["sh", "-c",
+             f'exec "{sys.executable}" "{analyzer}" stream'
+             f' --diag-out "{RESULTS_DIR / (safe_name + ".diag.jsonl.gz")}"'
+             f' --series-out "{RESULTS_DIR / (safe_name + ".series.json")}"'
+             f' --window-out "{RESULTS_DIR / (safe_name + ".window.json")}"'
+             f' --stats-out "{RESULTS_DIR / (safe_name + ".analyzer-stats.json")}"'
+             f' --workers {int(os.environ.get("PERF_CHECKPOINT_STREAM_WORKERS", "1"))}'
+             f' < "{stream_fifo}"'],
+            stderr=subprocess.DEVNULL)
     command = [
         "k6",
         "run",
@@ -770,10 +758,11 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
             if os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
             else []
         ),
-        # Native partitions route every complete sample to its existing
-        # metric owner; one-worker evidence retains buffered stdout.
-        *(["--quiet", "--out", f"json={stream_fifo}" if stream_partitions else "json=-"]
-          if stream_fifo else []),
+        # k6's stdout JSON writer is buffered; its ordinary file writer
+        # issues a write for every point, even when the file is a FIFO.
+        # Quiet mode and oauth.js's file-only handleSummary keep this channel
+        # exclusively JSON. All metrics still reach the same analyzer.
+        *(["--quiet", "--out", "json=-"] if stream_fifo else []),
         "--summary-export",
         str(k6_summary_path),
         "/perf/k6/oauth.js",
@@ -790,7 +779,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     }, indent=2))
     started = time.perf_counter()
     try:
-        if stream_fifo is not None and not stream_partitions:
+        if stream_fifo is not None:
             stream_stdout = stream_fifo.open("wb")
         with StatsSampler() as sampler:
             try:
@@ -802,15 +791,11 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
                 if stream_stdout is not None:
                     stream_stdout.close()
                     stream_stdout = None
-                if stream_partitions and stream_proc.stdin is not None:
-                    stream_proc.stdin.close()
     finally:
         # Close the parent descriptor before waiting: the reader needs EOF
         # after k6 has flushed its final buffered points and exited.
         if stream_stdout is not None:
             stream_stdout.close()
-        if stream_partitions and stream_proc.stdin is not None:
-            stream_proc.stdin.close()
         if stream_proc is not None:
             # k6 closing the FIFO gives the analyzer EOF; bound the wait so a
             # wedged reader can never hang the run.
@@ -822,9 +807,8 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
                     stream_proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     stream_proc.kill()
-            for fifo in stream_fifos:
-                if fifo.exists():
-                    fifo.unlink()
+            if stream_fifo.exists():
+                stream_fifo.unlink()
     elapsed = time.perf_counter() - started
     if not k6_summary_path.exists():
         raise RuntimeError(f"k6 scenario failed before writing summary: {profile}/{scenario}")
