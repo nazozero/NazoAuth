@@ -62,15 +62,17 @@ def bounds(state, key):
     return lower, upper
 
 
-def allocations():
+def allocations(application_cpus=None):
     allowed = sorted(os.sched_getaffinity(0))
+    db_n = max(1, len(allowed) // 4)
+    if application_cpus is not None and not 1 <= application_cpus <= len(allowed) - db_n - 2:
+        raise ValueError("application CPU count must leave separate database, Valkey and generator CPUs")
     if len(allowed) < 4:
         # Shared infrastructure is a different deployment profile, not a
         # reason to investigate hidden host resources or abandon the run.
         return {"allowed": allowed, "single": allowed[:1], "multi": allowed,
                 "postgres": allowed, "valkey": allowed, "generator": allowed}
-    app_n = max(1, len(allowed) // 4)
-    db_n = max(1, len(allowed) // 4)
+    app_n = application_cpus if application_cpus is not None else max(1, len(allowed) // 4)
     app = allowed[:app_n]
     db = allowed[app_n:app_n + db_n]
     valkey = allowed[app_n + db_n:app_n + db_n + 1]
@@ -232,6 +234,8 @@ def main():
     parser.add_argument("--vus", type=positive_int, help="calibrated pre/max VUs")
     parser.add_argument("--users", type=positive_int, help="fixed account cardinality")
     parser.add_argument("--pool-connections", type=positive_int)
+    parser.add_argument("--application-cpus", type=positive_int,
+                        help="calibrated multicore application count; CPU sets use visible affinity")
     parser.add_argument("--stream-workers", type=int, choices=range(1, 9), default=1,
                         help="metric-sharded stream observers; frozen per recipe")
     parser.add_argument("--sidecar-vus", nargs=4, type=positive_int,
@@ -260,7 +264,10 @@ def main():
     stop_at = datetime.fromisoformat(args.stop_at).timestamp()
     os.environ.setdefault("SIS_SOURCE_SHA", os.environ["SIS_APP_SHA"])
     sis.RESULTS.mkdir(parents=True, exist_ok=True)
-    cpus = allocations()
+    try:
+        cpus = allocations(args.application_cpus)
+    except ValueError as error:
+        parser.error(str(error))
     if args.stream_workers > 1 and args.stream_workers + 1 > len(cpus["generator"]):
         parser.error("stream workers plus dispatcher exceed the allocated generator CPU set")
     points.KEYSET_VOLUME = f"{sis.PROJECT}-keys"

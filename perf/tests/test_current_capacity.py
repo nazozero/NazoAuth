@@ -15,6 +15,35 @@ def record(rate, verdict, seconds):
     return {"rate": rate, "verdict": verdict, "metrics": {"window_seconds": seconds}}
 
 
+class CapacityAllocationTests(unittest.TestCase):
+    def test_override_redistributes_only_visible_cpus_without_overlap(self):
+        visible = set(range(17, 49)) | set(range(130, 162))
+        with patch.object(cc.os, 'sched_getaffinity', return_value=visible, create=True):
+            default = cc.allocations()
+            tuned = cc.allocations(4)
+        self.assertEqual(len(default['multi']), 16)
+        self.assertEqual(len(tuned['multi']), 4)
+        self.assertEqual(len(tuned['postgres']), 16)
+        self.assertEqual(len(tuned['generator']), 43)
+        groups = [set(tuned[key]) for key in ('multi', 'postgres', 'valkey', 'generator')]
+        self.assertEqual(set.union(*groups), visible)
+        self.assertEqual(sum(map(len, groups)), len(visible))
+        self.assertEqual(tuned['single'], tuned['multi'][:1])
+
+    def test_override_preserves_at_least_one_generator_cpu(self):
+        with patch.object(cc.os, 'sched_getaffinity', return_value={7, 9, 11, 13}, create=True):
+            self.assertEqual(cc.allocations(1)['generator'], [13])
+            for count in (0, 2, 5):
+                with self.assertRaises(ValueError):
+                    cc.allocations(count)
+
+    def test_shared_small_deployment_cannot_claim_isolated_override(self):
+        with patch.object(cc.os, 'sched_getaffinity', return_value={7, 9, 11}, create=True):
+            self.assertEqual(cc.allocations()['multi'], [7, 9, 11])
+            with self.assertRaises(ValueError):
+                cc.allocations(1)
+
+
 class CapacityBoundsTests(unittest.TestCase):
     def bound(self, *records):
         return bounds({"scene": list(records)}, "scene")
