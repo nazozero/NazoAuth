@@ -6,7 +6,8 @@ NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 The runner image pins `orjson==3.12.0` for the streaming evidence decoder.
 Checkpoint evidence uses stock k6's buffered `--quiet --out json=-` output,
 redirected to the analyzer FIFO. The script writes summaries only to files;
-the runner closes its FIFO descriptor before waiting for the analyzer. This
+the runner closes its FIFO descriptor before sampler shutdown and waiting
+for the analyzer. This
 retains all metric points and flushes the final buffered batch without a
 relaxed lag gate.
 
