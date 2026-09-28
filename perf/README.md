@@ -323,7 +323,9 @@ calibration recipes, not resource availability guarantees or validated maxima.
 Use deployment-local observations to fit memory and database connection limits.
 `--application-cpus` sets the multicore application count after measuring
 component costs. CPU IDs still come from visible affinity; PostgreSQL keeps
-its default count and the released application CPUs go to the generator.
+its default count unless `--database-cpus` explicitly calibrates its budget;
+released application/database CPUs go to the generator. Database CPU tuning
+does not change the connection pool or PostgreSQL durability settings.
 The override requires disjoint application/database/Valkey/generator sets and
 at least one generator CPU. Changing it creates a separate recipe: remeasure
 both endpoints and report the actual application count.
