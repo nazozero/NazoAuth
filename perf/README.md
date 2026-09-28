@@ -321,6 +321,12 @@ and must not be described as isolated infrastructure. Default main VUs scale at
 and the pool at two connections per allocated PostgreSQL CPU. These are initial
 calibration recipes, not resource availability guarantees or validated maxima.
 Use deployment-local observations to fit memory and database connection limits.
+`--application-cpus` sets the multicore application count after measuring
+component costs. CPU IDs still come from visible affinity; PostgreSQL keeps
+its default count and the released application CPUs go to the generator.
+The override requires disjoint application/database/Valkey/generator sets and
+at least one generator CPU. Changing it creates a separate recipe: remeasure
+both endpoints and report the actual application count.
 `--vus`, `--users` and `--pool-connections` independently override them; increasing
 VU capacity does not silently change user cardinality. `--sidecar-vus` accepts
 four positive counts in argon2/metadata/FAPI/refresh order, without changing
