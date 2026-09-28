@@ -202,3 +202,21 @@ isolated trusted perf network.
 The app-CPU and single-instance wrappers disable their own final commit by
 default, but inherited checkpoint settings must still be reviewed. The extended
 matrix's parent publication step has no equivalent opt-out.
+
+## Incremental current-B acceptance
+
+`perf/tools/current_capacity.py` evaluates the main workload and each of the
+four mixed sidecars through `capacity_search.evaluate` with required stream
+evidence. A naturally finished sidecar with a terminal summary is not by itself
+a business pass. Each sidecar retains its own rate, scenario-specific latency
+rules (including the separate cold-login class) and measurement cohort; the
+existing common-window check must also cover the main measurement.
+
+Invalid measurement or local preparation takes precedence over a service
+failure when combining business, sidecar, health and maintenance verdicts.
+Individual failures are retained, but an invalid point cannot establish a
+service capacity upper bound. Missing summaries are invalid evidence.
+`evaluate_point(point, record, point_directory, confirmation=...)` exposes the
+same verdict path for offline reassessment of retained artifacts without load;
+keep the original records and publish reassessment separately. Only affected
+points with insufficient evidence require new measurement.

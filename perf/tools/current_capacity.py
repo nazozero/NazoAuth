@@ -89,6 +89,76 @@ def sidecars(cores, duration):
             for name, scenario, rate, vus in recipes]
 
 
+def combined_verdict(*verdicts):
+    """Missing/invalid measurement cannot establish a service upper bound."""
+    for verdict in verdicts:
+        if verdict not in ("PASS", "FAIL"):
+            return verdict
+    return "FAIL" if "FAIL" in verdicts else "PASS"
+
+
+def evaluate_point(point, rec, out, *, confirmation=False):
+    """Evaluate retained evidence without launching load or rewriting it."""
+    scenario = point["scenario"]
+    duration = sis._duration_seconds(point["duration"])
+    window = duration - point["warmup_ms"] / 1000
+    summary = out / "load" / "latest.json"
+    verdict, metrics = gate.evaluate(gate.load_summary(summary), summary,
+                                    point["rate"], duration, scenario,
+                                    require_stream=True)
+    metrics["main_verdict"] = verdict
+    raw, _ = gate.k6_metrics(summary)
+    metrics["complete_operation_latency_ms"] = gate._trend(raw, "cap_iter_ms")
+    health = points._health_checks(rec, mixed=scenario == "cap_mixed")
+    if not all(health.values()):
+        m = rec.get("metrics") or {}
+        collected = (rec.get("ok") is True
+                     and m.get("oom_killed") is not None
+                     and m.get("restart_count") is not None
+                     and (m.get("audit_log_scan") or {}).get("collected") is True
+                     and (rec.get("audit_state_check", {}).get("checks") or {}).get("collected") is True
+                     and (rec.get("journal_stats") or {}).get("collected") is True)
+        if scenario == "cap_mixed":
+            collected = collected and rec.get("audit_queue_post_drain", {}).get("collected") is True
+        # Local/unknown preparation failures remain invalid even if every
+        # independent health snapshot was collected successfully.
+        health_verdict = ("FAIL" if collected and health["preparation_valid"]
+                          else "INVALID")
+        metrics["health_verdict"] = health_verdict
+        metrics["failed_health_checks"] = [k for k, v in health.items() if not v]
+        metrics["health_evidence_collected"] = collected
+        verdict = combined_verdict(verdict, health_verdict)
+    if scenario == "cap_mixed":
+        common = (rec.get("metrics") or {}).get("common_window_s") or {}
+        metrics["all_load_common_window"] = common
+        if common.get("seconds") is None or common["seconds"] < window:
+            verdict = combined_verdict(verdict, "INVALID")
+            metrics["reason"] = "full_sidecar_measurement_window_unavailable"
+        expected = {"argon2", "meta", "fapi", "refresh"}
+        recipes = point.get("sidecars") or []
+        if {sc["name"] for sc in recipes} != expected or len(recipes) != len(expected):
+            verdict = combined_verdict(verdict, "INVALID")
+            metrics["sidecar_recipe_error"] = "mixed_requires_all_four_sidecars"
+        metrics["sidecar_gates"] = {}
+        for sc in recipes:
+            path = out / sc["name"] / "latest.json"
+            sc_verdict, sc_metrics = gate.evaluate(
+                gate.load_summary(path), path, sc["rate"],
+                sis._duration_seconds(sc["duration"]), sc["scenario"],
+                require_stream=True)
+            metrics["sidecar_gates"][sc["name"]] = {
+                "verdict": sc_verdict, "metrics": sc_metrics}
+            verdict = combined_verdict(verdict, sc_verdict)
+    maintenance = None
+    if confirmation:
+        m = rec.get("metrics") or {}
+        maintenance = sis.issuance_maintenance_evidence(
+            out / "soak-metrics.jsonl", m.get("window_start_ms"),
+            m.get("window_end_ms"), point, rec.get("samplers", {}).get("interval_s", 2))
+        verdict = combined_verdict(verdict, maintenance.get("status", "INVALID"))
+    return verdict, metrics, health, maintenance
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--stop-at", required=True, help="ISO time with timezone")
@@ -149,41 +219,8 @@ def main():
             point["capture_audit_journal"] = True
         rec = points.run_ab_point(point)
         out = sis.RESULTS / mode / name
-        summary = out / "load" / "latest.json"
-        verdict, metrics = gate.evaluate(gate.load_summary(summary), summary,
-                                        rate, duration, scenario, require_stream=True)
-        raw, _ = gate.k6_metrics(summary)
-        metrics["complete_operation_latency_ms"] = gate._trend(raw, "cap_iter_ms")
-        health = points._health_checks(rec, mixed=scenario == "cap_mixed")
-        # Every point must retain runtime health and durable audit continuity.
-        # Only clean client-credentials has a one-to-one issuance count gate.
-        if not all(health.values()):
-            m = rec.get("metrics") or {}
-            collected = (rec.get("ok") is True
-                         and m.get("oom_killed") is not None
-                         and m.get("restart_count") is not None
-                         and (m.get("audit_log_scan") or {}).get("collected") is True
-                         and (rec.get("audit_state_check", {}).get("checks") or {}).get("collected") is True
-                         and (rec.get("journal_stats") or {}).get("collected") is True)
-            if scenario == "cap_mixed":
-                collected = collected and rec.get("audit_queue_post_drain", {}).get("collected") is True
-            verdict = "FAIL" if collected else "INVALID"
-            metrics["failed_health_checks"] = [k for k, v in health.items() if not v]
-            metrics["health_evidence_collected"] = collected
-        if scenario == "cap_mixed":
-            common = (rec.get("metrics") or {}).get("common_window_s") or {}
-            metrics["all_load_common_window"] = common
-            if common.get("seconds") is None or common["seconds"] < window:
-                verdict = "INVALID"
-                metrics["reason"] = "full_sidecar_measurement_window_unavailable"
-        maintenance = None
-        if confirmation:
-            m = rec.get("metrics") or {}
-            maintenance = sis.issuance_maintenance_evidence(
-                out / "soak-metrics.jsonl", m.get("window_start_ms"),
-                m.get("window_end_ms"), point, rec.get("samplers", {}).get("interval_s", 2))
-            if maintenance.get("status") != "PASS":
-                verdict = maintenance.get("status", "INVALID")
+        verdict, metrics, health, maintenance = evaluate_point(
+            point, rec, out, confirmation=confirmation)
         result = {"name": name, "mode": mode, "scenario": scenario, "rate": rate,
                   "verdict": verdict, "metrics": metrics, "health": health,
                   "confirmation": confirmation, "maintenance": maintenance,
