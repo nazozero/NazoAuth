@@ -127,6 +127,45 @@ class DiagOverflowInvariance(unittest.TestCase):
 
 
 class StreamHotPathEquivalence(unittest.TestCase):
+    def test_direct_partition_input_preserves_outputs_and_rejects_corruption(self):
+        try:
+            from test_checkpoint_measurement import run_stream
+        except ImportError:
+            from perf.tests.test_checkpoint_measurement import run_stream
+        points = _mixed_stream()
+        points.extend([_point("cap_iter_ms", _ts(1016), 12.5,
+                             {"cohort": "measure", "lw": "1"}),
+                       _point("http_reqs", _ts(1016), 1)])
+        rows = [json.dumps(p, separators=(",", ":")) for p in points]
+        partitions = [[] for _ in range(4)]
+        for point, row in zip(points, rows):
+            if point['metric'].startswith('cap_window_'):
+                for partition in partitions:
+                    partition.append(row)
+            else:
+                partitions[ca._metric_shard(point['metric'].encode(), 4)].append(row)
+        baseline = run_stream(rows)
+        direct = run_stream([], workers=4, partitions=partitions)
+        self.assertEqual(baseline['series'], direct['series'])
+        self.assertEqual(baseline['window'], direct['window'])
+        self.assertEqual(baseline['stats']['points'], direct['stats']['points'])
+        self.assertEqual(direct['stats']['parse_errors'], 0)
+        self.assertIsNone(direct['stats']['reader_error'])
+        wrong = [list(partition) for partition in partitions]
+        wrong[1].append(json.dumps(_point('http_reqs', _ts(1016), 1)))
+        result = run_stream([], workers=4, partitions=wrong)
+        self.assertIn('does not match stream shard', result['stats']['reader_error'])
+        missing = [list(partition) for partition in partitions]
+        missing[1] = [row for row in missing[1] if 'cap_window_' not in row]
+        result = run_stream([], workers=4, partitions=missing)
+        self.assertIn('different window contracts', result['stats']['reader_error'])
+        malformed = [list(partition) for partition in partitions]
+        malformed[0].append('malformed JSON')
+        result = run_stream([], workers=4, partitions=malformed)
+        self.assertEqual(result['stats']['parse_errors'], 1)
+        result = run_stream([], workers=4, partitions=partitions, control='unexpected')
+        self.assertIn('control input must be empty', result['stats']['reader_error'])
+
     def test_native_blocks_keep_order_across_chunks_and_fallback_layouts(self):
         try:
             from test_checkpoint_measurement import run_stream

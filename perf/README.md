@@ -4,10 +4,10 @@ This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
 The runner image pins `orjson==3.12.0` for the streaming evidence decoder.
-Checkpoint evidence uses stock k6's buffered `--quiet --out json=-` output,
-redirected to the analyzer FIFO. The script writes summaries only to files;
-the runner closes its FIFO descriptor before sampler shutdown and waiting
-for the analyzer. This
+One-worker checkpoint evidence uses k6's buffered `--quiet --out json=-`
+output redirected to the analyzer FIFO. The script writes summaries only
+to files; the runner closes its producer lifetime pipe before sampler
+shutdown and waiting for the analyzer. This
 retains all metric points and flushes the final buffered batch without a
 relaxed lag gate.
 
@@ -35,11 +35,18 @@ divergent, malformed, failed or late evidence retains its existing invalid gate.
 Analyzer stats record each worker's owned-point count and the unchanged
 five-second consumer-lag signal.
 
-The dispatcher sends complete input blocks to workers. Each worker selects
-its existing metric partition with a bounded native-row regex cache; new
-metrics, window contracts and other JSON layouts use the routing decoder.
-This removes per-Point work from the dispatcher. A worker still decodes and
-validates every owned Point, in input order, with the same forensic selection.
+With multiple workers, the JSON output patch writes every sample directly
+to its metric owner's buffered FIFO (`K6_JSON_PARTITIONS=2..8` and
+`--out json=<prefix>`). All partitions flush on every existing 200ms output
+tick, including quiet ticks, and close after the final flush. Window samples
+reach every worker. Each worker decodes and verifies the complete owned JSON
+envelope in input order; ownership errors invalidate the stream. The parent
+waits for producer EOF before the bounded final drain. This avoids dispatcher
+copies and scanning unowned rows. Offline stdin sharding remains available.
+Native image tests compare one run's stdout and partitioned outputs for
+identical series, windows, cohort counts and histogram populations with
+2, 4 and 8 workers; output tests cover metadata, partition ownership,
+quiet flushing, write errors and partial-start cleanup.
 
 Forensic selection remains per metric/second. With multiple workers, each
 metric belongs to one shard; each shard has an equal share of the existing
