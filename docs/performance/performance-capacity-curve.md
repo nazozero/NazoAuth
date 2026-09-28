@@ -1,74 +1,52 @@
 # NazoAuth Current-B Capacity Baseline
 
-Run date: 2026-09-28 Beijing time. This is the only current capacity table.
-All rates are complete logical operations per second. The application has one
-instance in both modes; only its allowed logical CPU count changes. The load
-producer/observers, PostgreSQL and Valkey occupy disjoint CPU sets in this visible
-container. These are observations for the registered workload, VUs, data and
-short windows, not intrinsic hardware maxima or production long-term capacity.
+Incremental checkpoint: **INCOMPLETE**. Each row is one frozen recipe on its stated deployment. Both modes use one application instance. Old and new deployments are not combined into a bound. A missing service upper means at least the passing load, never a maximum.
 
-Candidates use 180-second effective windows; mixed maintenance confirmations use
-660 seconds. Exploration used 90 seconds initially and 60 seconds later. Each
-row retains its actual window. A valid FAIL above a PASS establishes only the
-observed interval between those two loads; no FAIL means **at least L**, not a
-maximum. Cold Argon2 login is a separate class with its existing gate.
+Logical-operation quantiles cover the complete business operation. HTTP rate is reported separately. Short windows do not establish production long-term capacity. Windows below 180 seconds are exploratory candidates and require final verification; they are not labelled 180-second confirmations.
 
-Structured authority: [current-capacity.json](../../perf/results/data/capacity/current-capacity.json).
-Method, provenance, maintenance, WAL, audit and CI: [run report](reports/2026-09-28-current-b/report.md).
-Compact selected evidence: [point snapshots](../../perf/results/diagnostics/2026-09-28-current-b-selected.json).
+[Structured authority](../../perf/results/data/capacity/current-capacity.json) · [Report](reports/2026-09-28-incremental-b/report.md) · [Native evidence](../../perf/results/diagnostics/2026-09-28-incremental-b-selected.json)
 
 ## Single logical CPU
 
-| Scenario | App CPUs | Highest PASS L | First valid FAIL U | Success ops/s | HTTP req/s | P50/P95/P99 ms | Unexpected / drops / rejects / unfinished | Window s | Conclusion |
-|---|---:|---:|---:|---:|---:|---|---|---:|---|
-| `cap_mixed` | 1 | 600 | 700 | 600 | 869.944 | 4/45/103 | 0/0/0/0 | 660 | [600, 700) observed |
-| `cap_client_credentials` | 1 | 1600 | 2000 | 1598.494 | 1598.436 | 4/12/25 | 0/271/0/0 | 180 | [1600, 2000) observed |
-| `cap_authorization_code` | 1 | 320 | 400 | 320 | 1280.006 | 15/24/35 | 0/0/0/0 | 180 | [320, 400) observed |
-| `cap_refresh_token` | 1 | 800 | 1000 | 799.989 | 800 | 7/14/42 | 0/2/0/0 | 180 | [800, 1000) observed |
-| `fapi2_logged_in_high_security` | 1 | 20 | not established | 20 | 100 | 22/31/43.01 | 0/0/0/0 | 180 | at least 20/s; no valid U |
-| `cap_introspect` | 1 | 500 | not established | 500 | 500 | 1/3/11 | 0/0/0/0 | 180 | at least 500/s; no valid U |
-| `cap_revoke` | 1 | 60 | not established | 60 | 300 | 16/24/38 | 0/0/0/0 | 180 | at least 60/s; no valid U |
-| `mtls_client_credentials` | 1 | 250 | not established | 250 | 250 | 4/6/12 | 0/0/0/0 | 180 | at least 250/s; no valid U |
-| `par_signed_request_object` | 1 | 150 | not established | 150 | 150 | 3/5/11 | 0/0/0/0 | 180 | at least 150/s; no valid U |
+| Scenario | Deployment | App CPUs | PASS L | Service FAIL U | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window L/U s | Conclusion |
+|---|---|---:|---:|---:|---:|---:|---|---|---|---|
+| `cap_mixed` | original-container | 1 | 600 | 650 | 600 | 869.944 | 4/45/103 | 0/0/0/0 | 660/180 | [600, 650) observed |
+| `cap_client_credentials` | original-container | 1 | 1375 | 1500 | 1375.006 | 1375.011 | 5/24/46 | 0/0/0/0 | 180/180 | [1375, 1500) observed |
+| `cap_authorization_code` | original-container | 1 | 325 | 350 | 325 | 1299.989 | 19/50/158 | 0/0/0/0 | 180/180 | [325, 350) observed |
+| `cap_refresh_token` | original-container | 1 | 750 | 812 | 749.994 | 750 | 7/34/74 | 0/0/0/0 | 180/180 | [750, 812) observed |
+| `fapi2_logged_in_high_security` | original-container | 1 | 20 | not established | 20 | 100 | 22/31/43.01 | 0/0/0/0 | 180/N/A | at least 20/s |
+| `cap_introspect` | original-container | 1 | 500 | not established | 500 | 500 | 1/3/11 | 0/0/0/0 | 180/N/A | at least 500/s |
+| `cap_revoke` | original-container | 1 | 60 | not established | 60 | 300 | 16/24/38 | 0/0/0/0 | 180/N/A | at least 60/s |
+| `mtls_client_credentials` | original-container | 1 | 250 | not established | 250 | 250 | 4/6/12 | 0/0/0/0 | 180/N/A | at least 250/s |
+| `par_signed_request_object` | original-container | 1 | 150 | not established | 150 | 150 | 3/5/11 | 0/0/0/0 | 180/N/A | at least 150/s |
+| `oidc_cold_login_refresh` | original-container | 1 | 1 | not established | 1 | 6 | 132/142/153.21 | 0/0/0/0 | 180/N/A | at least 1/s |
 
 ## Sixteen logical CPUs
 
-| Scenario | App CPUs | Highest PASS L | First valid FAIL U | Success ops/s | HTTP req/s | P50/P95/P99 ms | Unexpected / drops / rejects / unfinished | Window s | Conclusion |
-|---|---:|---:|---:|---:|---:|---|---|---:|---|
-| `cap_mixed` | 16 | 2000 | 2400 | 2000.002 | 2897.598 | 4/18/24 | 0/0/0/0 | 660 | [2000, 2400) observed |
-| `cap_client_credentials` | 16 | 6000 | 7000 | 5999.35 | 5999.335 | 4/15/26 | 0/117/0/0 | 180 | [6000, 7000) observed |
-| `cap_authorization_code` | 16 | 960 | 1120 | 960 | 3840.056 | 15/32/45 | 0/0/0/0 | 180 | [960, 1120) observed |
-| `cap_refresh_token` | 16 | 3200 | 4000 | 3200.006 | 3200.017 | 7/16/26 | 0/0/0/0 | 180 | [3200, 4000) observed |
-| `fapi2_logged_in_high_security` | 16 | 320 | not established | 320 | 1600.017 | 24/32/42 | 0/0/0/0 | 180 | at least 320/s; no valid U |
-| `cap_introspect` | 16 | 4000 | not established | 4000.011 | 4000.011 | 1/2/3 | 0/0/0/0 | 180 | at least 4000/s; no valid U |
-| `cap_revoke` | 16 | 480 | not established | 480 | 2400.034 | 18/33/42 | 0/0/0/0 | 180 | at least 480/s; no valid U |
-| `mtls_client_credentials` | 16 | 4000 | not established | 3998.417 | 3998.553 | 4/9/20 | 0/285/0/0 | 180 | at least 4000/s; no valid U |
-| `par_signed_request_object` | 16 | 2400 | not established | 2400 | 2399.989 | 3/4/5 | 0/0/0/0 | 180 | at least 2400/s; no valid U |
+| Scenario | Deployment | App CPUs | PASS L | Service FAIL U | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window L/U s | Conclusion |
+|---|---|---:|---:|---:|---:|---:|---|---|---|---|
+| `cap_mixed` | new-container | 16 | 2349 | 2900 | 2349 | 3404.917 | 4/20/29 | 0/0/0/0 | 660/660 | [2349, 2900) observed |
+| `cap_client_credentials` | new-container | 16 | 6000 | 6500 | 6000.022 | 6000.067 | 4/11/29 | 0/0/0/0 | 180/180 | [6000, 6500) observed |
+| `cap_authorization_code` | new-container | 16 | 900 | 1000 | 900 | 3599.553 | 63/92/109 | 0/0/0/0 | 180/180 | [900, 1000) observed |
+| `cap_refresh_token` | new-container | 16 | 2624 | 2916 | 2624.006 | 2623.994 | 7/13/26 | 0/0/0/0 | 180/180 | [2624, 2916) observed |
+| `fapi2_logged_in_high_security` | original-container | 16 | 320 | not established | 320 | 1600.017 | 24/32/42 | 0/0/0/0 | 180/N/A | at least 320/s |
+| `cap_introspect` | original-container | 16 | 16000 | 17000 | 15997.911 | 15997.838 | 1/3/15 | 0/376/0/0 | 180/180 | [16000, 17000) observed |
+| `cap_revoke` | original-container | 16 | 480 | not established | 480 | 2400.034 | 18/33/42 | 0/0/0/0 | 180/N/A | at least 480/s |
+| `mtls_client_credentials` | original-container | 16 | 4000 | not established | 3998.417 | 3998.553 | 4/9/20 | 0/285/0/0 | 180/N/A | at least 4000/s |
+| `par_signed_request_object` | original-container | 16 | 2400 | not established | 2400 | 2399.989 | 3/4/5 | 0/0/0/0 | 180/N/A | at least 2400/s |
+| `oidc_cold_login_refresh` | original-container | 16 | 52 | 56 | 52 | 312 | 159/179/187 | 0/0/0/0 | 180/180 | [52, 56) observed |
 
-## Cold Argon2 login — separate class
+## Upper endpoints
 
-Each operation includes a new password verification and the complete six-request flow. The existing cold-login protocol/check and five-second HTTP guards apply alongside strict success/drop/error and runtime/audit accounting. Its complete-operation P50/P95/P99 is diagnostic; the ordinary 100/250 ms gate is not applied. Stored seeded hashes remain `m=65536,t=3,p=4`, admission concurrency 8 and queue deadline 100 ms.
-
-| Scenario | App CPUs | Highest PASS L | First valid FAIL U | Success ops/s | HTTP req/s | P50/P95/P99 ms | Unexpected / drops / rejects / unfinished | Window s | Conclusion |
-|---|---:|---:|---:|---:|---:|---|---|---:|---|
-| `oidc_cold_login_refresh` (single) | 1 | 1 | not established | 1 | 6 | 132/142/153.21 | 0/0/0/0 | 180 | at least 1/s; no valid U |
-| `oidc_cold_login_refresh` (multi) | 16 | 16 | not established | 16 | 96.011 | 153/172/184.61 | 0/0/0/0 | 90 | at least 16/s; no valid U; only short probe, 180 s unverified |
-
-## Upper points and failures
-
-| Mode / scenario | U ops/s | Successful ops/s | P95/P99 ms | Drops / unexpected | Window s | Failure |
+| Scenario / mode | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window s | Failure evidence |
 |---|---:|---:|---|---|---:|---|
-| single / `cap_mixed` | 700 | 699 | 94/178 | 90/0 | 90 | drops above 0.1% |
-| single / `cap_client_credentials` | 2000 | 1944.083 | 36/43 | 3355/0 | 60 | success below 99.5% offered; drops above 0.1% |
-| single / `cap_authorization_code` | 400 | 399.55 | 34/57 | 81/0 | 180 | drops above 0.1% |
-| single / `cap_refresh_token` | 1000 | 941.9 | 77/83 | 3486/0 | 60 | success below 99.5% offered; drops above 0.1% |
-| multi / `cap_mixed` | 2400 | 2387.817 | 47/142 | 731/0 | 60 | success below 99.5% offered; drops above 0.1% |
-| multi / `cap_client_credentials` | 7000 | 6975.983 | 22/33 | 1441/0 | 60 | drops above 0.1% |
-| multi / `cap_authorization_code` | 1120 | 1120 | 114/132 | 0/0 | 60 | complete-operation P95 above 100 ms |
-| multi / `cap_refresh_token` | 4000 | 3939.667 | 68/81 | 3620/0 | 60 | success below 99.5% offered; drops above 0.1% |
-
-Earlier release measurements remain [historical](reports/2026-09-22-current-capacity/report.md).
-The previous current entry is preserved at [its original commit](https://github.com/nazozero/NazoAuth/blob/dca30911651611c2f4fb2485ad90b21fad21e37d/docs/performance/performance-capacity-curve.md).
-Different resources, durations and operation-latency contracts prevent a defensible
-old/new improvement percentage. Historical 30-minute/three-hour evidence does
-not turn this run's short tests into long-term acceptance.
+| `cap_mixed` / single | 644.15 | 938.397 | 10/130/233 | 0/1053/0/0 | 180 | main complete-operation P95 130ms exceeds 100ms; FAPI complete-operation P95/P99 181.2/273.82ms exceeds 100/250ms; refresh complete-operation P95 131ms exceeds 100ms; main dropped fraction 0.9% exceeds 0.1% |
+| `cap_client_credentials` / single | 1491.167 | 1491.268 | 11/339/395 | 0/1590/0/0 | 180 | complete-operation P95/P99 339/395ms exceeds 100/250ms; measurement dropped fraction 0.5889% exceeds 0.1% |
+| `cap_authorization_code` / single | 342.806 | 1370.978 | 584/809/881 | 0/1295/0/0 | 180 | complete-operation P95/P99 809/881 ms exceeds 100/250 ms; 1295 measurement drops (2.0556%) exceeds 0.1% |
+| `cap_refresh_token` / single | 808.95 | 808.447 | 54/311/341 | 0/549/0/0 | 180 | complete-operation P95/P99 311/341 ms exceeds 100/250 ms; 549 measurement drops (0.3756%) exceeds 0.1% |
+| `cap_mixed` / multi | 2900.006 | 4208.812 | 7/44/78 | 0/0/0/0 | 660 | FAPI sidecar full-operation P95 108 ms exceeds 100 ms; its 22050 offered operations all finish successfully with no drops. |
+| `cap_client_credentials` / multi | 6497.539 | 6497.615 | 5/39/331.44 | 0/444/0/0 | 180 | Full-operation P99 331.44 ms exceeds 250 ms; delivery/drop/error/unfinished gates pass. |
+| `cap_authorization_code` / multi | 1000 | 4002.492 | 57/156/311 | 0/0/0/0 | 180 | Complete-operation P95/P99 156/311 ms exceed 100/250 ms |
+| `cap_refresh_token` / multi | 1728.389 | 1728.274 | 1196/1356/1517 | 0/213769/0/0 | 180 | Full-operation P95/P99 1356/1517 ms exceeds 100/250 ms; 40.7273% offered arrivals drop after VUs become occupied by slow responses. |
+| `cap_introspect` / multi | 16707.406 | 16989.581 | 1/4/24 | 50802/1892/0/0 | 180 | 50802 unexpected logical outcomes; retained HTTP429 temporarily_unavailable responses demonstrate the unchanged source-IP management admission limit |
+| `oidc_cold_login_refresh` / multi | 55.933 | 335.849 | 172/239/263 | 12/0/0/0 | 180 | 12 unexpected complete-operation outcomes; retained failed HTTP points are POST /auth/login 503 |

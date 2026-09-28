@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "archives": [
+    {
+      "file": "20260928-new-mixed-critical.tar.gz",
+      "bytes": 434443156,
+      "sha256": "0d13006b33a9e402d8dfb640b668fd194c10223682f7db27bbfe041251bcd5be",
+      "files": 63,
+      "uncompressed_bytes": 2288217205,
+      "point": "multi-cap-mixed-r2349-w660-1790604696",
+      "journal": {
+        "bytes": 2282794823,
+        "collected": true,
+        "file": "incremental-b-v2/multi/multi-cap-mixed-r2349-w660-1790604696/audit-journal.jsonl",
+        "sha256": "9266688c73d6ce1c888cdbbcf771f916783cd7591aa7061176a977fc5ce14b6d",
+        "source_hash_match": true
+      },
+      "scope": "Complete critical mixed confirmation native gate inputs, maintenance/CPU samplers and full journal; forensic gzip streams remain in final selected archive."
+    }
+  ],
+  "original_archive": {
+    "file": "20260928-current-b-evidence.tar.gz",
+    "bytes": 812407286,
+    "sha256": "9567bd099ce4953c836d67b949507ecc13871e7f7171e62243f65f63d78d8783",
+    "verification": "All 925 file hashes verified locally; original two mixed journals retained."
+  },
+  "retained_archive": {
+    "file": "20260928-incremental-retained-evidence.tar.gz",
+    "bytes": 121025108,
+    "sha256": "45143b887df5a2008d2321dcc93078597523560d924e81886c7265af577e2b7c",
+    "verification": "463 members verified; 17 missing legacy auxiliary stdout logs explicitly excluded."
+  }
+}

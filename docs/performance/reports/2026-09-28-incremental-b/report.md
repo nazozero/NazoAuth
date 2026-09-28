@@ -1,445 +1,184 @@
-# Current-B incremental capacity acceptance — 2026-09-28
-
-This continuation includes `04146234c578e61797aacee7ef7c4687b75653a1`.
-It first reassessed the original selected points using the shared main,
-sidecar, health and maintenance evaluator, then made targeted one-factor
-load-calibration experiments. Application source, binary and migrations are
-unchanged from the [original run](../2026-09-28-current-b/report.md).
-The application image is reused; no application build runs during measurement.
-
-## Offline reassessment
-
-The [separate reassessment](../../../../perf/results/diagnostics/2026-09-28-current-b-reassessment.json)
-retains original point hashes and evaluator identities. All 28 selected
-measurements remain valid: 20 PASS, 8 FAIL. Both original 660-second mixed
-confirmations and all four sidecars pass. Multicore mixed 2400/s additionally
-fails the FAPI and refresh sidecar gates. A valid measured failure is not
-automatically a demonstrated backend limit.
-
-## Mixed calibration experiments
-
-All rows below use one application instance allowed 16 logical CPUs, users
-256, the same business/sidecar rates and data, and the same images. Success
-and drops are the exact measurement-cohort values used by the evaluator;
-interpolated whole-second diagnostics are not substituted for these counters.
-The [calibration evidence](../../../../perf/results/diagnostics/2026-09-28-current-b-calibration.json)
-records each independent recipe, effective configuration, exact main/sidecar
-cohorts, component cost, analyzer lag, warning timing and source hashes.
-
-| Offered ops/s | Main VUs | Pool | Sidecar VUs: cold/meta/FAPI/refresh | Effective s | Main success/s | Complete P95/P99 ms | Main drops | Overall gate |
-|---:|---:|---:|---|---:|---:|---|---:|---|
-| 2400 | 1024 | 32 | 8/16/32/64 | 180 | 2400.006 | 18/30 | 0 | PASS, all sidecars PASS |
-| 3000 | 1024 | 32 | 8/16/32/64 | 180 | 2999.994 | 20/37 | 0 | PASS, all sidecars PASS |
-| 4000 | 1024 | 32 | 8/16/32/64 | 60 | 3935.3 | 137/381 | 3882 | FAIL |
-| 4000 | 2048 | 32 | 8/16/32/64 | 60 | 3996.317 | 62/266 | 221 | FAIL |
-| 4000 | 1024 | 64 | 8/16/32/64 | 60 | 4000 | 122/450 | 0 | FAIL |
-| 4000 | 1024 | 64 | 8/16/32/256 | 60 | 3985.6 | 128/443.65 | 864 | FAIL |
-| 4000 | 1024 | 64 | 64/16/32/256 | 60 | 3981.05 | 174/719 | 1139 | FAIL |
-
-The 2400/s main-VU experiment holds users, pool and every sidecar resource
-constant against the original 256-VU recipe. Its longer 180-second pass
-disproves use of the original 2400/s failure as a backend maximum. The
-subsequent 3000/s point also passes under the same 1024-VU recipe.
-
-At 4000/s, the 2048-VU control compares only main concurrency with the
-1024-VU/pool-32 row. The pool-64 control compares only pool size with the
-1024-VU/pool-32 row, not with the 2048-VU row. The next two controls separately
-increase refresh-sidecar VUs, then cold-sidecar VUs. User cardinalities,
-offered rates, password strength, audit and PostgreSQL durability are retained.
-Different recipes are not combined into one capacity interval.
-
-The pool-64 control completes all 4000/s main arrivals with no main drops but
-still misses complete-operation latency SLO. With refresh VUs 256, refresh
-completes its full 600/s offered rate with zero drops and P95 283 ms. With cold
-VUs 64, cold login completes its full 8/s rate with no drops, while FAPI
-completes 30/s with no drops and P95/P99 776/868 ms; refresh completes 599.63/s
-with only 50 drops and P95 260 ms. The sidecar latency misses therefore do not
-depend on failing to offer their workload. VU warnings are retained with their
-phase rather than being used alone to label a result invalid or a backend limit.
-
-The app used about 7.23/16 CPU and PostgreSQL 7.81/16 at the pool-32 4000/s
-point, with 3.802 ms mean pool wait/acquisition. Pool 64 reduced the mean to
-2.946 ms, with PostgreSQL 8.81/16 CPU; it did not remove the latency miss.
-Analyzer lag remained below 0.5 seconds in these controls. PostgreSQL wait
-samples include idle backends and are not wait-time or per-SQL attribution.
-The 2048-VU injector reached about 18.2 GiB RSS versus about 5.4 GiB at 1024;
-the visible deployment memory limit is 128 GiB. Increasing VUs indefinitely
-would add cost without proving a backend ceiling.
-
-## Original-container multicore mixed boundary
-
-The frozen 1024-VU/pool-64/side-VU-64,16,32,256 recipe has an observed
-**[3750, 4000) complete operations/s** interval. Both endpoints were verified
-for 180 effective seconds. A 60-second 3750/s FAPI latency failure was followed
-by a valid 180-second pass; the longer result, not the shorter failure, is used
-for the final boundary. Original observations remain in the external evidence.
-
-| Offered / effective window | Main success/s | Complete P95/P99 ms | Main drops | Sidecar result |
-|---|---:|---|---:|---|
-| 3750/s / 180 s | 3750.017 | 22/37 | 0 | all PASS |
-| 4000/s / 180 s | 3995.583 | 31/243 | 796 | FAPI and refresh FAIL |
-| 3750/s / 660 s | 3750.009 | 22/32 | 0 | all PASS; maintenance PASS |
-
-At the upper point FAPI completes all 30/s with no drops but P95/P99
-822.55/859 ms; refresh completes all 600/s with no drops but P95/P99
-269/290 ms. These fully delivered populations miss their unchanged business
-latency gates independently of the main VU warning during warmup. The main
-drop fraction is 0.1106%, slightly beyond 0.1%. No runtime/audit health gate
-fails. This establishes a configured workload SLO boundary, without attributing
-it to a specific SQL statement or intrinsic hardware maximum.
-
-The [selected checkpoint evidence](../../../../perf/results/diagnostics/2026-09-28-mixed-incremental-acceptance.json)
-retains exact cohorts, per-point effective sidecar windows, image/source/tool
-identity, analyzer health, component cost and input hashes. Main analyzer lag
-is 0.349 s at U and 0.478 s in the confirmation, below the unchanged 5-second
-observer gate. During confirmation, mean app/PG CPU is 6.908/8.053 logical CPUs
-and mean pool wait is 0.037 ms/acquisition; the U wait is 1.698 ms. Sampled PG
-wait counts include idle clients and do not prove a per-SQL bottleneck.
-
-## Mixed maintenance, audit and WAL confirmations
-
-| Evidence | Single CPU: retained 600/s, 660 s | Sixteen CPUs: new 3750/s, 660 s |
-|---|---|---|
-| Maintenance mature interval / age samples | 300 s / 148 | 300 s / 143 |
-| Maximum age sample gap | 2.056 s | 2.231 s |
-| Oldest expired issuance age, maximum; SLO 120 s | 58.435 s | 59.232 s |
-| Sampled due count first / last / maximum | 8413 / 8339 / 8413 | 39079 / 132083 / 194730 |
-| Inserted / deleted in same mature span | 138877 / 141626 | 983205 / 924120 |
-| Process queue enqueued / persisted / dropped / pending after drain | 67827 / 67827 / 0 / 0 | 440084 / 440084 / 0 / 0 |
-| Durable events / token-issued events, whole point | 536367 / 335282 | 3696610 / 2397896 |
-| Journal gaps / duplicates / malformed lines | 0 / 0 / 0; anchors reconciled | 0 / 0 / 0; anchors reconciled |
-| Generated WAL bytes (`pg_stat_wal`) | 1371739627.976 | 9980130918.750 |
-| WAL write bytes (`pg_stat_io`) | 5721142050.762 | 22501491263.410 |
-| WAL writes / fsyncs | 406231.228 / 405983.228 | 643515.690 / 641700.012 |
-| Main successful operations, window denominator | 396000 | 2475006 |
-| Generated / written WAL bytes per main success | 3463.989 / 14447.328 | 4032.366 / 9091.490 |
-
-Both confirmations pass across the declared retention horizon, and audit drains
-without loss. Multicore sampled due inventory grows during this finite span; the pass is
-the existing expiry-age SLO, not proof of indefinitely bounded total inventory.
-WAL/op includes every sidecar and background activity. Due inventory is a sampled
-diagnostic; age samples and inventory samples have different frequencies.
-The two WAL counters have different meanings, and
-interpolated counts are fractional. WAL timing is N/A because its timing GUC
-is off. Audit event totals include warmup and drain, unlike window throughput.
-
-The original receiver journal had 3,296,382,335 bytes,
-SHA-256 `91d1f43c46433c271c25dd220534f0784f8db77d4ed3d669262c84852c1e2f43`,
-equal to the runtime reconciliation hash. It is not committed to Git.
-The old container was then closed. Its emergency full-stream transfer was
-interrupted: the aggregate runtime evidence survived, but this multicore
-journal and its maintenance sampler did not. That confirmation cannot be
-independently replayed from the migration backup and is excluded from final
-authority pending a new complete confirmation. The new deployment uses a
-separate result namespace; its endpoints are never combined with old endpoints.
-The retained single-CPU journal has 478,326,657 bytes and SHA-256
-`45dcd4a33f270d59632022f246d5cb453a2b14eda38969947159717ac33a8d72`,
-also reconciled against its original runtime hash. It is retained externally.
-Its restored maintenance sampler passes offline reassessment after migration.
-
-## Container migration and execution window
-
-The resumed six-hour window began at 2026-09-28 09:58:28 UTC, with a hard
-deadline of 15:58:28 UTC. New exploration stops by 14:28:28 UTC to reserve
-90 minutes for publication and final-commit CI. The application image,
-benchmark images and required fixture key material were restored without an
-application build. Fixture secrets are excluded from public evidence.
-
-The new container exposes 64 logical CPUs and 128 GiB memory. Allocation is
-derived from its process affinity: application single `[24]`, application
-multicore `24-39`, PostgreSQL `40-55`, Valkey `[56]`, and generator/observers
-`57-79,184-191`. Each formal point still verifies actual process affinities.
-Both deployments remain explicitly identified; differences in CPU numbering
-or recipes are not treated as a performance improvement.
-
-Offline reassessment of the 13 retained non-confirmation selected endpoints
-preserves their original PASS/FAIL verdicts. The retained single mixed
-confirmation also passes with its complete restored sampler. The multicore
-confirmation's missing sampler correctly produces INVALID when replaying the
-metadata-only backup; it is not converted into a service failure or success.
-
-## Sparse sidecar observer repair
-
-The first new-container multicore mixed 3750/s, 180-second point is INVALID:
-the main stream is valid (3749.439 successful operations/s, complete P95/P99
-54/95 ms), runtime and audit pass, but Argon2/FAPI stream lag reaches
-22.528/6.383 seconds. This is excluded from capacity endpoints.
-
-The multi-reader dispatcher added a second 64 KiB buffer after `read1` had
-already returned an available block. Sparse input could wait for subsequent
-operations or EOF before reaching consumers. Complete input blocks now reach
-workers immediately, while partial trailing rows remain buffered until their
-newline. No sample selection, accounting, five-second lag gate, worker
-partition or business assertion is changed.
-
-A real-worker sparse-input regression holds subsequent input for six seconds:
-the old dispatcher reproduces artificial lag and fails; the repaired dispatcher
-consumes the point without lag rejection. The updated CI measurement suite
-passes 261 tests locally (two platform-conditional skips). Native-block,
-fallback-layout, cohort, quantile and forensic-population equivalence remain
-covered. The sparse-input regression is added to the existing quality job.
-Affected new endpoints are measured using a new recorded runner identity.
-
-## Accepted single-core mixed boundary
-
-The original 600/s, 660-second confirmation remains PASS under the updated
-main, four-sidecar, maintenance and audit evaluator. Its effective deployment
-and workload recipe matches the new 64-VU upper points: application binary,
-runner image, workload hash, CPU sets, 64 users, pool 32, seed cardinality,
-60-second warmup, expiry policy and all sidecar rates/resources. The retained
-raw point is unchanged; its schema predates recipe IDs, so the
-[checkpoint evidence](../../../../perf/results/diagnostics/2026-09-28-mixed-cold-boundary-acceptance.json)
-includes explicit equivalence and input-hash proof. Journal capture differs
-between a confirmation and a short point; application audit remains enabled.
-
-The observed frozen 64-VU interval is **[600, 650) operations/s**. At 650/s for
-180 effective seconds, main success is 644.15/s with 1053 drops (0.9%) and
-complete P95/P99 130/233 ms. FAPI completes every 2/s operation with zero drops
-but P95/P99 181.2/273.82 ms; refresh completes every 38/s operation with zero
-drops but P95 131 ms. At 675/s these sidecar failures also occur.
-
-The one-factor 128-VU control at 650/s holds users, pool, images and sidecars
-constant. Main success increases to 649.572/s with 77 drops (0.066%), satisfying
-the offered-success and drop gates, but main P95 remains 130 ms. FAPI completes
-every operation with zero drops and P95/P99 309/436.5 ms; refresh also has zero
-drops and P95 135 ms. The latency failure therefore survives removal of the
-main-VU delivery constraint. This separate control is not used as a bound in
-the 64-VU interval. App/PG/load mean CPU is 0.801/1.347/0.833; mean pool wait
-1.538 ms and maximum analyzer lag 0.253 s. No specific SQL or continuously
-saturated CPU is inferred from these averages.
-
-## Accepted multicore cold Argon2 boundary
-
-Cold login is reported under its existing protocol/HTTP guard and exact
-operation/health/audit gates, separately from the ordinary 100/250-ms latency
-gate. The frozen C3 runner recipe uses 1024 VUs, 256 users, pool 64, one
-stream worker and 16 application CPUs. Both endpoints have 180 effective
-seconds: **[52, 56) operations/s**.
-
-At 52/s, all arrivals complete successfully with zero drops and complete
-P95/P99 179/187 ms. At 56/s, all 10080 arrivals start and complete with zero
-drops; 12 measurement-cohort outcomes are unexpected, giving 55.933 successful
-operations/s and P95/P99 239/263 ms. Retained failed HTTP samples are
-`POST /auth/login` 503 responses. No VU warning occurs, analyzer lag is 0.270 s,
-load CPU is 0.273 and application CPU 8.053/16; pool wait is 0.001 ms. This
-establishes a server-response upper failure. The exact response body is absent,
-so the eight-permit hash-admission queue is not claimed as a proven root cause.
-Password strength and admission policy are unchanged.
-
-## Accepted single-core client-credentials boundary
-
-The frozen C3 recipe uses 512 VUs, 64 users, pool 32 and one stream worker.
-Its 180-second endpoints give **[1375, 1500) operations/s**. At 1375/s,
-successful throughput is 1375.006/s with complete P95/P99 24/46 ms and no
-drops. At 1500/s, success is 1491.167/s, complete P95/P99 339/395 ms and
-1590 drops (0.5889%). The upper misses latency and delivery gates.
-
-The one-factor 1024-VU control at 1500/s does not restore the SLO: complete
-P95/P99 rise to 701/760 ms, with 1553 drops. Native whole-point HTTP waiting
-P95 is 335.189 ms at 512 VUs and 697.629 ms at 1024 VUs; sending, receiving
-and blocked P95 are below 0.05 ms in both. These request diagnostics support
-the attribution and do not replace complete-operation measurement quantiles.
-At the 512-VU upper, load CPU is 0.797/31, analyzer lag 0.257 s, application
-CPU 0.912/1 and mean pool wait 16.985 ms. The control's pool wait increases
-to 60.062 ms. At 1500/s the 250-ms P99 SLO needs 375 busy VUs, below the
-frozen 512-VU allocation. The evidence supports service response and queue
-latency; it does not identify a particular SQL or continuously saturated CPU.
-The separate 1024-VU recipe also fails at 1375/s and is not mixed into the
-accepted 512-VU interval.
-
-## Accepted multicore introspection boundary and producer repair
-
-The high-rate producer experiment keeps the C3 Python/observer image, 1024
-VUs, 256 users, pool 64, four stream workers and workload unchanged. It
-replaces only native k6 and enables omission of six unused HTTP timing
-series from streamed JSON. Native summaries and thresholds still retain
-these timings; the operation cohorts, window contracts, latency populations,
-HTTP counts/errors, drops and all evaluator inputs remain exhaustive.
-Both flag modes pass native HTTP equivalence tests. The overlay's base,
-binary, patch and policy identities are in the
-[seven-point checkpoint evidence](../../../../perf/results/diagnostics/2026-09-28-issuer-introspect-boundary-acceptance.json).
-
-The unchanged producer dropped 9345 arrivals (0.324%) at 16000/s over 180
-seconds. The repaired producer passes the same offered rate: success
-15997.911/s, complete P95/P99 3/15 ms, 376 drops (0.0131%), no unexpected
-outcomes and no unfinished operations. This resolves the measured producer
-delivery constraint; no causal speedup percentage is inferred.
-
-The frozen repaired recipe gives **[16000, 17000) operations/s**. At 17000/s,
-99.938% of arrivals start and every started operation completes, with 1892
-drops (0.0618%) and complete P95/P99 4/24 ms. Measurement is valid, but 50802
-outcomes are unexpected and successful throughput falls to 16707.406/s.
-Retained responses are HTTP 429 `temporarily_unavailable`, matching the
-unchanged management request budget of 1000000 per source IP per 60 seconds.
-The bounded whole-point log retains 40960 such samples; this is not an exact
-measurement HTTP-status count. This interval describes the configured
-single-source-IP admission boundary, not an intrinsic CPU maximum.
-
-At the upper, load/app/PG CPU averages are 8.120/4.579/8.233 of 31/16/16
-allocated CPUs, mean pool wait is 0.090 ms and maximum analyzer lag is
-3.345 seconds, below its unchanged five-second validity gate. Parse and
-reader failure counts are zero. The failure is independent of injector
-delivery and observer validity. Security and admission settings are unchanged.
-
-## Accepted single-core authorization-code and refresh boundaries
-
-Both frozen C3 recipes use 256 VUs, 64 users, pool 32 and one stream worker.
-The [six-point evidence](../../../../perf/results/diagnostics/2026-09-28-code-refresh-boundary-acceptance.json)
-keeps 180-second endpoints and separate one-factor 512-VU controls.
-
-| Scene | L / U ops/s | Success at L / U | Complete P95/P99 at L / U ms | Drops at L / U |
-|---|---|---|---|---|
-| Authorization code | 325 / 350 | 325 / 342.806 | 50/158 / 809/881 | 0 / 1295 |
-| Refresh | 750 / 812 | 749.994 / 808.95 | 34/74 / 311/341 | 0 / 549 |
-
-At 350/s the 512-VU authorization-code control delivers and completes every
-one of 63000 arrivals, without drops or warnings, yet complete P95/P99 remain
-394/497 ms. The service latency failure survives removal of the delivery
-constraint. Load CPU is 1.139/31, observer lag 0.284 s and mean pool wait
-2.617 ms. At the frozen upper, application CPU is 0.978/1, load CPU 1.251/31,
-pool wait 28.991 ms and observer lag 0.266 s.
-
-The refresh 512-VU control does not restore the SLO: complete P95/P99 become
-771/813 ms. It still warns about VUs and drops 9.6654% of arrivals, so that
-control is not evidence of full target delivery. Independent service-response
-and queue measurements support the original upper's latency failure: native
-whole-point HTTP waiting P95 is 320.549 ms at 256 VUs and 769.863 ms at 512;
-send/receive/blocked P95 are below 0.062 ms. Pool acquisition wait rises from
-15.396 to 128.371 ms, while load CPU remains 0.485/31 and 0.490/31 and observer
-lag 0.259/0.262 s. Application CPU averages 0.958/1 and 0.927/1. At the unchanged
-250-ms P99 SLO, 812/s needs 203 busy VUs, below the frozen 256 allocation.
-The warning and drop counts are not used alone to attribute a backend failure.
-
-Every started operation completes, with no unexpected outcomes, preparation,
-runtime or audit failures at these endpoints and controls. Native HTTP timings
-are whole-point diagnostics; capacity quantiles remain complete-operation
-measurement cohorts. Bounds use the 256-VU recipe throughout; the controls
-are separate. No specific SQL or continuous component saturation is inferred.
-
-## Observer experiments and checkpoint CI
-
-The native metric-partition experiment preserved its equivalence tests but
-regressed in the actual high-rate pipeline. Its points are INVALID because
-observer lag exceeds the unchanged five-second gate, and they are excluded
-from capacity intervals. The experiment was removed in `286ab34a`; its
-[compact diagnostic](../../../../perf/results/diagnostics/2026-09-28-native-partition-probe.json)
-retains the evidence. Remaining measurements use their explicitly recorded
-known-valid runner images; the application image is reused.
-
-Checkpoint `60d46dff` has 11 successful checks and two conditional skips:
-Rust advisory audit runs outside pull requests, and official-source fetching
-runs outside pull requests. The
-[Rust quality job](https://github.com/nazozero/NazoAuth/actions/runs/36388420548/job/108818684745)
-passes in 1115 seconds with a two-second queue. Its resource-derived build
-concurrency is four; shared-state test threads remain one. Compilation inside
-the workspace step takes 166 seconds, and all 13 audit-ledger tests pass in
-375.54 seconds. Clippy takes 43 seconds, schema setup 31 seconds, cache restore
-25 seconds and avatar setup nine seconds. These costs overlap their enclosing
-job/step totals; cache and runner variation prevent causal speedup percentages.
-[Recorded timings](../../../../perf/results/diagnostics/2026-09-28-ci-cost-60d.json)
-do not substitute for the final publication commit's checks.
-
-Producer checkpoint `6511b3ab` also has all 11 applicable checks successful
-and the two justified PR-event skips. Its
-[native producer tests](https://github.com/nazozero/NazoAuth/actions/runs/36393855474)
-and [Rust quality gate](https://github.com/nazozero/NazoAuth/actions/runs/36393855477/job/108835545322)
-pass on that exact commit. This remains checkpoint evidence, not the future
-publication commit's CI proof.
-
-The remaining scene boundaries and their VU controls continue as targeted
-incremental tests. This checkpoint is not the final 20-row current baseline.
-
-## Retained evidence checkpoint after migration
-
-All eighteen retained original-container endpoint/confirmation/control records
-have been [reassessed again](../../../../perf/results/diagnostics/2026-09-28-retained-reassessment.json)
-with the current shared evaluator at `ec638ce7`. Their verdicts are unchanged;
-the recovered single-core mixed maintenance confirmation remains PASS.
-The superseded old multicore mixed confirmation is excluded from this set.
-
-The [selected retained archive](../../../../perf/results/diagnostics/2026-09-28-incremental-retained-archive.json)
-preserves 463 available files, including complete native gate inputs and the
-recovered single-core mixed journal. It contains 522743064 uncompressed bytes;
-`20260928-incremental-retained-evidence.tar.gz` is 121025108 bytes with SHA-256
-`45143b887df5a2008d2321dcc93078597523560d924e81886c7265af577e2b7c`.
-Its embedded manifest hashes every archived file. Seventeen unavailable
-auxiliary raw logs are listed explicitly; their absence is not presented as
-complete raw preservation. The archive is held outside Git in the task workspace.
-
-Checkpoint `ec638ce7` has all eleven applicable checks successful and the two
-existing PR-event conditional skips. Its [Rust job](https://github.com/nazozero/NazoAuth/actions/runs/36409414900/job/108885814020)
-takes 1110 seconds, with workspace compilation 176 seconds and all thirteen
-audit-ledger tests 374.16 seconds. Cache restore takes 26 seconds, native
-dependencies eleven, avatar setup ten, schema setup 27, clippy 38 and the
-workspace step 951. These [nested timings](../../../../perf/results/diagnostics/2026-09-28-ci-cost-ec638.json)
-overlap enclosing steps and do not support a causal speedup percentage.
-The final current-baseline publication will still require its own exact-head CI.
-
-## Reproduction and verification
-
-Use the [targeted runner](../../../../perf/README.md) with the recorded application
-image and runner image `sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef`.
-The tested app source remains `ac266e7a93749694022efd1aeea6ed4d316fbbcc`.
-For each table row, explicitly supply `--mode multi --scenarios cap_mixed
---rates <offered> --window <effective> --vus <main> --users 256
---pool-connections <pool> --sidecar-vus <cold> <meta> <FAPI> <refresh>`, alongside
-the required future `--stop-at` timestamp and existing runner environment.
-The controller allocates CPU sets from process affinity and saves independent
-recipe-specific configuration and state files. Do not start an unscoped matrix.
-
-The calibration checkpoint's [CI](https://github.com/nazozero/NazoAuth/actions/runs/36367997622)
-passed on `6b6c4cbb` (Rust job 24m41s): all 11 applicable checks succeeded and the two PR-event
-conditional checks were skipped. Final publication will be checked on its
-own exact commit; this checkpoint's green CI is not substituted for that result.
-
-
-## New-container mixed duration checkpoint
-
-With the same frozen recipe, 3537/s passes the 180-second effective window
-but fails the 660-second confirmation. The long point completes 3244.852
-successful operations/s, with complete-operation P95/P99 of 751/1146 ms and
-192821 dropped starts out of 2334423 scheduled (8.260%). Its refresh sidecar
-also fails, with 582.725 successful operations/s at 600 offered and P95/P99
-494/640 ms. These are [duration diagnostics](../../../../perf/results/diagnostics/2026-09-28-mixed-duration-checkpoint.json),
-not a confirmed passing capacity interval.
-
-The long point's connection-pool wait averages 34.35 ms per acquisition,
-compared with 0.038 ms at the same 180-second load. Application, database
-and main generator average 6.915, 8.941 and 3.781 logical CPUs respectively.
-Valid observer lag and complete business counters preserve the failure's
-measurement validity. These observations support service-side waiting;
-they do not identify one SQL statement or prove a CPU ceiling.
-
-Maintenance and durable audit still pass. The mature maintenance period has
-135 samples, maximum gap 2.456 s and maximum expired age 67.496 s. Cleanup
-passing does not make the latency failure pass. The short passing point is
-not promoted to a successful long confirmation. A lower frozen-load
-confirmation is required and remains in progress.
-
-The 6000/s client-credentials control with 2048 VUs remains INVALID after
-increasing stream workers from four to eight: only eight stale samples cross
-five seconds. Native forensic member prefixes show VU gauges starting at
-12:53:10.515 UTC while business/window samples begin at 12:53:19.082 UTC.
-The native stdout writer is buffered but its periodic flusher does not flush
-that buffer. Sparse initialization rows therefore wait for 4 KiB or shutdown.
-The repair flushes that existing buffer at each periodic boundary, preserving
-every emitted sample and the unchanged validity gate. A two-batch native
-regression fails on the old implementation and passes after the repair; both
-native JSON and metrics packages pass. Live affected-point validation is
-pending and the invalid point has not been promoted to a backend upper.
-
-The reporting repair at `6e0eeafb` has eleven applicable CI checks successful,
-with the two existing PR-event conditional skips. Its
-[Rust job](https://github.com/nazozero/NazoAuth/actions/runs/36417493911/job/108912021942)
-is successful; a later publication still requires its own exact-head checks.
-
-
-The [new-container code and transport verification](../../../../perf/results/diagnostics/2026-09-28-incremental-code-cc-validation.json) establishes a code-flow interval at 900/1000 offered operations/s, with 1024 VUs, 256 users, pool 64 and four stream workers. Both endpoints use 180-second windows. At 900/s all 162000 operations complete successfully, with complete-operation P50/P95/P99 63/92/109 ms. At 1000/s all 180000 complete successfully, with 57/156/311 ms. No VU warnings, errors, drops or unfinished operations occur. The independent latency failure establishes the upper; the generator uses 3.476 of its 31 CPUs at that endpoint. This pair was independently reevaluated with the current controller and its verdicts remain unchanged.
-
-The periodic-flush repair also passes live measurement validation: at client-credentials 6000/s, 2048 VUs, users 256, pool 64 and eight workers, observer lag is 0.538 s; at 5400/s it is 0.369 s. The latter passes at 5399.939 successful operations/s and full P95/P99 27/139 ms, with 9 drops out of 971998 scheduled. The former fails only its delivery/drop gate: full P95/P99 39/203 ms, 1863 drops out of 1080004 scheduled, with zero unexpected or unfinished operations. It remains a delivery-limited candidate, not an accepted backend upper. A separate one-factor VU control is still required.
-
-The repair checkpoint `dfed760e` has eleven applicable CI checks successful and the two existing event-conditional skips; its [Rust quality job](https://github.com/nazozero/NazoAuth/actions/runs/36427671321/job/108945549143) completed successfully. Final result publication must pass checks for its own commit.
-
-The new 660-second mixed confirmation passes at 2349 offered operations/s: all 1550340 main operations finish successfully, full P95/P99 are 20/29 ms, and all four sidecars, maintenance and durable audit pass. Its complete 2282794823-byte journal is saved locally inside a verified archive (SHA256 0d13006b33a9e402d8dfb640b668fd194c10223682f7db27bbfe041251bcd5be). At 2900/s, all main and FAPI operations finish without drops, but FAPI full-operation P95 is 108 ms against the unchanged 100 ms gate. The intervening 2610/s point fails delivery gates and is excluded as a service upper. This bracket is still wider than the requested refinement.
-
-The same-recipe issuance control raises only VUs from 2048 to 4096 at 6000/s and removes the drop-only failure: all 1080004 operations finish, full P95/P99 are 11/29 ms. At 6500/s the delivery gate passes (444/1170001 drops, 0.03795%), while full-operation P99 reaches 331.44 ms and independently fails. The frozen 4096-VU interval is [6000, 6500). These four endpoints and exact image/configuration identities are retained in [the checkpoint evidence](../../../../perf/results/diagnostics/2026-09-28-incremental-mixed-cc-boundaries.json). Nine of twenty mode/scenario rows currently have reviewed service uppers; the complete acceptance remains unfinished.
+# Current-B incremental performance acceptance — 2026-09-28
+
+Status: **INCOMPLETE**. 10/20 mode/scenario rows have reviewed service upper endpoints. All twenty retain real passing observations. Missing uppers remain lower bounds; short candidates still need 180-second verification and wide brackets still need refinement. The results below replace the current baseline, but do not claim completion of the requested full acceptance.
+
+The six-hour execution started at 09:58:28 UTC, with a hard stop at 15:58:28 UTC (23:58:28 Beijing). The remaining fixed verification was bounded to preserve final publication and CI time. The earlier exploration reserve was overrun while repairing invalid measurement and obtaining a new complete mixed journal. This is an execution limitation, not evidence of capacity. [Checkpoint history](checkpoint-history.md) records the independent commits and intermediate results; [original observations](../2026-09-28-current-b/report.md) are historical and superseded.
+
+## Identity, configuration and measurement
+
+Application source is `ac266e7a93749694022efd1aeea6ed4d316fbbcc`, image `5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d`, binary `13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b`. Production code is unchanged, so the restored application image was reused. Required ancestor `04146234c578e61797aacee7ef7c4687b75653a1` is included. The offline evaluator was reviewed at `efe3189b1dd746c8075ecc5923329c93e8e31421`; its exact source file hashes are retained in the separate reassessment.
+
+Both deployments expose 64 logical CPUs and a 128 GiB container memory limit. The original deployment allocated app single 128 or multi 128–143, PG 144–159, Valkey 160 and generators 161–191. The replacement deployment dynamically allocated app single 24 or multi 24–39, PG 40–55, Valkey 56 and generators 57–79,184–191. Actual per-point affinity is verified and retained. Only deployment-visible resources were investigated. Component allocations are disjoint; all auxiliary roles share the stated generator set. Each interval uses one deployment and one exact frozen recipe; no original/new result or altered VU/pool/user configuration is joined into a boundary.
+
+PostgreSQL 18.6 keeps fsync, synchronous_commit and full_page_writes enabled, normal autovacuum, max WAL 8 GB and five-minute checkpoints. Pool size is 32 in single mode and 64 in the new multi profiles; per-row configurations override any earlier defaults. The stored login fixture retains Argon2 m=65536 KiB/t=3/p=4, with the unchanged eight-permit/100 ms admission policy. Audit, migration, protocol and source-IP limits remain enabled. VUs, users and stream workers are listed per recipe; sidecar users remain independent of sidecar VU overrides.
+
+The existing controller, scenarios and gates were used. Main and sidecar logical operations use exact native measurement cohorts and complete-operation histograms; HTTP rate and HTTP diagnostic quantiles are separate populations. P99 values are never averaged. Standard non-cold gates retain >=99.5% successful offered operations, <=0.1% drops, zero unexpected outcomes, P95/P99 <=100/250 ms, runtime health and durable audit. Cold login and metadata keep their existing distinct gates. A failed/invalid observer, missing acceptance evidence or generator-only failure cannot become a service upper. Short windows do not establish production long-term capacity.
+
+Runner identities are frozen per row: legacy `64b27274...`, native cohort `c3ce0ca4...`, filtered `e5a7c22b...`, sparse-dispatch overlay `ba139190...`, and periodic-native-flush overlay `779d48cb...`; full IDs and component hashes are in the structured recipes. The last overlay contains controller files from `ec638ce7`, k6 v2.2.0 upstream `00a9a1b7f552d6bb4337278b10ae25aac0f4e666`, the `dfed760e` patch and native binary `dff9988f2f4e2dea89c140467632b652574fc31a03323aab4e687f5d1ad98384`. It is a composite image, not a pristine application rebuild.
+
+## Single logical CPU
+
+| Scenario | Deployment | App CPUs | PASS L | Service FAIL U | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window L/U s | Conclusion |
+|---|---|---:|---:|---:|---:|---:|---|---|---|---|
+| `cap_mixed` | original-container | 1 | 600 | 650 | 600 | 869.944 | 4/45/103 | 0/0/0/0 | 660/180 | [600, 650) observed |
+| `cap_client_credentials` | original-container | 1 | 1375 | 1500 | 1375.006 | 1375.011 | 5/24/46 | 0/0/0/0 | 180/180 | [1375, 1500) observed |
+| `cap_authorization_code` | original-container | 1 | 325 | 350 | 325 | 1299.989 | 19/50/158 | 0/0/0/0 | 180/180 | [325, 350) observed |
+| `cap_refresh_token` | original-container | 1 | 750 | 812 | 749.994 | 750 | 7/34/74 | 0/0/0/0 | 180/180 | [750, 812) observed |
+| `fapi2_logged_in_high_security` | original-container | 1 | 20 | not established | 20 | 100 | 22/31/43.01 | 0/0/0/0 | 180/N/A | at least 20/s |
+| `cap_introspect` | original-container | 1 | 500 | not established | 500 | 500 | 1/3/11 | 0/0/0/0 | 180/N/A | at least 500/s |
+| `cap_revoke` | original-container | 1 | 60 | not established | 60 | 300 | 16/24/38 | 0/0/0/0 | 180/N/A | at least 60/s |
+| `mtls_client_credentials` | original-container | 1 | 250 | not established | 250 | 250 | 4/6/12 | 0/0/0/0 | 180/N/A | at least 250/s |
+| `par_signed_request_object` | original-container | 1 | 150 | not established | 150 | 150 | 3/5/11 | 0/0/0/0 | 180/N/A | at least 150/s |
+| `oidc_cold_login_refresh` | original-container | 1 | 1 | not established | 1 | 6 | 132/142/153.21 | 0/0/0/0 | 180/N/A | at least 1/s |
+
+## Sixteen logical CPUs
+
+| Scenario | Deployment | App CPUs | PASS L | Service FAIL U | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window L/U s | Conclusion |
+|---|---|---:|---:|---:|---:|---:|---|---|---|---|
+| `cap_mixed` | new-container | 16 | 2349 | 2900 | 2349 | 3404.917 | 4/20/29 | 0/0/0/0 | 660/660 | [2349, 2900) observed |
+| `cap_client_credentials` | new-container | 16 | 6000 | 6500 | 6000.022 | 6000.067 | 4/11/29 | 0/0/0/0 | 180/180 | [6000, 6500) observed |
+| `cap_authorization_code` | new-container | 16 | 900 | 1000 | 900 | 3599.553 | 63/92/109 | 0/0/0/0 | 180/180 | [900, 1000) observed |
+| `cap_refresh_token` | new-container | 16 | 2624 | 2916 | 2624.006 | 2623.994 | 7/13/26 | 0/0/0/0 | 180/180 | [2624, 2916) observed |
+| `fapi2_logged_in_high_security` | original-container | 16 | 320 | not established | 320 | 1600.017 | 24/32/42 | 0/0/0/0 | 180/N/A | at least 320/s |
+| `cap_introspect` | original-container | 16 | 16000 | 17000 | 15997.911 | 15997.838 | 1/3/15 | 0/376/0/0 | 180/180 | [16000, 17000) observed |
+| `cap_revoke` | original-container | 16 | 480 | not established | 480 | 2400.034 | 18/33/42 | 0/0/0/0 | 180/N/A | at least 480/s |
+| `mtls_client_credentials` | original-container | 16 | 4000 | not established | 3998.417 | 3998.553 | 4/9/20 | 0/285/0/0 | 180/N/A | at least 4000/s |
+| `par_signed_request_object` | original-container | 16 | 2400 | not established | 2400 | 2399.989 | 3/4/5 | 0/0/0/0 | 180/N/A | at least 2400/s |
+| `oidc_cold_login_refresh` | original-container | 16 | 52 | 56 | 52 | 312 | 159/179/187 | 0/0/0/0 | 180/180 | [52, 56) observed |
+
+## Upper endpoints
+
+| Scenario / mode | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window s | Failure evidence |
+|---|---:|---:|---|---|---:|---|
+| `cap_mixed` / single | 644.15 | 938.397 | 10/130/233 | 0/1053/0/0 | 180 | main complete-operation P95 130ms exceeds 100ms; FAPI complete-operation P95/P99 181.2/273.82ms exceeds 100/250ms; refresh complete-operation P95 131ms exceeds 100ms; main dropped fraction 0.9% exceeds 0.1% |
+| `cap_client_credentials` / single | 1491.167 | 1491.268 | 11/339/395 | 0/1590/0/0 | 180 | complete-operation P95/P99 339/395ms exceeds 100/250ms; measurement dropped fraction 0.5889% exceeds 0.1% |
+| `cap_authorization_code` / single | 342.806 | 1370.978 | 584/809/881 | 0/1295/0/0 | 180 | complete-operation P95/P99 809/881 ms exceeds 100/250 ms; 1295 measurement drops (2.0556%) exceeds 0.1% |
+| `cap_refresh_token` / single | 808.95 | 808.447 | 54/311/341 | 0/549/0/0 | 180 | complete-operation P95/P99 311/341 ms exceeds 100/250 ms; 549 measurement drops (0.3756%) exceeds 0.1% |
+| `cap_mixed` / multi | 2900.006 | 4208.812 | 7/44/78 | 0/0/0/0 | 660 | FAPI sidecar full-operation P95 108 ms exceeds 100 ms; its 22050 offered operations all finish successfully with no drops. |
+| `cap_client_credentials` / multi | 6497.539 | 6497.615 | 5/39/331.44 | 0/444/0/0 | 180 | Full-operation P99 331.44 ms exceeds 250 ms; delivery/drop/error/unfinished gates pass. |
+| `cap_authorization_code` / multi | 1000 | 4002.492 | 57/156/311 | 0/0/0/0 | 180 | Complete-operation P95/P99 156/311 ms exceed 100/250 ms |
+| `cap_refresh_token` / multi | 1728.389 | 1728.274 | 1196/1356/1517 | 0/213769/0/0 | 180 | Full-operation P95/P99 1356/1517 ms exceeds 100/250 ms; 40.7273% offered arrivals drop after VUs become occupied by slow responses. |
+| `cap_introspect` / multi | 16707.406 | 16989.581 | 1/4/24 | 50802/1892/0/0 | 180 | 50802 unexpected logical outcomes; retained HTTP429 temporarily_unavailable responses demonstrate the unchanged source-IP management admission limit |
+| `oidc_cold_login_refresh` / multi | 55.933 | 335.849 | 172/239/263 | 12/0/0/0 | 180 | 12 unexpected complete-operation outcomes; retained failed HTTP points are POST /auth/login 503 |
+
+
+## Why the upper endpoints are service failures
+
+- `single/cap_mixed`: All FAPI and refresh sidecar arrivals complete with zero drops and miss their unchanged latency gates. A separate one-factor main-VU 64-to-128 control at the same 650/s reduces main drops to 0.066% and delivers 99.934% of offered operations, yet main P95 remains 130ms and FAPI/refresh P95 remain 309/135ms. This rules out insufficient main VUs as the cause of the latency failure; that control is not mixed into the frozen 64-VU interval. The original 600/s, 660-second confirmation has verified effective recipe equivalence and is retained without modifying its raw evidence.
+- `single/cap_client_credentials`: A one-factor VU 512-to-1024 control at the same 1500/s does not restore latency: complete-operation P95/P99 become 701/760 ms. Native whole-point HTTP waiting P95 is 335.189 ms at 512 VU and 697.629 ms at 1024 VU, while sending, receiving and blocked P95 are below 0.05 ms. These HTTP diagnostics do not replace full-operation cohort gates. Generator CPU is 0.797/31, analyzer lag 0.257 s and mean pool wait 16.985 ms at U (60.062 ms in the 1024 control), identifying server response/queue latency rather than injector compute or transport time. Under the 250-ms P99 SLO, 1500/s needs 375 busy VUs; the frozen 512-VU profile has headroom. The separate 1024 profile also fails at 1375/s and is not mixed into this 512-VU interval. No particular SQL or intrinsic hardware ceiling is claimed.
+- `single/cap_authorization_code`: A one-factor 256-to-512 VU control at the same 350/s, users 64 and pool 32 delivers and completes all 63000 offered operations with no drops or warnings but still fails full-operation P95/P99 at 394/497 ms. This excludes insufficient VUs as the independent latency failure. Its generator CPU is 1.139/31, observer lag 0.284 s and mean pool wait 2.617 ms; no audit/health evidence fails. At the frozen 256-VU upper, app CPU is 0.978/1, generator 1.251/31, pool wait 28.991 ms and lag 0.266 s. The separate 512-VU control is not used as an interval bound; no specific SQL or continuously saturated component is claimed.
+- `single/cap_refresh_token`: A one-factor 256-to-512 VU control holds users 64, pool 32 and images constant and does not restore the SLO: full-operation P95/P99 771/813 ms. The control still has a VU warning and 9.6654% drops, so it does not establish full target delivery. Independent response/queue evidence supports the service latency failure: native whole-point HTTP waiting P95 is 320.549 ms at the original upper and 769.863 ms in the control; send/receive/blocked P95 remain below 0.062 ms. Pool acquisition wait rises from 15.396 to 128.371 ms while generator CPU stays 0.485/31 and 0.490/31 and observer lag 0.259/0.262 s. App averages 0.958/1 and 0.927/1 CPU. At the unchanged 250-ms P99 SLO, 812/s requires 203 busy VUs, below 256. Warning/drop counts alone are not the attribution. The separate control is not an interval bound; no particular SQL is claimed.
+- `multi/cap_mixed`: Independent full-business SLO failure with complete FAPI offered-load delivery, no VU warnings and observer lag 0.327s. The main flow also delivers all 1914004 operations. CPU/pool evidence and whole-point native HTTP waiting support service response costs; no SQL or physical device cause is proved. The bracket remains wider than 12.5% and needs narrowing. A closer 2610/s candidate fails only delivery/drop gates and is not used as a service upper.
+- `multi/cap_client_credentials`: A one-factor 2048-to-4096 VU control holds users256/pool64/8 workers/native image fixed at6000/s: all1080004 offered operations finish with zero drops, P95/P99 11/29ms, disproving the old drop-only service upper. The frozen4096-VU upper at6500/s completes all1169557 started operations, has0unexpected and0unfinished, and444/1170001 drops (0.03795%, below0.1%). Its independent complete-operation P99 fails. Generator4.482/31CPUs, lag0.763s, pool wait2.221ms. A VU warning remains, but it is not the upper evidence; no particular SQL/CPU ceiling is claimed.
+- `multi/cap_authorization_code`: All 180000 scheduled operations start and finish successfully with no errors, dropped or unfinished operations; no VU warning. Generator uses 3.476 of 31 cores, observer lag 0.999s. Full-operation latency fails with complete offered load delivery.
+- `multi/cap_refresh_token`: The same 2048-VU/users256/pool64/4-worker recipe delivers all472321 operations at2624/s, full P95/P99 13/26ms, zero errors/drops/unfinished and no VU warning. At2916/s, complete-operation latency fails independently of the drop count. Mean measured server pool acquisition wait is229.24ms; generator uses1.527/31CPUs, app3.731/16 and PG5.713/16, observer lag0.334s, with no reader/parse failure and intact health/audit. Under the250ms SLO,2916/s requires729busyVUs, below2048. The warning reflects2048 VUs occupied by roughly1.2s responses; it does not by itself define U. This establishes a configured service response/queue boundary, not a specific SQL or intrinsic CPU ceiling. The3240/s control independently fails full P95/P99 1275/1364ms with mean pool wait57.213ms and generator2.081/31CPUs.
+- `multi/cap_introspect`: Both points have valid 180-second windows and full cohorts. At 17000/s, 99.938% of offered arrivals start, every started operation completes, and 0.0618% drops satisfy the 0.1% delivery gate; complete-operation P95/P99 are 4/24 ms. Failure persists independently as 50802 unexpected outcomes and a successful-operation deficit. Bounded whole-point logs retain 40960 HTTP 429 samples, not an exact measurement status count. The unchanged policy is 1000000 management requests per source IP per 60 seconds. Generator CPU 8.120/31, app 4.579/16, PG 8.233/16, pool wait 0.090 ms and analyzer lag 3.345 s with zero parse/reader failures exclude generator delivery and measurement failures. This is the configured one-source-IP service admission boundary, not an intrinsic CPU maximum.
+- `multi/oidc_cold_login_refresh`: All 10080 offered operations started and completed, no drops, preparation failure or VU warning; load CPU 0.273 and app CPU 8.053 of 16, pool wait 0.001ms and analyzer lag 0.270s. These are server 503 responses. Hash admission pressure is consistent with the eight-permit/100ms policy but the exact 503 response body was not retained, so no narrower root cause is claimed.
+
+## Mixed maintenance, audit and WAL
+
+| Mode / deployment | Load / window s | Mature span / samples | Max expired age s | Due first / last / max | Mature inserted / deleted | Audit queued / persisted / lost / pending after drain | Durable / journal sequence |
+|---|---|---|---:|---|---|---|---|
+| single / original-container | 600 / 660 | 300 / 148 | 58.435 | 8413 / 8339 / 8413 | 138877 / 141626 | 67827 / 67827 / 0 / 0 | 536367 / 536367 |
+| multi / new-container | 2349 / 660 | 300 / 144 | 60.115 | 9354 / 108785 / 134937 | 689993 / 615712 | 288660 / 288660 / 0 / 0 | 2535673 / 2535673 |
+
+| Mode | WAL generation bytes | WAL write bytes | Writes / fsyncs | Generated / written bytes per main success | Pool acquisition wait ms | Maintenance / audit / continuity |
+|---|---:|---:|---|---|---:|---|
+| single | 1371739627.976 | 5721142050.762 | 406231.228 / 405983.228 | 3463.989 / 14447.328 | 0.027 | PASS / PASS / PASS |
+| multi | 6894754743.598 | 18997814010.568 | 860099.164 / 858844.664 | 4447.253 / 12253.966 | 0.024 | PASS / PASS / PASS |
+
+| Mode / sidecar | Offered / successful ops/s | Own window s | Full P50/P95/P99 ms | HTTP guard quantiles when full cohort unavailable | Errors / drops / rejects / unfinished | Gate |
+|---|---|---:|---|---|---|---|
+| single / argon2 | 1 / 1 | 735 | 258/295.3/318.66 | N/A | 0/0/0/0 | PASS |
+| single / meta | 13 / 13 | 735 | 1/7/13 | N/A | 0/0/0/0 | PASS |
+| single / fapi | 2 / 2 | 735 | 26/36/51.31 | N/A | 0/0/0/0 | PASS |
+| single / refresh | 38 / 38 | 735 | 7/58/88 | N/A | 0/0/0/0 | PASS |
+| multi / argon2 | 8 / 8 | 735 | 157/174/194 | N/A | 0/0/0/0 | PASS |
+| multi / meta | 200 / 200 | 735 | 1/1/2 | N/A | 0/0/0/0 | PASS |
+| multi / fapi | 30 / 30 | 735 | 29/44/65 | N/A | 0/0/0/0 | PASS |
+| multi / refresh | 600 / 600 | 735 | 7/12/24 | N/A | 0/0/0/0 | PASS |
+
+WAL generation is pg_stat_wal; write bytes, writes and fsyncs are pg_stat_io. Sparse counter deltas are interpolated at the window boundaries. WAL per main success includes sidecars, audit and background work. WAL timing remains N/A; these are not physical-device write amplification measurements.
+
+
+The replacement mixed 2349/s confirmation completes every main operation and passes all four sidecars, mature cleanup, audit persistence/loss and journal continuity. Its complete journal is 2282794823 bytes with SHA256 `9266688c73d6ce1c888cdbbcf771f916783cd7591aa7061176a977fc5ce14b6d`; all 63 critical archive members and the full journal were verified locally. The retained single-CPU 600/s journal is also fully hash-verified. The later original-container 3750/s journal was lost during shutdown and is excluded from the current authority.
+
+At mixed 2900/s every FAPI arrival completes with zero drops and no VU warning, while FAPI full P95 is 108 ms. The closer 2610/s attempt fails only delivery gates and is not used as U. Its warning-time samples show pool waiting 20→1134→1268, idle connections zero and 63–64 PostgreSQL LWLock waiters, followed by recovery. These prove a server queue burst, but the captured samples do not identify a specific SQL or physical-device bottleneck. A later bounded wait-name observation on the passing 2349/s point is a separate population and cannot be retroactively attributed to that burst. The [burst evidence](../../../../perf/results/diagnostics/2026-09-28-incremental-mixed-queue-burst.json) records this boundary.
+
+## Endpoint resource evidence
+
+| Mode / scene / endpoint | App cores used / allocated | PG cores / 16 | Generator cores / 31 | Pool wait ms | Native max lag s |
+|---|---|---|---|---:|---:|
+| single / `cap_mixed` / L | 0.65 / 1 | 1.318 | 0.695 | 0.027 | 0.257 |
+| single / `cap_mixed` / U | 0.821 / 1 | 1.382 | 0.798 | 1.371 | 0.254 |
+| single / `cap_client_credentials` / L | 0.805 / 1 | 1.627 | 0.681 | 0.201 | 0.255 |
+| single / `cap_client_credentials` / U | 0.912 / 1 | 1.935 | 0.797 | 16.985 | 0.257 |
+| single / `cap_authorization_code` / L | 0.807 / 1 | 1.64 | 0.981 | 0.121 | 0.258 |
+| single / `cap_authorization_code` / U | 0.978 / 1 | 2.502 | 1.251 | 28.991 | 0.266 |
+| single / `cap_refresh_token` / L | 0.876 / 1 | 1.589 | 0.443 | 0.148 | 0.26 |
+| single / `cap_refresh_token` / U | 0.958 / 1 | 1.821 | 0.485 | 15.396 | 0.259 |
+| single / `fapi2_logged_in_high_security` / L | 0.087 / 1 | 0.157 | 0.196 | 0.001 | 0.251 |
+| single / `cap_introspect` / L | 0.093 / 1 | 0.397 | 0.356 | 0 | 0.251 |
+| single / `cap_revoke` / L | 0.172 / 1 | 0.491 | 0.249 | 0 | 0.25 |
+| single / `mtls_client_credentials` / L | 0.177 / 1 | 0.606 | 0.202 | 0.001 | 0.251 |
+| single / `par_signed_request_object` / L | 0.048 / 1 | 0.125 | 0.35 | 0.001 | 0.251 |
+| single / `oidc_cold_login_refresh` / L | 0.116 / 1 | 0.015 | 0.011 | 0.001 | 0.251 |
+| multi / `cap_mixed` / L | 5.387 / 16 | 6.533 | 2.767 | 0.024 | 0.71 |
+| multi / `cap_mixed` / U | 6.148 / 16 | 7.678 | 3.307 | 0.097 | 2.402 |
+| multi / `cap_client_credentials` / L | 4.834 / 16 | 6.699 | 3.779 | 0.184 | 0.506 |
+| multi / `cap_client_credentials` / U | 5.49 / 16 | 7.867 | 4.482 | 2.221 | 0.763 |
+| multi / `cap_authorization_code` / L | 3.105 / 16 | 5.516 | 3.038 | 0.019 | 1.998 |
+| multi / `cap_authorization_code` / U | 3.336 / 16 | 7.155 | 3.476 | 0.662 | 0.999 |
+| multi / `cap_refresh_token` / L | 4.297 / 16 | 7.323 | 1.966 | 0.032 | 0.311 |
+| multi / `cap_refresh_token` / U | 3.731 / 16 | 5.713 | 1.527 | 229.24 | 0.334 |
+| multi / `fapi2_logged_in_high_security` / L | 1.626 / 16 | 2.26 | 3.232 | 0.001 | 0.256 |
+| multi / `cap_introspect` / L | 4.235 / 16 | 7.556 | 7.696 | 0.048 | 3.078 |
+| multi / `cap_introspect` / U | 4.579 / 16 | 8.233 | 8.12 | 0.09 | 3.345 |
+| multi / `cap_revoke` / L | 1.766 / 16 | 3.704 | 2.056 | 0.001 | 0.254 |
+| multi / `mtls_client_credentials` / L | 3.55 / 16 | 5.284 | 3.086 | 0.122 | 0.261 |
+| multi / `par_signed_request_object` / L | 0.971 / 16 | 1.244 | 5.462 | 0.001 | 0.262 |
+| multi / `oidc_cold_login_refresh` / L | 7.48 / 16 | 0.401 | 0.244 | 0.001 | 0.267 |
+| multi / `oidc_cold_login_refresh` / U | 8.053 / 16 | 0.444 | 0.273 | 0.001 | 0.27 |
+
+
+## Measurement and CI repairs
+
+Mixed now evaluates all four sidecars using the existing shared gates. Invalid measurement takes precedence over health/maintenance service failures. Offline reevaluation and targeted mode/scenario/rate execution preserve separate recipes. Complete sidecar operation quantiles are exposed; absent full-cohort quantiles remain N/A. Python stream dispatch no longer waits for another 64 KiB after complete sparse blocks. Native k6 periodic output now flushes its existing stdout buffer instead of waiting for 4 KiB or shutdown. Both transport regressions fail on the old code and pass after the minimal repairs. Native JSON/metrics tests and 262 Python regressions ran (260 passed, two platform-conditional skips); live repaired observer lag is below the unchanged five-second gate. No acceptance assertion or durability setting was relaxed.
+
+The original compatibility failure was documentation/layout contract drift, not a Rust test failure. CI now budgets build concurrency from runner CPU/memory (four jobs in observed runners), reuses matching all-feature build artifacts and retains serial shared-database tests. Audit fixture cleanup adds deterministic isolation before the expensive vacuum case; all thirteen audit regression behaviors and assertions remain covered. No necessary job or security/concurrency test was deleted.
+
+| Representative quality job | Queue s | Total s | Workspace step s | Cargo compile s | Audit suite s | Evidence |
+|---|---:|---:|---:|---:|---:|---|
+| Before repair | 2 | 1829 / 1859 | 1567 / 1601 | 460 / 464 | 429.57 / 449.34 | [Original CI report](../2026-09-28-current-b/report.md#ci-repair-and-observed-cost) |
+| Earlier repaired run | 2 | 1115 | N/A | 166 | 375.54 | [Recorded timings](../../../../perf/results/diagnostics/2026-09-28-ci-cost-60d.json) |
+| `ec638ce7` | N/A | 1110 | 951 | 176 | 374.16 | [Job](https://github.com/nazozero/NazoAuth/actions/runs/36409414900/job/108885814020) |
+| `01f3c67c` | 2 | 1390 | 1205 | N/A | N/A | [Job](https://github.com/nazozero/NazoAuth/actions/runs/36430863648/job/108956375295) |
+
+The latest representative job spends 26 s restoring cache, 16 s installing native dependencies, 12 s preparing avatar fixtures, 36 s verifying schema and 47 s in Clippy. Queue, initialization, compilation and tests remain separate costs. Cache/runner variation prevents attributing a speedup percentage to one change. The serial audit suite remains a major cost. Eleven applicable checks must succeed on the delivered final commit. The two existing skips are event conditions: official-source freshness and Rust advisory audit are non-PR checks; their PR counterparts still run. Final SHA and exact-head check links are recorded in the [PR delivery comment](https://github.com/nazozero/NazoAuth/pull/222), rather than claiming an earlier commit's green checks cover this publication.
+
+## Evidence retention and reproduction
+
+[Current structured authority](../../../../perf/results/data/capacity/current-capacity.json), [selected compact evidence](../../../../perf/results/diagnostics/2026-09-28-incremental-b-selected.json), [offline reassessment](../../../../perf/results/diagnostics/2026-09-28-incremental-final-reassessment.json) and [archive identities](../../../../perf/results/diagnostics/2026-09-28-incremental-evidence-archives.json) are in Git. Large archives remain outside Git in the task artifact storage, with file hashes and explicit scopes. The original 812407286-byte archive has 925 verified members; retained incremental evidence has 463 verified members and explicitly lacks 17 legacy auxiliary stdout logs. Native acceptance inputs are retained. Some bounded auxiliary forensic streams overflowed; these are not represented as complete raw streams and do not replace the independent exact native counters/histograms.
+
+| Archive | Bytes | SHA256 | Scope |
+|---|---:|---|---|
+| `20260928-new-mixed-critical.tar.gz` | 434443156 | `0d13006b33a9e402d8dfb640b668fd194c10223682f7db27bbfe041251bcd5be` | Complete critical mixed confirmation native gate inputs, maintenance/CPU samplers and full journal; forensic gzip streams remain in final selected archive. |
+
+
+Reassess the preserved point directories with the current controller before requesting more load:
+
+```sh
+python perf/tools/current_capacity.py --reevaluate <selected-point.json-files> --output reassessment.json
+```
+
+For a new deployment, obtain its process-visible CPU/memory first and freeze its own registered recipe. Use [the existing incremental entry point](../../../../perf/README.md#incremental-current-b-acceptance), set the exact runner image and isolated result root, and specify only the required mode, scene, rate, effective window, VUs, users, pool and stream workers. Mixed also requires its exact sidecar VUs/users/rates and `--confirm --window 660`. Metadata/keys/fixture private inputs are kept outside Git. Do not use an unqualified full-matrix search or mix a newly configured upper with these retained lowers.
+
+## Outstanding acceptance
+
+Service uppers not established: `single/fapi2_logged_in_high_security`, `single/cap_introspect`, `single/cap_revoke`, `single/mtls_client_credentials`, `single/par_signed_request_object`, `single/oidc_cold_login_refresh`, `multi/fapi2_logged_in_high_security`, `multi/cap_revoke`, `multi/mtls_client_credentials`, `multi/par_signed_request_object`.
+
+Candidates needing 180-second confirmation: none.
+
+Intervals needing refinement: `multi/cap_mixed`.
+
+These gaps prevent completed acceptance. Passing observations and independent service failures above are verified within their stated windows and configurations; unestablished maxima, production long-term capacity, per-SQL WAL cause and hidden-host resource limits are not claimed.
