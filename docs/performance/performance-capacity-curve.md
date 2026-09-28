@@ -1,6 +1,6 @@
 # NazoAuth Current-B Capacity Baseline
 
-Incremental checkpoint: **INCOMPLETE**. Each row is one frozen recipe on its stated deployment. Both modes use one application instance. Old and new deployments are not combined into a bound. A missing service upper means at least the passing load, never a maximum.
+Incremental checkpoint: **COMPLETE**. Each row is one frozen recipe on its stated deployment. Both modes use one application instance. Old and new deployments are not combined into a bound. A missing service upper means at least the passing load, never a maximum.
 
 Logical-operation quantiles cover the complete business operation. HTTP rate is reported separately. Short windows do not establish production long-term capacity. Windows below 180 seconds are exploratory candidates and require final verification; they are not labelled 180-second confirmations.
 
@@ -29,11 +29,11 @@ Logical-operation quantiles cover the complete business operation. HTTP rate is 
 | `cap_client_credentials` | new-container | 16 | 6000 | 6500 | 6000.022 | 6000.067 | 4/11/29 | 0/0/0/0 | 180/180 | [6000, 6500) observed |
 | `cap_authorization_code` | new-container | 16 | 900 | 1000 | 900 | 3599.553 | 63/92/109 | 0/0/0/0 | 180/180 | [900, 1000) observed |
 | `cap_refresh_token` | new-container | 16 | 2624 | 2916 | 2624.006 | 2623.994 | 7/13/26 | 0/0/0/0 | 180/180 | [2624, 2916) observed |
-| `fapi2_logged_in_high_security` | original-container | 16 | 320 | not established | 320 | 1600.017 | 24/32/42 | 0/0/0/0 | 180/N/A | at least 320/s |
+| `fapi2_logged_in_high_security` | new-container | 8 | 1186 | 1334 | 1186 | 5930.017 | 36/63/81 | 0/0/0/0 | 180/180 | [1186, 1334) observed |
 | `cap_introspect` | original-container | 16 | 16000 | 17000 | 15997.911 | 15997.838 | 1/3/15 | 0/376/0/0 | 180/180 | [16000, 17000) observed |
-| `cap_revoke` | original-container | 16 | 480 | not established | 480 | 2400.034 | 18/33/42 | 0/0/0/0 | 180/N/A | at least 480/s |
-| `mtls_client_credentials` | original-container | 16 | 4000 | not established | 3998.417 | 3998.553 | 4/9/20 | 0/285/0/0 | 180/N/A | at least 4000/s |
-| `par_signed_request_object` | new-container | 4 | 11853 | not established | 11852.783 | 11853.117 | 4/34/61 | 0/5/0/0 | 180/N/A | at least 11853/s |
+| `cap_revoke` | new-container | 16 | 2000 | 2250 | 2000 | 10000.246 | 27/57/124 | 0/0/0/0 | 180/180 | [2000, 2250) observed |
+| `mtls_client_credentials` | new-container | 16 | 6223 | 7000 | 6223.017 | 6223.034 | 5/13/27 | 0/0/0/0 | 180/180 | [6223, 7000) observed |
+| `par_signed_request_object` | new-container | 4 | 11853 | 13334 | 11848.939 | 11848.961 | 4/57/93 | 0/729/0/0 | 180/180 | [11853, 13334) observed |
 | `oidc_cold_login_refresh` | original-container | 16 | 52 | 56 | 52 | 312 | 159/179/187 | 0/0/0/0 | 180/180 | [52, 56) observed |
 
 ## Upper endpoints
@@ -54,5 +54,9 @@ Logical-operation quantiles cover the complete business operation. HTTP rate is 
 | `cap_client_credentials` / multi | 6497.539 | 6497.615 | 5/39/331.44 | 0/444/0/0 | 180 | Full-operation P99 331.44 ms exceeds 250 ms; delivery/drop/error/unfinished gates pass. |
 | `cap_authorization_code` / multi | 1000 | 4002.492 | 57/156/311 | 0/0/0/0 | 180 | Complete-operation P95/P99 156/311 ms exceed 100/250 ms |
 | `cap_refresh_token` / multi | 1728.389 | 1728.274 | 1196/1356/1517 | 0/213769/0/0 | 180 | Full-operation P95/P99 1356/1517 ms exceeds 100/250 ms; 40.7273% offered arrivals drop after VUs become occupied by slow responses. |
+| `fapi2_logged_in_high_security` / multi | 1312.878 | 6564.028 | 45/832/848 | 0/3802/0/0 | 180 | Full-operation P95/P99 832/848 ms exceeds unchanged 100/250 ms gates; 3802 dropped operations (1.5834%); runtime audit queue-full gate also fails. |
 | `cap_introspect` / multi | 16707.406 | 16989.581 | 1/4/24 | 50802/1892/0/0 | 180 | 50802 unexpected logical outcomes; retained HTTP429 temporarily_unavailable responses demonstrate the unchanged source-IP management admission limit |
+| `cap_revoke` / multi | 2214.517 | 11077.95 | 210/487/504 | 0/6387/0/0 | 180 | Full-operation P95/P99 487/504ms exceeds unchanged100/250ms gates;6387drops(1.577%);runtime queue-full gate fails. |
+| `mtls_client_credentials` / multi | 6851.75 | 6851 | 5/33/369 | 0/26688/0/0 | 180 | Full-operation P99369ms exceeds unchanged250ms gate;26688droppedoperations(2.118%); successful6851.75/s is not gated capacity. |
+| `par_signed_request_object` / multi | 13118.883 | 13112.961 | 73/115/127 | 0/38728/0/0 | 180 | Full-operation P95115ms exceeds unchanged100ms gate;38728droppedoperations(1.6136%);13118.883/s completion is not gated capacity. |
 | `oidc_cold_login_refresh` / multi | 55.933 | 335.849 | 172/239/263 | 12/0/0/0 | 180 | 12 unexpected complete-operation outcomes; retained failed HTTP points are POST /auth/login 503 |
