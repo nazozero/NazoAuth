@@ -1,6 +1,14 @@
 --- a/internal/output/json/json.go
 +++ b/internal/output/json/json.go
-@@ -8,6 +8,8 @@
+@@ -4,10 +4,16 @@
+ 
+ import (
+ 	"bufio"
++	"bytes"
++	"crypto/sha256"
++	"encoding/binary"
+ 	"encoding/json"
++	"errors"
  	"fmt"
  	"io"
  	"maps"
@@ -9,19 +17,47 @@
  	"strings"
  	"time"
  
-@@ -34,6 +36,11 @@
+@@ -34,6 +40,14 @@
  	closeFn     func() error
  	seenMetrics map[string]struct{}
  	thresholds  map[string]metrics.Thresholds
 +	// Tag sets are immutable and interned by k6. Bound retained encodings so
 +	// dynamic user tags cannot turn the output into an unbounded cache.
-+	tagJSON      map[*metrics.TagSet][]byte
-+	metricJSON   map[string][]byte
-+	sampleBuffer []byte
++	tagJSON          map[*metrics.TagSet][]byte
++	metricJSON       map[string][]byte
++	sampleBuffer     []byte
++	partitions       []*bufio.Writer
++	partitionFiles   []io.Closer
++	metricPartitions map[string]int
  }
  
  // New returns a new JSON output.
-@@ -138,7 +145,7 @@
+@@ -62,7 +76,23 @@
+ func (o *Output) Start() error {
+ 	o.logger.Debug("Starting...")
+ 
+-	if o.filename == "" || o.filename == "-" {
++	if raw := o.params.Environment["K6_JSON_PARTITIONS"]; raw != "" && raw != "1" && o.filename != "" && o.filename != "-" {
++		count, err := strconv.Atoi(raw)
++		if err != nil || count < 2 || count > 8 || strings.HasSuffix(o.filename, ".gz") {
++			return fmt.Errorf("K6_JSON_PARTITIONS requires 2..8 and an uncompressed file prefix")
++		}
++		o.closeFn = o.closePartitions
++		for index := 0; index < count; index++ {
++			file, err := o.params.FS.Create(o.filename + "." + strconv.Itoa(index))
++			if err != nil {
++				_ = o.closePartitions()
++				return err
++			}
++			o.partitionFiles = append(o.partitionFiles, file)
++			o.partitions = append(o.partitions, bufio.NewWriterSize(file, 65536))
++		}
++		o.out = o.partitions[0]
++	} else if o.filename == "" || o.filename == "-" {
+ 		w := bufio.NewWriter(o.params.StdOut)
+ 		o.closeFn = func() error {
+ 			return w.Flush()
+@@ -138,7 +168,7 @@
  					firstErr = err
  				}
  			}
@@ -30,21 +66,38 @@
  				errCount++
  				if firstErr == nil {
  					firstErr = err
-@@ -155,6 +162,60 @@
+@@ -146,6 +176,14 @@
+ 			}
+ 		}
  	}
- }
- 
++	// Flush every existing 200ms tick, including a quiet one. A low-rate
++	// metric must not wait for a whole partition buffer before being observed.
++	if err := o.flushPartitions(); err != nil {
++		errCount++
++		if firstErr == nil {
++			firstErr = err
++		}
++	}
+ 	if firstErr != nil {
+ 		// Skip metric if it can't be made into JSON or envelope is null.
+ 		o.logger.WithError(firstErr).WithField("failed", errCount).Error("Sample(s) couldn't be marshalled to JSON")
+@@ -153,6 +191,138 @@
+ 	if count > 0 {
+ 		o.logger.WithField("t", time.Since(start)).WithField("count", count).Debug("Wrote metrics to JSON")
+ 	}
++}
++
 +// writeSample preserves the stock sample envelope and all fields. Avoid
 +// repeatedly reflecting the fixed frame and encoding an immutable tag set
 +// for every metric in the same request. Uncommon metadata/error cases retain
 +// the stock encoder. The periodic flusher owns these buffers and caches.
 +func (o *Output) writeSample(sample metrics.Sample, enc *json.Encoder) error {
 +	if sample.Metadata != nil || math.IsNaN(sample.Value) || math.IsInf(sample.Value, 0) {
-+		return enc.Encode(wrapSample(sample))
++		return o.writeFallback(sample, enc)
 +	}
 +	timestamp, err := sample.Time.MarshalJSON()
 +	if err != nil {
-+		return enc.Encode(wrapSample(sample))
++		return o.writeFallback(sample, enc)
 +	}
 +	if o.tagJSON == nil {
 +		o.tagJSON = make(map[*metrics.TagSet][]byte)
@@ -83,28 +136,107 @@
 +	b = append(b, `,"tags":`...)
 +	b = append(b, tags...)
 +	b = append(b, '}', '}', '\n')
-+	_, err = o.out.Write(b)
++	err = o.writeFrame(sample.Metric.Name, b)
 +	o.sampleBuffer = b
 +	return err
 +}
 +
++// Metric ownership matches the evidence consumer. Cache bounded immutable
++// names; window contracts reach every worker, all other Points exactly one.
++func (o *Output) partitionIndex(name string) int {
++	if index, ok := o.metricPartitions[name]; ok {
++		return index
++	}
++	common := []string{"http_reqs", "http_req_duration", "http_req_blocked",
++		"http_req_connecting", "http_req_tls_handshaking", "http_req_sending",
++		"http_req_waiting", "http_req_receiving", "http_req_failed", "checks",
++		"data_sent", "data_received", "iteration_duration", "iterations",
++		"cap_iter_begin", "cap_iter_end", "cap_iter_ms", "cap_measure_ms",
++		"cap_measure_ops", "cap_measure_errors", "vus", "vus_max", "dropped_iterations"}
++	digest := sha256.Sum256([]byte(name))
++	index := int(binary.BigEndian.Uint32(digest[:4]) % uint32(len(o.partitions)))
++	for ordinal, metric := range common {
++		if metric == name {
++			index = ordinal % len(o.partitions)
++			break
++		}
++	}
++	if o.metricPartitions == nil {
++		o.metricPartitions = make(map[string]int)
++	}
++	if len(o.metricPartitions) < 4096 {
++		o.metricPartitions[name] = index
++	}
++	return index
++}
++
++func (o *Output) writeFrame(metric string, frame []byte) error {
++	if len(o.partitions) == 0 {
++		_, err := o.out.Write(frame)
++		return err
++	}
++	if strings.HasPrefix(metric, "cap_window_") {
++		var errs []error
++		for _, writer := range o.partitions {
++			if _, err := writer.Write(frame); err != nil {
++				errs = append(errs, err)
++			}
++		}
++		return errors.Join(errs...)
++	}
++	_, err := o.partitions[o.partitionIndex(metric)].Write(frame)
++	return err
++}
++
++func (o *Output) writeFallback(sample metrics.Sample, enc *json.Encoder) error {
++	if len(o.partitions) == 0 {
++		return enc.Encode(wrapSample(sample))
++	}
++	var frame bytes.Buffer
++	encoder := json.NewEncoder(&frame)
++	encoder.SetEscapeHTML(false)
++	if err := encoder.Encode(wrapSample(sample)); err != nil {
++		return err
++	}
++	return o.writeFrame(sample.Metric.Name, frame.Bytes())
++}
++
++func (o *Output) flushPartitions() error {
++	var errs []error
++	for _, writer := range o.partitions {
++		if err := writer.Flush(); err != nil {
++			errs = append(errs, err)
++		}
++	}
++	return errors.Join(errs...)
++}
++
++func (o *Output) closePartitions() error {
++	errs := []error{o.flushPartitions()}
++	for _, file := range o.partitionFiles {
++		errs = append(errs, file.Close())
++	}
++	return errors.Join(errs...)
+ }
+ 
  func (o *Output) handleMetric(m *metrics.Metric, enc *json.Encoder) error {
- 	if _, ok := o.seenMetrics[m.Name]; ok {
- 		return nil
 --- a/internal/output/json/json_test.go
 +++ b/internal/output/json/json_test.go
-@@ -4,7 +4,10 @@
+@@ -4,7 +4,13 @@
  	"bufio"
  	"bytes"
  	"compress/gzip"
 +	stdjson "encoding/json"
++	"fmt"
  	"io"
 +	"math"
++	"path/filepath"
 +	"strconv"
++	"strings"
  	"testing"
  	"time"
  
-@@ -16,6 +19,67 @@
+@@ -16,6 +22,67 @@
  	"go.k6.io/k6/v2/metrics"
  	"go.k6.io/k6/v2/output"
  )
@@ -172,3 +304,92 @@
  
  func getValidator(t testing.TB, expected []string) func(io.Reader) {
  	return func(rawJSONLines io.Reader) {
+@@ -225,3 +292,88 @@
+ 	ts := metrics.NewThresholds([]string{"rate<0.01", "p(99)<250"})
+ 	jout.SetThresholds(map[string]metrics.Thresholds{"my_metric1": ts})
+ }
++
++func TestPartitionedSamplesPreserveStockEnvelope(t *testing.T) {
++	registry := metrics.NewRegistry()
++	names := []string{"http_reqs", "http_req_duration", "cap_iter_begin", "fixture_metric", "cap_window_measure_start_ms"}
++	for _, name := range names {
++		metric, err := registry.NewMetric(name, metrics.Trend)
++		require.NoError(t, err)
++		for _, metadata := range []map[string]string{nil, {}, {"escaped": "<>&\"\\\n雪"}} {
++			buffers := make([]*bytes.Buffer, 4)
++			out := &Output{}
++			for i := range buffers {
++				buffers[i] = new(bytes.Buffer)
++				out.partitions = append(out.partitions, bufio.NewWriterSize(buffers[i], 65536))
++			}
++			out.out = out.partitions[0]
++			sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: metric, Tags: registry.RootTagSet().With("escaped", "<>&\"\\\n雪")}, Time: time.Date(2026, 9, 28, 1, 2, 3, 123456789, time.UTC), Value: 1.25, Metadata: metadata}
++			stock := new(bytes.Buffer)
++			encoder := stdjson.NewEncoder(stock)
++			encoder.SetEscapeHTML(false)
++			require.NoError(t, encoder.Encode(wrapSample(sample)))
++			require.NoError(t, out.writeSample(sample, stdjson.NewEncoder(out.out)))
++			require.NoError(t, out.flushPartitions())
++			for index, buffer := range buffers {
++				if strings.HasPrefix(name, "cap_window_") || index == out.partitionIndex(name) {
++					require.JSONEq(t, stock.String(), buffer.String())
++				} else {
++					require.Empty(t, buffer.Bytes())
++				}
++			}
++		}
++	}
++}
++
++func TestPartitionOwnershipGoldenAndBoundedCache(t *testing.T) {
++	out := &Output{partitions: make([]*bufio.Writer, 4)}
++	// Fixed producer/consumer contract, independently exercised by native FIFO tests.
++	for name, index := range map[string]int{"http_reqs": 0, "http_req_duration": 1, "http_req_failed": 0, "cap_iter_begin": 2, "cap_iter_end": 3} {
++		require.Equal(t, index, out.partitionIndex(name))
++	}
++	for index := 0; index < 5000; index++ {
++		out.partitionIndex(strconv.Itoa(index))
++	}
++	require.Len(t, out.metricPartitions, 4096)
++}
++
++func TestQuietPartitionTickFlushesAndPropagatesErrors(t *testing.T) {
++	buffers := []*bytes.Buffer{new(bytes.Buffer), new(bytes.Buffer)}
++	out := &Output{logger: testutils.NewLogger(t)}
++	for _, buffer := range buffers {
++		out.partitions = append(out.partitions, bufio.NewWriterSize(buffer, 65536))
++	}
++	out.out = out.partitions[0]
++	require.NoError(t, out.writeFrame("http_reqs", []byte("first\n")))
++	require.Empty(t, buffers[0].Bytes())
++	out.flushMetrics() // no samples: a quiet tick must still flush prior bytes
++	require.Equal(t, "first\n", buffers[0].String())
++	broken := bufio.NewWriterSize(failingPartitionWriter{}, 65536)
++	out.partitions = []*bufio.Writer{broken}
++	require.NoError(t, out.writeFrame("http_reqs", []byte("pending\n")))
++	require.Error(t, out.flushPartitions())
++}
++
++type failingPartitionWriter struct{}
++
++func (failingPartitionWriter) Write([]byte) (int, error) {
++	return 0, fmt.Errorf("fixture write failure")
++}
++
++func TestPartitionStartRejectsInvalidConfigurationAndClosesPartialFiles(t *testing.T) {
++	for _, count := range []string{"0", "9", "invalid"} {
++		out, err := New(output.Params{Logger: testutils.NewLogger(t), FS: fsext.NewMemMapFs(), ConfigArgument: "/points", Environment: map[string]string{"K6_JSON_PARTITIONS": count}})
++		require.NoError(t, err)
++		require.Error(t, out.Start())
++	}
++	fs := fsext.NewOsFs()
++	prefix := filepath.Join(t.TempDir(), "points")
++	require.NoError(t, fs.Mkdir(prefix+".1", 0755))
++	generic, err := New(output.Params{Logger: testutils.NewLogger(t), FS: fs, ConfigArgument: prefix, Environment: map[string]string{"K6_JSON_PARTITIONS": "2"}})
++	require.NoError(t, err)
++	require.Error(t, generic.Start())
++	out := generic.(*Output)
++	require.Len(t, out.partitionFiles, 1)
++	_, err = out.partitionFiles[0].(io.Reader).Read(make([]byte, 1))
++	require.Error(t, err)
++}
