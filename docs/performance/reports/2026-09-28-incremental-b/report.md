@@ -66,12 +66,69 @@ The 2048-VU injector reached about 18.2 GiB RSS versus about 5.4 GiB at 1024;
 the visible deployment memory limit is 128 GiB. Increasing VUs indefinitely
 would add cost without proving a backend ceiling.
 
-The calibrated 1024-VU/pool-64/side-VU-64,16,32,256 recipe is now being bracketed
-and checked at 180 seconds; its final mixed candidate will receive its own
-660-second maintenance/audit confirmation. Other scenarios continue with
-targeted staircase measurements. This calibration checkpoint is not the final
-capacity table and does not combine its 4000/s failures with another recipe's
-passing lower bound.
+## Accepted multicore mixed boundary
+
+The frozen 1024-VU/pool-64/side-VU-64,16,32,256 recipe has an observed
+**[3750, 4000) complete operations/s** interval. Both endpoints were verified
+for 180 effective seconds. A 60-second 3750/s FAPI latency failure was followed
+by a valid 180-second pass; the longer result, not the shorter failure, is used
+for the final boundary. Original observations remain in the external evidence.
+
+| Offered / effective window | Main success/s | Complete P95/P99 ms | Main drops | Sidecar result |
+|---|---:|---|---:|---|
+| 3750/s / 180 s | 3750.017 | 22/37 | 0 | all PASS |
+| 4000/s / 180 s | 3995.583 | 31/243 | 796 | FAPI and refresh FAIL |
+| 3750/s / 660 s | 3750.009 | 22/32 | 0 | all PASS; maintenance PASS |
+
+At the upper point FAPI completes all 30/s with no drops but P95/P99
+822.55/859 ms; refresh completes all 600/s with no drops but P95/P99
+269/290 ms. These fully delivered populations miss their unchanged business
+latency gates independently of the main VU warning during warmup. The main
+drop fraction is 0.1106%, slightly beyond 0.1%. No runtime/audit health gate
+fails. This establishes a configured workload SLO boundary, without attributing
+it to a specific SQL statement or intrinsic hardware maximum.
+
+The [selected checkpoint evidence](../../../../perf/results/diagnostics/2026-09-28-mixed-incremental-acceptance.json)
+retains exact cohorts, per-point effective sidecar windows, image/source/tool
+identity, analyzer health, component cost and input hashes. Main analyzer lag
+is 0.349 s at U and 0.478 s in the confirmation, below the unchanged 5-second
+observer gate. During confirmation, mean app/PG CPU is 6.908/8.053 logical CPUs
+and mean pool wait is 0.037 ms/acquisition; the U wait is 1.698 ms. Sampled PG
+wait counts include idle clients and do not prove a per-SQL bottleneck.
+
+## Multicore mixed maintenance, audit and WAL confirmation
+
+| Evidence | Result in 3750/s, 660 effective seconds |
+|---|---|
+| Maintenance mature interval / samples | 300 s / 143; maximum gap 2.231 s |
+| Oldest expired issuance age | maximum 59.232 s, below declared 120 s SLO |
+| Sampled due count first / last / maximum | 39079 / 132083 / 194730 |
+| Inserted / deleted in same mature span | 983205 / 924120 |
+| Process queue enqueued / persisted / dropped / pending after drain | 440084 / 440084 / 0 / 0 |
+| Durable events / token-issued events, whole point | 3696610 / 2397896 |
+| Journal gaps / duplicates / malformed lines | 0 / 0 / 0; both anchors reconciled |
+| Generated WAL bytes (`pg_stat_wal`) | 9980130918.750 |
+| WAL write bytes (`pg_stat_io`) | 22501491263.410 |
+| WAL writes / fsyncs | 643515.690 / 641700.012 |
+| Generated / written WAL bytes per main success | 4032.366 / 9091.490 |
+
+Age passes across the declared retention horizon, and audit drains without
+loss. The sampled due inventory grows during this finite span; the pass is
+the existing expiry-age SLO, not proof of indefinitely bounded total inventory.
+WAL/op includes every sidecar and background activity and uses 2,475,006 main
+successes as denominator. The two WAL counters have different meanings, and
+interpolated counts are fractional. WAL timing is N/A because its timing GUC
+is off. Audit event totals include warmup and drain, unlike window throughput.
+
+The original receiver journal is retained externally: 3,296,382,335 bytes,
+SHA-256 `91d1f43c46433c271c25dd220534f0784f8db77d4ed3d669262c84852c1e2f43`,
+equal to the runtime reconciliation hash. It is not committed to Git.
+
+The early multicore introspect probe now validly passes 8000/s for 60 seconds,
+8000 successful operations/s, complete P95/P99 1/1 ms, zero drops and analyzer
+lag 1.105 s. It remains a short probe while its upper boundary and both
+180-second endpoints are being established. Other scenes continue with explicit
+targeted adaptive steps; this checkpoint does not replace the final 20-row table.
 
 ## Reproduction and verification
 
@@ -85,7 +142,7 @@ the required future `--stop-at` timestamp and existing runner environment.
 The controller allocates CPU sets from process affinity and saves independent
 recipe-specific configuration and state files. Do not start an unscoped matrix.
 
-The offline checkpoint's [CI](https://github.com/nazozero/NazoAuth/actions/runs/36365317444)
-passed on `dee98252`: all 11 applicable checks succeeded and the two PR-event
+The calibration checkpoint's [CI](https://github.com/nazozero/NazoAuth/actions/runs/36367997622)
+passed on `6b6c4cbb` (Rust job 24m41s): all 11 applicable checks succeeded and the two PR-event
 conditional checks were skipped. Final publication will be checked on its
 own exact commit; this checkpoint's green CI is not substituted for that result.
