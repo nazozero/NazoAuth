@@ -348,7 +348,7 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
              generator_facts: dict | None = None,
              require_stream: bool = False) -> tuple[str, dict]:
     if summary is None:
-        return "FAIL", {"reason": "no_summary"}
+        return "INVALID", {"reason": "no_summary"}
     k6 = summary.get("k6", {})
     metrics_raw, contract = k6_metrics(summary_path)
     dropped = int(k6.get("dropped_iterations", 0) or 0)
