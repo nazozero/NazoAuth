@@ -1,5 +1,9 @@
 # Current-B performance exploration and CI repair — 2026-09-28
 
+Historical snapshot, superseded by the [incremental acceptance report](../2026-09-28-incremental-b/report.md).
+Its VU-limited failure observations do not define the current service upper bounds.
+Use the unique current structured baseline and capacity table linked by the incremental report.
+
 
 Date: 2026-09-28. Task start was 2026-09-27 23:47:16 +08:00. The earlier
 deadline was 2026-09-28 07:47:16 +08:00; exploration was budgeted to stop by

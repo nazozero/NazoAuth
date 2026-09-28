@@ -16,6 +16,214 @@
         "source_hash_match": true
       },
       "scope": "Complete critical mixed confirmation native gate inputs, maintenance/CPU samplers and full journal; forensic gzip streams remain in final selected archive."
+    },
+    {
+      "schema_version": 1,
+      "file": "20260928-final-new-gate-evidence.tar.gz",
+      "bytes": 5227987,
+      "sha256": "70b96dbbe1dd7f188c72d47f803026fc4982ceb6a732650d0c23fc5cad214a69",
+      "selected_points": [
+        "single-fapi2-high-security-r180-w180-1790607454",
+        "single-fapi2-high-security-r200-w180-1790601184",
+        "single-cap-introspect-r5625-w60-1790608444",
+        "single-cap-introspect-r6500-w60-1790608911",
+        "single-cap-introspect-r5000-w60-1790608289",
+        "single-cap-revoke-r337-w60-1790608754",
+        "single-oidc-cold-login-refresh-r7-w180-1790608011",
+        "single-oidc-cold-login-refresh-r8-w180-1790607736",
+        "multi-cap-mixed-r2349-w660-1790604696",
+        "multi-cap-mixed-r2900-w660-1790602833",
+        "multi-cap-mixed-r2610-w660-1790603691",
+        "multi-cap-client-credentials-r6000-w180-1790605563",
+        "multi-cap-client-credentials-r6500-w180-1790606255",
+        "multi-cap-client-credentials-r6000-w180-1790601825",
+        "multi-cap-client-credentials-r5400-w180-1790602115",
+        "multi-cap-authorization-code-r900-w180-1790600228",
+        "multi-cap-authorization-code-r1000-w180-1790598564",
+        "multi-cap-refresh-token-r2624-w180-1790607161",
+        "multi-cap-refresh-token-r2916-w180-1790606860",
+        "multi-cap-refresh-token-r3240-w180-1790606567"
+      ],
+      "files": 583,
+      "uncompressed_bytes": 34943828,
+      "exclusions": [
+        {
+          "file": "perf-results/incremental-b-v2/single/single-fapi2-high-security-r180-w180-1790607454/load/capacity-fapi2-logged-in-high-security.diag.jsonl.gz",
+          "bytes": 5044811,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/single/single-fapi2-high-security-r200-w180-1790601184/load/capacity-fapi2-logged-in-high-security.diag.jsonl.gz",
+          "bytes": 5468697,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/single/single-cap-introspect-r5625-w60-1790608444/load/capacity-cap-introspect.diag.jsonl.gz",
+          "bytes": 7369420,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/single/single-cap-introspect-r6500-w60-1790608911/load/capacity-cap-introspect.diag.jsonl.gz",
+          "bytes": 7908054,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/single/single-cap-introspect-r5000-w60-1790608289/load/capacity-cap-introspect.diag.jsonl.gz",
+          "bytes": 7025903,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/single/single-cap-revoke-r337-w60-1790608754/load/capacity-cap-revoke.diag.jsonl.gz",
+          "bytes": 2914007,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/single/single-oidc-cold-login-refresh-r7-w180-1790608011/load/capacity-oidc-cold-login-refresh.diag.jsonl.gz",
+          "bytes": 700595,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/single/single-oidc-cold-login-refresh-r8-w180-1790607736/load/capacity-oidc-cold-login-refresh.diag.jsonl.gz",
+          "bytes": 803490,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2349-w660-1790604696/audit-journal.jsonl",
+          "bytes": 2282794823,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2349-w660-1790604696/load/capacity-cap-mixed.diag.jsonl.gz",
+          "bytes": 27235827,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2349-w660-1790604696/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz",
+          "bytes": 2050671,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2349-w660-1790604696/meta/capacity-metadata-jwks.diag.jsonl.gz",
+          "bytes": 6561154,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2349-w660-1790604696/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz",
+          "bytes": 3946983,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2349-w660-1790604696/refresh/capacity-cap-refresh-token.diag.jsonl.gz",
+          "bytes": 10034621,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2900-w660-1790602833/audit-journal.jsonl",
+          "bytes": 2682306832,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2900-w660-1790602833/load/capacity-cap-mixed.diag.jsonl.gz",
+          "bytes": 27788128,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2900-w660-1790602833/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz",
+          "bytes": 2060845,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2900-w660-1790602833/meta/capacity-metadata-jwks.diag.jsonl.gz",
+          "bytes": 6545254,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2900-w660-1790602833/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz",
+          "bytes": 3966860,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2900-w660-1790602833/refresh/capacity-cap-refresh-token.diag.jsonl.gz",
+          "bytes": 10070648,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2610-w660-1790603691/audit-journal.jsonl",
+          "bytes": 2468700833,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2610-w660-1790603691/load/capacity-cap-mixed.diag.jsonl.gz",
+          "bytes": 27580102,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2610-w660-1790603691/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz",
+          "bytes": 2059534,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2610-w660-1790603691/meta/capacity-metadata-jwks.diag.jsonl.gz",
+          "bytes": 6567373,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2610-w660-1790603691/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz",
+          "bytes": 3956948,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-mixed-r2610-w660-1790603691/refresh/capacity-cap-refresh-token.diag.jsonl.gz",
+          "bytes": 10106081,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-client-credentials-r6000-w180-1790605563/load/capacity-cap-client-credentials.diag.jsonl.gz",
+          "bytes": 7017516,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-client-credentials-r6500-w180-1790606255/load/capacity-cap-client-credentials.diag.jsonl.gz",
+          "bytes": 7328259,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-client-credentials-r6000-w180-1790601825/load/capacity-cap-client-credentials.diag.jsonl.gz",
+          "bytes": 6909684,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-client-credentials-r5400-w180-1790602115/load/capacity-cap-client-credentials.diag.jsonl.gz",
+          "bytes": 6667156,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-authorization-code-r900-w180-1790600228/load/capacity-cap-authorization-code.diag.jsonl.gz",
+          "bytes": 8461843,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-authorization-code-r1000-w180-1790598564/load/capacity-cap-authorization-code.diag.jsonl.gz",
+          "bytes": 8996813,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-refresh-token-r2624-w180-1790607161/load/capacity-cap-refresh-token.diag.jsonl.gz",
+          "bytes": 9467973,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-refresh-token-r2916-w180-1790606860/load/capacity-cap-refresh-token.diag.jsonl.gz",
+          "bytes": 22454813,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        },
+        {
+          "file": "perf-results/incremental-b-v2/multi/multi-cap-refresh-token-r3240-w180-1790606567/load/capacity-cap-refresh-token.diag.jsonl.gz",
+          "bytes": 15488750,
+          "reason": "Complete passing mixed journal retained in separate verified archive; bounded auxiliary forensic/raw diagnostic capture kept separately and not claimed complete."
+        }
+      ],
+      "scope": "Selected complete native JSON acceptance/replay inputs, terminal stdout logs and maintenance/component samplers. Passing mixed full journal is in the separately verified critical archive. Bounded auxiliary diagnostic streams and other journal payloads are explicitly excluded; this is not a complete raw-stream archive."
     }
   ],
   "original_archive": {

@@ -264,6 +264,11 @@ matrix's parent publication step has no equivalent opt-out.
 
 ## Incremental current-B acceptance
 
+The [current incremental report](../docs/performance/reports/2026-09-28-incremental-b/report.md)
+and [structured baseline](results/data/capacity/current-capacity.json) distinguish
+reviewed service intervals, exploratory candidates and unestablished uppers.
+Read the per-row deployment and frozen recipe before reproducing a point.
+
 `perf/tools/current_capacity.py` evaluates the main workload and each of the
 four mixed sidecars through `capacity_search.evaluate` with required stream
 evidence. A naturally finished sidecar with a terminal summary is not by itself

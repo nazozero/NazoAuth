@@ -14,12 +14,12 @@ Logical-operation quantiles cover the complete business operation. HTTP rate is 
 | `cap_client_credentials` | original-container | 1 | 1375 | 1500 | 1375.006 | 1375.011 | 5/24/46 | 0/0/0/0 | 180/180 | [1375, 1500) observed |
 | `cap_authorization_code` | original-container | 1 | 325 | 350 | 325 | 1299.989 | 19/50/158 | 0/0/0/0 | 180/180 | [325, 350) observed |
 | `cap_refresh_token` | original-container | 1 | 750 | 812 | 749.994 | 750 | 7/34/74 | 0/0/0/0 | 180/180 | [750, 812) observed |
-| `fapi2_logged_in_high_security` | original-container | 1 | 20 | not established | 20 | 100 | 22/31/43.01 | 0/0/0/0 | 180/N/A | at least 20/s |
-| `cap_introspect` | original-container | 1 | 500 | not established | 500 | 500 | 1/3/11 | 0/0/0/0 | 180/N/A | at least 500/s |
-| `cap_revoke` | original-container | 1 | 60 | not established | 60 | 300 | 16/24/38 | 0/0/0/0 | 180/N/A | at least 60/s |
+| `fapi2_logged_in_high_security` | new-container | 1 | 180 | 200 | 180 | 899.989 | 28/43/58 | 0/0/0/0 | 180/180 | [180, 200) observed |
+| `cap_introspect` | new-container | 1 | 5625 | 6500 | 5625.017 | 5625.153 | 1/7/19 | 0/0/0/0 | 60/60 | [5625, 6500) observed |
+| `cap_revoke` | new-container | 1 | 337 | not established | 337 | 1685.898 | 24/44/65 | 0/0/0/0 | 60/N/A | at least 337/s |
 | `mtls_client_credentials` | original-container | 1 | 250 | not established | 250 | 250 | 4/6/12 | 0/0/0/0 | 180/N/A | at least 250/s |
 | `par_signed_request_object` | original-container | 1 | 150 | not established | 150 | 150 | 3/5/11 | 0/0/0/0 | 180/N/A | at least 150/s |
-| `oidc_cold_login_refresh` | original-container | 1 | 1 | not established | 1 | 6 | 132/142/153.21 | 0/0/0/0 | 180/N/A | at least 1/s |
+| `oidc_cold_login_refresh` | new-container | 1 | 7 | 8 | 7 | 42 | 131/143/517.68 | 0/0/0/0 | 180/180 | [7, 8) observed |
 
 ## Sixteen logical CPUs
 
@@ -44,6 +44,9 @@ Logical-operation quantiles cover the complete business operation. HTTP rate is 
 | `cap_client_credentials` / single | 1491.167 | 1491.268 | 11/339/395 | 0/1590/0/0 | 180 | complete-operation P95/P99 339/395ms exceeds 100/250ms; measurement dropped fraction 0.5889% exceeds 0.1% |
 | `cap_authorization_code` / single | 342.806 | 1370.978 | 584/809/881 | 0/1295/0/0 | 180 | complete-operation P95/P99 809/881 ms exceeds 100/250 ms; 1295 measurement drops (2.0556%) exceeds 0.1% |
 | `cap_refresh_token` / single | 808.95 | 808.447 | 54/311/341 | 0/549/0/0 | 180 | complete-operation P95/P99 311/341 ms exceeds 100/250 ms; 549 measurement drops (0.3756%) exceeds 0.1% |
+| `fapi2_logged_in_high_security` / single | 200 | 999.972 | 70/114/130 | 0/0/0/0 | 180 | Complete-operation P95 114 ms exceeds the unchanged 100 ms gate. |
+| `cap_introspect` / single | 5647.483 | 5645.729 | 178/198/207 | 0/51152/0/0 | 60 | Complete-operation P95 198ms exceeds100ms;51152offered arrivals drop, while started operations all finish with zero unexpected outcomes. |
+| `oidc_cold_login_refresh` / single | 7.456 | 45.62 | 1123/1227/1247 | 98/0/0/0 | 180 | 98 unexpected logical outcomes at8/s; complete-operation P95/P99 1227/1247ms. The unchanged distinct cold-login gate fails. |
 | `cap_mixed` / multi | 2900.006 | 4208.812 | 7/44/78 | 0/0/0/0 | 660 | FAPI sidecar full-operation P95 108 ms exceeds 100 ms; its 22050 offered operations all finish successfully with no drops. |
 | `cap_client_credentials` / multi | 6497.539 | 6497.615 | 5/39/331.44 | 0/444/0/0 | 180 | Full-operation P99 331.44 ms exceeds 250 ms; delivery/drop/error/unfinished gates pass. |
 | `cap_authorization_code` / multi | 1000 | 4002.492 | 57/156/311 | 0/0/0/0 | 180 | Complete-operation P95/P99 156/311 ms exceed 100/250 ms |
