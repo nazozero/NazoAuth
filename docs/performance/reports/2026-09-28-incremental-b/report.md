@@ -158,6 +158,28 @@ confirmation also passes with its complete restored sampler. The multicore
 confirmation's missing sampler correctly produces INVALID when replaying the
 metadata-only backup; it is not converted into a service failure or success.
 
+## Sparse sidecar observer repair
+
+The first new-container multicore mixed 3750/s, 180-second point is INVALID:
+the main stream is valid (3749.439 successful operations/s, complete P95/P99
+54/95 ms), runtime and audit pass, but Argon2/FAPI stream lag reaches
+22.528/6.383 seconds. This is excluded from capacity endpoints.
+
+The multi-reader dispatcher added a second 64 KiB buffer after `read1` had
+already returned an available block. Sparse input could wait for subsequent
+operations or EOF before reaching consumers. Complete input blocks now reach
+workers immediately, while partial trailing rows remain buffered until their
+newline. No sample selection, accounting, five-second lag gate, worker
+partition or business assertion is changed.
+
+A real-worker sparse-input regression holds subsequent input for six seconds:
+the old dispatcher reproduces artificial lag and fails; the repaired dispatcher
+consumes the point without lag rejection. The updated CI measurement suite
+passes 261 tests locally (two platform-conditional skips). Native-block,
+fallback-layout, cohort, quantile and forensic-population equivalence remain
+covered. The sparse-input regression is added to the existing quality job.
+Affected new endpoints are measured using a new recorded runner identity.
+
 ## Accepted single-core mixed boundary
 
 The original 600/s, 660-second confirmation remains PASS under the updated
