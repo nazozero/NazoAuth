@@ -179,5 +179,45 @@ class ProducerConsumerContractTest(unittest.TestCase):
                 self.assertEqual(measure['successful_ops_per_s'], 0)
 
 
+@unittest.skipUnless(shutil.which('k6'), 'k6 is required to verify its buffered JSON writer')
+class BufferedJsonOutputTest(unittest.TestCase):
+    def test_stdout_contains_only_complete_json_and_flushes_final_points(self):
+        # The production script also returns file-only summary outputs. The
+        # final small counter batch exercises flushing below the buffer size.
+        script = """
+import { Counter } from 'k6/metrics';
+const count = new Counter('fixture_count');
+export const options = { vus: 1, iterations: 7 };
+export default function () { count.add(1); }
+export function handleSummary(data) {
+  return { [__ENV.FIXTURE_SUMMARY]: JSON.stringify(data) };
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / 'fixture.js'
+            output = root / 'points.jsonl'
+            summary = root / 'summary.json'
+            exported = root / 'exported.json'
+            source.write_text(script)
+            env = {**os.environ, 'FIXTURE_SUMMARY': str(summary)}
+            with output.open('wb') as stream:
+                completed = subprocess.run(
+                    ['k6', 'run', '--quiet', '--out', 'json=-',
+                     '--summary-export', str(exported), str(source)],
+                    env=env, stdout=stream, stderr=subprocess.PIPE, timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            rows = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertTrue(all(row['type'] in ('Metric', 'Point') for row in rows))
+            points = [row for row in rows
+                      if row['type'] == 'Point' and row['metric'] == 'fixture_count']
+            self.assertEqual(len(points), 7)
+            self.assertEqual(sum(row['data']['value'] for row in points), 7)
+            self.assertEqual(json.loads(summary.read_text())['metrics']['fixture_count']
+                             ['values']['count'], 7)
+            self.assertEqual(json.loads(exported.read_text())['metrics']['fixture_count']
+                             ['count'], 7)
+
+
 if __name__ == '__main__':
     unittest.main()

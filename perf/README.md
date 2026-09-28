@@ -4,6 +4,11 @@ This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
 The runner image pins `orjson==3.12.0` for the streaming evidence decoder.
+Checkpoint evidence uses stock k6's buffered `--quiet --out json=-` output,
+redirected to the analyzer FIFO. The script writes summaries only to files;
+the runner closes its FIFO descriptor before waiting for the analyzer. This
+retains all metric points and flushes the final buffered batch without a
+separate k6 build or a relaxed lag gate.
 Install that same binary package when invoking its Python tools on the host:
 `python -m pip install --only-binary=:all: orjson==3.12.0`.
 Streaming evidence retains the existing cohort, diagnostic-selection and
