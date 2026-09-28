@@ -1,12 +1,12 @@
 # Current-B incremental performance acceptance — 2026-09-28
 
-Status: **INCOMPLETE**. 14/20 mode/scenario rows have reviewed service upper endpoints. All twenty retain real passing observations. Missing uppers remain lower bounds; short candidates still need 180-second verification and wide brackets still need refinement. Full requested acceptance remains incomplete.
+Status: **INCOMPLETE**. 16/20 mode/scenario rows have reviewed service upper endpoints. All twenty retain real passing observations. Missing uppers remain lower bounds; short candidates still need 180-second verification and wide brackets still need refinement. Full requested acceptance remains incomplete.
 
-Execution began at 09:58:28 UTC. The user subsequently extended and corrected the final deadline to 2026-09-29 03:30 Beijing (2026-09-28 19:30 UTC), with immediate container destruction at 04:00 Beijing. Final boundary verification stops at 18:15 UTC, reserving the final 75 minutes for publication, exact-head CI and verified evidence export. [Checkpoint history](checkpoint-history.md) records the independent commits and intermediate results; [original observations](../2026-09-28-current-b/report.md) are historical and superseded.
+Execution began at 09:58:28 UTC. The user subsequently extended and corrected the final deadline to 2026-09-29 03:30 Beijing (2026-09-28 19:30 UTC), with immediate container destruction at 04:00 Beijing. Final boundary verification stops at 18:25 UTC, reserving the final 65 minutes for publication, exact-head CI and verified evidence export. [Checkpoint history](checkpoint-history.md) records the independent commits and intermediate results; [original observations](../2026-09-28-current-b/report.md) are historical and superseded.
 
 ## Identity, configuration and measurement
 
-Application source is `ac266e7a93749694022efd1aeea6ed4d316fbbcc`, image `5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d`, binary `13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b`. Production code is unchanged, so the restored application image was reused. Required ancestor `04146234c578e61797aacee7ef7c4687b75653a1` is included. The offline evaluator was reviewed at `8648d0172fb90f9d945b47cccc0e30bfb84b9e92`; its exact source file hashes are retained in the separate reassessment.
+Application source is `ac266e7a93749694022efd1aeea6ed4d316fbbcc`, image `5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d`, binary `13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b`. Production code is unchanged, so the restored application image was reused. Required ancestor `04146234c578e61797aacee7ef7c4687b75653a1` is included. The offline evaluator was reviewed at `2cdbd605d7d68ffb83e579345e1c9911b92f5cce`; its exact source file hashes are retained in the separate reassessment.
 
 Both deployments expose 64 logical CPUs and a 128 GiB container memory limit. The original deployment allocated app single 24 or multi 24–27,132–143 (16), PG 144–159, Valkey 160 and generators 161–191. The replacement deployment dynamically allocated app single 24 or multi 24–39, PG 40–55, Valkey 56 and generators 57–79,184–191. The PAR allocation override is calibrated from observed client signing cost; its actual application, database and generator CPU sets are separately retained in the registered recipe and its endpoints are remeasured. Actual per-point affinity is verified and retained. Only deployment-visible resources were investigated. Component allocations are disjoint; all auxiliary roles share the stated generator set. Each interval uses one deployment and one exact frozen recipe; no original/new result or altered VU/pool/user configuration is joined into a boundary. The original `current-b` and `incremental-b` result roots belong to the same deployment; `incremental-b-v2` belongs to the replacement.
 
@@ -27,8 +27,8 @@ Runner identities are frozen per row: legacy `64b27274...`, native cohort `c3ce0
 | `fapi2_logged_in_high_security` | new-container | 1 | 180 | 200 | 180 | 899.989 | 28/43/58 | 0/0/0/0 | 180/180 | [180, 200) observed |
 | `cap_introspect` | new-container | 1 | 5000 | 5625 | 5000 | 5000.006 | 1/2/11 | 0/0/0/0 | 180/180 | [5000, 5625) observed |
 | `cap_revoke` | new-container | 1 | 378 | 425 | 378 | 1890.006 | 22/48/118 | 0/0/0/0 | 180/180 | [378, 425) observed |
-| `mtls_client_credentials` | original-container | 1 | 250 | not established | 250 | 250 | 4/6/12 | 0/0/0/0 | 180/N/A | at least 250/s |
-| `par_signed_request_object` | original-container | 1 | 150 | not established | 150 | 150 | 3/5/11 | 0/0/0/0 | 180/N/A | at least 150/s |
+| `mtls_client_credentials` | new-container | 1 | 1500 | 1687 | 1500 | 1499.994 | 4/14/69 | 0/0/0/0 | 180/180 | [1500, 1687) observed |
+| `par_signed_request_object` | new-container | 1 | 4200 | 4725 | 4197.894 | 4197.883 | 3/9/24 | 0/379/0/0 | 180/180 | [4200, 4725) observed |
 | `oidc_cold_login_refresh` | new-container | 1 | 7 | 8 | 7 | 42 | 131/143/517.68 | 0/0/0/0 | 180/180 | [7, 8) observed |
 
 ## Multiple logical CPUs (count per row)
@@ -43,7 +43,7 @@ Runner identities are frozen per row: legacy `64b27274...`, native cohort `c3ce0
 | `cap_introspect` | original-container | 16 | 16000 | 17000 | 15997.911 | 15997.838 | 1/3/15 | 0/376/0/0 | 180/180 | [16000, 17000) observed |
 | `cap_revoke` | original-container | 16 | 480 | not established | 480 | 2400.034 | 18/33/42 | 0/0/0/0 | 180/N/A | at least 480/s |
 | `mtls_client_credentials` | original-container | 16 | 4000 | not established | 3998.417 | 3998.553 | 4/9/20 | 0/285/0/0 | 180/N/A | at least 4000/s |
-| `par_signed_request_object` | new-container | 4 | 11250 | not established | 11246.033 | 11246.39 | 4/58/93 | 0/224/0/0 | 60/N/A | at least 11250/s |
+| `par_signed_request_object` | new-container | 4 | 11853 | not established | 11852.783 | 11853.117 | 4/34/61 | 0/5/0/0 | 180/N/A | at least 11853/s |
 | `oidc_cold_login_refresh` | original-container | 16 | 52 | 56 | 52 | 312 | 159/179/187 | 0/0/0/0 | 180/180 | [52, 56) observed |
 
 ## Upper endpoints
@@ -57,6 +57,8 @@ Runner identities are frozen per row: legacy `64b27274...`, native cohort `c3ce0
 | `fapi2_logged_in_high_security` / single | 200 | 999.972 | 70/114/130 | 0/0/0/0 | 180 | Complete-operation P95 114 ms exceeds the unchanged 100 ms gate. |
 | `cap_introspect` / single | 5610.472 | 5610.486 | 1/173/191 | 0/2617/0/0 | 180 | Complete-operation P95 173ms exceeds 100ms; 2617 dropped arrivals (0.25847%) exceed the delivery gate. |
 | `cap_revoke` / single | 412.511 | 2060.855 | 601/650/674 | 0/2248/0/0 | 180 | Complete-operation P95/P99 650/674ms exceeds 100/250ms; 2248 dropped arrivals (2.9386%) exceed the delivery gate. |
+| `mtls_client_credentials` / single | 1610.528 | 1610.793 | 620/659/803 | 0/13764/0/0 | 180 | Complete-operation P95/P99 659/803ms exceeds 100/250ms; 13764 dropped arrivals (4.5327%) exceed the delivery gate. |
+| `par_signed_request_object` / single | 4681.561 | 4681.218 | 40/103/119 | 0/7819/0/0 | 180 | Complete-operation P95 103ms exceeds 100ms; 7819 dropped arrivals (0.91934%) exceed the delivery gate. |
 | `oidc_cold_login_refresh` / single | 7.456 | 45.62 | 1123/1227/1247 | 98/0/0/0 | 180 | 98 unexpected logical outcomes at8/s; complete-operation P95/P99 1227/1247ms. The unchanged distinct cold-login gate fails. |
 | `cap_mixed` / multi | 2900.006 | 4208.812 | 7/44/78 | 0/0/0/0 | 660 | FAPI sidecar full-operation P95 108 ms exceeds 100 ms; its 22050 offered operations all finish successfully with no drops. |
 | `cap_client_credentials` / multi | 6497.539 | 6497.615 | 5/39/331.44 | 0/444/0/0 | 180 | Full-operation P99 331.44 ms exceeds 250 ms; delivery/drop/error/unfinished gates pass. |
@@ -75,6 +77,8 @@ Runner identities are frozen per row: legacy `64b27274...`, native cohort `c3ce0
 - `single/fapi2_logged_in_high_security`: All36000 offered operations complete successfully at200/s with zero errors/drops/unfinished and no VU warning; full P95/P99 114/130ms. The180/s lower completes all32400 operations with full43/58ms. Both effective windows are180s on the same C3 runner/VU256/users64/pool32 recipe. Generator1.826/31CPUs and observer lag0.268s exclude injector compute or observer delay. Health and durable audit pass. This establishes the configured complete-business latency boundary; no particular SQL or CPU ceiling is inferred.
 - `single/cap_introspect`: Both endpoints use the frozen 1024-VU/users128/pool32/four-observer recipe and 180-second windows. At 5000/s all 900000 operations succeed without drops/errors/unfinished; full P95/P99 are 2/11ms. At 5625/s all 1009885 started operations succeed, but full P95/P99 are 173/191ms and 2617 offered arrivals drop. Independent native whole-point HTTP response waiting P95 is 173.398ms, while blocked/sending/receiving P95 are below 0.031ms; these are diagnostics, not replacements for complete-operation cohorts. Pool acquisition wait is 10.739ms, app mean CPU 0.894/1, generator 2.809/31 and observer lag 0.334s. The service response latency failure therefore persists independently of VU warning/delivery. Earlier 60-second passes remain controls and do not override the failed 180-second verification at 5625/s. No particular SQL or sustained CPU saturation is inferred.
 - `single/cap_revoke`: Both endpoints use 256 VUs/users64/pool32 and 180-second windows. At 378/s every offered operation succeeds with full P95/P99 48/118ms. At 425/s every started operation finishes successfully (74252), but full P95/P99 reach 650/674ms and 2248 arrivals drop. Independent native HTTP response waiting P95 is 201.351ms per request, while blocked/sending/receiving P95 are below 0.038ms; the full revoke business operation contains multiple requests and its own 650ms cohort gate remains authoritative. Application CPU 0.988/1 and pool acquisition wait 29.449ms identify service work/queue pressure, with generator CPU 1.385/31 and observer lag 0.265s. The VU warning is preserved and is not the sole upper evidence. No narrower SQL cause is claimed.
+- `single/mtls_client_credentials`: The separate frozen 1024-VU/users64/pool32 single-core recipe passes1500/s for180seconds, with all270000operations succeeding and no drops/errors/unfinished, full P95/P99 14/69ms. At1687/s every289895started operation completes successfully, but full P95/P99 reach659/803ms and13764offered arrivals drop. Independent native whole-point HTTP response waiting P95/P99 is663.883/795.670ms, while blocked/sending/receiving P95 are below0.039ms and TLS handshake P95 is zero; these diagnostics do not replace the full-operation cohort gate. Pool acquisition wait203.054ms and app CPU0.980of1 identify service queue/work pressure. Generator0.817of31CPUs and observer lag0.264s exclude injector compute/measurement delay. The warmup VU warning is retained, but response latency fails independently. Earlier512-VU results remain separate controls; no particular SQL is inferred.
+- `single/par_signed_request_object`: Both endpoints use the frozen 512-VU/users64/pool32 single-core recipe and 180-second windows. At 4200/s, all 755621 started operations succeed, full P95/P99 are 9/24ms, and 379 drops (0.05013%) satisfy the unchanged delivery gate. At 4725/s, all 842681 started operations finish successfully, but full P95/P99 are 103/119ms and 7819 offered arrivals drop. Independent whole-point native HTTP response waiting P95 is 100.440ms, with blocked/sending/receiving P95 below 0.034ms. These diagnostics identify response waiting and do not replace the complete-operation cohort gate. App CPU is 0.984/1 and mean pool wait 16.680ms; generator CPU 10.366/31 and observer lag 0.267s provide compute and measurement headroom. Warmup VU warnings remain explicit and are not the sole upper evidence. The separate multi-mode client-signing limits are not spliced into this interval; no per-SQL bottleneck is inferred.
 - `single/oidc_cold_login_refresh`: Both endpoints use180s and the same256-VU/users64/pool32/C3 recipe. At8/s all1440 offered operations start and complete, with zero drops/preparation failures/unfinished and no VU warning;1342succeed and98are unexpected. ApplicationCPU0.995of1, generator0.068of31 and observer lag0.371s support service work rather than an injector bottleneck. At7/s every offered operation succeeds, full P95/P99 143/517.68ms, under the existing cold-login class. The stored Argon2 m65536/t3/p4 and eight-permit admission policy are unchanged; no narrower admission/error-body cause or ordinary100/250ms comparison is claimed.
 - `multi/cap_mixed`: The same 1024-VU/users256/pool64/four-observer recipe passes2600/s for660seconds:1716002main operations all succeed, complete-operation P95/P99 18/25ms, and all four sidecars, health, mature maintenance and durable audit pass. At2900/s for660seconds all1914004main operations and all22050FAPI operations complete with zero drops/errors/unfinished and no FAPI VU warning, but FAPI complete-operation P95/P99 108/138.51ms violates its100msP95 gate. Main generator3.307of31CPUs and FAPI observer lag0.327s exclude clientcompute/measurement delay for that independent service-latency upper. The earlier2610/s delivery-failed point remains a valid apparatus-constrained control with documented server queue bursts; it is not silently discarded or promoted to a backend upper. The2600/2900 bracket is an observed short-window interval, not proof that every interior load or indefinite operation passes.
 - `multi/cap_client_credentials`: A one-factor 2048-to-4096 VU control holds users256/pool64/8 workers/native image fixed at6000/s: all1080004 offered operations finish with zero drops, P95/P99 11/29ms, disproving the old drop-only service upper. The frozen4096-VU upper at6500/s completes all1169557 started operations, has0unexpected and0unfinished, and444/1170001 drops (0.03795%, below0.1%). Its independent complete-operation P99 fails. Generator4.482/31CPUs, lag0.763s, pool wait2.221ms. A VU warning remains, but it is not the upper evidence; no particular SQL/CPU ceiling is claimed.
@@ -133,8 +137,10 @@ At mixed 2900/s every FAPI arrival completes with zero drops and no VU warning, 
 | single / `cap_introspect` / U | 0.894 / 1 | 2.338 / 16 | 2.809 / 31 | 98.34/1270.465 | 10.739 | 0.334 |
 | single / `cap_revoke` / L | 0.889 / 1 | 2.946 / 16 | 1.328 / 31 | 42.68/5169.508 | 0.054 | 0.257 |
 | single / `cap_revoke` / U | 0.988 / 1 | 3.411 / 16 | 1.491 / 31 | 45.246/5228.047 | 29.449 | 0.265 |
-| single / `mtls_client_credentials` / L | 0.177 / 1 | 0.606 / 16 | 0.308 / 31 | 33.359/1655.062 | 0.001 | 0.251 |
-| single / `par_signed_request_object` / L | 0.048 / 1 | 0.125 / 16 | 0.35 / 31 | 31.203/453.551 | 0.001 | 0.251 |
+| single / `mtls_client_credentials` / L | 0.887 / 1 | 1.896 / 16 | 0.901 / 31 | 69.492/4640.133 | 0.375 | 0.256 |
+| single / `mtls_client_credentials` / U | 0.98 / 1 | 2.312 / 16 | 0.944 / 31 | 93.117/4981.309 | 203.054 | 0.264 |
+| single / `par_signed_request_object` / L | 0.883 / 1 | 1.414 / 16 | 9.143 / 31 | 56.547/782.379 | 0.304 | 0.255 |
+| single / `par_signed_request_object` / U | 0.984 / 1 | 1.646 / 16 | 10.366 / 31 | 57.785/778.031 | 16.68 | 0.267 |
 | single / `oidc_cold_login_refresh` / L | 0.832 / 1 | 0.058 / 16 | 0.043 / 31 | 93.391/235.281 | 0.001 | 0.368 |
 | single / `oidc_cold_login_refresh` / U | 0.995 / 1 | 0.08 / 16 | 0.072 / 31 | 541.363/275.699 | 0.001 | 0.371 |
 | multi / `cap_mixed` / L | 5.461 / 16 | 6.126 / 16 | 3.755 / 31 | 167.977/10707.949 | 0.01 | 0.439 |
@@ -150,7 +156,7 @@ At mixed 2900/s every FAPI arrival completes with zero drops and no VU warning, 
 | multi / `cap_introspect` / U | 4.579 / 16 | 8.233 / 16 | 8.12 / 31 | 107.984/2396.367 | 0.09 | 3.345 |
 | multi / `cap_revoke` / L | 1.766 / 16 | 3.704 / 16 | 2.262 / 31 | 58.516/5240.215 | 0.001 | 0.254 |
 | multi / `mtls_client_credentials` / L | 3.55 / 16 | 5.284 / 16 | 3.287 / 31 | 60.793/5426.816 | 0.122 | 0.261 |
-| multi / `par_signed_request_object` / L | 3.201 / 4 | 4.219 / 16 | 30.796 / 43 | 105.445/1364.133 | 0.067 | 0.493 |
+| multi / `par_signed_request_object` / L | 3.337 / 4 | 4.794 / 8 | 31.236 / 51 | 106.285/1394.887 | 0.635 | 0.411 |
 | multi / `oidc_cold_login_refresh` / L | 7.48 / 16 | 0.401 / 16 | 0.257 / 31 | 532.23/688.273 | 0.001 | 0.267 |
 | multi / `oidc_cold_login_refresh` / U | 8.053 / 16 | 0.444 / 16 | 0.287 / 31 | 563.602/879.559 | 0.001 | 0.27 |
 
@@ -174,7 +180,7 @@ The dd273216 job spends 18 s restoring cache, 7 s preparing avatar fixtures, 42 
 
 ## Evidence retention and reproduction
 
-[Current structured authority](../../../../perf/results/data/capacity/current-capacity.json), [selected compact evidence](../../../../perf/results/diagnostics/2026-09-28-incremental-b-selected.json), [offline reassessment](../../../../perf/results/diagnostics/2026-09-28-incremental-final-reassessment.json) and [archive identities](../../../../perf/results/diagnostics/2026-09-28-incremental-evidence-archives.json) are in Git. Large archives remain outside Git in the task artifact storage, with file hashes and explicit scopes. The original 812407286-byte archive has 925 verified members; retained incremental evidence has 463 verified members and explicitly lacks 17 legacy auxiliary stdout logs. Native acceptance inputs are retained. Some bounded auxiliary forensic streams overflowed; these are not represented as complete raw streams and do not replace the independent exact native counters/histograms.
+[Current structured authority](../../../../perf/results/data/capacity/current-capacity.json), [selected compact evidence](../../../../perf/results/diagnostics/2026-09-28-incremental-b-selected.json), [offline reassessment](../../../../perf/results/diagnostics/2026-09-28-incremental-final-reassessment.json), [frozen reproduction arguments](../../../../perf/results/diagnostics/2026-09-28-incremental-reproduction-recipes.json), [excluded/apparatus controls](../../../../perf/results/diagnostics/2026-09-28-incremental-apparatus-controls.json) and [archive identities](../../../../perf/results/diagnostics/2026-09-28-incremental-evidence-archives.json) are in Git. Large archives remain outside Git in the task artifact storage, with file hashes and explicit scopes. The original 812407286-byte archive has 925 verified members; retained incremental evidence has 463 verified members and explicitly lacks 17 legacy auxiliary stdout logs. Native acceptance inputs are retained. Some bounded auxiliary forensic streams overflowed; these are not represented as complete raw streams and do not replace the independent exact native counters/histograms.
 
 | Archive | Bytes | SHA256 | Scope |
 |---|---:|---|---|
@@ -193,9 +199,9 @@ For a new deployment, obtain its process-visible CPU/memory first and freeze its
 
 ## Outstanding acceptance
 
-Service uppers not established: `single/mtls_client_credentials`, `single/par_signed_request_object`, `multi/fapi2_logged_in_high_security`, `multi/cap_revoke`, `multi/mtls_client_credentials`, `multi/par_signed_request_object`.
+Service uppers not established: `multi/fapi2_logged_in_high_security`, `multi/cap_revoke`, `multi/mtls_client_credentials`, `multi/par_signed_request_object`.
 
-Candidates needing 180-second confirmation: `multi/par_signed_request_object`.
+Candidates needing 180-second confirmation: none.
 
 Intervals needing refinement: none.
 

@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "scope": "Excluded or apparatus-constrained observations; none establishes a backend upper or silently changes an original valid verdict.",
+  "controls": [
+    {
+      "point": "multi-par-signed-request-r11000-w60-1790610321",
+      "recipe_id": "154563116729bb25",
+      "verdict": "INVALID",
+      "classification": "INVALID measurement: observer lag19.648s and more than ten million lag-over-five-second samples. Generator29.884/31CPUs. This is not a service upper.",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "window_s": 60,
+      "success_ops_s": 10322.467,
+      "complete_operation_ms": {
+        "p50": 69.0,
+        "p95": 175.0,
+        "p99": 273.0
+      },
+      "counts": {
+        "measure_scheduled": 660000,
+        "measure_started": 619348,
+        "measure_completed": 619348,
+        "measure_dropped": 40652,
+        "measure_unfinished": 0,
+        "outcome_unexpected": 0,
+        "outcome_prepare_failed": 0
+      },
+      "cpu": {
+        "app": 3.716868924838716,
+        "postgres": 4.123335118405563,
+        "sis-load-multi-par-signed-request-r11000-w60-1790610321": 29.884143406130036
+      },
+      "pool_wait_ms": 0.001,
+      "observer_lag_s": {
+        "load/capacity-par-signed-request-object.analyzer-stats.json": 19.648
+      },
+      "vu_warnings": [
+        {
+          "role": "load",
+          "timestamp": "2026-09-28T15:46:14Z",
+          "phase": "unknown",
+          "line": "time=\"2026-09-28T15:46:14Z\" level=warning msg=\"Insufficient VUs, reached 2048 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=par_signed_request_object"
+        }
+      ]
+    },
+    {
+      "point": "multi-par-signed-request-r11250-w180-1790612032",
+      "recipe_id": "57fc74c85fedcfc3",
+      "verdict": "FAIL",
+      "classification": "Valid workload FAIL, not a service upper: full P95/P99 110/174ms and 0.87836% drops; whole-point native HTTP waiting P95/P99 19.429/38.899ms. Signing/runtime compute cannot be excluded on the 2048-VU app4/gen43 profile.",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "window_s": 180.0,
+      "success_ops_s": 11151.294,
+      "complete_operation_ms": {
+        "p50": 4.0,
+        "p95": 110.0,
+        "p99": 174.0
+      },
+      "counts": {
+        "measure_scheduled": 2025020,
+        "measure_started": 2007233,
+        "measure_completed": 2007233,
+        "measure_dropped": 17787,
+        "measure_unfinished": 0,
+        "outcome_unexpected": 0,
+        "outcome_prepare_failed": 0
+      },
+      "cpu": {
+        "app": 3.240093581875594,
+        "postgres": 4.185164096277467,
+        "sis-load-multi-par-signed-request-r11250-w180-1790612032": 30.527736907710374
+      },
+      "pool_wait_ms": 0.133,
+      "observer_lag_s": {
+        "load/capacity-par-signed-request-object.analyzer-stats.json": 0.731
+      },
+      "vu_warnings": [
+        {
+          "role": "load",
+          "timestamp": "2026-09-28T16:14:45Z",
+          "phase": "before_measurement",
+          "line": "time=\"2026-09-28T16:14:45Z\" level=warning msg=\"Insufficient VUs, reached 2048 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=par_signed_request_object"
+        }
+      ]
+    },
+    {
+      "point": "multi-par-signed-request-r11250-w180-1790612858",
+      "recipe_id": "024b4aff7012ac46",
+      "verdict": "FAIL",
+      "classification": "Valid delivery FAIL, not a service upper: reducing only VUs2048-to1024 keeps full latency passing41/71ms but leaves2184drops(0.10785%). Both compared windows180s, users/pool/CPU/workload unchanged; no GC-specific cause inferred.",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "window_s": 180.0,
+      "success_ops_s": 11238.256,
+      "complete_operation_ms": {
+        "p50": 4.0,
+        "p95": 41.0,
+        "p99": 71.0
+      },
+      "counts": {
+        "measure_scheduled": 2025070,
+        "measure_started": 2022886,
+        "measure_completed": 2022886,
+        "measure_dropped": 2184,
+        "measure_unfinished": 0,
+        "outcome_unexpected": 0,
+        "outcome_prepare_failed": 0
+      },
+      "cpu": {
+        "app": 3.181669105476905,
+        "postgres": 4.193614650775818,
+        "sis-load-multi-par-signed-request-r11250-w180-1790612858": 30.779131712259005
+      },
+      "pool_wait_ms": 0.049,
+      "observer_lag_s": {
+        "load/capacity-par-signed-request-object.analyzer-stats.json": 0.412
+      },
+      "vu_warnings": [
+        {
+          "role": "load",
+          "timestamp": "2026-09-28T16:28:31Z",
+          "phase": "before_measurement",
+          "line": "time=\"2026-09-28T16:28:31Z\" level=warning msg=\"Insufficient VUs, reached 1024 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=par_signed_request_object"
+        }
+      ]
+    },
+    {
+      "point": "single-mtls-client-credentials-r1250-w180-1790614422",
+      "recipe_id": "51a74ca1bdc51370",
+      "verdict": "FAIL",
+      "classification": "Valid delivery FAIL on512VUs: full latency8/96ms passes,1378drops(0.61244%). Preserved without an established service upper; injector and burst contributions remain unresolved. The subsequent separate1024-VU profile passes1500/s with270000successful operations and zero drops. Different loads are not represented as a paired causal comparison.",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "window_s": 180.0,
+      "success_ops_s": 1242.344,
+      "complete_operation_ms": {
+        "p50": 4.0,
+        "p95": 8.0,
+        "p99": 96.0
+      },
+      "counts": {
+        "measure_scheduled": 225000,
+        "measure_started": 223622,
+        "measure_completed": 223622,
+        "measure_dropped": 1378,
+        "measure_unfinished": 0,
+        "outcome_unexpected": 0,
+        "outcome_prepare_failed": 0
+      },
+      "cpu": {
+        "app": 0.7470707674186448,
+        "postgres": 1.7186358699409636,
+        "sis-load-single-mtls-client-credentials-r1250-w180-1790614422": 0.6441512218188268
+      },
+      "pool_wait_ms": 1.562,
+      "observer_lag_s": {
+        "load/capacity-mtls-client-credentials.analyzer-stats.json": 0.27
+      },
+      "vu_warnings": [
+        {
+          "role": "load",
+          "timestamp": "2026-09-28T16:54:33Z",
+          "phase": "before_measurement",
+          "line": "time=\"2026-09-28T16:54:33Z\" level=warning msg=\"Insufficient VUs, reached 512 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=mtls_client_credentials"
+        }
+      ]
+    },
+    {
+      "point": "single-mtls-client-credentials-r1171-w180-1790615245",
+      "recipe_id": "51a74ca1bdc51370",
+      "verdict": "INVALID",
+      "classification": "Interrupted during queue handoff before a valid measurement cohort was available. INVALID and excluded from every capacity interval; no completion/success claim.",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "window_s": null,
+      "success_ops_s": null,
+      "complete_operation_ms": {
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "counts": {
+        "measure_scheduled": null,
+        "measure_started": null,
+        "measure_completed": null,
+        "measure_dropped": null,
+        "measure_unfinished": null,
+        "outcome_unexpected": null,
+        "outcome_prepare_failed": null
+      },
+      "cpu": {},
+      "pool_wait_ms": null,
+      "observer_lag_s": {},
+      "vu_warnings": [
+        {
+          "role": "load",
+          "timestamp": "2026-09-28T17:08:14Z",
+          "phase": "unknown",
+          "line": "time=\"2026-09-28T17:08:14Z\" level=warning msg=\"Insufficient VUs, reached 512 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=mtls_client_credentials"
+        }
+      ]
+    }
+  ]
+}
