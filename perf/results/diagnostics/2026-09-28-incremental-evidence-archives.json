@@ -224,6 +224,15 @@
         }
       ],
       "scope": "Selected complete native JSON acceptance/replay inputs, terminal stdout logs and maintenance/component samplers. Passing mixed full journal is in the separately verified critical archive. Bounded auxiliary diagnostic streams and other journal payloads are explicitly excluded; this is not a complete raw-stream archive."
+    },
+    {
+      "schema_version": 1,
+      "file": "20260928-final-selected-raw.tar.gz",
+      "bytes": 789011196,
+      "sha256": "29bb649b67b0fd01d2a7e00b45e4d5a8b262e0627f39d1268d9c1c49c19daf1f",
+      "files": 33,
+      "uncompressed_bytes": 2962865645,
+      "scope": "All available bounded selected-new forensic diagnostic captures plus complete2900/s service-upper journal. Existing capture overflow remains explicit; passing2349/s full journal is separately verified;2610/s delivery-control journal payload is not duplicated."
     }
   ],
   "original_archive": {
