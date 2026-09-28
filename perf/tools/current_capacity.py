@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -64,7 +65,10 @@ def bounds(state, key):
 def allocations():
     allowed = sorted(os.sched_getaffinity(0))
     if len(allowed) < 4:
-        raise RuntimeError("at least four logical CPUs needed for isolated components")
+        # Shared infrastructure is a different deployment profile, not a
+        # reason to investigate hidden host resources or abandon the run.
+        return {"allowed": allowed, "single": allowed[:1], "multi": allowed,
+                "postgres": allowed, "valkey": allowed, "generator": allowed}
     app_n = max(1, len(allowed) // 4)
     db_n = max(1, len(allowed) // 4)
     app = allowed[:app_n]
@@ -75,7 +79,7 @@ def allocations():
             "postgres": db, "valkey": valkey, "generator": generator}
 
 
-def sidecars(cores, duration):
+def sidecars(cores, duration, allocated_vus=None):
     # Keep every workload; register resource-scaled rates before any search.
     scale = cores / 16
     recipes = [("argon2", "oidc_cold_login_refresh", 8, 8),
@@ -84,9 +88,11 @@ def sidecars(cores, duration):
                ("refresh", "cap_refresh_token", 600, 64)]
     return [{"name": name, "scenario": scenario,
              "rate": max(1, math.ceil(rate * scale)),
-             "pre_vus": vus, "max_vus": vus, "user_count": vus,
+             "pre_vus": allocated_vus[i] if allocated_vus else math.ceil(vus * max(1, scale)),
+             "max_vus": allocated_vus[i] if allocated_vus else math.ceil(vus * max(1, scale)),
+             "user_count": vus,
              "duration": f"{duration + 30}s"}
-            for name, scenario, rate, vus in recipes]
+            for i, (name, scenario, rate, vus) in enumerate(recipes)]
 
 
 def combined_verdict(*verdicts):
@@ -159,11 +165,90 @@ def evaluate_point(point, rec, out, *, confirmation=False):
     return verdict, metrics, health, maintenance
 
 
+def positive_int(value):
+    value = int(value)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return value
+
+
+def resource_profile(cpus, mode, *, vus=None, users=None, pool=None):
+    """CPU-scaled starting recipe; explicit values come from calibration.
+
+    Users are independent of VUs so increasing injector concurrency need
+    not silently increase account cardinality in a one-factor experiment.
+    """
+    cores = len(cpus[mode])
+    return {"vus": vus or 64 * cores,
+            "users": users or max(64, 16 * cores),
+            "pool_connections": pool or 2 * len(cpus["postgres"])}
+
+
+def recipe_id(config):
+    # Controller revisions and stopping times do not change the workload.
+    # Binary/images, CPU allocation and effective workload resources do.
+    keys = ("cpus", "app_image_id", "runner_image_id", "binary_sha256",
+            "resources", "sidecars", "vector_counts", "gate")
+    encoded = json.dumps({k: config[k] for k in keys}, sort_keys=True).encode()
+    return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def reevaluate(paths, output):
+    """Offline only: original point files are never modified or promoted."""
+    if output.resolve() in {p.resolve() for p in paths}:
+        raise ValueError("reassessment output must not overwrite an input point")
+    results = []
+    for path in paths:
+        rec = json.loads(path.read_text())
+        point = rec["point"]
+        verdict, metrics, health, maintenance = evaluate_point(
+            point, rec, path.parent,
+            confirmation=bool(point.get("capture_audit_journal")))
+        results.append({"point_path": str(path), "point": point,
+                        "verdict": verdict, "metrics": metrics,
+                        "health": health, "maintenance": maintenance})
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save(output, results)
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stop-at", required=True, help="ISO time with timezone")
+    parser.add_argument("--stop-at", help="ISO time with timezone; required for load")
+    parser.add_argument("--reevaluate", nargs="+", type=Path, metavar="POINT_JSON")
+    parser.add_argument("--output", type=Path, help="separate offline reassessment JSON")
+    parser.add_argument("--mode", choices=("single", "multi", "all"), default="all")
+    parser.add_argument("--scenarios", nargs="+", choices=tuple(SCENARIOS))
+    parser.add_argument("--rates", nargs="+", type=positive_int,
+                        help="run only these rates for one scenario and CPU mode")
+    parser.add_argument("--window", type=positive_int, default=180,
+                        help="effective seconds for explicit --rates")
+    parser.add_argument("--vus", type=positive_int, help="calibrated pre/max VUs")
+    parser.add_argument("--users", type=positive_int, help="fixed account cardinality")
+    parser.add_argument("--pool-connections", type=positive_int)
+    parser.add_argument("--sidecar-vus", nargs=4, type=positive_int,
+                        metavar=("ARGON2", "META", "FAPI", "REFRESH"))
+    parser.add_argument("--repeat", action="store_true", help="recheck an already measured explicit rate")
+    parser.add_argument("--confirm", action="store_true", help="include mixed maintenance and journal checks")
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
+    if args.reevaluate:
+        if not args.output:
+            parser.error("--reevaluate requires --output")
+        results = reevaluate(args.reevaluate, args.output)
+        print(json.dumps([{"point": r["point_path"], "verdict": r["verdict"]}
+                          for r in results]))
+        return
+    if not args.stop_at:
+        parser.error("load requires --stop-at")
+    modes = ("single", "multi") if args.mode == "all" else (args.mode,)
+    scenarios = args.scenarios or list(SCENARIOS)
+    if args.rates and (len(modes) != 1 or len(scenarios) != 1):
+        parser.error("--rates requires one --mode and one --scenarios entry")
+    if args.confirm and (not args.rates or scenarios != ["cap_mixed"]):
+        parser.error("--confirm requires explicit mixed --rates")
+    if args.confirm and args.window < 540:
+        parser.error("maintenance confirmation needs at least 360 + 180 effective seconds")
     stop_at = datetime.fromisoformat(args.stop_at).timestamp()
     os.environ.setdefault("SIS_SOURCE_SHA", os.environ["SIS_APP_SHA"])
     sis.RESULTS.mkdir(parents=True, exist_ok=True)
@@ -176,16 +261,33 @@ def main():
     if not binary:
         raise RuntimeError("application binary identity unavailable")
     config = {"cpus": cpus, "app_image": "nazoauth-perf-nazoauth",
-              "binary_sha256": binary, "pool_connections": 32,
-              "sidecars": {m: sidecars(len(cpus[m]), 180) for m in ("single", "multi")},
+              "binary_sha256": binary,
+              "app_image_id": sis.dc("image", "inspect", "nazoauth-perf-nazoauth",
+                                     "--format", "{{.Id}}").stdout.strip(),
+              "runner_image_id": sis.dc("image", "inspect", sis.PERF_IMAGE,
+                                        "--format", "{{.Id}}").stdout.strip(),
+              "resources": {m: resource_profile(cpus, m, vus=args.vus,
+                             users=args.users, pool=args.pool_connections)
+                            for m in ("single", "multi")},
+              "sidecars": {m: sidecars(len(cpus[m]), 180, args.sidecar_vus)
+                           for m in ("single", "multi")},
               "stop_at": args.stop_at, "gate": "successful-ops-v1",
               "vector_counts": {"default": 48000, "fapi2_logged_in_high_security": 49200},
               "exploration_window_seconds": 60, "candidate_window_seconds": 180,
               "mixed_confirmation_window_seconds": 660,
               "hash_policy": "unchanged application defaults", "source_sha": os.environ["SIS_APP_SHA"],
               "harness_sha": sis.sh(["git", "-C", sis.WORKSPACE, "rev-parse", "HEAD"]).stdout.strip()}
-    save(sis.RESULTS / "registered-config.json", config)
-    state_path = sis.RESULTS / "search-state.json"
+    identity = recipe_id(config)
+    config["recipe_id"] = identity
+    current_config = sis.RESULTS / "registered-config.json"
+    if current_config.exists():
+        previous = current_config.read_bytes()
+        if "recipe_id" not in json.loads(previous):
+            legacy_id = hashlib.sha256(previous).hexdigest()[:16]
+            (sis.RESULTS / f"registered-config-legacy-{legacy_id}.json").write_bytes(previous)
+    save(current_config, config)
+    save(sis.RESULTS / f"registered-config-{identity}.json", config)
+    state_path = sis.RESULTS / f"search-state-{identity}.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
     def run(mode, scenario, rate, window=60, confirmation=False):
@@ -194,15 +296,16 @@ def main():
         warmup = 60 if scenario == "cap_mixed" else 15
         duration = window + warmup
         name = point_name(mode, scenario, rate, window, time.time())
+        resources = config["resources"][mode]
         point = {"name": name, "phase": mode, "image": config["app_image"],
+                 "capacity_recipe_id": identity,
                  "app_cpus": cpus[mode], "postgres_cpus": cpus["postgres"],
                  "valkey_cpus": cpus["valkey"], "infra_cpus": cpus["generator"],
                  "profile": "capacity", "scenario": scenario,
                  "executor": "constant-arrival-rate", "rate": rate,
                  "duration": f"{duration}s", "warmup_ms": warmup * 1000,
-                 "pre_vus": 64 if mode == "single" else 256,
-                 "max_vus": 64 if mode == "single" else 256,
-                 "user_count": 64 if mode == "single" else 256,
+                 "pre_vus": resources["vus"], "max_vus": resources["vus"],
+                 "user_count": resources["users"],
                  # FAPI reserves offset 12 * 100 before its bounded 48k
                  # replay pool. Freeze the whole pool before its search so
                  # the runner cannot silently grow it at higher rates.
@@ -210,11 +313,12 @@ def main():
                  "stream_evidence": True,
                  "formal_preflight": True, "grace_s": 300,
                  "expected_binary_sha256": binary,
-                 "app_env_overrides": {"DATABASE_MAX_CONNECTIONS": 32},
+                 "app_env_overrides": {"DATABASE_MAX_CONNECTIONS": resources["pool_connections"]},
                  "issuance_retention_seconds": 360,
                  "issuance_max_expired_age_seconds": 120}
         if scenario == "cap_mixed":
-            point.update(sidecars=sidecars(len(cpus[mode]), duration), sidecar_delay_s=0)
+            point.update(sidecars=sidecars(len(cpus[mode]), duration, args.sidecar_vus),
+                         sidecar_delay_s=0)
         if confirmation:
             point["capture_audit_journal"] = True
         rec = points.run_ab_point(point)
@@ -272,13 +376,25 @@ def main():
                 run(mode, scenario, max(1, upper * 3 // 4), window=180)
 
     try:
+        if args.rates:
+            mode, scenario = modes[0], scenarios[0]
+            for rate in args.rates:
+                existing = [r for r in state.get(f"{mode}/{scenario}", [])
+                            if r["rate"] == rate and r["verdict"] in ("PASS", "FAIL")
+                            and (r["metrics"].get("window_seconds") or 0) >= args.window
+                            and (not args.confirm or r.get("confirmation"))]
+                if existing and not args.repeat:
+                    print(f"REUSE {existing[-1]['name']}", flush=True)
+                    continue
+                run(mode, scenario, rate, window=args.window, confirmation=args.confirm)
+            return
         if args.smoke:
             run("single", "cap_client_credentials", 50, window=60)
             return
         # Give every requested scenario both CPU modes a real observation
         # before spending the remaining budget narrowing the priority paths.
-        for scenario in SCENARIOS:
-            for mode in ("single", "multi"):
+        for scenario in scenarios:
+            for mode in modes:
                 key = f"{mode}/{scenario}"
                 for _ in range(3):
                     records = state.get(key, [])
@@ -290,32 +406,32 @@ def main():
                     rate = (max(1, records[-1]["rate"] // 2) if records
                             else SCENARIOS[scenario] * len(cpus[mode]))
                     run(mode, scenario, rate)
-        for mode in ("single", "multi"):
-            for scenario in PRIMARY:
+        for mode in modes:
+            for scenario in (s for s in scenarios if s in PRIMARY):
                 search(mode, scenario)
             lower, _ = bounds(state, f"{mode}/cap_mixed")
             confirmed = any(r["verdict"] == "PASS" and r["rate"] == lower
                             and r.get("confirmation")
                             and r["metrics"].get("window_seconds", 0) >= 660
                             for r in state.get(f"{mode}/cap_mixed", []))
-            if lower and not confirmed:
+            if "cap_mixed" in scenarios and lower and not confirmed:
                 run(mode, "cap_mixed", lower, window=660, confirmation=True)
         # Give all secondary candidates a three-minute verification before
         # spending the remaining deadline budget on additional narrowing.
-        for scenario in list(SCENARIOS)[4:]:
-            for mode in ("single", "multi"):
+        for scenario in (s for s in scenarios if s not in PRIMARY):
+            for mode in modes:
                 lower, _ = bounds(state, f"{mode}/{scenario}")
                 # Initial failure-only scenes need a lower probe first.
                 # Otherwise verify the existing candidate before optional
                 # higher probes spend time reserved for matrix coverage.
                 search(mode, scenario, extra=0 if lower else 1)
-        for scenario in list(SCENARIOS)[4:]:
-            for mode in ("single", "multi"):
+        for scenario in (s for s in scenarios if s not in PRIMARY):
+            for mode in modes:
                 search(mode, scenario, extra=2)
     except TimeoutError as exc:
         print(str(exc), flush=True)
     finally:
-        save(sis.RESULTS / "search-state.json", state)
+        save(state_path, state)
         print("SEARCH_STOPPED", flush=True)
 
 

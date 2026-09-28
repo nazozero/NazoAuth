@@ -145,3 +145,108 @@ class PointVerdictTests(unittest.TestCase):
     def test_missing_summary_is_invalid_in_authoritative_evaluator(self):
         self.assertEqual(cc.gate.evaluate(None, Path('missing.json'), 100, 60,
                                          'cap_mixed')[0], 'INVALID')
+
+
+class IncrementalExecutionTests(unittest.TestCase):
+    def setUp(self):
+        self.cpus = {'allowed': list(range(64)), 'single': [0],
+                     'multi': list(range(16)), 'postgres': list(range(16, 32)),
+                     'valkey': [32], 'generator': list(range(33, 64))}
+
+    def test_resources_scale_and_vu_change_preserves_user_population(self):
+        small = cc.resource_profile(self.cpus, 'single')
+        large = cc.resource_profile(self.cpus, 'multi')
+        self.assertGreater(large['vus'], small['vus'])
+        increased = cc.resource_profile(self.cpus, 'multi', vus=2048)
+        self.assertEqual(increased['users'], large['users'])
+        self.assertEqual(increased['pool_connections'], large['pool_connections'])
+        exact = cc.resource_profile(self.cpus, 'multi', vus=512, users=256, pool=48)
+        self.assertEqual(exact, {'vus': 512, 'users': 256, 'pool_connections': 48})
+
+    def test_sidecar_vu_override_preserves_offered_workload(self):
+        before = cc.sidecars(16, 240)
+        after = cc.sidecars(16, 240, [16, 32, 64, 256])
+        for old, new in zip(before, after):
+            self.assertEqual(old['rate'], new['rate'])
+            self.assertEqual(old['user_count'], new['user_count'])
+            self.assertGreater(new['pre_vus'], old['pre_vus'])
+            self.assertEqual(new['pre_vus'], new['max_vus'])
+
+    def test_small_deployment_reports_shared_infra_without_blocking(self):
+        with patch.object(cc.os, 'sched_getaffinity', return_value={7}, create=True):
+            cpus = cc.allocations()
+        self.assertEqual(cpus['single'], [7])
+        self.assertEqual(cpus['postgres'], [7])
+        self.assertEqual(cpus['generator'], [7])
+
+    def test_targeted_resume_reuses_same_recipe_and_separates_changed_pool(self):
+        import contextlib
+        import io
+        import json
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(cc.sis, 'RESULTS', Path(tmp)), \
+                patch.object(cc, 'allocations', return_value=self.cpus), \
+                patch.object(cc.points, 'image_binary_sha', return_value='binary'), \
+                patch.object(cc.sis, 'dc', return_value=SimpleNamespace(stdout='image')), \
+                patch.object(cc.sis, 'sh', return_value=SimpleNamespace(stdout='controller')), \
+                patch.dict(cc.os.environ, {'SIS_APP_SHA': 'application'}), \
+                patch.object(cc.points, 'run_ab_point', return_value={}) as run, \
+                patch.object(cc, 'evaluate_point', side_effect=lambda *a, **kw:
+                             ('PASS', {'window_seconds': 180}, {}, None)), \
+                contextlib.redirect_stdout(io.StringIO()):
+            legacy = b'{"pool_connections": 32, "harness_sha": "original"}\n'
+            (Path(tmp) / 'registered-config.json').write_bytes(legacy)
+            args = ['current_capacity.py', '--stop-at', '2099-01-01T00:00:00+00:00',
+                    '--mode', 'multi', '--scenarios', 'cap_mixed', '--rates', '2400', '3000',
+                    '--vus', '512', '--users', '256', '--pool-connections', '32']
+            with patch.object(sys, 'argv', args):
+                cc.main()
+            archived = next(Path(tmp).glob('registered-config-legacy-*.json'))
+            self.assertEqual(archived.read_bytes(), legacy)
+            self.assertEqual([c.args[0]['rate'] for c in run.call_args_list], [2400, 3000])
+            self.assertTrue(all(c.args[0]['scenario'] == 'cap_mixed'
+                                and c.args[0]['pre_vus'] == 512
+                                and c.args[0]['user_count'] == 256
+                                for c in run.call_args_list))
+            original = next(Path(tmp).glob('search-state-*.json'))
+            original_bytes = original.read_bytes()
+            run.reset_mock()
+            # A later stop time or controller-only checkpoint must not repeat load.
+            args[2] = '2099-02-01T00:00:00+00:00'
+            with patch.object(sys, 'argv', args):
+                cc.main()
+            run.assert_not_called()
+            args[-1] = '48'
+            with patch.object(sys, 'argv', args):
+                cc.main()
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(len(list(Path(tmp).glob('search-state-*.json'))), 2)
+            self.assertEqual(original.read_bytes(), original_bytes)
+            self.assertEqual(len(json.loads(original.read_text())['multi/cap_mixed']), 2)
+
+    def test_offline_cli_needs_no_container_and_preserves_source(self):
+        import contextlib
+        import io
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'point.json'
+            source.write_text(json.dumps({'point': {'capture_audit_journal': True}}))
+            before = source.read_bytes()
+            output = Path(tmp) / 'reassessed.json'
+            with patch.object(sys, 'argv', ['current_capacity.py', '--reevaluate',
+                                           str(source), '--output', str(output)]), \
+                    patch.object(cc, 'evaluate_point', return_value=('PASS', {}, {}, {})) as evaluate, \
+                    patch.object(cc.sis, 'dc') as docker, \
+                    patch.object(cc.points, 'run_ab_point') as load, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                cc.main()
+            docker.assert_not_called()
+            load.assert_not_called()
+            self.assertTrue(evaluate.call_args.kwargs['confirmation'])
+            self.assertEqual(source.read_bytes(), before)
+            self.assertEqual(json.loads(output.read_text())[0]['verdict'], 'PASS')
+            with self.assertRaises(ValueError):
+                cc.reevaluate([source], source)

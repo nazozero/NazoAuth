@@ -220,3 +220,45 @@ service capacity upper bound. Missing summaries are invalid evidence.
 same verdict path for offline reassessment of retained artifacts without load;
 keep the original records and publish reassessment separately. Only affected
 points with insufficient evidence require new measurement.
+
+For retained point directories, run an offline reassessment first (no Docker,
+SSH, image build or new load is performed):
+
+```sh
+python perf/tools/current_capacity.py --reevaluate \
+  "$POINT_A/point.json" "$POINT_B/point.json" --output "$REASSESSMENT_JSON"
+```
+
+For new load, `--mode single|multi` and `--scenarios ...` restrict the search.
+`--rates ...` runs only the requested rates for exactly one mode/scenario;
+`--window` is their effective duration (default 180 seconds). Existing valid
+observations with the same recipe/rate and at least that duration are reused;
+`--repeat` explicitly requests a new observation. Mixed `--confirm --window 660`
+also checks mature maintenance and preserves the journal. It is unnecessary to
+repeat an already valid confirmation under an unchanged recipe.
+
+```sh
+python perf/tools/current_capacity.py --stop-at "$STOP_AT" \
+  --mode multi --scenarios cap_mixed --rates 2400 3000 --window 180 \
+  --vus "$CALIBRATED_VUS" --users "$FIXED_USERS" \
+  --pool-connections "$CALIBRATED_POOL"
+```
+
+CPU IDs come only from the process affinity. With fewer than four available
+logical CPUs, infrastructure shares the available set; this topology is recorded
+and must not be described as isolated infrastructure. Default main VUs scale at
+64 per allocated application CPU, users at 16 per CPU with a minimum of 64,
+and the pool at two connections per allocated PostgreSQL CPU. These are initial
+calibration recipes, not resource availability guarantees or validated maxima.
+Use deployment-local observations to fit memory and database connection limits.
+`--vus`, `--users` and `--pool-connections` independently override them; increasing
+VU capacity does not silently change user cardinality. `--sidecar-vus` accepts
+four positive counts in argon2/metadata/FAPI/refresh order, without changing
+sidecar rates or users. Default sidecar VUs scale upward with application CPUs.
+
+Recipe-specific `registered-config-<id>.json` and `search-state-<id>.json` preserve
+independent histories when images, affinity, pool, VUs, users or sidecar settings
+change. Do not combine bounds from different recipes. The old unqualified
+`search-state.json` is not imported automatically: reassess its archived points
+and retain valid published results, then request only missing new points.
+Historical reports remain tied to their original controller and configuration.
