@@ -746,6 +746,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
              f' --series-out "{RESULTS_DIR / (safe_name + ".series.json")}"'
              f' --window-out "{RESULTS_DIR / (safe_name + ".window.json")}"'
              f' --stats-out "{RESULTS_DIR / (safe_name + ".analyzer-stats.json")}"'
+             f' --workers {int(os.environ.get("PERF_CHECKPOINT_STREAM_WORKERS", "1"))}'
              f' < "{stream_fifo}"'],
             stderr=subprocess.DEVNULL)
     command = [
