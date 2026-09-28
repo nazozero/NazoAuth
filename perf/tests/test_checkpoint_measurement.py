@@ -57,11 +57,11 @@ def k6_point(metric, ts, value, tags=None):
         "metric": metric})
 
 
-def run_stream(points):
+def run_stream(points, workers=1):
     """Feed k6 JSON lines through the analyzer; return artifacts dict."""
     tmp = Path(tempfile.mkdtemp())
     p = subprocess.run(
-        [sys.executable, str(ANALYZER), "stream",
+        [sys.executable, str(ANALYZER), "stream", "--workers", str(workers),
          "--diag-out", str(tmp / "diag.jsonl.gz"),
          "--series-out", str(tmp / "series.json"),
          "--window-out", str(tmp / "window.json"),

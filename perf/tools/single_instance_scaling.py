@@ -1349,6 +1349,7 @@ def load_env_list(point: dict, run_id: str) -> list[str]:
         "-e", f"CAP_WARMUP_MS={point.get('warmup_ms', 15000)}",
         "-e", f"PERF_USER_COUNT={point.get('user_count', 64)}",
         "-e", f"PERF_VECTOR_COUNT={point.get('vector_count', 48000)}",
+        "-e", f"PERF_CHECKPOINT_STREAM_WORKERS={point.get('stream_workers', 1)}",
         # The harness owns the only pg_stat_statements reset (executed
         # before the pre snapshot); nothing may reset mid-window.
         "-e", "PERF_SKIP_PG_STATS_RESET=1",

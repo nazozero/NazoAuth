@@ -189,7 +189,9 @@ def recipe_id(config):
     # Binary/images, CPU allocation and effective workload resources do.
     keys = ("cpus", "app_image_id", "runner_image_id", "binary_sha256",
             "resources", "sidecars", "vector_counts", "gate")
-    encoded = json.dumps({k: config[k] for k in keys}, sort_keys=True).encode()
+    fields = {k: config[k] for k in keys}
+    fields["stream_workers"] = config.get("stream_workers", 1)
+    encoded = json.dumps(fields, sort_keys=True).encode()
     return hashlib.sha256(encoded).hexdigest()[:16]
 
 
@@ -226,6 +228,8 @@ def main():
     parser.add_argument("--vus", type=positive_int, help="calibrated pre/max VUs")
     parser.add_argument("--users", type=positive_int, help="fixed account cardinality")
     parser.add_argument("--pool-connections", type=positive_int)
+    parser.add_argument("--stream-workers", type=int, choices=range(1, 9), default=1,
+                        help="metric-sharded stream observers; frozen per recipe")
     parser.add_argument("--sidecar-vus", nargs=4, type=positive_int,
                         metavar=("ARGON2", "META", "FAPI", "REFRESH"))
     parser.add_argument("--repeat", action="store_true", help="recheck an already measured explicit rate")
@@ -253,6 +257,8 @@ def main():
     os.environ.setdefault("SIS_SOURCE_SHA", os.environ["SIS_APP_SHA"])
     sis.RESULTS.mkdir(parents=True, exist_ok=True)
     cpus = allocations()
+    if args.stream_workers > 1 and args.stream_workers + 1 > len(cpus["generator"]):
+        parser.error("stream workers plus dispatcher exceed the allocated generator CPU set")
     points.KEYSET_VOLUME = f"{sis.PROJECT}-keys"
     sis.dc("volume", "create", points.KEYSET_VOLUME)
     for service in ("keyset", "audit-receiver", "perf"):
@@ -266,6 +272,7 @@ def main():
                                      "--format", "{{.Id}}").stdout.strip(),
               "runner_image_id": sis.dc("image", "inspect", sis.PERF_IMAGE,
                                         "--format", "{{.Id}}").stdout.strip(),
+              "stream_workers": args.stream_workers,
               "resources": {m: resource_profile(cpus, m, vus=args.vus,
                              users=args.users, pool=args.pool_connections)
                             for m in ("single", "multi")},
@@ -311,6 +318,7 @@ def main():
                  # the runner cannot silently grow it at higher rates.
                  "vector_count": 49200 if scenario == "fapi2_logged_in_high_security" else 48000,
                  "stream_evidence": True,
+                 "stream_workers": args.stream_workers,
                  "formal_preflight": True, "grace_s": 300,
                  "expected_binary_sha256": binary,
                  "app_env_overrides": {"DATABASE_MAX_CONNECTIONS": resources["pool_connections"]},

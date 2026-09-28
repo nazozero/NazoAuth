@@ -126,6 +126,95 @@ class DiagOverflowInvariance(unittest.TestCase):
             win_a["measurement_cohort"], win_b["measurement_cohort"])
 
 
+class StreamHotPathEquivalence(unittest.TestCase):
+    def test_shards_preserve_authoritative_outputs_and_forensic_population(self):
+        try:
+            from test_checkpoint_measurement import run_stream
+        except ImportError:
+            from perf.tests.test_checkpoint_measurement import run_stream
+
+        points = _mixed_stream()
+        points.insert(0, _point("dropped_iterations", _ts(1016.0), 3))
+        points.extend(_point("http_req_duration", _ts(1015.0 + i * 0.1), value)
+                      for i, value in enumerate(ca.BUCKETS))
+        rows = [json.dumps(point, separators=(",", ":")) for point in points]
+        baseline, sharded = run_stream(rows), run_stream(rows, workers=4)
+        self.assertEqual(baseline["series"], sharded["series"])
+        self.assertEqual(baseline["window"], sharded["window"])
+        for field in ("points", "parse_errors", "bins", "vus_seen",
+                      "diag_budget_exceeded", "diag_overflow_dropped"):
+            self.assertEqual(baseline["stats"][field], sharded["stats"][field])
+        def forensic_population(result):
+            return sorted(json.dumps(json.loads(row), sort_keys=True)
+                          for row in result["diag_lines"].splitlines()
+                          if json.loads(row).get("type") == "Point")
+        self.assertEqual(forensic_population(baseline), forensic_population(sharded))
+        self.assertGreater(sharded["stats"]["lag_over_5s"], 0)
+
+    def test_shards_retain_divergent_contract_and_parse_failure(self):
+        try:
+            from test_checkpoint_measurement import run_stream
+        except ImportError:
+            from perf.tests.test_checkpoint_measurement import run_stream
+
+        points = _mixed_stream()
+        points.append(_point("cap_window_measure_start_ms", _ts(1016.0), 999))
+        rows = [json.dumps(point) for point in points] + ["malformed JSON"]
+        baseline, sharded = run_stream(rows), run_stream(rows, workers=2)
+        self.assertEqual(baseline["series"], sharded["series"])
+        self.assertEqual(baseline["window"], sharded["window"])
+        self.assertEqual(sharded["stats"]["parse_errors"], 1)
+
+    def test_shard_reader_failure_remains_invalid(self):
+        try:
+            from test_checkpoint_measurement import run_stream
+        except ImportError:
+            from perf.tests.test_checkpoint_measurement import run_stream
+        result = run_stream([json.dumps({"metric": "broken", "type": "Point",
+                                        "data": []})], workers=2)
+        self.assertIsNotNone(result["stats"]["reader_error"])
+        self.assertFalse(result["window"]["measurement_cohort"]["valid"])
+
+    def test_binary_rows_preserve_cohort_lag_and_forensic_content(self):
+        from unittest.mock import patch
+
+        points = _mixed_stream()
+        points.extend([
+            _point("http_req_duration", _ts(1016.0), 900,
+                   {"detail": "Unicode 审计"}),
+            _point("http_req_duration", _ts(1015.0), 100),
+            _point("http_req_duration", "invalid timestamp", 1),
+            _point("http_req_duration", "invalid timestamp", 2),
+        ])
+        text, binary = _run_series(), _run_series()
+        with patch.object(ca, "time_now", return_value=2800.0):
+            for point in points:
+                row = json.dumps(point, ensure_ascii=False)
+                text.on_point(point, row)
+                binary.on_point(point, ("  " + row + "\n").encode("utf-8"))
+        text.emit_window()
+        binary.emit_window()
+        self.assertEqual(text.finalize_bins(), binary.finalize_bins())
+        self.assertEqual(text.window_json, binary.window_json)
+        self.assertEqual(text.stats(), binary.stats())
+        self.assertEqual(text.diag_fh.getvalue(), binary.diag_fh.getvalue())
+        self.assertEqual(binary.parse_errors, 2)
+        self.assertGreater(binary.lag_over_5s, 0)
+
+    def test_histogram_search_preserves_strict_bucket_edges(self):
+        values = [-1.0, 0.0, float("inf"), float("nan")]
+        values.extend(v + delta for v in ca.BUCKETS
+                      for delta in (-0.0001, 0, 0.0001))
+        for value in values:
+            with self.subTest(value=value):
+                expected = next((i for i, bound in enumerate(ca.BUCKETS)
+                                 if value < bound), len(ca.BUCKETS))
+                histogram = ca.new_hist()
+                ca.hist_add(histogram, value)
+                self.assertEqual(histogram["b"][expected], 1)
+                self.assertEqual(sum(histogram["b"]), 1)
+
+
 class ForensicDiagContract(unittest.TestCase):
     """§5/§8: stream_evidence projects diag status but never gates on it."""
 

@@ -9,6 +9,24 @@ Install that same binary package when invoking its Python tools on the host:
 Streaming evidence retains the existing cohort, diagnostic-selection and
 five-second consumer-lag rules; forensic gzip output uses compression level 1.
 
+For a measured stream-consumer bottleneck, the targeted controller accepts
+`--stream-workers 2` through `8` (default `1`). It registers this setting as
+part of the recipe and requires enough allocated generator CPUs for the workers
+and dispatcher. The application image does not need rebuilding for this change.
+Every Point is still decoded and validated; metric sharding preserves exact
+cohorts, counts, outcomes, drops and histogram buckets. Native k6 complete-flow
+quantiles remain one population. Window contracts reach every shard; missing,
+divergent, malformed, failed or late evidence retains its existing invalid gate.
+Analyzer stats record each worker's owned-point count and the unchanged
+five-second consumer-lag signal.
+
+Forensic selection remains per metric/second. With multiple workers, each
+metric belongs to one shard; each shard has an equal share of the existing
+512 MiB logical diagnostic budget. Concatenated gzip members form the single
+diagnostic artifact. Ordering and truncation of this sampled forensic copy may
+change; it remains separate from exhaustive authoritative counters and never
+feeds the business verdict. Keep worker count frozen within a capacity interval.
+
 ## Run
 
 Run the full matrix:

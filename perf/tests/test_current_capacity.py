@@ -225,6 +225,14 @@ class IncrementalExecutionTests(unittest.TestCase):
             self.assertEqual(len(list(Path(tmp).glob('search-state-*.json'))), 2)
             self.assertEqual(original.read_bytes(), original_bytes)
             self.assertEqual(len(json.loads(original.read_text())['multi/cap_mixed']), 2)
+            run.reset_mock()
+            with patch.object(sys, 'argv', args + ['--stream-workers', '4']):
+                cc.main()
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(len(list(Path(tmp).glob('search-state-*.json'))), 3)
+            self.assertTrue(all(call.args[0]['stream_workers'] == 4
+                                for call in run.call_args_list))
+            self.assertEqual(original.read_bytes(), original_bytes)
 
     def test_offline_cli_needs_no_container_and_preserves_source(self):
         import contextlib
