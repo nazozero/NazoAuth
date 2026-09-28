@@ -101,6 +101,24 @@ class PointVerdictTests(unittest.TestCase):
                 self.assertEqual(verdict, 'FAIL')
                 self.assertEqual(metrics['sidecar_gates'][name]['verdict'], 'FAIL')
 
+    def test_sidecar_quantiles_keep_operation_and_request_populations_separate(self):
+        operation = {'med': 41, 'p(95)': 131, 'p(99)': 211}
+        request = {'med': 2, 'p(95)': 3, 'p(99)': 4}
+
+        def native(path):
+            raw = {'http_req_duration': {'values': request}}
+            if path.parent.name != 'meta':
+                raw['cap_iter_ms'] = {'values': operation}
+            return raw, {}
+
+        with patch.object(cc.gate, 'k6_metrics', side_effect=native):
+            (verdict, metrics, _, _), _ = self.evaluate()
+        self.assertEqual(verdict, 'PASS')
+        self.assertEqual(metrics['sidecar_gates']['fapi']['metrics'][
+            'complete_operation_latency_ms'], {'p50': 41, 'p95': 131, 'p99': 211})
+        self.assertIsNone(metrics['sidecar_gates']['meta']['metrics'][
+            'complete_operation_latency_ms'])
+
     def test_invalid_sidecar_does_not_establish_service_upper_bound(self):
         (verdict, _, _, _), _ = self.evaluate(main='FAIL', sides={'fapi': 'INVALID'})
         self.assertEqual(verdict, 'INVALID')

@@ -152,6 +152,10 @@ def evaluate_point(point, rec, out, *, confirmation=False):
                 gate.load_summary(path), path, sc["rate"],
                 sis._duration_seconds(sc["duration"]), sc["scenario"],
                 require_stream=True)
+            sc_raw, _ = gate.k6_metrics(path)
+            sc_metrics["complete_operation_latency_ms"] = (
+                gate._trend(sc_raw, "cap_iter_ms")
+                if "cap_iter_ms" in sc_raw else None)
             metrics["sidecar_gates"][sc["name"]] = {
                 "verdict": sc_verdict, "metrics": sc_metrics}
             verdict = combined_verdict(verdict, sc_verdict)
