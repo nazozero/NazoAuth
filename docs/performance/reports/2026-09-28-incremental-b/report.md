@@ -391,3 +391,32 @@ The calibration checkpoint's [CI](https://github.com/nazozero/NazoAuth/actions/r
 passed on `6b6c4cbb` (Rust job 24m41s): all 11 applicable checks succeeded and the two PR-event
 conditional checks were skipped. Final publication will be checked on its
 own exact commit; this checkpoint's green CI is not substituted for that result.
+
+
+## New-container mixed duration checkpoint
+
+With the same frozen recipe, 3537/s passes the 180-second effective window
+but fails the 660-second confirmation. The long point completes 3244.852
+successful operations/s, with complete-operation P95/P99 of 751/1146 ms and
+192821 dropped starts out of 2334423 scheduled (8.260%). Its refresh sidecar
+also fails, with 582.725 successful operations/s at 600 offered and P95/P99
+494/640 ms. These are [duration diagnostics](../../../../perf/results/diagnostics/2026-09-28-mixed-duration-checkpoint.json),
+not a confirmed passing capacity interval.
+
+The long point's connection-pool wait averages 34.35 ms per acquisition,
+compared with 0.038 ms at the same 180-second load. Application, database
+and main generator average 6.915, 8.941 and 3.781 logical CPUs respectively.
+Valid observer lag and complete business counters preserve the failure's
+measurement validity. These observations support service-side waiting;
+they do not identify one SQL statement or prove a CPU ceiling.
+
+Maintenance and durable audit still pass. The mature maintenance period has
+135 samples, maximum gap 2.456 s and maximum expired age 67.496 s. Cleanup
+passing does not make the latency failure pass. The short passing point is
+not promoted to a successful long confirmation. A lower frozen-load
+confirmation is required and remains in progress.
+
+The reporting repair at `6e0eeafb` has eleven applicable CI checks successful,
+with the two existing PR-event conditional skips. Its
+[Rust job](https://github.com/nazozero/NazoAuth/actions/runs/36417493911/job/108912021942)
+is successful; a later publication still requires its own exact-head checks.
