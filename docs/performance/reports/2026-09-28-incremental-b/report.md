@@ -96,33 +96,39 @@ observer gate. During confirmation, mean app/PG CPU is 6.908/8.053 logical CPUs
 and mean pool wait is 0.037 ms/acquisition; the U wait is 1.698 ms. Sampled PG
 wait counts include idle clients and do not prove a per-SQL bottleneck.
 
-## Multicore mixed maintenance, audit and WAL confirmation
+## Mixed maintenance, audit and WAL confirmations
 
-| Evidence | Result in 3750/s, 660 effective seconds |
-|---|---|
-| Maintenance mature interval / samples | 300 s / 143; maximum gap 2.231 s |
-| Oldest expired issuance age | maximum 59.232 s, below declared 120 s SLO |
-| Sampled due count first / last / maximum | 39079 / 132083 / 194730 |
-| Inserted / deleted in same mature span | 983205 / 924120 |
-| Process queue enqueued / persisted / dropped / pending after drain | 440084 / 440084 / 0 / 0 |
-| Durable events / token-issued events, whole point | 3696610 / 2397896 |
-| Journal gaps / duplicates / malformed lines | 0 / 0 / 0; both anchors reconciled |
-| Generated WAL bytes (`pg_stat_wal`) | 9980130918.750 |
-| WAL write bytes (`pg_stat_io`) | 22501491263.410 |
-| WAL writes / fsyncs | 643515.690 / 641700.012 |
-| Generated / written WAL bytes per main success | 4032.366 / 9091.490 |
+| Evidence | Single CPU: retained 600/s, 660 s | Sixteen CPUs: new 3750/s, 660 s |
+|---|---|---|
+| Maintenance mature interval / age samples | 300 s / 148 | 300 s / 143 |
+| Maximum age sample gap | 2.056 s | 2.231 s |
+| Oldest expired issuance age, maximum; SLO 120 s | 58.435 s | 59.232 s |
+| Sampled due count first / last / maximum | 8413 / 8339 / 8413 | 39079 / 132083 / 194730 |
+| Inserted / deleted in same mature span | 138877 / 141626 | 983205 / 924120 |
+| Process queue enqueued / persisted / dropped / pending after drain | 67827 / 67827 / 0 / 0 | 440084 / 440084 / 0 / 0 |
+| Durable events / token-issued events, whole point | 536367 / 335282 | 3696610 / 2397896 |
+| Journal gaps / duplicates / malformed lines | 0 / 0 / 0; anchors reconciled | 0 / 0 / 0; anchors reconciled |
+| Generated WAL bytes (`pg_stat_wal`) | 1371739627.976 | 9980130918.750 |
+| WAL write bytes (`pg_stat_io`) | 5721142050.762 | 22501491263.410 |
+| WAL writes / fsyncs | 406231.228 / 405983.228 | 643515.690 / 641700.012 |
+| Main successful operations, window denominator | 396000 | 2475006 |
+| Generated / written WAL bytes per main success | 3463.989 / 14447.328 | 4032.366 / 9091.490 |
 
-Age passes across the declared retention horizon, and audit drains without
-loss. The sampled due inventory grows during this finite span; the pass is
+Both confirmations pass across the declared retention horizon, and audit drains
+without loss. Multicore sampled due inventory grows during this finite span; the pass is
 the existing expiry-age SLO, not proof of indefinitely bounded total inventory.
-WAL/op includes every sidecar and background activity and uses 2,475,006 main
-successes as denominator. The two WAL counters have different meanings, and
+WAL/op includes every sidecar and background activity. Due inventory is a sampled
+diagnostic; age samples and inventory samples have different frequencies.
+The two WAL counters have different meanings, and
 interpolated counts are fractional. WAL timing is N/A because its timing GUC
 is off. Audit event totals include warmup and drain, unlike window throughput.
 
 The original receiver journal is retained externally: 3,296,382,335 bytes,
 SHA-256 `91d1f43c46433c271c25dd220534f0784f8db77d4ed3d669262c84852c1e2f43`,
 equal to the runtime reconciliation hash. It is not committed to Git.
+The retained single-CPU journal has 478,326,657 bytes and SHA-256
+`45dcd4a33f270d59632022f246d5cb453a2b14eda38969947159717ac33a8d72`,
+also reconciled against its original runtime hash. It is retained externally.
 
 ## Accepted single-core mixed boundary
 
@@ -224,6 +230,41 @@ allocated CPUs, mean pool wait is 0.090 ms and maximum analyzer lag is
 3.345 seconds, below its unchanged five-second validity gate. Parse and
 reader failure counts are zero. The failure is independent of injector
 delivery and observer validity. Security and admission settings are unchanged.
+
+## Accepted single-core authorization-code and refresh boundaries
+
+Both frozen C3 recipes use 256 VUs, 64 users, pool 32 and one stream worker.
+The [six-point evidence](../../../../perf/results/diagnostics/2026-09-28-code-refresh-boundary-acceptance.json)
+keeps 180-second endpoints and separate one-factor 512-VU controls.
+
+| Scene | L / U ops/s | Success at L / U | Complete P95/P99 at L / U ms | Drops at L / U |
+|---|---|---|---|---|
+| Authorization code | 325 / 350 | 325 / 342.806 | 50/158 / 809/881 | 0 / 1295 |
+| Refresh | 750 / 812 | 749.994 / 808.95 | 34/74 / 311/341 | 0 / 549 |
+
+At 350/s the 512-VU authorization-code control delivers and completes every
+one of 63000 arrivals, without drops or warnings, yet complete P95/P99 remain
+394/497 ms. The service latency failure survives removal of the delivery
+constraint. Load CPU is 1.139/31, observer lag 0.284 s and mean pool wait
+2.617 ms. At the frozen upper, application CPU is 0.978/1, load CPU 1.251/31,
+pool wait 28.991 ms and observer lag 0.266 s.
+
+The refresh 512-VU control does not restore the SLO: complete P95/P99 become
+771/813 ms. It still warns about VUs and drops 9.6654% of arrivals, so that
+control is not evidence of full target delivery. Independent service-response
+and queue measurements support the original upper's latency failure: native
+whole-point HTTP waiting P95 is 320.549 ms at 256 VUs and 769.863 ms at 512;
+send/receive/blocked P95 are below 0.062 ms. Pool acquisition wait rises from
+15.396 to 128.371 ms, while load CPU remains 0.485/31 and 0.490/31 and observer
+lag 0.259/0.262 s. Application CPU averages 0.958/1 and 0.927/1. At the unchanged
+250-ms P99 SLO, 812/s needs 203 busy VUs, below the frozen 256 allocation.
+The warning and drop counts are not used alone to attribute a backend failure.
+
+Every started operation completes, with no unexpected outcomes, preparation,
+runtime or audit failures at these endpoints and controls. Native HTTP timings
+are whole-point diagnostics; capacity quantiles remain complete-operation
+measurement cohorts. Bounds use the 256-VU recipe throughout; the controls
+are separate. No specific SQL or continuous component saturation is inferred.
 
 ## Observer experiments and checkpoint CI
 
