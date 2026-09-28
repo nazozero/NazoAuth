@@ -684,6 +684,42 @@ def _metric_shard(metric: bytes, workers: int) -> int:
     return int.from_bytes(hashlib.sha256(metric).digest()[:4], "big") % workers
 
 
+def _owned_stream_rows(connection, index, workers):
+    # Native k6 puts the root metric first. C regex scans skip known rows
+    # owned by other shards without decoding them in each worker. Contracts,
+    # new metrics and other valid JSON layouts use the existing decoder.
+    names, pattern = set(), None
+    while chunk := connection.recv_bytes():
+        if pattern is None:
+            ordinary = sorted(name for name in names
+                              if not name.startswith(b"cap_window_"))
+            owned = [name for name in ordinary
+                     if _metric_shard(name, workers) == index]
+            prefix = rb'\{"metric":"(?:' + b"|".join(map(re.escape, ordinary)) + rb')",'
+            fast = (rb'(?P<owned>\{"metric":"(?:' + b"|".join(map(re.escape, owned))
+                    + rb')",[^\n]*)|') if owned else b""
+            slow = ((rb'(?P<slow>(?!' + prefix + rb')[^\n]*)') if ordinary
+                    else rb'(?P<slow>[^\n]*)')
+            pattern = re.compile(rb'\n(?:' + fast + slow + rb')(?=\n)')
+        changed = False
+        for match in pattern.finditer(b"\n" + chunk):
+            raw = match.group(match.lastgroup) + b"\n"
+            if match.lastgroup == "owned":
+                yield False, raw
+                continue
+            if raw.isspace():
+                continue
+            metric = _stream_metric(raw)
+            if metric and len(metric) <= 256 and len(names) < 1024 and metric not in names:
+                names.add(metric); changed = True
+            contract = metric is not None and metric.startswith(b"cap_window_")
+            if not contract and (_metric_shard(metric, workers) if metric else 0) != index:
+                continue
+            yield contract, raw
+        if changed:
+            pattern = None
+
+
 def _stream_shard(connection, index, workers, diag_path):
     global MAX_DIAG_BYTES
     MAX_DIAG_BYTES //= workers
@@ -691,37 +727,35 @@ def _stream_shard(connection, index, workers, diag_path):
     series.diag_fh = gzip.open(diag_path, "wt", encoding="utf-8", compresslevel=1)
     unowned_points = unowned_late = unowned_errors = 0
     try:
-        while chunk := connection.recv_bytes():
-            for framed in chunk.splitlines(keepends=True):
-                broadcast, raw = framed[:1] == b"B", framed[1:]
-                try:
-                    obj = orjson.loads(raw)
-                except orjson.JSONDecodeError:
-                    series.parse_errors += 1
-                    continue
-                if obj.get("type") != "Point":
-                    continue
-                data = obj.get("data", obj)
-                metric = data.get("metric") or obj.get("metric")
-                if not isinstance(metric, str):
-                    series.on_point(obj, raw)
-                    continue
-                contract = metric.startswith("cap_window_")
-                if contract != broadcast or (not contract and
-                        _metric_shard(metric.encode("utf-8"), workers) != index):
-                    raise ValueError("point metric does not match stream shard")
-                before_points, before_late = series.points, series.lag_over_5s
-                before_errors, before_max_lag = series.parse_errors, series.lag_max_s
-                forensic = series.diag_fh
-                if broadcast and index != 0:
-                    series.diag_fh = None
+        for broadcast, raw in _owned_stream_rows(connection, index, workers):
+            try:
+                obj = orjson.loads(raw)
+            except orjson.JSONDecodeError:
+                series.parse_errors += 1
+                continue
+            if obj.get("type") != "Point":
+                continue
+            data = obj.get("data", obj)
+            metric = data.get("metric") or obj.get("metric")
+            if not isinstance(metric, str):
                 series.on_point(obj, raw)
-                series.diag_fh = forensic
-                if broadcast and index != 0:
-                    unowned_points += series.points - before_points
-                    unowned_late += series.lag_over_5s - before_late
-                    unowned_errors += series.parse_errors - before_errors
-                    series.lag_max_s = before_max_lag
+                continue
+            contract = metric.startswith("cap_window_")
+            if contract != broadcast or (not contract and
+                    _metric_shard(metric.encode("utf-8"), workers) != index):
+                raise ValueError("point metric does not match stream shard")
+            before_points, before_late = series.points, series.lag_over_5s
+            before_errors, before_max_lag = series.parse_errors, series.lag_max_s
+            forensic = series.diag_fh
+            if broadcast and index != 0:
+                series.diag_fh = None
+            series.on_point(obj, raw)
+            series.diag_fh = forensic
+            if broadcast and index != 0:
+                unowned_points += series.points - before_points
+                unowned_late += series.lag_over_5s - before_late
+                unowned_errors += series.parse_errors - before_errors
+                series.lag_max_s = before_max_lag
     except Exception as error:
         series.reader_error = f"{type(error).__name__}: {error}"
     finally:
@@ -787,17 +821,23 @@ def _consume_sharded_stream(workers, diag_path):
                 child.close()
                 children.append(process); connections.append(parent)
                 buffers.append(bytearray()); diagnostics.append(path)
-            for raw in sys.stdin.buffer:
-                if raw.isspace():
+            # All shards see complete blocks. Each worker selects its owned
+            # metric rows, so the dispatcher does no per-Point Python work.
+            pending = b""
+            while chunk := sys.stdin.buffer.read1(65536):
+                block = pending + chunk
+                edge = block.rfind(b"\n")
+                if edge < 0:
+                    pending = block
                     continue
-                metric = _stream_metric(raw)
-                broadcast = metric is not None and metric.startswith(b"cap_window_")
-                indices = range(workers) if broadcast else (
-                    _metric_shard(metric, workers) if metric else 0,)
-                for index in indices:
-                    buffers[index] += (b"B" if broadcast else b"O") + raw
+                pending = block[edge + 1:]
+                for index, connection in enumerate(connections):
+                    buffers[index].extend(block[:edge + 1])
                     if len(buffers[index]) >= 65536:
-                        connections[index].send_bytes(buffers[index]); buffers[index].clear()
+                        connection.send_bytes(buffers[index]); buffers[index].clear()
+            if pending:
+                for buffer in buffers:
+                    buffer.extend(pending + b"\n")
             for connection, buffer in zip(connections, buffers):
                 if buffer:
                     connection.send_bytes(buffer)

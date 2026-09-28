@@ -35,6 +35,12 @@ divergent, malformed, failed or late evidence retains its existing invalid gate.
 Analyzer stats record each worker's owned-point count and the unchanged
 five-second consumer-lag signal.
 
+The dispatcher sends complete input blocks to workers. Each worker selects
+its existing metric partition with a bounded native-row regex cache; new
+metrics, window contracts and other JSON layouts use the routing decoder.
+This removes per-Point work from the dispatcher. A worker still decodes and
+validates every owned Point, in input order, with the same forensic selection.
+
 Forensic selection remains per metric/second. With multiple workers, each
 metric belongs to one shard; each shard has an equal share of the existing
 512 MiB logical diagnostic budget. Concatenated gzip members form the single
