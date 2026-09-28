@@ -1,6 +1,6 @@
 --- a/internal/output/json/json.go
 +++ b/internal/output/json/json.go
-@@ -4,10 +4,16 @@
+@@ -4,10 +4,17 @@
  
  import (
  	"bufio"
@@ -13,11 +13,12 @@
  	"io"
  	"maps"
 +	"math"
++	"os"
 +	"strconv"
  	"strings"
  	"time"
  
-@@ -34,6 +40,14 @@
+@@ -34,6 +41,14 @@
  	closeFn     func() error
  	seenMetrics map[string]struct{}
  	thresholds  map[string]metrics.Thresholds
@@ -32,7 +33,7 @@
  }
  
  // New returns a new JSON output.
-@@ -62,7 +76,23 @@
+@@ -62,7 +77,25 @@
  func (o *Output) Start() error {
  	o.logger.Debug("Starting...")
  
@@ -44,7 +45,9 @@
 +		}
 +		o.closeFn = o.closePartitions
 +		for index := 0; index < count; index++ {
-+			file, err := o.params.FS.Create(o.filename + "." + strconv.Itoa(index))
++			// A write-only FIFO open waits for its reader. Create() uses O_RDWR
++			// and can finish a short run before a spawned reader opens the pipe.
++			file, err := o.params.FS.OpenFile(o.filename+"."+strconv.Itoa(index), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 +			if err != nil {
 +				_ = o.closePartitions()
 +				return err
@@ -57,7 +60,7 @@
  		w := bufio.NewWriter(o.params.StdOut)
  		o.closeFn = func() error {
  			return w.Flush()
-@@ -138,7 +168,7 @@
+@@ -138,7 +171,7 @@
  					firstErr = err
  				}
  			}
@@ -66,7 +69,7 @@
  				errCount++
  				if firstErr == nil {
  					firstErr = err
-@@ -146,6 +176,14 @@
+@@ -146,6 +179,14 @@
  			}
  		}
  	}
@@ -81,7 +84,7 @@
  	if firstErr != nil {
  		// Skip metric if it can't be made into JSON or envelope is null.
  		o.logger.WithError(firstErr).WithField("failed", errCount).Error("Sample(s) couldn't be marshalled to JSON")
-@@ -153,6 +191,138 @@
+@@ -153,6 +194,138 @@
  	if count > 0 {
  		o.logger.WithField("t", time.Since(start)).WithField("count", count).Debug("Wrote metrics to JSON")
  	}
