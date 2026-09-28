@@ -179,6 +179,55 @@ class ProducerConsumerContractTest(unittest.TestCase):
                 self.assertEqual(measure['successful_ops_per_s'], 0)
 
 
+class RunnerStreamLifetimeTest(unittest.TestCase):
+    def test_eof_precedes_sampler_shutdown_on_success_and_process_error(self):
+        tree = ast.parse((ROOT / 'perf/runner.py').read_text())
+        run = next(n for n in tree.body
+                   if isinstance(n, ast.FunctionDef) and n.name == 'run_scenario')
+        lifecycle = next(n for n in run.body if isinstance(n, ast.Try)
+                         and any(isinstance(child, ast.Call)
+                                 and isinstance(child.func, ast.Name)
+                                 and child.func.id == 'StatsSampler'
+                                 for child in ast.walk(n)))
+        for process_error in (False, True):
+            with self.subTest(process_error=process_error):
+                events = []
+
+                class Writer:
+                    def close(self):
+                        events.append('eof')
+
+                class Fifo:
+                    def open(self, mode):
+                        assert mode == 'wb'
+                        return Writer()
+
+                class Sampler:
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, *_):
+                        events.append('sampler_shutdown')
+
+                def execute(*_, **kwargs):
+                    self.assertIsInstance(kwargs['stdout'], Writer)
+                    events.append('k6_exit')
+                    if process_error:
+                        raise RuntimeError('process failure')
+
+                scope = dict(stream_fifo=Fifo(), stream_proc=None, stream_stdout=None,
+                             StatsSampler=Sampler, command=[], env={},
+                             subprocess=type('Process', (), {'run': staticmethod(execute)}))
+                source = compile(ast.Module(body=[lifecycle], type_ignores=[]),
+                                 'runner-stream-lifetime', 'exec')
+                if process_error:
+                    with self.assertRaisesRegex(RuntimeError, 'process failure'):
+                        exec(source, scope)
+                else:
+                    exec(source, scope)
+                self.assertEqual(events, ['k6_exit', 'eof', 'sampler_shutdown'])
+
+
 @unittest.skipUnless(shutil.which('k6'), 'k6 is required to verify its buffered JSON writer')
 class BufferedJsonOutputTest(unittest.TestCase):
     def test_stdout_contains_only_complete_json_and_flushes_final_points(self):

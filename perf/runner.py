@@ -782,8 +782,15 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         if stream_fifo is not None:
             stream_stdout = stream_fifo.open("wb")
         with StatsSampler() as sampler:
-            completed = subprocess.run(command, env=env, text=True,
-                                       stdout=stream_stdout)
+            try:
+                completed = subprocess.run(command, env=env, text=True,
+                                           stdout=stream_stdout)
+            finally:
+                # StatsSampler exit can wait five seconds. Deliver EOF now
+                # so partial shard batches drain without that extra delay.
+                if stream_stdout is not None:
+                    stream_stdout.close()
+                    stream_stdout = None
     finally:
         # Close the parent descriptor before waiting: the reader needs EOF
         # after k6 has flushed its final buffered points and exited.
