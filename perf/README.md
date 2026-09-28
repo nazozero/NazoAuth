@@ -38,7 +38,8 @@ five-second consumer-lag signal.
 With multiple workers, the JSON output patch writes every sample directly
 to its metric owner's buffered FIFO (`K6_JSON_PARTITIONS=2..8` and
 `--out json=<prefix>`). All partitions flush on every existing 200ms output
-tick, including quiet ticks, and close after the final flush. Window samples
+tick, including quiet ticks, and close after the final flush. Write-only FIFO
+opens wait for their readers before a short producer can finish. Window samples
 reach every worker. Each worker decodes and verifies the complete owned JSON
 envelope in input order; ownership errors invalidate the stream. The parent
 waits for producer EOF before the bounded final drain. This avoids dispatcher

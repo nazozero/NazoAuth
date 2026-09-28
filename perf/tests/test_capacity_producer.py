@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -279,17 +280,22 @@ export function handleSummary(data) { return {}; }
                         '--series-out', str(root / f'{stem}.series.json'),
                         '--window-out', str(root / f'{stem}.window.json'),
                         '--stats-out', str(root / f'{stem}.stats.json')]
-                reader = subprocess.Popen([*command('partition'), '--workers', str(workers),
-                                            '--fifo-prefix', str(prefix)], stdin=subprocess.PIPE)
-                try:
-                    producer = subprocess.run(['k6', 'run', '--quiet', '--out', 'json=-',
+                producer = subprocess.Popen(['k6', 'run', '--quiet', '--out', 'json=-',
                                               '--out', f'json={prefix}', str(source)],
                         env={**os.environ, 'K6_JSON_PARTITIONS': str(workers)},
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # Start the producer first: a write-only FIFO open must wait
+                # for every reader rather than lose a short final batch.
+                time.sleep(0.2)
+                self.assertIsNone(producer.poll())
+                reader = subprocess.Popen([*command('partition'), '--workers', str(workers),
+                                           '--fifo-prefix', str(prefix)], stdin=subprocess.PIPE)
+                try:
+                    stdout, stderr = producer.communicate(timeout=30)
                     reader.stdin.close()
-                    self.assertEqual(producer.returncode, 0, producer.stderr.decode())
+                    self.assertEqual(producer.returncode, 0, stderr.decode())
                     self.assertEqual(reader.wait(timeout=60), 0)
-                    baseline = subprocess.run(command('baseline'), input=producer.stdout,
+                    baseline = subprocess.run(command('baseline'), input=stdout,
                                               capture_output=True, timeout=30)
                     self.assertEqual(baseline.returncode, 0, baseline.stderr.decode())
                     for artifact in ('series', 'window'):
@@ -310,6 +316,8 @@ export function handleSummary(data) { return {}; }
                         reader.stdin.close()
                     if reader.poll() is None:
                         reader.terminate(); reader.wait(timeout=10)
+                    if producer.poll() is None:
+                        producer.kill(); producer.communicate(timeout=10)
 
     def test_stdout_contains_only_complete_json_and_flushes_final_points(self):
         # The production script also returns file-only summary outputs. The
