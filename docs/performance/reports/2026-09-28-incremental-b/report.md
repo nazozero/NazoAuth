@@ -170,6 +170,61 @@ establishes a server-response upper failure. The exact response body is absent,
 so the eight-permit hash-admission queue is not claimed as a proven root cause.
 Password strength and admission policy are unchanged.
 
+## Accepted single-core client-credentials boundary
+
+The frozen C3 recipe uses 512 VUs, 64 users, pool 32 and one stream worker.
+Its 180-second endpoints give **[1375, 1500) operations/s**. At 1375/s,
+successful throughput is 1375.006/s with complete P95/P99 24/46 ms and no
+drops. At 1500/s, success is 1491.167/s, complete P95/P99 339/395 ms and
+1590 drops (0.5889%). The upper misses latency and delivery gates.
+
+The one-factor 1024-VU control at 1500/s does not restore the SLO: complete
+P95/P99 rise to 701/760 ms, with 1553 drops. Native whole-point HTTP waiting
+P95 is 335.189 ms at 512 VUs and 697.629 ms at 1024 VUs; sending, receiving
+and blocked P95 are below 0.05 ms in both. These request diagnostics support
+the attribution and do not replace complete-operation measurement quantiles.
+At the 512-VU upper, load CPU is 0.797/31, analyzer lag 0.257 s, application
+CPU 0.912/1 and mean pool wait 16.985 ms. The control's pool wait increases
+to 60.062 ms. At 1500/s the 250-ms P99 SLO needs 375 busy VUs, below the
+frozen 512-VU allocation. The evidence supports service response and queue
+latency; it does not identify a particular SQL or continuously saturated CPU.
+The separate 1024-VU recipe also fails at 1375/s and is not mixed into the
+accepted 512-VU interval.
+
+## Accepted multicore introspection boundary and producer repair
+
+The high-rate producer experiment keeps the C3 Python/observer image, 1024
+VUs, 256 users, pool 64, four stream workers and workload unchanged. It
+replaces only native k6 and enables omission of six unused HTTP timing
+series from streamed JSON. Native summaries and thresholds still retain
+these timings; the operation cohorts, window contracts, latency populations,
+HTTP counts/errors, drops and all evaluator inputs remain exhaustive.
+Both flag modes pass native HTTP equivalence tests. The overlay's base,
+binary, patch and policy identities are in the
+[seven-point checkpoint evidence](../../../../perf/results/diagnostics/2026-09-28-issuer-introspect-boundary-acceptance.json).
+
+The unchanged producer dropped 9345 arrivals (0.324%) at 16000/s over 180
+seconds. The repaired producer passes the same offered rate: success
+15997.911/s, complete P95/P99 3/15 ms, 376 drops (0.0131%), no unexpected
+outcomes and no unfinished operations. This resolves the measured producer
+delivery constraint; no causal speedup percentage is inferred.
+
+The frozen repaired recipe gives **[16000, 17000) operations/s**. At 17000/s,
+99.938% of arrivals start and every started operation completes, with 1892
+drops (0.0618%) and complete P95/P99 4/24 ms. Measurement is valid, but 50802
+outcomes are unexpected and successful throughput falls to 16707.406/s.
+Retained responses are HTTP 429 `temporarily_unavailable`, matching the
+unchanged management request budget of 1000000 per source IP per 60 seconds.
+The bounded whole-point log retains 40960 such samples; this is not an exact
+measurement HTTP-status count. This interval describes the configured
+single-source-IP admission boundary, not an intrinsic CPU maximum.
+
+At the upper, load/app/PG CPU averages are 8.120/4.579/8.233 of 31/16/16
+allocated CPUs, mean pool wait is 0.090 ms and maximum analyzer lag is
+3.345 seconds, below its unchanged five-second validity gate. Parse and
+reader failure counts are zero. The failure is independent of injector
+delivery and observer validity. Security and admission settings are unchanged.
+
 ## Observer experiments and checkpoint CI
 
 The native metric-partition experiment preserved its equivalence tests but
@@ -192,6 +247,13 @@ the workspace step takes 166 seconds, and all 13 audit-ledger tests pass in
 job/step totals; cache and runner variation prevent causal speedup percentages.
 [Recorded timings](../../../../perf/results/diagnostics/2026-09-28-ci-cost-60d.json)
 do not substitute for the final publication commit's checks.
+
+Producer checkpoint `6511b3ab` also has all 11 applicable checks successful
+and the two justified PR-event skips. Its
+[native producer tests](https://github.com/nazozero/NazoAuth/actions/runs/36393855474)
+and [Rust quality gate](https://github.com/nazozero/NazoAuth/actions/runs/36393855477/job/108835545322)
+pass on that exact commit. This remains checkpoint evidence, not the future
+publication commit's CI proof.
 
 The remaining scene boundaries and their VU controls continue as targeted
 incremental tests. This checkpoint is not the final 20-row current baseline.
