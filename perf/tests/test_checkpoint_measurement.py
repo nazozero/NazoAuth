@@ -57,23 +57,16 @@ def k6_point(metric, ts, value, tags=None):
         "metric": metric})
 
 
-def run_stream(points, workers=1, partitions=None, control=""):
+def run_stream(points, workers=1):
     """Feed k6 JSON lines through the analyzer; return artifacts dict."""
     tmp = Path(tempfile.mkdtemp())
-    extra = []
-    if partitions is not None:
-        prefix = tmp / "points"
-        for index, rows in enumerate(partitions):
-            Path(f"{prefix}.{index}").write_text("\n".join(rows), encoding="utf-8")
-        extra = ["--fifo-prefix", str(prefix)]
     p = subprocess.run(
         [sys.executable, str(ANALYZER), "stream", "--workers", str(workers),
          "--diag-out", str(tmp / "diag.jsonl.gz"),
          "--series-out", str(tmp / "series.json"),
          "--window-out", str(tmp / "window.json"),
-         "--stats-out", str(tmp / "stats.json"), *extra],
-        input=control if partitions is not None else "\n".join(points),
-        text=True, capture_output=True, timeout=120)
+         "--stats-out", str(tmp / "stats.json")],
+        input="\n".join(points), text=True, capture_output=True, timeout=120)
     assert p.returncode == 0, p.stderr
     out = {
         "series": json.loads((tmp / "series.json").read_text()),

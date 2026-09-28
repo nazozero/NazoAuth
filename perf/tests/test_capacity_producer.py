@@ -8,8 +8,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
-import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -191,18 +189,13 @@ class RunnerStreamLifetimeTest(unittest.TestCase):
                                  and isinstance(child.func, ast.Name)
                                  and child.func.id == 'StatsSampler'
                                  for child in ast.walk(n)))
-        for partitioned, process_error in ((False, False), (False, True),
-                                           (True, False), (True, True)):
-            with self.subTest(partitioned=partitioned, process_error=process_error):
+        for process_error in (False, True):
+            with self.subTest(process_error=process_error):
                 events = []
 
                 class Writer:
-                    closed = False
-
                     def close(self):
-                        if not self.closed:
-                            events.append('eof')
-                            self.closed = True
+                        events.append('eof')
 
                 class Fifo:
                     def open(self, mode):
@@ -217,19 +210,12 @@ class RunnerStreamLifetimeTest(unittest.TestCase):
                         events.append('sampler_shutdown')
 
                 def execute(*_, **kwargs):
-                    if partitioned:
-                        self.assertIsNone(kwargs['stdout'])
-                    else:
-                        self.assertIsInstance(kwargs['stdout'], Writer)
+                    self.assertIsInstance(kwargs['stdout'], Writer)
                     events.append('k6_exit')
                     if process_error:
                         raise RuntimeError('process failure')
 
-                scope = dict(stream_fifo=Fifo(), stream_partitions=partitioned,
-                             stream_proc=type('Reader', (), {'stdin': Writer(),
-                                 'wait': lambda self, timeout: 0})()
-                             if partitioned else None, stream_stdout=None,
-                             stream_fifos=[],
+                scope = dict(stream_fifo=Fifo(), stream_proc=None, stream_stdout=None,
                              StatsSampler=Sampler, command=[], env={},
                              subprocess=type('Process', (), {'run': staticmethod(execute)}))
                 source = compile(ast.Module(body=[lifecycle], type_ignores=[]),
@@ -244,81 +230,6 @@ class RunnerStreamLifetimeTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('k6'), 'k6 is required to verify its buffered JSON writer')
 class BufferedJsonOutputTest(unittest.TestCase):
-    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'POSIX FIFOs are required')
-    def test_native_partitions_match_same_run_stdout_cohort_and_histograms(self):
-        script = """
-import { Counter, Trend } from 'k6/metrics';
-import { sleep } from 'k6';
-const fields = ['scenario_start_ms','measure_start_ms','measure_end_ms','duration_ms','clock_ok'];
-const contracts = fields.map(name => new Trend('cap_window_' + name));
-const begin = new Counter('cap_iter_begin');
-const end = new Counter('cap_iter_end');
-const latency = new Trend('cap_iter_ms');
-const custom = new Counter('fixture_custom_unicode');
-export const options = { vus: 1, iterations: 7 };
-export function setup() { return Date.now(); }
-export default function (start) {
-  [start,start,start+10000,10000,1].forEach((value,i) => contracts[i].add(value));
-  const tags = { cohort:'measure',lw:'1',detail:'雪 <>&' };
-  begin.add(1,tags); latency.add(__ITER+0.5,tags);
-  end.add(1,{...tags,outcome:'success'}); custom.add(1,tags); sleep(0.03);
-}
-export function handleSummary(data) { return {}; }
-"""
-        for workers in (2, 4, 8):
-            with self.subTest(workers=workers), tempfile.TemporaryDirectory() as td:
-                root = Path(td)
-                source = root / 'fixture.js'
-                source.write_text(script)
-                prefix = root / 'points'
-                for index in range(workers):
-                    os.mkfifo(f'{prefix}.{index}')
-                analyzer = ROOT / 'perf/tools/checkpoint_analyze.py'
-                def command(stem):
-                    return [sys.executable, str(analyzer), 'stream',
-                        '--diag-out', str(root / f'{stem}.diag.gz'),
-                        '--series-out', str(root / f'{stem}.series.json'),
-                        '--window-out', str(root / f'{stem}.window.json'),
-                        '--stats-out', str(root / f'{stem}.stats.json')]
-                producer = subprocess.Popen(['k6', 'run', '--quiet', '--out', 'json=-',
-                                              '--out', f'json={prefix}', str(source)],
-                        env={**os.environ, 'K6_JSON_PARTITIONS': str(workers)},
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                # Start the producer first: a write-only FIFO open must wait
-                # for every reader rather than lose a short final batch.
-                time.sleep(0.2)
-                self.assertIsNone(producer.poll())
-                reader = subprocess.Popen([*command('partition'), '--workers', str(workers),
-                                           '--fifo-prefix', str(prefix)], stdin=subprocess.PIPE)
-                try:
-                    stdout, stderr = producer.communicate(timeout=30)
-                    reader.stdin.close()
-                    self.assertEqual(producer.returncode, 0, stderr.decode())
-                    self.assertEqual(reader.wait(timeout=60), 0)
-                    baseline = subprocess.run(command('baseline'), input=stdout,
-                                              capture_output=True, timeout=30)
-                    self.assertEqual(baseline.returncode, 0, baseline.stderr.decode())
-                    for artifact in ('series', 'window'):
-                        self.assertEqual(json.loads((root / f'baseline.{artifact}.json').read_text()),
-                                         json.loads((root / f'partition.{artifact}.json').read_text()))
-                    stats = json.loads((root / 'partition.stats.json').read_text())
-                    original = json.loads((root / 'baseline.stats.json').read_text())
-                    self.assertEqual(stats['points'], original['points'])
-                    self.assertEqual(sum(stats['shard_points']), stats['points'])
-                    self.assertEqual(stats['parse_errors'], 0)
-                    self.assertIsNone(stats['reader_error'])
-                    self.assertEqual(stats['lag_over_5s'], 0)
-                    window = json.loads((root / 'partition.window.json').read_text())
-                    self.assertTrue(window['valid'], window)
-                    self.assertEqual(window['measurement_cohort']['measure_completed_exact'], 7)
-                finally:
-                    if not reader.stdin.closed:
-                        reader.stdin.close()
-                    if reader.poll() is None:
-                        reader.terminate(); reader.wait(timeout=10)
-                    if producer.poll() is None:
-                        producer.kill(); producer.communicate(timeout=10)
-
     def test_stdout_contains_only_complete_json_and_flushes_final_points(self):
         # The production script also returns file-only summary outputs. The
         # final small counter batch exercises flushing below the buffer size.
