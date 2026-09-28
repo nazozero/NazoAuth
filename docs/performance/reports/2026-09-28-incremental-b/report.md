@@ -123,12 +123,40 @@ The two WAL counters have different meanings, and
 interpolated counts are fractional. WAL timing is N/A because its timing GUC
 is off. Audit event totals include warmup and drain, unlike window throughput.
 
-The original receiver journal is retained externally: 3,296,382,335 bytes,
+The original receiver journal had 3,296,382,335 bytes,
 SHA-256 `91d1f43c46433c271c25dd220534f0784f8db77d4ed3d669262c84852c1e2f43`,
 equal to the runtime reconciliation hash. It is not committed to Git.
+The old container was then closed. Its emergency full-stream transfer was
+interrupted: the aggregate runtime evidence survived, but this multicore
+journal and its maintenance sampler did not. That confirmation cannot be
+independently replayed from the migration backup and is excluded from final
+authority pending a new complete confirmation. The new deployment uses a
+separate result namespace; its endpoints are never combined with old endpoints.
 The retained single-CPU journal has 478,326,657 bytes and SHA-256
 `45dcd4a33f270d59632022f246d5cb453a2b14eda38969947159717ac33a8d72`,
 also reconciled against its original runtime hash. It is retained externally.
+Its restored maintenance sampler passes offline reassessment after migration.
+
+## Container migration and execution window
+
+The resumed six-hour window began at 2026-09-28 09:58:28 UTC, with a hard
+deadline of 15:58:28 UTC. New exploration stops by 14:28:28 UTC to reserve
+90 minutes for publication and final-commit CI. The application image,
+benchmark images and required fixture key material were restored without an
+application build. Fixture secrets are excluded from public evidence.
+
+The new container exposes 64 logical CPUs and 128 GiB memory. Allocation is
+derived from its process affinity: application single `[24]`, application
+multicore `24-39`, PostgreSQL `40-55`, Valkey `[56]`, and generator/observers
+`57-79,184-191`. Each formal point still verifies actual process affinities.
+Both deployments remain explicitly identified; differences in CPU numbering
+or recipes are not treated as a performance improvement.
+
+Offline reassessment of the 13 retained non-confirmation selected endpoints
+preserves their original PASS/FAIL verdicts. The retained single mixed
+confirmation also passes with its complete restored sampler. The multicore
+confirmation's missing sampler correctly produces INVALID when replaying the
+metadata-only backup; it is not converted into a service failure or success.
 
 ## Accepted single-core mixed boundary
 
