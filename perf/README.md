@@ -49,6 +49,9 @@ its existing metric partition with a bounded native-row regex cache; new
 metrics, window contracts and other JSON layouts use the routing decoder.
 This removes per-Point work from the dispatcher. A worker still decodes and
 validates every owned Point, in input order, with the same forensic selection.
+Available complete input blocks are dispatched immediately. The dispatcher
+does not wait to accumulate 64 KiB: low-rate sidecars must reach their consumers
+before a later iteration or EOF, under the same five-second lag gate.
 
 Forensic selection remains per metric/second. With multiple workers, each
 metric belongs to one shard; each shard has an equal share of the existing

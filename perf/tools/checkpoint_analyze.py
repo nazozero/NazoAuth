@@ -810,7 +810,7 @@ def _consume_sharded_stream(workers, diag_path):
     series = StreamingSeries()
     series.shard_points = []
     with tempfile.TemporaryDirectory(prefix="k6-stream-") as temporary:
-        children, connections, buffers, diagnostics = [], [], [], []
+        children, connections, diagnostics = [], [], []
         try:
             for index in range(workers):
                 parent, child = context.Pipe()
@@ -820,7 +820,7 @@ def _consume_sharded_stream(workers, diag_path):
                 process.start()
                 child.close()
                 children.append(process); connections.append(parent)
-                buffers.append(bytearray()); diagnostics.append(path)
+                diagnostics.append(path)
             # All shards see complete blocks. Each worker selects its owned
             # metric rows, so the dispatcher does no per-Point Python work.
             pending = b""
@@ -831,16 +831,16 @@ def _consume_sharded_stream(workers, diag_path):
                     pending = block
                     continue
                 pending = block[edge + 1:]
-                for index, connection in enumerate(connections):
-                    buffers[index].extend(block[:edge + 1])
-                    if len(buffers[index]) >= 65536:
-                        connection.send_bytes(buffers[index]); buffers[index].clear()
+                # read1 already returns an available input block. Waiting
+                # for another 64 KiB here delays low-rate sidecars until a
+                # later iteration or EOF and creates artificial consumer lag.
+                complete = block[:edge + 1]
+                for connection in connections:
+                    connection.send_bytes(complete)
             if pending:
-                for buffer in buffers:
-                    buffer.extend(pending + b"\n")
-            for connection, buffer in zip(connections, buffers):
-                if buffer:
-                    connection.send_bytes(buffer)
+                for connection in connections:
+                    connection.send_bytes(pending + b"\n")
+            for connection in connections:
                 connection.send_bytes(b"")
             for process, connection in zip(children, connections):
                 if not connection.poll(60):
