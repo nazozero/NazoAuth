@@ -729,6 +729,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     env["PERF_ERR_DETAIL"] = str(err_detail_path)
     stream_fifo = None
     stream_proc = None
+    stream_stdout = None
     if os.environ.get("PERF_CHECKPOINT_EVIDENCE") == "1":
         # Diagnostic stream: k6 writes JSON points into a FIFO drained by
         # checkpoint_analyze.py, which keeps bounded per-second aggregates and
@@ -757,7 +758,11 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
             if os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
             else []
         ),
-        *(["--out", f"json={stream_fifo}"] if stream_fifo else []),
+        # k6's stdout JSON writer is buffered; its ordinary file writer
+        # issues a write for every point, even when the file is a FIFO.
+        # Quiet mode and oauth.js's file-only handleSummary keep this channel
+        # exclusively JSON. All metrics still reach the same analyzer.
+        *(["--quiet", "--out", "json=-"] if stream_fifo else []),
         "--summary-export",
         str(k6_summary_path),
         "/perf/k6/oauth.js",
@@ -774,9 +779,16 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     }, indent=2))
     started = time.perf_counter()
     try:
+        if stream_fifo is not None:
+            stream_stdout = stream_fifo.open("wb")
         with StatsSampler() as sampler:
-            completed = subprocess.run(command, env=env, text=True)
+            completed = subprocess.run(command, env=env, text=True,
+                                       stdout=stream_stdout)
     finally:
+        # Close the parent descriptor before waiting: the reader needs EOF
+        # after k6 has flushed its final buffered points and exited.
+        if stream_stdout is not None:
+            stream_stdout.close()
         if stream_proc is not None:
             # k6 closing the FIFO gives the analyzer EOF; bound the wait so a
             # wedged reader can never hang the run.
