@@ -14,9 +14,18 @@ relaxed lag gate.
 The runner builds exact k6 v2.2.0 source `00a9a1b7f552d6bb4337278b10ae25aac0f4e666`
 from a checksum-verified archive. Its [small JSON output patch](runner/k6-json-throughput.patch)
 reuses bounded encodings of immutable tag sets and writes the same complete
-sample envelope without repeated reflection. Every metric, timestamp, value,
-tag and metadata field is retained; metadata and invalid-value cases use the
-stock encoder. Upstream output/metrics tests and added envelope equivalence,
+sample envelope without repeated reflection. Retained samples preserve every
+timestamp, value, tag and metadata field; metadata and invalid-value cases use
+the stock encoder. The runner sets `K6_JSON_OMIT_UNUSED_HTTP_TIMINGS=1` to omit
+only `http_req_blocked`, `http_req_connecting`, `http_req_tls_handshaking`,
+`http_req_sending`, `http_req_waiting` and `http_req_receiving` from JSON output.
+The evaluator does not consume these six auxiliary timings. Native k6 summaries
+and thresholds still receive every metric; complete-operation cohorts/quantiles,
+window contracts, outcomes, errors, drops, HTTP totals/duration, network bytes
+and VUs remain exhaustive in the stream. Setting the flag to `0` restores full
+JSON output. This output setting is recorded in `k6-started.json`; runner image
+identity separates its recipes from previous unfiltered images.
+Upstream output/metrics tests and added envelope equivalence,
 invalid-value and bounded-cache tests run during the image build. Per-point
 provenance records the resulting k6 binary hash and runner image.
 Install that same binary package when invoking its Python tools on the host:

@@ -4,11 +4,13 @@ Node supplies only k6 I/O/metric shims. The measurement clock, capRun and
 bootstrap failure handling execute from the production load-script sources.
 """
 import ast
+import http.server
 import json
 import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from typing import Any
@@ -230,6 +232,75 @@ class RunnerStreamLifetimeTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('k6'), 'k6 is required to verify its buffered JSON writer')
 class BufferedJsonOutputTest(unittest.TestCase):
+    def test_auxiliary_filter_keeps_native_summaries_and_all_acceptance_points(self):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'fixture')
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        auxiliary = {
+            'http_req_blocked', 'http_req_connecting', 'http_req_tls_handshaking',
+            'http_req_sending', 'http_req_waiting', 'http_req_receiving',
+        }
+        script = """
+import http from 'k6/http';
+import { Counter, Trend } from 'k6/metrics';
+const begin = new Counter('cap_iter_begin');
+const end = new Counter('cap_iter_end');
+const latency = new Trend('cap_iter_ms');
+export const options = { vus: 1, iterations: 7 };
+export default function () {
+  const started = Date.now();
+  begin.add(1, {cohort:'measure', lw:'measure'});
+  const response = http.get(__ENV.FIXTURE_URL);
+  latency.add(Date.now()-started, {cohort:'measure', lw:'measure'});
+  end.add(1, {cohort:'measure', lw:'measure',
+             outcome:response.status===200 ? 'success' : 'unexpected'});
+}
+export function handleSummary(data) {
+  return { [__ENV.FIXTURE_SUMMARY]: JSON.stringify(data) };
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / 'fixture.js'
+            source.write_text(script)
+            for enabled in ('0', '1'):
+                with self.subTest(enabled=enabled):
+                    output = root / f'points-{enabled}.jsonl'
+                    summary = root / f'summary-{enabled}.json'
+                    env = {**os.environ, 'FIXTURE_SUMMARY': str(summary),
+                           'FIXTURE_URL': f'http://127.0.0.1:{server.server_port}',
+                           'K6_JSON_OMIT_UNUSED_HTTP_TIMINGS': enabled}
+                    with output.open('wb') as stream:
+                        completed = subprocess.run(
+                            ['k6', 'run', '--quiet', '--out', 'json=-', str(source)],
+                            env=env, stdout=stream, stderr=subprocess.PIPE, timeout=30)
+                    self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+                    rows = [json.loads(line) for line in output.read_text().splitlines()]
+                    points = [r for r in rows if r['type'] == 'Point']
+                    for metric in ('cap_iter_begin', 'cap_iter_end', 'cap_iter_ms',
+                                   'http_reqs', 'http_req_failed', 'http_req_duration'):
+                        self.assertEqual(sum(r['metric'] == metric for r in points), 7)
+                    ends = [r for r in points if r['metric'] == 'cap_iter_end']
+                    self.assertTrue(all(r['data']['tags']['outcome'] == 'success' for r in ends))
+                    self.assertEqual({r['metric'] for r in points} & auxiliary,
+                                     set() if enabled == '1' else auxiliary)
+                    native = json.loads(summary.read_text())['metrics']
+                    self.assertTrue(auxiliary.issubset(native))
+                    self.assertEqual(native['http_reqs']['values']['count'], 7)
+                    self.assertEqual(native['cap_iter_end']['values']['count'], 7)
+                    self.assertEqual(native['http_req_failed']['values']['rate'], 0)
+
     def test_stdout_contains_only_complete_json_and_flushes_final_points(self):
         # The production script also returns file-only summary outputs. The
         # final small counter batch exercises flushing below the buffer size.
