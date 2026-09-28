@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "scope": "Native buffered stdout sparse-batch transport repair; live validation pending. No metric omitted or gate changed.",
+  "scope": "Native sparse-batch transport repair with completed live measurement validation. No metric omitted or gate changed.",
   "upstream_k6_sha": "00a9a1b7f552d6bb4337278b10ae25aac0f4e666",
   "upstream_archive_sha256": "d7299559ddb4b7fed2062f253ca4f24212a7946bc59e91b5e5add4522625e260",
   "patch_sha256": "90d42e40eb7ea30f23327c7d7736ed638d39eb5752ef716a9de83f3eac57d768",
@@ -29,6 +29,36 @@
   "global_lag_max_s": 8.805,
   "global_lag_over_5s": 8,
   "forensic_gzip_sha256": "7f4a9dd99d95e7b332e755520d6ecdf0f0de91407ff7aa169fdea311b90a149b",
-  "live_validation_status": "pending",
-  "clean_source_patch_application": "pinned upstream files; GNU patch -p1 --fuzz=0; exact bytes equal to tested sources"
+  "live_validation_status": "PASS: both affected live points satisfy unchanged measurement validity; business capacity verdicts remain independent.",
+  "clean_source_patch_application": "pinned upstream files; GNU patch -p1 --fuzz=0; exact bytes equal to tested sources",
+  "live_validation": [
+    {
+      "point": "multi-cap-client-credentials-r6000-w180-1790601825",
+      "recipe_id": "154563116729bb25",
+      "measurement_valid": true,
+      "capacity_verdict": "FAIL",
+      "observer_lag_max_s": 0.538,
+      "successful_ops_s": 5989.672,
+      "full_operation_p95_p99_ms": [
+        39.0,
+        203.0
+      ],
+      "measurement_drops": 1863,
+      "audit": "PASS"
+    },
+    {
+      "point": "multi-cap-client-credentials-r5400-w180-1790602115",
+      "recipe_id": "154563116729bb25",
+      "measurement_valid": true,
+      "capacity_verdict": "PASS",
+      "observer_lag_max_s": 0.369,
+      "successful_ops_s": 5399.939,
+      "full_operation_p95_p99_ms": [
+        27.0,
+        139.0
+      ],
+      "measurement_drops": 9,
+      "audit": "PASS"
+    }
+  ]
 }

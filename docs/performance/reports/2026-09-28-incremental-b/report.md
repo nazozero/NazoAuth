@@ -432,3 +432,10 @@ The reporting repair at `6e0eeafb` has eleven applicable CI checks successful,
 with the two existing PR-event conditional skips. Its
 [Rust job](https://github.com/nazozero/NazoAuth/actions/runs/36417493911/job/108912021942)
 is successful; a later publication still requires its own exact-head checks.
+
+
+The [new-container code and transport verification](../../../../perf/results/diagnostics/2026-09-28-incremental-code-cc-validation.json) establishes a code-flow interval at 900/1000 offered operations/s, with 1024 VUs, 256 users, pool 64 and four stream workers. Both endpoints use 180-second windows. At 900/s all 162000 operations complete successfully, with complete-operation P50/P95/P99 63/92/109 ms. At 1000/s all 180000 complete successfully, with 57/156/311 ms. No VU warnings, errors, drops or unfinished operations occur. The independent latency failure establishes the upper; the generator uses 3.476 of its 31 CPUs at that endpoint. This pair was independently reevaluated with the current controller and its verdicts remain unchanged.
+
+The periodic-flush repair also passes live measurement validation: at client-credentials 6000/s, 2048 VUs, users 256, pool 64 and eight workers, observer lag is 0.538 s; at 5400/s it is 0.369 s. The latter passes at 5399.939 successful operations/s and full P95/P99 27/139 ms, with 9 drops out of 971998 scheduled. The former fails only its delivery/drop gate: full P95/P99 39/203 ms, 1863 drops out of 1080004 scheduled, with zero unexpected or unfinished operations. It remains a delivery-limited candidate, not an accepted backend upper. A separate one-factor VU control is still required.
+
+The repair checkpoint `dfed760e` has eleven applicable CI checks successful and the two existing event-conditional skips; its [Rust quality job](https://github.com/nazozero/NazoAuth/actions/runs/36427671321/job/108945549143) completed successfully. Final result publication must pass checks for its own commit.
