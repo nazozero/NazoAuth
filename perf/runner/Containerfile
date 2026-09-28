@@ -19,6 +19,10 @@ RUN apk add --no-cache ca-certificates docker-cli \
 COPY --from=k6 /usr/bin/k6 /usr/bin/k6
 COPY perf /perf
 
+# Keep acceptance samples and native summaries; omit six unused per-request
+# timing streams that otherwise compete with high-rate load generation.
+ENV K6_JSON_OMIT_UNUSED_HTTP_TIMINGS=1
+
 ARG SOURCE_SHA=unknown
 LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
 RUN printf "%s" "${SOURCE_SHA}" > /perf/.source-sha

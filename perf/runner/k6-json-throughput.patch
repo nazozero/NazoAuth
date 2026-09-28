@@ -30,7 +30,7 @@
  				errCount++
  				if firstErr == nil {
  					firstErr = err
-@@ -155,6 +162,60 @@
+@@ -155,6 +162,70 @@
  	}
  }
  
@@ -45,6 +45,16 @@
 +	timestamp, err := sample.Time.MarshalJSON()
 +	if err != nil {
 +		return enc.Encode(wrapSample(sample))
++	}
++	// These six auxiliary HTTP timings are not consumed by the capacity
++	// evaluator. Native k6 summaries and thresholds still receive all samples.
++	// Preserve full-operation cohorts, HTTP totals/duration, errors and drops.
++	if o.params.Environment["K6_JSON_OMIT_UNUSED_HTTP_TIMINGS"] == "1" {
++		switch sample.Metric.Name {
++		case "http_req_blocked", "http_req_connecting", "http_req_tls_handshaking",
++			"http_req_sending", "http_req_waiting", "http_req_receiving":
++			return nil
++		}
 +	}
 +	if o.tagJSON == nil {
 +		o.tagJSON = make(map[*metrics.TagSet][]byte)
@@ -104,10 +114,68 @@
  	"testing"
  	"time"
  
-@@ -16,6 +19,67 @@
+@@ -16,6 +19,125 @@
  	"go.k6.io/k6/v2/metrics"
  	"go.k6.io/k6/v2/output"
  )
++
++func TestOptionalAuxiliaryTimingsPreserveCapacitySamples(t *testing.T) {
++	r := metrics.NewRegistry()
++	auxiliary := []string{"http_req_blocked", "http_req_connecting", "http_req_tls_handshaking",
++		"http_req_sending", "http_req_waiting", "http_req_receiving"}
++	retained := []string{"cap_iter_begin", "cap_iter_end", "cap_iter_ms", "cap_measure_ms",
++		"cap_window_start_ms", "cap_window_end_ms", "cap_measure_ops", "cap_measure_errors",
++		"dropped_iterations", "iterations", "iteration_duration", "http_reqs", "http_req_failed",
++		"http_req_duration", "data_sent", "data_received", "vus", "vus_max", "unknown_metric"}
++	for _, enabled := range []bool{false, true} {
++		flag := "0"
++		if enabled {
++			flag = "1"
++		}
++		output, err := New(output.Params{Logger: testutils.NewLogger(t),
++			Environment: map[string]string{"K6_JSON_OMIT_UNUSED_HTTP_TIMINGS": flag}})
++		require.NoError(t, err)
++		o := output.(*Output)
++		for _, name := range append(auxiliary, retained...) {
++			m, err := r.NewMetric(name, metrics.Trend)
++			require.NoError(t, err)
++			sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m,
++				Tags: r.RootTagSet().With("cohort", "measure")}, Time: time.Now(), Value: 123}
++			var got, stock bytes.Buffer
++			o.out = &got
++			enc := stdjson.NewEncoder(&got)
++			require.NoError(t, o.writeSample(sample, enc))
++			omit := false
++			for _, aux := range auxiliary {
++				omit = omit || name == aux
++			}
++			if enabled && omit {
++				assert.Empty(t, got.Bytes(), name)
++			} else {
++				require.NoError(t, stdjson.NewEncoder(&stock).Encode(wrapSample(sample)))
++				assert.JSONEq(t, stock.String(), got.String(), name)
++			}
++			// Metadata and invalid samples keep stock error handling even for
++			// auxiliary metrics, rather than silently hiding malformed output.
++			sample.Metadata = map[string]string{"detail": "retained"}
++			got.Reset()
++			stock.Reset()
++			require.NoError(t, o.writeSample(sample, enc))
++			require.NoError(t, stdjson.NewEncoder(&stock).Encode(wrapSample(sample)))
++			assert.JSONEq(t, stock.String(), got.String())
++			sample.Metadata = nil
++			for _, invalid := range []float64{math.NaN(), math.Inf(1)} {
++				sample.Value = invalid
++				got.Reset()
++				assert.Error(t, o.writeSample(sample, enc))
++				assert.Empty(t, got.Bytes())
++			}
++			sample.Value = 123
++			sample.Time = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
++			assert.Error(t, o.writeSample(sample, enc))
++		}
++	}
++}
 +
 +func TestSampleWriterMatchesStockEnvelope(t *testing.T) {
 +	r := metrics.NewRegistry()

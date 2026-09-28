@@ -761,7 +761,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         # k6's stdout JSON writer is buffered; its ordinary file writer
         # issues a write for every point, even when the file is a FIFO.
         # Quiet mode and oauth.js's file-only handleSummary keep this channel
-        # exclusively JSON. All metrics still reach the same analyzer.
+        # exclusively JSON. All acceptance metrics reach the same analyzer.
         *(["--quiet", "--out", "json=-"] if stream_fifo else []),
         "--summary-export",
         str(k6_summary_path),
@@ -773,6 +773,8 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     (RESULTS_DIR / "k6-started.json").write_text(json.dumps({
         "ts": time.time(), "scenario": scenario, "profile": profile,
         "run_id": os.environ.get("PERF_STATE_RUN_ID", ""),
+        "k6_json_omit_unused_http_timings": env.get(
+            "K6_JSON_OMIT_UNUSED_HTTP_TIMINGS") == "1",
         "state_ready_ts": (STATE_READY or {}).get("validated_at"),
         "state_ready_run_id": (STATE_READY or {}).get(
             "marker", {}).get("run_id"),
