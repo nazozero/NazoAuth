@@ -2399,6 +2399,91 @@ async fn insert_foreign_tenant_client(connection: &mut AsyncPgConnection) -> (Uu
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn new_family_collision_is_tenant_scoped_and_preserves_compromise_audit() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::from_u128(1);
+    let family_id = Uuid::now_v7();
+    let original = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        family_id,
+        format!("collision-original-{}", Uuid::now_v7()),
+        None,
+    );
+    assert_eq!(
+        commit_refresh(&database_url, original.clone()).await.0,
+        CommitTokenIssuanceResult::Committed
+    );
+
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let (foreign_tenant, foreign_client, foreign_public_id) =
+        insert_foreign_tenant_client(&mut connection).await;
+    let mut foreign = original.clone();
+    foreign.tenant_id = foreign_tenant;
+    foreign.client_id = foreign_client;
+    foreign.user_id = None;
+    foreign.subject = "client".to_owned();
+    foreign.authentication_context.audience = foreign_public_id;
+    foreign.member_id = Uuid::now_v7();
+    foreign.raw_token = format!("collision-foreign-{}", Uuid::now_v7());
+    assert_eq!(
+        commit_refresh(&database_url, foreign.clone()).await.0,
+        CommitTokenIssuanceResult::Committed,
+        "the same family UUID in another tenant is not a collision"
+    );
+
+    // Both a live and an already-compromised family must remain collisions.
+    let repository = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+    let mut first_revoked_at = None;
+    for _ in 0..2 {
+        let mut collision = original.clone();
+        collision.member_id = Uuid::now_v7();
+        collision.raw_token = format!("collision-loser-{}", Uuid::now_v7());
+        let losing_raw = collision.raw_token.clone();
+        let (result, losing) = commit_refresh(&database_url, collision).await;
+        assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+        assert_rotation_conflict_facts(
+            &mut connection,
+            tenant_id,
+            family_id,
+            &losing,
+            1,
+            true,
+            false,
+        )
+        .await;
+        assert!(
+            repository
+                .by_raw_refresh_token(tenant_id, &losing_raw)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let retained = repository
+            .by_raw_refresh_token(tenant_id, &original.raw_token)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.id, original.member_id);
+        assert!(retained.revoked_at.is_some());
+        if let Some(first) = first_revoked_at {
+            assert_eq!(retained.revoked_at, Some(first));
+        }
+        first_revoked_at = retained.revoked_at;
+    }
+    let untouched = repository
+        .by_raw_refresh_token(foreign_tenant, &foreign.raw_token)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(untouched.id, foreign.member_id);
+    assert!(untouched.revoked_at.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audit() {
     let Some(database_url) = database_url() else {
         return;
