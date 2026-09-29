@@ -796,14 +796,24 @@ async fn persist_refresh_token_inner(
     // Only existence matters here. Do not fetch/decode the current member,
     // audience and sender bindings for a new family; rotation above still
     // reads those authoritative facts under the same locks.
-    if diesel::select(diesel::dsl::exists(
-        oauth_refresh_families::table
-            .filter(oauth_refresh_families::tenant_id.eq(token.tenant_id))
-            .filter(oauth_refresh_families::token_family_id.eq(token.family_id))
-            .select(oauth_refresh_families::token_family_id),
-    ))
-    .get_result::<bool>(connection)
+    // Do not retain a named prepared plan for this miss-heavy probe. A plan
+    // chosen while the family table is empty can keep a sequential scan as
+    // issuance grows the table, until statistics invalidate it. SqlQuery is
+    // uncached, so this primary-key lookup is planned against the current size.
+    #[derive(diesel::QueryableByName)]
+    struct FamilyPresence {
+        #[diesel(sql_type = sql_types::Bool)]
+        present: bool,
+    }
+    if sql_query(
+        "SELECT EXISTS (SELECT 1 FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2) AS present",
+    )
+    .bind::<sql_types::Uuid, _>(token.tenant_id)
+    .bind::<sql_types::Uuid, _>(token.family_id)
+    .get_result::<FamilyPresence>(connection)
     .await?
+    .present
     {
         compromise_family(connection, token.tenant_id, token.family_id).await?;
         return Ok(RefreshTokenPersistResult::RotationConflict);
