@@ -277,7 +277,7 @@ async fn call_device_token_for_test(
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(state);
     let issuance = TokenIssuanceContext {
-                client_epoch: 0,
+        client_epoch: 0,
         config: &issuance_config,
         modules: &modules,
         authorization: &authorization,
@@ -507,7 +507,7 @@ async fn device_token_rejects_client_policy_before_polling_state() {
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
-                client_epoch: 0,
+        client_epoch: 0,
         config: &issuance_config,
         modules: &modules,
         authorization: &authorization,

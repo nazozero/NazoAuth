@@ -183,7 +183,7 @@ async fn native_sso_issue_binding_enforces_client_sender_policy() {
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
-                client_epoch: 0,
+        client_epoch: 0,
         config: &config,
         modules: &modules,
         authorization: &authorization,
@@ -443,7 +443,7 @@ async fn native_sso_exchange_rejects_unbound_inputs_before_secret_store_access()
                 .insert(nazo_runtime_modules::ModuleId::NativeSso);
         }
         let issuance = TokenIssuanceContext {
-                client_epoch: 0,
+            client_epoch: 0,
             config: &config,
             modules: &modules,
             authorization: &authorization,

@@ -227,27 +227,27 @@ pub async fn issue_token_response(
         }
     } else {
         match token_service
-        .token_principal_state(client.tenant_id, client.id, issue.user_id, &issue.subject)
-        .await
-    {
-        Ok(state) => state,
-        Err(error) => {
-            tracing::warn!(%error, "failed to read token principal state");
-            mark_failed_authorization_code_if_needed(
-                token_service,
-                issue.authorization_code_hash.as_deref(),
-                "token_principal_state_unavailable",
-                auth_code_ttl_seconds,
-            )
-            .await;
-            return Err(OAuthEndpointError::token(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "令牌主体状态不可用.",
-                false,
-            ));
+            .token_principal_state(client.tenant_id, client.id, issue.user_id, &issue.subject)
+            .await
+        {
+            Ok(state) => state,
+            Err(error) => {
+                tracing::warn!(%error, "failed to read token principal state");
+                mark_failed_authorization_code_if_needed(
+                    token_service,
+                    issue.authorization_code_hash.as_deref(),
+                    "token_principal_state_unavailable",
+                    auth_code_ttl_seconds,
+                )
+                .await;
+                return Err(OAuthEndpointError::token(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "令牌主体状态不可用.",
+                    false,
+                ));
+            }
         }
-    }
     };
     let issuance_id = Uuid::now_v7();
     // Commit-owned issuance: when the final commit transaction carries both
