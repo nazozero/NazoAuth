@@ -77,6 +77,7 @@ pub(crate) async fn token_jwt_bearer(
         token_jwt_bearer_with_service(
             &service,
             &TokenIssuanceContext {
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,

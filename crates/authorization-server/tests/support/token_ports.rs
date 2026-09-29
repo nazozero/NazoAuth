@@ -184,6 +184,7 @@ impl AuthorizationRepositoryPort for HolderFixture {
         Box::pin(async move {
             client.map(|client| {
                 client.map(|client| nazo_auth::ClientAuthenticationSnapshot {
+                    client_epoch: 0,
                     client,
                     secret_salt: None,
                 })

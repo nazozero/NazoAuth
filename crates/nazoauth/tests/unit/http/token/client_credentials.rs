@@ -66,6 +66,7 @@ pub(crate) async fn token_client_credentials(
             &service,
             &authorization_service,
             &TokenIssuanceContext {
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization_service,

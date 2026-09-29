@@ -217,7 +217,16 @@ pub async fn issue_token_response(
     } else {
         None
     };
-    let principal_state = match token_service
+    let principal_state = if issue.user_id.is_none() {
+        // Authentication already read this version before signing. The commit
+        // still locks the client and rejects a deactivate/reactivate race.
+        nazo_auth::TokenPrincipalState {
+            client_epoch: context.client_epoch,
+            user_epoch: None,
+            subject_bound: false,
+        }
+    } else {
+        match token_service
         .token_principal_state(client.tenant_id, client.id, issue.user_id, &issue.subject)
         .await
     {
@@ -238,6 +247,7 @@ pub async fn issue_token_response(
                 false,
             ));
         }
+    }
     };
     let issuance_id = Uuid::now_v7();
     // Commit-owned issuance: when the final commit transaction carries both

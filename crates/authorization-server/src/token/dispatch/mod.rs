@@ -231,11 +231,11 @@ impl TokenEndpointHandles {
                 has_basic,
             ));
         };
-        let (mut client, secret_salt) = match authorization_service
+        let (mut client, secret_salt, client_epoch) = match authorization_service
             .client_authentication_snapshot(client_id)
             .await
         {
-            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
+            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt, snapshot.client_epoch),
             Ok(None) => {
                 perform_dummy_client_secret_verification(
                     &credentials,
@@ -413,6 +413,7 @@ impl TokenEndpointHandles {
         }
         let modules = runtime_modules.load_full();
         let issuance = TokenIssuanceContext {
+            client_epoch,
             config: issuance_config,
             modules: &modules,
             authorization: authorization_service,

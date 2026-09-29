@@ -107,7 +107,8 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                 .await
                 .map(|snapshot| {
                     snapshot.map(
-                        |(client, secret_salt)| nazo_auth::ClientAuthenticationSnapshot {
+                        |(client, secret_salt, client_epoch)| nazo_auth::ClientAuthenticationSnapshot {
+                            client_epoch,
                             client,
                             secret_salt,
                         },

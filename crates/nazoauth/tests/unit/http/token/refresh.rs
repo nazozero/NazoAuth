@@ -60,6 +60,7 @@ pub(crate) async fn token_refresh(
         token_refresh_with_service(
             &service,
             &TokenIssuanceContext {
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,

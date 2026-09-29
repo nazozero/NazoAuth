@@ -168,8 +168,9 @@ only state required by their semantics:
   is rechecked in the transaction; expiry rolls it back and returns the healthy
   connection to the pool.
 
-Before signing, one narrow read obtains client/user access-token epochs and
-whether a non-public subject already has its reusable binding. The commit
+Client-only issuance reuses the access-token epoch read in the request's client
+authentication snapshot. Issuance with a user obtains client/user epochs and
+non-public subject binding state in one narrow read before signing. The commit
 locks client then user and rechecks activity and these exact epochs. A
 concurrent deactivate/reactivate cycle cannot admit an older signed snapshot.
 Principal deactivation increments its epoch in the same database row update;

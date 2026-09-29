@@ -24,6 +24,7 @@ pub(crate) struct CountingTokenRepository {
     pub(crate) active_subject_claims_calls: Arc<AtomicUsize>,
     pub(crate) owner_lookup_calls: Arc<AtomicUsize>,
     pub(crate) userinfo_snapshot_calls: Arc<AtomicUsize>,
+    pub(crate) principal_snapshot_calls: Arc<AtomicUsize>,
     fail_owner_lookups: bool,
 }
 
@@ -34,6 +35,7 @@ impl CountingTokenRepository {
             active_subject_claims_calls: Arc::new(AtomicUsize::new(0)),
             owner_lookup_calls: Arc::new(AtomicUsize::new(0)),
             userinfo_snapshot_calls: Arc::new(AtomicUsize::new(0)),
+            principal_snapshot_calls: Arc::new(AtomicUsize::new(0)),
             fail_owner_lookups: false,
         }
     }
@@ -76,6 +78,7 @@ impl TokenRepositoryPort for CountingTokenRepository {
         user_id: Option<Uuid>,
         subject: &'a str,
     ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+        self.principal_snapshot_calls.fetch_add(1, Ordering::SeqCst);
         self.inner
             .token_principal_state(tenant_id, client_id, user_id, subject)
     }
