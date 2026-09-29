@@ -68,6 +68,10 @@ pub enum ConfirmationPolicy {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifiedAccessToken {
+    pub client_epoch: Option<i64>,
+    pub user_epoch: Option<i64>,
+    pub user_id: Option<String>,
+    pub subject_type: Option<String>,
     pub issuer: String,
     pub subject: String,
     pub tenant_id: Option<String>,
@@ -136,6 +140,14 @@ pub enum ResourceServerRequestError {
 
 #[derive(Debug, Deserialize)]
 struct AccessTokenClaims {
+    #[serde(default)]
+    client_epoch: Option<i64>,
+    #[serde(default)]
+    user_epoch: Option<i64>,
+    #[serde(default)]
+    user_id: Option<String>,
+    #[serde(default)]
+    subject_type: Option<String>,
     iss: String,
     sub: String,
     #[serde(default)]
@@ -261,6 +273,10 @@ impl ResourceServerVerifier {
         validate_confirmation_claims(claims.cnf.as_ref())?;
         validate_confirmation_policy(&self.config.confirmation, claims.cnf.as_ref())?;
         Ok(VerifiedAccessToken {
+            client_epoch: claims.client_epoch,
+            user_epoch: claims.user_epoch,
+            user_id: claims.user_id,
+            subject_type: claims.subject_type,
             issuer: claims.iss,
             subject: claims.sub,
             tenant_id: claims.tenant_id,

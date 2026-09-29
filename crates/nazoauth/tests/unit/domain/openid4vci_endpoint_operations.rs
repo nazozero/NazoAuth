@@ -322,6 +322,17 @@ struct SubjectStateOutage {
 }
 
 impl TokenRepositoryPort for SubjectStateOutage {
+    fn token_principal_state<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        user_id: Option<Uuid>,
+        subject: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+        self.inner
+            .token_principal_state(tenant_id, client_id, user_id, subject)
+    }
+
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
@@ -385,6 +396,7 @@ impl TokenRepositoryPort for SubjectStateOutage {
         &'a self,
         _tenant_id: Uuid,
         _jti: &'a str,
+        _subject: &'a str,
     ) -> nazo_auth::TokenFuture<'a, Option<Uuid>> {
         Box::pin(async { Err(TokenPortError::Unavailable) })
     }
@@ -409,9 +421,9 @@ impl TokenRepositoryPort for SubjectStateOutage {
     fn access_token_revoked<'a>(
         &'a self,
         tenant_id: Uuid,
-        jti: &'a str,
+        claims: &'a nazo_auth::Claims,
     ) -> nazo_auth::TokenFuture<'a, bool> {
-        self.inner.access_token_revoked(tenant_id, jti)
+        self.inner.access_token_revoked(tenant_id, claims)
     }
 
     fn refresh_family_active<'a>(

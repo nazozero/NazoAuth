@@ -22,6 +22,16 @@ struct Ports {
 
 #[allow(unused_variables)]
 impl TokenRepositoryPort for Ports {
+    fn token_principal_state<'a>(
+        &'a self,
+        _tenant_id: Uuid,
+        _client_id: Uuid,
+        _user_id: Option<Uuid>,
+        _subject: &'a str,
+    ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+        panic!("unexpected issuance principal lookup")
+    }
+
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
@@ -73,6 +83,7 @@ impl TokenRepositoryPort for Ports {
         &'a self,
         tenant_id: Uuid,
         jti: &'a str,
+        subject: &'a str,
     ) -> TokenFuture<'a, Option<Uuid>> {
         panic!("unexpected active_subject_id_by_access_token call")
     }
@@ -99,7 +110,11 @@ impl TokenRepositoryPort for Ports {
             }
         })
     }
-    fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
+    fn access_token_revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        claims: &'a nazo_auth::Claims,
+    ) -> TokenFuture<'a, bool> {
         Box::pin(async move {
             self.calls.lock().unwrap().revocation_reads += 1;
             if self.unavailable {

@@ -217,13 +217,35 @@ pub async fn issue_token_response(
     } else {
         None
     };
+    let principal_state = match token_service
+        .token_principal_state(client.tenant_id, client.id, issue.user_id, &issue.subject)
+        .await
+    {
+        Ok(state) => state,
+        Err(error) => {
+            tracing::warn!(%error, "failed to read token principal state");
+            mark_failed_authorization_code_if_needed(
+                token_service,
+                issue.authorization_code_hash.as_deref(),
+                "token_principal_state_unavailable",
+                auth_code_ttl_seconds,
+            )
+            .await;
+            return Err(OAuthEndpointError::token(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "令牌主体状态不可用.",
+                false,
+            ));
+        }
+    };
     let issuance_id = Uuid::now_v7();
     // Commit-owned issuance: when the final commit transaction carries both
-    // the durable token fact and the required `token_issued` append, the
+    // the principal-version check and required `token_issued` append, the
     // commit itself is the fail-closed writer check, so the per-request
     // static capability probe is redundant. Normal refresh rotation and
     // preserving an existing refresh token join the no-refresh shape: any
-    // family lock, spent-proof bookkeeping and issuance row are owned by
+    // family lock and spent-proof bookkeeping are owned by
     // that same commit transaction. Any path
     // with a preceding durable side effect (authorization-code consumption,
     // Native SSO device-secret persistence) keeps the full storage
@@ -275,6 +297,8 @@ pub async fn issue_token_response(
     };
     let issued_access_token = match token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: Some(principal_state.client_epoch),
+            user_epoch: principal_state.user_epoch,
             issuer: &context.config.issuer,
             tenant_id: client.tenant_id,
             subject: &issue.subject,
@@ -558,6 +582,8 @@ pub async fn issue_token_response(
     };
     match token_service
         .commit_token_issuance(nazo_auth::CommitTokenIssuance {
+            principal_state,
+            subject: issue.subject.clone(),
             issuance_id,
             tenant_id: client.tenant_id,
             client_id: client.id,

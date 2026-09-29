@@ -193,9 +193,24 @@ mod real_userinfo_contract {
         calls: Arc<Mutex<Vec<&'static str>>>,
     }
     impl TokenRepositoryPort for ObservedRepository {
-        fn access_token_revoked<'a>(&'a self, tenant: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
+        fn token_principal_state<'a>(
+            &'a self,
+            tenant_id: Uuid,
+            client_id: Uuid,
+            user_id: Option<Uuid>,
+            subject: &'a str,
+        ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+            self.inner
+                .token_principal_state(tenant_id, client_id, user_id, subject)
+        }
+
+        fn access_token_revoked<'a>(
+            &'a self,
+            tenant: Uuid,
+            claims: &'a nazo_auth::Claims,
+        ) -> TokenFuture<'a, bool> {
             self.calls.lock().unwrap().push("revocation");
-            self.inner.access_token_revoked(tenant, jti)
+            self.inner.access_token_revoked(tenant, claims)
         }
         fn active_subject_claims(
             &self,
@@ -239,9 +254,15 @@ mod real_userinfo_contract {
             &'a self,
             tenant: Uuid,
             jti: &'a str,
+            subject: &'a str,
         ) -> TokenFuture<'a, Option<Uuid>> {
             self.calls.lock().unwrap().push("subject");
-            TokenRepositoryPort::active_subject_id_by_access_token(&self.inner, tenant, jti)
+            TokenRepositoryPort::active_subject_id_by_access_token(
+                &self.inner,
+                tenant,
+                jti,
+                subject,
+            )
         }
         fn commit_token_issuance<'a>(
             &'a self,

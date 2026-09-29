@@ -9,6 +9,72 @@ use uuid::Uuid;
 
 mod support;
 
+#[tokio::test]
+async fn token_principal_epochs_survive_reactivation_and_bindings_are_tenant_owned() {
+    let Some(url) = database_url() else { return };
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("principal_epoch_{}", Uuid::now_v7().simple());
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema}; \
+         CREATE TABLE users (id UUID PRIMARY KEY, tenant_id UUID NOT NULL, \
+           is_active BOOLEAN NOT NULL DEFAULT TRUE, UNIQUE (id, tenant_id)); \
+         CREATE TABLE oauth_clients (id UUID PRIMARY KEY, is_active BOOLEAN NOT NULL DEFAULT TRUE);"
+        ))
+        .await
+        .unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20260929000200_token_principal_state/up.sql"
+        ))
+        .await
+        .unwrap();
+    let user = Uuid::now_v7();
+    let tenant = Uuid::now_v7();
+    connection
+        .batch_execute(&format!(
+            "INSERT INTO users (id, tenant_id) VALUES ('{user}', '{tenant}'); \
+         INSERT INTO oauth_clients (id) VALUES ('{user}'); \
+         INSERT INTO oauth_subject_bindings VALUES ('{tenant}', 'pairwise', '{user}'); \
+         UPDATE users SET is_active = FALSE; UPDATE users SET is_active = TRUE; \
+         UPDATE oauth_clients SET is_active = FALSE; UPDATE oauth_clients SET is_active = TRUE;"
+        ))
+        .await
+        .unwrap();
+    let state = sql_query(
+        "SELECT (SELECT access_token_epoch = 1 FROM users) AND \
+                (SELECT access_token_epoch = 1 FROM oauth_clients) AS value",
+    )
+    .get_result::<BooleanRow>(&mut connection)
+    .await
+    .unwrap();
+    assert!(state.value, "reactivation must never restore a token epoch");
+    connection
+        .batch_execute("SAVEPOINT wrong_tenant")
+        .await
+        .unwrap();
+    assert!(
+        connection
+            .batch_execute(&format!(
+                "INSERT INTO oauth_subject_bindings VALUES ('{}', 'wrong-tenant', '{user}')",
+                Uuid::now_v7()
+            ))
+            .await
+            .is_err(),
+        "a binding must belong to the user's tenant"
+    );
+    connection
+        .batch_execute("ROLLBACK TO wrong_tenant; DELETE FROM users")
+        .await
+        .unwrap();
+    let remaining = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_subject_bindings")
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(remaining.count, 0, "identity deletion removes its bindings");
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
 #[test]
 fn embedded_migration_head_tracks_latest_directory() {
     let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");

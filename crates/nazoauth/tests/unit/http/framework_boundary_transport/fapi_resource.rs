@@ -321,6 +321,10 @@ mod fapi_signed_contract {
                 }
                 Ok(ProtectedResourceAuthorizationResult {
                     token: VerifiedAccessToken {
+                        client_epoch: None,
+                        user_epoch: None,
+                        user_id: None,
+                        subject_type: None,
                         issuer: "https://issuer.example".to_owned(),
                         subject: "subject-1".to_owned(),
                         tenant_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),

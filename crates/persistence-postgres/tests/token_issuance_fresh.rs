@@ -1,5 +1,5 @@
 //! Contract coverage for the Fresh issuance commit path with no user and no
-//! refresh token: one ownership row and one `token_issued` audit event
+//! refresh token: no per-token ownership row and one `token_issued` audit event
 //! commit atomically, and every rejection leaves no partial writes. These
 //! tests exercise the public repository contract; they must pass identically
 //! on the serial and the combined-statement implementation.
@@ -37,18 +37,6 @@ struct FixtureIds {
     client_public_id: String,
 }
 
-#[derive(QueryableByName)]
-struct IssuanceRow {
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    user_id: Option<Uuid>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    refresh_token_family_id: Option<Uuid>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    access_token_expires_at: chrono::DateTime<chrono::Utc>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    retain_until: chrono::DateTime<chrono::Utc>,
-}
-
 async fn fixture(database_url: &str) -> FixtureIds {
     nazo_postgres::run_pending_migrations(database_url)
         .await
@@ -83,6 +71,12 @@ async fn fixture(database_url: &str) -> FixtureIds {
 fn fresh_issuance(fixture: &FixtureIds, tenant_id: Uuid) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: None,
+            subject_bound: false,
+        },
+        subject: "client".to_owned(),
         issuance_id,
         tenant_id,
         client_id: fixture.client_id,
@@ -105,6 +99,184 @@ fn fresh_issuance(fixture: &FixtureIds, tenant_id: Uuid) -> CommitTokenIssuance 
 fn tagged_database_url(database_url: &str, application_name: &str) -> String {
     let separator = if database_url.contains('?') { '&' } else { '?' };
     format!("{database_url}{separator}application_name={application_name}")
+}
+
+#[tokio::test]
+async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
+    let Some(url) = database_url() else { return };
+    let fixture = fixture(&url).await;
+    let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let pool = create_pool(&url, 2).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let tokens = TokenRepository::new(pool);
+    let input = fresh_issuance(&fixture, tenant);
+    repository
+        .commit_token_issuance(input.clone())
+        .await
+        .unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE id = $1")
+        .bind::<sql_types::Uuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = TRUE WHERE id = $1")
+        .bind::<sql_types::Uuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let stale = fresh_issuance(&fixture, tenant);
+    assert_eq!(
+        repository
+            .commit_token_issuance(stale.clone())
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::ClientInactive
+    );
+    assert_no_writes(&url, stale.issuance_id).await;
+    let mut current = fresh_issuance(&fixture, tenant);
+    current.principal_state = repository
+        .token_principal_state(tenant, fixture.client_id, None, &current.subject)
+        .await
+        .unwrap();
+    assert_eq!(current.principal_state.client_epoch, 1);
+    assert_eq!(
+        repository
+            .commit_token_issuance(current.clone())
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+    for (issuance, expected) in [(&input, true), (&current, false)] {
+        assert_eq!(
+            tokens
+                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                    tenant_id: &tenant.to_string(),
+                    jti: &issuance.access_token_jti,
+                    client_id: &fixture.client_public_id,
+                    subject: &fixture.client_public_id,
+                    user_id: None,
+                    subject_type: Some("client"),
+                    client_epoch: Some(issuance.principal_state.client_epoch),
+                    user_epoch: None,
+                })
+                .await
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            write_counts(&mut connection, issuance.issuance_id).await,
+            (0, 1)
+        );
+    }
+    repository
+        .revoke_issued_tokens(
+            tenant,
+            fixture.client_id,
+            &current.access_token_jti,
+            chrono::DateTime::from_timestamp(current.access_token_expires_at, 0),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(
+        tokens
+            .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                tenant_id: &tenant.to_string(),
+                jti: &current.access_token_jti,
+                client_id: &fixture.client_public_id,
+                subject: &fixture.client_public_id,
+                user_id: None,
+                subject_type: Some("client"),
+                client_epoch: Some(current.principal_state.client_epoch),
+                user_epoch: None,
+            })
+            .await
+            .unwrap(),
+        "individual revocation still overrides a current principal epoch"
+    );
+    assert!(
+        !tokens
+            .access_token_revoked(tenant, &input.access_token_jti)
+            .await
+            .unwrap(),
+        "principal invalidation must not expand into JTI revocation records"
+    );
+}
+
+#[tokio::test]
+async fn repeated_pairwise_issuance_reuses_one_binding_and_honors_user_epoch() {
+    let Some(url) = database_url() else { return };
+    let fixture = fixture(&url).await;
+    let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let pool = create_pool(&url, 2).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let tokens = TokenRepository::new(pool);
+    let user_id = Uuid::now_v7();
+    let subject = format!("pairwise-{user_id}");
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    sql_query("INSERT INTO users (id, tenant_id, username, email, password_hash) VALUES ($1, $2, $3, $3, 'fixture')")
+        .bind::<sql_types::Uuid, _>(user_id).bind::<sql_types::Uuid, _>(tenant)
+        .bind::<sql_types::Text, _>(format!("{user_id}@example.invalid"))
+        .execute(&mut connection).await.unwrap();
+    let mut last_jti = String::new();
+    for index in 0..3 {
+        let mut input = fresh_issuance(&fixture, tenant);
+        input.user_id = Some(user_id);
+        input.subject = subject.clone();
+        input.principal_state = repository
+            .token_principal_state(tenant, fixture.client_id, Some(user_id), &subject)
+            .await
+            .unwrap();
+        assert_eq!(input.principal_state.subject_bound, index > 0);
+        last_jti.clone_from(&input.access_token_jti);
+        assert_eq!(
+            repository
+                .commit_token_issuance(input.clone())
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        assert_eq!(
+            write_counts(&mut connection, input.issuance_id).await,
+            (0, 1)
+        );
+    }
+    assert_eq!(
+        repository
+            .active_subject_id_by_access_token(tenant, &last_jti, &subject)
+            .await
+            .unwrap(),
+        Some(user_id)
+    );
+    let bindings = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_subject_bindings WHERE tenant_id = $1 AND user_id = $2")
+        .bind::<sql_types::Uuid, _>(tenant).bind::<sql_types::Uuid, _>(user_id)
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(bindings.count, 1);
+    for (active, expected) in [(true, false), (false, true), (true, true)] {
+        sql_query("UPDATE users SET is_active = $2 WHERE id = $1")
+            .bind::<sql_types::Uuid, _>(user_id)
+            .bind::<sql_types::Bool, _>(active)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(
+            tokens
+                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                    tenant_id: &tenant.to_string(),
+                    jti: &last_jti,
+                    client_id: &fixture.client_public_id,
+                    subject: &subject,
+                    user_id: None,
+                    subject_type: Some("user"),
+                    client_epoch: Some(0),
+                    user_epoch: Some(0),
+                })
+                .await
+                .unwrap(),
+            expected
+        );
+    }
 }
 
 async fn wait_for_lock_wait(connection: &mut AsyncPgConnection, application_name: &str) {
@@ -204,7 +376,7 @@ async fn assert_no_writes(database_url: &str, issuance_id: Uuid) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fresh_issuance_commits_ownership_and_audit() {
+async fn fresh_issuance_commits_only_required_audit() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -224,34 +396,8 @@ async fn fresh_issuance_commits_ownership_and_audit() {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, input.issuance_id).await,
-        (1, 1),
-        "a committed fresh issuance owns one row and one audit event"
-    );
-    let row = sql_query(
-        "SELECT user_id, refresh_token_family_id, access_token_expires_at, retain_until \
-         FROM oauth_token_issuances WHERE issuance_id = $1",
-    )
-    .bind::<sql_types::Uuid, _>(input.issuance_id)
-    .get_result::<IssuanceRow>(&mut connection)
-    .await
-    .expect("issuance row should load");
-    assert!(
-        row.user_id.is_none(),
-        "client_credentials carries no subject"
-    );
-    assert!(
-        row.refresh_token_family_id.is_none(),
-        "client_credentials carries no refresh family"
-    );
-    assert_eq!(
-        row.access_token_expires_at.timestamp(),
-        input.access_token_expires_at
-    );
-    assert!(
-        row.retain_until.timestamp()
-            >= input.access_token_expires_at
-                + nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
-        "the durable fence retains the row through the verifier skew window"
+        (0, 1),
+        "a committed fresh issuance creates only the required audit event"
     );
 }
 
@@ -315,7 +461,7 @@ async fn fresh_issuance_never_crosses_tenant_boundary() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fresh_issuance_id_conflict_stays_an_error() {
+async fn fresh_issuance_rejects_duplicate_pending_audit_identity() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -343,8 +489,8 @@ async fn fresh_issuance_id_conflict_stays_an_error() {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, input.issuance_id).await,
-        (1, 1),
-        "the conflicting retry must not append a second audit or ownership row"
+        (0, 1),
+        "the conflicting retry must not append a second audit event"
     );
 }
 
@@ -442,7 +588,7 @@ async fn client_deactivation_waits_for_fresh_issuance_commit() {
         r#"
         CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
-            IF NEW.issuance_id = '{issuance_id}'::uuid THEN
+            IF NEW.event_id = '{issuance_id}'::uuid THEN
                 PERFORM pg_advisory_xact_lock({gate_key});
             END IF;
             RETURN NEW;
@@ -454,7 +600,7 @@ async fn client_deactivation_waits_for_fresh_issuance_commit() {
     .await
     .expect("fresh issuance gate function should install");
     sql_query(format!(
-        "CREATE TRIGGER {trigger} BEFORE INSERT ON oauth_token_issuances \
+        "CREATE TRIGGER {trigger} BEFORE INSERT ON security_audit_events \
          FOR EACH ROW EXECUTE FUNCTION {function}()"
     ))
     .execute(&mut coordinator)
@@ -516,12 +662,21 @@ async fn client_deactivation_waits_for_fresh_issuance_commit() {
     let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
     assert!(
         tokens
-            .access_token_revoked(tenant_id, &access_token_jti)
+            .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                tenant_id: &tenant_id.to_string(),
+                jti: &access_token_jti,
+                client_id: &fixture.client_public_id,
+                subject: &fixture.client_public_id,
+                user_id: None,
+                subject_type: Some("client"),
+                client_epoch: Some(0),
+                user_epoch: None,
+            })
             .await
             .expect("access-token revocation should load"),
         "deactivation must revoke the access token committed while it was blocked"
     );
-    sql_query(format!("DROP TRIGGER {trigger} ON oauth_token_issuances"))
+    sql_query(format!("DROP TRIGGER {trigger} ON security_audit_events"))
         .execute(&mut coordinator)
         .await
         .expect("gate trigger should be removed");
@@ -706,7 +861,7 @@ async fn fresh_issuance_runs_under_the_restricted_runtime_role() {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, input.issuance_id).await,
-        (1, 1),
+        (0, 1),
         "the restricted role writes audit through the function boundary only"
     );
     // The role holds granted privileges (database CONNECT plus the
@@ -831,7 +986,7 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, recovered.issuance_id).await,
-        (1, 1)
+        (0, 1)
     );
 
     drop(pool);

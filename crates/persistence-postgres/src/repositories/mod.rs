@@ -23,6 +23,7 @@ mod signing_keys;
 mod tenancy;
 mod tenant_resources;
 mod token_issuance;
+mod token_principals;
 mod tokens;
 mod users;
 pub use access_requests::AccessRequestRepository;

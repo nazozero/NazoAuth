@@ -52,6 +52,10 @@ pub struct OidcClaimRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Claims {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_epoch: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_epoch: Option<i64>,
     pub iss: String,
     pub sub: String,
     pub tenant_id: String,
@@ -79,6 +83,8 @@ pub struct Claims {
 }
 
 pub struct AccessTokenClaimsInput<'a> {
+    pub client_epoch: Option<i64>,
+    pub user_epoch: Option<i64>,
     pub tenant_id: Uuid,
     pub subject: &'a str,
     pub user_id: Option<Uuid>,
@@ -103,6 +109,8 @@ pub fn access_token_claims(
     jti: &str,
 ) -> Claims {
     Claims {
+        client_epoch: input.client_epoch,
+        user_epoch: input.user_epoch,
         iss: issuer.to_owned(),
         sub: input.subject.to_owned(),
         tenant_id: input.tenant_id.to_string(),

@@ -194,7 +194,7 @@ async fn preserve_existing_refresh_uses_transactional_readiness() {
     assert!(body.get("access_token").is_some());
     assert!(body.get("refresh_token").is_none());
     assert_eq!(audit.counts(), (0, 1));
-    assert_eq!(token_issuance_row_count(&state, &client).await, 1);
+    assert_eq!(token_issuance_row_count(&state, &client).await, 0);
 }
 
 #[actix_web::test]

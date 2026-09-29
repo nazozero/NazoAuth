@@ -344,10 +344,9 @@ async fn token_exchange_issued_token_is_rejected_by_verifier_after_per_user_revo
         .as_str()
         .expect("token exchange must return an access token")
         .to_owned();
-    let exchanged_jti =
+    let exchanged_claims =
         decode_access_claims_with(&state.keyset, &state.settings.endpoint.issuer, &exchanged)
-            .expect("exchanged access token should decode")
-            .jti;
+            .expect("exchanged access token should decode");
 
     // The exchanged token never carries `openid` (token exchange strips it),
     // so the real userinfo verifier reaches the scope gate only after decode,
@@ -392,10 +391,10 @@ async fn token_exchange_issued_token_is_rejected_by_verifier_after_per_user_revo
 
     assert!(
         token_service(&state)
-            .access_token_revoked(DEFAULT_TENANT_ID, &exchanged_jti)
+            .access_token_revoked(DEFAULT_TENANT_ID, &exchanged_claims)
             .await
             .expect("revocation state should be readable"),
-        "per-user revocation must record the exchanged token's revocation fact"
+        "per-user revocation must invalidate the exchanged token"
     );
     let rejected = userinfo(state.clone(), userinfo_request(&exchanged), Bytes::new()).await;
     assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
@@ -613,20 +612,20 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         .await
         .expect("database connection should be available");
     let persisted_owner = sql_query(
-        "SELECT user_id FROM oauth_token_issuances \
-         WHERE tenant_id = $1 AND access_token_jti = $2",
+        "SELECT user_id FROM oauth_subject_bindings \
+         WHERE tenant_id = $1 AND subject = $2",
     )
     .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
-    .bind::<Text, _>(&exchanged_claims.jti)
+    .bind::<Text, _>(&exchanged_claims.sub)
     .get_result::<TokenOwnerRow>(&mut conn)
     .await
-    .expect("exchange issuance row should be persisted")
+    .expect("exchange should establish a reusable subject binding")
     .user_id;
     drop(conn);
     assert_eq!(
         persisted_owner,
         Some(user_id),
-        "the persisted issuance owner must be the resolved pairwise user"
+        "the reusable binding must resolve the pairwise user"
     );
     assert_eq!(
         counting.owner_lookup_count(),

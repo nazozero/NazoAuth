@@ -140,7 +140,8 @@ instances from double-processing the same rows.
 - A failed batch logs a warning; the worker waits for the next interval
   instead of retrying in a tight loop. The worker is aborted and awaited
   during shutdown.
-- Covered state: expired consumed grants, consumed token-issuance rows, SCIM
+- Covered state: expired consumed grants, SingleUse receipts and remaining legacy
+  token-issuance rows (Fresh issuance creates none), SCIM
   security events and historical SCIM audit rows past retention (successful
   credential use now emits only the unified audit event), completed backchannel-logout
   deliveries, expired access-token revocations, and expired OpenID4VP
@@ -229,3 +230,15 @@ Managed mdoc certificates, IACA private material and revocation facts use the
 shared encrypted tenant keyset. See [import, rotation, and revocation](mdoc-shared-state.md).
 Import accepts complete externally prepared material for an existing current
 keyset; it is not an automatic historical-format conversion.
+
+### Token principal epoch upgrade
+
+The token-state reduction release requires a coordinated application upgrade:
+stop admission and drain old instances, apply the additive migrations, upgrade
+all authorization-server and online protected-resource instances, then reopen
+admission. Old binaries do not check the new signed principal epochs; do not
+mix them with instances issuing epoch-bound tokens. Pre-upgrade tokens remain
+supported through their original JTI/ownership records and retention policy.
+After new issuance starts, application rollback to an epoch-unaware release is
+not supported. Database downgrade is explicitly refused by the principal-state
+migration. This changes no standalone offline-verifier revocation guarantee.

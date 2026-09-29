@@ -46,6 +46,12 @@ pub struct ProtectedResourceAuthorizationResult {
 
 #[derive(Clone, Copy, Debug)]
 pub struct RevocationLookupKey<'a> {
+    pub client_id: &'a str,
+    pub subject: &'a str,
+    pub user_id: Option<&'a str>,
+    pub subject_type: Option<&'a str>,
+    pub client_epoch: Option<i64>,
+    pub user_epoch: Option<i64>,
     pub tenant_id: &'a str,
     pub jti: &'a str,
 }
@@ -319,6 +325,12 @@ where
         let revoked = self
             .revocations
             .is_revoked(RevocationLookupKey {
+                client_id: &token.client_id,
+                subject: &token.subject,
+                user_id: token.user_id.as_deref(),
+                subject_type: token.subject_type.as_deref(),
+                client_epoch: token.client_epoch,
+                user_epoch: token.user_epoch,
                 tenant_id,
                 jti: &token.jti,
             })
