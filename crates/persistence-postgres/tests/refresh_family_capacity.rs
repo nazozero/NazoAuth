@@ -666,7 +666,8 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
 
     // Rotate well past the proof bound; the family stays one live row and the
     // proof count must converge on the cap, never exceed it.
-    let mut last_raw = String::new();
+    let mut raw_tokens = Vec::new();
+    let rotation_start = chrono::Utc::now();
     for generation in 0..(PROOF_CAP + 8) {
         let raw = format!("cap-proof-g{generation}-{}", Uuid::now_v7());
         let child = new_refresh(
@@ -675,7 +676,7 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
             family_id,
             raw.clone(),
             Some(member),
-            chrono::Utc::now() + chrono::Duration::milliseconds(generation),
+            rotation_start + chrono::Duration::milliseconds(generation),
         );
         member = child.member_id;
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
@@ -683,7 +684,14 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
             .await
             .expect("rotation should commit");
         assert_eq!(result, CommitTokenIssuanceResult::Committed);
-        last_raw = raw;
+        raw_tokens.push(raw);
+        if [0, PROOF_CAP - 1, PROOF_CAP, PROOF_CAP + 7].contains(&generation) {
+            assert_eq!(
+                proof_count(&mut connection, tenant_id, family_id).await,
+                (generation + 1).min(PROOF_CAP),
+                "proof retention at generation {generation}"
+            );
+        }
     }
 
     let proofs = proof_count(&mut connection, tenant_id, family_id).await;
@@ -692,18 +700,23 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
         "sustained rotation must converge on the per-family proof bound"
     );
 
-    // The trimmed tail really is gone: the earliest generation's proof no
-    // longer resolves, while the newest member still resolves through the
-    // family row.
+    // Verify the identities retained, not just the count: only the newest
+    // PROOF_CAP spent presentations and the current member still resolve.
     let repository = TokenRepository::new(create_pool(&database_url, 2).unwrap());
-    assert!(
-        repository
-            .by_raw_refresh_token(tenant_id, &last_raw)
+    let current_index = raw_tokens.len() - 1;
+    let first_retained = current_index - PROOF_CAP as usize;
+    for (index, raw) in raw_tokens.iter().enumerate() {
+        let found = repository
+            .by_raw_refresh_token(tenant_id, raw)
             .await
-            .expect("current lookup should succeed")
-            .is_some(),
-        "the current generation still resolves"
-    );
+            .expect("presentation lookup should succeed");
+        if index < first_retained {
+            assert!(found.is_none(), "the oldest proof must be trimmed");
+        } else {
+            let found = found.expect("retained presentation should resolve");
+            assert_eq!(found.revoked_at.is_none(), index == current_index);
+        }
+    }
     assert_eq!(
         live_family_count(
             &mut connection,

@@ -752,16 +752,19 @@ async fn persist_refresh_token_inner(
             .await?;
         // Bound the replay window: keep only the newest
         // MAX_SPENT_PROOFS_PER_REFRESH_FAMILY proofs for this family so spent
-        // state cannot grow with rotation count or family age.
+        // state cannot grow with rotation count or family age. Select only
+        // overflow digests, then delete those primary keys; do not rescan the
+        // family to test every retained proof against a NOT IN keep-set.
         sql_query(
-            "DELETE FROM oauth_refresh_spent_tokens \
-             WHERE tenant_id = $1 AND token_family_id = $2 \
-               AND member_id NOT IN ( \
-                 SELECT member_id FROM oauth_refresh_spent_tokens \
+            "DELETE FROM oauth_refresh_spent_tokens AS spent \
+             USING ( \
+                 SELECT refresh_token_blake3 FROM oauth_refresh_spent_tokens \
                  WHERE tenant_id = $1 AND token_family_id = $2 \
                  ORDER BY spent_at DESC, member_id DESC \
-                 LIMIT $3 \
-               )",
+                 OFFSET $3 \
+             ) AS excess \
+             WHERE spent.tenant_id = $1 AND spent.token_family_id = $2 \
+               AND spent.refresh_token_blake3 = excess.refresh_token_blake3",
         )
         .bind::<sql_types::Uuid, _>(token.tenant_id)
         .bind::<sql_types::Uuid, _>(token.family_id)

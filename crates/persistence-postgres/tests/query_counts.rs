@@ -742,10 +742,9 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
 // ---------------------------------------------------------------------------
 
 /// RF-01: `commit_token_issuance` for an ordinary rotation issues every write
-/// inside one transaction on one connection. The rotated-from parent is
-/// updated with `UPDATE .. WHERE revoked_at IS NULL RETURNING
-/// oidc_auth_context` — the parent row is *not* loaded first; that removed
-/// SELECT is the remediation under test.
+/// inside one transaction on one connection. The family is read under its
+/// advisory lock to validate the current member and sender binding; rotation
+/// retains a bounded spent proof and updates the current member in place.
 #[tokio::test]
 async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     let _serial = SERIAL.lock().await;
@@ -813,7 +812,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     //   SELECT pg_advisory_xact_lock(family)
     //   SELECT oauth_refresh_families                      (current member check)
     //   INSERT INTO oauth_refresh_spent_tokens             (predecessor proof)
-    //   DELETE FROM oauth_refresh_spent_tokens .. LIMIT    (generation bound)
+    //   DELETE FROM oauth_refresh_spent_tokens .. OFFSET   (overflow proofs)
     //   UPDATE oauth_refresh_families SET current_*        (in-place rotation)
     //   SELECT nazo_persist_security_audit_event(..)       (token_issued)
     // Rotation writes one narrow family UPDATE plus one compact spent proof —
