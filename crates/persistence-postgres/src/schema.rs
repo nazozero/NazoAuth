@@ -156,6 +156,7 @@ diesel::table! {
         address_locality -> Nullable<Varchar>, address_region -> Nullable<Varchar>,
         address_postal_code -> Nullable<Varchar>, address_country -> Nullable<Varchar>,
         phone_number -> Nullable<Varchar>, phone_number_verified -> Bool,
+        access_token_epoch -> BigInt,
     }
 }
 

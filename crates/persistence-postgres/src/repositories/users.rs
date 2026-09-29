@@ -108,10 +108,7 @@ impl UserRepository {
             .find(user_id.as_uuid())
             .filter(users::tenant_id.eq(tenant_id.as_uuid()))
             .filter(users::is_active.eq(true))
-            .select((
-                SubjectClaimsRow::as_select(),
-                diesel::dsl::sql::<sql_types::BigInt>("access_token_epoch"),
-            ))
+            .select((SubjectClaimsRow::as_select(), users::access_token_epoch))
             .first::<(SubjectClaimsRow, i64)>(&mut connection)
             .await
             .optional()
@@ -590,7 +587,7 @@ impl UserRepository {
         &self,
         tenant: TenantContext,
         user_id: UserId,
-    ) -> Result<Option<(SubjectClaims, i64)>, RepositoryError> {
+    ) -> Result<Option<SubjectClaims>, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
@@ -600,15 +597,12 @@ impl UserRepository {
             .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
             .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
             .filter(users::is_active.eq(true))
-            .select((
-                SubjectClaimsRow::as_select(),
-                diesel::dsl::sql::<sql_types::BigInt>("access_token_epoch"),
-            ))
-            .first::<(SubjectClaimsRow, i64)>(&mut connection)
+            .select(SubjectClaimsRow::as_select())
+            .first(&mut connection)
             .await
             .optional()
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-            .map(|(row, epoch)| identity::active_subject_claims(row).map(|claims| (claims, epoch)))
+            .map(identity::active_subject_claims)
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
