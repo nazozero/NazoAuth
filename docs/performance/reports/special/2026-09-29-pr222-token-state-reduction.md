@@ -72,3 +72,21 @@ Local verification: workspace/all-targets/all-features type checking and Clippy,
 formatting, static contracts and persistence dependency checks. Database-backed
 regressions still require the PR CI PostgreSQL fixture; no missing local database
 run is counted as a test pass. Accepted capacity data is unchanged.
+
+## Audit claim follow-up
+
+Static review of the stalled scale regression exposed a second unnecessary
+read: selecting at most 256 event IDs and then joining the event table again
+does not bound the join's index work. Migration 20260929000400 reads unchained
+events directly through the pending-order index. Chained leftovers retain
+sequence priority and use bounded, parameterized primary-key lookups. The
+function's bounds, privileges, batch fencing and acknowledgement are unchanged.
+
+The existing 0/10k/1M/15M-row regressions remain. Their EXPLAIN ANALYZE and real
+claim statements now enforce the existing 30-second budget in PostgreSQL, so
+an excessive execution fails instead of waiting until the entire CI job times
+out. Plan assertions also count actual index rows across loops, rather than
+accepting every plan merely because it avoids a sequential scan. The previous
+CI logs ended after seeding the 15M fixture; those logs alone do not identify
+the exact statement responsible for the job timeout. No capacity conclusion
+is drawn from this regression fix.
