@@ -1,5 +1,8 @@
 # Current-B incremental performance acceptance — 2026-09-28
 
+[修订后的中文交付摘要](delivery-summary-zh.md) fixes the cold-login failure attribution
+and records the actual delivery deadline outcome without changing any measured point.
+
 Capacity acceptance status: **COMPLETE**. 20/20 mode/scenario rows have reviewed service upper endpoints. All twenty mode/scenario rows have reviewed service upper endpoints, narrowed frozen-recipe intervals and at least 180-second endpoint verification. Both mixed passing candidates have 660-second maintenance and audit confirmations.
 
 Execution began at 09:58:28 UTC. The user subsequently extended and corrected the final deadline to 2026-09-29 03:30 Beijing (2026-09-28 19:30 UTC), with immediate container destruction at 04:00 Beijing. Final targeted verification uses an explicit 19:40 UTC stop guard; the last formal point finished before 19:27 UTC; publication and exact-head CI are advanced alongside the retained-evidence work. The original 90-minute final reserve was not maintained after continued boundary refinement; the actual final timings are recorded in the delivery comment. [Checkpoint history](checkpoint-history.md) records the independent commits and intermediate results; [original observations](../2026-09-28-current-b/report.md) are historical and superseded.
