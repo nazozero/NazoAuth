@@ -884,6 +884,22 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
                 .await
                 .expect("fixture cleanup should delete prior rows");
         }
+        // The million-row cases only read through this same connection.
+        // Their visibility does not require committing the synthetic rows.
+        // Reclaim the previous fixture first, then roll this one back after
+        // every plan/count assertion instead of issuing millions of guarded
+        // DELETEs. The 10k cross-connection claim/ACK case stays committed.
+        let rollback_fixture = pending_rows >= 1_000_000;
+        if rollback_fixture {
+            sql_query("VACUUM public.security_audit_events")
+                .execute(&mut connection)
+                .await
+                .expect("previous fixture should be reclaimed before seeding");
+            connection
+                .batch_execute("BEGIN")
+                .await
+                .expect("scale fixture transaction should begin");
+        }
         if pending_rows > 0 {
             let started = std::time::Instant::now();
             sql_query(format!(
@@ -909,7 +925,7 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
         // the dead-prefix path with no manual vacuum, including natural
         // autovacuum catch-up, is covered by
         // audit_claim_survives_dead_prefix_and_autovacuum_recovers.
-        if pending_rows > 0 {
+        if pending_rows > 0 && !rollback_fixture {
             sql_query("VACUUM public.security_audit_events")
                 .execute(&mut connection)
                 .await
@@ -1025,6 +1041,12 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
                 .await
                 .expect("fixture batch should ack");
         }
+        if rollback_fixture {
+            connection
+                .batch_execute("ROLLBACK")
+                .await
+                .expect("synthetic scale rows should roll back after verification");
+        }
     }
     for cleanup in [
         "DELETE FROM public.security_audit_chain_entries",
@@ -1035,7 +1057,7 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
             .await
             .expect("fixture cleanup should delete prior rows");
     }
-    // This scale fixture must not lend millions of dead index entries to
+    // This scale fixture must not lend millions of aborted/dead index entries to
     // the next test. Its own clean-state plans and all backlog depths have
     // already been checked. The dead-prefix test below creates and observes
     // its own ack-deleted rows without manually vacuuming that lifecycle.
