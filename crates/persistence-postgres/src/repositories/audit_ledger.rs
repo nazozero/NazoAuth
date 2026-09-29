@@ -159,8 +159,8 @@ impl AuditLedgerRepository {
             .map_err(map_error)
     }
 
-    /// Persist a queued batch in one checkout and one transaction. Events
-    /// beyond the first are written by a single set-based statement that
+    /// Persist a queued batch in one checkout and one implicit transaction.
+    /// Events beyond the first are written by a single set-based statement that
     /// calls `nazo_persist_security_audit_event` once per row inside the same
     /// statement, so per-event idempotent replay semantics are unchanged and
     /// any failure rolls the whole batch back. An indeterminate transaction
@@ -192,27 +192,25 @@ impl AuditLedgerRepository {
         let occurred_ats: Vec<DateTime<Utc>> =
             events.iter().map(|event| event.occurred_at).collect();
         let mut guard = DiscardOnDrop(Some(self.connection().await?));
-        let result = guard
-            .connection()
-            .transaction::<_, diesel::result::Error, _>(async |connection| {
-                sql_query(
-                    "SELECT public.nazo_persist_security_audit_event(\
-                            item.event_id, item.event_type, item.event_category, \
-                            item.payload, item.occurred_at) AS changed \
-                     FROM unnest($1, $2, $3, $4, $5) AS \
-                            item(event_id, event_type, event_category, payload, occurred_at)",
-                )
-                .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(event_ids)
-                .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(event_types)
-                .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(event_categories)
-                .bind::<diesel::sql_types::Array<diesel::sql_types::Jsonb>, _>(payloads)
-                .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(occurred_ats)
-                .load::<AuditMutationRow>(connection)
-                .await?;
-                Ok(())
-            })
-            .await
-            .map_err(map_error);
+        // The single statement already commits or rolls back every function
+        // call together. Separate BEGIN/COMMIT round trips add no atomicity.
+        // Keep the guard armed until the complete statement outcome is known.
+        let result = sql_query(
+            "SELECT public.nazo_persist_security_audit_event(\
+                    item.event_id, item.event_type, item.event_category, \
+                    item.payload, item.occurred_at) AS changed \
+             FROM unnest($1, $2, $3, $4, $5) AS \
+                    item(event_id, event_type, event_category, payload, occurred_at)",
+        )
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(event_ids)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(event_types)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(event_categories)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Jsonb>, _>(payloads)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(occurred_ats)
+        .load::<AuditMutationRow>(guard.connection())
+        .await
+        .map(|_| ())
+        .map_err(map_error);
         if result.is_ok() {
             guard.return_to_pool();
         }
