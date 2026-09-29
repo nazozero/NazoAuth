@@ -396,7 +396,9 @@ async fn token_client_credentials_accepts_verified_mtls_then_fails_closed_withou
         .unwrap();
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["error"], "server_error");
-    assert_eq!(body["error_description"], "令牌主体状态不可用.");
+    // The OAuth presenter replaces non-ASCII internal descriptions with its
+    // RFC-compatible public fallback; the HTTP body must keep that contract.
+    assert_eq!(body["error_description"], "Request failed.");
 
     let retry_request = TestRequest::post()
         .uri("/token")
@@ -418,7 +420,7 @@ async fn token_client_credentials_accepts_verified_mtls_then_fails_closed_withou
         .unwrap();
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["error"], "server_error");
-    assert_eq!(body["error_description"], "令牌主体状态不可用.");
+    assert_eq!(body["error_description"], "Request failed.");
 }
 
 #[actix_web::test]

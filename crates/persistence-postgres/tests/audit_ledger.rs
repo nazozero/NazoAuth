@@ -815,21 +815,44 @@ fn assert_bounded_claim_analysis(plan: &str) {
             && line.contains("(actual time=")
     }) {
         let actual = line.split("(actual time=").nth(1).unwrap();
-        let rows: u64 = actual
+        // PostgreSQL 18 reports averaged rows with decimal precision.
+        let rows: f64 = actual
             .split(" rows=")
             .nth(1)
             .and_then(|tail| tail.split_whitespace().next())
             .and_then(|value| value.parse().ok())
             .expect("executed index node must report rows");
-        let loops: u64 = actual
+        let loops: f64 = actual
             .split(" loops=")
             .nth(1)
             .and_then(|tail| tail.split(')').next())
             .and_then(|value| value.parse().ok())
             .expect("executed index node must report loops");
         assert!(
-            rows.saturating_mul(loops) <= 256,
+            rows >= 0.0 && loops >= 0.0 && rows * loops <= 256.0,
             "claim index work must stay within the candidate bound:\n{plan}"
+        );
+    }
+}
+
+#[test]
+fn bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans() {
+    for (rows, loops, bounded) in [
+        ("256", "1", true),
+        ("256.00", "1", true),
+        ("1.00", "256", true),
+        ("10000.00", "1", false),
+        ("1.00", "257", false),
+    ] {
+        let plan = format!(
+            "Index Scan using pending_order on security_audit_events \
+             (cost=0.0..1.0 rows=256 width=192) \
+             (actual time=0.0..0.1 rows={rows} loops={loops})\nExecution Time: 1.0 ms"
+        );
+        assert_eq!(
+            std::panic::catch_unwind(|| assert_bounded_claim_analysis(&plan)).is_ok(),
+            bounded,
+            "unexpected index bound for rows={rows} loops={loops}"
         );
     }
 }
