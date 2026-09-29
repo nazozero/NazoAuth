@@ -288,7 +288,9 @@ fn query_with_status(value: &str) -> HashMap<String, String> {
 
 #[test]
 fn delivery_tokens_are_deterministic_and_request_scoped() {
-    let pepper = "delivery-token-test-pepper";
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let pepper = &settings.protocol.client_secret_pepper;
     let user_id = Uuid::now_v7();
     let request_id = Uuid::now_v7();
     let first = access_delivery_token(pepper, user_id, request_id);
