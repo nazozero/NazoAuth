@@ -265,3 +265,5 @@ Use the commands and isolated service prerequisites in
 [testing.md](testing.md#verification). Choose validation for the changed
 boundary; source checks do not establish deployment, conformance, or load-test
 results. Historical reports apply only to their recorded revisions.
+
+The new refresh-family collision probe deliberately uses an uncached parameterized query: a named plan selected for an empty family table can retain a sequential scan after rapid growth. It still checks only the tenant/family primary key before any retirement or insertion; collision compromise and audit semantics are unchanged. Other typed principal and lock queries retain prepared-plan reuse.
