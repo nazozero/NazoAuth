@@ -27,7 +27,20 @@ const MIGRATION_LOCK_TIMEOUT: Duration = Duration::from_secs(25);
 const MIGRATION_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const MIGRATION_STATEMENT_TIMEOUT: &str = "240s";
 
-pub type DbPool = Pool<AsyncPgConnection>;
+/// Shared connections and their transaction execution use one runtime owner.
+#[derive(Clone)]
+pub struct DbPool {
+    connections: Pool<AsyncPgConnection>,
+    pub(crate) runtime: tokio::runtime::Handle,
+}
+
+impl std::ops::Deref for DbPool {
+    type Target = Pool<AsyncPgConnection>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.connections
+    }
+}
 pub type DbConnection = Object<AsyncPgConnection>;
 
 /// Discard the physical connection unless its transaction outcome is confirmed.
@@ -85,8 +98,11 @@ pub fn create_pool(
     max_connections: usize,
 ) -> anyhow::Result<DbPool> {
     let runtime = tokio::runtime::Handle::try_current()?;
-    let manager = connection_manager(database_url.into(), runtime);
-    Ok(Pool::builder(manager).max_size(max_connections).build()?)
+    let manager = connection_manager(database_url.into(), runtime.clone());
+    Ok(DbPool {
+        connections: Pool::builder(manager).max_size(max_connections).build()?,
+        runtime,
+    })
 }
 
 fn connection_manager(

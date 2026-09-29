@@ -468,23 +468,36 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map(prepare_refresh_contract)
                 .transpose()
                 .map_err(map_repository_error)?;
-            let mut guard =
-                DiscardOnDrop(Some(self.connection().await.map_err(map_repository_error)?));
-            let transaction = guard
-                .connection()
-                .transaction::<CommitTokenIssuanceResult, CommitTransactionError, _>(
-                    async |connection| {
-                        diesel::sql_query("SET LOCAL lock_timeout = '2s'")
-                            .execute(connection)
-                            .await?;
-                        if let Some(result) =
-                            super::token_principals::lock_and_recheck(connection, &input).await?
-                        {
-                            return Ok(result);
-                        }
-                        if let Some((digest, grant_expires_at)) = single_use {
-                            let inserted = sql_query(
-                                "INSERT INTO oauth_token_issuances (\
+            // Keep the transaction's sequential SQL and its connection driver
+            // on the same runtime. A request crosses that boundary once instead
+            // of waking another runtime for each statement. Dropping JoinSet
+            // cancels the operation; DiscardOnDrop still discards an unconfirmed
+            // transaction's physical connection.
+            let pool = self.pool.clone();
+            let mut operation = tokio::task::JoinSet::new();
+            operation.spawn_on(
+                async move {
+                    let mut guard = DiscardOnDrop(Some(
+                        get_conn(&pool)
+                            .await
+                            .map_err(|_| TokenPortError::Unavailable)?,
+                    ));
+                    let transaction = guard
+                        .connection()
+                        .transaction::<CommitTokenIssuanceResult, CommitTransactionError, _>(
+                            async |connection| {
+                                diesel::sql_query("SET LOCAL lock_timeout = '2s'")
+                                    .execute(connection)
+                                    .await?;
+                                if let Some(result) =
+                                    super::token_principals::lock_and_recheck(connection, &input)
+                                        .await?
+                                {
+                                    return Ok(result);
+                                }
+                                if let Some((digest, grant_expires_at)) = single_use {
+                                    let inserted = sql_query(
+                                        "INSERT INTO oauth_token_issuances (\
                                          issuance_id, tenant_id, client_id, user_id, \
                                          single_use_key_blake3, access_token_jti, \
                                          access_token_expires_at, retain_until, \
@@ -494,102 +507,119 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                        WHERE single_use_key_blake3 IS NOT NULL \
                                      DO NOTHING \
                                      RETURNING (clock_timestamp() < $10) AS grant_valid",
-                            )
-                            .bind::<sql_types::Uuid, _>(input.issuance_id)
-                            .bind::<sql_types::Uuid, _>(input.tenant_id)
-                            .bind::<sql_types::Uuid, _>(input.client_id)
-                            .bind::<sql_types::Nullable<sql_types::Uuid>, _>(None::<Uuid>)
-                            .bind::<sql_types::Binary, _>(digest.as_slice())
-                            .bind::<sql_types::Varchar, _>(input.access_token_jti.as_str())
-                            .bind::<sql_types::Timestamptz, _>(access_token_expires_at)
-                            .bind::<sql_types::Timestamptz, _>(retain_until)
-                            .bind::<sql_types::Nullable<sql_types::Uuid>, _>(
-                                input
-                                    .refresh_token
-                                    .as_ref()
-                                    .map(|refresh| refresh.family_id),
-                            )
-                            .bind::<sql_types::Timestamptz, _>(grant_expires_at)
-                            .get_result::<SingleUseInsertRow>(connection)
-                            .await
-                            .optional()?;
-                            match inserted {
-                                None => {
-                                    return Ok(CommitTokenIssuanceResult::AlreadyUsed);
-                                }
-                                Some(row) if !row.grant_valid => {
-                                    return Err(CommitTransactionError::GrantExpired);
-                                }
-                                Some(_) => {}
-                            }
-                        }
-                        if let Some(refresh) = input.refresh_token.as_ref() {
-                            let prepared = prepared_contract.as_ref().ok_or_else(|| {
-                                CommitTransactionError::Repository(RepositoryError::Consistency(
-                                    "refresh token is missing its prepared contract".to_owned(),
-                                ))
-                            })?;
-                            match TokenRepository::persist_refresh_token_on_connection(
-                                connection,
-                                refresh.clone(),
-                                input.issuance_id,
-                                prepared,
-                            )
-                            .await
-                            .map_err(CommitTransactionError::Repository)?
-                            {
-                                RefreshTokenPersistResult::Inserted => {}
-                                RefreshTokenPersistResult::RotationConflict => {
-                                    // Keep the family compromise written by the
-                                    // rotation attempt, drop only this request's
-                                    // issuance row, and commit the reuse audit.
-                                    if single_use.is_some() {
-                                        diesel::delete(
-                                            oauth_token_issuances::table
-                                                .filter(
-                                                    oauth_token_issuances::issuance_id
-                                                        .eq(input.issuance_id),
-                                                )
-                                                .filter(
-                                                    oauth_token_issuances::tenant_id
-                                                        .eq(input.tenant_id),
-                                                ),
-                                        )
-                                        .execute(connection)
-                                        .await?;
-                                    }
-                                    append_fresh_security_audit_on_connection(
-                                        connection,
-                                        &refresh_reuse_audit_event(&input, refresh),
                                     )
-                                    .await?;
-                                    return Ok(CommitTokenIssuanceResult::RotationConflict);
+                                    .bind::<sql_types::Uuid, _>(input.issuance_id)
+                                    .bind::<sql_types::Uuid, _>(input.tenant_id)
+                                    .bind::<sql_types::Uuid, _>(input.client_id)
+                                    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(None::<Uuid>)
+                                    .bind::<sql_types::Binary, _>(digest.as_slice())
+                                    .bind::<sql_types::Varchar, _>(input.access_token_jti.as_str())
+                                    .bind::<sql_types::Timestamptz, _>(access_token_expires_at)
+                                    .bind::<sql_types::Timestamptz, _>(retain_until)
+                                    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(
+                                        input
+                                            .refresh_token
+                                            .as_ref()
+                                            .map(|refresh| refresh.family_id),
+                                    )
+                                    .bind::<sql_types::Timestamptz, _>(grant_expires_at)
+                                    .get_result::<SingleUseInsertRow>(connection)
+                                    .await
+                                    .optional()?;
+                                    match inserted {
+                                        None => {
+                                            return Ok(CommitTokenIssuanceResult::AlreadyUsed);
+                                        }
+                                        Some(row) if !row.grant_valid => {
+                                            return Err(CommitTransactionError::GrantExpired);
+                                        }
+                                        Some(_) => {}
+                                    }
                                 }
-                            }
-                        }
-                        super::token_principals::ensure_subject_binding(connection, &input).await?;
-                        append_fresh_security_audit_on_connection(
-                            connection,
-                            &token_issued_audit_event(&input, input.refresh_token.as_ref()),
+                                if let Some(refresh) = input.refresh_token.as_ref() {
+                                    let prepared = prepared_contract.as_ref().ok_or_else(|| {
+                                        CommitTransactionError::Repository(
+                                            RepositoryError::Consistency(
+                                                "refresh token is missing its prepared contract"
+                                                    .to_owned(),
+                                            ),
+                                        )
+                                    })?;
+                                    match TokenRepository::persist_refresh_token_on_connection(
+                                        connection,
+                                        refresh.clone(),
+                                        input.issuance_id,
+                                        prepared,
+                                    )
+                                    .await
+                                    .map_err(CommitTransactionError::Repository)?
+                                    {
+                                        RefreshTokenPersistResult::Inserted => {}
+                                        RefreshTokenPersistResult::RotationConflict => {
+                                            // Keep the family compromise written by the
+                                            // rotation attempt, drop only this request's
+                                            // issuance row, and commit the reuse audit.
+                                            if single_use.is_some() {
+                                                diesel::delete(
+                                                    oauth_token_issuances::table
+                                                        .filter(
+                                                            oauth_token_issuances::issuance_id
+                                                                .eq(input.issuance_id),
+                                                        )
+                                                        .filter(
+                                                            oauth_token_issuances::tenant_id
+                                                                .eq(input.tenant_id),
+                                                        ),
+                                                )
+                                                .execute(connection)
+                                                .await?;
+                                            }
+                                            append_fresh_security_audit_on_connection(
+                                                connection,
+                                                &refresh_reuse_audit_event(&input, refresh),
+                                            )
+                                            .await?;
+                                            return Ok(CommitTokenIssuanceResult::RotationConflict);
+                                        }
+                                    }
+                                }
+                                super::token_principals::ensure_subject_binding(connection, &input)
+                                    .await?;
+                                append_fresh_security_audit_on_connection(
+                                    connection,
+                                    &token_issued_audit_event(&input, input.refresh_token.as_ref()),
+                                )
+                                .await?;
+                                Ok(CommitTokenIssuanceResult::Committed)
+                            },
                         )
-                        .await?;
-                        Ok(CommitTokenIssuanceResult::Committed)
-                    },
-                )
-                .await;
-            match transaction {
-                Ok(result) => {
-                    guard.return_to_pool();
-                    Ok(result)
-                }
-                Err(CommitTransactionError::GrantExpired) => {
-                    // Rollback completed cleanly; the connection is healthy.
-                    guard.return_to_pool();
-                    Ok(CommitTokenIssuanceResult::GrantExpired)
-                }
-                Err(CommitTransactionError::Repository(error)) => Err(map_repository_error(error)),
-                Err(CommitTransactionError::Diesel(error)) => Err(map_diesel_error(error)),
-            }
+                        .await;
+                    match transaction {
+                        Ok(result) => {
+                            guard.return_to_pool();
+                            Ok(result)
+                        }
+                        Err(CommitTransactionError::GrantExpired) => {
+                            // Rollback completed cleanly; the connection is healthy.
+                            guard.return_to_pool();
+                            Ok(CommitTokenIssuanceResult::GrantExpired)
+                        }
+                        Err(CommitTransactionError::Repository(error)) => {
+                            Err(map_repository_error(error))
+                        }
+                        Err(CommitTransactionError::Diesel(error)) => Err(map_diesel_error(error)),
+                    }
+                },
+                &self.pool.runtime,
+            );
+            operation
+                .join_next()
+                .await
+                .expect("issuance transaction task was registered")
+                .map_err(|error| {
+                    tracing::warn!(%error, "token issuance runtime ended before completion");
+                    TokenPortError::Unavailable
+                })?
         })
     }
     fn single_use_redemption<'a>(
