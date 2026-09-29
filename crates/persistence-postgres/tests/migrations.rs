@@ -27,7 +27,7 @@ fn embedded_migration_head_tracks_latest_directory() {
 }
 
 #[test]
-fn security_state_cleanup_has_one_bounded_definition_and_no_runtime_call() {
+fn security_state_cleanup_has_versioned_definitions_and_no_runtime_call() {
     let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let mut definitions = 0;
     let mut invocations = 0;
@@ -56,8 +56,8 @@ fn security_state_cleanup_has_one_bounded_definition_and_no_runtime_call() {
                 .count();
     }
     assert_eq!(
-        definitions, 1,
-        "the bounded security-state cleanup must be defined exactly once"
+        definitions, 2,
+        "the original cleanup plus its index-cutoff replacement define one runtime function"
     );
     assert_eq!(
         invocations, 0,
@@ -67,27 +67,32 @@ fn security_state_cleanup_has_one_bounded_definition_and_no_runtime_call() {
 
 #[test]
 fn security_state_cleanup_function_bounds_every_category() {
-    let sql = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../migrations/20260805000500_token_issuance_saga/up.sql"),
-    )
-    .expect("token issuance saga migration should be readable");
-    assert_eq!(
-        sql.matches("LIMIT 256 FOR UPDATE SKIP LOCKED").count(),
-        5,
-        "each cleanup category must select a bounded candidate set under SKIP LOCKED"
-    );
-    for column in [
-        "deleted_issuances",
-        "deleted_access_token_revocations",
-        "deleted_scim_audit_events",
-        "deleted_backchannel_logout_deliveries",
-        "deleted_scim_security_events",
+    for migration in [
+        "20260805000500_token_issuance_saga",
+        "20260929000100_security_cleanup_index_cutoff",
     ] {
-        assert!(
-            sql.contains(column),
-            "cleanup function must report {column}"
+        let sql = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../migrations/{migration}/up.sql")),
+        )
+        .expect("security cleanup migration should be readable");
+        assert_eq!(
+            sql.matches("LIMIT 256 FOR UPDATE SKIP LOCKED").count(),
+            5,
+            "each cleanup category must select a bounded candidate set under SKIP LOCKED"
         );
+        for column in [
+            "deleted_issuances",
+            "deleted_access_token_revocations",
+            "deleted_scim_audit_events",
+            "deleted_backchannel_logout_deliveries",
+            "deleted_scim_security_events",
+        ] {
+            assert!(
+                sql.contains(column),
+                "cleanup function must report {column}"
+            );
+        }
     }
 }
 
@@ -633,6 +638,61 @@ async fn tenant_resource_provenance_cut_keeps_one_deterministic_binding_and_reje
         ))
         .await
         .expect("conflict fixture cleanup");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn issuance_cleanup_uses_expiry_as_an_index_bound() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("pending migrations should apply");
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    #[derive(QueryableByName)]
+    struct FunctionBody {
+        #[diesel(sql_type = Text)]
+        body: String,
+    }
+    let body = sql_query(
+        "SELECT prosrc AS body FROM pg_proc \
+         WHERE oid = 'nazo_oauth_cleanup_expired_security_state()'::regprocedure",
+    )
+    .get_result::<FunctionBody>(&mut connection)
+    .await
+    .expect("installed cleanup definition should be readable")
+    .body;
+    // Explain the installed candidate query, not a second copy that could
+    // keep passing after the production predicate regresses. The bind models
+    // PL/pgSQL's one per-call cutoff variable.
+    let candidate = body
+        .split_once("WITH due AS (")
+        .expect("issuance candidate CTE should exist")
+        .1
+        .split_once(")\n    DELETE FROM oauth_token_issuances")
+        .expect("issuance candidate should feed the bounded delete")
+        .0
+        .replace("v_cutoff", "$1");
+    connection
+        .batch_execute("SET enable_seqscan = off; SET enable_bitmapscan = off")
+        .await
+        .expect("small fixtures should still expose usable index conditions");
+    let plan = sql_query(format!("EXPLAIN (COSTS OFF) {candidate}"))
+        .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+        .load::<ExplainRow>(&mut connection)
+        .await
+        .expect("installed expiry candidate should explain")
+        .into_iter()
+        .map(|row| row.query_plan)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        plan.contains("oauth_token_issuances_retention_idx")
+            && plan.contains("Index Cond: (retain_until <="),
+        "expiry must bound the index scan rather than filter retained rows:\n{plan}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
