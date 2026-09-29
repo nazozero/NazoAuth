@@ -538,12 +538,15 @@ async fn cancelled_issuance_on_pool_runtime_discards_the_blocked_connection() {
         .execute(&mut locker)
         .await
         .unwrap();
+    // Observe outside the lock-holding transaction: PostgreSQL caches its
+    // statistics snapshot until that transaction ends.
+    let mut observer = AsyncPgConnection::establish(&database_url).await.unwrap();
     let issuer = repository.clone();
     let operation = tokio::spawn(async move { issuer.commit_token_issuance(input).await });
     tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
             let blocked = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))")
-                .bind::<sql_types::BigInt, _>(backend).get_result::<CountRow>(&mut locker).await.unwrap().count;
+                .bind::<sql_types::BigInt, _>(backend).get_result::<CountRow>(&mut observer).await.unwrap().count;
             if blocked > 0 { break; }
             assert!(!operation.is_finished(), "issuance must wait for the principal lock");
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
