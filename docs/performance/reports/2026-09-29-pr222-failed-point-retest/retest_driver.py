@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """PR222 failed-point retest only; reuse existing preparation, worker and gates."""
 import argparse, hashlib, json, os, sys, time
+from datetime import datetime, timezone
 from pathlib import Path
-ROOT=Path('/workspace')
+ROOT=Path(os.environ.get('SIS_WORKSPACE','/workspace'))
 sys.path.insert(0,str(ROOT/'perf/tools'))
 import short_baseline as sb
 parser=argparse.ArgumentParser()
@@ -25,7 +26,7 @@ def publish():
     return summary
 try:
     manifest=sb.prepare(argparse.Namespace(app_image='nazoauth-perf-nazoauth',runner_image='nazoauth-perf-perf',cpu_budget=args.cpu_budget),out)
-    manifest.update(task_started_at=args.started_at,load_cutoff_at='2026-09-29T11:35:36Z',delivery_deadline_at='2026-09-29T11:40:36Z',scope='失败点补测',driver_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),production_inputs_equal_previous=not sb.command(['git','diff','3b6d8d3cfe35f79a3ab896d53a3aa76c443e7599',manifest['harness_sha'],'--',*sb.APP_INPUTS]),cpu_budget_basis='This deployment .cnb.yml runner.cpus=64; actual CPU IDs from current process and runner probe intersection.')
+    manifest.update(task_started_at=args.started_at,load_cutoff_at=datetime.fromtimestamp(cutoff,timezone.utc).isoformat(),delivery_deadline_at=datetime.fromtimestamp(started+3600,timezone.utc).isoformat(),scope='失败点补测',driver_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),production_inputs_equal_previous=not sb.command(['git','diff','3b6d8d3cfe35f79a3ab896d53a3aa76c443e7599',manifest['harness_sha'],'--',*sb.APP_INPUTS]),cpu_budget_basis='This deployment .cnb.yml runner.cpus=64; actual CPU IDs from current process and runner probe intersection.')
     sb.save(out/'manifest.json',manifest)
     env={**os.environ,'SIS_WORKSPACE':str(ROOT),'SIS_RESULTS':str(out),'SIS_BIN':str(out/'bin'),'SIS_PROJECT':manifest['project'],'SIS_PERF_IMAGE':manifest['runner_image'],'SIS_SOURCE_SHA':manifest['source_sha'],'SIS_APP_SHA':manifest['source_sha'],'SIS_LOAD_BUDGET_S':'2700'}
     if len(manifest['cpus']['multi'])<2: raise RuntimeError('multicore unavailable')

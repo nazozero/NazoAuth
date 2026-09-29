@@ -1,0 +1,40 @@
+{
+  "scope": "Prior CC proof retained; not rerun in failed-point retest",
+  "report_commit": "e9e12083ec326e9941722029605060118e3c5d94",
+  "points": [
+    {
+      "point": "s0-single-1790671160",
+      "source_sha": "3b6d8d3cfe35f79a3ab896d53a3aa76c443e7599",
+      "harness_sha": "3b6d8d3cfe35f79a3ab896d53a3aa76c443e7599",
+      "verdict": "PASS",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 0,
+        "issuance_inserts": 0,
+        "subject_bindings": 0,
+        "database_bytes": 34002623
+      },
+      "native_point_sha256": "44c54541251b195350c37c9f76380ea15a7bd4afd29d98cb40d3dfe4688c8625",
+      "native_inventory_sha256_match": true
+    },
+    {
+      "point": "s1-multi-1790671303",
+      "source_sha": "3b6d8d3cfe35f79a3ab896d53a3aa76c443e7599",
+      "harness_sha": "3b6d8d3cfe35f79a3ab896d53a3aa76c443e7599",
+      "verdict": "PASS",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 0,
+        "issuance_inserts": 0,
+        "subject_bindings": 0,
+        "database_bytes": 140760767
+      },
+      "native_point_sha256": "901b510b7aad64d8087d83f6ffac2940a15665a0dc4c74630a0983193ee44647",
+      "native_inventory_sha256_match": true
+    }
+  ]
+}

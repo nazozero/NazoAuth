@@ -76,6 +76,10 @@ for r in post.get('statements',[]):
     if same: row['delta']={k:float(r[k])-float(b[k]) for k in row['post'] if r.get(k) is not None and b.get(k) is not None}
     rows.append(row)
 result['pgss']={'pre_metadata':{k:pre.get(k) for k in ('ts','stats_reset','dealloc')},'post_metadata':{k:post.get(k) for k in ('ts','stats_reset','dealloc')},'rows':rows,'population':extra.get('family_population'),'seed_population':extra.get('seed_population'),'relation_stats':extra.get('relation_stats'),'post_capture_collected':extra.get('collected'),'warning':'Top-level and nested reported separately; never sum them. Snapshot interval includes seed, warmup and drain. SQL exec time is not CPU time.'}
+result['pgss']['supplemental_metadata']={k:extra.get(k) for k in ('ts','collector_sha256','plan_scope','plan_error_kind')}
+result['pgss']['supplemental_full_metadata']={k:extra.get('pgss_full',{}).get(k) for k in ('stats_reset','dealloc')}
+result['pgss']['indexes']=extra.get('indexes')
+result['pgss']['fresh_generic_load_family_plan']=extra.get('fresh_generic_load_family_plan')
 samples=[r for r in jsonl(a.point/'residency.jsonl') if r.get('kind')=='sample' and start<=r.get('ts',0)<end]
 events=collections.Counter(); qids=collections.Counter(); pools=[]; locks=[]; missing=0
 for row in samples:

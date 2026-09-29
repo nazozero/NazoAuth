@@ -1,0 +1,227 @@
+{
+  "point": "s2-single-1790671460",
+  "fapi_retained_operations": 270,
+  "retained_cold_login_requests": 151,
+  "groups": {
+    "overlaps_cold_login": {
+      "count": 134,
+      "over_100ms": 29,
+      "p50_ms": 64.0,
+      "p95_ms": 202.49999999999994,
+      "max_ms": 235
+    },
+    "does_not_overlap_retained_login": {
+      "count": 136,
+      "over_100ms": 0,
+      "p50_ms": 31.0,
+      "p95_ms": 44.25,
+      "max_ms": 55
+    }
+  },
+  "slow_fapi_operations": [
+    {
+      "fapi_entry_epoch": 1790671537.881035,
+      "fapi_completion_epoch": 1790671538.116035,
+      "full_operation_ms": 235,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.22835493087768555
+    },
+    {
+      "fapi_entry_epoch": 1790671544.880673,
+      "fapi_completion_epoch": 1790671544.982673,
+      "full_operation_ms": 102,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.10199999809265137
+    },
+    {
+      "fapi_entry_epoch": 1790671545.881294,
+      "fapi_completion_epoch": 1790671545.994294,
+      "full_operation_ms": 113,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.11299991607666016
+    },
+    {
+      "fapi_entry_epoch": 1790671562.881995,
+      "fapi_completion_epoch": 1790671563.020995,
+      "full_operation_ms": 139,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.13899993896484375
+    },
+    {
+      "fapi_entry_epoch": 1790671564.881693,
+      "fapi_completion_epoch": 1790671565.090693,
+      "full_operation_ms": 209,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.19900918006896973
+    },
+    {
+      "fapi_entry_epoch": 1790671565.881356,
+      "fapi_completion_epoch": 1790671566.099356,
+      "full_operation_ms": 218,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.2015540599822998
+    },
+    {
+      "fapi_entry_epoch": 1790671566.881867,
+      "fapi_completion_epoch": 1790671566.988867,
+      "full_operation_ms": 107,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.10700011253356934
+    },
+    {
+      "fapi_entry_epoch": 1790671567.881143,
+      "fapi_completion_epoch": 1790671568.055143,
+      "full_operation_ms": 174,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.17400002479553223
+    },
+    {
+      "fapi_entry_epoch": 1790671568.881831,
+      "fapi_completion_epoch": 1790671569.115831,
+      "full_operation_ms": 234,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.1880631446838379
+    },
+    {
+      "fapi_entry_epoch": 1790671569.8811789,
+      "fapi_completion_epoch": 1790671570.012179,
+      "full_operation_ms": 131,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.13100004196166992
+    },
+    {
+      "fapi_entry_epoch": 1790671570.881822,
+      "fapi_completion_epoch": 1790671571.109822,
+      "full_operation_ms": 228,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.21655678749084473
+    },
+    {
+      "fapi_entry_epoch": 1790671571.881885,
+      "fapi_completion_epoch": 1790671572.104885,
+      "full_operation_ms": 223,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.20737195014953613
+    },
+    {
+      "fapi_entry_epoch": 1790671572.881751,
+      "fapi_completion_epoch": 1790671573.000751,
+      "full_operation_ms": 119,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.11899995803833008
+    },
+    {
+      "fapi_entry_epoch": 1790671573.8819978,
+      "fapi_completion_epoch": 1790671573.982998,
+      "full_operation_ms": 101,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.10100007057189941
+    },
+    {
+      "fapi_entry_epoch": 1790671576.8816092,
+      "fapi_completion_epoch": 1790671577.037609,
+      "full_operation_ms": 156,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.15599989891052246
+    },
+    {
+      "fapi_entry_epoch": 1790671585.880763,
+      "fapi_completion_epoch": 1790671586.011763,
+      "full_operation_ms": 131,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.13100004196166992
+    },
+    {
+      "fapi_entry_epoch": 1790671586.8819602,
+      "fapi_completion_epoch": 1790671587.03396,
+      "full_operation_ms": 152,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.15199995040893555
+    },
+    {
+      "fapi_entry_epoch": 1790671589.881542,
+      "fapi_completion_epoch": 1790671589.982542,
+      "full_operation_ms": 101,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.10100007057189941
+    },
+    {
+      "fapi_entry_epoch": 1790671595.88185,
+      "fapi_completion_epoch": 1790671596.09285,
+      "full_operation_ms": 211,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.2109999656677246
+    },
+    {
+      "fapi_entry_epoch": 1790671603.881762,
+      "fapi_completion_epoch": 1790671604.025762,
+      "full_operation_ms": 144,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.1386270523071289
+    },
+    {
+      "fapi_entry_epoch": 1790671606.8819878,
+      "fapi_completion_epoch": 1790671606.998988,
+      "full_operation_ms": 117,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.11700010299682617
+    },
+    {
+      "fapi_entry_epoch": 1790671607.8819652,
+      "fapi_completion_epoch": 1790671608.027965,
+      "full_operation_ms": 146,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.14599990844726562
+    },
+    {
+      "fapi_entry_epoch": 1790671609.881373,
+      "fapi_completion_epoch": 1790671610.022373,
+      "full_operation_ms": 141,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.14100003242492676
+    },
+    {
+      "fapi_entry_epoch": 1790671610.881489,
+      "fapi_completion_epoch": 1790671611.080489,
+      "full_operation_ms": 199,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.19899988174438477
+    },
+    {
+      "fapi_entry_epoch": 1790671613.8803592,
+      "fapi_completion_epoch": 1790671614.013359,
+      "full_operation_ms": 133,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.13299989700317383
+    },
+    {
+      "fapi_entry_epoch": 1790671614.8811848,
+      "fapi_completion_epoch": 1790671614.988185,
+      "full_operation_ms": 107,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.10700011253356934
+    },
+    {
+      "fapi_entry_epoch": 1790671620.881885,
+      "fapi_completion_epoch": 1790671621.019885,
+      "full_operation_ms": 138,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.12225103378295898
+    },
+    {
+      "fapi_entry_epoch": 1790671622.880158,
+      "fapi_completion_epoch": 1790671622.995158,
+      "full_operation_ms": 115,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.11500000953674316
+    },
+    {
+      "fapi_entry_epoch": 1790671632.881206,
+      "fapi_completion_epoch": 1790671632.994206,
+      "full_operation_ms": 113,
+      "retained_login_overlap_count": 1,
+      "overlap_seconds": 0.11299991607666016
+    }
+  ],
+  "scope": "Retained cap_iter_ms measurement-entry cohort; cold login interval approximated by HTTP completion minus request duration. Correlation only. Check forensic sample count and overflow against authoritative cohort; missing retained login is not proof of no login."
+}

@@ -1,0 +1,16 @@
+{
+  "archive_filename": "native-evidence.tar.gz",
+  "archive_sha256": "707b10e6977e6ee99b4d95db71d0122e0b9add65208a5b849955624d293147fb",
+  "archive_bytes": 279669630,
+  "native_file_count": 399,
+  "native_inventory_sha256": "a1f05a277747c3a28b12ff5449d8889e8b44e40e4f028cc44312d7e4ab0d64d0",
+  "archived_at_utc": "2026-09-29T11:20:58.498865+00:00",
+  "retention": "Private native copy outside test containers; raw evidence not committed to Git.",
+  "local_verification": {
+    "archive_sha256_match": true,
+    "native_inventory_sha256_match": true,
+    "native_files_verified": 399,
+    "verified_at_utc": "2026-09-29T11:24:13.526680+00:00",
+    "retention": "Private Windows copy outside CNB and test containers."
+  }
+}
