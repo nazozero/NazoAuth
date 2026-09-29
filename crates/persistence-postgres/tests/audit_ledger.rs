@@ -763,18 +763,28 @@ async fn explain_query_plan(
     } else {
         "EXPLAIN (FORMAT TEXT)"
     };
-    sql_query(format!(
+    // The post-execution assertion cannot stop a bad plan from occupying CI.
+    // Bound the server statement itself, independently of fixture seeding.
+    sql_query("SET statement_timeout = '30s'")
+        .execute(connection)
+        .await
+        .expect("plan execution deadline should apply");
+    let rows = sql_query(format!(
         "SELECT nazo_test_explain FROM pg_temp.nazo_test_explain(\
          '{explain} {}')",
         query.replace('\'', "''")
     ))
     .load::<PlanRow>(connection)
     .await
-    .expect("explain should run")
-    .into_iter()
-    .map(|row| row.nazo_test_explain)
-    .collect::<Vec<_>>()
-    .join("\n")
+    .expect("explain should finish within the existing 30-second bound");
+    sql_query("RESET statement_timeout")
+        .execute(connection)
+        .await
+        .expect("plan execution deadline should reset");
+    rows.into_iter()
+        .map(|row| row.nazo_test_explain)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn assert_bounded_claim_analysis(plan: &str) {
@@ -797,6 +807,31 @@ fn assert_bounded_claim_analysis(plan: &str) {
         !plan.contains("Sort Method: external"),
         "claim analysis must not spill to disk:\n{plan}"
     );
+    // An index scan can still read the whole backlog. Count the tuples
+    // actually emitted by every executed index node, including repeated
+    // primary-key probes; limiting only the final output is insufficient.
+    for line in plan.lines().filter(|line| {
+        (line.contains("Index Scan") || line.contains("Index Only Scan"))
+            && line.contains("(actual time=")
+    }) {
+        let actual = line.split("(actual time=").nth(1).unwrap();
+        let rows: u64 = actual
+            .split(" rows=")
+            .nth(1)
+            .and_then(|tail| tail.split_whitespace().next())
+            .and_then(|value| value.parse().ok())
+            .expect("executed index node must report rows");
+        let loops: u64 = actual
+            .split(" loops=")
+            .nth(1)
+            .and_then(|tail| tail.split(')').next())
+            .and_then(|value| value.parse().ok())
+            .expect("executed index node must report loops");
+        assert!(
+            rows.saturating_mul(loops) <= 256,
+            "claim index work must stay within the candidate bound:\n{plan}"
+        );
+    }
 }
 
 fn assert_bounded_claim_plan(plan: &str) {
@@ -830,24 +865,22 @@ const CHAINED_CLAIM_QUERY: &str = "\
            event.event_category::TEXT, event.payload::TEXT, event.occurred_at,
            chained.previous_hash, chained.event_hash
     FROM chained
-    JOIN public.security_audit_events AS event
-        ON event.event_id = chained.event_id
+    CROSS JOIN LATERAL (
+        SELECT candidate.event_id, candidate.event_type, candidate.event_category,
+               candidate.payload, candidate.occurred_at
+        FROM public.security_audit_events AS candidate
+        WHERE candidate.event_id = chained.event_id
+        LIMIT 1
+    ) AS event
     ORDER BY chained.sequence";
 
 const PENDING_CLAIM_QUERY: &str = "\
-    WITH pending AS MATERIALIZED (
-        SELECT event.event_id, event.occurred_at
-        FROM public.security_audit_events AS event
-        ORDER BY event.occurred_at, event.event_id
-        LIMIT 256
-    )
     SELECT event.event_id, NULL::BIGINT, event.event_type::TEXT,
            event.event_category::TEXT, event.payload::TEXT, event.occurred_at,
            NULL::BYTEA, NULL::BYTEA
-    FROM pending
-    JOIN public.security_audit_events AS event
-        ON event.event_id = pending.event_id
-    ORDER BY pending.occurred_at, pending.event_id";
+    FROM public.security_audit_events AS event
+    ORDER BY event.occurred_at, event.event_id
+    LIMIT 256";
 
 const CLAIM_ROWS_QUERY: &str =
     "SELECT count(*) AS value FROM public.nazo_claim_security_audit_pending(256)";
@@ -954,8 +987,10 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
                 .execute(&mut connection)
                 .await
                 .expect("plan pinning should apply");
+            eprintln!("pending={pending_rows} analyzed={analyzed}: explain chained prefix");
             let chained_plan = explain_analyze_plan(&mut connection, CHAINED_CLAIM_QUERY).await;
             assert_bounded_claim_analysis(&chained_plan);
+            eprintln!("pending={pending_rows} analyzed={analyzed}: explain direct pending read");
             let pending_plan = explain_analyze_plan(&mut connection, PENDING_CLAIM_QUERY).await;
             assert_bounded_claim_analysis(&pending_plan);
             sql_query("RESET enable_seqscan")
@@ -966,6 +1001,11 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
                 .execute(&mut connection)
                 .await
                 .expect("plan pinning should reset");
+            eprintln!("pending={pending_rows} analyzed={analyzed}: execute claim function");
+            sql_query("SET statement_timeout = '30s'")
+                .execute(&mut connection)
+                .await
+                .expect("claim execution deadline should apply");
             let started = std::time::Instant::now();
             let claimed = sql_query(CLAIM_ROWS_QUERY)
                 .get_result::<BigCount>(&mut connection)
@@ -973,6 +1013,10 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
                 .expect("claim should execute")
                 .value;
             let elapsed = started.elapsed();
+            sql_query("RESET statement_timeout")
+                .execute(&mut connection)
+                .await
+                .expect("claim execution deadline should reset");
             assert!(claimed <= 256, "claim returned {claimed} rows");
             assert_eq!(
                 claimed,
