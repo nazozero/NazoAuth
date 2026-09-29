@@ -1,19 +1,42 @@
 //! Principal-sized token authority: versions and reusable private-subject ownership.
-use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
+use diesel::{
+    BoolExpressionMethods, ExpressionMethods, NullableExpressionMethods, OptionalExtension,
+    QueryDsl, QueryableByName, sql_query, sql_types,
+};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{CommitTokenIssuance, CommitTokenIssuanceResult, TokenPrincipalState};
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
-#[derive(QueryableByName)]
-struct Snapshot {
-    #[diesel(sql_type = sql_types::BigInt)]
-    client_epoch: i64,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::BigInt>)]
-    user_epoch: Option<i64>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    bound_user: Option<Uuid>,
+use crate::schema::oauth_subject_bindings;
+
+// Security-only projections of the existing tables. The full client projection
+// already has 64 columns; these reads do not need that profile/configuration data.
+diesel::table! {
+    #[sql_name = "oauth_clients"]
+    client_principals (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        is_active -> Bool,
+        access_token_epoch -> BigInt,
+    }
 }
+
+diesel::table! {
+    #[sql_name = "users"]
+    user_principals (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        is_active -> Bool,
+        access_token_epoch -> BigInt,
+    }
+}
+
+diesel::allow_tables_to_appear_in_same_query!(
+    client_principals,
+    user_principals,
+    oauth_subject_bindings,
+);
 
 pub(super) async fn snapshot(
     connection: &mut AsyncPgConnection,
@@ -24,62 +47,78 @@ pub(super) async fn snapshot(
 ) -> Result<TokenPrincipalState, RepositoryError> {
     // Only security columns are read: no profile preload for non-OIDC issuance.
     // Missing/inactive principals are still classified by the locked commit check.
-    let row = sql_query(
-        "SELECT COALESCE(c.access_token_epoch, 0)::bigint AS client_epoch, \
-                CASE WHEN $3::uuid IS NOT NULL THEN COALESCE(u.access_token_epoch, 0) END AS user_epoch, \
-                b.user_id AS bound_user \
-         FROM (SELECT $1::uuid AS tenant_id) AS request \
-         LEFT JOIN oauth_clients c ON c.tenant_id = request.tenant_id AND c.id = $2 \
-         LEFT JOIN users u ON u.tenant_id = request.tenant_id AND u.id = $3 \
-         LEFT JOIN oauth_subject_bindings b ON $3::uuid IS NOT NULL AND $4 <> $3::text AND b.tenant_id = request.tenant_id AND b.subject = $4",
-    )
-    .bind::<sql_types::Uuid, _>(tenant_id)
-    .bind::<sql_types::Uuid, _>(client_id)
-    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
-    .bind::<sql_types::Text, _>(subject)
-    .get_result::<Snapshot>(connection)
-    .await
-    .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-    if row.bound_user.is_some() && row.bound_user != user_id {
+    // Keep this one MVCC snapshot and a typed query so every connection can
+    // reuse its prepared statement across tenants, clients and subject types.
+    let client_epoch = client_principals::table
+        .filter(client_principals::tenant_id.eq(tenant_id))
+        .filter(client_principals::id.eq(client_id))
+        .select(client_principals::access_token_epoch)
+        .single_value();
+    let user_epoch = user_principals::table
+        .filter(user_principals::tenant_id.eq(tenant_id))
+        .filter(user_principals::id.nullable().eq(user_id))
+        .select(user_principals::access_token_epoch)
+        .single_value();
+    let private_subject = user_id.is_some_and(|id| subject != id.to_string());
+    let bound_user = oauth_subject_bindings::table
+        .filter(oauth_subject_bindings::tenant_id.eq(tenant_id))
+        .filter(
+            oauth_subject_bindings::subject
+                .eq(subject)
+                .and::<_, sql_types::Bool>(private_subject),
+        )
+        .select(oauth_subject_bindings::user_id)
+        .single_value();
+    let (client_epoch, user_epoch, bound_user) =
+        diesel::select((client_epoch, user_epoch, bound_user))
+            .get_result::<(Option<i64>, Option<i64>, Option<Uuid>)>(connection)
+            .await
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+    if bound_user.is_some() && bound_user != user_id {
         return Err(RepositoryError::Consistency(
             "subject ownership collision".to_owned(),
         ));
     }
     Ok(TokenPrincipalState {
-        client_epoch: row.client_epoch,
-        user_epoch: row.user_epoch,
-        subject_bound: row.bound_user.is_some(),
+        client_epoch: client_epoch.unwrap_or(0),
+        user_epoch: user_id.map(|_| user_epoch.unwrap_or(0)),
+        subject_bound: bound_user.is_some(),
     })
-}
-
-#[derive(QueryableByName)]
-struct LockedPrincipal {
-    #[diesel(sql_type = sql_types::Bool)]
-    is_active: bool,
-    #[diesel(sql_type = sql_types::BigInt)]
-    access_token_epoch: i64,
 }
 
 pub(super) async fn lock_and_recheck(
     connection: &mut AsyncPgConnection,
     input: &CommitTokenIssuance,
 ) -> diesel::QueryResult<Option<CommitTokenIssuanceResult>> {
-    let client = sql_query("SELECT is_active, access_token_epoch FROM oauth_clients WHERE tenant_id = $1 AND id = $2 FOR SHARE")
-        .bind::<sql_types::Uuid, _>(input.tenant_id)
-        .bind::<sql_types::Uuid, _>(input.client_id)
-        .get_result::<LockedPrincipal>(connection).await.optional()?;
-    if !client.is_some_and(|row| {
-        row.is_active && row.access_token_epoch == input.principal_state.client_epoch
-    }) {
+    let client = client_principals::table
+        .filter(client_principals::tenant_id.eq(input.tenant_id))
+        .filter(client_principals::id.eq(input.client_id))
+        .select((
+            client_principals::is_active,
+            client_principals::access_token_epoch,
+        ))
+        .for_share()
+        .first::<(bool, i64)>(connection)
+        .await
+        .optional()?;
+    if !client.is_some_and(|(active, epoch)| active && epoch == input.principal_state.client_epoch)
+    {
         return Ok(Some(CommitTokenIssuanceResult::ClientInactive));
     }
     if let Some(user_id) = input.user_id {
-        let user = sql_query("SELECT is_active, access_token_epoch FROM users WHERE tenant_id = $1 AND id = $2 FOR SHARE")
-            .bind::<sql_types::Uuid, _>(input.tenant_id)
-            .bind::<sql_types::Uuid, _>(user_id)
-            .get_result::<LockedPrincipal>(connection).await.optional()?;
-        if !user.is_some_and(|row| {
-            row.is_active && Some(row.access_token_epoch) == input.principal_state.user_epoch
+        let user = user_principals::table
+            .filter(user_principals::tenant_id.eq(input.tenant_id))
+            .filter(user_principals::id.eq(user_id))
+            .select((
+                user_principals::is_active,
+                user_principals::access_token_epoch,
+            ))
+            .for_share()
+            .first::<(bool, i64)>(connection)
+            .await
+            .optional()?;
+        if !user.is_some_and(|(active, epoch)| {
+            active && Some(epoch) == input.principal_state.user_epoch
         }) {
             return Ok(Some(CommitTokenIssuanceResult::SubjectInactive));
         }
