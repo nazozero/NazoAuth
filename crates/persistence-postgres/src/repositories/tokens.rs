@@ -790,9 +790,17 @@ async fn persist_refresh_token_inner(
     // New family issuance: a same-named family is a collision compromise,
     // then the (tenant, user, client) active-family cap retires the
     // deterministically oldest live families before the insert.
-    if load_family(connection, token.tenant_id, token.family_id)
-        .await?
-        .is_some()
+    // Only existence matters here. Do not fetch/decode the current member,
+    // audience and sender bindings for a new family; rotation above still
+    // reads those authoritative facts under the same locks.
+    if diesel::select(diesel::dsl::exists(
+        oauth_refresh_families::table
+            .filter(oauth_refresh_families::tenant_id.eq(token.tenant_id))
+            .filter(oauth_refresh_families::token_family_id.eq(token.family_id))
+            .select(oauth_refresh_families::token_family_id),
+    ))
+    .get_result::<bool>(connection)
+    .await?
     {
         compromise_family(connection, token.tenant_id, token.family_id).await?;
         return Ok(RefreshTokenPersistResult::RotationConflict);
