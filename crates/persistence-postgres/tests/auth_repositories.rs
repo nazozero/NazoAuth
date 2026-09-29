@@ -329,7 +329,11 @@ async fn fixture(database_url: &str) -> FixtureIds {
     .expect("auth repository fixture should insert")
 }
 
-async fn seed_deactivation(database_url: &str, fixture: &FixtureIds, count: usize) {
+async fn seed_deactivation(
+    database_url: &str,
+    fixture: &FixtureIds,
+    count: usize,
+) -> CommitTokenIssuance {
     let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let repository = TokenIssuanceRepository::new(create_pool(database_url, 1).unwrap());
     let token = refresh_token_fixture(
@@ -339,9 +343,10 @@ async fn seed_deactivation(database_url: &str, fixture: &FixtureIds, count: usiz
         Uuid::now_v7().to_string(),
         None,
     );
+    let issuance = refresh_issuance(token);
     assert_eq!(
         repository
-            .commit_token_issuance(refresh_issuance(token))
+            .commit_token_issuance(issuance.clone())
             .await
             .unwrap(),
         CommitTokenIssuanceResult::Committed
@@ -358,6 +363,7 @@ async fn seed_deactivation(database_url: &str, fixture: &FixtureIds, count: usiz
          INSERT INTO user_client_grants (tenant_id, user_id, client_id, first_authorized_at, last_authorized_at, last_scopes) \
          VALUES ('{tenant}', '{user}', '{client}', NOW(), NOW(), '[\"openid\"]');"
     )).await.unwrap();
+    issuance
 }
 
 async fn deactivation_state(
@@ -389,8 +395,8 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
     let large = fixture(&database_url).await;
     let second = fixture(&database_url).await;
     let untouched = fixture(&database_url).await;
-    seed_deactivation(&database_url, &large, 100_000).await;
-    seed_deactivation(&database_url, &second, 513).await;
+    let large_issuance = seed_deactivation(&database_url, &large, 100_000).await;
+    let second_issuance = seed_deactivation(&database_url, &second, 513).await;
     seed_deactivation(&database_url, &untouched, 2).await;
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     let before = deactivation_state(&mut connection, &large).await;
@@ -452,10 +458,39 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
         })
         .await
         .unwrap();
-    for (owner, count) in [(&large, 100_002), (&second, 515)] {
+    // Only the legacy rows and the independently owned VCI grant expand
+    // into JTI revocations. The Fresh issuance is invalidated by the epoch.
+    let tokens = TokenRepository::new(create_pool(&database_url, 1).unwrap());
+    for (owner, count, fresh) in [
+        (&large, 100_001, &large_issuance),
+        (&second, 514, &second_issuance),
+    ] {
         let state = deactivation_state(&mut connection, owner).await;
         assert_eq!(state["client"]["is_active"], false);
         assert_eq!(state["revocations"], count);
+        assert_eq!(state["client"]["access_token_epoch"], 1);
+        assert!(
+            tokens
+                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                    tenant_id: &tenant.to_string(),
+                    jti: &fresh.access_token_jti,
+                    client_id: &owner.client_public_id,
+                    subject: &fresh.subject,
+                    user_id: Some(&owner.user_id.to_string()),
+                    subject_type: Some("user"),
+                    client_epoch: Some(fresh.principal_state.client_epoch),
+                    user_epoch: fresh.principal_state.user_epoch,
+                })
+                .await
+                .unwrap()
+        );
+        assert!(
+            !tokens
+                .access_token_revoked(tenant, &fresh.access_token_jti)
+                .await
+                .unwrap(),
+            "epoch invalidation must not create a redundant per-JTI fact"
+        );
         for key in ["active_vci", "active_refresh", "grants"] {
             assert_eq!(state[key], 0, "{key}");
         }
@@ -484,7 +519,8 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
     );
     let state = deactivation_state(&mut connection, &concurrent).await;
     assert_eq!(state["client"]["is_active"], false);
-    assert_eq!(state["revocations"], 515);
+    assert_eq!(state["revocations"], 514);
+    assert_eq!(state["client"]["access_token_epoch"], 1);
     for key in ["active_vci", "active_refresh", "grants"] {
         assert_eq!(state[key], 0, "{key}");
     }
@@ -621,6 +657,13 @@ async fn issuance_commits_complete_audit_payloads_and_pending_events_for_users_r
     for user_id in [None, Some(fixture.user_id)] {
         let mut input = make();
         input.user_id = user_id;
+        input.subject = user_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| fixture.client_public_id.clone());
+        input.principal_state = repository
+            .token_principal_state(tenant_id, fixture.client_id, user_id, &input.subject)
+            .await
+            .unwrap();
         input.refresh_token = None;
         assert_eq!(
             repository
