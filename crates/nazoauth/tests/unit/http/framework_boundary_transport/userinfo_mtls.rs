@@ -175,11 +175,11 @@ mod real_userinfo_contract {
         sql_types::{Bool, Text, Uuid as SqlUuid},
     };
     use diesel_async::RunQueryDsl;
+    use nazo_auth::PreparedTokenSubject;
     use nazo_auth::*;
     use nazo_identity::DEFAULT_ORGANIZATION_ID;
     use nazo_identity::DEFAULT_REALM_ID;
     use nazo_identity::DEFAULT_TENANT_ID;
-    use nazo_identity::SubjectClaims;
     use nazo_oauth_server::domain::userinfo::{
         ServerUserinfoOperations, UserinfoConfig, UserinfoHandles,
     };
@@ -216,7 +216,7 @@ mod real_userinfo_contract {
             &self,
             tenant: Uuid,
             user: Uuid,
-        ) -> TokenFuture<'_, Option<SubjectClaims>> {
+        ) -> TokenFuture<'_, Option<PreparedTokenSubject>> {
             self.calls.lock().unwrap().push("subject");
             self.inner.active_subject_claims(tenant, user)
         }

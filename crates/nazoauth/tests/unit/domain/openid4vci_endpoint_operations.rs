@@ -380,7 +380,7 @@ impl TokenRepositoryPort for SubjectStateOutage {
         &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> nazo_auth::TokenFuture<'a, Option<nazo_identity::SubjectClaims>> {
+    ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::PreparedTokenSubject>> {
         self.inner.active_subject_claims(tenant_id, user_id)
     }
 

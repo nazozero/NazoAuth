@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub use nazo_auth::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
-    OidcClaimRequest, PushedAuthorizationRequest,
+    OidcClaimRequest, PreparedTokenSubject, PushedAuthorizationRequest,
 };
 
 /// token 签发函数所需的归一化输入。
@@ -27,15 +27,6 @@ pub enum RefreshTokenPolicy {
         retry_started_at: DateTime<Utc>,
     },
     PreserveExisting,
-}
-
-/// Request-local subject claims snapshot for grants that already loaded the
-/// active subject once (CIBA). It exists only for this TokenIssue's lifetime:
-/// it is never serialized, persisted, or cached, and it is not the final
-/// authority — the commit still revalidates the principal under its lock.
-pub struct PreparedTokenSubject {
-    pub tenant_id: Uuid,
-    pub claims: nazo_identity::SubjectClaims,
 }
 
 pub struct TokenIssue {

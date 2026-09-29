@@ -9,7 +9,7 @@ use nazo_auth::{
     RefreshTokenPersistResult, SingleUseRedemption, TokenFuture, TokenIssuanceMode, TokenPortError,
     TokenRepositoryPort, TokenRevocation, UserinfoSnapshot,
 };
-use nazo_identity::{SubjectClaims, TenantId, UserId, ports::RepositoryError};
+use nazo_identity::{TenantId, UserId, ports::RepositoryError};
 use nazo_persistence::SecurityAuditEvent;
 use nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS;
 use uuid::Uuid;
@@ -668,13 +668,20 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<SubjectClaims>> {
+    ) -> TokenFuture<'_, Option<nazo_auth::PreparedTokenSubject>> {
         Box::pin(async move {
             let tenant_id = TenantId::new(tenant_id).map_err(|_| TokenPortError::CorruptData)?;
             let user_id = UserId::new(user_id).map_err(|_| TokenPortError::CorruptData)?;
             self.users
                 .active_subject_claims_by_tenant_id(tenant_id, user_id)
                 .await
+                .map(|snapshot| {
+                    snapshot.map(|(claims, user_epoch)| nazo_auth::PreparedTokenSubject {
+                        tenant_id: tenant_id.as_uuid(),
+                        claims,
+                        user_epoch,
+                    })
+                })
                 .map_err(map_repository_error)
         })
     }
