@@ -389,6 +389,14 @@ fn new_refresh_token(
 fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: (token.user_id).map(|_| 0),
+            subject_bound: false,
+        },
+        subject: (token.user_id)
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "client".to_owned()),
         issuance_id,
         tenant_id: token.tenant_id,
         client_id: token.client_id,
@@ -797,11 +805,10 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         result.expect("rotation should commit"),
         CommitTokenIssuanceResult::Committed
     );
-    // 11 data statements inside the single commit transaction:
+    // 10 data statements inside the single commit transaction:
     //   SET LOCAL lock_timeout
     //   SELECT is_active FROM oauth_clients .. FOR SHARE
     //   SELECT is_active FROM users .. FOR SHARE          (user_id is Some)
-    //   INSERT INTO oauth_token_issuances                  (issuance fence)
     //   SELECT pg_advisory_xact_lock(grant scope)
     //   SELECT pg_advisory_xact_lock(family)
     //   SELECT oauth_refresh_families                      (current member check)
@@ -811,7 +818,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     //   SELECT nazo_persist_security_audit_event(..)       (token_issued)
     // Rotation writes one narrow family UPDATE plus one compact spent proof —
     // the immutable contract is never rewritten.
-    assert_eq!(delta.data_queries, 11);
+    assert_eq!(delta.data_queries, 10);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1, "the whole saga runs on one pooled checkout");
@@ -942,7 +949,7 @@ async fn rf06_lost_response_successor_is_single_read() {
 
 /// UI-01: `userinfo_snapshot` joins the subject row to the client row in a
 /// single SELECT for both subject reference kinds — direct user id, and
-/// access-token JTI resolved through an inner join to oauth_token_issuances.
+/// non-public subject resolved through its reusable identity binding.
 #[tokio::test]
 async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
     let _serial = SERIAL.lock().await;
@@ -959,6 +966,10 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
     {
         let mut connection = connect(&database_url).await;
         seed_token_issuance(&mut connection, tenant, &seed, &jti).await;
+        sql_query("INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, 'legacy-pairwise', $2) ON CONFLICT (tenant_id, subject) DO UPDATE SET user_id = EXCLUDED.user_id")
+            .bind::<diesel::sql_types::Uuid, _>(tenant_id)
+            .bind::<diesel::sql_types::Uuid, _>(seed.user_id)
+            .execute(&mut connection).await.expect("stable subject binding should seed");
     }
     let (pool, counter) = instrumented_pool(&database_url).await;
     let repository = TokenIssuanceRepository::new(pool);
@@ -985,13 +996,15 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
     assert_eq!(acquires, 1);
     assert_clean(delta);
 
-    // AccessTokenJti reference resolves through oauth_token_issuances in the
-    // same SELECT via an inner join.
+    // A stable subject binding resolves in the same SELECT via an inner join.
     let (result, delta, acquires) = measure(
         &counter,
         repository.userinfo_snapshot(
             tenant_id,
-            UserinfoSubjectRef::AccessTokenJti(jti.as_str()),
+            UserinfoSubjectRef::AccessToken {
+                subject: "legacy-pairwise",
+                jti: jti.as_str(),
+            },
             seed.client.client_id.as_str(),
         ),
     )
@@ -1001,8 +1014,8 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
         .expect("the seeded issuance must produce a snapshot");
     assert_eq!(snapshot.subject.subject.as_uuid(), seed.user_id);
     assert!(snapshot.client.is_some());
-    // 1 data statement: SELECT users INNER JOIN oauth_token_issuances (jti
-    // + expiry horizon) LEFT JOIN oauth_clients — still one round trip.
+    // 1 data statement: SELECT users INNER JOIN oauth_subject_bindings
+    // LEFT JOIN oauth_clients — still one round trip.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_eq!(acquires, 1);

@@ -39,6 +39,8 @@ async fn signed_access_token_with_binding(
     issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: None,
+            user_epoch: None,
             issuer: &issuer.issuer,
             tenant_id: issuer.tenant_id,
             subject: &subject,
@@ -70,6 +72,8 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
         .issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: None,
+            user_epoch: None,
             issuer: &fixture.issuer.issuer,
             tenant_id: fixture.issuer.tenant_id,
             subject: "opaque-subject",
@@ -242,6 +246,8 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
         .issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: None,
+            user_epoch: None,
             issuer: &fixture.issuer.issuer,
             tenant_id: fixture.issuer.tenant_id,
             subject: &pairwise_sub,
@@ -579,6 +585,8 @@ async fn live_access_fails_closed_when_subject_state_is_unavailable() {
         .issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: None,
+            user_epoch: None,
             issuer: &fixture.issuer.issuer,
             tenant_id: fixture.issuer.tenant_id,
             subject: &pairwise_sub,

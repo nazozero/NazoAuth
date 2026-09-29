@@ -34,6 +34,8 @@ fn exchange_policy<'a>(
 
 fn access_claims(tenant_id: Uuid) -> Claims {
     Claims {
+        client_epoch: None,
+        user_epoch: None,
         iss: "https://issuer.example".to_owned(),
         sub: "subject".to_owned(),
         tenant_id: tenant_id.to_string(),

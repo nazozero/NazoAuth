@@ -109,6 +109,8 @@ impl ServerCredentialIssuerOperations {
             let issued = self
                 .token_service
                 .sign_access_token(nazo_auth::AccessTokenSignInput {
+                    client_epoch: None,
+                    user_epoch: None,
                     issuer: &self.issuer,
                     tenant_id: authorization.tenant_id,
                     subject: &authorization.subject_id.to_string(),

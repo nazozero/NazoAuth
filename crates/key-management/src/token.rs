@@ -27,6 +27,8 @@ impl TokenSignerPort for KeyManager {
             let claims = access_token_claims(
                 input.issuer,
                 AccessTokenClaimsInput {
+                    client_epoch: input.client_epoch,
+                    user_epoch: input.user_epoch,
                     tenant_id: input.tenant_id,
                     subject: input.subject,
                     user_id: input.user_id,

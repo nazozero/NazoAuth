@@ -29,6 +29,10 @@ impl FapiResourceAuthorizer for Authorizer {
         Box::pin(async {
             Ok(ProtectedResourceAuthorizationResult {
                 token: VerifiedAccessToken {
+                    client_epoch: None,
+                    user_epoch: None,
+                    user_id: None,
+                    subject_type: None,
                     issuer: "https://auth.example".to_owned(),
                     subject: "subject-1".to_owned(),
                     tenant_id: Some("01900000-0000-7000-8000-000000000001".to_owned()),
@@ -128,6 +132,10 @@ impl FapiResourceAuthorizer for RecordingAuthorizer {
 fn successful_authorization() -> ProtectedResourceAuthorizationResult {
     ProtectedResourceAuthorizationResult {
         token: VerifiedAccessToken {
+            client_epoch: None,
+            user_epoch: None,
+            user_id: None,
+            subject_type: None,
             issuer: "https://auth.example".to_owned(),
             subject: "subject-1".to_owned(),
             tenant_id: Some("01900000-0000-7000-8000-000000000001".to_owned()),

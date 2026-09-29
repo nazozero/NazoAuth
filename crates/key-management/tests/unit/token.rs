@@ -6,6 +6,8 @@ use crate::KeyManager;
 
 fn access_input(authorization_details: &serde_json::Value) -> AccessTokenSignInput<'_> {
     AccessTokenSignInput {
+        client_epoch: None,
+        user_epoch: None,
         issuer: "https://issuer.example",
         tenant_id: uuid::Uuid::from_u128(1),
         subject: "user",

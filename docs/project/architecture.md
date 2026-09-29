@@ -156,33 +156,42 @@ storage; repositories are injected only into flows that query them.
 
 ## Token Issuance and Security State
 
-Token issuance commits through `TokenIssuanceRepository` against one durable
-fence: the `oauth_token_issuances` table. Two modes exist:
+Token issuance commits through `TokenIssuanceRepository`. Its two modes retain
+only state required by their semantics:
 
-- `Fresh` inserts unconditionally — one statement, no fence row content, no
-  request digest, and no stored response.
-- `SingleUse` inserts under a partial unique index on the 32-byte BLAKE3
-  `single_use_key_blake3` fence column and re-checks the verified grant
-  deadline inside the same transaction. The commit reports `Committed`,
-  `AlreadyUsed`, `GrantExpired`, `ClientInactive`, `SubjectInactive`, or
-  `RotationConflict`; a `GrantExpired` result means the transaction rolled
-  back and its connection returns to the pool.
+- `Fresh` creates no `oauth_token_issuances` row. Refresh rotation/family
+  changes, a first non-public subject binding when needed, and Required audit
+  commit together. A client-credentials issuance ordinarily writes only audit.
+- `SingleUse` retains a compact receipt under the 32-byte BLAKE3 grant fence,
+  with the issued JTI, acceptance deadline and optional refresh family needed
+  for replay handling. New receipts do not store user ownership. Grant expiry
+  is rechecked in the transaction; expiry rolls it back and returns the healthy
+  connection to the pool.
 
-The generic issuance path accepts no `Idempotency-Key`, persists no request
-digest, and stores no encrypted response envelope; there is no generic
-response replay or recovery. One-time consumption remains atomic where the
-protocol requires it — authorization codes, device authorization, JWT Bearer
-assertions, and CIBA consume through the state store — and refresh-token
-rotation keeps its family reuse protection and the bounded lost-response
-recovery. DPoP and mTLS sender constraints and the tenant/client/subject/user
-final checks run inside the commit transaction; the security audit event
-commits with the issuance row.
+Before signing, one narrow read obtains client/user access-token epochs and
+whether a non-public subject already has its reusable binding. The commit
+locks client then user and rechecks activity and these exact epochs. A
+concurrent deactivate/reactivate cycle cannot admit an older signed snapshot.
+Principal deactivation increments its epoch in the same database row update;
+reactivation never resets it. Online token validation combines individual JTI
+revocation with current principal activity and signed epoch checks in one read.
+The offline signature verifier retains its existing offline-only guarantee.
 
-Access-token ownership is read from PostgreSQL: user-facing and credential
-flows resolve the issuing user through `oauth_token_issuances` rather than a
-Valkey JTI-to-subject projection, keeping the durable store the single source
-of truth. OpenID4VC preauthorized issuance keeps its own storage and is not
-mixed into the generic issuance fence.
+Public subjects carry their existing user identity. Pairwise/non-public
+subjects resolve through `oauth_subject_bindings`, keyed by tenant and subject;
+repeated issuance reuses the relation without writing it again. Existing `sub`
+values and internal-user confidentiality are unchanged. Bindings end with their
+owning user, not with individual token expiry. Epoch-less tokens retain legacy
+JTI revocation and issuance-based ownership during the remaining acceptance
+window. Old records drain under their existing retention policy. Principal-wide
+revocation enumerates only these legacy records and the separately owned
+OpenID4VC preauthorized grants; new SingleUse receipts are excluded.
+
+The generic path accepts no `Idempotency-Key`, stores no request digest or
+response envelope, and implements no generic response recovery. Authorization
+code, device, JWT Bearer and CIBA atomic consumption, refresh-family reuse and
+bounded lost-response recovery, DPoP/mTLS binding, tenant isolation and Required
+audit remain mandatory. OpenID4VC preauthorized issuance keeps its own storage.
 
 OpenID4VC preauthorized transaction-code verification uses the host's shared,
 bounded password verifier. The repository releases its read connection before

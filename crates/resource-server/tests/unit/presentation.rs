@@ -210,6 +210,10 @@ fn presented_authorization_token_rejects_unknown_scheme() {
 
 fn verified_token(cnf: Option<ConfirmationClaims>) -> VerifiedAccessToken {
     VerifiedAccessToken {
+        client_epoch: None,
+        user_epoch: None,
+        user_id: None,
+        subject_type: None,
         issuer: "issuer".to_owned(),
         subject: "subject".to_owned(),
         tenant_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),

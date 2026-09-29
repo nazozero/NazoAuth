@@ -253,6 +253,58 @@ impl TokenRepository {
         .map_err(map_error)
     }
 
+    /// One indexed state read for both individual and principal-wide revocation.
+    /// Epoch-less tokens retain the previous JTI contract during migration.
+    pub async fn access_token_state_revoked(
+        &self,
+        key: RevocationLookupKey<'_>,
+    ) -> Result<bool, RepositoryError> {
+        let tenant_id = Uuid::parse_str(key.tenant_id)
+            .map_err(|_| RepositoryError::Consistency("invalid token tenant".to_owned()))?;
+        let Some(client_epoch) = key.client_epoch else {
+            if key.user_epoch.is_some() {
+                return Ok(true);
+            }
+            return self.access_token_revoked(tenant_id, key.jti).await;
+        };
+        if client_epoch < 0 || key.user_epoch.is_some_and(|value| value < 0) {
+            return Ok(true);
+        }
+        let user_id = match key.user_id {
+            Some(value) => match Uuid::parse_str(value) {
+                Ok(value) => Some(value),
+                Err(_) => return Ok(true),
+            },
+            None => None,
+        };
+        #[derive(diesel::QueryableByName)]
+        struct State {
+            #[diesel(sql_type = sql_types::Bool)]
+            revoked: bool,
+        }
+        let mut connection = self.connection().await?;
+        let state = sql_query(
+            "SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = $1 AND access_token_jti_blake3 = $2) \
+             OR NOT EXISTS ( \
+               SELECT 1 FROM oauth_clients c \
+               LEFT JOIN users u ON $7 = 'user' AND u.tenant_id = c.tenant_id AND u.id = COALESCE($6::uuid, \
+                 (SELECT b.user_id FROM oauth_subject_bindings b WHERE b.tenant_id = $1 AND b.subject = $5)) \
+               WHERE c.tenant_id = $1 AND c.client_id = $3 AND c.is_active AND c.access_token_epoch = $4 \
+                 AND (($7 = 'client' AND $6::uuid IS NULL AND $8::bigint IS NULL) \
+                   OR ($7 = 'user' AND u.is_active AND u.access_token_epoch = $8)) \
+             ) AS revoked"
+        ).bind::<sql_types::Uuid, _>(tenant_id)
+            .bind::<sql_types::Text, _>(blake3_hex(key.jti))
+            .bind::<sql_types::Text, _>(key.client_id)
+            .bind::<sql_types::BigInt, _>(client_epoch)
+            .bind::<sql_types::Text, _>(key.subject)
+            .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
+            .bind::<sql_types::Nullable<sql_types::Text>, _>(key.subject_type)
+            .bind::<sql_types::Nullable<sql_types::BigInt>, _>(key.user_epoch)
+            .get_result::<State>(&mut connection).await.map_err(map_error)?;
+        Ok(state.revoked)
+    }
+
     /// Revokes a refresh-token family or records an access-token JTI in one transaction.
     /// The family lock is shared with rotation so a successor cannot escape revocation.
     pub(crate) async fn revoke_for_client(
@@ -357,9 +409,9 @@ impl AccessTokenRevocationLookup for TokenRepository {
         key: RevocationLookupKey<'a>,
     ) -> ResourceServerPortFuture<'a, Result<bool, ProtectedResourceDependencyError>> {
         Box::pin(async move {
-            let tenant_id = Uuid::parse_str(key.tenant_id)
+            Uuid::parse_str(key.tenant_id)
                 .map_err(|_| ProtectedResourceDependencyError::InvalidTenantBoundary)?;
-            self.access_token_revoked(tenant_id, key.jti)
+            self.access_token_state_revoked(key)
                 .await
                 .map_err(|_| ProtectedResourceDependencyError::RevocationLookupUnavailable)
         })

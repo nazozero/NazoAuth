@@ -204,7 +204,7 @@ pub async fn validate_exchange_access_token(
     validate_token_exchange_access_token(&claims, policy)
         .map_err(|_| TokenExchangeTokenError::Invalid)?;
     let revoked = token_service
-        .access_token_revoked(client.tenant_id, &claims.jti)
+        .access_token_revoked(client.tenant_id, &claims)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to query token exchange access token revocation state");
@@ -485,7 +485,7 @@ pub async fn token_exchange(
         TokenExchangeSubjectIdentity::User {
             public_user_id: None,
         } => match token_service
-            .active_subject_id_by_access_token(client.tenant_id, &subject.jti)
+            .active_subject_id_by_access_token(client.tenant_id, &subject.jti, &subject.sub)
             .await
         {
             Ok(Some(user_id)) => Some(user_id),

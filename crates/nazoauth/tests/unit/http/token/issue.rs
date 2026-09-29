@@ -278,6 +278,12 @@ pub(crate) async fn persist_consumed_single_use_grant_for_test(
     let issuance_id = Uuid::now_v7();
     let result = service
         .commit_token_issuance(CommitTokenIssuance {
+            principal_state: nazo_auth::TokenPrincipalState {
+                client_epoch: 0,
+                user_epoch: None,
+                subject_bound: false,
+            },
+            subject: "client".to_owned(),
             issuance_id,
             tenant_id: client.tenant_id,
             client_id: client.id,

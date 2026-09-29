@@ -271,6 +271,7 @@ diesel::table! {
 
 diesel::table! {
     oauth_token_issuances (issuance_id) {
+        principal_epoch_bound -> Bool,
         issuance_id -> Uuid,
         tenant_id -> Uuid,
         client_id -> Uuid,

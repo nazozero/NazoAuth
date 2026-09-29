@@ -14,6 +14,16 @@ struct HolderFixture {
 
 #[allow(unused_variables)]
 impl TokenRepositoryPort for HolderFixture {
+    fn token_principal_state<'a>(
+        &'a self,
+        _tenant_id: Uuid,
+        _client_id: Uuid,
+        _user_id: Option<Uuid>,
+        _subject: &'a str,
+    ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+        panic!("unexpected issuance principal lookup")
+    }
+
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
@@ -65,6 +75,7 @@ impl TokenRepositoryPort for HolderFixture {
         &'a self,
         tenant_id: Uuid,
         jti: &'a str,
+        subject: &'a str,
     ) -> TokenFuture<'a, Option<Uuid>> {
         panic!("unexpected TokenRepositoryPort::active_subject_id_by_access_token call")
     }
@@ -78,7 +89,11 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'a, ()> {
         panic!("unexpected TokenRepositoryPort::revoke_issued_tokens call")
     }
-    fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
+    fn access_token_revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        claims: &'a nazo_auth::Claims,
+    ) -> TokenFuture<'a, bool> {
         panic!("unexpected TokenRepositoryPort::access_token_revoked call")
     }
     fn refresh_family_active(

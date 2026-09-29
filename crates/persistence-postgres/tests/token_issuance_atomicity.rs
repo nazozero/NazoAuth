@@ -138,6 +138,12 @@ fn issuance(
 ) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: Some(0),
+            subject_bound: false,
+        },
+        subject: fixture.user_id.to_string(),
         issuance_id,
         tenant_id,
         client_id: fixture.client_id,

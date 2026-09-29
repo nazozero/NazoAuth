@@ -111,6 +111,8 @@ fn client() -> ClientRow {
 
 fn claims(client_id: &str, audience: Value, scope: &str) -> Claims {
     Claims {
+        client_epoch: None,
+        user_epoch: None,
         iss: "https://issuer.example".to_owned(),
         sub: "subject-1".to_owned(),
         tenant_id: DEFAULT_TENANT_ID.to_string(),

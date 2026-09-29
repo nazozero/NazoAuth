@@ -11,6 +11,8 @@ use super::{
 
 fn access_claims(confirmation: Option<ConfirmationClaims>) -> Claims {
     Claims {
+        client_epoch: None,
+        user_epoch: None,
         iss: "https://issuer.example".to_owned(),
         sub: "subject".to_owned(),
         tenant_id: uuid::Uuid::nil().to_string(),

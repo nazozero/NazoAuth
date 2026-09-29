@@ -69,6 +69,17 @@ impl CountingTokenRepository {
 }
 
 impl TokenRepositoryPort for CountingTokenRepository {
+    fn token_principal_state<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        user_id: Option<Uuid>,
+        subject: &'a str,
+    ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+        self.inner
+            .token_principal_state(tenant_id, client_id, user_id, subject)
+    }
+
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
@@ -135,12 +146,14 @@ impl TokenRepositoryPort for CountingTokenRepository {
         &'a self,
         tenant_id: Uuid,
         jti: &'a str,
+        subject: &'a str,
     ) -> TokenFuture<'a, Option<Uuid>> {
         self.owner_lookup_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail_owner_lookups {
             return Box::pin(async { Err(nazo_auth::TokenPortError::Unavailable) });
         }
-        self.inner.active_subject_id_by_access_token(tenant_id, jti)
+        self.inner
+            .active_subject_id_by_access_token(tenant_id, jti, subject)
     }
 
     fn revoke_issued_tokens<'a>(
@@ -160,8 +173,12 @@ impl TokenRepositoryPort for CountingTokenRepository {
         )
     }
 
-    fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
-        self.inner.access_token_revoked(tenant_id, jti)
+    fn access_token_revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        claims: &'a nazo_auth::Claims,
+    ) -> TokenFuture<'a, bool> {
+        self.inner.access_token_revoked(tenant_id, claims)
     }
 
     fn refresh_family_active<'a>(

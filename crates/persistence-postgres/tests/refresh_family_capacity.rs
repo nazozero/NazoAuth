@@ -139,6 +139,14 @@ fn new_refresh(
 fn issuance(token: NewRefreshToken) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: (token.user_id).map(|_| 0),
+            subject_bound: false,
+        },
+        subject: (token.user_id)
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "client".to_owned()),
         issuance_id,
         tenant_id: token.tenant_id,
         client_id: token.client_id,

@@ -266,6 +266,14 @@ fn refresh_token_fixture(
 fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: (token.user_id).map(|_| 0),
+            subject_bound: false,
+        },
+        subject: (token.user_id)
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "client".to_owned()),
         issuance_id,
         tenant_id: token.tenant_id,
         client_id: token.client_id,
@@ -2935,7 +2943,7 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
         left_input.issuance_id
     };
     let kept = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
+        "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type = 'token_issued' AND payload->>'issuance_id' = $1::text",
     )
     .bind::<SqlUuid, _>(winner_issuance)
     .get_result::<CountRow>(&mut coordinator)
@@ -2943,7 +2951,7 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
     .unwrap();
     assert_eq!(
         kept.count, 1,
-        "the winning issuance row must stay committed"
+        "the winning issuance audit must stay committed"
     );
 }
 
