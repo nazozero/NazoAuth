@@ -266,7 +266,10 @@ def make_point(manifest, mode, scenario, rate, window, index):
              "executor": "constant-arrival-rate", "rate": rate,
              "duration": f"{window + warmup}s", "effective_seconds": window,
              "warmup_ms": warmup * 1000, "pre_vus": vus, "max_vus": vus,
-             "user_count": max(64, 16 * cores),
+             # runner.ensure_user_capacity enforces at least one seeded
+             # user per VU. Freeze that effective count, not a smaller
+             # requested count that the runner would silently increase.
+             "user_count": max(64, 16 * cores, vus),
              # Include the FAPI sidecar's 1,200-vector offset before its
              # bounded 48k slice, including on large logical CPU sets.
              "vector_count": 49200 if scenario == "cap_mixed" else 48000,

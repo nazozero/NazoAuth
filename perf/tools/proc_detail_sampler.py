@@ -61,6 +61,10 @@ CONTAINERS = {
     "app": f"{PROJECT}-nazoauth-1",
     "postgres": f"{PROJECT}-postgres-1",
     "valkey": f"{PROJECT}-valkey-1",
+    # These are compose-run services, not docker-run SIS extras. Resolve
+    # their exact per-point names through the compose ownership label too.
+    "audit-receiver": f"sis-rcv-{RUN_ID}",
+    "audit-worker": f"sis-worker-{RUN_ID}",
 }
 
 
@@ -113,9 +117,10 @@ def container_name(base: str) -> str | None:
     names = proc.stdout.split()
     if base in names:
         return base
-    for n in names:
-        if re.fullmatch(re.escape(base.rstrip("1")) + r"\d+", n):
-            return n
+    if base.startswith(f"{PROJECT}-") and base.endswith("-1"):
+        for n in names:
+            if re.fullmatch(re.escape(base[:-1]) + r"\d+", n):
+                return n
     return None
 
 
