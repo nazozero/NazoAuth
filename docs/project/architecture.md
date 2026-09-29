@@ -169,14 +169,25 @@ only state required by their semantics:
   connection to the pool.
 
 Client-only issuance reuses the access-token epoch read in the request's client
-authentication snapshot. Issuance with a user obtains client/user epochs and
-non-public subject binding state in one narrow read before signing. The commit
+authentication snapshot. OIDC issuance with a public subject also reuses the user
+epoch returned with the active subject claims in `PreparedTokenSubject`. This
+request-local snapshot belongs to the authorization core; its security version
+is not serialized into the public subject claims. Non-OIDC or non-public user
+issuance keeps the narrow principal/binding read before signing. The commit
 locks client then user and rechecks activity and these exact epochs. A
 concurrent deactivate/reactivate cycle cannot admit an older signed snapshot.
 Principal deactivation increments its epoch in the same database row update;
 reactivation never resets it. Online token validation combines individual JTI
 revocation with current principal activity and signed epoch checks in one read.
 The offline signature verifier retains its existing offline-only guarantee.
+
+`DbPool` records its creating runtime as the connection I/O owner. The issuance
+transaction executes on that same runtime, so its sequential statements do not
+repeatedly wake the HTTP worker runtime. Pure contract preparation still happens
+before checkout. The request owns the transaction task through `JoinSet`:
+cancellation aborts it, and `DiscardOnDrop` removes the physical connection unless
+commit or rollback was confirmed. This preserves the transaction's lock order,
+atomic audit append and rollback behavior without creating another runtime.
 
 Public subjects carry their existing user identity. Pairwise/non-public
 subjects resolve through `oauth_subject_bindings`, keyed by tenant and subject;
