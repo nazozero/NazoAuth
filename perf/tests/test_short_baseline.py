@@ -100,6 +100,30 @@ class ShortBaselineTests(unittest.TestCase):
                              f"{sampler.PROJECT}-nazoauth-1")
             self.assertIn(f"label=com.docker.compose.project={sampler.PROJECT}", run.call_args.args[0])
 
+    def test_compose_audit_services_are_sampled_without_a_sis_extra_label(self):
+        names = [f"sis-rcv-{sampler.RUN_ID}", f"sis-worker-{sampler.RUN_ID}"]
+        with patch.object(sampler.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, "\n".join(names))) as run:
+            for role, name in zip(("audit-receiver", "audit-worker"), names):
+                self.assertEqual(sampler.container_name(sampler.CONTAINERS[role]), name)
+            self.assertTrue(all(f"label=com.docker.compose.project={sampler.PROJECT}"
+                                in call.args[0] for call in run.call_args_list))
+        # A same-name container outside this compose project is not returned.
+        with patch.object(sampler.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, "")):
+            self.assertIsNone(sampler.container_name(names[0]))
+        with patch.object(sampler.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, "sis-rcv-point-172\n")):
+            self.assertIsNone(sampler.container_name("sis-rcv-point-171"))
+
+    def test_frozen_users_match_the_runner_minimum_without_changing_measured_workload(self):
+        manifest = {"cpus": short.allocate(range(64)), "app_image": "test",
+                    "binary_sha256": "test"}
+        for mode, scenario, window in short.cases():
+            point = short.make_point(manifest, mode, scenario, 100, window, 0)
+            self.assertGreaterEqual(point["user_count"], point["max_vus"])
+            self.assertEqual(point["user_count"], 64 if mode == "single" else 992)
+
 
 if __name__ == "__main__":
     unittest.main()
