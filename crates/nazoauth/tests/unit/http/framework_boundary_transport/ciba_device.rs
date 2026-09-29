@@ -270,7 +270,7 @@ mod ciba_device_contract {
         let authorization =
             crate::http::token::issue::test_support::test_authorization_service(state);
         let issuance = TokenIssuanceContext {
-                client_epoch: 0,
+            client_epoch: 0,
             config: &config,
             modules: &modules,
             authorization: &authorization,
@@ -667,7 +667,7 @@ mod ciba_device_contract {
         let authorization =
             crate::http::token::issue::test_support::test_authorization_service(&state);
         let context = TokenIssuanceContext {
-                client_epoch: 0,
+            client_epoch: 0,
             config: &config,
             modules: &modules,
             authorization: &authorization,

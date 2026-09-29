@@ -207,7 +207,9 @@ impl OAuthClientRepository {
             .optional()
             .map_err(map_error)?
             .map(|(record, secret_salt, epoch)| {
-                record.into_domain().map(|client| (client, secret_salt, epoch))
+                record
+                    .into_domain()
+                    .map(|client| (client, secret_salt, epoch))
             })
             .transpose()
     }

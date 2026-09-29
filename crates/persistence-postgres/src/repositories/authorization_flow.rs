@@ -106,13 +106,13 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                 .authentication_snapshot(self.tenant_id, client_id)
                 .await
                 .map(|snapshot| {
-                    snapshot.map(
-                        |(client, secret_salt, client_epoch)| nazo_auth::ClientAuthenticationSnapshot {
+                    snapshot.map(|(client, secret_salt, client_epoch)| {
+                        nazo_auth::ClientAuthenticationSnapshot {
                             client_epoch,
                             client,
                             secret_salt,
-                        },
-                    )
+                        }
+                    })
                 })
                 .map_err(map_repository_error)
         })

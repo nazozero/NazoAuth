@@ -58,6 +58,10 @@ impl CountingTokenRepository {
         self.owner_lookup_calls.load(Ordering::SeqCst)
     }
 
+    pub(crate) fn principal_snapshot_count(&self) -> usize {
+        self.principal_snapshot_calls.load(Ordering::SeqCst)
+    }
+
     pub(crate) fn userinfo_snapshot_count(&self) -> usize {
         self.userinfo_snapshot_calls.load(Ordering::SeqCst)
     }

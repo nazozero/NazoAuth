@@ -419,24 +419,33 @@ async fn malformed_active_subject_claims_fail_closed_before_id_token_signing() {
     assert!(value.get("id_token").is_none());
 }
 
-
 #[actix_web::test]
 async fn client_only_issuance_reuses_authenticated_epoch_and_rejects_stale_snapshot() {
-    let Some(state) = issue_state_with_live_database() else { return; };
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
     let mut client = client_with_grants(&["client_credentials"]);
     client.client_id = format!("authenticated-epoch-{}", Uuid::now_v7());
     insert_issue_client(&state, &client).await;
-    let repository = Arc::new(crate::test_support::CountingTokenRepository::new(
-        Arc::new(crate::test_support::token_issuance_repository(state.diesel_db.clone())),
-    ));
+    let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+    )));
     let authorization = test_support::test_authorization_service(&state);
-    let initial = authorization.client_authentication_snapshot(&client.client_id)
-        .await.unwrap().unwrap();
+    let initial = authorization
+        .client_authentication_snapshot(&client.client_id)
+        .await
+        .unwrap()
+        .unwrap();
     let mut issue = token_issue_without_openid();
     issue.include_refresh = false;
     let response = issue_token_response_with_repository(
-        &state, &client, issue, repository.clone(), initial.client_epoch,
-    ).await;
+        &state,
+        &client,
+        issue,
+        repository.clone(),
+        initial.client_epoch,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
 
     let mut connection = get_conn(&state.diesel_db).await.unwrap();
@@ -445,26 +454,44 @@ async fn client_only_issuance_reuses_authenticated_epoch_and_rejects_stale_snaps
             .bind::<diesel::sql_types::Bool, _>(active)
             .bind::<SqlUuid, _>(client.tenant_id)
             .bind::<SqlUuid, _>(client.id)
-            .execute(&mut connection).await.unwrap();
+            .execute(&mut connection)
+            .await
+            .unwrap();
     }
     drop(connection);
     let mut stale = token_issue_without_openid();
     stale.include_refresh = false;
     let response = issue_token_response_with_repository(
-        &state, &client, stale, repository.clone(), initial.client_epoch,
-    ).await;
+        &state,
+        &client,
+        stale,
+        repository.clone(),
+        initial.client_epoch,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(response).await, "unauthorized_client");
 
-    let current = authorization.client_authentication_snapshot(&client.client_id)
-        .await.unwrap().unwrap();
+    let current = authorization
+        .client_authentication_snapshot(&client.client_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(current.client_epoch, initial.client_epoch + 1);
     let mut fresh = token_issue_without_openid();
     fresh.include_refresh = false;
     let response = issue_token_response_with_repository(
-        &state, &client, fresh, repository.clone(), current.client_epoch,
-    ).await;
+        &state,
+        &client,
+        fresh,
+        repository.clone(),
+        current.client_epoch,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(repository.principal_snapshot_calls.load(std::sync::atomic::Ordering::SeqCst), 0,
-        "client-only issuance must use its authenticated epoch without another principal read");
+    assert_eq!(
+        repository.principal_snapshot_count(),
+        0,
+        "client-only issuance must use its authenticated epoch without another principal read"
+    );
 }
