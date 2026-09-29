@@ -1,6 +1,5 @@
 use chrono::{DateTime, TimeZone, Utc};
 use nazo_auth::*;
-use nazo_identity::SubjectClaims;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -73,7 +72,7 @@ impl TokenRepositoryPort for Ports {
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<SubjectClaims>> {
+    ) -> TokenFuture<'_, Option<PreparedTokenSubject>> {
         panic!("unexpected active_subject_claims call")
     }
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>> {

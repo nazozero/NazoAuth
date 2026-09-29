@@ -1,7 +1,6 @@
 use crate::services::{ServerAuthorizationService, ServerTokenService};
 use chrono::{DateTime, Utc};
 use nazo_auth::*;
-use nazo_identity::SubjectClaims;
 use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -65,7 +64,7 @@ impl TokenRepositoryPort for HolderFixture {
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<SubjectClaims>> {
+    ) -> TokenFuture<'_, Option<PreparedTokenSubject>> {
         panic!("unexpected TokenRepositoryPort::active_subject_claims call")
     }
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>> {

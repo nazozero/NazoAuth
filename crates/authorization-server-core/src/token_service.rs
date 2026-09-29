@@ -10,6 +10,16 @@ use crate::{
     OidcClaimRequest, RefreshToken,
 };
 
+/// Request-local subject claims snapshot for grants that already loaded the
+/// active subject once. It exists only for this TokenIssue's lifetime:
+/// it is never serialized, persisted, or cached, and it is not the final
+/// authority — the commit still revalidates the principal under its lock.
+pub struct PreparedTokenSubject {
+    pub tenant_id: Uuid,
+    pub claims: SubjectClaims,
+    pub user_epoch: i64,
+}
+
 pub type TokenFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, TokenPortError>> + Send + 'a>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -336,7 +346,7 @@ pub trait TokenRepositoryPort: Send + Sync {
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<SubjectClaims>>;
+    ) -> TokenFuture<'_, Option<PreparedTokenSubject>>;
 
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>>;
 
@@ -586,7 +596,7 @@ where
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> Result<Option<SubjectClaims>, TokenPortError> {
+    ) -> Result<Option<PreparedTokenSubject>, TokenPortError> {
         self.repository
             .active_subject_claims(tenant_id, user_id)
             .await

@@ -174,7 +174,7 @@ pub async fn issue_token_response(
                         false,
                     ));
                 }
-                Some(prepared.claims)
+                Some(prepared)
             }
             None => match token_service
                 .active_subject_claims(client.tenant_id, user_id)
@@ -223,6 +223,17 @@ pub async fn issue_token_response(
         nazo_auth::TokenPrincipalState {
             client_epoch: context.client_epoch,
             user_epoch: None,
+            subject_bound: false,
+        }
+    } else if let Some(snapshot) = subject_claims_snapshot.as_ref()
+        && issue.subject == snapshot.claims.subject.as_uuid().to_string()
+    {
+        // OIDC already read the active subject and its version in one snapshot.
+        // Public subjects have no private binding to resolve; commit rechecks both
+        // principal versions under lock before making the signed tokens usable.
+        nazo_auth::TokenPrincipalState {
+            client_epoch: context.client_epoch,
+            user_epoch: Some(snapshot.user_epoch),
             subject_bound: false,
         }
     } else {
@@ -378,7 +389,7 @@ pub async fn issue_token_response(
             .as_ref()
             .expect("openid token issues have a validated subject snapshot");
         let mut user_claims = Some(oidc_id_token_user_claims(
-            loaded_claims,
+            &loaded_claims.claims,
             id_token_claim_scopes,
             &issue.subject,
             &issue.id_token_claims,

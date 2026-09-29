@@ -495,3 +495,80 @@ async fn client_only_issuance_reuses_authenticated_epoch_and_rejects_stale_snaps
         "client-only issuance must use its authenticated epoch without another principal read"
     );
 }
+
+#[actix_web::test]
+async fn oidc_issuance_reuses_subject_epoch_and_rejects_stale_prepared_snapshot() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let mut client = client_with_grants(&["authorization_code"]);
+    client.client_id = format!("subject-epoch-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let user_id = Uuid::now_v7();
+    insert_issue_user(&state, user_id).await;
+    let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+    )));
+    let make_issue = || {
+        let mut issue = token_issue_with_sid(Vec::new());
+        issue.user_id = Some(user_id);
+        issue.subject = user_id.to_string();
+        issue.include_refresh = false;
+        issue
+    };
+    let response =
+        issue_token_response_with_repository(&state, &client, make_issue(), repository.clone(), 0)
+            .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(repository.active_subject_claims_count(), 1);
+    assert_eq!(repository.principal_snapshot_count(), 0);
+
+    let stale_subject = nazo_auth::TokenRepositoryPort::active_subject_claims(
+        repository.as_ref(),
+        client.tenant_id,
+        user_id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let initial_epoch = stale_subject.user_epoch;
+    let mut connection = get_conn(&state.diesel_db).await.unwrap();
+    for active in [false, true] {
+        sql_query("UPDATE users SET is_active = $1 WHERE tenant_id = $2 AND id = $3")
+            .bind::<diesel::sql_types::Bool, _>(active)
+            .bind::<SqlUuid, _>(client.tenant_id)
+            .bind::<SqlUuid, _>(user_id)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    }
+    drop(connection);
+    let mut stale = make_issue();
+    stale.prepared_subject = Some(stale_subject);
+    let response =
+        issue_token_response_with_repository(&state, &client, stale, repository.clone(), 0).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(response).await, "invalid_grant");
+    assert_eq!(repository.active_subject_claims_count(), 2);
+
+    let fresh = nazo_auth::TokenRepositoryPort::active_subject_claims(
+        repository.as_ref(),
+        client.tenant_id,
+        user_id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(fresh.user_epoch, initial_epoch + 1);
+    let mut issue = make_issue();
+    issue.prepared_subject = Some(fresh);
+    let response =
+        issue_token_response_with_repository(&state, &client, issue, repository.clone(), 0).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(repository.active_subject_claims_count(), 3);
+    assert_eq!(
+        repository.principal_snapshot_count(),
+        0,
+        "public OIDC subjects must reuse the profile epoch without a second principal read"
+    );
+}
