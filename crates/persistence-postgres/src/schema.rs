@@ -262,6 +262,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    oauth_subject_bindings (tenant_id, subject) {
+        tenant_id -> Uuid,
+        subject -> Varchar,
+        user_id -> Uuid,
+    }
+}
+
+diesel::table! {
     oauth_token_issuances (issuance_id) {
         issuance_id -> Uuid,
         tenant_id -> Uuid,
@@ -553,6 +561,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     oauth_refresh_families,
     oauth_refresh_spent_tokens,
     oauth_token_issuances,
+    oauth_subject_bindings,
     recovery_invalidations,
     user_client_grants,
     client_access_requests,
