@@ -91,6 +91,12 @@ is [code-quality.yml](../../.github/workflows/code-quality.yml); it owns the
 service versions, fixtures, and complete environment. Do not point these tests
 at a deployment database or state store.
 
+Construct PostgreSQL pools inside a Tokio runtime that lives at least as long
+as the pool. Test-local pools can use the test runtime; a process-lifetime
+shared audit fixture must retain its own runtime with its pool. Pure logic
+tests should pass the configuration they use instead of constructing unrelated
+database infrastructure.
+
 The workspace suite requires isolated PostgreSQL and Valkey, a separate audit
 test database (`NAZO_AUDIT_TEST_DATABASE_URL`), and the S3-compatible fixture
 configured with `NAZO_TEST_S3_*`. Copy the workflow's other fixture settings,

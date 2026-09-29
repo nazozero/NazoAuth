@@ -288,30 +288,15 @@ fn query_with_status(value: &str) -> HashMap<String, String> {
 
 #[test]
 fn delivery_tokens_are_deterministic_and_request_scoped() {
-    let state = test_state();
+    let pepper = "delivery-token-test-pepper";
     let user_id = Uuid::now_v7();
     let request_id = Uuid::now_v7();
-    let first = access_delivery_token(
-        &state.settings.protocol.client_secret_pepper,
-        user_id,
-        request_id,
-    );
+    let first = access_delivery_token(pepper, user_id, request_id);
 
-    assert_eq!(
-        first,
-        access_delivery_token(
-            &state.settings.protocol.client_secret_pepper,
-            user_id,
-            request_id
-        )
-    );
+    assert_eq!(first, access_delivery_token(pepper, user_id, request_id));
     assert_ne!(
         first,
-        access_delivery_token(
-            &state.settings.protocol.client_secret_pepper,
-            user_id,
-            Uuid::now_v7()
-        )
+        access_delivery_token(pepper, user_id, Uuid::now_v7())
     );
 }
 

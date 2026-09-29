@@ -180,7 +180,8 @@ pub(crate) fn token_issuance_repository(
 }
 
 pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
-    static PROCESS_AUDIT_POOL: OnceLock<nazo_postgres::DbPool> = OnceLock::new();
+    static PROCESS_AUDIT_POOL: OnceLock<(tokio::runtime::Runtime, nazo_postgres::DbPool)> =
+        OnceLock::new();
 
     // The production audit sink is process-lifetime state.  Some endpoint tests
     // intentionally use a pool whose search_path points at a small isolated
@@ -189,12 +190,23 @@ pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
     // own.  Keep the process-lifetime test sink on the canonical public test
     // database; focused repositories continue to use their caller-provided
     // pool below.
-    let audit_pool = PROCESS_AUDIT_POOL.get_or_init(|| {
+    let (_, audit_pool) = PROCESS_AUDIT_POOL.get_or_init(|| {
         let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
             .expect("database-backed tests require NAZO_TEST_DATABASE_URL or DATABASE_URL");
-        nazo_postgres::create_pool(database_url, 4)
-            .expect("test durable audit database pool should build")
+        // The shared sink outlives each test's runtime. Its connection
+        // drivers need the same process lifetime as the pool itself.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("process audit fixture runtime should build");
+        let pool = {
+            let _entered = runtime.enter();
+            nazo_postgres::create_pool(database_url, 4)
+                .expect("test durable audit database pool should build")
+        };
+        (runtime, pool)
     });
     let preflight = crate::adapters::audit_anchor::AuditAnchorPreflight::new(
         crate::adapters::audit_anchor::AuditAnchorPreflightConfig {
