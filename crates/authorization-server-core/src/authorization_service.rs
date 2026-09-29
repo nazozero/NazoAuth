@@ -228,6 +228,8 @@ pub enum AuthorizationRateDimension {
 /// when the client has no usable secret verifier or is inactive.
 #[derive(Clone, Debug)]
 pub struct ClientAuthenticationSnapshot {
+    /// Version observed with the authenticated client; issuance rechecks it under lock.
+    pub client_epoch: i64,
     pub client: OAuthClient,
     pub secret_salt: Option<String>,
 }

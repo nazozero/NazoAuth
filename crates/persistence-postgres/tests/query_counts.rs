@@ -718,7 +718,7 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
     )
     .await;
 
-    let (client, salt) = result
+    let (client, salt, epoch) = result
         .expect("snapshot query should succeed")
         .expect("the seeded client must produce a snapshot");
     assert_eq!(client.client_id, seed.client.client_id);
@@ -727,6 +727,7 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
         Some(format!("qc-salt-{}", seed.client.id).as_str()),
         "the salt must be derived inside the same SELECT"
     );
+    assert_eq!(epoch, 0, "the client version is part of the same snapshot");
     // 1 data statement: SELECT oauth_clients row plus
     // split_part(client_secret_hash, ':', 2) as a computed column. No
     // transaction is opened for a read-only snapshot.

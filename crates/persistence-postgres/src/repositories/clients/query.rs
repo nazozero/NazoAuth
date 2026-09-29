@@ -189,7 +189,7 @@ impl OAuthClientRepository {
         &self,
         tenant_id: Uuid,
         client_id: &str,
-    ) -> Result<Option<(OAuthClient, Option<String>)>, RepositoryError> {
+    ) -> Result<Option<(OAuthClient, Option<String>, i64)>, RepositoryError> {
         let mut connection = self.connection().await?;
         oauth_clients::table
             .filter(oauth_clients::tenant_id.eq(tenant_id))
@@ -200,12 +200,15 @@ impl OAuthClientRepository {
                     "CASE WHEN is_active AND client_secret_hash LIKE 'client-secret-v1:%:%' \
                      THEN split_part(client_secret_hash, ':', 2) END",
                 ),
+                diesel::dsl::sql::<diesel::sql_types::BigInt>("access_token_epoch"),
             ))
-            .first::<(OAuthClientRecord, Option<String>)>(&mut connection)
+            .first::<(OAuthClientRecord, Option<String>, i64)>(&mut connection)
             .await
             .optional()
             .map_err(map_error)?
-            .map(|(record, secret_salt)| record.into_domain().map(|client| (client, secret_salt)))
+            .map(|(record, secret_salt, epoch)| {
+                record.into_domain().map(|client| (client, secret_salt, epoch))
+            })
             .transpose()
     }
 

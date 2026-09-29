@@ -104,6 +104,8 @@ impl TokenIssuanceConfig {
 }
 
 pub struct TokenIssuanceContext<'a> {
+    /// Client version read by this request's authentication snapshot.
+    pub client_epoch: i64,
     pub config: &'a TokenIssuanceConfig,
     pub modules: &'a nazo_runtime_modules::ActiveModuleSnapshot,
     pub authorization: &'a crate::services::ServerAuthorizationService,

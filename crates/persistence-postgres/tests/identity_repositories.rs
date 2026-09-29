@@ -2893,11 +2893,12 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     repository.insert(&public_client, None, None).await.unwrap();
 
     // CA-01: one snapshot equals the two reads it replaces.
-    let (snapshot_client, snapshot_salt) = repository
+    let (snapshot_client, snapshot_salt, snapshot_epoch) = repository
         .authentication_snapshot(client.tenant_id, &client.client_id)
         .await
         .unwrap()
         .expect("the registered client resolves a snapshot");
+    assert_eq!(snapshot_epoch, 0);
     let split_client = repository
         .by_client_id(client.tenant_id, &client.client_id)
         .await
@@ -2962,7 +2963,7 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     );
 
     // An active client without a versioned secret verifier yields no salt.
-    let (_, public_salt) = repository
+    let (_, public_salt, _) = repository
         .authentication_snapshot(public_client.tenant_id, &public_client.client_id)
         .await
         .unwrap()
@@ -2979,12 +2980,13 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
         .await
         .unwrap();
     drop(connection);
-    let (inactive_client, inactive_salt) = repository
+    let (inactive_client, inactive_salt, inactive_epoch) = repository
         .authentication_snapshot(client.tenant_id, &client.client_id)
         .await
         .unwrap()
         .expect("the snapshot still returns the deactivated client's metadata");
     assert!(!inactive_client.is_active);
+    assert_eq!(inactive_epoch, snapshot_epoch + 1);
     assert_eq!(
         inactive_salt, None,
         "an inactive client must not leak a usable secret salt"

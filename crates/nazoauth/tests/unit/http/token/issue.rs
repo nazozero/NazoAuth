@@ -78,6 +78,7 @@ async fn issue_token_response_with_repository(
     client: &ClientRow,
     issue: TokenIssue,
     repository: std::sync::Arc<dyn TokenRepositoryPort>,
+    client_epoch: i64,
 ) -> HttpResponse {
     let service = ServerTokenService::from_port(
         repository,
@@ -91,6 +92,7 @@ async fn issue_token_response_with_repository(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                client_epoch,
                 config: &config,
                 modules: &state.active_module_snapshot(),
                 authorization: &authorization,
@@ -124,6 +126,7 @@ async fn issue_token_response_with_modules(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,
@@ -192,6 +195,7 @@ async fn issue_token_response_with_mode_and_modules_for_test(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,
