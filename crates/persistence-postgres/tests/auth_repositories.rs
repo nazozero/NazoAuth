@@ -650,6 +650,109 @@ fn issued_audit_fields(input: &CommitTokenIssuance) -> serde_json::Value {
     })
 }
 
+#[tokio::test]
+async fn principal_snapshot_reuses_prepared_query_without_caching_security_state() {
+    let database_url = database_url().expect("principal snapshot regression requires PostgreSQL");
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let subject = format!("private-subject-{}", Uuid::now_v7());
+    let initial = repository
+        .token_principal_state(tenant_id, fixture.client_id, None, &subject)
+        .await
+        .unwrap();
+    assert_eq!(initial.client_epoch, 0);
+    assert_eq!(initial.user_epoch, None);
+    assert!(!initial.subject_bound);
+
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%pg_prepared_statements%'")
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        prepared.count, 1,
+        "the snapshot must be a reusable prepared query"
+    );
+    sql_query("UPDATE oauth_clients SET access_token_epoch = 7 WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("UPDATE users SET access_token_epoch = 11 WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query(
+        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<Text, _>(&subject)
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+
+    let current = repository
+        .token_principal_state(
+            tenant_id,
+            fixture.client_id,
+            Some(fixture.user_id),
+            &subject,
+        )
+        .await
+        .unwrap();
+    assert_eq!(current.client_epoch, 7);
+    assert_eq!(current.user_epoch, Some(11));
+    assert!(current.subject_bound);
+    let public = repository
+        .token_principal_state(
+            tenant_id,
+            fixture.client_id,
+            Some(fixture.user_id),
+            &fixture.user_id.to_string(),
+        )
+        .await
+        .unwrap();
+    assert!(!public.subject_bound);
+    let missing_client = repository
+        .token_principal_state(tenant_id, Uuid::now_v7(), Some(fixture.user_id), &subject)
+        .await
+        .unwrap();
+    assert_eq!(missing_client.client_epoch, 0);
+    assert_eq!(missing_client.user_epoch, Some(11));
+    assert!(missing_client.subject_bound);
+    assert!(
+        repository
+            .token_principal_state(tenant_id, fixture.client_id, Some(Uuid::now_v7()), &subject)
+            .await
+            .is_err(),
+        "a private subject must not bind to a different user"
+    );
+    let foreign = repository
+        .token_principal_state(
+            Uuid::now_v7(),
+            fixture.client_id,
+            Some(fixture.user_id),
+            &subject,
+        )
+        .await
+        .unwrap();
+    assert_eq!(foreign.client_epoch, 0);
+    assert_eq!(foreign.user_epoch, Some(0));
+    assert!(!foreign.subject_bound);
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%pg_prepared_statements%'")
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        prepared.count, 1,
+        "parameter changes must reuse the query, not its previous result"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn issuance_commits_complete_audit_payloads_and_pending_events_for_users_rotation_and_reuse()
 {
