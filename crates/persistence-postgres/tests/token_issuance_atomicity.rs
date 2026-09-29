@@ -1,10 +1,9 @@
 //! Atomic token-issuance commit coverage for the final issuance schema.
 //!
-//! The `oauth_token_issuances` table is the single durable fence: `Fresh`
-//! inserts unconditionally, `SingleUse` inserts under the partial unique
-//! index and re-checks the verified grant deadline inside the commit.  A
-//! refresh rotation conflict deletes only the current issuance row while the
-//! family compromise and the reuse audit commit.
+//! Fresh creates no issuance row; SingleUse keeps its durable grant receipt
+//! under the partial unique index and rechecks the deadline in the commit.
+//! A refresh conflict commits family compromise and reuse audit, with no
+//! token-issued event or receipt for the losing request.
 
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
@@ -367,7 +366,7 @@ async fn concurrent_single_use_commits_commit_exactly_once() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rotation_conflict_deletes_only_the_losing_issuance() {
+async fn rotation_conflict_keeps_family_compromise_and_only_reuse_audit() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -407,7 +406,7 @@ async fn rotation_conflict_deletes_only_the_losing_issuance() {
         CommitTokenIssuanceResult::Committed
     );
     // A second claimant rotating from the same consumed parent loses: its
-    // issuance row is deleted, the family compromise commits, and only the
+    // Fresh path creates no receipt, the family compromise commits, and only the
     // reuse audit for this issuance is written.
     let loser_raw = format!("rotation-loser-{}", Uuid::now_v7());
     let loser = refresh_token_fixture(&fixture, tenant_id, family_id, loser_raw, Some(root_id));
@@ -427,15 +426,15 @@ async fn rotation_conflict_deletes_only_the_losing_issuance() {
     .get_result::<CountRow>(&mut connection)
     .await
     .unwrap();
-    assert_eq!(rows.count, 0, "the losing issuance row must be deleted");
+    assert_eq!(rows.count, 0, "Fresh rotation must create no issuance row");
     let kept = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
+        "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type = 'token_issued' AND payload->>'issuance_id' = $1",
     )
-    .bind::<sql_types::Uuid, _>(child_issuance.issuance_id)
+    .bind::<sql_types::Text, _>(child_issuance.issuance_id.to_string())
     .get_result::<CountRow>(&mut connection)
     .await
     .unwrap();
-    assert_eq!(kept.count, 1, "the committed rotation stays");
+    assert_eq!(kept.count, 1, "the committed rotation audit stays");
     let reuse_audit = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM security_audit_events \
          WHERE event_type = 'refresh_reuse_detected' AND payload->>'issuance_id' = $1",

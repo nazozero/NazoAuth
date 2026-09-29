@@ -883,8 +883,7 @@ async fn fresh_issuance_runs_under_the_restricted_runtime_role() {
 
 /// Mid-run privilege revocation must fail the commit, not just the next
 /// preflight: with EXECUTE on `nazo_persist_security_audit_event` revoked
-/// after a healthy start, the same transaction that writes the ownership
-/// row must roll back in full — no issuance row, no audit event — and the
+/// after a healthy start, issuance must fail with no audit event and the
 /// pool must not retain an open transaction.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn revoked_audit_append_execute_fails_the_fresh_commit() {
@@ -1004,11 +1003,9 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
         .expect("restricted role should be dropped");
 }
 
-/// Same-statement audit failure keeps the ownership insert uncommitted:
-/// a conflicting pre-existing event id makes the persist function raise,
-/// and the issuance row must not survive the rollback.
+/// Audit append failure rejects Fresh issuance and returns no partial state.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fresh_issuance_audit_function_failure_rolls_back_ownership() {
+async fn fresh_issuance_audit_function_failure_rejects_commit() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1017,9 +1014,8 @@ async fn fresh_issuance_audit_function_failure_rolls_back_ownership() {
     let mut admin = AsyncPgConnection::establish(&database_url)
         .await
         .expect("admin connection should connect");
-    // A trigger raises for this client's issuance inserts; the trigger runs
-    // inside the audit function's INSERT, so the persist call fails after the
-    // ownership row was written by the same statement family. Both roll back.
+    // Inject failure inside the required audit append; the repository must
+    // reject the issuance and return a cleanly aborted connection.
     let suffix = Uuid::now_v7().simple().to_string();
     let function = format!("test_fresh_audit_failure_{suffix}");
     let trigger = format!("test_fresh_audit_failure_trigger_{suffix}");

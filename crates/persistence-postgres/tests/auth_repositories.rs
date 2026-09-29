@@ -179,7 +179,7 @@ async fn remove_rotation_insert_gate(
 
 async fn install_issuance_insert_gate(
     connection: &mut AsyncPgConnection,
-    client_id: Uuid,
+    issuance_id: Uuid,
     gate_key: i64,
 ) -> (String, String) {
     let suffix = Uuid::now_v7().simple().to_string();
@@ -189,7 +189,7 @@ async fn install_issuance_insert_gate(
         r#"
         CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
-            IF NEW.client_id = '{client_id}'::uuid THEN
+            IF NEW.event_id = '{issuance_id}'::uuid THEN
                 PERFORM pg_advisory_xact_lock({gate_key});
             END IF;
             RETURN NEW;
@@ -203,7 +203,7 @@ async fn install_issuance_insert_gate(
     sql_query(format!(
         r#"
         CREATE TRIGGER {trigger}
-        BEFORE INSERT ON oauth_token_issuances
+        BEFORE INSERT ON security_audit_events
         FOR EACH ROW EXECUTE FUNCTION {function}()
         "#
     ))
@@ -218,7 +218,7 @@ async fn remove_issuance_insert_gate(
     trigger: &str,
     function: &str,
 ) {
-    sql_query(format!("DROP TRIGGER {trigger} ON oauth_token_issuances"))
+    sql_query(format!("DROP TRIGGER {trigger} ON security_audit_events"))
         .execute(&mut *connection)
         .await
         .expect("token issuance gate trigger should be removed");
@@ -1100,7 +1100,7 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
         .await
         .expect("test coordinator should connect");
     let (trigger, function) =
-        install_issuance_insert_gate(&mut coordinator, fixture.client_id, gate_key).await;
+        install_issuance_insert_gate(&mut coordinator, input.issuance_id, gate_key).await;
     sql_query("SELECT pg_advisory_lock($1)")
         .bind::<BigInt, _>(gate_key)
         .execute(&mut coordinator)
@@ -1159,7 +1159,16 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
     let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
     assert!(
         tokens
-            .access_token_revoked(tenant_id, &access_token_jti)
+            .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                tenant_id: &tenant_id.to_string(),
+                jti: &access_token_jti,
+                client_id: &fixture.client_public_id,
+                subject: &fixture.user_id.to_string(),
+                user_id: Some(&fixture.user_id.to_string()),
+                subject_type: Some("user"),
+                client_epoch: Some(0),
+                user_epoch: Some(0),
+            })
             .await
             .expect("access-token revocation should load"),
         "deactivation must revoke the access token committed while it was blocked"
@@ -2138,7 +2147,7 @@ fn raw_refresh_row<'a>(
 /// Bounded retry for token-repository calls that may abort on transient
 /// lock-queue timeouts.  The shared test database serializes the gated
 /// concurrency tests' `CREATE`/`DROP TRIGGER` DDL on `oauth_refresh_spent_tokens`
-/// and `oauth_token_issuances` behind parked rotation transactions, so an
+/// and `security_audit_events` behind parked rotation transactions, so an
 /// unrelated commit can hit its 2s `lock_timeout` through no fault of the
 /// path under test.  An `Err` always means the transaction rolled back, so
 /// retrying is safe; business verdicts return immediately and deterministic
@@ -2184,7 +2193,7 @@ async fn commit_refresh_labeled(
 
 /// Durable facts that every ordinary-rotation business conflict must leave
 /// behind: the family carries exactly its current member plus the spent proofs
-/// of rotated generations, the losing issuance row is deleted, exactly one
+/// of rotated generations, no Fresh issuance row is created, exactly one
 /// `refresh_reuse_detected` audit (pending delivery) is appended, and no
 /// `token_issued` audit exists for the losing issuance. `compromised` and
 /// `active` are family-level facts in the minimal model.
@@ -2248,7 +2257,10 @@ async fn assert_rotation_conflict_facts(
     .get_result::<CountRow>(connection)
     .await
     .expect("losing issuance count should load");
-    assert_eq!(issuance.count, 0, "the losing issuance row must be deleted");
+    assert_eq!(
+        issuance.count, 0,
+        "Fresh rotation must create no issuance row"
+    );
     let rotated_from_id = losing
         .refresh_token
         .as_ref()

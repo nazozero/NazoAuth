@@ -31,7 +31,7 @@ pub(super) async fn snapshot(
          FROM (SELECT $1::uuid AS tenant_id) AS request \
          LEFT JOIN oauth_clients c ON c.tenant_id = request.tenant_id AND c.id = $2 \
          LEFT JOIN users u ON u.tenant_id = request.tenant_id AND u.id = $3 \
-         LEFT JOIN oauth_subject_bindings b ON $3::uuid IS NOT NULL AND b.tenant_id = request.tenant_id AND b.subject = $4",
+         LEFT JOIN oauth_subject_bindings b ON $3::uuid IS NOT NULL AND $4 <> $3::text AND b.tenant_id = request.tenant_id AND b.subject = $4",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Uuid, _>(client_id)
