@@ -388,6 +388,15 @@ async fn deactivation_state(
 
 #[tokio::test]
 async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners() {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        assert_deactivation_batches_and_repeated_owners(),
+    )
+    .await
+    .expect("deactivation batches exceeded the bounded test window");
+}
+
+async fn assert_deactivation_batches_and_repeated_owners() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -399,6 +408,7 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
     let second_issuance = seed_deactivation(&database_url, &second, 513).await;
     seed_deactivation(&database_url, &untouched, 2).await;
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    eprintln!("deactivation fixture: seeded owners and legacy batches");
     let before = deactivation_state(&mut connection, &large).await;
     let untouched_before = deactivation_state(&mut connection, &untouched).await;
     let suffix = Uuid::now_v7().simple().to_string();
@@ -458,6 +468,7 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
         })
         .await
         .unwrap();
+    eprintln!("deactivation fixture: rollback and two-owner commit verified");
     // Only the legacy rows and the independently owned VCI grant expand
     // into JTI revocations. The Fresh issuance is invalidated by the epoch.
     let tokens = TokenRepository::new(create_pool(&database_url, 1).unwrap());
@@ -469,6 +480,7 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
         assert_eq!(state["client"]["is_active"], false);
         assert_eq!(state["revocations"], count);
         assert_eq!(state["client"]["access_token_epoch"], 1);
+        eprintln!("deactivation fixture: checking principal epoch");
         assert!(
             tokens
                 .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
@@ -484,6 +496,7 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
                 .await
                 .unwrap()
         );
+        eprintln!("deactivation fixture: checking absence of redundant JTI state");
         assert!(
             !tokens
                 .access_token_revoked(tenant, &fresh.access_token_jti)
@@ -500,6 +513,7 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
         untouched_before
     );
 
+    eprintln!("deactivation fixture: starting concurrent deactivation");
     let concurrent = fixture(&database_url).await;
     seed_deactivation(&database_url, &concurrent, 513).await;
     let mut left = AsyncPgConnection::establish(&database_url).await.unwrap();
@@ -512,6 +526,7 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
             nazo_postgres::deactivate_client_on_connection(c, tenant, concurrent.client_id).await
         })
     );
+    eprintln!("deactivation fixture: concurrent writers completed");
     assert_ne!(
         left.unwrap(),
         right.unwrap(),
@@ -638,6 +653,15 @@ fn issued_audit_fields(input: &CommitTokenIssuance) -> serde_json::Value {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn issuance_commits_complete_audit_payloads_and_pending_events_for_users_rotation_and_reuse()
 {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        assert_complete_issuance_audit_payloads(),
+    )
+    .await
+    .expect("issuance audit exceeded the bounded test window");
+}
+
+async fn assert_complete_issuance_audit_payloads() {
     let database_url =
         database_url().expect("audit regression requires a live PostgreSQL database");
     let fixture = fixture(&database_url).await;

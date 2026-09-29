@@ -200,7 +200,8 @@ jobs:
           pending_migrations_create_all_runtime_module_state_tables
 
       - name: Test workspace with PostgreSQL and Valkey
-        run: cargo test --workspace --all-features --locked --no-fail-fast
+        # Stream test progress so an interrupted job retains its actual wait boundary.
+        run: cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture
 
   python-quality:
     name: Python script syntax gate
