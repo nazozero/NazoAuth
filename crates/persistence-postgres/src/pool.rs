@@ -84,16 +84,31 @@ pub fn create_pool(
     database_url: impl Into<String>,
     max_connections: usize,
 ) -> anyhow::Result<DbPool> {
-    let manager = connection_manager(database_url.into());
+    let runtime = tokio::runtime::Handle::try_current()?;
+    let manager = connection_manager(database_url.into(), runtime);
     Ok(Pool::builder(manager).max_size(max_connections).build()?)
 }
 
-fn connection_manager(database_url: String) -> AsyncDieselConnectionManager<AsyncPgConnection> {
+fn connection_manager(
+    database_url: String,
+    runtime: tokio::runtime::Handle,
+) -> AsyncDieselConnectionManager<AsyncPgConnection> {
     let mut config = ManagerConfig::default();
     config.recycling_method = RecyclingMethod::Fast;
-    config.custom_setup = Box::new(|url| {
+    config.custom_setup = Box::new(move |url| {
         let url = url.to_owned();
-        async move { establish_connection(&url).await }.boxed()
+        // A shared pool's connection drivers belong to its owning runtime.
+        // JoinSet aborts an in-flight setup when its borrower is cancelled.
+        let mut setup = tokio::task::JoinSet::new();
+        setup.spawn_on(async move { establish_connection(&url).await }, &runtime);
+        async move {
+            setup
+                .join_next()
+                .await
+                .expect("connection setup task was registered")
+                .map_err(|error| ConnectionError::BadConnection(error.to_string()))?
+        }
+        .boxed()
     });
     AsyncDieselConnectionManager::new_with_config(database_url, config)
 }
