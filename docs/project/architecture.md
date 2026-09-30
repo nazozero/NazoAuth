@@ -191,12 +191,21 @@ cancellation aborts it, and `DiscardOnDrop` removes the physical connection unle
 commit or rollback was confirmed. This preserves the transaction's lock order,
 atomic audit append and rollback behavior without creating another runtime.
 
-The existing best-effort Telemetry worker coalesces arrivals for at most 10 ms
-from the first event, bounded to 64 events per transaction. A full batch or a
-closed channel flushes immediately; later arrivals never extend the deadline.
-Event order, whole-batch retry, queue capacity and overflow behavior are
-preserved. Required audit bypasses this queue and still commits synchronously
-through its direct or issuance-transaction path.
+The audit adapter batches up to 64 events for at most 10 ms from the first
+arrival; full batches and closed channels flush immediately. Standalone
+Required records have a separate bounded channel and wait for the batch's
+successful durable commit before callers continue. Queue saturation, channel
+closure, worker termination and append failure return errors. Failed Required
+batches report their first error without retrying or blocking subsequent
+batches; caller cancellation never turns an unconfirmed append into success.
+Required intents still commit before destructive state consumption. Token
+issuance keeps its Required audit inside the business transaction.
+
+Telemetry retains its independent queue, FIFO whole-batch retry and overflow
+behavior. Its counters exclude Required records. Both channels reuse the same
+batch worker implementation, existing runtime, pool and ledger transaction;
+a retrying Telemetry batch cannot block the Required channel. Bootstrap installs
+their senders and readiness repository together in one process-lifetime owner.
 
 Public subjects carry their existing user identity. Pairwise/non-public
 subjects resolve through `oauth_subject_bindings`, keyed by tenant and subject;
