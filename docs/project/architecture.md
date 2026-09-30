@@ -191,6 +191,13 @@ cancellation aborts it, and `DiscardOnDrop` removes the physical connection unle
 commit or rollback was confirmed. This preserves the transaction's lock order,
 atomic audit append and rollback behavior without creating another runtime.
 
+The existing best-effort Telemetry worker coalesces arrivals for at most 10 ms
+from the first event, bounded to 64 events per transaction. A full batch or a
+closed channel flushes immediately; later arrivals never extend the deadline.
+Event order, whole-batch retry, queue capacity and overflow behavior are
+preserved. Required audit bypasses this queue and still commits synchronously
+through its direct or issuance-transaction path.
+
 Public subjects carry their existing user identity. Pairwise/non-public
 subjects resolve through `oauth_subject_bindings`, keyed by tenant and subject;
 repeated issuance reuses the relation without writing it again. Existing `sub`

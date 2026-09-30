@@ -503,14 +503,15 @@ pub(crate) fn install_persistent_audit_sink(
     Ok(())
 }
 
-/// Upper bound for one opportunistic persist batch. The worker never waits to
-/// fill a batch: it appends immediately whatever is already queued, so a lone
-/// event is still persisted without added latency.
+/// Bound both batch size and additional coalescing time for queued Telemetry.
+/// Required evidence uses the direct or issuance-transaction path.
 const AUDIT_PERSIST_BATCH_MAX: usize = 64;
+const AUDIT_PERSIST_COALESCE_WINDOW: Duration = Duration::from_millis(10);
 
-/// Drain the best-effort queue into the durable ledger. After the first event
-/// arrives, already-queued events are pulled in non-blocking up to
-/// `AUDIT_PERSIST_BATCH_MAX`; the batch is then persisted in one transaction.
+/// Drain the best-effort queue into the durable ledger. After the first event,
+/// collect arrivals until the fixed window ends, the batch is full or the
+/// channel closes; persist the batch in one transaction. Later arrivals do
+/// not extend the first event's deadline.
 /// A failed batch is retained whole and retried with exponential backoff, so
 /// the oldest unpersisted batch still blocks all later ones. Split out of the
 /// sink installer so tests can drive it with their own channel and ledger.
@@ -520,10 +521,16 @@ async fn run_audit_persist_worker(
 ) {
     while let Some(first) = receiver.recv().await {
         let mut batch = vec![first];
+        let coalesce = tokio::time::sleep(AUDIT_PERSIST_COALESCE_WINDOW);
+        tokio::pin!(coalesce);
         while batch.len() < AUDIT_PERSIST_BATCH_MAX {
-            match receiver.try_recv() {
-                Ok(event) => batch.push(event),
-                Err(_) => break,
+            tokio::select! {
+                biased;
+                _ = &mut coalesce => break,
+                event = receiver.recv() => match event {
+                    Some(event) => batch.push(event),
+                    None => break,
+                },
             }
         }
         let events: Vec<SecurityAuditEvent> = batch

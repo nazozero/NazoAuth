@@ -495,7 +495,7 @@ mod queue_persistence {
     }
 
     #[tokio::test]
-    async fn worker_persists_a_single_event_immediately_without_batching() {
+    async fn worker_persists_a_single_event_after_bounded_coalescing() {
         let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
@@ -513,7 +513,7 @@ mod queue_persistence {
             }
         })
         .await
-        .expect("a single queued event must persist without waiting to batch");
+        .expect("a lone queued event must persist within the bounded coalescing window");
         drop(sender);
         tokio::time::timeout(Duration::from_secs(5), worker)
             .await
@@ -525,6 +525,62 @@ mod queue_persistence {
         assert_eq!(be1 - be0, 1);
         assert!(m1 >= 1);
         let _ = (e0, e1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn worker_coalesces_arrivals_without_extending_the_first_event_deadline() {
+        let _guard = COUNTER_TEST_LOCK.lock().await;
+        let (sender, receiver) = mpsc::channel(8);
+        let ledger = Arc::new(FakeLedger::new());
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+        let first = telemetry_event();
+        let second = telemetry_event();
+        let third = telemetry_event();
+        let expected = vec![first.event_id, second.event_id, third.event_id];
+
+        sender.send(first).await.unwrap();
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(3)).await;
+        sender.send(second).await.unwrap();
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(3)).await;
+        sender.send(third).await.unwrap();
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(3)).await;
+        tokio::task::yield_now().await;
+        assert!(ledger.batches.lock().unwrap().is_empty());
+
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(*ledger.batches.lock().unwrap(), vec![expected]);
+        drop(sender);
+        worker.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn full_or_closed_batch_flushes_without_waiting_for_the_window() {
+        let _guard = COUNTER_TEST_LOCK.lock().await;
+        for (count, close) in [(AUDIT_PERSIST_BATCH_MAX, false), (1, true)] {
+            let (sender, receiver) = mpsc::channel(AUDIT_PERSIST_BATCH_MAX);
+            let ledger = Arc::new(FakeLedger::new());
+            let mut expected = Vec::new();
+            for _ in 0..count {
+                let event = telemetry_event();
+                expected.push(event.event_id);
+                sender.send(event).await.unwrap();
+            }
+            let sender = if close {
+                drop(sender);
+                None
+            } else {
+                Some(sender)
+            };
+            let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+            tokio::task::yield_now().await;
+            assert_eq!(*ledger.batches.lock().unwrap(), vec![expected]);
+            drop(sender);
+            worker.await.unwrap();
+        }
     }
 
     #[tokio::test]
