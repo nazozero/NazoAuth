@@ -190,7 +190,7 @@ pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
     // own.  Keep the process-lifetime test sink on the canonical public test
     // database; focused repositories continue to use their caller-provided
     // pool below.
-    let (_, audit_pool) = PROCESS_AUDIT_POOL.get_or_init(|| {
+    let (runtime, audit_pool) = PROCESS_AUDIT_POOL.get_or_init(|| {
         let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
             .expect("database-backed tests require NAZO_TEST_DATABASE_URL or DATABASE_URL");
@@ -217,6 +217,9 @@ pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
         },
     )
     .expect("test audit anchor preflight config is valid");
+    // The process-lifetime sink's workers must survive the installing test,
+    // just like the pool's connection drivers above.
+    let _entered = runtime.enter();
     crate::adapters::audit::install_persistent_audit_sink(
         std::sync::Arc::new(nazo_postgres::AuditLedgerRepository::new(
             audit_pool.clone(),
