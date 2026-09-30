@@ -91,6 +91,12 @@ is [code-quality.yml](../../.github/workflows/code-quality.yml); it owns the
 service versions, fixtures, and complete environment. Do not point these tests
 at a deployment database or state store.
 
+Construct PostgreSQL pools inside a Tokio runtime that lives at least as long
+as the pool. Test-local pools can use the test runtime; a process-lifetime
+shared audit fixture must retain its own runtime with its pool. Pure logic
+tests should pass the configuration they use instead of constructing unrelated
+database infrastructure.
+
 The workspace suite requires isolated PostgreSQL and Valkey, a separate audit
 test database (`NAZO_AUDIT_TEST_DATABASE_URL`), and the S3-compatible fixture
 configured with `NAZO_TEST_S3_*`. Copy the workflow's other fixture settings,
@@ -102,16 +108,25 @@ python scripts/verify_static_contracts.py --check
 python scripts/check_persistence_dependency_graph.py
 cargo fmt --check
 cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
-cargo test --locked -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables
-cargo test --workspace --all-features --locked
+cargo test --all-features --locked -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables
+cargo test --workspace --all-features --locked --no-fail-fast
 ```
 
 The migration test prepares the isolated schema before the full suite, as in
-CI. For a focused change, run the owning package/test target first; broaden
+CI. The full suite collects failures across test targets in one run; any failed
+target still fails the gate. For a focused change, run the owning package/test
+target first; broaden
 validation when the change crosses boundaries or leaves an unresolved risk.
 Documentation-only changes need source/example/reference checks, not a Rust
 build. A passed unit suite does not replace required HTTP, migration, recovery,
 conformance, deployment, or performance evidence.
+
+CI budgets Cargo build concurrency from the runner's available logical CPUs
+and memory (3 GiB per build job). Shared-state tests remain serial. Schema
+materialization uses the workspace suite's feature set to reuse its artifacts.
+The audit backlog scale fixture vacuums its deleted rows at handoff; the
+separate dead-prefix regression still creates its own ack-deleted prefix and
+requires natural autovacuum recovery without manual vacuum of that lifecycle.
 
 Targeted suites with their own entry points:
 

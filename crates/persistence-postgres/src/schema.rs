@@ -156,6 +156,7 @@ diesel::table! {
         address_locality -> Nullable<Varchar>, address_region -> Nullable<Varchar>,
         address_postal_code -> Nullable<Varchar>, address_country -> Nullable<Varchar>,
         phone_number -> Nullable<Varchar>, phone_number_verified -> Bool,
+        access_token_epoch -> BigInt,
     }
 }
 
@@ -262,7 +263,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    oauth_subject_bindings (tenant_id, subject) {
+        tenant_id -> Uuid,
+        subject -> Varchar,
+        user_id -> Uuid,
+    }
+}
+
+diesel::table! {
     oauth_token_issuances (issuance_id) {
+        principal_epoch_bound -> Bool,
         issuance_id -> Uuid,
         tenant_id -> Uuid,
         client_id -> Uuid,
@@ -520,18 +530,6 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    security_audit_event_outbox (event_id) {
-        event_id -> Uuid,
-        attempts -> Int4,
-        available_at -> Timestamptz,
-        locked_at -> Nullable<Timestamptz>,
-        last_error -> Nullable<Text>,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
-    }
-}
-
 diesel::joinable!(realms -> tenants (tenant_id));
 diesel::joinable!(organizations -> tenants (tenant_id));
 diesel::joinable!(client_access_requests -> users (user_id));
@@ -565,6 +563,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     oauth_refresh_families,
     oauth_refresh_spent_tokens,
     oauth_token_issuances,
+    oauth_subject_bindings,
     recovery_invalidations,
     user_client_grants,
     client_access_requests,
@@ -580,6 +579,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     runtime_module_state_events,
     security_audit_chain_state,
     security_audit_chain_entries,
-    security_audit_events,
-    security_audit_event_outbox
+    security_audit_events
 );

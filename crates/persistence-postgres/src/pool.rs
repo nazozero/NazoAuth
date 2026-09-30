@@ -27,7 +27,20 @@ const MIGRATION_LOCK_TIMEOUT: Duration = Duration::from_secs(25);
 const MIGRATION_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const MIGRATION_STATEMENT_TIMEOUT: &str = "240s";
 
-pub type DbPool = Pool<AsyncPgConnection>;
+/// Shared connections and their transaction execution use one runtime owner.
+#[derive(Clone)]
+pub struct DbPool {
+    connections: Pool<AsyncPgConnection>,
+    pub(crate) runtime: tokio::runtime::Handle,
+}
+
+impl std::ops::Deref for DbPool {
+    type Target = Pool<AsyncPgConnection>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.connections
+    }
+}
 pub type DbConnection = Object<AsyncPgConnection>;
 
 /// Discard the physical connection unless its transaction outcome is confirmed.
@@ -84,16 +97,34 @@ pub fn create_pool(
     database_url: impl Into<String>,
     max_connections: usize,
 ) -> anyhow::Result<DbPool> {
-    let manager = connection_manager(database_url.into());
-    Ok(Pool::builder(manager).max_size(max_connections).build()?)
+    let runtime = tokio::runtime::Handle::try_current()?;
+    let manager = connection_manager(database_url.into(), runtime.clone());
+    Ok(DbPool {
+        connections: Pool::builder(manager).max_size(max_connections).build()?,
+        runtime,
+    })
 }
 
-fn connection_manager(database_url: String) -> AsyncDieselConnectionManager<AsyncPgConnection> {
+fn connection_manager(
+    database_url: String,
+    runtime: tokio::runtime::Handle,
+) -> AsyncDieselConnectionManager<AsyncPgConnection> {
     let mut config = ManagerConfig::default();
     config.recycling_method = RecyclingMethod::Fast;
-    config.custom_setup = Box::new(|url| {
+    config.custom_setup = Box::new(move |url| {
         let url = url.to_owned();
-        async move { establish_connection(&url).await }.boxed()
+        // A shared pool's connection drivers belong to its owning runtime.
+        // JoinSet aborts an in-flight setup when its borrower is cancelled.
+        let mut setup = tokio::task::JoinSet::new();
+        setup.spawn_on(async move { establish_connection(&url).await }, &runtime);
+        async move {
+            setup
+                .join_next()
+                .await
+                .expect("connection setup task was registered")
+                .map_err(|error| ConnectionError::BadConnection(error.to_string()))?
+        }
+        .boxed()
     });
     AsyncDieselConnectionManager::new_with_config(database_url, config)
 }
@@ -239,8 +270,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.__diesel_schema_migrations, \
                          public.security_audit_chain_state, \
                          public.security_audit_events, \
-                         public.security_audit_chain_entries, \
-                         public.security_audit_event_outbox \
+                         public.security_audit_chain_entries \
                      FROM {quoted_role};\
                      REVOKE ALL ON FUNCTION \
                          public.nazo_reject_security_audit_event_mutation(), \
@@ -257,10 +287,12 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_observe_security_audit_anchor(TEXT), \
                          public.nazo_record_security_audit_genesis(TEXT, BYTEA), \
                          public.nazo_security_audit_shared_anchor_health(), \
-                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
+                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN), \
+                         public.nazo_oauth_refresh_contract_ensure(UUID, BYTEA, JSONB) \
                      FROM {quoted_role};\
                      GRANT EXECUTE ON FUNCTION \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
+                         public.nazo_oauth_refresh_contract_ensure(UUID, BYTEA, JSONB), \
                          public.nazo_security_audit_shared_anchor_health(), \
                          public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
                      TO {quoted_role};"

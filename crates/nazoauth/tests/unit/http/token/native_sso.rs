@@ -183,6 +183,7 @@ async fn native_sso_issue_binding_enforces_client_sender_policy() {
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
+        client_epoch: 0,
         config: &config,
         modules: &modules,
         authorization: &authorization,
@@ -304,8 +305,9 @@ fn native_sso_scope_and_client_admission_are_fail_closed() {
 
 #[test]
 fn native_sso_subject_policy_uses_client_specific_subject_mapping() {
-    let state = native_sso_state_with_signing_key();
-    let config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let config = crate::http::token::issue::token_issuance_config(&settings);
     let client = native_sso_client(json!(["openid", "offline_access", "device_sso"]));
     let subject = native_sso_subject_for_client(&config, Uuid::now_v7(), &client)
         .expect("configured public subject policy should map the user");
@@ -441,6 +443,7 @@ async fn native_sso_exchange_rejects_unbound_inputs_before_secret_store_access()
                 .insert(nazo_runtime_modules::ModuleId::NativeSso);
         }
         let issuance = TokenIssuanceContext {
+            client_epoch: 0,
             config: &config,
             modules: &modules,
             authorization: &authorization,

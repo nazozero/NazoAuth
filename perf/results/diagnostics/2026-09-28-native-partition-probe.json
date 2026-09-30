@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "role": "observer regression diagnostic; not accepted service capacity",
+  "scenario": "cap_introspect",
+  "mode": "multi",
+  "offered_ops_s": 32000,
+  "effective_window_s": 60,
+  "application_source": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+  "resources": {"application_logical_cpus": 16, "vus": 1024, "users": 256, "pool_connections": 64, "stream_workers": 8},
+  "observations": [
+    {
+      "point": "multi-cap-introspect-r32000-w60-1790576865",
+      "runner_source": "9ce8ada46bbc785632cce2f7b54a4624473a37b3",
+      "runner_image": "sha256:66ddf843c34989c70b663c3b65319ca55f8c89bdc648adc68942362a877a1d66",
+      "verdict": "INVALID",
+      "points": 52482335,
+      "parse_errors": 0,
+      "reader_error": null,
+      "lag_max_s": 192.284,
+      "lag_over_5s": 51368853,
+      "native_started_completed": 1663737,
+      "native_dropped": 256263,
+      "native_unexpected": 678715,
+      "native_complete_p95_p99_ms": [43, 67]
+    },
+    {
+      "point": "multi-cap-introspect-r32000-w60-1790577313",
+      "runner_source": "1d7635ac27b7cdce74251ae0ff6f4475924226a4",
+      "runner_image": "sha256:3ae4ad163dda6deca862c98fd1faba02c40cd06765a5a13d51b22b8d5f7b61fb",
+      "verdict": "INVALID",
+      "points": 54067683,
+      "parse_errors": 0,
+      "reader_error": null,
+      "lag_max_s": 170.501,
+      "lag_over_5s": 52917289,
+      "native_started_completed": 1730990,
+      "native_dropped": 189010,
+      "native_unexpected": 702827,
+      "native_complete_p95_p99_ms": [39, 61]
+    }
+  ],
+  "correctness_validation": {
+    "native_tests": "same-run stdout versus 2/4/8 FIFO partitions retained identical series, windows, complete-operation populations and point counts",
+    "ci": "https://github.com/nazozero/NazoAuth/actions/runs/36386660487",
+    "remote_tests_passed": 9
+  },
+  "decision": "Remove the native partition mechanism because correctness equivalence did not establish acceptable live observer performance. Retain buffered stdout, bounded JSON encoding caches and the existing metric-sharded analyzer. Use the already valid 16000/s runner recipe for the missing 180-second endpoints.",
+  "retained_test_coverage": "Protocol, cohort, outcome, drop, window, histogram, parse/error, JSON-envelope and bounded-cache tests remain. Only tests of the removed native FIFO feature are removed.",
+  "security_policy": {"source": "perf/env.yaml", "window_s": 60, "token_management_requests_per_source_ip": 1000000, "changed": false},
+  "capacity_upper": null
+}

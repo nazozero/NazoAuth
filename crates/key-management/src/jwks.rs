@@ -5,10 +5,11 @@ use crate::VerificationKey;
 pub(crate) fn public_jwks(
     keys: &[VerificationKey],
     request_object_encryption_jwk: &Value,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Value {
     let mut keys = keys
         .iter()
-        .filter(|key| key.can_verify())
+        .filter(|key| key.can_verify_at(now))
         .map(|key| {
             let mut public = key.public_jwk.clone();
             if let Some(object) = public.as_object_mut() {

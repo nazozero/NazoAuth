@@ -1,0 +1,17 @@
+{
+  "app_image_id": "sha256:e1af5ced65987933373f731ad093f76e9a60ac14f06ed4c1bdffbe46efbd1099",
+  "app_source_sha_file": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+  "source_sha": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+  "source_sha_eq_file": true,
+  "source_sha_eq_image_revision": true,
+  "binary_sha256": "0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d",
+  "runner_image_id": "sha256:93515766f9407b507160ca9531feb910c375581f5895b76128be42a48d9cf790",
+  "runner_image_revision": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+  "runner_k6_oauth_sha256": "b0b4790d72b58268bfc595351cd43a265b6dae7f3a8f00c9b0d5eaad0625721c",
+  "workspace_k6_oauth_sha256": "b0b4790d72b58268bfc595351cd43a265b6dae7f3a8f00c9b0d5eaad0625721c",
+  "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+  "pg_fsync": "on",
+  "pg_synchronous_commit": "on",
+  "pg_full_page_writes": "on",
+  "pg_track_io_timing": "on"
+}

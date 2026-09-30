@@ -38,12 +38,23 @@ pub(crate) async fn authorize_request_with_context(
 
     let original_authorization_query = q.get("request_uri").is_some().then(|| q.clone());
     let reauth_started_at = consume_reauth_nonce_with_context(context, q).await;
+    // RFC 9101 section 5 and RFC 9126 section 4 require client_id in the
+    // authorization request itself, including when a PAR handle is supplied.
+    // Check before replacing the outer parameters with stored PAR parameters.
+    if !q.contains_key("client_id") {
+        return Err(OAuthEndpointError::json(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "缺少 client_id.",
+        ));
+    }
     let mut pushed_dpop_jkt = None;
     let mut pushed_mtls_x5t_s256 = None;
     let mut consumed_request_uri_error: Option<&'static str> = None;
     let mut used_pushed_authorization_request = false;
     let mut pending_pushed_request_uri = None;
     let mut pending_pushed_request_digest = None;
+    let mut pending_pushed_request_version = None;
     let mut pending_external_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         if !is_pushed_authorization_request_uri(&request_uri) {
@@ -71,7 +82,8 @@ pub(crate) async fn authorize_request_with_context(
                     ));
                 }
             };
-            if let Some(pushed) = pushed {
+            if let Some(snapshot) = pushed {
+                let pushed = snapshot.payload;
                 if q.get("client_id")
                     .is_some_and(|client_id| client_id != &pushed.client_id)
                 {
@@ -99,6 +111,7 @@ pub(crate) async fn authorize_request_with_context(
                         used_pushed_authorization_request = true;
                         pending_pushed_request_uri = Some(request_uri);
                         pending_pushed_request_digest = Some(digest);
+                        pending_pushed_request_version = Some(snapshot.version);
                         *q = pushed.params;
                     }
                 }
@@ -114,14 +127,6 @@ pub(crate) async fn authorize_request_with_context(
 
     if let Some(response) = runtime_authorization_capability_error(context, q) {
         return Err(response);
-    }
-
-    if !q.contains_key("client_id")
-        && let Some(request_object) = q.get("request")
-        && let Some(client_id) =
-            super::unverified_request_object_client_id(context.request_object_keys, request_object)
-    {
-        q.insert("client_id".to_owned(), client_id);
     }
 
     let Some(client_id) = q.get("client_id") else {
@@ -197,7 +202,7 @@ pub(crate) async fn authorize_request_with_context(
         }
     }
     let direct_request_object_present = q.contains_key("request");
-    let request_object_error = apply_request_object_with_context(context, q, &mut client)
+    let request_object_error = apply_request_object_with_context(context, q, &mut client, None)
         .await
         .err();
     if let Some(response) = runtime_authorization_capability_error(context, q) {
@@ -543,7 +548,10 @@ pub(crate) async fn authorize_request_with_context(
         {
             Ok(true) => {
                 return issue_authorization_code_without_interaction_with_context(
-                    context, facts, payload,
+                    context,
+                    facts,
+                    payload,
+                    pending_pushed_request_version.as_deref(),
                 )
                 .await;
             }

@@ -9,9 +9,10 @@ use nazo_oauth_server::contracts::runtime_modules::{
 use nazo_runtime_modules::{
     ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredRevisionGuard, DesiredStateChange,
     DesiredStateRecord, DesiredStateUpdate, DesiredStateUpdateOutcome, InstanceStateMutation,
-    InstanceStateRecord, ModuleCatalog, ModuleEventPage, ModuleId, ModuleLifecycle, ModuleRevision,
-    ModuleState, ModuleStateRepository, ReconcileOutcome, RegistryError, RuntimeModuleManagement,
-    RuntimeModuleManagementError, RuntimeModuleRegistry, RuntimeModuleView,
+    InstanceStateRecord, ModuleCatalog, ModuleEventPage, ModuleId, ModuleLifecycle,
+    ModuleReconcileState, ModuleRevision, ModuleState, ModuleStateRepository, ReconcileOutcome,
+    RegistryError, RuntimeModuleManagement, RuntimeModuleManagementError, RuntimeModuleRegistry,
+    RuntimeModuleView,
 };
 
 use crate::settings::Settings;
@@ -42,6 +43,13 @@ impl ModuleStateRepository for PersistenceRuntimeModuleRepository {
 
     async fn read_all_desired(&self) -> Result<Vec<DesiredStateRecord>, Self::Error> {
         self.store.read_all_desired().await
+    }
+
+    async fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> Result<Vec<ModuleReconcileState>, Self::Error> {
+        self.store.read_reconcile_state(instance_id).await
     }
 
     async fn compare_and_set_desired(
@@ -213,8 +221,15 @@ impl RuntimeModules {
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
-                for module_id in ModuleId::ALL {
-                    match modules.registry.reconcile_once(module_id).await {
+                let outcomes = match modules.registry.reconcile_all().await {
+                    Ok(outcomes) => outcomes,
+                    Err(error) => {
+                        tracing::error!(?error, "runtime module snapshot read failed");
+                        continue;
+                    }
+                };
+                for (module_id, outcome) in outcomes {
+                    match outcome {
                         Ok(ReconcileOutcome::NoChange) => {}
                         Ok(outcome) => {
                             tracing::info!(?module_id, ?outcome, "runtime module reconciled");

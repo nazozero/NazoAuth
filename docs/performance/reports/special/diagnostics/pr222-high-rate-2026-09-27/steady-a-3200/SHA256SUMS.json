@@ -1,0 +1,15 @@
+{
+  "algorithm": "SHA-256",
+  "files": {
+    "README.md": "7b6e58162fc0b7d194a7f7e57555a501316d36360e7239efae6041b3ed1aea5d",
+    "cap-mixed.series.json": "f3426bd08bc0a932571713b25c8cdc6c9ff1143068215b799282f37020177507",
+    "cap-mixed.window.json": "5b4f0f91549c63f8d390604d3cee758fe3ffc7db46629d3062da9a9947464e96",
+    "formal-a-3200-steady-detailed-evidence.json": "612f19231611b81d3b60e10ef855322c8f2068cb527a005cdeaed81af3aa0cbc",
+    "formal-a-3200-steady-public-summary.json": "1b9e317495d7a98ffb5769eba81f4fd76bd4cbddc5f6679dc7c6d6feb3b01eb4",
+    "issuance-maintenance-evidence.json": "c6c9418ffa7298096c0b0ebfdda1bc92580e1adf08ef265071f515c35ee8d935",
+    "provenance.json": "68aaa115515e314244c3cea0b42b08c9d6bf7c9fe60ee335302a980d9857c5dc",
+    "refresh-capacity-gate.json": "bd2c735b6317b32cbd707942dc11c3c0dea0452526247b76074e6288fae1ed7d",
+    "wal-post.json": "b3d953c7d30064a62225b4eae3f8adf4744f4cf3623f2d64e45cbf184d462058",
+    "wal-pre.json": "6b9b677bd2142c3ea56b1ab042248eb42fefafb6340d6ec4d3bf0791e93e6b66"
+  }
+}

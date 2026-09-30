@@ -48,6 +48,14 @@ pub struct InstanceStateRecord {
     pub updated_at: SystemTime,
 }
 
+/// One module's durable desired state and this process instance's actual state.
+/// All records returned by `read_reconcile_state` belong to one storage snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModuleReconcileState {
+    pub desired: DesiredStateRecord,
+    pub instance: Option<InstanceStateRecord>,
+}
+
 /// Input to an actual-state compare-and-set operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstanceStateChange {
@@ -118,6 +126,13 @@ pub trait ModuleStateRepository: Send + Sync {
     fn read_all_desired(
         &self,
     ) -> impl Future<Output = Result<Vec<DesiredStateRecord>, Self::Error>> + Send;
+
+    /// Reads all desired records and only the named instance's actual state in
+    /// one consistent snapshot. A missing instance must not omit desired state.
+    fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> impl Future<Output = Result<Vec<ModuleReconcileState>, Self::Error>> + Send;
 
     /// Compares and sets desired state and appends the matching
     /// [`ModuleEventType::DesiredStateChanged`] event in one atomic commit.

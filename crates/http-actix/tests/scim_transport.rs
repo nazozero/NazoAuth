@@ -12,8 +12,8 @@ use nazo_http_actix::{
 use nazo_identity::{
     PublicAccount, TenantContext, UserId,
     ports::{
-        NewScimUser, PasswordHashInput, RepositoryError, RepositoryFuture, ScimCredentialAuditPort,
-        ScimCredentialUse, ScimListQuery, ScimRepositoryPort, UserPage,
+        NewScimUser, PasswordHashInput, RepositoryError, RepositoryFuture, ScimCredentialPort,
+        ScimListQuery, ScimRepositoryPort, UserPage,
     },
     scim::{NormalizedScimUser, ScimCursorSubject, ScimPatch, ScimRequiredScope, ScimService},
 };
@@ -74,17 +74,13 @@ impl ScimRepositoryPort for UnusedRepository {
     }
 }
 
-struct UnusedAudit;
+struct UnusedCredentials;
 
-impl ScimCredentialAuditPort for UnusedAudit {
+impl ScimCredentialPort for UnusedCredentials {
     fn active_credential<'a>(
         &'a self,
         _token_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<nazo_identity::scim::ScimTokenCredential>> {
-        Box::pin(async { Err(RepositoryError::Unavailable) })
-    }
-
-    fn record_use<'a>(&'a self, _usage: ScimCredentialUse) -> RepositoryFuture<'a, ()> {
         Box::pin(async { Err(RepositoryError::Unavailable) })
     }
 }
@@ -218,7 +214,7 @@ impl ScimBootstrapPasswordProvider for UnusedPassword {
 
 fn endpoint(authorizer: Arc<dyn ScimRequestAuthorizer>) -> web::Data<ScimEndpoint> {
     web::Data::new(ScimEndpoint::new(
-        ScimService::new(Arc::new(UnusedRepository), Arc::new(UnusedAudit)),
+        ScimService::new(Arc::new(UnusedRepository), Arc::new(UnusedCredentials)),
         authorizer,
         Arc::new(UnusedCursor),
         Arc::new(UnusedPassword),
@@ -230,7 +226,7 @@ fn event_endpoint() -> web::Data<ScimEndpoint> {
     let tenant = TenantContext::default_system();
     web::Data::new(
         ScimEndpoint::new(
-            ScimService::new(Arc::new(UnusedRepository), Arc::new(UnusedAudit)),
+            ScimService::new(Arc::new(UnusedRepository), Arc::new(UnusedCredentials)),
             Arc::new(EventRequests {
                 receiver: EventReceiver {
                     token_id: uuid::Uuid::now_v7(),
@@ -252,7 +248,7 @@ async fn authorization_extracts_only_bearer_source_ip_and_user_agent() {
     let app = actix_test::init_service(
         App::new()
             .app_data(web::Data::new(ScimEndpoint::new(
-                ScimService::new(Arc::new(UnusedRepository), Arc::new(UnusedAudit)),
+                ScimService::new(Arc::new(UnusedRepository), Arc::new(UnusedCredentials)),
                 captured.clone(),
                 Arc::new(UnusedCursor),
                 Arc::new(UnusedPassword),

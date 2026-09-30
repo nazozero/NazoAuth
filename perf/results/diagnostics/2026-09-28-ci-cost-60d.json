@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source_commit": "60d46dfffe84a6f9d55086ea7c07a9eec0303ce9",
+  "run_url": "https://github.com/nazozero/NazoAuth/actions/runs/36388420548",
+  "rust_job_url": "https://github.com/nazozero/NazoAuth/actions/runs/36388420548/job/108818684745",
+  "queue_s": 2.0,
+  "rust_job_s": 1115.0,
+  "runner_build_resources": {
+    "logical_cpus": 4,
+    "memory_budget_bytes": 14774943744,
+    "cargo_jobs": 4,
+    "shared_state_test_threads": 1
+  },
+  "steps_s": {
+    "Set up job": 1.0,
+    "Initialize containers": 18.0,
+    "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1": 2.0,
+    "Run dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1": 7.0,
+    "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6": 25.0,
+    "Budget build concurrency from runner resources": 0.0,
+    "Install native dependencies": 12.0,
+    "Prepare runtime directories": 0.0,
+    "Prepare isolated avatar object storage": 9.0,
+    "Create isolated audit ledger test database": 0.0,
+    "Verify compatibility contracts": 4.0,
+    "Verify persistence dependency isolation": 3.0,
+    "Verify crypto boundary": 1.0,
+    "Test crypto boundary guard": 0.0,
+    "Verify perf results layout": 0.0,
+    "Format": 2.0,
+    "Clippy all targets": 43.0,
+    "Materialize the isolated CI schema through the persistence owner": 31.0,
+    "Test workspace with PostgreSQL and Valkey": 953.0,
+    "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6": 0.0,
+    "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1": 0.0,
+    "Stop containers": 1.0,
+    "Complete job": 0.0
+  },
+  "workspace_compile_line": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 46s",
+  "audit_suite_result": "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 375.54s",
+  "interpretation": "Compilation and audit execution are included in the workspace step. Runner and cache variation precludes a causal percentage from total job duration. This successful checkpoint is not a substitute for final publication checks."
+}

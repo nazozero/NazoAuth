@@ -1,0 +1,134 @@
+{
+  "wal_global_snapshot_window": {
+    "start_utc": "2026-09-27T12:53:19.225342Z",
+    "end_utc": "2026-09-27T13:26:10.009078Z",
+    "seconds": 1970.784,
+    "includes": "setup, warmup, load and drain; not the exact 1800 s effective window",
+    "valid_counter_delta": true,
+    "generated_wal_bytes": 26753076396,
+    "wal_write_bytes": 55821074432,
+    "wal_write_ops": 2509155,
+    "mean_bytes_per_write": 22247.0,
+    "fsync_ops": 2504301,
+    "write_bytes_per_generated_byte": 2.0865,
+    "write_time_ms_raw": 0,
+    "fsync_time_ms_raw": 0,
+    "write_and_fsync_time_interpretation": "raw counters were 0; report N/A, not zero wait",
+    "pg_stat_io_top_by_write_bytes": [
+      {
+        "backend_type": "client backend",
+        "context": "normal",
+        "write_bytes": 47640870912.0,
+        "writes": 2507860.0,
+        "fsyncs": 2503007.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "client backend",
+        "context": "init",
+        "write_bytes": 8136949760.0,
+        "writes": 485.0,
+        "fsyncs": 485.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "autovacuum worker",
+        "context": "init",
+        "write_bytes": 16777216.0,
+        "writes": 1.0,
+        "fsyncs": 1.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "walwriter",
+        "context": "normal",
+        "write_bytes": 12247040.0,
+        "writes": 500.0,
+        "fsyncs": 500.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "autovacuum worker",
+        "context": "normal",
+        "write_bytes": 11812864.0,
+        "writes": 297.0,
+        "fsyncs": 296.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "background worker",
+        "context": "normal",
+        "write_bytes": 2179072.0,
+        "writes": 1.0,
+        "fsyncs": 1.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "checkpointer",
+        "context": "normal",
+        "write_bytes": 237568.0,
+        "writes": 11.0,
+        "fsyncs": 11.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "autovacuum launcher",
+        "context": "init",
+        "write_bytes": 0.0,
+        "writes": 0.0,
+        "fsyncs": 0.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "autovacuum launcher",
+        "context": "normal",
+        "write_bytes": 0.0,
+        "writes": 0.0,
+        "fsyncs": 0.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "background worker",
+        "context": "init",
+        "write_bytes": 0.0,
+        "writes": 0.0,
+        "fsyncs": 0.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      }
+    ]
+  },
+  "pgss_strict_full_identity": {
+    "start_utc": "2026-09-27T12:53:18.983981Z",
+    "end_utc": "2026-09-27T13:26:09.777956Z",
+    "seconds": 1970.794,
+    "stats_reset_same": true,
+    "pre_rows": 3,
+    "post_rows": 172,
+    "matched_full_identity": 3,
+    "same_stats_since_rows": 3,
+    "stats_since_mismatch_rows": 0,
+    "post_only_excluded": 169,
+    "invalid_counter_rows": 0,
+    "positive_wal_delta_rows": 0,
+    "matched_wal_bytes_delta": 0,
+    "top10": [],
+    "status": "INVALID_INCOMPLETE",
+    "reason": "only 3 baseline identities matched; all had zero WAL delta, while 169 post-only identities were excluded; no SQL Top10 can be established"
+  },
+  "resource_and_correlation": {
+    "pool_wait_ms_per_acquisition": 0.0262,
+    "window": "whole runner/load interval only",
+    "p99_correlation": "not assessable because exact effective window and complete-iteration P95/P99 are absent",
+    "wal_wait_timing": "N/A; raw write/fsync timing counters are zero and wait samples do not identify WALWrite/WALSync durations"
+  }
+}

@@ -1,0 +1,4319 @@
+{
+  "schema_version": 1,
+  "scope": "New-container code boundary and client-credentials injector/transport controls; CC 6000 drop-only failure is not a service upper.",
+  "registered_recipes": {
+    "ad0b7aaa5c14076f": {
+      "cpus": {
+        "allowed": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "single": [
+          24
+        ],
+        "multi": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "postgres": [
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55
+        ],
+        "valkey": [
+          56
+        ],
+        "generator": [
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ]
+      },
+      "app_image": "nazoauth-perf-nazoauth",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+      "runner_image_id": "sha256:ba139190de3c33d65de70ca8bf84e5c006f35abb747f33cb9f70c373b94ae39f",
+      "stream_workers": 4,
+      "resources": {
+        "single": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 64
+        },
+        "multi": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 64
+        }
+      },
+      "sidecars": {
+        "single": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 1,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 13,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 2,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 38,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ],
+        "multi": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 8,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 200,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 30,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 600,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ]
+      },
+      "stop_at": "2026-09-28T22:28:28+08:00",
+      "gate": "successful-ops-v1",
+      "vector_counts": {
+        "default": 48000,
+        "fapi2_logged_in_high_security": 49200
+      },
+      "exploration_window_seconds": 60,
+      "candidate_window_seconds": 180,
+      "mixed_confirmation_window_seconds": 660,
+      "hash_policy": "unchanged application defaults",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "harness_sha": "ec638ce76cca15411d9b0d6e3c617dcd1e17b684",
+      "recipe_id": "ad0b7aaa5c14076f",
+      "deployment_origin": "incremental-b-v2"
+    },
+    "154563116729bb25": {
+      "cpus": {
+        "allowed": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "single": [
+          24
+        ],
+        "multi": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "postgres": [
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55
+        ],
+        "valkey": [
+          56
+        ],
+        "generator": [
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ]
+      },
+      "app_image": "nazoauth-perf-nazoauth",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+      "runner_image_id": "sha256:779d48cbf12804a2c3a0f11d9c1714b8de5c3930c9fd82289e8a598cf12a5f94",
+      "stream_workers": 8,
+      "resources": {
+        "single": {
+          "vus": 2048,
+          "users": 256,
+          "pool_connections": 64
+        },
+        "multi": {
+          "vus": 2048,
+          "users": 256,
+          "pool_connections": 64
+        }
+      },
+      "sidecars": {
+        "single": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 1,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 13,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 2,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 38,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ],
+        "multi": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 8,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 200,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 30,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 600,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ]
+      },
+      "stop_at": "2026-09-28T22:28:28+08:00",
+      "gate": "successful-ops-v1",
+      "vector_counts": {
+        "default": 48000,
+        "fapi2_logged_in_high_security": 49200
+      },
+      "exploration_window_seconds": 60,
+      "candidate_window_seconds": 180,
+      "mixed_confirmation_window_seconds": 660,
+      "hash_policy": "unchanged application defaults",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "harness_sha": "ec638ce76cca15411d9b0d6e3c617dcd1e17b684",
+      "recipe_id": "154563116729bb25",
+      "deployment_origin": "incremental-b-v2"
+    }
+  },
+  "points": [
+    {
+      "name": "multi-cap-authorization-code-r1000-w180-1790598564",
+      "mode": "multi",
+      "scenario": "cap_authorization_code",
+      "rate": 1000,
+      "verdict": "FAIL",
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true
+      },
+      "confirmation": false,
+      "maintenance": null,
+      "elapsed_s": 286.8,
+      "error": null,
+      "gate": {
+        "reason": null,
+        "rate_basis": "scenario_window_stream",
+        "capacity_gate_contract": "successful-ops-v1",
+        "latency_gate": "complete_operation_100_250ms",
+        "failed_health_checks": null,
+        "health_evidence_collected": null,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "unexpected_errors": 0,
+        "status": "passed",
+        "threshold_status_diagnostic": "passed",
+        "evidence_problems": null
+      },
+      "measured": {
+        "window_start_ms": 1790598636387,
+        "window_end_ms": 1790598816387,
+        "window_seconds": 180.0,
+        "measure_scheduled": 180000,
+        "measure_started": 180000,
+        "measure_completed": 180000,
+        "measure_dropped": 0,
+        "measure_unfinished": 0,
+        "measure_drop_fraction": 0.0,
+        "outcome_success": 180000,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_unexpected": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_prepare_local_failed": 0,
+        "outcome_prepare_sut_failed": 0,
+        "iter_p50_ms": 57.0,
+        "iter_p95_ms": 156.0,
+        "iter_p99_ms": 311.0,
+        "successful_ops_per_s": 1000.0,
+        "wal_windowed": {
+          "delta": 1693443664.0764995,
+          "field": "wal_bytes",
+          "sample_span": [
+            1790598612,
+            1790598839
+          ],
+          "window_s": 180.0
+        },
+        "wal_per_success_bytes": 9408.02,
+        "wal_io_windowed": {
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "sample_span": [
+              1790598612,
+              1790598839
+            ],
+            "window_s": 180.0
+          },
+          "fsyncs": {
+            "delta": 150039.87993621826,
+            "field": "wal_io.fsyncs",
+            "sample_span": [
+              1790598612,
+              1790598839
+            ],
+            "window_s": 180.0
+          },
+          "write_bytes": {
+            "delta": 4673322956.828125,
+            "field": "wal_io.write_bytes",
+            "sample_span": [
+              1790598612,
+              1790598839
+            ],
+            "window_s": 180.0
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "sample_span": [
+              1790598612,
+              1790598839
+            ],
+            "window_s": 180.0
+          },
+          "writes": {
+            "delta": 150348.29943609238,
+            "field": "wal_io.writes",
+            "sample_span": [
+              1790598612,
+              1790598839
+            ],
+            "window_s": 180.0
+          }
+        },
+        "wait_per_acq_ms": 0.662,
+        "pool_wait_ns_windowed": {
+          "delta": 1572642338028.0366,
+          "field": "pool.wait_ns",
+          "sample_span": [
+            1790598612,
+            1790598839
+          ],
+          "window_s": 180.0
+        },
+        "acquire_windowed": {
+          "delta": 2375358.0463118553,
+          "field": "pool.acq",
+          "sample_span": [
+            1790598612,
+            1790598839
+          ],
+          "window_s": 180.0
+        },
+        "acquire_per_op_windowed": 13.1964,
+        "refresh_invariants": {
+          "max_active_per_scope": 10,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "common_window_s": {
+          "end_ms": 1790598816387,
+          "method": "contract",
+          "seconds": 180.0,
+          "start_ms": 1790598636387
+        },
+        "sidecar_evidence": {},
+        "oom_killed": false,
+        "restart_count": 0,
+        "audit_log_scan": {
+          "collected": true,
+          "dropped_required": 0,
+          "lines": 1,
+          "persistence_error": 0,
+          "queue_full": 0,
+          "rc": 0,
+          "since_ts": 1790598614.590367
+        }
+      },
+      "recipe_id": "ad0b7aaa5c14076f",
+      "validated_gate_metrics": {
+        "rps": 3999.245,
+        "p50": 11.389,
+        "p95": 44.251,
+        "p99": 90.22,
+        "dropped": 0,
+        "drop_fraction": 0.0,
+        "error_rate": 0.0,
+        "status": "passed",
+        "measured_ops_s": 1000.0,
+        "successful_ops_s": 1000.0,
+        "window_seconds": 180.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1790598636.387,
+          "window_end_s": 1790598816.387,
+          "measure_started_exact": 180000,
+          "measure_completed_exact": 180000,
+          "measure_dropped_exact": 0,
+          "measure_scheduled_observed": 180000,
+          "measure_drop_fraction": 0.0,
+          "measure_outcomes": {
+            "success": 180000
+          },
+          "measure_outcome_sum": 180000,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 180000,
+          "schedule_delta_vs_rational": 0,
+          "observed_schedule_rate": 1000.0,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 156.0,
+        "gate_p99": 311.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 4382832,
+          "overflow_dropped_points": 1281664,
+          "logical_bytes_cap": 536870912,
+          "file": "multi/multi-cap-authorization-code-r1000-w180-1790598564/load/capacity-cap-authorization-code.diag.jsonl.gz"
+        },
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 1000.0,
+        "threshold_status_diagnostic": "passed",
+        "main_verdict": "FAIL",
+        "complete_operation_latency_ms": {
+          "p50": 57.0,
+          "p95": 156.0,
+          "p99": 311.0
+        }
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": false,
+        "vu_warnings": [],
+        "load_lifecycle": {
+          "ended_ts": 1790598823.0189097,
+          "load_seconds": 208.4,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-authorization-code-r1000-w180-1790598564",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [],
+          "started_ts": 1790598614.590367
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-authorization-code-r1000-w180-1790598564",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-authorization-code-r1000-w180-1790598564",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "test_data": {
+        "configured_users": 256,
+        "configured_vectors": 48000,
+        "seeded_users": 1024,
+        "seeded_vectors": 48000
+      },
+      "wal_guc": {
+        "commit_delay": "0",
+        "commit_siblings": "5",
+        "fsync": "on",
+        "full_page_writes": "on",
+        "synchronous_commit": "on",
+        "track_wal_io_timing": "off"
+      },
+      "provenance": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-authorization-code-r1000-w180-1790598564",
+        "runner_image_id": "sha256:ba139190de3c33d65de70ca8bf84e5c006f35abb747f33cb9f70c373b94ae39f",
+        "runner_image_ref": "nazoauth-perf-perf-sparse-filter",
+        "runner_image_revision": "dc3d81ce6b8bcbcccbbf2b8c20a7b4f153bd473a",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "workspace_provenance": {
+        "git_head": "ec638ce76cca15411d9b0d6e3c617dcd1e17b684",
+        "ok": true,
+        "missing": [],
+        "file_sha256": {
+          "Containerfile": {
+            "sha256": "aa096206a5799e01effe16082613e5a8981b15c27007edec7ab7d3ea979a8373",
+            "size": 2970
+          },
+          "docker-compose.perf.yml": {
+            "sha256": "da2f371f10adc3b36a0e8786ccd274cc8f8ed2bf8238dd5855c2566bbce0b1c5",
+            "size": 6646
+          },
+          "perf/audit-anchor-receiver/Cargo.toml": {
+            "sha256": "ef689bd14ab2e748351f13e79eeb2c6280caf1cad906b86c319b7194c4d15b82",
+            "size": 783
+          },
+          "perf/audit-anchor-receiver/Containerfile": {
+            "sha256": "263512d290bcce053b94fda86a97706adc50ae6772ebfba219e8a77984ea4f3a",
+            "size": 1060
+          },
+          "perf/audit-anchor-receiver/src/main.rs": {
+            "sha256": "3ffbf28afa1bc00363147a2f4f62c2e270cb3abb4130890731a486ebd1d0738f",
+            "size": 19920
+          },
+          "perf/audit-anchor-receiver/src/store.rs": {
+            "sha256": "5f4ab9c92fc00f45a8961041ec63984946ed545b7876e1eb9d516f3be9f90878",
+            "size": 2974
+          },
+          "perf/audit-anchor-receiver/src/wire.rs": {
+            "sha256": "2d520f18646c2912b5be45b9c320e3ca47fee7e81a298389a4186fe2f50e8627",
+            "size": 9809
+          },
+          "perf/env.yaml": {
+            "sha256": "51b86db0dfbcef044524b5a2bcbc69784bd8fd694801c841e2681fb04b5f93c0",
+            "size": 1234
+          },
+          "perf/k6/measurement_clock.js": {
+            "sha256": "80e178b3424159cbf7a1640ee6621a250204d9a31ab09bfe50d126d247dfefdc",
+            "size": 10706
+          },
+          "perf/k6/oauth.js": {
+            "sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+            "size": 70147
+          },
+          "perf/k6/subject_state.js": {
+            "sha256": "384ff18822c3cf9d948c33d92274fe25c87fc0369c60953d109cace0828c9725",
+            "size": 2182
+          },
+          "perf/keyset/Containerfile": {
+            "sha256": "a014cd32c7daa395fc9f339e53e5c8a5865a505fc10d710e2bd39d21ed73a241",
+            "size": 272
+          },
+          "perf/runner.py": {
+            "sha256": "c02c057466bd680721fb47cb57cf8d35d589cbd70e4211759f2d48f20643e268",
+            "size": 50390
+          },
+          "perf/runner/Containerfile": {
+            "sha256": "775bfad1829241ea36c3e6ce22c552b4a8114075208a5a585178bf5366573a08",
+            "size": 1623
+          },
+          "perf/seed.py": {
+            "sha256": "d3ad49edfa39021504e492bf73bb08055df109ed1787ce56f3c108eec8525c61",
+            "size": 29330
+          },
+          "perf/tools/audit_anchor_fault_regression.sh": {
+            "sha256": "636b6a00b9e117c49d91048d7330bbeac84e7824f6e6e5ea983d7d68289cf068",
+            "size": 14701
+          },
+          "perf/tools/capacity_search.py": {
+            "sha256": "799ad49b4927b1cba0d2a9d137c0df34a39b00368fc1751a414bea514341a76f",
+            "size": 38598
+          },
+          "perf/tools/checkpoint_analyze.py": {
+            "sha256": "b8ed1d8fc1413fb8cc63c4a614907e68a57e8f9e19fca7d5019f1d589c882a14",
+            "size": 100614
+          },
+          "perf/tools/ledger.sql": {
+            "sha256": "b83d759b25d78256123c81b420f95247f60dcc31cb4292c5ed066bc81a8e57ca",
+            "size": 24126
+          },
+          "perf/tools/ledger_check.py": {
+            "sha256": "58c1c8a6ca39d53d2fe8042452df475b5a365a0b00618113ec51e4c5344ca256",
+            "size": 17739
+          },
+          "perf/tools/point_runner.py": {
+            "sha256": "8ce9ca908d60edbb86f95da88e14ec3044ec39b57d442963540b04c386a7c7ca",
+            "size": 53016
+          },
+          "perf/tools/pool_size_ab.py": {
+            "sha256": "1796210c61684a084b3ce70651243edad400ffaf679d51b02edee5478fb76a14",
+            "size": 55759
+          },
+          "perf/tools/proc_detail_sampler.py": {
+            "sha256": "e7c9cb739e845e72753c4cc4bf5377907968fd0ee69880e7c2d1142e369d2cec",
+            "size": 5860
+          },
+          "perf/tools/residency_observer.py": {
+            "sha256": "7500fd6e85f4c62372ef950a87dd569c668f60dc044560b5f2f5dccf707b1b18",
+            "size": 9290
+          },
+          "perf/tools/single_instance_scaling.py": {
+            "sha256": "e105bd0e227a2d919baa408e812eb2d3618452aab58653f948fff38b6cfb09d8",
+            "size": 108825
+          },
+          "perf/tools/soak_sampler.py": {
+            "sha256": "932e2a92c8118d49d515729f949c1bbf4b65c6fd4e03753baccf014976f2edec",
+            "size": 14557
+          },
+          "perf/tools/stability_analyze.py": {
+            "sha256": "f9bdcea435944b10977b2fdc27d5fdbdf316e15312ff5dc47f5dd4a78f6cb826",
+            "size": 16693
+          },
+          "perf/tools/vkledger.py": {
+            "sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b",
+            "size": 4459
+          },
+          "scripts/ensure_runtime_keyset.py": {
+            "sha256": "a89a1f810a38ffaf3a34f3e872fb14638e0d5c15a7c6d0a54f0769da7d6963bf",
+            "size": 4687
+          }
+        }
+      },
+      "effective_point": {
+        "scenario": "cap_authorization_code",
+        "rate": 1000,
+        "duration": "195s",
+        "warmup_ms": 15000,
+        "pre_vus": 1024,
+        "max_vus": 1024,
+        "user_count": 256,
+        "vector_count": 48000,
+        "stream_workers": 4,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "postgres_cpus": [
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55
+        ],
+        "valkey_cpus": [
+          56
+        ],
+        "infra_cpus": [
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": null,
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 64
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "binary_provenance": {
+        "container_id": "d45ed6c90cdb8806fec18a525cd36c4460da9759ce1fe41d630d38d5301b175c",
+        "expected_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "host_pid": 2361985,
+        "image_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "ok": true,
+        "pid1_eq_expected": true,
+        "pid1_eq_image": true,
+        "running_pid1_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b"
+      },
+      "affinity": {
+        "app": {
+          "container": "pr222-current-b-nazoauth-1",
+          "pid1_allowed": "Cpus_allowed_list:\t24-39",
+          "pin_output": "pinned_tasks=36 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 nazoauth 24-39",
+            "/proc/88 sh 24-79,184-191"
+          ],
+          "requested": "24-39",
+          "uid": "10001"
+        },
+        "app_cpus": "24-39",
+        "app_exec_mode": "pinset-exec",
+        "app_verified": true,
+        "keyset": {
+          "container": "pr222-current-b-keyset-1",
+          "pid1_allowed": "Cpus_allowed_list:\t57-79,184-191",
+          "pin_output": "pinned_tasks=2 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 tail 57-79,184-191",
+            "/proc/82 sh 24-79,184-191"
+          ],
+          "requested": "57-79,184-191",
+          "uid": "0"
+        },
+        "pg_verified": true,
+        "postgres": {
+          "container": "pr222-current-b-postgres-1",
+          "pid1_allowed": "Cpus_allowed_list:\t40-55",
+          "pin_output": "pinned_tasks=13 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 postgres 40-55",
+            "/proc/126 sh 24-79,184-191",
+            "/proc/64 postgres 40-55",
+            "/proc/65 postgres 40-55",
+            "/proc/66 postgres 40-55",
+            "/proc/67 postgres 40-55",
+            "/proc/68 postgres 40-55",
+            "/proc/70 postgres 40-55",
+            "/proc/71 postgres 40-55",
+            "/proc/72 postgres 40-55",
+            "/proc/92 postgres 40-55",
+            "/proc/93 postgres 40-55",
+            "/proc/94 postgres 40-55"
+          ],
+          "requested": "40-55",
+          "uid": "70"
+        },
+        "valkey": {
+          "container": "pr222-current-b-valkey-1",
+          "pid1_allowed": "Cpus_allowed_list:\t56",
+          "pin_output": "pinned_tasks=6 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 valkey-server 56",
+            "/proc/58 sh 24-79,184-191"
+          ],
+          "requested": "56",
+          "uid": "999"
+        }
+      },
+      "audit_journal_archive": null,
+      "audit": {
+        "accepted_events_delta": 770788,
+        "checkpoint_advanced": true,
+        "checks": {
+          "accepted_events_delta_eq": true,
+          "checkpoint_progress_valid": true,
+          "collected": true,
+          "db_head_eq_anchor_hash": true,
+          "db_head_eq_anchor_seq": true,
+          "deployment_match": true,
+          "fault_none": true,
+          "journal_clean": true,
+          "journal_collected": true,
+          "journal_range_eq_delta": true,
+          "pending_zero": true,
+          "rcv_hash_eq_anchor": true,
+          "rcv_seq_eq_anchor": true
+        },
+        "delta_events": 770788,
+        "empty_prefix_allowed": false,
+        "expected_issuances": null,
+        "journal": {
+          "batches": 4152,
+          "by_event_type": {
+            "authorization_approved": 195001,
+            "authorization_decision_intent": 195001,
+            "refresh_family_capacity_retired": 185785,
+            "token_issued": 195001
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 770788,
+          "expected_in_range": 770788,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 660639152,
+          "journal_sha256": "a05cdb86a873d31c603cd6e9a322f212e9a6832c6e50abecee12142fb7e7be1f",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 195001
+        },
+        "point": "multi-cap-authorization-code-r1000-w180-1790598564",
+        "token_issued_delta": 195001,
+        "token_issued_scope": "reported_only_no_clean_denominator",
+        "verdict": "PASS"
+      },
+      "audit_state_pre": {
+        "db": {
+          "anchor_deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "anchor_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "anchor_sequence": 0,
+          "collected": true,
+          "last_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "last_sequence": 0,
+          "pending": 0
+        },
+        "receiver_checkpoint": {
+          "accepted_batches": 0,
+          "accepted_events": 0,
+          "batch_digest": "T188xI3Uw9J7pfJ2Nt1gWEYp2YttqP9zrhdhxkJ5R_8",
+          "checkpoint_kind": "genesis",
+          "collected": true,
+          "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "last_sequence": 0,
+          "updated_at": "2026-09-28T12:30:09.678076080Z"
+        },
+        "receiver_state": {
+          "accepted": 1,
+          "checkpoint": {
+            "accepted_batches": 0,
+            "accepted_events": 0,
+            "batch_digest": "T188xI3Uw9J7pfJ2Nt1gWEYp2YttqP9zrhdhxkJ5R_8",
+            "checkpoint_kind": "genesis",
+            "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+            "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "last_sequence": 0,
+            "updated_at": "2026-09-28T12:30:09.678076080Z"
+          },
+          "collected": true,
+          "duplicates": 0,
+          "fault": "none",
+          "rejected": 0,
+          "requests": 2
+        }
+      },
+      "audit_state_post": {
+        "db": {
+          "anchor_deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "anchor_hash": "f1c4e553fb597c931d0ae0113697e539cc5f30e403af52999bdd6348825530a7",
+          "anchor_sequence": 770788,
+          "collected": true,
+          "last_hash": "f1c4e553fb597c931d0ae0113697e539cc5f30e403af52999bdd6348825530a7",
+          "last_sequence": 770788,
+          "pending": 0
+        },
+        "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+        "receiver_checkpoint": {
+          "accepted_batches": 4152,
+          "accepted_events": 770788,
+          "batch_digest": "WxppyYO6olBB6MW8wGSbNrwjT6EkGsQxChsP0UPNNdA",
+          "checkpoint_kind": "batch",
+          "collected": true,
+          "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "last_hash": "8cTlU_tZfJMdCuARNpflOcxfMOQDr1KZm91jSIJVMKc",
+          "last_sequence": 770788,
+          "updated_at": "2026-09-28T12:33:36.446965478Z"
+        },
+        "receiver_state": {
+          "accepted": 4153,
+          "checkpoint": {
+            "accepted_batches": 4152,
+            "accepted_events": 770788,
+            "batch_digest": "WxppyYO6olBB6MW8wGSbNrwjT6EkGsQxChsP0UPNNdA",
+            "checkpoint_kind": "batch",
+            "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+            "last_hash": "8cTlU_tZfJMdCuARNpflOcxfMOQDr1KZm91jSIJVMKc",
+            "last_sequence": 770788,
+            "updated_at": "2026-09-28T12:33:36.446965478Z"
+          },
+          "collected": true,
+          "duplicates": 0,
+          "fault": "none",
+          "rejected": 0,
+          "requests": 4156
+        }
+      },
+      "audit_queue_post_drain": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 195001,
+        "pending_in_process": 0,
+        "persist_batch_events": 195001,
+        "persist_batches": 44287,
+        "persist_max_batch": 64,
+        "persisted": 195001
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790598640.8934035,
+            1790598814.6745229
+          ],
+          "effective_cores_mean": 3.3360931393452926,
+          "effective_cores_peak_sample": 3.954881658974357,
+          "rss_kib_min": 92996,
+          "rss_kib_max": 98376,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790598640.8934035,
+            1790598814.6745229
+          ],
+          "effective_cores_mean": 7.155207681220372,
+          "effective_cores_peak_sample": 10.26944149918646,
+          "rss_kib_min": 6379852,
+          "rss_kib_max": 10642284,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-authorization-code-r1000-w180-1790598564": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790598640.8934035,
+            1790598814.6745229
+          ],
+          "effective_cores_mean": 3.4762694720308494,
+          "effective_cores_peak_sample": 4.0384012267140745,
+          "rss_kib_min": 5212944,
+          "rss_kib_max": 5984924,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-authorization-code-r1000-w180-1790598564": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790598640.8934035,
+            1790598814.6745229
+          ],
+          "effective_cores_mean": 0.05063841246440462,
+          "effective_cores_peak_sample": 0.06412988273564475,
+          "rss_kib_min": 8528,
+          "rss_kib_max": 8880,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-authorization-code-r1000-w180-1790598564": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790598640.8934035,
+            1790598814.6745229
+          ],
+          "effective_cores_mean": 0.06968536078908408,
+          "effective_cores_peak_sample": 0.09263205284037576,
+          "rss_kib_min": 20996,
+          "rss_kib_max": 21116,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790598640.8934035,
+            1790598814.6745229
+          ],
+          "effective_cores_mean": 0.24697734806502797,
+          "effective_cores_peak_sample": 0.3174632261281955,
+          "rss_kib_min": 19244,
+          "rss_kib_max": 78672,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790598637,
+          1790598816
+        ],
+        "http_requests": 716446,
+        "http_requests_per_s": 4002.4916201117317,
+        "http_failed_requests": 0,
+        "vus_peak": 321,
+        "vus_max_peak": 1024,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 85,
+        "sample_interval_s": [
+          1790598638,
+          1790598816
+        ],
+        "pg_wait_samples": 85,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.964705882352941,
+          "Client": 48.34117647058824,
+          "IO": 0.8235294117647058,
+          "IPC": 0.011764705882352941,
+          "LWLock": 8.211764705882352,
+          "Timeout": 0.058823529411764705
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 8192,
+        "audit_pending_last_sample": 0,
+        "valkey_used_memory_bytes_peak": 69909584,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "sidecars": {},
+      "analyzer_stats": {
+        "load/capacity-cap-authorization-code.analyzer-stats.json": {
+          "points": 6504512,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.999,
+          "lag_over_5s": 0,
+          "diag_overflow": true,
+          "stream_workers": 4,
+          "shard_points": [
+            2363331,
+            2941159,
+            690048,
+            509974
+          ],
+          "max_diag_bytes_per_shard": 134217728
+        }
+      },
+      "pgss": {
+        "valid": true,
+        "total_calls_delta": 10711069,
+        "path_classes": {
+          "audit_anchor_health": 0,
+          "audit_append": 620074,
+          "audit_writer_preflight": 195001,
+          "client_lock": 195001,
+          "combined": 0,
+          "commit_txn": 225074,
+          "exporter": 37446,
+          "issuance_insert": 195001,
+          "nested": 5128701,
+          "observer_other": 7662,
+          "rollback_txn": 0,
+          "runtime_toplevel": 5537260
+        },
+        "top_statements": [
+          {
+            "calls_delta": 185785,
+            "q": "DELETE FROM \"oauth_refresh_families\" WHERE (((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"token_family_id\" = $2)) AND (\"oauth_re",
+            "queryid": 8718669233736325932,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 185785,
+            "toplevel": true,
+            "total_exec_ms_delta": 130232.271
+          },
+          {
+            "calls_delta": 195001,
+            "q": "WITH ranked AS ( SELECT token_family_id, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, count(*) OVER () AS total FROM oauth_re",
+            "queryid": 988688075674336999,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 185785,
+            "toplevel": true,
+            "total_exec_ms_delta": 118336.953
+          },
+          {
+            "calls_delta": 590007,
+            "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+            "queryid": 7937354421020446243,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 590007,
+            "toplevel": true,
+            "total_exec_ms_delta": 105275.64
+          },
+          {
+            "calls_delta": 195001,
+            "q": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+            "queryid": -4859543494755560605,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 195001,
+            "toplevel": true,
+            "total_exec_ms_delta": 63109.603
+          },
+          {
+            "calls_delta": 195001,
+            "q": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+            "queryid": 7076455219069621783,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 195001,
+            "toplevel": true,
+            "total_exec_ms_delta": 53651.812
+          }
+        ]
+      },
+      "files": {
+        "multi/multi-cap-authorization-code-r1000-w180-1790598564/point.json": "b357da8f44a05373ee90e06e4dea52f08c017d6891ca69b13ca43220543437ca",
+        "multi/multi-cap-authorization-code-r1000-w180-1790598564/load/run.log": "d7823da47f8808e821cfff97c6c6b525044de9ae75beff816a228aa2dcf2b732",
+        "multi/multi-cap-authorization-code-r1000-w180-1790598564/load/capacity-cap-authorization-code.k6.json": "e576f445aaece76bef5046ed6ffd6783a7cc0218fdeed0cec60e1d2b48089508",
+        "multi/multi-cap-authorization-code-r1000-w180-1790598564/load/capacity-cap-authorization-code.window.json": "d6aa3a97be11bc34629120ce9dedd9c1af6fe7382e69ee510e6d037507c4594a"
+      },
+      "retained_from": "incremental-b-v2"
+    },
+    {
+      "name": "multi-cap-authorization-code-r900-w180-1790600228",
+      "mode": "multi",
+      "scenario": "cap_authorization_code",
+      "rate": 900,
+      "verdict": "PASS",
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true
+      },
+      "confirmation": false,
+      "maintenance": null,
+      "elapsed_s": 284.1,
+      "error": null,
+      "gate": {
+        "reason": null,
+        "rate_basis": "scenario_window_stream",
+        "capacity_gate_contract": "successful-ops-v1",
+        "latency_gate": "complete_operation_100_250ms",
+        "failed_health_checks": null,
+        "health_evidence_collected": null,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "unexpected_errors": 0,
+        "status": "passed",
+        "threshold_status_diagnostic": "passed",
+        "evidence_problems": null
+      },
+      "measured": {
+        "window_start_ms": 1790600299665,
+        "window_end_ms": 1790600479665,
+        "window_seconds": 180.0,
+        "measure_scheduled": 162000,
+        "measure_started": 162000,
+        "measure_completed": 162000,
+        "measure_dropped": 0,
+        "measure_unfinished": 0,
+        "measure_drop_fraction": 0.0,
+        "outcome_success": 162000,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_unexpected": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_prepare_local_failed": 0,
+        "outcome_prepare_sut_failed": 0,
+        "iter_p50_ms": 63.0,
+        "iter_p95_ms": 92.0,
+        "iter_p99_ms": 109.0,
+        "successful_ops_per_s": 900.0,
+        "wal_windowed": {
+          "delta": 1511346588.1406384,
+          "field": "wal_bytes",
+          "sample_span": [
+            1790600275,
+            1790600500
+          ],
+          "window_s": 180.0
+        },
+        "wal_per_success_bytes": 9329.3,
+        "wal_io_windowed": {
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "sample_span": [
+              1790600275,
+              1790600500
+            ],
+            "window_s": 180.0
+          },
+          "fsyncs": {
+            "delta": 165839.10753297806,
+            "field": "wal_io.fsyncs",
+            "sample_span": [
+              1790600275,
+              1790600500
+            ],
+            "window_s": 180.0
+          },
+          "write_bytes": {
+            "delta": 4421192459.1484375,
+            "field": "wal_io.write_bytes",
+            "sample_span": [
+              1790600275,
+              1790600500
+            ],
+            "window_s": 180.0
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "sample_span": [
+              1790600275,
+              1790600500
+            ],
+            "window_s": 180.0
+          },
+          "writes": {
+            "delta": 166113.61003303528,
+            "field": "wal_io.writes",
+            "sample_span": [
+              1790600275,
+              1790600500
+            ],
+            "window_s": 180.0
+          }
+        },
+        "wait_per_acq_ms": 0.019,
+        "pool_wait_ns_windowed": {
+          "delta": 41852341958.50535,
+          "field": "pool.wait_ns",
+          "sample_span": [
+            1790600275,
+            1790600500
+          ],
+          "window_s": 180.0
+        },
+        "acquire_windowed": {
+          "delta": 2153883.9754724503,
+          "field": "pool.acq",
+          "sample_span": [
+            1790600275,
+            1790600500
+          ],
+          "window_s": 180.0
+        },
+        "acquire_per_op_windowed": 13.2956,
+        "refresh_invariants": {
+          "max_active_per_scope": 10,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "common_window_s": {
+          "end_ms": 1790600479665,
+          "method": "contract",
+          "seconds": 180.0,
+          "start_ms": 1790600299665
+        },
+        "sidecar_evidence": {},
+        "oom_killed": false,
+        "restart_count": 0,
+        "audit_log_scan": {
+          "collected": true,
+          "dropped_required": 0,
+          "lines": 1,
+          "persistence_error": 0,
+          "queue_full": 0,
+          "rc": 0,
+          "since_ts": 1790600277.5146942
+        }
+      },
+      "recipe_id": "ad0b7aaa5c14076f",
+      "validated_gate_metrics": {
+        "rps": 3599.25,
+        "p50": 11.775,
+        "p95": 31.562,
+        "p99": 41.639,
+        "dropped": 0,
+        "drop_fraction": 0.0,
+        "error_rate": 0.0,
+        "status": "passed",
+        "measured_ops_s": 900.0,
+        "successful_ops_s": 900.0,
+        "window_seconds": 180.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1790600299.665,
+          "window_end_s": 1790600479.665,
+          "measure_started_exact": 162000,
+          "measure_completed_exact": 162000,
+          "measure_dropped_exact": 0,
+          "measure_scheduled_observed": 162000,
+          "measure_drop_fraction": 0.0,
+          "measure_outcomes": {
+            "success": 162000
+          },
+          "measure_outcome_sum": 162000,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 162000,
+          "schedule_delta_vs_rational": 0,
+          "observed_schedule_rate": 900.0,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 92.0,
+        "gate_p99": 109.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 4011717,
+          "overflow_dropped_points": 1048194,
+          "logical_bytes_cap": 536870912,
+          "file": "multi/multi-cap-authorization-code-r900-w180-1790600228/load/capacity-cap-authorization-code.diag.jsonl.gz"
+        },
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 900.0,
+        "threshold_status_diagnostic": "passed",
+        "main_verdict": "PASS",
+        "complete_operation_latency_ms": {
+          "p50": 63.0,
+          "p95": 92.0,
+          "p99": 109.0
+        }
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": false,
+        "vu_warnings": [],
+        "load_lifecycle": {
+          "ended_ts": 1790600485.7803006,
+          "load_seconds": 208.3,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-authorization-code-r900-w180-1790600228",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [],
+          "started_ts": 1790600277.5146942
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-authorization-code-r900-w180-1790600228",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-authorization-code-r900-w180-1790600228",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "test_data": {
+        "configured_users": 256,
+        "configured_vectors": 48000,
+        "seeded_users": 1024,
+        "seeded_vectors": 48000
+      },
+      "wal_guc": {
+        "commit_delay": "0",
+        "commit_siblings": "5",
+        "fsync": "on",
+        "full_page_writes": "on",
+        "synchronous_commit": "on",
+        "track_wal_io_timing": "off"
+      },
+      "provenance": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-authorization-code-r900-w180-1790600228",
+        "runner_image_id": "sha256:ba139190de3c33d65de70ca8bf84e5c006f35abb747f33cb9f70c373b94ae39f",
+        "runner_image_ref": "nazoauth-perf-perf-sparse-filter",
+        "runner_image_revision": "dc3d81ce6b8bcbcccbbf2b8c20a7b4f153bd473a",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "workspace_provenance": {
+        "git_head": "ec638ce76cca15411d9b0d6e3c617dcd1e17b684",
+        "ok": true,
+        "missing": [],
+        "file_sha256": {
+          "Containerfile": {
+            "sha256": "aa096206a5799e01effe16082613e5a8981b15c27007edec7ab7d3ea979a8373",
+            "size": 2970
+          },
+          "docker-compose.perf.yml": {
+            "sha256": "da2f371f10adc3b36a0e8786ccd274cc8f8ed2bf8238dd5855c2566bbce0b1c5",
+            "size": 6646
+          },
+          "perf/audit-anchor-receiver/Cargo.toml": {
+            "sha256": "ef689bd14ab2e748351f13e79eeb2c6280caf1cad906b86c319b7194c4d15b82",
+            "size": 783
+          },
+          "perf/audit-anchor-receiver/Containerfile": {
+            "sha256": "263512d290bcce053b94fda86a97706adc50ae6772ebfba219e8a77984ea4f3a",
+            "size": 1060
+          },
+          "perf/audit-anchor-receiver/src/main.rs": {
+            "sha256": "3ffbf28afa1bc00363147a2f4f62c2e270cb3abb4130890731a486ebd1d0738f",
+            "size": 19920
+          },
+          "perf/audit-anchor-receiver/src/store.rs": {
+            "sha256": "5f4ab9c92fc00f45a8961041ec63984946ed545b7876e1eb9d516f3be9f90878",
+            "size": 2974
+          },
+          "perf/audit-anchor-receiver/src/wire.rs": {
+            "sha256": "2d520f18646c2912b5be45b9c320e3ca47fee7e81a298389a4186fe2f50e8627",
+            "size": 9809
+          },
+          "perf/env.yaml": {
+            "sha256": "51b86db0dfbcef044524b5a2bcbc69784bd8fd694801c841e2681fb04b5f93c0",
+            "size": 1234
+          },
+          "perf/k6/measurement_clock.js": {
+            "sha256": "80e178b3424159cbf7a1640ee6621a250204d9a31ab09bfe50d126d247dfefdc",
+            "size": 10706
+          },
+          "perf/k6/oauth.js": {
+            "sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+            "size": 70147
+          },
+          "perf/k6/subject_state.js": {
+            "sha256": "384ff18822c3cf9d948c33d92274fe25c87fc0369c60953d109cace0828c9725",
+            "size": 2182
+          },
+          "perf/keyset/Containerfile": {
+            "sha256": "a014cd32c7daa395fc9f339e53e5c8a5865a505fc10d710e2bd39d21ed73a241",
+            "size": 272
+          },
+          "perf/runner.py": {
+            "sha256": "c02c057466bd680721fb47cb57cf8d35d589cbd70e4211759f2d48f20643e268",
+            "size": 50390
+          },
+          "perf/runner/Containerfile": {
+            "sha256": "775bfad1829241ea36c3e6ce22c552b4a8114075208a5a585178bf5366573a08",
+            "size": 1623
+          },
+          "perf/seed.py": {
+            "sha256": "d3ad49edfa39021504e492bf73bb08055df109ed1787ce56f3c108eec8525c61",
+            "size": 29330
+          },
+          "perf/tools/audit_anchor_fault_regression.sh": {
+            "sha256": "636b6a00b9e117c49d91048d7330bbeac84e7824f6e6e5ea983d7d68289cf068",
+            "size": 14701
+          },
+          "perf/tools/capacity_search.py": {
+            "sha256": "799ad49b4927b1cba0d2a9d137c0df34a39b00368fc1751a414bea514341a76f",
+            "size": 38598
+          },
+          "perf/tools/checkpoint_analyze.py": {
+            "sha256": "b8ed1d8fc1413fb8cc63c4a614907e68a57e8f9e19fca7d5019f1d589c882a14",
+            "size": 100614
+          },
+          "perf/tools/ledger.sql": {
+            "sha256": "b83d759b25d78256123c81b420f95247f60dcc31cb4292c5ed066bc81a8e57ca",
+            "size": 24126
+          },
+          "perf/tools/ledger_check.py": {
+            "sha256": "58c1c8a6ca39d53d2fe8042452df475b5a365a0b00618113ec51e4c5344ca256",
+            "size": 17739
+          },
+          "perf/tools/point_runner.py": {
+            "sha256": "8ce9ca908d60edbb86f95da88e14ec3044ec39b57d442963540b04c386a7c7ca",
+            "size": 53016
+          },
+          "perf/tools/pool_size_ab.py": {
+            "sha256": "1796210c61684a084b3ce70651243edad400ffaf679d51b02edee5478fb76a14",
+            "size": 55759
+          },
+          "perf/tools/proc_detail_sampler.py": {
+            "sha256": "e7c9cb739e845e72753c4cc4bf5377907968fd0ee69880e7c2d1142e369d2cec",
+            "size": 5860
+          },
+          "perf/tools/residency_observer.py": {
+            "sha256": "7500fd6e85f4c62372ef950a87dd569c668f60dc044560b5f2f5dccf707b1b18",
+            "size": 9290
+          },
+          "perf/tools/single_instance_scaling.py": {
+            "sha256": "e105bd0e227a2d919baa408e812eb2d3618452aab58653f948fff38b6cfb09d8",
+            "size": 108825
+          },
+          "perf/tools/soak_sampler.py": {
+            "sha256": "932e2a92c8118d49d515729f949c1bbf4b65c6fd4e03753baccf014976f2edec",
+            "size": 14557
+          },
+          "perf/tools/stability_analyze.py": {
+            "sha256": "f9bdcea435944b10977b2fdc27d5fdbdf316e15312ff5dc47f5dd4a78f6cb826",
+            "size": 16693
+          },
+          "perf/tools/vkledger.py": {
+            "sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b",
+            "size": 4459
+          },
+          "scripts/ensure_runtime_keyset.py": {
+            "sha256": "a89a1f810a38ffaf3a34f3e872fb14638e0d5c15a7c6d0a54f0769da7d6963bf",
+            "size": 4687
+          }
+        }
+      },
+      "effective_point": {
+        "scenario": "cap_authorization_code",
+        "rate": 900,
+        "duration": "195s",
+        "warmup_ms": 15000,
+        "pre_vus": 1024,
+        "max_vus": 1024,
+        "user_count": 256,
+        "vector_count": 48000,
+        "stream_workers": 4,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "postgres_cpus": [
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55
+        ],
+        "valkey_cpus": [
+          56
+        ],
+        "infra_cpus": [
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": null,
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 64
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "binary_provenance": {
+        "container_id": "d30cd889111d2e2fc1a49cabca6657bd1f5a9f025e72416288e283e6aa9e7d7f",
+        "expected_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "host_pid": 2780844,
+        "image_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "ok": true,
+        "pid1_eq_expected": true,
+        "pid1_eq_image": true,
+        "running_pid1_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b"
+      },
+      "affinity": {
+        "app": {
+          "container": "pr222-current-b-nazoauth-1",
+          "pid1_allowed": "Cpus_allowed_list:\t24-39",
+          "pin_output": "pinned_tasks=36 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 nazoauth 24-39",
+            "/proc/88 sh 24-79,184-191"
+          ],
+          "requested": "24-39",
+          "uid": "10001"
+        },
+        "app_cpus": "24-39",
+        "app_exec_mode": "pinset-exec",
+        "app_verified": true,
+        "keyset": {
+          "container": "pr222-current-b-keyset-1",
+          "pid1_allowed": "Cpus_allowed_list:\t57-79,184-191",
+          "pin_output": "pinned_tasks=2 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 tail 57-79,184-191",
+            "/proc/82 sh 24-79,184-191"
+          ],
+          "requested": "57-79,184-191",
+          "uid": "0"
+        },
+        "pg_verified": true,
+        "postgres": {
+          "container": "pr222-current-b-postgres-1",
+          "pid1_allowed": "Cpus_allowed_list:\t40-55",
+          "pin_output": "pinned_tasks=13 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 postgres 40-55",
+            "/proc/126 sh 24-79,184-191",
+            "/proc/64 postgres 40-55",
+            "/proc/65 postgres 40-55",
+            "/proc/66 postgres 40-55",
+            "/proc/67 postgres 40-55",
+            "/proc/68 postgres 40-55",
+            "/proc/70 postgres 40-55",
+            "/proc/71 postgres 40-55",
+            "/proc/72 postgres 40-55",
+            "/proc/92 postgres 40-55",
+            "/proc/93 postgres 40-55",
+            "/proc/94 postgres 40-55"
+          ],
+          "requested": "40-55",
+          "uid": "70"
+        },
+        "valkey": {
+          "container": "pr222-current-b-valkey-1",
+          "pid1_allowed": "Cpus_allowed_list:\t56",
+          "pin_output": "pinned_tasks=6 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 valkey-server 56",
+            "/proc/59 sh 24-79,184-191"
+          ],
+          "requested": "56",
+          "uid": "999"
+        }
+      },
+      "audit_journal_archive": null,
+      "audit": {
+        "accepted_events_delta": 692784,
+        "checkpoint_advanced": true,
+        "checks": {
+          "accepted_events_delta_eq": true,
+          "checkpoint_progress_valid": true,
+          "collected": true,
+          "db_head_eq_anchor_hash": true,
+          "db_head_eq_anchor_seq": true,
+          "deployment_match": true,
+          "fault_none": true,
+          "journal_clean": true,
+          "journal_collected": true,
+          "journal_range_eq_delta": true,
+          "pending_zero": true,
+          "rcv_hash_eq_anchor": true,
+          "rcv_seq_eq_anchor": true
+        },
+        "delta_events": 692784,
+        "empty_prefix_allowed": false,
+        "expected_issuances": null,
+        "journal": {
+          "batches": 7760,
+          "by_event_type": {
+            "authorization_approved": 175500,
+            "authorization_decision_intent": 175500,
+            "refresh_family_capacity_retired": 166284,
+            "token_issued": 175500
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 692784,
+          "expected_in_range": 692784,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 595369574,
+          "journal_sha256": "5f2183b3e31b9bc542688173f5dea1606e28c8d6ebc3c76396d3132922794471",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 175500
+        },
+        "point": "multi-cap-authorization-code-r900-w180-1790600228",
+        "token_issued_delta": 175500,
+        "token_issued_scope": "reported_only_no_clean_denominator",
+        "verdict": "PASS"
+      },
+      "audit_state_pre": {
+        "db": {
+          "anchor_deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "anchor_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "anchor_sequence": 0,
+          "collected": true,
+          "last_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "last_sequence": 0,
+          "pending": 0
+        },
+        "receiver_checkpoint": {
+          "accepted_batches": 0,
+          "accepted_events": 0,
+          "batch_digest": "T188xI3Uw9J7pfJ2Nt1gWEYp2YttqP9zrhdhxkJ5R_8",
+          "checkpoint_kind": "genesis",
+          "collected": true,
+          "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "last_sequence": 0,
+          "updated_at": "2026-09-28T12:57:53.449849576Z"
+        },
+        "receiver_state": {
+          "accepted": 1,
+          "checkpoint": {
+            "accepted_batches": 0,
+            "accepted_events": 0,
+            "batch_digest": "T188xI3Uw9J7pfJ2Nt1gWEYp2YttqP9zrhdhxkJ5R_8",
+            "checkpoint_kind": "genesis",
+            "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+            "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "last_sequence": 0,
+            "updated_at": "2026-09-28T12:57:53.449849576Z"
+          },
+          "collected": true,
+          "duplicates": 0,
+          "fault": "none",
+          "rejected": 0,
+          "requests": 2
+        }
+      },
+      "audit_state_post": {
+        "db": {
+          "anchor_deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "anchor_hash": "77e2111a39ac538938ad90956bc63ed641663fa5514dc615f8c19ecdd13415df",
+          "anchor_sequence": 692784,
+          "collected": true,
+          "last_hash": "77e2111a39ac538938ad90956bc63ed641663fa5514dc615f8c19ecdd13415df",
+          "last_sequence": 692784,
+          "pending": 0
+        },
+        "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+        "receiver_checkpoint": {
+          "accepted_batches": 7760,
+          "accepted_events": 692784,
+          "batch_digest": "w3ceNkwY1oGrMcfJ4k2ZVdjgPqXQrLsHn4qgSols9w4",
+          "checkpoint_kind": "batch",
+          "collected": true,
+          "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "last_hash": "d-IRGjmsU4k4rZCVa8Y-1kFmP6VRTcYV-MGezdE0Fd8",
+          "last_sequence": 692784,
+          "updated_at": "2026-09-28T13:01:19.706975421Z"
+        },
+        "receiver_state": {
+          "accepted": 7761,
+          "checkpoint": {
+            "accepted_batches": 7760,
+            "accepted_events": 692784,
+            "batch_digest": "w3ceNkwY1oGrMcfJ4k2ZVdjgPqXQrLsHn4qgSols9w4",
+            "checkpoint_kind": "batch",
+            "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+            "last_hash": "d-IRGjmsU4k4rZCVa8Y-1kFmP6VRTcYV-MGezdE0Fd8",
+            "last_sequence": 692784,
+            "updated_at": "2026-09-28T13:01:19.706975421Z"
+          },
+          "collected": true,
+          "duplicates": 0,
+          "fault": "none",
+          "rejected": 0,
+          "requests": 7764
+        }
+      },
+      "audit_queue_post_drain": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 175500,
+        "pending_in_process": 0,
+        "persist_batch_events": 175500,
+        "persist_batches": 55249,
+        "persist_max_batch": 64,
+        "persisted": 175500
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790600303.3659923,
+            1790600476.4158242
+          ],
+          "effective_cores_mean": 3.1048282116348154,
+          "effective_cores_peak_sample": 3.233500337500573,
+          "rss_kib_min": 88780,
+          "rss_kib_max": 91248,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790600303.3659923,
+            1790600476.4158242
+          ],
+          "effective_cores_mean": 5.515983400275264,
+          "effective_cores_peak_sample": 8.468465301101917,
+          "rss_kib_min": 5448792,
+          "rss_kib_max": 10508100,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-authorization-code-r900-w180-1790600228": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790600303.3659923,
+            1790600476.4158242
+          ],
+          "effective_cores_mean": 3.0382577915673785,
+          "effective_cores_peak_sample": 3.2735038264794314,
+          "rss_kib_min": 4998392,
+          "rss_kib_max": 5794968,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-authorization-code-r900-w180-1790600228": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790600303.3659923,
+            1790600476.4158242
+          ],
+          "effective_cores_mean": 0.058769198965783975,
+          "effective_cores_peak_sample": 0.06891587003114592,
+          "rss_kib_min": 9264,
+          "rss_kib_max": 9824,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-authorization-code-r900-w180-1790600228": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790600303.3659923,
+            1790600476.4158242
+          ],
+          "effective_cores_mean": 0.09141875394677508,
+          "effective_cores_peak_sample": 0.1051873805738543,
+          "rss_kib_min": 20544,
+          "rss_kib_max": 21344,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790600303.3659923,
+            1790600476.4158242
+          ],
+          "effective_cores_mean": 0.13302526648892302,
+          "effective_cores_peak_sample": 0.15548178752560776,
+          "rss_kib_min": 18212,
+          "rss_kib_max": 73840,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790600300,
+          1790600479
+        ],
+        "http_requests": 644320,
+        "http_requests_per_s": 3599.5530726256984,
+        "http_failed_requests": 0,
+        "vus_peak": 94,
+        "vus_max_peak": 1024,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 87,
+        "sample_interval_s": [
+          1790600300,
+          1790600479
+        ],
+        "pg_wait_samples": 87,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.977011494252873,
+          "Client": 52.298850574712645,
+          "IO": 0.8275862068965517,
+          "IPC": 0.022988505747126436,
+          "LWLock": 6.425287356321839,
+          "Timeout": 0.022988505747126436
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 5596,
+        "audit_pending_last_sample": 0,
+        "valkey_used_memory_bytes_peak": 63266832,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "sidecars": {},
+      "analyzer_stats": {
+        "load/capacity-cap-authorization-code.analyzer-stats.json": {
+          "points": 5855255,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 1.998,
+          "lag_over_5s": 0,
+          "diag_overflow": true,
+          "stream_workers": 4,
+          "shard_points": [
+            2127833,
+            2647425,
+            620960,
+            459037
+          ],
+          "max_diag_bytes_per_shard": 134217728
+        }
+      },
+      "pgss": {
+        "valid": true,
+        "total_calls_delta": 9780473,
+        "path_classes": {
+          "audit_anchor_health": 0,
+          "audit_append": 572533,
+          "audit_writer_preflight": 175500,
+          "client_lock": 175500,
+          "combined": 0,
+          "commit_txn": 207202,
+          "exporter": 69912,
+          "issuance_insert": 175500,
+          "nested": 4697436,
+          "observer_other": 7676,
+          "rollback_txn": 0,
+          "runtime_toplevel": 5005449
+        },
+        "top_statements": [
+          {
+            "calls_delta": 166284,
+            "q": "DELETE FROM \"oauth_refresh_families\" WHERE (((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"token_family_id\" = $2)) AND (\"oauth_re",
+            "queryid": 8718669233736325932,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 166284,
+            "toplevel": true,
+            "total_exec_ms_delta": 101062.497
+          },
+          {
+            "calls_delta": 175500,
+            "q": "WITH ranked AS ( SELECT token_family_id, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, count(*) OVER () AS total FROM oauth_re",
+            "queryid": 988688075674336999,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 166284,
+            "toplevel": true,
+            "total_exec_ms_delta": 97199.564
+          },
+          {
+            "calls_delta": 540837,
+            "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+            "queryid": 7937354421020446243,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 540837,
+            "toplevel": true,
+            "total_exec_ms_delta": 76052.499
+          },
+          {
+            "calls_delta": 175500,
+            "q": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+            "queryid": -4859543494755560605,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 175500,
+            "toplevel": true,
+            "total_exec_ms_delta": 41947.685
+          },
+          {
+            "calls_delta": 175500,
+            "q": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+            "queryid": 7076455219069621783,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 175500,
+            "toplevel": true,
+            "total_exec_ms_delta": 38623.722
+          }
+        ]
+      },
+      "files": {
+        "multi/multi-cap-authorization-code-r900-w180-1790600228/point.json": "d9bf1f4e2dca085d0b17a73dd122dbfe047c1ceb74fbb304a403f7402d775942",
+        "multi/multi-cap-authorization-code-r900-w180-1790600228/load/run.log": "267ed168ee878bb02018f9b143a9395edb3a73b380508a42be74ff942e1fb195",
+        "multi/multi-cap-authorization-code-r900-w180-1790600228/load/capacity-cap-authorization-code.k6.json": "03c0d51d6cd8430bd77517366849bb86df599c3c088a8ff7a1ce737082a11e5b",
+        "multi/multi-cap-authorization-code-r900-w180-1790600228/load/capacity-cap-authorization-code.window.json": "1b86be275682685bae28624460ec896baab2086a13d204ec69113498123218ec"
+      },
+      "retained_from": "incremental-b-v2"
+    },
+    {
+      "name": "multi-cap-client-credentials-r6000-w180-1790601825",
+      "mode": "multi",
+      "scenario": "cap_client_credentials",
+      "rate": 6000,
+      "verdict": "FAIL",
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true
+      },
+      "confirmation": false,
+      "maintenance": null,
+      "elapsed_s": 289.1,
+      "error": null,
+      "gate": {
+        "reason": null,
+        "rate_basis": "scenario_window_stream",
+        "capacity_gate_contract": "successful-ops-v1",
+        "latency_gate": "complete_operation_100_250ms",
+        "failed_health_checks": null,
+        "health_evidence_collected": null,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "unexpected_errors": 0,
+        "status": "target_miss",
+        "threshold_status_diagnostic": "target_miss",
+        "evidence_problems": null
+      },
+      "measured": {
+        "window_start_ms": 1790601902857,
+        "window_end_ms": 1790602082857,
+        "window_seconds": 180.0,
+        "measure_scheduled": 1080004,
+        "measure_started": 1078141,
+        "measure_completed": 1078141,
+        "measure_dropped": 1863,
+        "measure_unfinished": 0,
+        "measure_drop_fraction": 0.001725,
+        "outcome_success": 1078141,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_unexpected": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_prepare_local_failed": 0,
+        "outcome_prepare_sut_failed": 0,
+        "iter_p50_ms": 7.0,
+        "iter_p95_ms": 39.0,
+        "iter_p99_ms": 203.0,
+        "successful_ops_per_s": 5989.672,
+        "wal_windowed": {
+          "delta": 2695803362.778179,
+          "field": "wal_bytes",
+          "sample_span": [
+            1790601871,
+            1790602102
+          ],
+          "window_s": 180.0
+        },
+        "wal_per_success_bytes": 2500.418,
+        "wal_io_windowed": {
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "sample_span": [
+              1790601871,
+              1790602102
+            ],
+            "window_s": 180.0
+          },
+          "fsyncs": {
+            "delta": 185400.07194328308,
+            "field": "wal_io.fsyncs",
+            "sample_span": [
+              1790601871,
+              1790602102
+            ],
+            "window_s": 180.0
+          },
+          "write_bytes": {
+            "delta": 7000770320.083984,
+            "field": "wal_io.write_bytes",
+            "sample_span": [
+              1790601871,
+              1790602102
+            ],
+            "window_s": 180.0
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "sample_span": [
+              1790601871,
+              1790602102
+            ],
+            "window_s": 180.0
+          },
+          "writes": {
+            "delta": 185889.78644311428,
+            "field": "wal_io.writes",
+            "sample_span": [
+              1790601871,
+              1790602102
+            ],
+            "window_s": 180.0
+          }
+        },
+        "wait_per_acq_ms": 1.106,
+        "pool_wait_ns_windowed": {
+          "delta": 3554285894596.3965,
+          "field": "pool.wait_ns",
+          "sample_span": [
+            1790601871,
+            1790602102
+          ],
+          "window_s": 180.0
+        },
+        "acquire_windowed": {
+          "delta": 3212188.2944164276,
+          "field": "pool.acq",
+          "sample_span": [
+            1790601871,
+            1790602102
+          ],
+          "window_s": 180.0
+        },
+        "acquire_per_op_windowed": 2.9794,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "common_window_s": {
+          "end_ms": 1790602082857,
+          "method": "contract",
+          "seconds": 180.0,
+          "start_ms": 1790601902857
+        },
+        "sidecar_evidence": {},
+        "oom_killed": false,
+        "restart_count": 0,
+        "audit_log_scan": {
+          "collected": true,
+          "dropped_required": 0,
+          "lines": 1,
+          "persistence_error": 0,
+          "queue_full": 0,
+          "rc": 0,
+          "since_ts": 1790601873.8878942
+        }
+      },
+      "recipe_id": "154563116729bb25",
+      "validated_gate_metrics": {
+        "rps": 5989.389,
+        "p50": 6.723,
+        "p95": 34.68,
+        "p99": 109.402,
+        "dropped": 2024,
+        "drop_fraction": 0.00172990565860346,
+        "error_rate": 0.0,
+        "status": "target_miss",
+        "measured_ops_s": 5989.672,
+        "successful_ops_s": 5989.672,
+        "window_seconds": 180.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1790601902.857,
+          "window_end_s": 1790602082.857,
+          "measure_started_exact": 1078141,
+          "measure_completed_exact": 1078141,
+          "measure_dropped_exact": 1863,
+          "measure_scheduled_observed": 1080004,
+          "measure_drop_fraction": 0.001725,
+          "measure_outcomes": {
+            "success": 1078141
+          },
+          "measure_outcome_sum": 1078141,
+          "drops_pre_window": 161,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 1080000,
+          "schedule_delta_vs_rational": 4,
+          "observed_schedule_rate": 6000.022,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 39.0,
+        "gate_p99": 203.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 15448053,
+          "overflow_dropped_points": 5126906,
+          "logical_bytes_cap": 536870912,
+          "file": "multi/multi-cap-client-credentials-r6000-w180-1790601825/load/capacity-cap-client-credentials.diag.jsonl.gz"
+        },
+        "load_generator_evidence": "absent",
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 5989.672,
+        "threshold_status_diagnostic": "target_miss",
+        "main_verdict": "FAIL",
+        "complete_operation_latency_ms": {
+          "p50": 7.0,
+          "p95": 39.0,
+          "p99": 203.0
+        }
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": true,
+        "vu_warnings": [
+          {
+            "role": "load",
+            "timestamp": "2026-09-28T13:24:48Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T13:24:48Z\" level=warning msg=\"Insufficient VUs, reached 2048 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_client_credentials"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790602087.1834323,
+          "load_seconds": 213.3,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-client-credentials-r6000-w180-1790601825",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [],
+          "started_ts": 1790601873.8878942
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-client-credentials-r6000-w180-1790601825",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-client-credentials-r6000-w180-1790601825",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "test_data": {
+        "configured_users": 256,
+        "configured_vectors": 48000,
+        "seeded_users": 2048,
+        "seeded_vectors": 48000
+      },
+      "wal_guc": {
+        "commit_delay": "0",
+        "commit_siblings": "5",
+        "fsync": "on",
+        "full_page_writes": "on",
+        "synchronous_commit": "on",
+        "track_wal_io_timing": "off"
+      },
+      "provenance": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-client-credentials-r6000-w180-1790601825",
+        "runner_image_id": "sha256:779d48cbf12804a2c3a0f11d9c1714b8de5c3930c9fd82289e8a598cf12a5f94",
+        "runner_image_ref": "nazoauth-perf-perf-periodic-flush",
+        "runner_image_revision": "dc3d81ce6b8bcbcccbbf2b8c20a7b4f153bd473a",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "workspace_provenance": {
+        "git_head": "ec638ce76cca15411d9b0d6e3c617dcd1e17b684",
+        "ok": true,
+        "missing": [],
+        "file_sha256": {
+          "Containerfile": {
+            "sha256": "aa096206a5799e01effe16082613e5a8981b15c27007edec7ab7d3ea979a8373",
+            "size": 2970
+          },
+          "docker-compose.perf.yml": {
+            "sha256": "da2f371f10adc3b36a0e8786ccd274cc8f8ed2bf8238dd5855c2566bbce0b1c5",
+            "size": 6646
+          },
+          "perf/audit-anchor-receiver/Cargo.toml": {
+            "sha256": "ef689bd14ab2e748351f13e79eeb2c6280caf1cad906b86c319b7194c4d15b82",
+            "size": 783
+          },
+          "perf/audit-anchor-receiver/Containerfile": {
+            "sha256": "263512d290bcce053b94fda86a97706adc50ae6772ebfba219e8a77984ea4f3a",
+            "size": 1060
+          },
+          "perf/audit-anchor-receiver/src/main.rs": {
+            "sha256": "3ffbf28afa1bc00363147a2f4f62c2e270cb3abb4130890731a486ebd1d0738f",
+            "size": 19920
+          },
+          "perf/audit-anchor-receiver/src/store.rs": {
+            "sha256": "5f4ab9c92fc00f45a8961041ec63984946ed545b7876e1eb9d516f3be9f90878",
+            "size": 2974
+          },
+          "perf/audit-anchor-receiver/src/wire.rs": {
+            "sha256": "2d520f18646c2912b5be45b9c320e3ca47fee7e81a298389a4186fe2f50e8627",
+            "size": 9809
+          },
+          "perf/env.yaml": {
+            "sha256": "51b86db0dfbcef044524b5a2bcbc69784bd8fd694801c841e2681fb04b5f93c0",
+            "size": 1234
+          },
+          "perf/k6/measurement_clock.js": {
+            "sha256": "80e178b3424159cbf7a1640ee6621a250204d9a31ab09bfe50d126d247dfefdc",
+            "size": 10706
+          },
+          "perf/k6/oauth.js": {
+            "sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+            "size": 70147
+          },
+          "perf/k6/subject_state.js": {
+            "sha256": "384ff18822c3cf9d948c33d92274fe25c87fc0369c60953d109cace0828c9725",
+            "size": 2182
+          },
+          "perf/keyset/Containerfile": {
+            "sha256": "a014cd32c7daa395fc9f339e53e5c8a5865a505fc10d710e2bd39d21ed73a241",
+            "size": 272
+          },
+          "perf/runner.py": {
+            "sha256": "c02c057466bd680721fb47cb57cf8d35d589cbd70e4211759f2d48f20643e268",
+            "size": 50390
+          },
+          "perf/runner/Containerfile": {
+            "sha256": "775bfad1829241ea36c3e6ce22c552b4a8114075208a5a585178bf5366573a08",
+            "size": 1623
+          },
+          "perf/seed.py": {
+            "sha256": "d3ad49edfa39021504e492bf73bb08055df109ed1787ce56f3c108eec8525c61",
+            "size": 29330
+          },
+          "perf/tools/audit_anchor_fault_regression.sh": {
+            "sha256": "636b6a00b9e117c49d91048d7330bbeac84e7824f6e6e5ea983d7d68289cf068",
+            "size": 14701
+          },
+          "perf/tools/capacity_search.py": {
+            "sha256": "799ad49b4927b1cba0d2a9d137c0df34a39b00368fc1751a414bea514341a76f",
+            "size": 38598
+          },
+          "perf/tools/checkpoint_analyze.py": {
+            "sha256": "b8ed1d8fc1413fb8cc63c4a614907e68a57e8f9e19fca7d5019f1d589c882a14",
+            "size": 100614
+          },
+          "perf/tools/ledger.sql": {
+            "sha256": "b83d759b25d78256123c81b420f95247f60dcc31cb4292c5ed066bc81a8e57ca",
+            "size": 24126
+          },
+          "perf/tools/ledger_check.py": {
+            "sha256": "58c1c8a6ca39d53d2fe8042452df475b5a365a0b00618113ec51e4c5344ca256",
+            "size": 17739
+          },
+          "perf/tools/point_runner.py": {
+            "sha256": "8ce9ca908d60edbb86f95da88e14ec3044ec39b57d442963540b04c386a7c7ca",
+            "size": 53016
+          },
+          "perf/tools/pool_size_ab.py": {
+            "sha256": "1796210c61684a084b3ce70651243edad400ffaf679d51b02edee5478fb76a14",
+            "size": 55759
+          },
+          "perf/tools/proc_detail_sampler.py": {
+            "sha256": "e7c9cb739e845e72753c4cc4bf5377907968fd0ee69880e7c2d1142e369d2cec",
+            "size": 5860
+          },
+          "perf/tools/residency_observer.py": {
+            "sha256": "7500fd6e85f4c62372ef950a87dd569c668f60dc044560b5f2f5dccf707b1b18",
+            "size": 9290
+          },
+          "perf/tools/single_instance_scaling.py": {
+            "sha256": "e105bd0e227a2d919baa408e812eb2d3618452aab58653f948fff38b6cfb09d8",
+            "size": 108825
+          },
+          "perf/tools/soak_sampler.py": {
+            "sha256": "932e2a92c8118d49d515729f949c1bbf4b65c6fd4e03753baccf014976f2edec",
+            "size": 14557
+          },
+          "perf/tools/stability_analyze.py": {
+            "sha256": "f9bdcea435944b10977b2fdc27d5fdbdf316e15312ff5dc47f5dd4a78f6cb826",
+            "size": 16693
+          },
+          "perf/tools/vkledger.py": {
+            "sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b",
+            "size": 4459
+          },
+          "scripts/ensure_runtime_keyset.py": {
+            "sha256": "a89a1f810a38ffaf3a34f3e872fb14638e0d5c15a7c6d0a54f0769da7d6963bf",
+            "size": 4687
+          }
+        }
+      },
+      "effective_point": {
+        "scenario": "cap_client_credentials",
+        "rate": 6000,
+        "duration": "195s",
+        "warmup_ms": 15000,
+        "pre_vus": 2048,
+        "max_vus": 2048,
+        "user_count": 256,
+        "vector_count": 48000,
+        "stream_workers": 8,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "postgres_cpus": [
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55
+        ],
+        "valkey_cpus": [
+          56
+        ],
+        "infra_cpus": [
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": null,
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 64
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "binary_provenance": {
+        "container_id": "df9408cbff1a714a0081c04e96a4ff3792bb45f25d1607d12a21d78192c4a5b9",
+        "expected_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "host_pid": 2953191,
+        "image_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "ok": true,
+        "pid1_eq_expected": true,
+        "pid1_eq_image": true,
+        "running_pid1_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b"
+      },
+      "affinity": {
+        "app": {
+          "container": "pr222-current-b-nazoauth-1",
+          "pid1_allowed": "Cpus_allowed_list:\t24-39",
+          "pin_output": "pinned_tasks=36 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 nazoauth 24-39",
+            "/proc/88 sh 24-79,184-191"
+          ],
+          "requested": "24-39",
+          "uid": "10001"
+        },
+        "app_cpus": "24-39",
+        "app_exec_mode": "pinset-exec",
+        "app_verified": true,
+        "keyset": {
+          "container": "pr222-current-b-keyset-1",
+          "pid1_allowed": "Cpus_allowed_list:\t57-79,184-191",
+          "pin_output": "pinned_tasks=2 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 tail 57-79,184-191",
+            "/proc/82 sh 24-79,184-191"
+          ],
+          "requested": "57-79,184-191",
+          "uid": "0"
+        },
+        "pg_verified": true,
+        "postgres": {
+          "container": "pr222-current-b-postgres-1",
+          "pid1_allowed": "Cpus_allowed_list:\t40-55",
+          "pin_output": "pinned_tasks=13 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 postgres 40-55",
+            "/proc/127 sh 24-79,184-191",
+            "/proc/64 postgres 40-55",
+            "/proc/65 postgres 40-55",
+            "/proc/66 postgres 40-55",
+            "/proc/67 postgres 40-55",
+            "/proc/68 postgres 40-55",
+            "/proc/70 postgres 40-55",
+            "/proc/71 postgres 40-55",
+            "/proc/72 postgres 40-55",
+            "/proc/93 postgres 40-55",
+            "/proc/94 postgres 40-55",
+            "/proc/95 postgres 40-55"
+          ],
+          "requested": "40-55",
+          "uid": "70"
+        },
+        "valkey": {
+          "container": "pr222-current-b-valkey-1",
+          "pid1_allowed": "Cpus_allowed_list:\t56",
+          "pin_output": "pinned_tasks=6 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 valkey-server 56",
+            "/proc/58 sh 24-79,184-191"
+          ],
+          "requested": "56",
+          "uid": "999"
+        }
+      },
+      "audit_journal_archive": null,
+      "audit": {
+        "accepted_events_delta": 1167982,
+        "checkpoint_advanced": true,
+        "checks": {
+          "accepted_events_delta_eq": true,
+          "checkpoint_progress_valid": true,
+          "collected": true,
+          "db_head_eq_anchor_hash": true,
+          "db_head_eq_anchor_seq": true,
+          "deployment_match": true,
+          "fault_none": true,
+          "journal_clean": true,
+          "journal_collected": true,
+          "journal_range_eq_delta": true,
+          "pending_zero": true,
+          "rcv_hash_eq_anchor": true,
+          "rcv_seq_eq_anchor": true,
+          "token_issued_eq_expected": true
+        },
+        "delta_events": 1167982,
+        "empty_prefix_allowed": false,
+        "expected_issuances": 1167982,
+        "journal": {
+          "batches": 4963,
+          "by_event_type": {
+            "token_issued": 1167982
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 1167982,
+          "expected_in_range": 1167982,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 1004068335,
+          "journal_sha256": "a6b66aa7364bb8f25261d23391744ab1f8ebe94ff320386848152c4aa38f1703",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 1167982
+        },
+        "point": "multi-cap-client-credentials-r6000-w180-1790601825",
+        "token_issued_delta": 1167982,
+        "verdict": "PASS"
+      },
+      "audit_state_pre": {
+        "db": {
+          "anchor_deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "anchor_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "anchor_sequence": 0,
+          "collected": true,
+          "last_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "last_sequence": 0,
+          "pending": 0
+        },
+        "receiver_checkpoint": {
+          "accepted_batches": 0,
+          "accepted_events": 0,
+          "batch_digest": "T188xI3Uw9J7pfJ2Nt1gWEYp2YttqP9zrhdhxkJ5R_8",
+          "checkpoint_kind": "genesis",
+          "collected": true,
+          "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "last_sequence": 0,
+          "updated_at": "2026-09-28T13:24:29.528678379Z"
+        },
+        "receiver_state": {
+          "accepted": 1,
+          "checkpoint": {
+            "accepted_batches": 0,
+            "accepted_events": 0,
+            "batch_digest": "T188xI3Uw9J7pfJ2Nt1gWEYp2YttqP9zrhdhxkJ5R_8",
+            "checkpoint_kind": "genesis",
+            "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+            "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "last_sequence": 0,
+            "updated_at": "2026-09-28T13:24:29.528678379Z"
+          },
+          "collected": true,
+          "duplicates": 0,
+          "fault": "none",
+          "rejected": 0,
+          "requests": 2
+        }
+      },
+      "audit_state_post": {
+        "db": {
+          "anchor_deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "anchor_hash": "97165c547c960e6fd5fa6d43d938636da241e334b0c79034c98c5053fba43ee5",
+          "anchor_sequence": 1167982,
+          "collected": true,
+          "last_hash": "97165c547c960e6fd5fa6d43d938636da241e334b0c79034c98c5053fba43ee5",
+          "last_sequence": 1167982,
+          "pending": 0
+        },
+        "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+        "receiver_checkpoint": {
+          "accepted_batches": 4963,
+          "accepted_events": 1167982,
+          "batch_digest": "KsbUQTlP-ivJ3UVtg1nO8H9epEaWRU1G1E1qCQx_DKE",
+          "checkpoint_kind": "batch",
+          "collected": true,
+          "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "last_hash": "lxZcVHyWDm_V-m1D2ThjbaJB4zSwx5A0yYxQU_ukPuU",
+          "last_sequence": 1167982,
+          "updated_at": "2026-09-28T13:28:03.000965747Z"
+        },
+        "receiver_state": {
+          "accepted": 4964,
+          "checkpoint": {
+            "accepted_batches": 4963,
+            "accepted_events": 1167982,
+            "batch_digest": "KsbUQTlP-ivJ3UVtg1nO8H9epEaWRU1G1E1qCQx_DKE",
+            "checkpoint_kind": "batch",
+            "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+            "last_hash": "lxZcVHyWDm_V-m1D2ThjbaJB4zSwx5A0yYxQU_ukPuU",
+            "last_sequence": 1167982,
+            "updated_at": "2026-09-28T13:28:03.000965747Z"
+          },
+          "collected": true,
+          "duplicates": 0,
+          "fault": "none",
+          "rejected": 0,
+          "requests": 4967
+        }
+      },
+      "audit_queue_post_drain": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 0,
+        "pending_in_process": 0,
+        "persist_batch_events": 0,
+        "persist_batches": 0,
+        "persist_max_batch": 0,
+        "persisted": 0
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790601905.4388769,
+            1790602080.041731
+          ],
+          "effective_cores_mean": 4.923859943090443,
+          "effective_cores_peak_sample": 5.0334166654469215,
+          "rss_kib_min": 154352,
+          "rss_kib_max": 157512,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790601905.4388769,
+            1790602080.041731
+          ],
+          "effective_cores_mean": 6.790610640818656,
+          "effective_cores_peak_sample": 7.1299364364678715,
+          "rss_kib_min": 7545868,
+          "rss_kib_max": 10616376,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-client-credentials-r6000-w180-1790601825": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790601905.4388769,
+            1790602080.041731
+          ],
+          "effective_cores_mean": 3.724051378118107,
+          "effective_cores_peak_sample": 4.722513588797353,
+          "rss_kib_min": 14546640,
+          "rss_kib_max": 18734172,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-client-credentials-r6000-w180-1790601825": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790601905.4388769,
+            1790602080.041731
+          ],
+          "effective_cores_mean": 0.062484660097609376,
+          "effective_cores_peak_sample": 0.07366158596736995,
+          "rss_kib_min": 8320,
+          "rss_kib_max": 8424,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-client-credentials-r6000-w180-1790601825": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790601905.4388769,
+            1790602080.041731
+          ],
+          "effective_cores_mean": 0.08573743003310838,
+          "effective_cores_peak_sample": 0.10061094668713945,
+          "rss_kib_min": 20680,
+          "rss_kib_max": 21036,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790601905.4388769,
+            1790602080.041731
+          ],
+          "effective_cores_mean": 0.0737674080712382,
+          "effective_cores_peak_sample": 0.08069171036456133,
+          "rss_kib_min": 11844,
+          "rss_kib_max": 12232,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790601903,
+          1790602082
+        ],
+        "http_requests": 1071932,
+        "http_requests_per_s": 5988.446927374302,
+        "http_failed_requests": 0,
+        "vus_peak": 2047,
+        "vus_max_peak": 2048,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 87,
+        "sample_interval_s": [
+          1790601904,
+          1790602082
+        ],
+        "pg_wait_samples": 87,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.954022988505747,
+          "Client": 45.2183908045977,
+          "IO": 0.9770114942528736,
+          "LWLock": 12.022988505747126,
+          "Timeout": 0.04597701149425287
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 15248,
+        "audit_pending_last_sample": 1096,
+        "valkey_used_memory_bytes_peak": 2229896,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "sidecars": {},
+      "analyzer_stats": {
+        "load/capacity-cap-client-credentials.analyzer-stats.json": {
+          "points": 21429808,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.538,
+          "lag_over_5s": 0,
+          "diag_overflow": true,
+          "stream_workers": 8,
+          "shard_points": [
+            4149093,
+            3773264,
+            2965114,
+            1886770,
+            2965167,
+            3352412,
+            1170006,
+            1167982
+          ],
+          "max_diag_bytes_per_shard": 67108864
+        }
+      },
+      "pgss": {
+        "valid": true,
+        "total_calls_delta": 16545998,
+        "path_classes": {
+          "audit_anchor_health": 0,
+          "audit_append": 1167982,
+          "audit_writer_preflight": 0,
+          "client_lock": 1167982,
+          "combined": 0,
+          "commit_txn": 1167988,
+          "exporter": 44775,
+          "issuance_insert": 1167982,
+          "nested": 7143025,
+          "observer_other": 13876,
+          "rollback_txn": 0,
+          "runtime_toplevel": 9344322
+        },
+        "top_statements": [
+          {
+            "calls_delta": 1167982,
+            "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\", \"refresh",
+            "queryid": -2887139335912015367,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 1167982,
+            "toplevel": true,
+            "total_exec_ms_delta": 138350.183
+          },
+          {
+            "calls_delta": 1167982,
+            "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+            "queryid": 7937354421020446243,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 1167982,
+            "toplevel": true,
+            "total_exec_ms_delta": 124364.253
+          },
+          {
+            "calls_delta": 1167982,
+            "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE",
+            "queryid": 327112332356189388,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 1167982,
+            "toplevel": true,
+            "total_exec_ms_delta": 47102.777
+          },
+          {
+            "calls_delta": 1167982,
+            "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+            "queryid": 4375303120003040442,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 1167982,
+            "toplevel": true,
+            "total_exec_ms_delta": 44286.001
+          },
+          {
+            "calls_delta": 4963,
+            "q": "SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)",
+            "queryid": -6871906609541267958,
+            "rolname": "nazoauth_perf_exporter",
+            "rows_delta": 4963,
+            "toplevel": true,
+            "total_exec_ms_delta": 40041.054
+          }
+        ]
+      },
+      "files": {
+        "multi/multi-cap-client-credentials-r6000-w180-1790601825/point.json": "fa438d3356b1dff177aae969e224648e79e8ed878f677f711cabeb94cffb746a",
+        "multi/multi-cap-client-credentials-r6000-w180-1790601825/load/run.log": "f8c6a91586f9526adb805ec8e7e97033a6e3d0cefae38a6a8b2669222d7114a4",
+        "multi/multi-cap-client-credentials-r6000-w180-1790601825/load/capacity-cap-client-credentials.k6.json": "b51fd89d2b1eaef490cbd5ac15dee2f7637f0459bd9b7963c5fc1de6f8bbfc63",
+        "multi/multi-cap-client-credentials-r6000-w180-1790601825/load/capacity-cap-client-credentials.window.json": "34dc2fe0f89a1ead561e775c8d6b24e9cb26a1ffdda6570017f2ff5215f23538"
+      },
+      "retained_from": "incremental-b-v2"
+    },
+    {
+      "name": "multi-cap-client-credentials-r5400-w180-1790602115",
+      "mode": "multi",
+      "scenario": "cap_client_credentials",
+      "rate": 5400,
+      "verdict": "PASS",
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true
+      },
+      "confirmation": false,
+      "maintenance": null,
+      "elapsed_s": 290.0,
+      "error": null,
+      "gate": {
+        "reason": null,
+        "rate_basis": "scenario_window_stream",
+        "capacity_gate_contract": "successful-ops-v1",
+        "latency_gate": "complete_operation_100_250ms",
+        "failed_health_checks": null,
+        "health_evidence_collected": null,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "unexpected_errors": 0,
+        "status": "target_miss",
+        "threshold_status_diagnostic": "target_miss",
+        "evidence_problems": null
+      },
+      "measured": {
+        "window_start_ms": 1790602192925,
+        "window_end_ms": 1790602372925,
+        "window_seconds": 180.0,
+        "measure_scheduled": 971998,
+        "measure_started": 971989,
+        "measure_completed": 971989,
+        "measure_dropped": 9,
+        "measure_unfinished": 0,
+        "measure_drop_fraction": 9e-06,
+        "outcome_success": 971989,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_unexpected": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_prepare_local_failed": 0,
+        "outcome_prepare_sut_failed": 0,
+        "iter_p50_ms": 7.0,
+        "iter_p95_ms": 27.0,
+        "iter_p99_ms": 139.0,
+        "successful_ops_per_s": 5399.939,
+        "wal_windowed": {
+          "delta": 2401191602.404111,
+          "field": "wal_bytes",
+          "sample_span": [
+            1790602161,
+            1790602394
+          ],
+          "window_s": 180.0
+        },
+        "wal_per_success_bytes": 2470.39,
+        "wal_io_windowed": {
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "sample_span": [
+              1790602161,
+              1790602394
+            ],
+            "window_s": 180.0
+          },
+          "fsyncs": {
+            "delta": 184627.0500254631,
+            "field": "wal_io.fsyncs",
+            "sample_span": [
+              1790602161,
+              1790602394
+            ],
+            "window_s": 180.0
+          },
+          "write_bytes": {
+            "delta": 6402007040.9140625,
+            "field": "wal_io.write_bytes",
+            "sample_span": [
+              1790602161,
+              1790602394
+            ],
+            "window_s": 180.0
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "sample_span": [
+              1790602161,
+              1790602394
+            ],
+            "window_s": 180.0
+          },
+          "writes": {
+            "delta": 185061.16252553463,
+            "field": "wal_io.writes",
+            "sample_span": [
+              1790602161,
+              1790602394
+            ],
+            "window_s": 180.0
+          }
+        },
+        "wait_per_acq_ms": 0.666,
+        "pool_wait_ns_windowed": {
+          "delta": 1934307522635.571,
+          "field": "pool.wait_ns",
+          "sample_span": [
+            1790602161,
+            1790602394
+          ],
+          "window_s": 180.0
+        },
+        "acquire_windowed": {
+          "delta": 2904425.13780272,
+          "field": "pool.acq",
+          "sample_span": [
+            1790602161,
+            1790602394
+          ],
+          "window_s": 180.0
+        },
+        "acquire_per_op_windowed": 2.9881,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "common_window_s": {
+          "end_ms": 1790602372925,
+          "method": "contract",
+          "seconds": 180.0,
+          "start_ms": 1790602192925
+        },
+        "sidecar_evidence": {},
+        "oom_killed": false,
+        "restart_count": 0,
+        "audit_log_scan": {
+          "collected": true,
+          "dropped_required": 0,
+          "lines": 1,
+          "persistence_error": 0,
+          "queue_full": 0,
+          "rc": 0,
+          "since_ts": 1790602163.4433346
+        }
+      },
+      "recipe_id": "154563116729bb25",
+      "validated_gate_metrics": {
+        "rps": 5399.834,
+        "p50": 6.315,
+        "p95": 24.17,
+        "p99": 68.122,
+        "dropped": 9,
+        "drop_fraction": 8.546992313404912e-06,
+        "error_rate": 0.0,
+        "status": "target_miss",
+        "measured_ops_s": 5399.939,
+        "successful_ops_s": 5399.939,
+        "window_seconds": 180.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1790602192.925,
+          "window_end_s": 1790602372.925,
+          "measure_started_exact": 971989,
+          "measure_completed_exact": 971989,
+          "measure_dropped_exact": 9,
+          "measure_scheduled_observed": 971998,
+          "measure_drop_fraction": 9e-06,
+          "measure_outcomes": {
+            "success": 971989
+          },
+          "measure_outcome_sum": 971989,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 972000,
+          "schedule_delta_vs_rational": -2,
+          "observed_schedule_rate": 5399.989,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 27.0,
+        "gate_p99": 139.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 13998752,
+          "overflow_dropped_points": 4491601,
+          "logical_bytes_cap": 536870912,
+          "file": "multi/multi-cap-client-credentials-r5400-w180-1790602115/load/capacity-cap-client-credentials.diag.jsonl.gz"
+        },
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 5399.939,
+        "threshold_status_diagnostic": "target_miss",
+        "main_verdict": "PASS",
+        "complete_operation_latency_ms": {
+          "p50": 7.0,
+          "p95": 27.0,
+          "p99": 139.0
+        }
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": true,
+        "vu_warnings": [
+          {
+            "role": "load",
+            "timestamp": "2026-09-28T13:30:45Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T13:30:45Z\" level=warning msg=\"Insufficient VUs, reached 2048 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_client_credentials"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790602376.8137748,
+          "load_seconds": 213.4,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-client-credentials-r5400-w180-1790602115",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [],
+          "started_ts": 1790602163.4433346
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-client-credentials-r5400-w180-1790602115",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-client-credentials-r5400-w180-1790602115",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "test_data": {
+        "configured_users": 256,
+        "configured_vectors": 48000,
+        "seeded_users": 2048,
+        "seeded_vectors": 48000
+      },
+      "wal_guc": {
+        "commit_delay": "0",
+        "commit_siblings": "5",
+        "fsync": "on",
+        "full_page_writes": "on",
+        "synchronous_commit": "on",
+        "track_wal_io_timing": "off"
+      },
+      "provenance": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-client-credentials-r5400-w180-1790602115",
+        "runner_image_id": "sha256:779d48cbf12804a2c3a0f11d9c1714b8de5c3930c9fd82289e8a598cf12a5f94",
+        "runner_image_ref": "nazoauth-perf-perf-periodic-flush",
+        "runner_image_revision": "dc3d81ce6b8bcbcccbbf2b8c20a7b4f153bd473a",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "workspace_provenance": {
+        "git_head": "ec638ce76cca15411d9b0d6e3c617dcd1e17b684",
+        "ok": true,
+        "missing": [],
+        "file_sha256": {
+          "Containerfile": {
+            "sha256": "aa096206a5799e01effe16082613e5a8981b15c27007edec7ab7d3ea979a8373",
+            "size": 2970
+          },
+          "docker-compose.perf.yml": {
+            "sha256": "da2f371f10adc3b36a0e8786ccd274cc8f8ed2bf8238dd5855c2566bbce0b1c5",
+            "size": 6646
+          },
+          "perf/audit-anchor-receiver/Cargo.toml": {
+            "sha256": "ef689bd14ab2e748351f13e79eeb2c6280caf1cad906b86c319b7194c4d15b82",
+            "size": 783
+          },
+          "perf/audit-anchor-receiver/Containerfile": {
+            "sha256": "263512d290bcce053b94fda86a97706adc50ae6772ebfba219e8a77984ea4f3a",
+            "size": 1060
+          },
+          "perf/audit-anchor-receiver/src/main.rs": {
+            "sha256": "3ffbf28afa1bc00363147a2f4f62c2e270cb3abb4130890731a486ebd1d0738f",
+            "size": 19920
+          },
+          "perf/audit-anchor-receiver/src/store.rs": {
+            "sha256": "5f4ab9c92fc00f45a8961041ec63984946ed545b7876e1eb9d516f3be9f90878",
+            "size": 2974
+          },
+          "perf/audit-anchor-receiver/src/wire.rs": {
+            "sha256": "2d520f18646c2912b5be45b9c320e3ca47fee7e81a298389a4186fe2f50e8627",
+            "size": 9809
+          },
+          "perf/env.yaml": {
+            "sha256": "51b86db0dfbcef044524b5a2bcbc69784bd8fd694801c841e2681fb04b5f93c0",
+            "size": 1234
+          },
+          "perf/k6/measurement_clock.js": {
+            "sha256": "80e178b3424159cbf7a1640ee6621a250204d9a31ab09bfe50d126d247dfefdc",
+            "size": 10706
+          },
+          "perf/k6/oauth.js": {
+            "sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+            "size": 70147
+          },
+          "perf/k6/subject_state.js": {
+            "sha256": "384ff18822c3cf9d948c33d92274fe25c87fc0369c60953d109cace0828c9725",
+            "size": 2182
+          },
+          "perf/keyset/Containerfile": {
+            "sha256": "a014cd32c7daa395fc9f339e53e5c8a5865a505fc10d710e2bd39d21ed73a241",
+            "size": 272
+          },
+          "perf/runner.py": {
+            "sha256": "c02c057466bd680721fb47cb57cf8d35d589cbd70e4211759f2d48f20643e268",
+            "size": 50390
+          },
+          "perf/runner/Containerfile": {
+            "sha256": "775bfad1829241ea36c3e6ce22c552b4a8114075208a5a585178bf5366573a08",
+            "size": 1623
+          },
+          "perf/seed.py": {
+            "sha256": "d3ad49edfa39021504e492bf73bb08055df109ed1787ce56f3c108eec8525c61",
+            "size": 29330
+          },
+          "perf/tools/audit_anchor_fault_regression.sh": {
+            "sha256": "636b6a00b9e117c49d91048d7330bbeac84e7824f6e6e5ea983d7d68289cf068",
+            "size": 14701
+          },
+          "perf/tools/capacity_search.py": {
+            "sha256": "799ad49b4927b1cba0d2a9d137c0df34a39b00368fc1751a414bea514341a76f",
+            "size": 38598
+          },
+          "perf/tools/checkpoint_analyze.py": {
+            "sha256": "b8ed1d8fc1413fb8cc63c4a614907e68a57e8f9e19fca7d5019f1d589c882a14",
+            "size": 100614
+          },
+          "perf/tools/ledger.sql": {
+            "sha256": "b83d759b25d78256123c81b420f95247f60dcc31cb4292c5ed066bc81a8e57ca",
+            "size": 24126
+          },
+          "perf/tools/ledger_check.py": {
+            "sha256": "58c1c8a6ca39d53d2fe8042452df475b5a365a0b00618113ec51e4c5344ca256",
+            "size": 17739
+          },
+          "perf/tools/point_runner.py": {
+            "sha256": "8ce9ca908d60edbb86f95da88e14ec3044ec39b57d442963540b04c386a7c7ca",
+            "size": 53016
+          },
+          "perf/tools/pool_size_ab.py": {
+            "sha256": "1796210c61684a084b3ce70651243edad400ffaf679d51b02edee5478fb76a14",
+            "size": 55759
+          },
+          "perf/tools/proc_detail_sampler.py": {
+            "sha256": "e7c9cb739e845e72753c4cc4bf5377907968fd0ee69880e7c2d1142e369d2cec",
+            "size": 5860
+          },
+          "perf/tools/residency_observer.py": {
+            "sha256": "7500fd6e85f4c62372ef950a87dd569c668f60dc044560b5f2f5dccf707b1b18",
+            "size": 9290
+          },
+          "perf/tools/single_instance_scaling.py": {
+            "sha256": "e105bd0e227a2d919baa408e812eb2d3618452aab58653f948fff38b6cfb09d8",
+            "size": 108825
+          },
+          "perf/tools/soak_sampler.py": {
+            "sha256": "932e2a92c8118d49d515729f949c1bbf4b65c6fd4e03753baccf014976f2edec",
+            "size": 14557
+          },
+          "perf/tools/stability_analyze.py": {
+            "sha256": "f9bdcea435944b10977b2fdc27d5fdbdf316e15312ff5dc47f5dd4a78f6cb826",
+            "size": 16693
+          },
+          "perf/tools/vkledger.py": {
+            "sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b",
+            "size": 4459
+          },
+          "scripts/ensure_runtime_keyset.py": {
+            "sha256": "a89a1f810a38ffaf3a34f3e872fb14638e0d5c15a7c6d0a54f0769da7d6963bf",
+            "size": 4687
+          }
+        }
+      },
+      "effective_point": {
+        "scenario": "cap_client_credentials",
+        "rate": 5400,
+        "duration": "195s",
+        "warmup_ms": 15000,
+        "pre_vus": 2048,
+        "max_vus": 2048,
+        "user_count": 256,
+        "vector_count": 48000,
+        "stream_workers": 8,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "postgres_cpus": [
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55
+        ],
+        "valkey_cpus": [
+          56
+        ],
+        "infra_cpus": [
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": null,
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 64
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "binary_provenance": {
+        "container_id": "1f7cfbd5f7268dc58ce1b46a23ded263b658cfc180847e789bbad8268fc38c02",
+        "expected_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "host_pid": 3004537,
+        "image_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "ok": true,
+        "pid1_eq_expected": true,
+        "pid1_eq_image": true,
+        "running_pid1_binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b"
+      },
+      "affinity": {
+        "app": {
+          "container": "pr222-current-b-nazoauth-1",
+          "pid1_allowed": "Cpus_allowed_list:\t24-39",
+          "pin_output": "pinned_tasks=37 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 nazoauth 24-39",
+            "/proc/89 sh 24-79,184-191"
+          ],
+          "requested": "24-39",
+          "uid": "10001"
+        },
+        "app_cpus": "24-39",
+        "app_exec_mode": "pinset-exec",
+        "app_verified": true,
+        "keyset": {
+          "container": "pr222-current-b-keyset-1",
+          "pid1_allowed": "Cpus_allowed_list:\t57-79,184-191",
+          "pin_output": "pinned_tasks=2 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 tail 57-79,184-191",
+            "/proc/82 sh 24-79,184-191"
+          ],
+          "requested": "57-79,184-191",
+          "uid": "0"
+        },
+        "pg_verified": true,
+        "postgres": {
+          "container": "pr222-current-b-postgres-1",
+          "pid1_allowed": "Cpus_allowed_list:\t40-55",
+          "pin_output": "pinned_tasks=13 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 postgres 40-55",
+            "/proc/126 sh 24-79,184-191",
+            "/proc/64 postgres 40-55",
+            "/proc/65 postgres 40-55",
+            "/proc/66 postgres 40-55",
+            "/proc/67 postgres 40-55",
+            "/proc/68 postgres 40-55",
+            "/proc/70 postgres 40-55",
+            "/proc/71 postgres 40-55",
+            "/proc/72 postgres 40-55",
+            "/proc/92 postgres 40-55",
+            "/proc/93 postgres 40-55",
+            "/proc/94 postgres 40-55"
+          ],
+          "requested": "40-55",
+          "uid": "70"
+        },
+        "valkey": {
+          "container": "pr222-current-b-valkey-1",
+          "pid1_allowed": "Cpus_allowed_list:\t56",
+          "pin_output": "pinned_tasks=6 failed_procs=0",
+          "pin_rc": 0,
+          "proc_masks": [
+            "/proc/1 valkey-server 56",
+            "/proc/57 sh 24-79,184-191"
+          ],
+          "requested": "56",
+          "uid": "999"
+        }
+      },
+      "audit_journal_archive": null,
+      "audit": {
+        "accepted_events_delta": 1052993,
+        "checkpoint_advanced": true,
+        "checks": {
+          "accepted_events_delta_eq": true,
+          "checkpoint_progress_valid": true,
+          "collected": true,
+          "db_head_eq_anchor_hash": true,
+          "db_head_eq_anchor_seq": true,
+          "deployment_match": true,
+          "fault_none": true,
+          "journal_clean": true,
+          "journal_collected": true,
+          "journal_range_eq_delta": true,
+          "pending_zero": true,
+          "rcv_hash_eq_anchor": true,
+          "rcv_seq_eq_anchor": true,
+          "token_issued_eq_expected": true
+        },
+        "delta_events": 1052993,
+        "empty_prefix_allowed": false,
+        "expected_issuances": 1052993,
+        "journal": {
+          "batches": 5324,
+          "by_event_type": {
+            "token_issued": 1052993
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 1052993,
+          "expected_in_range": 1052993,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 905429319,
+          "journal_sha256": "e06bdaf462e58d35a356c1ed9fa31f0da9657b230a0832a0d82d764fa57eef72",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 1052993
+        },
+        "point": "multi-cap-client-credentials-r5400-w180-1790602115",
+        "token_issued_delta": 1052993,
+        "verdict": "PASS"
+      },
+      "audit_state_pre": {
+        "db": {
+          "anchor_deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "anchor_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "anchor_sequence": 0,
+          "collected": true,
+          "last_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "last_sequence": 0,
+          "pending": 0
+        },
+        "receiver_checkpoint": {
+          "accepted_batches": 0,
+          "accepted_events": 0,
+          "batch_digest": "T188xI3Uw9J7pfJ2Nt1gWEYp2YttqP9zrhdhxkJ5R_8",
+          "checkpoint_kind": "genesis",
+          "collected": true,
+          "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "last_sequence": 0,
+          "updated_at": "2026-09-28T13:29:19.314799055Z"
+        },
+        "receiver_state": {
+          "accepted": 1,
+          "checkpoint": {
+            "accepted_batches": 0,
+            "accepted_events": 0,
+            "batch_digest": "T188xI3Uw9J7pfJ2Nt1gWEYp2YttqP9zrhdhxkJ5R_8",
+            "checkpoint_kind": "genesis",
+            "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+            "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "last_sequence": 0,
+            "updated_at": "2026-09-28T13:29:19.314799055Z"
+          },
+          "collected": true,
+          "duplicates": 0,
+          "fault": "none",
+          "rejected": 0,
+          "requests": 2
+        }
+      },
+      "audit_state_post": {
+        "db": {
+          "anchor_deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "anchor_hash": "7d6e2a785d2b851bcab8cb9530d56ecacff918fb0f242ce89683a56930dabf45",
+          "anchor_sequence": 1052993,
+          "collected": true,
+          "last_hash": "7d6e2a785d2b851bcab8cb9530d56ecacff918fb0f242ce89683a56930dabf45",
+          "last_sequence": 1052993,
+          "pending": 0
+        },
+        "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+        "receiver_checkpoint": {
+          "accepted_batches": 5324,
+          "accepted_events": 1052993,
+          "batch_digest": "c_C6Ypitlcf9pRszJEppByMLlIgd_D0BIwJrOOhzxqI",
+          "checkpoint_kind": "batch",
+          "collected": true,
+          "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+          "last_hash": "fW4qeF0rhRvKuMuVMNVuys_5GPsPJCzoloOlaTDav0U",
+          "last_sequence": 1052993,
+          "updated_at": "2026-09-28T13:32:52.950864904Z"
+        },
+        "receiver_state": {
+          "accepted": 5325,
+          "checkpoint": {
+            "accepted_batches": 5324,
+            "accepted_events": 1052993,
+            "batch_digest": "c_C6Ypitlcf9pRszJEppByMLlIgd_D0BIwJrOOhzxqI",
+            "checkpoint_kind": "batch",
+            "deployment_id": "01a0e77c-e0b8-7642-ba95-915f268f0088",
+            "last_hash": "fW4qeF0rhRvKuMuVMNVuys_5GPsPJCzoloOlaTDav0U",
+            "last_sequence": 1052993,
+            "updated_at": "2026-09-28T13:32:52.950864904Z"
+          },
+          "collected": true,
+          "duplicates": 0,
+          "fault": "none",
+          "rejected": 0,
+          "requests": 5328
+        }
+      },
+      "audit_queue_post_drain": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 0,
+        "pending_in_process": 0,
+        "persist_batch_events": 0,
+        "persist_batches": 0,
+        "persist_max_batch": 0,
+        "persisted": 0
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790602194.8172789,
+            1790602368.8224456
+          ],
+          "effective_cores_mean": 4.442626700999767,
+          "effective_cores_peak_sample": 4.5537211232258805,
+          "rss_kib_min": 109844,
+          "rss_kib_max": 141876,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790602194.8172789,
+            1790602368.8224456
+          ],
+          "effective_cores_mean": 6.193494250837538,
+          "effective_cores_peak_sample": 6.569453744144522,
+          "rss_kib_min": 6221748,
+          "rss_kib_max": 10498932,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-client-credentials-r5400-w180-1790602115": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790602194.8172789,
+            1790602368.8224456
+          ],
+          "effective_cores_mean": 3.4303004392524983,
+          "effective_cores_peak_sample": 4.500614853073563,
+          "rss_kib_min": 15378512,
+          "rss_kib_max": 18728540,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-client-credentials-r5400-w180-1790602115": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790602194.8172789,
+            1790602368.8224456
+          ],
+          "effective_cores_mean": 0.05971087061909809,
+          "effective_cores_peak_sample": 0.07370015680460004,
+          "rss_kib_min": 8244,
+          "rss_kib_max": 8588,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-client-credentials-r5400-w180-1790602115": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790602194.8172789,
+            1790602368.8224456
+          ],
+          "effective_cores_mean": 0.08568711077293095,
+          "effective_cores_peak_sample": 0.10671417339703596,
+          "rss_kib_min": 20696,
+          "rss_kib_max": 21064,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 32,
+          "interval_s": [
+            1790602194.8172789,
+            1790602368.8224456
+          ],
+          "effective_cores_mean": 0.06994045191861634,
+          "effective_cores_peak_sample": 0.0826872798172101,
+          "rss_kib_min": 11968,
+          "rss_kib_max": 12324,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790602193,
+          1790602372
+        ],
+        "http_requests": 966561,
+        "http_requests_per_s": 5399.782122905028,
+        "http_failed_requests": 0,
+        "vus_peak": 2035,
+        "vus_max_peak": 2048,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 87,
+        "sample_interval_s": [
+          1790602194,
+          1790602371
+        ],
+        "pg_wait_samples": 87,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.9655172413793105,
+          "Client": 46.71264367816092,
+          "IO": 0.8275862068965517,
+          "LWLock": 12.045977011494253,
+          "Timeout": 0.04597701149425287
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 11236,
+        "audit_pending_last_sample": 237,
+        "valkey_used_memory_bytes_peak": 2230752,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "sidecars": {},
+      "analyzer_stats": {
+        "load/capacity-cap-client-credentials.analyzer-stats.json": {
+          "points": 19319763,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.369,
+          "lag_over_5s": 0,
+          "diag_overflow": true,
+          "stream_workers": 8,
+          "shard_points": [
+            3742305,
+            3401979,
+            2672965,
+            1701002,
+            2673189,
+            3022328,
+            1053002,
+            1052993
+          ],
+          "max_diag_bytes_per_shard": 67108864
+        }
+      },
+      "pgss": {
+        "valid": true,
+        "total_calls_delta": 14946980,
+        "path_classes": {
+          "audit_anchor_health": 0,
+          "audit_append": 1052993,
+          "audit_writer_preflight": 0,
+          "client_lock": 1052993,
+          "combined": 0,
+          "commit_txn": 1052999,
+          "exporter": 48024,
+          "issuance_insert": 1052993,
+          "nested": 6460672,
+          "observer_other": 13876,
+          "rollback_txn": 0,
+          "runtime_toplevel": 8424408
+        },
+        "top_statements": [
+          {
+            "calls_delta": 1052993,
+            "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\", \"refresh",
+            "queryid": -2887139335912015367,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 1052993,
+            "toplevel": true,
+            "total_exec_ms_delta": 120076.184
+          },
+          {
+            "calls_delta": 1052993,
+            "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+            "queryid": 7937354421020446243,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 1052993,
+            "toplevel": true,
+            "total_exec_ms_delta": 113405.976
+          },
+          {
+            "calls_delta": 1052993,
+            "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE",
+            "queryid": 327112332356189388,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 1052993,
+            "toplevel": true,
+            "total_exec_ms_delta": 39329.161
+          },
+          {
+            "calls_delta": 1052993,
+            "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+            "queryid": 4375303120003040442,
+            "rolname": "nazoauth_perf_runtime",
+            "rows_delta": 1052993,
+            "toplevel": true,
+            "total_exec_ms_delta": 38440.496
+          },
+          {
+            "calls_delta": 5324,
+            "q": "SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)",
+            "queryid": -6871906609541267958,
+            "rolname": "nazoauth_perf_exporter",
+            "rows_delta": 5324,
+            "toplevel": true,
+            "total_exec_ms_delta": 34379.697
+          }
+        ]
+      },
+      "files": {
+        "multi/multi-cap-client-credentials-r5400-w180-1790602115/point.json": "1faeab4b126a6a744cce6db7fb16f197f36b1df9587b8e28cd6c752456c2b4c1",
+        "multi/multi-cap-client-credentials-r5400-w180-1790602115/load/run.log": "68bf7e0722caf97c129f671f3719ce72b5ff2e85f58e82eb10d970748da422cc",
+        "multi/multi-cap-client-credentials-r5400-w180-1790602115/load/capacity-cap-client-credentials.k6.json": "3726c3783af75a6f9058a6c657bf8c059f0f02658d65096fa16774cb1e9209fa",
+        "multi/multi-cap-client-credentials-r5400-w180-1790602115/load/capacity-cap-client-credentials.window.json": "483b5759ef2c86119ab0075fcdae8ab867b52f3e23fea13d90fc265bc364cb5b"
+      },
+      "retained_from": "incremental-b-v2"
+    }
+  ]
+}

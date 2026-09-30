@@ -9,7 +9,7 @@ use std::{
 };
 
 use chrono::Utc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use nazo_oauth_server::ports::audit::{AuditFuture, SecurityAudit};
@@ -431,8 +431,28 @@ pub(crate) fn audit_queue_metrics() -> serde_json::Value {
 // These are process-lifetime handles: the request path currently resolves the
 // durable sink through `ensure_audit_storage`, so bootstrap must install them
 // exactly once before handlers start accepting traffic.
-static PERSISTENT_AUDIT_SINK: OnceLock<mpsc::Sender<QueuedAuditEvent>> = OnceLock::new();
-static REQUIRED_AUDIT_REPOSITORY: OnceLock<RequiredAuditRepository> = OnceLock::new();
+static PERSISTENT_AUDIT_SINK: OnceLock<PersistentAuditSink> = OnceLock::new();
+
+struct PersistentAuditSink {
+    telemetry: mpsc::Sender<AuditPersistRequest>,
+    required: mpsc::Sender<AuditPersistRequest>,
+    repository: RequiredAuditRepository,
+}
+
+#[derive(Debug)]
+struct AuditPersistRequest {
+    event: QueuedAuditEvent,
+    completion: Option<oneshot::Sender<anyhow::Result<()>>>,
+}
+
+impl From<QueuedAuditEvent> for AuditPersistRequest {
+    fn from(event: QueuedAuditEvent) -> Self {
+        Self {
+            event,
+            completion: None,
+        }
+    }
+}
 
 struct RequiredAuditRepository {
     repository: Arc<dyn SecurityAuditLedger>,
@@ -451,25 +471,19 @@ struct QueuedAuditEvent {
 
 /// Install the durable audit sink once during application bootstrap.
 ///
-/// The request path remains synchronous: it writes the structured event to
-/// tracing and performs a bounded `try_send` into a worker. The worker retries
-/// database failures indefinitely, preserving the event after it has entered
-/// the queue. Queue saturation/disconnection is reported as a distinct,
-/// machine-searchable failure instead of being silently swallowed. Actions
-/// that already have a transactional security repository retain their own
-/// fail-closed semantics; this sink is the durable evidence/export path for
-/// the broader application audit vocabulary.
+/// Telemetry logs and tries its bounded channel without waiting. Standalone
+/// Required records use an independent bounded channel and await the batch's
+/// durable commit. Required failures return to the caller; Telemetry retries
+/// its own failed batch without delaying the Required channel. Audit inside a
+/// business transaction retains that transaction's fail-closed semantics.
 pub(crate) fn install_persistent_audit_sink(
     repository: Arc<dyn SecurityAuditLedger>,
     require_least_privilege: bool,
     preflight: AuditAnchorPreflight,
 ) -> anyhow::Result<()> {
-    if PERSISTENT_AUDIT_SINK.get().is_some() {
-        let Some(existing) = REQUIRED_AUDIT_REPOSITORY.get() else {
-            anyhow::bail!("durable security audit sink is partially installed");
-        };
-        if existing.require_least_privilege != require_least_privilege
-            || existing.preflight != preflight
+    if let Some(existing) = PERSISTENT_AUDIT_SINK.get() {
+        if existing.repository.require_least_privilege != require_least_privilege
+            || existing.repository.preflight != preflight
         {
             anyhow::bail!(
                 "durable security audit sink was already installed with different configuration"
@@ -477,63 +491,84 @@ pub(crate) fn install_persistent_audit_sink(
         }
         return Ok(());
     }
-    let candidate = RequiredAuditRepository {
-        repository: repository.clone(),
-        require_least_privilege,
-        preflight: preflight.clone(),
+    let (telemetry, telemetry_receiver) = mpsc::channel(AUDIT_QUEUE_CAPACITY);
+    let (required, required_receiver) = mpsc::channel(AUDIT_QUEUE_CAPACITY);
+    let candidate = PersistentAuditSink {
+        telemetry,
+        required,
+        repository: RequiredAuditRepository {
+            repository: repository.clone(),
+            require_least_privilege,
+            preflight,
+        },
     };
-    if let Err(candidate) = REQUIRED_AUDIT_REPOSITORY.set(candidate) {
-        let Some(existing) = REQUIRED_AUDIT_REPOSITORY.get() else {
-            anyhow::bail!("durable security audit repository installation raced bootstrap");
-        };
-        if existing.require_least_privilege != candidate.require_least_privilege
-            || existing.preflight != candidate.preflight
+    if let Err(candidate) = PERSISTENT_AUDIT_SINK.set(candidate) {
+        let existing = PERSISTENT_AUDIT_SINK
+            .get()
+            .expect("sink was installed concurrently");
+        if existing.repository.require_least_privilege
+            != candidate.repository.require_least_privilege
+            || existing.repository.preflight != candidate.repository.preflight
         {
             anyhow::bail!(
-                "durable security audit repository was already installed with different configuration"
+                "durable security audit sink was already installed with different configuration"
             );
         }
-    }
-    let (sender, receiver) = mpsc::channel(AUDIT_QUEUE_CAPACITY);
-    if PERSISTENT_AUDIT_SINK.set(sender).is_err() {
         return Ok(());
     }
-
-    tokio::spawn(run_audit_persist_worker(receiver, repository));
+    tokio::spawn(run_audit_persist_worker(
+        telemetry_receiver,
+        repository.clone(),
+    ));
+    tokio::spawn(run_audit_persist_worker(required_receiver, repository));
     Ok(())
 }
 
-/// Upper bound for one opportunistic persist batch. The worker never waits to
-/// fill a batch: it appends immediately whatever is already queued, so a lone
-/// event is still persisted without added latency.
+/// Bound both batch size and additional coalescing time. Standalone Required
+/// records wait for the committed batch; issuance audit stays in its transaction.
 const AUDIT_PERSIST_BATCH_MAX: usize = 64;
+const AUDIT_PERSIST_COALESCE_WINDOW: Duration = Duration::from_millis(10);
 
-/// Drain the best-effort queue into the durable ledger. After the first event
-/// arrives, already-queued events are pulled in non-blocking up to
-/// `AUDIT_PERSIST_BATCH_MAX`; the batch is then persisted in one transaction.
-/// A failed batch is retained whole and retried with exponential backoff, so
-/// the oldest unpersisted batch still blocks all later ones. Split out of the
+/// Drain one audit channel into the durable ledger. After the first event,
+/// collect arrivals until the fixed window ends, the batch is full or the
+/// channel closes; persist the batch in one transaction. Later arrivals do
+/// not extend the first event's deadline.
+/// Telemetry retries whole batches in order. A Required batch reports its first
+/// failure to every caller and continues; it never shares Telemetry's retry
+/// backlog. Split out of the
 /// sink installer so tests can drive it with their own channel and ledger.
 async fn run_audit_persist_worker(
-    mut receiver: mpsc::Receiver<QueuedAuditEvent>,
+    mut receiver: mpsc::Receiver<AuditPersistRequest>,
     repository: Arc<dyn SecurityAuditLedger>,
 ) {
     while let Some(first) = receiver.recv().await {
         let mut batch = vec![first];
+        let coalesce = tokio::time::sleep(AUDIT_PERSIST_COALESCE_WINDOW);
+        tokio::pin!(coalesce);
         while batch.len() < AUDIT_PERSIST_BATCH_MAX {
-            match receiver.try_recv() {
-                Ok(event) => batch.push(event),
-                Err(_) => break,
+            tokio::select! {
+                biased;
+                _ = &mut coalesce => break,
+                event = receiver.recv() => match event {
+                    Some(event) => batch.push(event),
+                    None => break,
+                },
             }
         }
+        let required = batch[0].completion.is_some();
+        debug_assert!(
+            batch
+                .iter()
+                .all(|request| request.completion.is_some() == required)
+        );
         let events: Vec<SecurityAuditEvent> = batch
             .iter()
-            .map(|event| SecurityAuditEvent {
-                event_id: event.event_id,
-                event_type: event.event_type.clone(),
-                event_category: event.event_category.clone(),
-                payload: event.payload.clone(),
-                occurred_at: event.occurred_at,
+            .map(|request| SecurityAuditEvent {
+                event_id: request.event.event_id,
+                event_type: request.event.event_type.clone(),
+                event_category: request.event.event_category.clone(),
+                payload: request.event.payload.clone(),
+                occurred_at: request.event.occurred_at,
             })
             .collect();
         let batch_len = events.len() as u64;
@@ -541,10 +576,17 @@ async fn run_audit_persist_worker(
         loop {
             match repository.append_batch(&events).await {
                 Ok(()) => {
-                    AUDIT_QUEUE_PERSISTED.fetch_add(batch_len, Ordering::Relaxed);
-                    AUDIT_PERSIST_BATCHES.fetch_add(1, Ordering::Relaxed);
-                    AUDIT_PERSIST_BATCH_EVENTS.fetch_add(batch_len, Ordering::Relaxed);
-                    AUDIT_PERSIST_MAX_BATCH.fetch_max(batch_len, Ordering::Relaxed);
+                    if !required {
+                        AUDIT_QUEUE_PERSISTED.fetch_add(batch_len, Ordering::Relaxed);
+                        AUDIT_PERSIST_BATCHES.fetch_add(1, Ordering::Relaxed);
+                        AUDIT_PERSIST_BATCH_EVENTS.fetch_add(batch_len, Ordering::Relaxed);
+                        AUDIT_PERSIST_MAX_BATCH.fetch_max(batch_len, Ordering::Relaxed);
+                    }
+                    for request in &mut batch {
+                        if let Some(completion) = request.completion.take() {
+                            let _ = completion.send(Ok(()));
+                        }
+                    }
                     tracing::debug!(
                         target: "audit.persistence",
                         batch_len,
@@ -559,9 +601,19 @@ async fn run_audit_persist_worker(
                         target: "audit.persistence",
                         batch_len,
                         %error,
-                        persistence_status = "retrying",
+                        persistence_status = if required { "failed_required" } else { "retrying" },
                         "security audit batch persistence failed"
                     );
+                    if required {
+                        for request in &mut batch {
+                            if let Some(completion) = request.completion.take() {
+                                let _ = completion.send(Err(anyhow::anyhow!(
+                                    "security audit append failed: {error}"
+                                )));
+                            }
+                        }
+                        break;
+                    }
                     tokio::time::sleep(retry_delay).await;
                     retry_delay = std::cmp::min(retry_delay + retry_delay, Duration::from_secs(5));
                 }
@@ -578,10 +630,10 @@ async fn run_audit_persist_worker(
 /// [`audit_event`] (or, where the stores are atomic, through
 /// [`audit_event_required`]).
 pub(crate) async fn ensure_audit_storage() -> anyhow::Result<()> {
-    let Some(required) = REQUIRED_AUDIT_REPOSITORY.get() else {
+    let Some(sink) = PERSISTENT_AUDIT_SINK.get() else {
         anyhow::bail!("durable security audit repository is not configured");
     };
-    ensure_audit_storage_via(required).await
+    ensure_audit_storage_via(&sink.repository).await
 }
 
 async fn ensure_audit_storage_via(required: &RequiredAuditRepository) -> anyhow::Result<()> {
@@ -602,10 +654,10 @@ async fn ensure_audit_storage_via(required: &RequiredAuditRepository) -> anyhow:
 /// buys nothing. The dynamic anchor-health gate is unchanged: required mode
 /// still reads fresh health on every call.
 pub(crate) async fn ensure_transactional_audit_ready() -> anyhow::Result<()> {
-    let Some(required) = REQUIRED_AUDIT_REPOSITORY.get() else {
+    let Some(sink) = PERSISTENT_AUDIT_SINK.get() else {
         anyhow::bail!("durable security audit repository is not configured");
     };
-    ensure_transactional_audit_ready_via(required).await
+    ensure_transactional_audit_ready_via(&sink.repository).await
 }
 
 async fn ensure_transactional_audit_ready_via(
@@ -634,8 +686,8 @@ async fn ensure_anchor_fresh(required: &RequiredAuditRepository) -> anyhow::Resu
 }
 
 /// Append a high-impact audit outcome synchronously. Unlike [`audit_event`],
-/// this path never drops an event into the in-process queue: the caller gets an
-/// error when the ledger is unavailable and must convert it to a fail-closed
+/// this path waits for a durable batch acknowledgement: the caller gets an
+/// error when the channel or ledger is unavailable and must convert it to a fail-closed
 /// response. The recommended sequence is `ensure_audit_storage().await`,
 /// perform the mutation, then await this function with the committed outcome.
 pub(crate) async fn audit_event_required(
@@ -651,29 +703,34 @@ async fn append_required_event(
 ) -> anyhow::Result<()> {
     let queued =
         queued.map_err(|reason| anyhow::anyhow!("security audit event rejected: {reason}"))?;
-    let Some(required) = REQUIRED_AUDIT_REPOSITORY.get() else {
+    let Some(sink) = PERSISTENT_AUDIT_SINK.get() else {
         anyhow::bail!("durable security audit repository is not configured");
     };
-    append_required_via(&required.repository, event, queued).await
+    append_required_via(&sink.required, event, queued).await
 }
 
-/// The required evidence path is deliberately separate from the best-effort
-/// queue: a direct ledger append whose failure is returned to the caller.
+/// Required evidence has its own bounded channel and a commit barrier. It
+/// cannot be dropped as Telemetry or wait behind a retrying Telemetry batch.
 async fn append_required_via(
-    repository: &Arc<dyn SecurityAuditLedger>,
+    sink: &mpsc::Sender<AuditPersistRequest>,
     event: &str,
     queued: QueuedAuditEvent,
 ) -> anyhow::Result<()> {
-    repository
-        .append(SecurityAuditEvent {
-            event_id: queued.event_id,
-            event_type: queued.event_type.clone(),
-            event_category: queued.event_category.clone(),
-            payload: queued.payload.clone(),
-            occurred_at: queued.occurred_at,
-        })
+    let (completion, persisted) = oneshot::channel();
+    sink.try_send(AuditPersistRequest {
+        event: queued.clone(),
+        completion: Some(completion),
+    })
+    .map_err(|error| {
+        let reason = match error {
+            mpsc::error::TrySendError::Full(_) => "queue_full",
+            mpsc::error::TrySendError::Closed(_) => "sink_closed",
+        };
+        anyhow::anyhow!("required security audit event not accepted: {reason}")
+    })?;
+    persisted
         .await
-        .map_err(|error| anyhow::anyhow!("security audit append failed: {error}"))?;
+        .map_err(|_| anyhow::anyhow!("required security audit worker stopped before commit"))??;
     tracing::info!(
         target: "audit",
         event,
@@ -716,10 +773,14 @@ fn enqueue_event(event: &str, queued: Result<QueuedAuditEvent, &'static str>) {
         );
         return;
     };
-    enqueue_into_sink(sink, event, queued);
+    enqueue_into_sink(&sink.telemetry, event, queued);
 }
 
-fn enqueue_into_sink(sink: &mpsc::Sender<QueuedAuditEvent>, event: &str, queued: QueuedAuditEvent) {
+fn enqueue_into_sink(
+    sink: &mpsc::Sender<AuditPersistRequest>,
+    event: &str,
+    queued: QueuedAuditEvent,
+) {
     let required_class = audit_event_is_required(event);
     if required_class {
         // Required evidence should go through `audit_event_required` or a
@@ -741,7 +802,7 @@ fn enqueue_into_sink(sink: &mpsc::Sender<QueuedAuditEvent>, event: &str, queued:
             );
         }
     }
-    match sink.try_send(queued) {
+    match sink.try_send(queued.into()) {
         Ok(()) => {
             AUDIT_QUEUE_ENQUEUED.fetch_add(1, Ordering::Relaxed);
         }

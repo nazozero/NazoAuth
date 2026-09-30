@@ -18,7 +18,7 @@ import psycopg
 import redis
 
 from tools.measure_schedule import (
-    cohort_accounting, parse_time_unit_ms)
+    OUTCOME_NAMES, cohort_accounting, parse_time_unit_ms)
 from tools.perf_state_ready import (
     clear_ready, wait_ready, write_ready)
 
@@ -483,7 +483,7 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     # The denominator is the explicit scenario-window contract emitted by the
     # script — never Counter.rate and never a different evaluator's window.
     measure_metric = metrics.get("cap_measure_ms", {})
-    if measure_metric:
+    if measure_metric or "cap_measure_ops" in metrics:
         measure = measure_metric.get("values", measure_metric)
         ops_metric = metrics.get("cap_measure_ops", {})
         errs_metric = metrics.get("cap_measure_errors", {})
@@ -501,8 +501,7 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
             return int(metric_values(summary, name).get("count", 0))
         outcomes = {
             name: cnt(f"cap_measure_{name}")
-            for name in ("success", "expected_rejection", "local_no_request",
-                         "unexpected", "prepare_failed")
+            for name in OUTCOME_NAMES
         }
         legacy_ops = cnt("cap_iter_begin_lw1")
         late_vu = cnt("cap_iter_begin_late_vu")
@@ -730,6 +729,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     env["PERF_ERR_DETAIL"] = str(err_detail_path)
     stream_fifo = None
     stream_proc = None
+    stream_stdout = None
     if os.environ.get("PERF_CHECKPOINT_EVIDENCE") == "1":
         # Diagnostic stream: k6 writes JSON points into a FIFO drained by
         # checkpoint_analyze.py, which keeps bounded per-second aggregates and
@@ -747,6 +747,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
              f' --series-out "{RESULTS_DIR / (safe_name + ".series.json")}"'
              f' --window-out "{RESULTS_DIR / (safe_name + ".window.json")}"'
              f' --stats-out "{RESULTS_DIR / (safe_name + ".analyzer-stats.json")}"'
+             f' --workers {int(os.environ.get("PERF_CHECKPOINT_STREAM_WORKERS", "1"))}'
              f' < "{stream_fifo}"'],
             stderr=subprocess.DEVNULL)
     command = [
@@ -757,7 +758,11 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
             if os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
             else []
         ),
-        *(["--out", f"json={stream_fifo}"] if stream_fifo else []),
+        # k6's stdout JSON writer is buffered; its ordinary file writer
+        # issues a write for every point, even when the file is a FIFO.
+        # Quiet mode and oauth.js's file-only handleSummary keep this channel
+        # exclusively JSON. All acceptance metrics reach the same analyzer.
+        *(["--quiet", "--out", "json=-"] if stream_fifo else []),
         "--summary-export",
         str(k6_summary_path),
         "/perf/k6/oauth.js",
@@ -768,15 +773,31 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     (RESULTS_DIR / "k6-started.json").write_text(json.dumps({
         "ts": time.time(), "scenario": scenario, "profile": profile,
         "run_id": os.environ.get("PERF_STATE_RUN_ID", ""),
+        "k6_json_omit_unused_http_timings": env.get(
+            "K6_JSON_OMIT_UNUSED_HTTP_TIMINGS") == "1",
         "state_ready_ts": (STATE_READY or {}).get("validated_at"),
         "state_ready_run_id": (STATE_READY or {}).get(
             "marker", {}).get("run_id"),
     }, indent=2))
     started = time.perf_counter()
     try:
+        if stream_fifo is not None:
+            stream_stdout = stream_fifo.open("wb")
         with StatsSampler() as sampler:
-            completed = subprocess.run(command, env=env, text=True)
+            try:
+                completed = subprocess.run(command, env=env, text=True,
+                                           stdout=stream_stdout)
+            finally:
+                # StatsSampler exit can wait five seconds. Deliver EOF now
+                # so partial shard batches drain without that extra delay.
+                if stream_stdout is not None:
+                    stream_stdout.close()
+                    stream_stdout = None
     finally:
+        # Close the parent descriptor before waiting: the reader needs EOF
+        # after k6 has flushed its final buffered points and exited.
+        if stream_stdout is not None:
+            stream_stdout.close()
         if stream_proc is not None:
             # k6 closing the FIFO gives the analyzer EOF; bound the wait so a
             # wedged reader can never hang the run.

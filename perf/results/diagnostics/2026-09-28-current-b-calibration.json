@@ -1,0 +1,5460 @@
+{
+  "schema_version": 1,
+  "scope": "one-factor mixed calibration, not final capacity bounds",
+  "registered_recipes": {
+    "69a4e53743e9ef20": {
+      "cpus": {
+        "allowed": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "single": [
+          24
+        ],
+        "multi": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey": [
+          160
+        ],
+        "generator": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ]
+      },
+      "app_image": "nazoauth-perf-nazoauth",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+      "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+      "resources": {
+        "single": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 32
+        },
+        "multi": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 32
+        }
+      },
+      "sidecars": {
+        "single": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 1,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 13,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 2,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 38,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ],
+        "multi": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 8,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 200,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 30,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 600,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ]
+      },
+      "stop_at": "2026-09-29T12:00:00+08:00",
+      "gate": "successful-ops-v1",
+      "vector_counts": {
+        "default": 48000,
+        "fapi2_logged_in_high_security": 49200
+      },
+      "exploration_window_seconds": 60,
+      "candidate_window_seconds": 180,
+      "mixed_confirmation_window_seconds": 660,
+      "hash_policy": "unchanged application defaults",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "harness_sha": "04146234c578e61797aacee7ef7c4687b75653a1",
+      "recipe_id": "69a4e53743e9ef20"
+    },
+    "d53a15a8f8016155": {
+      "cpus": {
+        "allowed": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "single": [
+          24
+        ],
+        "multi": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey": [
+          160
+        ],
+        "generator": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ]
+      },
+      "app_image": "nazoauth-perf-nazoauth",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+      "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+      "resources": {
+        "single": {
+          "vus": 2048,
+          "users": 256,
+          "pool_connections": 32
+        },
+        "multi": {
+          "vus": 2048,
+          "users": 256,
+          "pool_connections": 32
+        }
+      },
+      "sidecars": {
+        "single": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 1,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 13,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 2,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 38,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ],
+        "multi": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 8,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 200,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 30,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 600,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ]
+      },
+      "stop_at": "2026-09-29T12:00:00+08:00",
+      "gate": "successful-ops-v1",
+      "vector_counts": {
+        "default": 48000,
+        "fapi2_logged_in_high_security": 49200
+      },
+      "exploration_window_seconds": 60,
+      "candidate_window_seconds": 180,
+      "mixed_confirmation_window_seconds": 660,
+      "hash_policy": "unchanged application defaults",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "harness_sha": "04146234c578e61797aacee7ef7c4687b75653a1",
+      "recipe_id": "d53a15a8f8016155"
+    },
+    "09c4c0f42ac6026a": {
+      "cpus": {
+        "allowed": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "single": [
+          24
+        ],
+        "multi": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey": [
+          160
+        ],
+        "generator": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ]
+      },
+      "app_image": "nazoauth-perf-nazoauth",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+      "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+      "resources": {
+        "single": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 64
+        },
+        "multi": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 64
+        }
+      },
+      "sidecars": {
+        "single": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 1,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 13,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 2,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 38,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ],
+        "multi": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 8,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 200,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 30,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 600,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ]
+      },
+      "stop_at": "2026-09-29T12:00:00+08:00",
+      "gate": "successful-ops-v1",
+      "vector_counts": {
+        "default": 48000,
+        "fapi2_logged_in_high_security": 49200
+      },
+      "exploration_window_seconds": 60,
+      "candidate_window_seconds": 180,
+      "mixed_confirmation_window_seconds": 660,
+      "hash_policy": "unchanged application defaults",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "harness_sha": "04146234c578e61797aacee7ef7c4687b75653a1",
+      "recipe_id": "09c4c0f42ac6026a"
+    },
+    "f52ff62ea926f603": {
+      "cpus": {
+        "allowed": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "single": [
+          24
+        ],
+        "multi": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey": [
+          160
+        ],
+        "generator": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ]
+      },
+      "app_image": "nazoauth-perf-nazoauth",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+      "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+      "resources": {
+        "single": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 64
+        },
+        "multi": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 64
+        }
+      },
+      "sidecars": {
+        "single": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 1,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 13,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 2,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 38,
+            "pre_vus": 256,
+            "max_vus": 256,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ],
+        "multi": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 8,
+            "pre_vus": 8,
+            "max_vus": 8,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 200,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 30,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 600,
+            "pre_vus": 256,
+            "max_vus": 256,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ]
+      },
+      "stop_at": "2026-09-29T12:00:00+08:00",
+      "gate": "successful-ops-v1",
+      "vector_counts": {
+        "default": 48000,
+        "fapi2_logged_in_high_security": 49200
+      },
+      "exploration_window_seconds": 60,
+      "candidate_window_seconds": 180,
+      "mixed_confirmation_window_seconds": 660,
+      "hash_policy": "unchanged application defaults",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "harness_sha": "04146234c578e61797aacee7ef7c4687b75653a1",
+      "recipe_id": "f52ff62ea926f603"
+    },
+    "ad358f6ac4474b7b": {
+      "cpus": {
+        "allowed": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "single": [
+          24
+        ],
+        "multi": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey": [
+          160
+        ],
+        "generator": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ]
+      },
+      "app_image": "nazoauth-perf-nazoauth",
+      "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+      "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+      "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+      "resources": {
+        "single": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 64
+        },
+        "multi": {
+          "vus": 1024,
+          "users": 256,
+          "pool_connections": 64
+        }
+      },
+      "sidecars": {
+        "single": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 1,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 13,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 2,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 38,
+            "pre_vus": 256,
+            "max_vus": 256,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ],
+        "multi": [
+          {
+            "name": "argon2",
+            "scenario": "oidc_cold_login_refresh",
+            "rate": 8,
+            "pre_vus": 64,
+            "max_vus": 64,
+            "user_count": 8,
+            "duration": "210s"
+          },
+          {
+            "name": "meta",
+            "scenario": "metadata_jwks",
+            "rate": 200,
+            "pre_vus": 16,
+            "max_vus": 16,
+            "user_count": 16,
+            "duration": "210s"
+          },
+          {
+            "name": "fapi",
+            "scenario": "fapi2_logged_in_high_security",
+            "rate": 30,
+            "pre_vus": 32,
+            "max_vus": 32,
+            "user_count": 32,
+            "duration": "210s"
+          },
+          {
+            "name": "refresh",
+            "scenario": "cap_refresh_token",
+            "rate": 600,
+            "pre_vus": 256,
+            "max_vus": 256,
+            "user_count": 64,
+            "duration": "210s"
+          }
+        ]
+      },
+      "stop_at": "2026-09-29T12:00:00+08:00",
+      "gate": "successful-ops-v1",
+      "vector_counts": {
+        "default": 48000,
+        "fapi2_logged_in_high_security": 49200
+      },
+      "exploration_window_seconds": 60,
+      "candidate_window_seconds": 180,
+      "mixed_confirmation_window_seconds": 660,
+      "hash_policy": "unchanged application defaults",
+      "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+      "harness_sha": "04146234c578e61797aacee7ef7c4687b75653a1",
+      "recipe_id": "ad358f6ac4474b7b"
+    }
+  },
+  "observations": [
+    {
+      "point_id": "multi-cap-mixed-r4000-w60-1790559554",
+      "recipe_id": "09c4c0f42ac6026a",
+      "verdict": "FAIL",
+      "effective_point": {
+        "scenario": "cap_mixed",
+        "rate": 4000,
+        "duration": "120s",
+        "warmup_ms": 60000,
+        "pre_vus": 1024,
+        "max_vus": 1024,
+        "user_count": 256,
+        "vector_count": 48000,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres_cpus": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey_cpus": [
+          160
+        ],
+        "infra_cpus": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": [
+          {
+            "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559554",
+            "duration": "150s",
+            "max_vus": 8,
+            "name": "argon2",
+            "pre_vus": 8,
+            "rate": 8,
+            "scenario": "oidc_cold_login_refresh",
+            "started_ts": 1790559604.0582047,
+            "user_count": 8
+          },
+          {
+            "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790559554",
+            "duration": "150s",
+            "max_vus": 16,
+            "name": "meta",
+            "pre_vus": 16,
+            "rate": 200,
+            "scenario": "metadata_jwks",
+            "started_ts": 1790559604.542368,
+            "user_count": 16
+          },
+          {
+            "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559554",
+            "duration": "150s",
+            "max_vus": 32,
+            "name": "fapi",
+            "pre_vus": 32,
+            "rate": 30,
+            "scenario": "fapi2_logged_in_high_security",
+            "started_ts": 1790559605.0466,
+            "user_count": 32
+          },
+          {
+            "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559554",
+            "duration": "150s",
+            "max_vus": 64,
+            "name": "refresh",
+            "pre_vus": 64,
+            "rate": 600,
+            "scenario": "cap_refresh_token",
+            "started_ts": 1790559605.5556602,
+            "user_count": 64
+          }
+        ],
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 64
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "application_and_runner": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-mixed-r4000-w60-1790559554",
+        "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+        "runner_image_ref": "nazoauth-perf-perf",
+        "runner_image_revision": "dd69c9e2330580422ef417c5a38b726e509c1942",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "main_cohort": {
+        "window_start_s": 1790559666.184,
+        "window_end_s": 1790559726.184,
+        "measure_started_exact": 240000,
+        "measure_completed_exact": 240000,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 240000,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 240000
+        },
+        "measure_outcome_sum": 240000,
+        "drops_pre_window": 3085,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 240000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 4000.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "main_successful_ops_s": 4000.0,
+      "complete_operation_ms": {
+        "p50": 6.0,
+        "p95": 122.0,
+        "p99": 450.0
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790559667,
+          1790559726
+        ],
+        "http_requests": 343282,
+        "http_requests_per_s": 5818.338983050848,
+        "http_failed_requests": 0,
+        "vus_peak": 736,
+        "vus_max_peak": 1024,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sidecars": {
+        "argon2": {
+          "verdict": "FAIL",
+          "successful_ops_s": 7.926,
+          "complete_p95_ms": 897.55,
+          "complete_p99_ms": 1157.8599999999997,
+          "scheduled": 1080,
+          "started": 1070,
+          "completed": 1070,
+          "dropped": 10,
+          "outcomes": {
+            "success": 1070
+          },
+          "reason": null
+        },
+        "meta": {
+          "verdict": "PASS",
+          "successful_ops_s": 200.0,
+          "complete_p95_ms": 1.0,
+          "complete_p99_ms": 2.0,
+          "scheduled": 27000,
+          "started": 27000,
+          "completed": 27000,
+          "dropped": 0,
+          "outcomes": {
+            "success": 27000
+          },
+          "reason": null
+        },
+        "fapi": {
+          "verdict": "FAIL",
+          "successful_ops_s": 29.97,
+          "complete_p95_ms": 592.0,
+          "complete_p99_ms": 844.1000000000004,
+          "scheduled": 4050,
+          "started": 4046,
+          "completed": 4046,
+          "dropped": 4,
+          "outcomes": {
+            "success": 4046
+          },
+          "reason": null
+        },
+        "refresh": {
+          "verdict": "FAIL",
+          "successful_ops_s": 549.081,
+          "complete_p95_ms": 171.0,
+          "complete_p99_ms": 221.0,
+          "scheduled": 81000,
+          "started": 74126,
+          "completed": 74126,
+          "dropped": 6874,
+          "outcomes": {
+            "success": 74126
+          },
+          "reason": null
+        }
+      },
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "queue_dropped_zero": true,
+        "pending_zero_post_drain": true,
+        "enqueued_eq_persisted": true
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 7.268918294471298,
+          "effective_cores_peak_sample": 7.400724226103935,
+          "rss_kib_min": 126328,
+          "rss_kib_max": 188648,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 8.814862524515675,
+          "effective_cores_peak_sample": 11.115156157076253,
+          "rss_kib_min": 10605040,
+          "rss_kib_max": 10822308,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-mixed-r4000-w60-1790559554": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 4.826527685663082,
+          "effective_cores_peak_sample": 5.20407390328934,
+          "rss_kib_min": 5514664,
+          "rss_kib_max": 5556796,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-mixed-r4000-w60-1790559554": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 0.0665754650895425,
+          "effective_cores_peak_sample": 0.07504492561815244,
+          "rss_kib_min": 8076,
+          "rss_kib_max": 8448,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559554": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 0.053608732063381605,
+          "effective_cores_peak_sample": 0.056657137169700514,
+          "rss_kib_min": 304840,
+          "rss_kib_max": 330484,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559554": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 0.3344255920777019,
+          "effective_cores_peak_sample": 0.34998672076869847,
+          "rss_kib_min": 410896,
+          "rss_kib_max": 439556,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-meta-multi-cap-mixed-r4000-w60-1790559554": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 0.2376589277033668,
+          "effective_cores_peak_sample": 0.25238179284684775,
+          "rss_kib_min": 363104,
+          "rss_kib_max": 390512,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559554": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 0.5312489874150993,
+          "effective_cores_peak_sample": 0.5665713716970051,
+          "rss_kib_min": 582820,
+          "rss_kib_max": 613500,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-mixed-r4000-w60-1790559554": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 0.09231539781311561,
+          "effective_cores_peak_sample": 0.09947815721476021,
+          "rss_kib_min": 20404,
+          "rss_kib_max": 20488,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559669.1194935,
+            1790559720.7901802
+          ],
+          "effective_cores_mean": 0.23804599436086418,
+          "effective_cores_peak_sample": 0.248948026957775,
+          "rss_kib_min": 31248,
+          "rss_kib_max": 46524,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "pool_wait_ms_per_acquisition": 2.946,
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 29,
+        "sample_interval_s": [
+          1790559667,
+          1790559726
+        ],
+        "pg_wait_samples": 29,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.827586206896552,
+          "Client": 44.275862068965516,
+          "IO": 1.0344827586206897,
+          "LWLock": 11.89655172413793,
+          "Timeout": 0.034482758620689655
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 54838,
+        "audit_pending_last_sample": 16687,
+        "valkey_used_memory_bytes_peak": 38565000,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": true,
+        "vu_warnings": [
+          {
+            "role": "load",
+            "timestamp": "2026-09-28T01:40:06Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:40:06Z\" level=warning msg=\"Insufficient VUs, reached 1024 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_mixed"
+          },
+          {
+            "role": "argon2",
+            "timestamp": "2026-09-28T01:40:43Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T01:40:43Z\" level=warning msg=\"Insufficient VUs, reached 8 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=oidc_cold_login_refresh"
+          },
+          {
+            "role": "fapi",
+            "timestamp": "2026-09-28T01:40:49Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T01:40:49Z\" level=warning msg=\"Insufficient VUs, reached 32 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=fapi2_logged_in_high_security"
+          },
+          {
+            "role": "refresh",
+            "timestamp": "2026-09-28T01:40:36Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T01:40:36Z\" level=warning msg=\"Insufficient VUs, reached 64 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_refresh_token"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790559731.2103887,
+          "load_seconds": 129.9,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-mixed-r4000-w60-1790559554",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [
+            {
+              "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559554",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "argon2",
+              "started_ts": 1790559604.0582047,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790559554",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "meta",
+              "started_ts": 1790559604.542368,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559554",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "fapi",
+              "started_ts": 1790559605.0466,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559554",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "refresh",
+              "started_ts": 1790559605.5556602,
+              "terminal_summary": true
+            }
+          ],
+          "started_ts": 1790559601.2620924
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-mixed-r4000-w60-1790559554",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-mixed-r4000-w60-1790559554",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "analyzer_stats": {
+        "load/capacity-cap-mixed.analyzer-stats.json": {
+          "points": 12511040,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.395,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "argon2/capacity-oidc-cold-login-refresh.analyzer-stats.json": {
+          "points": 94494,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "meta/capacity-metadata-jwks.analyzer-stats.json": {
+          "points": 1083434,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "fapi/capacity-fapi2-logged-in-high-security.analyzer-stats.json": {
+          "points": 311232,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "refresh/capacity-cap-refresh-token.analyzer-stats.json": {
+          "points": 2164820,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        }
+      },
+      "input_sha256": {
+        "multi/multi-cap-mixed-r4000-w60-1790559554/point.json": "7d83df9f530b665fe9f0f6f8ca7deff36662bfc60cf74a6f7ce19221ab866945",
+        "multi/multi-cap-mixed-r4000-w60-1790559554/load/run.log": "8e37fcabe03648c74fd44e2ad02e027d53d7a98ef27a4d608d0ed489fe38ce4e",
+        "multi/multi-cap-mixed-r4000-w60-1790559554/load/capacity-cap-mixed.k6.json": "ae77c135e90299cf4bbc4f15108b3d13cf0339b6bea82bfd877e4a715e3ea4f0",
+        "multi/multi-cap-mixed-r4000-w60-1790559554/load/capacity-cap-mixed.window.json": "f3c3ab7ff2a24a13a5880b89a4d3feb32738cb2e550be151c4d0aa4f13282a2e"
+      },
+      "audit_reconciliation": {
+        "verdict": "PASS",
+        "journal": {
+          "batches": 4333,
+          "by_event_type": {
+            "authorization_approved": 77786,
+            "authorization_decision_intent": 77786,
+            "login_success": 1190,
+            "refresh_family_capacity_retired": 68250,
+            "token_issued": 429259
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 654271,
+          "expected_in_range": 654271,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 584038983,
+          "journal_sha256": "8b4996d42cabedf94bc5a70e7d9825e1f67967fa0cb4fad38dc84adab45f73eb",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 429259
+        }
+      },
+      "source_checkout": "04146234c578e61797aacee7ef7c4687b75653a1"
+    },
+    {
+      "point_id": "multi-cap-mixed-r2400-w180-1790558045",
+      "recipe_id": "69a4e53743e9ef20",
+      "verdict": "PASS",
+      "effective_point": {
+        "scenario": "cap_mixed",
+        "rate": 2400,
+        "duration": "240s",
+        "warmup_ms": 60000,
+        "pre_vus": 1024,
+        "max_vus": 1024,
+        "user_count": 256,
+        "vector_count": 48000,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres_cpus": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey_cpus": [
+          160
+        ],
+        "infra_cpus": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": [
+          {
+            "container": "sis-side-argon2-multi-cap-mixed-r2400-w180-1790558045",
+            "duration": "270s",
+            "max_vus": 8,
+            "name": "argon2",
+            "pre_vus": 8,
+            "rate": 8,
+            "scenario": "oidc_cold_login_refresh",
+            "started_ts": 1790558094.658588,
+            "user_count": 8
+          },
+          {
+            "container": "sis-side-meta-multi-cap-mixed-r2400-w180-1790558045",
+            "duration": "270s",
+            "max_vus": 16,
+            "name": "meta",
+            "pre_vus": 16,
+            "rate": 200,
+            "scenario": "metadata_jwks",
+            "started_ts": 1790558095.1228232,
+            "user_count": 16
+          },
+          {
+            "container": "sis-side-fapi-multi-cap-mixed-r2400-w180-1790558045",
+            "duration": "270s",
+            "max_vus": 32,
+            "name": "fapi",
+            "pre_vus": 32,
+            "rate": 30,
+            "scenario": "fapi2_logged_in_high_security",
+            "started_ts": 1790558095.594285,
+            "user_count": 32
+          },
+          {
+            "container": "sis-side-refresh-multi-cap-mixed-r2400-w180-1790558045",
+            "duration": "270s",
+            "max_vus": 64,
+            "name": "refresh",
+            "pre_vus": 64,
+            "rate": 600,
+            "scenario": "cap_refresh_token",
+            "started_ts": 1790558096.063075,
+            "user_count": 64
+          }
+        ],
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 32
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "application_and_runner": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-mixed-r2400-w180-1790558045",
+        "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+        "runner_image_ref": "nazoauth-perf-perf",
+        "runner_image_revision": "dd69c9e2330580422ef417c5a38b726e509c1942",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "main_cohort": {
+        "window_start_s": 1790558156.705,
+        "window_end_s": 1790558336.705,
+        "measure_started_exact": 432001,
+        "measure_completed_exact": 432001,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 432001,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 432001
+        },
+        "measure_outcome_sum": 432001,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 432000,
+        "schedule_delta_vs_rational": 1,
+        "observed_schedule_rate": 2400.006,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "main_successful_ops_s": 2400.006,
+      "complete_operation_ms": {
+        "p50": 4.0,
+        "p95": 18.0,
+        "p99": 30.0
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790558157,
+          1790558336
+        ],
+        "http_requests": 621941,
+        "http_requests_per_s": 3474.530726256983,
+        "http_failed_requests": 0,
+        "vus_peak": 319,
+        "vus_max_peak": 1024,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sidecars": {
+        "argon2": {
+          "verdict": "PASS",
+          "successful_ops_s": 8.0,
+          "complete_p95_ms": 172.0,
+          "complete_p99_ms": 192.0,
+          "scheduled": 2040,
+          "started": 2040,
+          "completed": 2040,
+          "dropped": 0,
+          "outcomes": {
+            "success": 2040
+          },
+          "reason": null
+        },
+        "meta": {
+          "verdict": "PASS",
+          "successful_ops_s": 200.0,
+          "complete_p95_ms": 1.0,
+          "complete_p99_ms": 2.0,
+          "scheduled": 51000,
+          "started": 51000,
+          "completed": 51000,
+          "dropped": 0,
+          "outcomes": {
+            "success": 51000
+          },
+          "reason": null
+        },
+        "fapi": {
+          "verdict": "PASS",
+          "successful_ops_s": 30.0,
+          "complete_p95_ms": 44.0,
+          "complete_p99_ms": 63.51000000000022,
+          "scheduled": 7650,
+          "started": 7650,
+          "completed": 7650,
+          "dropped": 0,
+          "outcomes": {
+            "success": 7650
+          },
+          "reason": null
+        },
+        "refresh": {
+          "verdict": "PASS",
+          "successful_ops_s": 599.718,
+          "complete_p95_ms": 12.0,
+          "complete_p99_ms": 25.0,
+          "scheduled": 153000,
+          "started": 152928,
+          "completed": 152928,
+          "dropped": 72,
+          "outcomes": {
+            "success": 152928
+          },
+          "reason": null
+        }
+      },
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "queue_dropped_zero": true,
+        "pending_zero_post_drain": true,
+        "enqueued_eq_persisted": true
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 5.003623081331354,
+          "effective_cores_peak_sample": 5.075239617729919,
+          "rss_kib_min": 109836,
+          "rss_kib_max": 165220,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 4.919137391063287,
+          "effective_cores_peak_sample": 5.055994565385535,
+          "rss_kib_min": 5420188,
+          "rss_kib_max": 5662004,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-mixed-r2400-w180-1790558045": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 2.8930421618214703,
+          "effective_cores_peak_sample": 3.250447741322145,
+          "rss_kib_min": 5467444,
+          "rss_kib_max": 5638404,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-mixed-r2400-w180-1790558045": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 0.0744815667797888,
+          "effective_cores_peak_sample": 0.07996494668809698,
+          "rss_kib_min": 8368,
+          "rss_kib_max": 9124,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-argon2-multi-cap-mixed-r2400-w180-1790558045": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 0.051871091150210054,
+          "effective_cores_peak_sample": 0.06203865688302092,
+          "rss_kib_min": 296620,
+          "rss_kib_max": 324724,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-fapi-multi-cap-mixed-r2400-w180-1790558045": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 0.32816994679759426,
+          "effective_cores_peak_sample": 0.3816039277023902,
+          "rss_kib_min": 412332,
+          "rss_kib_max": 443180,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-meta-multi-cap-mixed-r2400-w180-1790558045": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 0.2335644784344464,
+          "effective_cores_peak_sample": 0.2691670561472217,
+          "rss_kib_min": 362708,
+          "rss_kib_max": 398208,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-refresh-multi-cap-mixed-r2400-w180-1790558045": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 0.5256501879101554,
+          "effective_cores_peak_sample": 0.5962561370349847,
+          "rss_kib_min": 591428,
+          "rss_kib_max": 638632,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-mixed-r2400-w180-1790558045": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 0.11733159859952753,
+          "effective_cores_peak_sample": 0.1258006097905702,
+          "rss_kib_min": 20532,
+          "rss_kib_max": 21224,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558160.336056,
+            1790558333.264749
+          ],
+          "effective_cores_mean": 0.1631308228926896,
+          "effective_cores_peak_sample": 0.17922278655094934,
+          "rss_kib_min": 26572,
+          "rss_kib_max": 65084,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "pool_wait_ms_per_acquisition": 0.087,
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 87,
+        "sample_interval_s": [
+          1790558157,
+          1790558335
+        ],
+        "pg_wait_samples": 87,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.908045977011494,
+          "Client": 20.666666666666668,
+          "IO": 0.9540229885057471,
+          "LWLock": 6.67816091954023,
+          "Lock": 0.011494252873563218,
+          "Timeout": 0.04597701149425287
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 368,
+        "audit_pending_last_sample": 131,
+        "valkey_used_memory_bytes_peak": 55490232,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": false,
+        "vu_warnings": [
+          {
+            "role": "refresh",
+            "timestamp": "2026-09-28T01:18:28Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T01:18:28Z\" level=warning msg=\"Insufficient VUs, reached 64 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_refresh_token"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790558342.0352004,
+          "load_seconds": 250.1,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-mixed-r2400-w180-1790558045",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [
+            {
+              "container": "sis-side-argon2-multi-cap-mixed-r2400-w180-1790558045",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "argon2",
+              "started_ts": 1790558094.658588,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-meta-multi-cap-mixed-r2400-w180-1790558045",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "meta",
+              "started_ts": 1790558095.1228232,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-fapi-multi-cap-mixed-r2400-w180-1790558045",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "fapi",
+              "started_ts": 1790558095.594285,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-refresh-multi-cap-mixed-r2400-w180-1790558045",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "refresh",
+              "started_ts": 1790558096.063075,
+              "terminal_summary": true
+            }
+          ],
+          "started_ts": 1790558091.9512544
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-mixed-r2400-w180-1790558045",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-mixed-r2400-w180-1790558045",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "analyzer_stats": {
+        "load/capacity-cap-mixed.analyzer-stats.json": {
+          "points": 16397478,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.28,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "argon2/capacity-oidc-cold-login-refresh.analyzer-stats.json": {
+          "points": 172396,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "meta/capacity-metadata-jwks.analyzer-stats.json": {
+          "points": 1971698,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.254,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "fapi/capacity-fapi2-logged-in-high-security.analyzer-stats.json": {
+          "points": 563746,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "refresh/capacity-cap-refresh-token.analyzer-stats.json": {
+          "points": 4285895,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        }
+      },
+      "input_sha256": {
+        "multi/multi-cap-mixed-r2400-w180-1790558045/point.json": "1f6f08c8a9c900088ac0bae0cf386c13d6d4413550e9a06e2031361973d31322",
+        "multi/multi-cap-mixed-r2400-w180-1790558045/load/run.log": "adb2af56c251248d0aa47399ad915ec45ff7bbcd35709a3911c235729b3e1b2b",
+        "multi/multi-cap-mixed-r2400-w180-1790558045/load/capacity-cap-mixed.k6.json": "33773269459df9e11c0d8b877ae69fcf3113aee085cd734c39afb4ba866ec8fb",
+        "multi/multi-cap-mixed-r2400-w180-1790558045/load/capacity-cap-mixed.window.json": "0bcae9d309189dba7dd3bd03cfacdeaad182dd79b02b6fd61893ff3ee2e44f64"
+      },
+      "audit_reconciliation": {
+        "verdict": "PASS",
+        "journal": {
+          "batches": 12429,
+          "by_event_type": {
+            "authorization_approved": 97139,
+            "authorization_decision_intent": 97139,
+            "login_success": 2161,
+            "refresh_family_capacity_retired": 87603,
+            "token_issued": 585713
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 869755,
+          "expected_in_range": 869755,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 783985443,
+          "journal_sha256": "780c842d6fb0fa08de28ae5eb3cca591c6218a065c9f6e7f51b6fc352e9e4073",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 585713
+        }
+      },
+      "source_checkout": "04146234c578e61797aacee7ef7c4687b75653a1"
+    },
+    {
+      "point_id": "multi-cap-mixed-r3000-w180-1790558424",
+      "recipe_id": "69a4e53743e9ef20",
+      "verdict": "PASS",
+      "effective_point": {
+        "scenario": "cap_mixed",
+        "rate": 3000,
+        "duration": "240s",
+        "warmup_ms": 60000,
+        "pre_vus": 1024,
+        "max_vus": 1024,
+        "user_count": 256,
+        "vector_count": 48000,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres_cpus": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey_cpus": [
+          160
+        ],
+        "infra_cpus": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": [
+          {
+            "container": "sis-side-argon2-multi-cap-mixed-r3000-w180-1790558424",
+            "duration": "270s",
+            "max_vus": 8,
+            "name": "argon2",
+            "pre_vus": 8,
+            "rate": 8,
+            "scenario": "oidc_cold_login_refresh",
+            "started_ts": 1790558474.2650416,
+            "user_count": 8
+          },
+          {
+            "container": "sis-side-meta-multi-cap-mixed-r3000-w180-1790558424",
+            "duration": "270s",
+            "max_vus": 16,
+            "name": "meta",
+            "pre_vus": 16,
+            "rate": 200,
+            "scenario": "metadata_jwks",
+            "started_ts": 1790558474.7574358,
+            "user_count": 16
+          },
+          {
+            "container": "sis-side-fapi-multi-cap-mixed-r3000-w180-1790558424",
+            "duration": "270s",
+            "max_vus": 32,
+            "name": "fapi",
+            "pre_vus": 32,
+            "rate": 30,
+            "scenario": "fapi2_logged_in_high_security",
+            "started_ts": 1790558475.2842035,
+            "user_count": 32
+          },
+          {
+            "container": "sis-side-refresh-multi-cap-mixed-r3000-w180-1790558424",
+            "duration": "270s",
+            "max_vus": 64,
+            "name": "refresh",
+            "pre_vus": 64,
+            "rate": 600,
+            "scenario": "cap_refresh_token",
+            "started_ts": 1790558475.759241,
+            "user_count": 64
+          }
+        ],
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 32
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "application_and_runner": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-mixed-r3000-w180-1790558424",
+        "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+        "runner_image_ref": "nazoauth-perf-perf",
+        "runner_image_revision": "dd69c9e2330580422ef417c5a38b726e509c1942",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "main_cohort": {
+        "window_start_s": 1790558536.693,
+        "window_end_s": 1790558716.693,
+        "measure_started_exact": 539999,
+        "measure_completed_exact": 539999,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 539999,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 539999
+        },
+        "measure_outcome_sum": 539999,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 540000,
+        "schedule_delta_vs_rational": -1,
+        "observed_schedule_rate": 2999.994,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "main_successful_ops_s": 2999.994,
+      "complete_operation_ms": {
+        "p50": 4.0,
+        "p95": 20.0,
+        "p99": 37.0
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790558537,
+          1790558716
+        ],
+        "http_requests": 780432,
+        "http_requests_per_s": 4359.9553072625695,
+        "http_failed_requests": 0,
+        "vus_peak": 194,
+        "vus_max_peak": 1024,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sidecars": {
+        "argon2": {
+          "verdict": "PASS",
+          "successful_ops_s": 8.0,
+          "complete_p95_ms": 196.04999999999995,
+          "complete_p99_ms": 243.2199999999998,
+          "scheduled": 2040,
+          "started": 2040,
+          "completed": 2040,
+          "dropped": 0,
+          "outcomes": {
+            "success": 2040
+          },
+          "reason": null
+        },
+        "meta": {
+          "verdict": "PASS",
+          "successful_ops_s": 200.0,
+          "complete_p95_ms": 1.0,
+          "complete_p99_ms": 2.0,
+          "scheduled": 51000,
+          "started": 51000,
+          "completed": 51000,
+          "dropped": 0,
+          "outcomes": {
+            "success": 51000
+          },
+          "reason": null
+        },
+        "fapi": {
+          "verdict": "PASS",
+          "successful_ops_s": 30.0,
+          "complete_p95_ms": 60.0,
+          "complete_p99_ms": 98.51000000000022,
+          "scheduled": 7650,
+          "started": 7650,
+          "completed": 7650,
+          "dropped": 0,
+          "outcomes": {
+            "success": 7650
+          },
+          "reason": null
+        },
+        "refresh": {
+          "verdict": "PASS",
+          "successful_ops_s": 599.541,
+          "complete_p95_ms": 18.0,
+          "complete_p99_ms": 32.0,
+          "scheduled": 153000,
+          "started": 152883,
+          "completed": 152883,
+          "dropped": 117,
+          "outcomes": {
+            "success": 152883
+          },
+          "reason": null
+        }
+      },
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "queue_dropped_zero": true,
+        "pending_zero_post_drain": true,
+        "enqueued_eq_persisted": true
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 5.831338372417073,
+          "effective_cores_peak_sample": 5.9268742218905075,
+          "rss_kib_min": 135844,
+          "rss_kib_max": 172556,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 6.031752085086363,
+          "effective_cores_peak_sample": 6.867428357453061,
+          "rss_kib_min": 5462688,
+          "rss_kib_max": 5713524,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-mixed-r3000-w180-1790558424": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 3.603972449902126,
+          "effective_cores_peak_sample": 4.087921576573916,
+          "rss_kib_min": 5506764,
+          "rss_kib_max": 5701588,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-mixed-r3000-w180-1790558424": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 0.0768416633089129,
+          "effective_cores_peak_sample": 0.08463437221105592,
+          "rss_kib_min": 8576,
+          "rss_kib_max": 9084,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-argon2-multi-cap-mixed-r3000-w180-1790558424": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 0.051826140664263026,
+          "effective_cores_peak_sample": 0.05829124478242963,
+          "rss_kib_min": 299428,
+          "rss_kib_max": 328380,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-fapi-multi-cap-mixed-r3000-w180-1790558424": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 0.3254913258925391,
+          "effective_cores_peak_sample": 0.352355345531743,
+          "rss_kib_min": 413888,
+          "rss_kib_max": 447316,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-meta-multi-cap-mixed-r3000-w180-1790558424": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 0.23469424370084702,
+          "effective_cores_peak_sample": 0.2520189747462661,
+          "rss_kib_min": 363792,
+          "rss_kib_max": 393420,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-refresh-multi-cap-mixed-r3000-w180-1790558424": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 0.5308849805697916,
+          "effective_cores_peak_sample": 0.5561687316726532,
+          "rss_kib_min": 587324,
+          "rss_kib_max": 647020,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-mixed-r3000-w180-1790558424": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 0.11644957416294185,
+          "effective_cores_peak_sample": 0.12954240644549375,
+          "rss_kib_min": 21508,
+          "rss_kib_max": 21628,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 31,
+          "interval_s": [
+            1790558538.5817952,
+            1790558711.2745693
+          ],
+          "effective_cores_mean": 0.1906275475606189,
+          "effective_cores_peak_sample": 0.20381338614091016,
+          "rss_kib_min": 27956,
+          "rss_kib_max": 71548,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "pool_wait_ms_per_acquisition": 0.199,
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 87,
+        "sample_interval_s": [
+          1790558538,
+          1790558716
+        ],
+        "pg_wait_samples": 87,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.873563218390805,
+          "Client": 19.977011494252874,
+          "IO": 1.0114942528735633,
+          "LWLock": 6.264367816091954,
+          "Timeout": 0.05747126436781609
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 522,
+        "audit_pending_last_sample": 10,
+        "valkey_used_memory_bytes_peak": 63311576,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": false,
+        "vu_warnings": [
+          {
+            "role": "refresh",
+            "timestamp": "2026-09-28T01:21:17Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:21:17Z\" level=warning msg=\"Insufficient VUs, reached 64 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_refresh_token"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790558721.7576334,
+          "load_seconds": 250.2,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-mixed-r3000-w180-1790558424",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [
+            {
+              "container": "sis-side-argon2-multi-cap-mixed-r3000-w180-1790558424",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "argon2",
+              "started_ts": 1790558474.2650416,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-meta-multi-cap-mixed-r3000-w180-1790558424",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "meta",
+              "started_ts": 1790558474.7574358,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-fapi-multi-cap-mixed-r3000-w180-1790558424",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "fapi",
+              "started_ts": 1790558475.2842035,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-refresh-multi-cap-mixed-r3000-w180-1790558424",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "refresh",
+              "started_ts": 1790558475.759241,
+              "terminal_summary": true
+            }
+          ],
+          "started_ts": 1790558471.5275156
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-mixed-r3000-w180-1790558424",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-mixed-r3000-w180-1790558424",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "analyzer_stats": {
+        "load/capacity-cap-mixed.analyzer-stats.json": {
+          "points": 20513136,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.302,
+          "lag_over_5s": 0,
+          "diag_overflow": true
+        },
+        "argon2/capacity-oidc-cold-login-refresh.analyzer-stats.json": {
+          "points": 172324,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "meta/capacity-metadata-jwks.analyzer-stats.json": {
+          "points": 1971672,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.254,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "fapi/capacity-fapi2-logged-in-high-security.analyzer-stats.json": {
+          "points": 563809,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "refresh/capacity-cap-refresh-token.analyzer-stats.json": {
+          "points": 4283278,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.255,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        }
+      },
+      "input_sha256": {
+        "multi/multi-cap-mixed-r3000-w180-1790558424/point.json": "dea96619704c76a78d2d48f563f8e73d664e11d2011a2205fc46488996701661",
+        "multi/multi-cap-mixed-r3000-w180-1790558424/load/run.log": "cd946786e3fd1c7602105dd00913e2b538ca1d592fb3e3b14090f0f845eea6ed",
+        "multi/multi-cap-mixed-r3000-w180-1790558424/load/capacity-cap-mixed.k6.json": "45a2df8517a7ec2fe0cdf2f8ea85674e231d5752db0034457e4f5280609665a4",
+        "multi/multi-cap-mixed-r3000-w180-1790558424/load/capacity-cap-mixed.window.json": "e2415dc29018d3de0630500a4c9cc94869d3e4a0a2a5123f0488b7a286a00bd5"
+      },
+      "audit_reconciliation": {
+        "verdict": "PASS",
+        "journal": {
+          "batches": 11817,
+          "by_event_type": {
+            "authorization_approved": 119469,
+            "authorization_decision_intent": 119469,
+            "login_success": 2160,
+            "refresh_family_capacity_retired": 109933,
+            "token_issued": 687402
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 1038433,
+          "expected_in_range": 1038433,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 931500516,
+          "journal_sha256": "ae66ecb0d3835e168c56ebdfe93ae32161ba132cea75765fc628b04c4be0431a",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 687402
+        }
+      },
+      "source_checkout": "04146234c578e61797aacee7ef7c4687b75653a1"
+    },
+    {
+      "point_id": "multi-cap-mixed-r4000-w60-1790558834",
+      "recipe_id": "69a4e53743e9ef20",
+      "verdict": "FAIL",
+      "effective_point": {
+        "scenario": "cap_mixed",
+        "rate": 4000,
+        "duration": "120s",
+        "warmup_ms": 60000,
+        "pre_vus": 1024,
+        "max_vus": 1024,
+        "user_count": 256,
+        "vector_count": 48000,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres_cpus": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey_cpus": [
+          160
+        ],
+        "infra_cpus": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": [
+          {
+            "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790558834",
+            "duration": "150s",
+            "max_vus": 8,
+            "name": "argon2",
+            "pre_vus": 8,
+            "rate": 8,
+            "scenario": "oidc_cold_login_refresh",
+            "started_ts": 1790558883.7459269,
+            "user_count": 8
+          },
+          {
+            "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790558834",
+            "duration": "150s",
+            "max_vus": 16,
+            "name": "meta",
+            "pre_vus": 16,
+            "rate": 200,
+            "scenario": "metadata_jwks",
+            "started_ts": 1790558884.2464201,
+            "user_count": 16
+          },
+          {
+            "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790558834",
+            "duration": "150s",
+            "max_vus": 32,
+            "name": "fapi",
+            "pre_vus": 32,
+            "rate": 30,
+            "scenario": "fapi2_logged_in_high_security",
+            "started_ts": 1790558884.7199514,
+            "user_count": 32
+          },
+          {
+            "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790558834",
+            "duration": "150s",
+            "max_vus": 64,
+            "name": "refresh",
+            "pre_vus": 64,
+            "rate": 600,
+            "scenario": "cap_refresh_token",
+            "started_ts": 1790558885.2453163,
+            "user_count": 64
+          }
+        ],
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 32
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "application_and_runner": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-mixed-r4000-w60-1790558834",
+        "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+        "runner_image_ref": "nazoauth-perf-perf",
+        "runner_image_revision": "dd69c9e2330580422ef417c5a38b726e509c1942",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "main_cohort": {
+        "window_start_s": 1790558946.08,
+        "window_end_s": 1790559006.08,
+        "measure_started_exact": 236118,
+        "measure_completed_exact": 236118,
+        "measure_dropped_exact": 3882,
+        "measure_scheduled_observed": 240000,
+        "measure_drop_fraction": 0.016175,
+        "measure_outcomes": {
+          "success": 236118
+        },
+        "measure_outcome_sum": 236118,
+        "drops_pre_window": 27113,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 240000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 4000.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "main_successful_ops_s": 3935.3,
+      "complete_operation_ms": {
+        "p50": 6.0,
+        "p95": 137.0,
+        "p99": 381.0
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790558947,
+          1790559006
+        ],
+        "http_requests": 339910,
+        "http_requests_per_s": 5761.186440677966,
+        "http_failed_requests": 0,
+        "vus_peak": 1022,
+        "vus_max_peak": 1024,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sidecars": {
+        "argon2": {
+          "verdict": "FAIL",
+          "successful_ops_s": 7.089,
+          "complete_p95_ms": 1525.0,
+          "complete_p99_ms": 1589.1999999999998,
+          "scheduled": 1080,
+          "started": 957,
+          "completed": 957,
+          "dropped": 123,
+          "outcomes": {
+            "success": 957
+          },
+          "reason": null
+        },
+        "meta": {
+          "verdict": "PASS",
+          "successful_ops_s": 200.0,
+          "complete_p95_ms": 1.0,
+          "complete_p99_ms": 2.0,
+          "scheduled": 27000,
+          "started": 27000,
+          "completed": 27000,
+          "dropped": 0,
+          "outcomes": {
+            "success": 27000
+          },
+          "reason": null
+        },
+        "fapi": {
+          "verdict": "FAIL",
+          "successful_ops_s": 29.859,
+          "complete_p95_ms": 1065.5,
+          "complete_p99_ms": 1120.3999999999996,
+          "scheduled": 4050,
+          "started": 4031,
+          "completed": 4031,
+          "dropped": 19,
+          "outcomes": {
+            "success": 4031
+          },
+          "reason": null
+        },
+        "refresh": {
+          "verdict": "FAIL",
+          "successful_ops_s": 458.074,
+          "complete_p95_ms": 340.0,
+          "complete_p99_ms": 366.0,
+          "scheduled": 81000,
+          "started": 61840,
+          "completed": 61840,
+          "dropped": 19160,
+          "outcomes": {
+            "success": 61840
+          },
+          "reason": null
+        }
+      },
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "queue_dropped_zero": true,
+        "pending_zero_post_drain": true,
+        "enqueued_eq_persisted": true
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 7.22979906995323,
+          "effective_cores_peak_sample": 7.380492483572363,
+          "rss_kib_min": 120136,
+          "rss_kib_max": 185692,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 7.811285182225005,
+          "effective_cores_peak_sample": 9.076651656229311,
+          "rss_kib_min": 5501232,
+          "rss_kib_max": 5614328,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-mixed-r4000-w60-1790558834": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 4.712402405073298,
+          "effective_cores_peak_sample": 5.157957815223867,
+          "rss_kib_min": 5446884,
+          "rss_kib_max": 5537176,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-mixed-r4000-w60-1790558834": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 0.07146853832048435,
+          "effective_cores_peak_sample": 0.07841941060698034,
+          "rss_kib_min": 9548,
+          "rss_kib_max": 9824,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-argon2-multi-cap-mixed-r4000-w60-1790558834": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 0.053905710168735146,
+          "effective_cores_peak_sample": 0.05734489533519114,
+          "rss_kib_min": 301932,
+          "rss_kib_max": 328672,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-fapi-multi-cap-mixed-r4000-w60-1790558834": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 0.3314331728439006,
+          "effective_cores_peak_sample": 0.3592621144491229,
+          "rss_kib_min": 410948,
+          "rss_kib_max": 439008,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-meta-multi-cap-mixed-r4000-w60-1790558834": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 0.23961957616940976,
+          "effective_cores_peak_sample": 0.2535967866699691,
+          "rss_kib_min": 334488,
+          "rss_kib_max": 364460,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-refresh-multi-cap-mixed-r4000-w60-1790558834": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 0.5194076008839094,
+          "effective_cores_peak_sample": 0.5437079135417303,
+          "rss_kib_min": 581008,
+          "rss_kib_max": 612668,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-mixed-r4000-w60-1790558834": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 0.10363807503408434,
+          "effective_cores_peak_sample": 0.11327248198786048,
+          "rss_kib_min": 20392,
+          "rss_kib_max": 21020,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790558948.5352495,
+            1790559006.0430717
+          ],
+          "effective_cores_mean": 0.2364895671918703,
+          "effective_cores_peak_sample": 0.2446185955729476,
+          "rss_kib_min": 29948,
+          "rss_kib_max": 46804,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "pool_wait_ms_per_acquisition": 3.802,
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 29,
+        "sample_interval_s": [
+          1790558947,
+          1790559006
+        ],
+        "pg_wait_samples": 29,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.793103448275862,
+          "Client": 15.620689655172415,
+          "IO": 1.0,
+          "LWLock": 9.517241379310345,
+          "Lock": 0.034482758620689655,
+          "Timeout": 0.034482758620689655
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 502,
+        "audit_pending_last_sample": 117,
+        "valkey_used_memory_bytes_peak": 37036376,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": true,
+        "vu_warnings": [
+          {
+            "role": "load",
+            "timestamp": "2026-09-28T01:28:06Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:28:06Z\" level=warning msg=\"Insufficient VUs, reached 1024 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_mixed"
+          },
+          {
+            "role": "argon2",
+            "timestamp": "2026-09-28T01:28:25Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T01:28:25Z\" level=warning msg=\"Insufficient VUs, reached 8 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=oidc_cold_login_refresh"
+          },
+          {
+            "role": "fapi",
+            "timestamp": "2026-09-28T01:28:51Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T01:28:51Z\" level=warning msg=\"Insufficient VUs, reached 32 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=fapi2_logged_in_high_security"
+          },
+          {
+            "role": "refresh",
+            "timestamp": "2026-09-28T01:28:07Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:28:07Z\" level=warning msg=\"Insufficient VUs, reached 64 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_refresh_token"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790559010.9306462,
+          "load_seconds": 129.9,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-mixed-r4000-w60-1790558834",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [
+            {
+              "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790558834",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "argon2",
+              "started_ts": 1790558883.7459269,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790558834",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "meta",
+              "started_ts": 1790558884.2464201,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790558834",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "fapi",
+              "started_ts": 1790558884.7199514,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790558834",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "refresh",
+              "started_ts": 1790558885.2453163,
+              "terminal_summary": true
+            }
+          ],
+          "started_ts": 1790558880.9901145
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-mixed-r4000-w60-1790558834",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-mixed-r4000-w60-1790558834",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "analyzer_stats": {
+        "load/capacity-cap-mixed.analyzer-stats.json": {
+          "points": 11911475,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.323,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "argon2/capacity-oidc-cold-login-refresh.analyzer-stats.json": {
+          "points": 85639,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "meta/capacity-metadata-jwks.analyzer-stats.json": {
+          "points": 1083458,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "fapi/capacity-fapi2-logged-in-high-security.analyzer-stats.json": {
+          "points": 310258,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "refresh/capacity-cap-refresh-token.analyzer-stats.json": {
+          "points": 1841320,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        }
+      },
+      "input_sha256": {
+        "multi/multi-cap-mixed-r4000-w60-1790558834/point.json": "deb7314d102053eafb8711a8f4a724fd8ebd183251ce002d7fb543acf79d8845",
+        "multi/multi-cap-mixed-r4000-w60-1790558834/load/run.log": "db05a230ecb9576927569804c1f0c9ceb0e130eaabb4871464b6d7c84de76353",
+        "multi/multi-cap-mixed-r4000-w60-1790558834/load/capacity-cap-mixed.k6.json": "95aadbc7a6d953690059dc312074fecd1add9a0db929ec9282c3c2428168958b",
+        "multi/multi-cap-mixed-r4000-w60-1790558834/load/capacity-cap-mixed.window.json": "caca84484a321157ad99e1d804e2d69d449a9f71481ce2e78d9aa4e9b99705cd"
+      },
+      "audit_reconciliation": {
+        "verdict": "PASS",
+        "journal": {
+          "batches": 5541,
+          "by_event_type": {
+            "authorization_approved": 73776,
+            "authorization_decision_intent": 73776,
+            "login_success": 1078,
+            "refresh_family_capacity_retired": 64240,
+            "token_issued": 396891
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 609761,
+          "expected_in_range": 609761,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 544195523,
+          "journal_sha256": "753bcaa4cd3382b98f38929572fdcf89c590f18078217df710e4edb847503617",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 396891
+        }
+      },
+      "source_checkout": "04146234c578e61797aacee7ef7c4687b75653a1"
+    },
+    {
+      "point_id": "multi-cap-mixed-r4000-w60-1790560209",
+      "recipe_id": "ad358f6ac4474b7b",
+      "verdict": "FAIL",
+      "effective_point": {
+        "scenario": "cap_mixed",
+        "rate": 4000,
+        "duration": "120s",
+        "warmup_ms": 60000,
+        "pre_vus": 1024,
+        "max_vus": 1024,
+        "user_count": 256,
+        "vector_count": 48000,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres_cpus": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey_cpus": [
+          160
+        ],
+        "infra_cpus": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": [
+          {
+            "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790560209",
+            "duration": "150s",
+            "max_vus": 64,
+            "name": "argon2",
+            "pre_vus": 64,
+            "rate": 8,
+            "scenario": "oidc_cold_login_refresh",
+            "started_ts": 1790560259.686021,
+            "user_count": 8
+          },
+          {
+            "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790560209",
+            "duration": "150s",
+            "max_vus": 16,
+            "name": "meta",
+            "pre_vus": 16,
+            "rate": 200,
+            "scenario": "metadata_jwks",
+            "started_ts": 1790560260.1545448,
+            "user_count": 16
+          },
+          {
+            "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790560209",
+            "duration": "150s",
+            "max_vus": 32,
+            "name": "fapi",
+            "pre_vus": 32,
+            "rate": 30,
+            "scenario": "fapi2_logged_in_high_security",
+            "started_ts": 1790560260.643335,
+            "user_count": 32
+          },
+          {
+            "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790560209",
+            "duration": "150s",
+            "max_vus": 256,
+            "name": "refresh",
+            "pre_vus": 256,
+            "rate": 600,
+            "scenario": "cap_refresh_token",
+            "started_ts": 1790560261.1510565,
+            "user_count": 64
+          }
+        ],
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 64
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "application_and_runner": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-mixed-r4000-w60-1790560209",
+        "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+        "runner_image_ref": "nazoauth-perf-perf",
+        "runner_image_revision": "dd69c9e2330580422ef417c5a38b726e509c1942",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "main_cohort": {
+        "window_start_s": 1790560322.007,
+        "window_end_s": 1790560382.007,
+        "measure_started_exact": 238863,
+        "measure_completed_exact": 238863,
+        "measure_dropped_exact": 1139,
+        "measure_scheduled_observed": 240002,
+        "measure_drop_fraction": 0.004746,
+        "measure_outcomes": {
+          "success": 238863
+        },
+        "measure_outcome_sum": 238863,
+        "drops_pre_window": 1173,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 240000,
+        "schedule_delta_vs_rational": 2,
+        "observed_schedule_rate": 4000.033,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "main_successful_ops_s": 3981.05,
+      "complete_operation_ms": {
+        "p50": 5.0,
+        "p95": 174.0,
+        "p99": 719.0
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790560323,
+          1790560382
+        ],
+        "http_requests": 341489,
+        "http_requests_per_s": 5787.949152542373,
+        "http_failed_requests": 0,
+        "vus_peak": 1022,
+        "vus_max_peak": 1024,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sidecars": {
+        "argon2": {
+          "verdict": "PASS",
+          "successful_ops_s": 8.0,
+          "complete_p95_ms": 1152.05,
+          "complete_p99_ms": 1272.21,
+          "scheduled": 1080,
+          "started": 1080,
+          "completed": 1080,
+          "dropped": 0,
+          "outcomes": {
+            "success": 1080
+          },
+          "reason": null
+        },
+        "meta": {
+          "verdict": "PASS",
+          "successful_ops_s": 200.0,
+          "complete_p95_ms": 1.0,
+          "complete_p99_ms": 2.0,
+          "scheduled": 27000,
+          "started": 27000,
+          "completed": 27000,
+          "dropped": 0,
+          "outcomes": {
+            "success": 27000
+          },
+          "reason": null
+        },
+        "fapi": {
+          "verdict": "FAIL",
+          "successful_ops_s": 30.0,
+          "complete_p95_ms": 776.0,
+          "complete_p99_ms": 868.0,
+          "scheduled": 4050,
+          "started": 4050,
+          "completed": 4050,
+          "dropped": 0,
+          "outcomes": {
+            "success": 4050
+          },
+          "reason": null
+        },
+        "refresh": {
+          "verdict": "FAIL",
+          "successful_ops_s": 599.63,
+          "complete_p95_ms": 260.0,
+          "complete_p99_ms": 293.0,
+          "scheduled": 81000,
+          "started": 80950,
+          "completed": 80950,
+          "dropped": 50,
+          "outcomes": {
+            "success": 80950
+          },
+          "reason": null
+        }
+      },
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "queue_dropped_zero": true,
+        "pending_zero_post_drain": true,
+        "enqueued_eq_persisted": true
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 7.247365456063198,
+          "effective_cores_peak_sample": 7.686671118507238,
+          "rss_kib_min": 200092,
+          "rss_kib_max": 208292,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 8.870588771840056,
+          "effective_cores_peak_sample": 12.11100648383125,
+          "rss_kib_min": 10602108,
+          "rss_kib_max": 10752868,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-mixed-r4000-w60-1790560209": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 4.767146522898273,
+          "effective_cores_peak_sample": 5.067697945155433,
+          "rss_kib_min": 5559100,
+          "rss_kib_max": 5622020,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-mixed-r4000-w60-1790560209": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 0.06822047415232196,
+          "effective_cores_peak_sample": 0.07647848199873614,
+          "rss_kib_min": 8472,
+          "rss_kib_max": 8564,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-argon2-multi-cap-mixed-r4000-w60-1790560209": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 0.059933806388056864,
+          "effective_cores_peak_sample": 0.0838736562146732,
+          "rss_kib_min": 570968,
+          "rss_kib_max": 596680,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-fapi-multi-cap-mixed-r4000-w60-1790560209": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 0.3335865558126252,
+          "effective_cores_peak_sample": 0.34772619972333263,
+          "rss_kib_min": 408748,
+          "rss_kib_max": 437388,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-meta-multi-cap-mixed-r4000-w60-1790560209": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 0.23433925584526416,
+          "effective_cores_peak_sample": 0.24681691917773935,
+          "rss_kib_min": 336148,
+          "rss_kib_max": 362320,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-refresh-multi-cap-mixed-r4000-w60-1790560209": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 0.5606027099127249,
+          "effective_cores_peak_sample": 0.6150734789076034,
+          "rss_kib_min": 1588488,
+          "rss_kib_max": 1616020,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-mixed-r4000-w60-1790560209": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 0.09751288113297997,
+          "effective_cores_peak_sample": 0.10602698640733874,
+          "rss_kib_min": 21044,
+          "rss_kib_max": 21136,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790560324.6472254,
+            1790560376.5378058
+          ],
+          "effective_cores_mean": 0.23761538031020615,
+          "effective_cores_peak_sample": 0.2498736008062139,
+          "rss_kib_min": 33672,
+          "rss_kib_max": 46808,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "pool_wait_ms_per_acquisition": 4.291,
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 28,
+        "sample_interval_s": [
+          1790560325,
+          1790560382
+        ],
+        "pg_wait_samples": 28,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.857142857142857,
+          "Client": 41.32142857142857,
+          "IO": 1.0714285714285714,
+          "LWLock": 14.357142857142858,
+          "Lock": 0.03571428571428571,
+          "Timeout": 0.07142857142857142
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 45987,
+        "audit_pending_last_sample": 39,
+        "valkey_used_memory_bytes_peak": 38655856,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": true,
+        "vu_warnings": [
+          {
+            "role": "load",
+            "timestamp": "2026-09-28T01:51:02Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:51:02Z\" level=warning msg=\"Insufficient VUs, reached 1024 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_mixed"
+          },
+          {
+            "role": "meta",
+            "timestamp": "2026-09-28T01:51:02Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:51:02Z\" level=warning msg=\"Insufficient VUs, reached 16 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=metadata_jwks"
+          },
+          {
+            "role": "refresh",
+            "timestamp": "2026-09-28T01:51:23Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T01:51:23Z\" level=warning msg=\"Insufficient VUs, reached 256 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_refresh_token"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790560386.8045273,
+          "load_seconds": 129.8,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-mixed-r4000-w60-1790560209",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [
+            {
+              "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790560209",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "argon2",
+              "started_ts": 1790560259.686021,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790560209",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "meta",
+              "started_ts": 1790560260.1545448,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790560209",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "fapi",
+              "started_ts": 1790560260.643335,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790560209",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "refresh",
+              "started_ts": 1790560261.1510565,
+              "terminal_summary": true
+            }
+          ],
+          "started_ts": 1790560256.9588823
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-mixed-r4000-w60-1790560209",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-mixed-r4000-w60-1790560209",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "analyzer_stats": {
+        "load/capacity-cap-mixed.analyzer-stats.json": {
+          "points": 12517623,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.327,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "argon2/capacity-oidc-cold-login-refresh.analyzer-stats.json": {
+          "points": 95804,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "meta/capacity-metadata-jwks.analyzer-stats.json": {
+          "points": 1083402,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.256,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "fapi/capacity-fapi2-logged-in-high-security.analyzer-stats.json": {
+          "points": 311568,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "refresh/capacity-cap-refresh-token.analyzer-stats.json": {
+          "points": 2351862,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.255,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        }
+      },
+      "input_sha256": {
+        "multi/multi-cap-mixed-r4000-w60-1790560209/point.json": "b35a6d80b513acae31894d1ed0d61f4469b33c06913b67b9ee628bf7a99405db",
+        "multi/multi-cap-mixed-r4000-w60-1790560209/load/run.log": "03ab471226d9b1b4cadd3130feab8262fd3a35b2458f475a46ee32aa3acdb91d",
+        "multi/multi-cap-mixed-r4000-w60-1790560209/load/capacity-cap-mixed.k6.json": "af15d9a4dd8b93b038728fd15d8ed012792f07691391a52c8c815d605321f61b",
+        "multi/multi-cap-mixed-r4000-w60-1790560209/load/capacity-cap-mixed.window.json": "8c83f83da6803b2dfbb5bce1d3849cc2aa04a9aa321685838005d13d40c2e06d"
+      },
+      "audit_reconciliation": {
+        "verdict": "PASS",
+        "journal": {
+          "batches": 4669,
+          "by_event_type": {
+            "authorization_approved": 78125,
+            "authorization_decision_intent": 78125,
+            "login_success": 1201,
+            "refresh_family_capacity_retired": 68589,
+            "token_issued": 436628
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 662668,
+          "expected_in_range": 662668,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 592225070,
+          "journal_sha256": "5cbbad914484e809f5b150f03f11063af79c15b27865745dbe1307f563cca4b1",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 436628
+        }
+      },
+      "source_checkout": "04146234c578e61797aacee7ef7c4687b75653a1"
+    },
+    {
+      "point_id": "multi-cap-mixed-r4000-w60-1790559212",
+      "recipe_id": "d53a15a8f8016155",
+      "verdict": "FAIL",
+      "effective_point": {
+        "scenario": "cap_mixed",
+        "rate": 4000,
+        "duration": "120s",
+        "warmup_ms": 60000,
+        "pre_vus": 2048,
+        "max_vus": 2048,
+        "user_count": 256,
+        "vector_count": 48000,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres_cpus": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey_cpus": [
+          160
+        ],
+        "infra_cpus": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": [
+          {
+            "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559212",
+            "duration": "150s",
+            "max_vus": 8,
+            "name": "argon2",
+            "pre_vus": 8,
+            "rate": 8,
+            "scenario": "oidc_cold_login_refresh",
+            "started_ts": 1790559263.7410474,
+            "user_count": 8
+          },
+          {
+            "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790559212",
+            "duration": "150s",
+            "max_vus": 16,
+            "name": "meta",
+            "pre_vus": 16,
+            "rate": 200,
+            "scenario": "metadata_jwks",
+            "started_ts": 1790559264.306255,
+            "user_count": 16
+          },
+          {
+            "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559212",
+            "duration": "150s",
+            "max_vus": 32,
+            "name": "fapi",
+            "pre_vus": 32,
+            "rate": 30,
+            "scenario": "fapi2_logged_in_high_security",
+            "started_ts": 1790559265.013795,
+            "user_count": 32
+          },
+          {
+            "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559212",
+            "duration": "150s",
+            "max_vus": 64,
+            "name": "refresh",
+            "pre_vus": 64,
+            "rate": 600,
+            "scenario": "cap_refresh_token",
+            "started_ts": 1790559265.5498655,
+            "user_count": 64
+          }
+        ],
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 32
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "application_and_runner": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-mixed-r4000-w60-1790559212",
+        "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+        "runner_image_ref": "nazoauth-perf-perf",
+        "runner_image_revision": "dd69c9e2330580422ef417c5a38b726e509c1942",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "main_cohort": {
+        "window_start_s": 1790559328.914,
+        "window_end_s": 1790559388.914,
+        "measure_started_exact": 239779,
+        "measure_completed_exact": 239779,
+        "measure_dropped_exact": 221,
+        "measure_scheduled_observed": 240000,
+        "measure_drop_fraction": 0.000921,
+        "measure_outcomes": {
+          "success": 239779
+        },
+        "measure_outcome_sum": 239779,
+        "drops_pre_window": 13688,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 240000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 4000.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "main_successful_ops_s": 3996.317,
+      "complete_operation_ms": {
+        "p50": 6.0,
+        "p95": 62.0,
+        "p99": 266.0
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790559329,
+          1790559388
+        ],
+        "http_requests": 345721,
+        "http_requests_per_s": 5859.677966101695,
+        "http_failed_requests": 0,
+        "vus_peak": 1991,
+        "vus_max_peak": 2048,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sidecars": {
+        "argon2": {
+          "verdict": "FAIL",
+          "successful_ops_s": 7.0,
+          "complete_p95_ms": 2577.5999999999995,
+          "complete_p99_ms": 2888.199999999999,
+          "scheduled": 1080,
+          "started": 945,
+          "completed": 945,
+          "dropped": 135,
+          "outcomes": {
+            "success": 945
+          },
+          "reason": null
+        },
+        "meta": {
+          "verdict": "PASS",
+          "successful_ops_s": 200.0,
+          "complete_p95_ms": 1.0,
+          "complete_p99_ms": 2.0,
+          "scheduled": 27000,
+          "started": 27000,
+          "completed": 27000,
+          "dropped": 0,
+          "outcomes": {
+            "success": 27000
+          },
+          "reason": null
+        },
+        "fapi": {
+          "verdict": "FAIL",
+          "successful_ops_s": 27.607,
+          "complete_p95_ms": 1967.0,
+          "complete_p99_ms": 2106.0,
+          "scheduled": 4050,
+          "started": 3727,
+          "completed": 3727,
+          "dropped": 323,
+          "outcomes": {
+            "success": 3727
+          },
+          "reason": null
+        },
+        "refresh": {
+          "verdict": "FAIL",
+          "successful_ops_s": 487.659,
+          "complete_p95_ms": 262.0,
+          "complete_p99_ms": 673.0,
+          "scheduled": 81000,
+          "started": 65834,
+          "completed": 65834,
+          "dropped": 15166,
+          "outcomes": {
+            "success": 65834
+          },
+          "reason": null
+        }
+      },
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "queue_dropped_zero": true,
+        "pending_zero_post_drain": true,
+        "enqueued_eq_persisted": true
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 7.331570062736661,
+          "effective_cores_peak_sample": 7.45115368066671,
+          "rss_kib_min": 232128,
+          "rss_kib_max": 258608,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 7.97734005564956,
+          "effective_cores_peak_sample": 8.31424854886164,
+          "rss_kib_min": 5764756,
+          "rss_kib_max": 5795412,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-mixed-r4000-w60-1790559212": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 4.939023063337707,
+          "effective_cores_peak_sample": 5.992940979966406,
+          "rss_kib_min": 18738496,
+          "rss_kib_max": 19102372,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-mixed-r4000-w60-1790559212": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 0.06742825104997455,
+          "effective_cores_peak_sample": 0.07694184102707094,
+          "rss_kib_min": 8980,
+          "rss_kib_max": 9140,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559212": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 0.05509851371512206,
+          "effective_cores_peak_sample": 0.06264398236898681,
+          "rss_kib_min": 328588,
+          "rss_kib_max": 356960,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559212": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 0.34099429816701415,
+          "effective_cores_peak_sample": 0.38108422607800313,
+          "rss_kib_min": 555500,
+          "rss_kib_max": 581552,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-meta-multi-cap-mixed-r4000-w60-1790559212": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 0.24428292094676493,
+          "effective_cores_peak_sample": 0.26449681444683326,
+          "rss_kib_min": 400080,
+          "rss_kib_max": 429288,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559212": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 0.5534896150473625,
+          "effective_cores_peak_sample": 0.5942130859884922,
+          "rss_kib_min": 883024,
+          "rss_kib_max": 914416,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-mixed-r4000-w60-1790559212": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 0.09594076863682094,
+          "effective_cores_peak_sample": 0.1049206923096422,
+          "rss_kib_min": 20804,
+          "rss_kib_max": 20912,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 10,
+          "interval_s": [
+            1790559333.1819403,
+            1790559385.0889666
+          ],
+          "effective_cores_mean": 0.24177844305062304,
+          "effective_cores_peak_sample": 0.25579626134002953,
+          "rss_kib_min": 31776,
+          "rss_kib_max": 46920,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "pool_wait_ms_per_acquisition": 2.352,
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 27,
+        "sample_interval_s": [
+          1790559330,
+          1790559387
+        ],
+        "pg_wait_samples": 27,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.888888888888889,
+          "Client": 13.37037037037037,
+          "IO": 1.037037037037037,
+          "LWLock": 11.11111111111111,
+          "Timeout": 0.037037037037037035
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 104607,
+        "audit_pending_last_sample": 73455,
+        "valkey_used_memory_bytes_peak": 37553272,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": true,
+        "vu_warnings": [
+          {
+            "role": "load",
+            "timestamp": "2026-09-28T01:34:29Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:34:29Z\" level=warning msg=\"Insufficient VUs, reached 2048 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_mixed"
+          },
+          {
+            "role": "argon2",
+            "timestamp": "2026-09-28T01:34:30Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:34:30Z\" level=warning msg=\"Insufficient VUs, reached 8 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=oidc_cold_login_refresh"
+          },
+          {
+            "role": "fapi",
+            "timestamp": "2026-09-28T01:34:30Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:34:30Z\" level=warning msg=\"Insufficient VUs, reached 32 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=fapi2_logged_in_high_security"
+          },
+          {
+            "role": "refresh",
+            "timestamp": "2026-09-28T01:34:28Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:34:28Z\" level=warning msg=\"Insufficient VUs, reached 64 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_refresh_token"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790559391.311752,
+          "load_seconds": 130.4,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-mixed-r4000-w60-1790559212",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [
+            {
+              "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559212",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "argon2",
+              "started_ts": 1790559263.7410474,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790559212",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "meta",
+              "started_ts": 1790559264.306255,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559212",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "fapi",
+              "started_ts": 1790559265.013795,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559212",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "refresh",
+              "started_ts": 1790559265.5498655,
+              "terminal_summary": true
+            }
+          ],
+          "started_ts": 1790559260.948105
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-mixed-r4000-w60-1790559212",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-mixed-r4000-w60-1790559212",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "analyzer_stats": {
+        "load/capacity-cap-mixed.analyzer-stats.json": {
+          "points": 12347226,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.46,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "argon2/capacity-oidc-cold-login-refresh.analyzer-stats.json": {
+          "points": 84341,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "meta/capacity-metadata-jwks.analyzer-stats.json": {
+          "points": 1083436,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.254,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "fapi/capacity-fapi2-logged-in-high-security.analyzer-stats.json": {
+          "points": 289039,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.253,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "refresh/capacity-cap-refresh-token.analyzer-stats.json": {
+          "points": 1934162,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.256,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        }
+      },
+      "input_sha256": {
+        "multi/multi-cap-mixed-r4000-w60-1790559212/point.json": "b18e1298e7f807d93e009a4943d0d9a5486cafa3cdda9f130e4107aa9d6765fa",
+        "multi/multi-cap-mixed-r4000-w60-1790559212/load/run.log": "805b36542310e6a369a9cb054fbc74afb4776f41e1d75c9890230ab766e9b026",
+        "multi/multi-cap-mixed-r4000-w60-1790559212/load/capacity-cap-mixed.k6.json": "5d225581a928ac67cbbd4dadf26e864108f7feeb3ace94a79e89f15f9764f4d3",
+        "multi/multi-cap-mixed-r4000-w60-1790559212/load/capacity-cap-mixed.window.json": "62b2f8415d983455ca08f35207796a2f2fef97f073a8a3e28f1377b88d6bd63c"
+      },
+      "audit_reconciliation": {
+        "verdict": "PASS",
+        "journal": {
+          "batches": 3389,
+          "by_event_type": {
+            "authorization_approved": 76956,
+            "authorization_decision_intent": 76956,
+            "login_success": 1061,
+            "refresh_family_capacity_retired": 58204,
+            "token_issued": 412525
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 625702,
+          "expected_in_range": 625702,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 558514759,
+          "journal_sha256": "49a09274f1808e5f36e83d033d230b884f7d6d8aa6ee8f9a828f607c40161b5f",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 412525
+        }
+      },
+      "source_checkout": "04146234c578e61797aacee7ef7c4687b75653a1"
+    },
+    {
+      "point_id": "multi-cap-mixed-r4000-w60-1790559876",
+      "recipe_id": "f52ff62ea926f603",
+      "verdict": "FAIL",
+      "effective_point": {
+        "scenario": "cap_mixed",
+        "rate": 4000,
+        "duration": "120s",
+        "warmup_ms": 60000,
+        "pre_vus": 1024,
+        "max_vus": 1024,
+        "user_count": 256,
+        "vector_count": 48000,
+        "app_cpus": [
+          24,
+          25,
+          26,
+          27,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143
+        ],
+        "postgres_cpus": [
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159
+        ],
+        "valkey_cpus": [
+          160
+        ],
+        "infra_cpus": [
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191
+        ],
+        "sidecars": [
+          {
+            "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559876",
+            "duration": "150s",
+            "max_vus": 8,
+            "name": "argon2",
+            "pre_vus": 8,
+            "rate": 8,
+            "scenario": "oidc_cold_login_refresh",
+            "started_ts": 1790559927.6771152,
+            "user_count": 8
+          },
+          {
+            "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790559876",
+            "duration": "150s",
+            "max_vus": 16,
+            "name": "meta",
+            "pre_vus": 16,
+            "rate": 200,
+            "scenario": "metadata_jwks",
+            "started_ts": 1790559928.2463324,
+            "user_count": 16
+          },
+          {
+            "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559876",
+            "duration": "150s",
+            "max_vus": 32,
+            "name": "fapi",
+            "pre_vus": 32,
+            "rate": 30,
+            "scenario": "fapi2_logged_in_high_security",
+            "started_ts": 1790559928.7842014,
+            "user_count": 32
+          },
+          {
+            "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559876",
+            "duration": "150s",
+            "max_vus": 256,
+            "name": "refresh",
+            "pre_vus": 256,
+            "rate": 600,
+            "scenario": "cap_refresh_token",
+            "started_ts": 1790559929.3599882,
+            "user_count": 64
+          }
+        ],
+        "app_env_overrides": {
+          "DATABASE_MAX_CONNECTIONS": 64
+        },
+        "issuance_retention_seconds": 360,
+        "issuance_max_expired_age_seconds": 120,
+        "capture_audit_journal": null
+      },
+      "application_and_runner": {
+        "app_image_id": "sha256:5f62a3a2247e609d72ee03de1bc0d330873d5742b1f94cd5ec144baa69f2f71d",
+        "app_image_ref": "nazoauth-perf-nazoauth",
+        "app_image_revision": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "app_source_sha_file": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "applied_migrations_sha256": "812aa6dc33897e769a6ee6d7481aa5bed8b216097d38ce0ca81a3268e4832920",
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "k6_oauth_eq_workspace": true,
+        "pg_checkpoint_completion_target": "0.9",
+        "pg_checkpoint_timeout": "5min",
+        "pg_fsync": "on",
+        "pg_full_page_writes": "on",
+        "pg_max_connections": "100",
+        "pg_max_wal_size": "8GB",
+        "pg_shared_buffers": "128MB",
+        "pg_synchronous_commit": "on",
+        "pg_track_io_timing": "on",
+        "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "point": "multi-cap-mixed-r4000-w60-1790559876",
+        "runner_image_id": "sha256:64b272744b87acc391c9a628ed37aa070d8517471527e6b2adc5066ae61664ef",
+        "runner_image_ref": "nazoauth-perf-perf",
+        "runner_image_revision": "dd69c9e2330580422ef417c5a38b726e509c1942",
+        "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+        "source_sha_eq_file": true,
+        "source_sha_eq_image_revision": true,
+        "source_sha_registered": true,
+        "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+      },
+      "main_cohort": {
+        "window_start_s": 1790559990.631,
+        "window_end_s": 1790560050.631,
+        "measure_started_exact": 239136,
+        "measure_completed_exact": 239136,
+        "measure_dropped_exact": 864,
+        "measure_scheduled_observed": 240000,
+        "measure_drop_fraction": 0.0036,
+        "measure_outcomes": {
+          "success": 239136
+        },
+        "measure_outcome_sum": 239136,
+        "drops_pre_window": 3351,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 240000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 4000.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "main_successful_ops_s": 3985.6,
+      "complete_operation_ms": {
+        "p50": 5.0,
+        "p95": 128.0,
+        "p99": 443.6499999999942
+      },
+      "http": {
+        "status": "OBSERVED",
+        "interval_s": [
+          1790559991,
+          1790560050
+        ],
+        "http_requests": 342639,
+        "http_requests_per_s": 5807.440677966101,
+        "http_failed_requests": 0,
+        "vus_peak": 1023,
+        "vus_max_peak": 1024,
+        "scope": "whole seconds fully inside main measurement; request completion time"
+      },
+      "sidecars": {
+        "argon2": {
+          "verdict": "FAIL",
+          "successful_ops_s": 7.674,
+          "complete_p95_ms": 1252.25,
+          "complete_p99_ms": 1304.65,
+          "scheduled": 1080,
+          "started": 1036,
+          "completed": 1036,
+          "dropped": 44,
+          "outcomes": {
+            "success": 1036
+          },
+          "reason": null
+        },
+        "meta": {
+          "verdict": "PASS",
+          "successful_ops_s": 200.0,
+          "complete_p95_ms": 1.0,
+          "complete_p99_ms": 2.0,
+          "scheduled": 27000,
+          "started": 27000,
+          "completed": 27000,
+          "dropped": 0,
+          "outcomes": {
+            "success": 27000
+          },
+          "reason": null
+        },
+        "fapi": {
+          "verdict": "FAIL",
+          "successful_ops_s": 30.0,
+          "complete_p95_ms": 857.5499999999997,
+          "complete_p99_ms": 900.0,
+          "scheduled": 4050,
+          "started": 4050,
+          "completed": 4050,
+          "dropped": 0,
+          "outcomes": {
+            "success": 4050
+          },
+          "reason": null
+        },
+        "refresh": {
+          "verdict": "FAIL",
+          "successful_ops_s": 600.0,
+          "complete_p95_ms": 283.0,
+          "complete_p99_ms": 305.0,
+          "scheduled": 81000,
+          "started": 81000,
+          "completed": 81000,
+          "dropped": 0,
+          "outcomes": {
+            "success": 81000
+          },
+          "reason": null
+        }
+      },
+      "health": {
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "queue_dropped_zero": true,
+        "pending_zero_post_drain": true,
+        "enqueued_eq_persisted": true
+      },
+      "cpu": {
+        "app": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 7.200410373921914,
+          "effective_cores_peak_sample": 7.558444422208914,
+          "rss_kib_min": 133636,
+          "rss_kib_max": 199160,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "postgres": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 8.641539019981575,
+          "effective_cores_peak_sample": 10.71475615837074,
+          "rss_kib_min": 10621244,
+          "rss_kib_max": 10834328,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-load-multi-cap-mixed-r4000-w60-1790559876": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 4.749689304309441,
+          "effective_cores_peak_sample": 5.002819763519311,
+          "rss_kib_min": 5531272,
+          "rss_kib_max": 5619444,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-rcv-multi-cap-mixed-r4000-w60-1790559876": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 0.06872484707667717,
+          "effective_cores_peak_sample": 0.07672701048521485,
+          "rss_kib_min": 8632,
+          "rss_kib_max": 8728,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559876": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 0.05285184940160706,
+          "effective_cores_peak_sample": 0.057309099653765544,
+          "rss_kib_min": 305360,
+          "rss_kib_max": 332916,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559876": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 0.33001880880475437,
+          "effective_cores_peak_sample": 0.3514746255262893,
+          "rss_kib_min": 413864,
+          "rss_kib_max": 440664,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-meta-multi-cap-mixed-r4000-w60-1790559876": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 0.234257537116694,
+          "effective_cores_peak_sample": 0.2406111542281153,
+          "rss_kib_min": 336568,
+          "rss_kib_max": 362756,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559876": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 0.5525896333474957,
+          "effective_cores_peak_sample": 0.6022962403503506,
+          "rss_kib_min": 1556164,
+          "rss_kib_max": 1591752,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "sis-worker-multi-cap-mixed-r4000-w60-1790559876": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 0.09419141477514131,
+          "effective_cores_peak_sample": 0.10461354531657188,
+          "rss_kib_min": 20900,
+          "rss_kib_max": 21016,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        },
+        "valkey": {
+          "status": "OBSERVED",
+          "samples": 11,
+          "interval_s": [
+            1790559992.886446,
+            1790560050.2165117
+          ],
+          "effective_cores_mean": 0.23565296548373316,
+          "effective_cores_peak_sample": 0.2505561686920082,
+          "rss_kib_min": 31592,
+          "rss_kib_max": 48492,
+          "rss_scope": "sum of process RSS; PostgreSQL shared pages counted repeatedly"
+        }
+      },
+      "pool_wait_ms_per_acquisition": 3.214,
+      "sampled_health": {
+        "status": "OBSERVED",
+        "samples": 28,
+        "sample_interval_s": [
+          1790559992,
+          1790560049
+        ],
+        "pg_wait_samples": 28,
+        "pg_wait_type_backend_count_sample_mean": {
+          "Activity": 7.892857142857143,
+          "Client": 43.714285714285715,
+          "IO": 1.0357142857142858,
+          "LWLock": 11.928571428571429,
+          "Lock": 0.07142857142857142,
+          "Timeout": 0.03571428571428571
+        },
+        "pg_wait_scope": "all database backends, including idle clients; sampled counts, not wait time",
+        "audit_pending_peak": 44067,
+        "audit_pending_last_sample": 268,
+        "valkey_used_memory_bytes_peak": 38452128,
+        "postgres_sample_errors": 0,
+        "valkey_sample_errors": 0
+      },
+      "generator": {
+        "insufficient_vus_warning_whole_run": true,
+        "vu_warnings": [
+          {
+            "role": "load",
+            "timestamp": "2026-09-28T01:45:30Z",
+            "phase": "before_measurement",
+            "line": "time=\"2026-09-28T01:45:30Z\" level=warning msg=\"Insufficient VUs, reached 1024 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=cap_mixed"
+          },
+          {
+            "role": "argon2",
+            "timestamp": "2026-09-28T01:46:11Z",
+            "phase": "measurement",
+            "line": "time=\"2026-09-28T01:46:11Z\" level=warning msg=\"Insufficient VUs, reached 8 active VUs and cannot initialize more\" executor=constant-arrival-rate scenario=oidc_cold_login_refresh"
+          }
+        ],
+        "load_lifecycle": {
+          "ended_ts": 1790560055.0345042,
+          "load_seconds": 130.2,
+          "load_status": "completed",
+          "main_container": "sis-load-multi-cap-mixed-r4000-w60-1790559876",
+          "main_exit_code": "0",
+          "main_oom_killed": false,
+          "sidecars": [
+            {
+              "container": "sis-side-argon2-multi-cap-mixed-r4000-w60-1790559876",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "argon2",
+              "started_ts": 1790559927.6771152,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-meta-multi-cap-mixed-r4000-w60-1790559876",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "meta",
+              "started_ts": 1790559928.2463324,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-fapi-multi-cap-mixed-r4000-w60-1790559876",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "fapi",
+              "started_ts": 1790559928.7842014,
+              "terminal_summary": true
+            },
+            {
+              "container": "sis-side-refresh-multi-cap-mixed-r4000-w60-1790559876",
+              "exit_code": "0",
+              "interrupted": false,
+              "name": "refresh",
+              "started_ts": 1790559929.3599882,
+              "terminal_summary": true
+            }
+          ],
+          "started_ts": 1790559924.818023
+        },
+        "sampler_health": {
+          "checks": {
+            "proc": {
+              "container": "sis-proc-multi-cap-mixed-r4000-w60-1790559876",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            },
+            "soak": {
+              "container": "sis-sampler-multi-cap-mixed-r4000-w60-1790559876",
+              "detail": "ok",
+              "meta_ok": true,
+              "running": true
+            }
+          },
+          "ok": true
+        }
+      },
+      "analyzer_stats": {
+        "load/capacity-cap-mixed.analyzer-stats.json": {
+          "points": 12501301,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.541,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "argon2/capacity-oidc-cold-login-refresh.analyzer-stats.json": {
+          "points": 91880,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.251,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "meta/capacity-metadata-jwks.analyzer-stats.json": {
+          "points": 1083458,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.254,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "fapi/capacity-fapi2-logged-in-high-security.analyzer-stats.json": {
+          "points": 311570,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.26,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        },
+        "refresh/capacity-cap-refresh-token.analyzer-stats.json": {
+          "points": 2353204,
+          "parse_errors": 0,
+          "reader_error": null,
+          "lag_max_s": 0.276,
+          "lag_over_5s": 0,
+          "diag_overflow": false
+        }
+      },
+      "input_sha256": {
+        "multi/multi-cap-mixed-r4000-w60-1790559876/point.json": "3a962c9bbfde8da4a5dd95364d9a37fadaf0f943f38ec95213c41803fee47498",
+        "multi/multi-cap-mixed-r4000-w60-1790559876/load/run.log": "e2de61cef2b35665b192e0cbd083b2fb6f334ba39b0c6d3497c4aad8c200109e",
+        "multi/multi-cap-mixed-r4000-w60-1790559876/load/capacity-cap-mixed.k6.json": "e5ee58f48c909e360097bd99c457c10a99695ead2f6020162e5eec26bb005e0c",
+        "multi/multi-cap-mixed-r4000-w60-1790559876/load/capacity-cap-mixed.window.json": "18a96764f203498cd31a659ed273501e5f5d7c87c35824c009b00478b8385f53"
+      },
+      "audit_reconciliation": {
+        "verdict": "PASS",
+        "journal": {
+          "batches": 4817,
+          "by_event_type": {
+            "authorization_approved": 78421,
+            "authorization_decision_intent": 78421,
+            "login_success": 1157,
+            "refresh_family_capacity_retired": 68885,
+            "token_issued": 435619
+          },
+          "collected": true,
+          "duplicate_sequences": 0,
+          "events_in_range": 662503,
+          "expected_in_range": 662503,
+          "foreign_deployment_batches": 0,
+          "journal_bytes": 592035417,
+          "journal_sha256": "d33159422b6c6c6048fdfd3ee099d4d584e459ee36d848e89b35d587021a09bd",
+          "malformed_lines": 0,
+          "range_contiguous": true,
+          "sequence_gaps": 0,
+          "token_issued_in_range": 435619
+        }
+      },
+      "source_checkout": "04146234c578e61797aacee7ef7c4687b75653a1"
+    }
+  ]
+}

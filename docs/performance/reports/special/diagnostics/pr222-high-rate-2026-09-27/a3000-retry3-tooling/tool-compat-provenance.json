@@ -1,0 +1,14 @@
+{
+  "baseline_diagnostic_patch": "dc72cf469a2c5465cbb8a8185e0cff7d9999ad96",
+  "production_A": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+  "shared_harness_H": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+  "task_local_compatibility_patch_sha256": "e6849d96a53034dd5f5cff3ce5585df3f764d9f0cde14c1184b5d7dfa1ad227f",
+  "task_local_compatibility_patch_lines": 359,
+  "active_single_instance_scaling_sha256": "e00654d00b4c3f2da4a9327f54c2b3bc61076e4318f2ad68e8ecca16de8f979f",
+  "active_point_runner_sha256": "14db33f9500f14a9f29b46530eb00528ac1c2d6899c85c94cc18071c69d8b7fc",
+  "change": "Before removing main and sidecar runner containers, stream each /out directory to the task container through Docker API copy so remote-daemon bind paths cannot drop formal summaries or timing markers.",
+  "compatibility_probe": "isolated bind-mounted Docker cp probe passed",
+  "run_id": "steady-a-3000-retry3-20260927-135400",
+  "run_started_utc": "2026-09-27T13:55:14Z",
+  "run_status": "RUNNING"
+}

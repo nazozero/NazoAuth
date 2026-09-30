@@ -112,7 +112,11 @@ Each `ModuleId` declares:
 An administrator PATCH changes only desired state and returns `202 Accepted`.
 The UI must show the request as pending until actual state and revision confirm
 completion. Desired state is durable; actual state is reconciled by each
-server instance.
+server instance. Each one-second reconciliation pass reads the tenant's desired
+state and this instance's actual state in one PostgreSQL snapshot. The snapshot
+only skips already-settled modules whose dependency and admission checks still
+hold; modules requiring action retain fresh reads and the revision-fenced state
+machine. No durable snapshot is cached between passes.
 
 Every asynchronous transition carries the desired-state revision. The worker
 revalidates that revision before publishing an active snapshot, before
@@ -152,33 +156,79 @@ storage; repositories are injected only into flows that query them.
 
 ## Token Issuance and Security State
 
-Token issuance commits through `TokenIssuanceRepository` against one durable
-fence: the `oauth_token_issuances` table. Two modes exist:
+Token issuance commits through `TokenIssuanceRepository`. Its two modes retain
+only state required by their semantics:
 
-- `Fresh` inserts unconditionally — one statement, no fence row content, no
-  request digest, and no stored response.
-- `SingleUse` inserts under a partial unique index on the 32-byte BLAKE3
-  `single_use_key_blake3` fence column and re-checks the verified grant
-  deadline inside the same transaction. The commit reports `Committed`,
-  `AlreadyUsed`, `GrantExpired`, `ClientInactive`, `SubjectInactive`, or
-  `RotationConflict`; a `GrantExpired` result means the transaction rolled
-  back and its connection returns to the pool.
+- `Fresh` creates no `oauth_token_issuances` row. Refresh rotation/family
+  changes, a first non-public subject binding when needed, and Required audit
+  commit together. A client-credentials issuance ordinarily writes only audit.
+- `SingleUse` retains a compact receipt under the 32-byte BLAKE3 grant fence,
+  with the issued JTI, acceptance deadline and optional refresh family needed
+  for replay handling. New receipts do not store user ownership. Grant expiry
+  is rechecked in the transaction; expiry rolls it back and returns the healthy
+  connection to the pool.
 
-The generic issuance path accepts no `Idempotency-Key`, persists no request
-digest, and stores no encrypted response envelope; there is no generic
-response replay or recovery. One-time consumption remains atomic where the
-protocol requires it — authorization codes, device authorization, JWT Bearer
-assertions, and CIBA consume through the state store — and refresh-token
-rotation keeps its family reuse protection and the bounded lost-response
-recovery. DPoP and mTLS sender constraints and the tenant/client/subject/user
-final checks run inside the commit transaction; the security audit event
-commits with the issuance row.
+Client-only issuance reuses the access-token epoch read in the request's client
+authentication snapshot. Its fixed salt/epoch projection preserves prepared-query
+reuse while reading current values on every request. OIDC issuance with a public
+subject also reuses the user epoch returned with the active subject claims in
+`PreparedTokenSubject`. This
+request-local snapshot belongs to the authorization core; its security version
+is not serialized into the public subject claims. Non-OIDC or non-public user
+issuance keeps the narrow principal/binding read before signing. The commit
+locks client then user and rechecks activity and these exact epochs. A
+concurrent deactivate/reactivate cycle cannot admit an older signed snapshot.
+Principal deactivation increments its epoch in the same database row update;
+reactivation never resets it. Online token validation combines individual JTI
+revocation with current principal activity and signed epoch checks in one read.
+The offline signature verifier retains its existing offline-only guarantee.
 
-Access-token ownership is read from PostgreSQL: user-facing and credential
-flows resolve the issuing user through `oauth_token_issuances` rather than a
-Valkey JTI-to-subject projection, keeping the durable store the single source
-of truth. OpenID4VC preauthorized issuance keeps its own storage and is not
-mixed into the generic issuance fence.
+`DbPool` records its creating runtime as the connection I/O owner. The issuance
+transaction executes on that same runtime, so its sequential statements do not
+repeatedly wake the HTTP worker runtime. Pure contract preparation still happens
+before checkout. The request owns the transaction task through `JoinSet`:
+cancellation aborts it, and `DiscardOnDrop` removes the physical connection unless
+commit or rollback was confirmed. This preserves the transaction's lock order,
+atomic audit append and rollback behavior without creating another runtime.
+
+The audit adapter batches up to 64 events for at most 10 ms from the first
+arrival; full batches and closed channels flush immediately. Standalone
+Required records have a separate bounded channel and wait for the batch's
+successful durable commit before callers continue. Queue saturation, channel
+closure, worker termination and append failure return errors. Failed Required
+batches report their first error without retrying or blocking subsequent
+batches; caller cancellation never turns an unconfirmed append into success.
+Required intents still commit before destructive state consumption. Token
+issuance keeps its Required audit inside the business transaction.
+
+Telemetry retains its independent queue, FIFO whole-batch retry and overflow
+behavior. Its counters exclude Required records. Both channels reuse the same
+batch worker implementation, existing runtime, pool and ledger transaction;
+a retrying Telemetry batch cannot block the Required channel. Bootstrap installs
+their senders and readiness repository together in one process-lifetime owner.
+
+Public subjects carry their existing user identity. Pairwise/non-public
+subjects resolve through `oauth_subject_bindings`, keyed by tenant and subject;
+repeated issuance reuses the relation without writing it again. Existing `sub`
+values and internal-user confidentiality are unchanged. Bindings end with their
+owning user, not with individual token expiry. Epoch-less tokens retain legacy
+JTI revocation and issuance-based ownership during the remaining acceptance
+window. Old records drain under their existing retention policy. Principal-wide
+revocation enumerates only these legacy records and the separately owned
+OpenID4VC preauthorized grants; new SingleUse receipts are excluded.
+
+The generic path accepts no `Idempotency-Key`, stores no request digest or
+response envelope, and implements no generic response recovery. Authorization
+code, device, JWT Bearer and CIBA atomic consumption, refresh-family reuse and
+bounded lost-response recovery, DPoP/mTLS binding, tenant isolation and Required
+audit remain mandatory. OpenID4VC preauthorized issuance keeps its own storage.
+
+OpenID4VC preauthorized transaction-code verification uses the host's shared,
+bounded password verifier. The repository releases its read connection before
+waiting for Argon2, then conditionally consumes the unchanged offer in one
+statement. That write rechecks the database clock, tenant, code, verifier and
+authorization snapshot; concurrent requests still have exactly one winner.
+Verifier saturation returns storage unavailable rather than an invalid code.
 
 Expired security state is reclaimed by a bounded host-owned worker: each
 server process runs one maintenance worker, each batch is capped per
@@ -233,3 +283,5 @@ Use the commands and isolated service prerequisites in
 [testing.md](testing.md#verification). Choose validation for the changed
 boundary; source checks do not establish deployment, conformance, or load-test
 results. Historical reports apply only to their recorded revisions.
+
+The new refresh-family collision probe deliberately uses an uncached parameterized query: a named plan selected for an empty family table can retain a sequential scan after rapid growth. It still checks only the tenant/family primary key before any retirement or insertion; collision compromise and audit semantics are unchanged. Other typed principal and lock queries retain prepared-plan reuse.

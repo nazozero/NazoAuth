@@ -139,6 +139,14 @@ fn new_refresh(
 fn issuance(token: NewRefreshToken) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: (token.user_id).map(|_| 0),
+            subject_bound: false,
+        },
+        subject: (token.user_id)
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "client".to_owned()),
         issuance_id,
         tenant_id: token.tenant_id,
         client_id: token.client_id,
@@ -515,8 +523,8 @@ async fn retired_family_tokens_resolve_as_unknown_grant() {
             assert!(resolved.is_some(), "surviving families still resolve");
         }
     }
-    // The retired family left no residual state: no spent proofs and no
-    // orphaned contract, while the surviving family's spent proof still
+    // Retirement removes the family and spent proofs; contract reclamation
+    // belongs to maintenance. The surviving family's spent proof still
     // resolves for replay detection.
     let retired_family = created[0].0;
     let spent_left = sql_query(
@@ -658,7 +666,8 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
 
     // Rotate well past the proof bound; the family stays one live row and the
     // proof count must converge on the cap, never exceed it.
-    let mut last_raw = String::new();
+    let mut raw_tokens = Vec::new();
+    let rotation_start = chrono::Utc::now();
     for generation in 0..(PROOF_CAP + 8) {
         let raw = format!("cap-proof-g{generation}-{}", Uuid::now_v7());
         let child = new_refresh(
@@ -667,7 +676,7 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
             family_id,
             raw.clone(),
             Some(member),
-            chrono::Utc::now() + chrono::Duration::milliseconds(generation),
+            rotation_start + chrono::Duration::milliseconds(generation),
         );
         member = child.member_id;
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
@@ -675,7 +684,14 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
             .await
             .expect("rotation should commit");
         assert_eq!(result, CommitTokenIssuanceResult::Committed);
-        last_raw = raw;
+        raw_tokens.push(raw);
+        if [0, PROOF_CAP - 1, PROOF_CAP, PROOF_CAP + 7].contains(&generation) {
+            assert_eq!(
+                proof_count(&mut connection, tenant_id, family_id).await,
+                (generation + 1).min(PROOF_CAP),
+                "proof retention at generation {generation}"
+            );
+        }
     }
 
     let proofs = proof_count(&mut connection, tenant_id, family_id).await;
@@ -684,18 +700,23 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
         "sustained rotation must converge on the per-family proof bound"
     );
 
-    // The trimmed tail really is gone: the earliest generation's proof no
-    // longer resolves, while the newest member still resolves through the
-    // family row.
+    // Verify the identities retained, not just the count: only the newest
+    // PROOF_CAP spent presentations and the current member still resolve.
     let repository = TokenRepository::new(create_pool(&database_url, 2).unwrap());
-    assert!(
-        repository
-            .by_raw_refresh_token(tenant_id, &last_raw)
+    let current_index = raw_tokens.len() - 1;
+    let first_retained = current_index - PROOF_CAP as usize;
+    for (index, raw) in raw_tokens.iter().enumerate() {
+        let found = repository
+            .by_raw_refresh_token(tenant_id, raw)
             .await
-            .expect("current lookup should succeed")
-            .is_some(),
-        "the current generation still resolves"
-    );
+            .expect("presentation lookup should succeed");
+        if index < first_retained {
+            assert!(found.is_none(), "the oldest proof must be trimmed");
+        } else {
+            let found = found.expect("retained presentation should resolve");
+            assert_eq!(found.revoked_at.is_none(), index == current_index);
+        }
+    }
     assert_eq!(
         live_family_count(
             &mut connection,
@@ -706,5 +727,137 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
         .await,
         1,
         "rotation never multiplies the family row"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn retired_contract_is_reclaimed_after_grace_without_touching_live_references() {
+    use diesel::sql_types::Binary;
+    use nazo_persistence::SecurityStateMaintenancePort;
+    use nazo_postgres::SecurityStateMaintenanceRepository;
+
+    #[derive(QueryableByName)]
+    struct ContractDigest {
+        #[diesel(sql_type = Binary)]
+        contract_blake3: Vec<u8>,
+    }
+
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let tenant_id = Uuid::from_u128(1);
+    let fixture = fixture(&database_url, "cap-contract-gc").await;
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let issuance_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let retired_family = Uuid::now_v7();
+    let mut token = new_refresh(
+        &fixture,
+        tenant_id,
+        retired_family,
+        format!("cap-contract-gc-{}", Uuid::now_v7()),
+        None,
+        chrono::Utc::now() - chrono::Duration::minutes(10),
+    );
+    // Give the oldest family an earlier authentication time, which is part
+    // of the persisted contract. Nonce/id_token_sid are cleared by persisted()
+    // and therefore cannot distinguish the orphan from the ten live families.
+    token.authentication_context.auth_time -= 60;
+    assert_eq!(
+        issuance_repository
+            .commit_token_issuance(issuance(token))
+            .await
+            .expect("oldest family should commit"),
+        CommitTokenIssuanceResult::Committed
+    );
+    let orphan_digest = sql_query(
+        "SELECT contract_blake3 FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(retired_family)
+    .get_result::<ContractDigest>(&mut connection)
+    .await
+    .unwrap()
+    .contract_blake3;
+    for ordinal in 0..CAP {
+        issue_family(&database_url, &fixture, tenant_id, ordinal).await;
+    }
+    let live_digest = sql_query(
+        "SELECT contract_blake3 FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND user_id = $2 AND client_id = $3 LIMIT 1",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .bind::<SqlUuid, _>(fixture.client_id)
+    .get_result::<ContractDigest>(&mut connection)
+    .await
+    .unwrap()
+    .contract_blake3;
+    assert_ne!(orphan_digest, live_digest);
+
+    async fn contract_exists(
+        connection: &mut AsyncPgConnection,
+        tenant_id: Uuid,
+        digest: &[u8],
+    ) -> bool {
+        sql_query(
+            "SELECT count(*)::bigint AS count FROM oauth_refresh_contracts \
+             WHERE tenant_id = $1 AND contract_blake3 = $2",
+        )
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<Binary, _>(digest)
+        .get_result::<CountRow>(connection)
+        .await
+        .unwrap()
+        .count
+            == 1
+    }
+
+    assert!(
+        !live_family_ids(
+            &mut connection,
+            tenant_id,
+            fixture.user_id,
+            fixture.client_id
+        )
+        .await
+        .contains(&retired_family),
+        "capacity retirement must still remove the family immediately"
+    );
+    assert!(
+        contract_exists(&mut connection, tenant_id, &orphan_digest).await,
+        "capacity retirement must leave the orphan contract to maintenance"
+    );
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    maintenance
+        .cleanup_batch()
+        .await
+        .expect("fresh-contract sweep should succeed");
+    assert!(
+        contract_exists(&mut connection, tenant_id, &orphan_digest).await,
+        "the one-hour creation grace must protect a fresh orphan"
+    );
+    // Both keys are old enough. The orphan sorts first among test fixtures;
+    // the live key must remain regardless of its age.
+    for digest in [&orphan_digest, &live_digest] {
+        sql_query(
+            "UPDATE oauth_refresh_contracts SET created_at = '1970-01-01 UTC' \
+             WHERE tenant_id = $1 AND contract_blake3 = $2",
+        )
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<Binary, _>(digest)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    maintenance
+        .cleanup_batch()
+        .await
+        .expect("aged-contract sweep should succeed");
+    assert!(!contract_exists(&mut connection, tenant_id, &orphan_digest).await);
+    assert!(
+        contract_exists(&mut connection, tenant_id, &live_digest).await,
+        "a surviving family reference must protect an old contract"
     );
 }

@@ -133,13 +133,19 @@ impl MfaRepository {
                 )
                 .execute(connection)
                 .await?;
-                for hash in hashes {
+                if !hashes.is_empty() {
+                    let codes = hashes
+                        .into_iter()
+                        .map(|hash| {
+                            (
+                                user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()),
+                                user_mfa_backup_codes::user_id.eq(user_id.as_uuid()),
+                                user_mfa_backup_codes::code_hash.eq(hash),
+                            )
+                        })
+                        .collect::<Vec<_>>();
                     diesel::insert_into(user_mfa_backup_codes::table)
-                        .values((
-                            user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()),
-                            user_mfa_backup_codes::user_id.eq(user_id.as_uuid()),
-                            user_mfa_backup_codes::code_hash.eq(hash),
-                        ))
+                        .values(&codes)
                         .execute(connection)
                         .await?;
                 }

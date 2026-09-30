@@ -10,6 +10,16 @@ use crate::{
     OidcClaimRequest, RefreshToken,
 };
 
+/// Request-local subject claims snapshot for grants that already loaded the
+/// active subject once. It exists only for this TokenIssue's lifetime:
+/// it is never serialized, persisted, or cached, and it is not the final
+/// authority — the commit still revalidates the principal under its lock.
+pub struct PreparedTokenSubject {
+    pub tenant_id: Uuid,
+    pub claims: SubjectClaims,
+    pub user_epoch: i64,
+}
+
 pub type TokenFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, TokenPortError>> + Send + 'a>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,8 +73,8 @@ pub struct IssuedAccessToken {
     pub expires_at: i64,
 }
 
-/// The storage contract for a token issuance.  Fresh grants insert their
-/// durable record unconditionally; single-use grants carry the already
+/// The storage contract for a token issuance. Fresh grants commit only their
+/// owned mutations and audit; single-use grants carry the already
 /// verified absolute deadline of the underlying grant so the atomic commit
 /// can re-check it while holding the fence.
 #[derive(Clone, Debug, PartialEq)]
@@ -85,9 +95,19 @@ pub struct TokenIssuedAuditFields {
     pub audience: Vec<String>,
 }
 
+/// Principal versions read before signing and rechecked under commit locks.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenPrincipalState {
+    pub client_epoch: i64,
+    pub user_epoch: Option<i64>,
+    pub subject_bound: bool,
+}
+
 /// Owned input for the one durable token-issuance commit boundary.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommitTokenIssuance {
+    pub principal_state: TokenPrincipalState,
+    pub subject: String,
     pub issuance_id: Uuid,
     pub tenant_id: Uuid,
     pub client_id: Uuid,
@@ -101,7 +121,7 @@ pub struct CommitTokenIssuance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CommitTokenIssuanceResult {
-    /// This request inserted and committed the terminal issuance record.
+    /// Owned state changes and required audit committed atomically.
     Committed,
     /// A single-use grant key was already committed.
     AlreadyUsed,
@@ -128,6 +148,8 @@ pub struct SingleUseRedemption {
 }
 
 pub struct AccessTokenSignInput<'a> {
+    pub client_epoch: Option<i64>,
+    pub user_epoch: Option<i64>,
     pub issuer: &'a str,
     pub tenant_id: Uuid,
     pub subject: &'a str,
@@ -261,10 +283,10 @@ pub struct TokenRevocation<'a> {
 }
 
 /// How the UserInfo subject read resolves ownership: a directly carried user
-/// UUID, or the access-token JTI joined through its issuance row.
+/// UUID, or a reusable non-public subject binding with a legacy JTI fallback.
 pub enum UserinfoSubjectRef<'a> {
     UserId(Uuid),
-    AccessTokenJti(&'a str),
+    AccessToken { subject: &'a str, jti: &'a str },
 }
 
 /// One-read UserInfo result. `None` overall means there is no valid subject;
@@ -276,6 +298,14 @@ pub struct UserinfoSnapshot {
 }
 
 pub trait TokenRepositoryPort: Send + Sync {
+    fn token_principal_state<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        user_id: Option<Uuid>,
+        subject: &'a str,
+    ) -> TokenFuture<'a, TokenPrincipalState>;
+
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
@@ -316,7 +346,7 @@ pub trait TokenRepositoryPort: Send + Sync {
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<SubjectClaims>>;
+    ) -> TokenFuture<'_, Option<PreparedTokenSubject>>;
 
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>>;
 
@@ -324,6 +354,7 @@ pub trait TokenRepositoryPort: Send + Sync {
         &'a self,
         tenant_id: Uuid,
         jti: &'a str,
+        subject: &'a str,
     ) -> TokenFuture<'a, Option<Uuid>>;
 
     fn revoke_issued_tokens<'a>(
@@ -335,7 +366,11 @@ pub trait TokenRepositoryPort: Send + Sync {
         refresh_token_family_id: Option<Uuid>,
     ) -> TokenFuture<'a, ()>;
 
-    fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool>;
+    fn access_token_revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        claims: &'a Claims,
+    ) -> TokenFuture<'a, bool>;
 
     fn refresh_family_active(
         &self,
@@ -561,7 +596,7 @@ where
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> Result<Option<SubjectClaims>, TokenPortError> {
+    ) -> Result<Option<PreparedTokenSubject>, TokenPortError> {
         self.repository
             .active_subject_claims(tenant_id, user_id)
             .await
@@ -575,13 +610,26 @@ where
         self.repository.active_subject_id(tenant_id, user_id).await
     }
 
+    pub async fn token_principal_state(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        user_id: Option<Uuid>,
+        subject: &str,
+    ) -> Result<TokenPrincipalState, TokenPortError> {
+        self.repository
+            .token_principal_state(tenant_id, client_id, user_id, subject)
+            .await
+    }
+
     pub async fn active_subject_id_by_access_token(
         &self,
         tenant_id: Uuid,
         jti: &str,
+        subject: &str,
     ) -> Result<Option<Uuid>, TokenPortError> {
         self.repository
-            .active_subject_id_by_access_token(tenant_id, jti)
+            .active_subject_id_by_access_token(tenant_id, jti, subject)
             .await
     }
 
@@ -699,9 +747,11 @@ where
     pub async fn access_token_revoked(
         &self,
         tenant_id: Uuid,
-        jti: &str,
+        claims: &Claims,
     ) -> Result<bool, TokenPortError> {
-        self.repository.access_token_revoked(tenant_id, jti).await
+        self.repository
+            .access_token_revoked(tenant_id, claims)
+            .await
     }
 
     pub async fn sign_id_token(
@@ -737,11 +787,14 @@ where
             {
                 return Ok(TokenInspection::Inactive);
             }
-            let revoked = self
+            if claims.exp <= now.timestamp() {
+                return Ok(TokenInspection::Inactive);
+            }
+            if self
                 .repository
-                .access_token_revoked(resource_server.tenant_id, &claims.jti)
-                .await?;
-            if revoked || claims.exp <= now.timestamp() {
+                .access_token_revoked(resource_server.tenant_id, &claims)
+                .await?
+            {
                 return Ok(TokenInspection::Inactive);
             }
             let token_type = access_token_type(&claims);
@@ -792,19 +845,36 @@ where
             .signer
             .decode_access_token(issuer, raw_token)
             .await?
-            .filter(|claims| claims.client_id == client.client_id)
+            .filter(|claims| {
+                claims.client_id == client.client_id
+                    && claims.tenant_id.parse::<Uuid>().ok() == Some(client.tenant_id)
+            })
             .and_then(|claims| {
                 Some(AccessTokenRevocation {
                     jti: claims.jti,
                     expires_at: DateTime::<Utc>::from_timestamp(claims.exp, 0)?,
                 })
             });
+        if let Some(access_token) = access_token {
+            self.repository
+                .revoke_issued_tokens(
+                    client.tenant_id,
+                    client.id,
+                    &access_token.jti,
+                    Some(access_token.expires_at),
+                    None,
+                )
+                .await?;
+            // The audit count records revoked refresh-family members. An
+            // access-only revocation has always reported zero updated members.
+            return Ok(0);
+        }
         self.repository
             .revoke_token(TokenRevocation {
                 tenant_id: client.tenant_id,
                 client_id: client.id,
                 raw_token,
-                access_token,
+                access_token: None,
             })
             .await
     }

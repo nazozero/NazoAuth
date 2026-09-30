@@ -180,7 +180,8 @@ pub(crate) fn token_issuance_repository(
 }
 
 pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
-    static PROCESS_AUDIT_POOL: OnceLock<nazo_postgres::DbPool> = OnceLock::new();
+    static PROCESS_AUDIT_POOL: OnceLock<(tokio::runtime::Runtime, nazo_postgres::DbPool)> =
+        OnceLock::new();
 
     // The production audit sink is process-lifetime state.  Some endpoint tests
     // intentionally use a pool whose search_path points at a small isolated
@@ -189,12 +190,23 @@ pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
     // own.  Keep the process-lifetime test sink on the canonical public test
     // database; focused repositories continue to use their caller-provided
     // pool below.
-    let audit_pool = PROCESS_AUDIT_POOL.get_or_init(|| {
+    let (runtime, audit_pool) = PROCESS_AUDIT_POOL.get_or_init(|| {
         let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
             .expect("database-backed tests require NAZO_TEST_DATABASE_URL or DATABASE_URL");
-        nazo_postgres::create_pool(database_url, 4)
-            .expect("test durable audit database pool should build")
+        // The shared sink outlives each test's runtime. Its connection
+        // drivers need the same process lifetime as the pool itself.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("process audit fixture runtime should build");
+        let pool = {
+            let _entered = runtime.enter();
+            nazo_postgres::create_pool(database_url, 4)
+                .expect("test durable audit database pool should build")
+        };
+        (runtime, pool)
     });
     let preflight = crate::adapters::audit_anchor::AuditAnchorPreflight::new(
         crate::adapters::audit_anchor::AuditAnchorPreflightConfig {
@@ -205,6 +217,9 @@ pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
         },
     )
     .expect("test audit anchor preflight config is valid");
+    // The process-lifetime sink's workers must survive the installing test,
+    // just like the pool's connection drivers above.
+    let _entered = runtime.enter();
     crate::adapters::audit::install_persistent_audit_sink(
         std::sync::Arc::new(nazo_postgres::AuditLedgerRepository::new(
             audit_pool.clone(),
@@ -281,7 +296,8 @@ pub(crate) fn registration_service(
         std::sync::Arc::new(
             crate::adapters::email::SmtpVerificationEmailDelivery::from_delivery(
                 &identity.email.delivery,
-            ),
+            )
+            .expect("valid test SMTP configuration"),
         ),
         state.settings.tenant.context,
         nazo_identity::RegistrationServiceConfig {
@@ -354,14 +370,17 @@ pub(crate) fn federation_http_config(
 ) -> actix_web::web::Data<crate::http::auth::federation::FederationHttpConfig> {
     let session = &state.settings.session;
     let federation = &state.settings.identity.federation;
-    actix_web::web::Data::new(crate::http::auth::federation::FederationHttpConfig::new(
-        federation.providers.clone(),
-        federation.saml_gateway.clone(),
-        session.session_cookie_name.as_str(),
-        session.csrf_cookie_name.as_str(),
-        session.session_ttl_seconds,
-        session.cookie_secure,
-    ))
+    actix_web::web::Data::new(
+        crate::http::auth::federation::FederationHttpConfig::new(
+            federation.providers.clone(),
+            federation.saml_gateway.clone(),
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            session.session_ttl_seconds,
+            session.cookie_secure,
+        )
+        .expect("federation HTTP configuration"),
+    )
 }
 
 pub(crate) fn auth_request_limiter(

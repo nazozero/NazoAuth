@@ -1,0 +1,9 @@
+--- a/crates/persistence-postgres/tests/auth_repositories.rs
++++ b/crates/persistence-postgres/tests/auth_repositories.rs
+@@ -1231,0 +1232 @@
++    for _ in 0..3 {
+@@ -1242,0 +1244 @@
++    }
+@@ -1247 +1249 @@
+-    assert_eq!(revoked.revoked_refresh_tokens, 1);
++    assert_eq!(revoked.revoked_refresh_tokens, 3);

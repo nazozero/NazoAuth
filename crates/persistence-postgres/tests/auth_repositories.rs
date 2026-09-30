@@ -179,7 +179,7 @@ async fn remove_rotation_insert_gate(
 
 async fn install_issuance_insert_gate(
     connection: &mut AsyncPgConnection,
-    client_id: Uuid,
+    issuance_id: Uuid,
     gate_key: i64,
 ) -> (String, String) {
     let suffix = Uuid::now_v7().simple().to_string();
@@ -189,7 +189,7 @@ async fn install_issuance_insert_gate(
         r#"
         CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
-            IF NEW.client_id = '{client_id}'::uuid THEN
+            IF NEW.event_id = '{issuance_id}'::uuid THEN
                 PERFORM pg_advisory_xact_lock({gate_key});
             END IF;
             RETURN NEW;
@@ -203,7 +203,7 @@ async fn install_issuance_insert_gate(
     sql_query(format!(
         r#"
         CREATE TRIGGER {trigger}
-        BEFORE INSERT ON oauth_token_issuances
+        BEFORE INSERT ON security_audit_events
         FOR EACH ROW EXECUTE FUNCTION {function}()
         "#
     ))
@@ -218,7 +218,7 @@ async fn remove_issuance_insert_gate(
     trigger: &str,
     function: &str,
 ) {
-    sql_query(format!("DROP TRIGGER {trigger} ON oauth_token_issuances"))
+    sql_query(format!("DROP TRIGGER {trigger} ON security_audit_events"))
         .execute(&mut *connection)
         .await
         .expect("token issuance gate trigger should be removed");
@@ -266,6 +266,14 @@ fn refresh_token_fixture(
 fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: (token.user_id).map(|_| 0),
+            subject_bound: false,
+        },
+        subject: (token.user_id)
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "client".to_owned()),
         issuance_id,
         tenant_id: token.tenant_id,
         client_id: token.client_id,
@@ -321,7 +329,11 @@ async fn fixture(database_url: &str) -> FixtureIds {
     .expect("auth repository fixture should insert")
 }
 
-async fn seed_deactivation(database_url: &str, fixture: &FixtureIds, count: usize) {
+async fn seed_deactivation(
+    database_url: &str,
+    fixture: &FixtureIds,
+    count: usize,
+) -> CommitTokenIssuance {
     let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let repository = TokenIssuanceRepository::new(create_pool(database_url, 1).unwrap());
     let token = refresh_token_fixture(
@@ -331,9 +343,10 @@ async fn seed_deactivation(database_url: &str, fixture: &FixtureIds, count: usiz
         Uuid::now_v7().to_string(),
         None,
     );
+    let issuance = refresh_issuance(token);
     assert_eq!(
         repository
-            .commit_token_issuance(refresh_issuance(token))
+            .commit_token_issuance(issuance.clone())
             .await
             .unwrap(),
         CommitTokenIssuanceResult::Committed
@@ -350,6 +363,7 @@ async fn seed_deactivation(database_url: &str, fixture: &FixtureIds, count: usiz
          INSERT INTO user_client_grants (tenant_id, user_id, client_id, first_authorized_at, last_authorized_at, last_scopes) \
          VALUES ('{tenant}', '{user}', '{client}', NOW(), NOW(), '[\"openid\"]');"
     )).await.unwrap();
+    issuance
 }
 
 async fn deactivation_state(
@@ -374,6 +388,15 @@ async fn deactivation_state(
 
 #[tokio::test]
 async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners() {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        assert_deactivation_batches_and_repeated_owners(),
+    )
+    .await
+    .expect("deactivation batches exceeded the bounded test window");
+}
+
+async fn assert_deactivation_batches_and_repeated_owners() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -381,10 +404,11 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
     let large = fixture(&database_url).await;
     let second = fixture(&database_url).await;
     let untouched = fixture(&database_url).await;
-    seed_deactivation(&database_url, &large, 100_000).await;
-    seed_deactivation(&database_url, &second, 513).await;
+    let large_issuance = seed_deactivation(&database_url, &large, 100_000).await;
+    let second_issuance = seed_deactivation(&database_url, &second, 513).await;
     seed_deactivation(&database_url, &untouched, 2).await;
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    eprintln!("deactivation fixture: seeded owners and legacy batches");
     let before = deactivation_state(&mut connection, &large).await;
     let untouched_before = deactivation_state(&mut connection, &untouched).await;
     let suffix = Uuid::now_v7().simple().to_string();
@@ -444,10 +468,42 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
         })
         .await
         .unwrap();
-    for (owner, count) in [(&large, 100_002), (&second, 515)] {
+    eprintln!("deactivation fixture: rollback and two-owner commit verified");
+    // Only the legacy rows and the independently owned VCI grant expand
+    // into JTI revocations. The Fresh issuance is invalidated by the epoch.
+    let tokens = TokenRepository::new(create_pool(&database_url, 1).unwrap());
+    for (owner, count, fresh) in [
+        (&large, 100_001, &large_issuance),
+        (&second, 514, &second_issuance),
+    ] {
         let state = deactivation_state(&mut connection, owner).await;
         assert_eq!(state["client"]["is_active"], false);
         assert_eq!(state["revocations"], count);
+        assert_eq!(state["client"]["access_token_epoch"], 1);
+        eprintln!("deactivation fixture: checking principal epoch");
+        assert!(
+            tokens
+                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                    tenant_id: &tenant.to_string(),
+                    jti: &fresh.access_token_jti,
+                    client_id: &owner.client_public_id,
+                    subject: &fresh.subject,
+                    user_id: Some(&owner.user_id.to_string()),
+                    subject_type: Some("user"),
+                    client_epoch: Some(fresh.principal_state.client_epoch),
+                    user_epoch: fresh.principal_state.user_epoch,
+                })
+                .await
+                .unwrap()
+        );
+        eprintln!("deactivation fixture: checking absence of redundant JTI state");
+        assert!(
+            !tokens
+                .access_token_revoked(tenant, &fresh.access_token_jti)
+                .await
+                .unwrap(),
+            "epoch invalidation must not create a redundant per-JTI fact"
+        );
         for key in ["active_vci", "active_refresh", "grants"] {
             assert_eq!(state[key], 0, "{key}");
         }
@@ -457,6 +513,7 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
         untouched_before
     );
 
+    eprintln!("deactivation fixture: starting concurrent deactivation");
     let concurrent = fixture(&database_url).await;
     seed_deactivation(&database_url, &concurrent, 513).await;
     let mut left = AsyncPgConnection::establish(&database_url).await.unwrap();
@@ -469,6 +526,7 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
             nazo_postgres::deactivate_client_on_connection(c, tenant, concurrent.client_id).await
         })
     );
+    eprintln!("deactivation fixture: concurrent writers completed");
     assert_ne!(
         left.unwrap(),
         right.unwrap(),
@@ -476,7 +534,8 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
     );
     let state = deactivation_state(&mut connection, &concurrent).await;
     assert_eq!(state["client"]["is_active"], false);
-    assert_eq!(state["revocations"], 515);
+    assert_eq!(state["revocations"], 514);
+    assert_eq!(state["client"]["access_token_epoch"], 1);
     for key in ["active_vci", "active_refresh", "grants"] {
         assert_eq!(state[key], 0, "{key}");
     }
@@ -549,7 +608,7 @@ struct IssuanceAuditRow {
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     payload: serde_json::Value,
     #[diesel(sql_type = diesel::sql_types::Bool)]
-    pending_outbox: bool,
+    pending_delivery: bool,
 }
 
 async fn assert_issuance_audit(
@@ -557,13 +616,13 @@ async fn assert_issuance_audit(
     input: &CommitTokenIssuance,
     expected: &[(&str, &str, serde_json::Value)],
 ) {
-    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, true AS pending_outbox FROM security_audit_events e JOIN security_audit_event_outbox o USING(event_id) WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
+    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, NOT EXISTS (SELECT 1 FROM security_audit_chain_entries c WHERE c.event_id = e.event_id) AS pending_delivery FROM security_audit_events e WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
         .bind::<Text, _>(input.issuance_id.to_string()).load::<IssuanceAuditRow>(connection).await.unwrap();
     assert_eq!(rows.len(), expected.len());
     for (row, (event_type, category, fields)) in rows.iter().zip(expected) {
         assert_eq!(row.event_type, *event_type);
         assert_eq!(row.event_category, *category);
-        assert!(row.pending_outbox);
+        assert!(row.pending_delivery);
         let mut payload = json!({
             "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
             "event_category": category,
@@ -591,8 +650,121 @@ fn issued_audit_fields(input: &CommitTokenIssuance) -> serde_json::Value {
     })
 }
 
+#[tokio::test]
+async fn principal_snapshot_reuses_prepared_query_without_caching_security_state() {
+    let database_url = database_url().expect("principal snapshot regression requires PostgreSQL");
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let subject = format!("private-subject-{}", Uuid::now_v7());
+    let initial = repository
+        .token_principal_state(tenant_id, fixture.client_id, None, &subject)
+        .await
+        .unwrap();
+    assert_eq!(initial.client_epoch, 0);
+    assert_eq!(initial.user_epoch, None);
+    assert!(!initial.subject_bound);
+
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%pg_prepared_statements%'")
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        prepared.count, 1,
+        "the snapshot must be a reusable prepared query"
+    );
+    sql_query("UPDATE oauth_clients SET access_token_epoch = 7 WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("UPDATE users SET access_token_epoch = 11 WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query(
+        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<Text, _>(&subject)
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+
+    let current = repository
+        .token_principal_state(
+            tenant_id,
+            fixture.client_id,
+            Some(fixture.user_id),
+            &subject,
+        )
+        .await
+        .unwrap();
+    assert_eq!(current.client_epoch, 7);
+    assert_eq!(current.user_epoch, Some(11));
+    assert!(current.subject_bound);
+    let public = repository
+        .token_principal_state(
+            tenant_id,
+            fixture.client_id,
+            Some(fixture.user_id),
+            &fixture.user_id.to_string(),
+        )
+        .await
+        .unwrap();
+    assert!(!public.subject_bound);
+    let missing_client = repository
+        .token_principal_state(tenant_id, Uuid::now_v7(), Some(fixture.user_id), &subject)
+        .await
+        .unwrap();
+    assert_eq!(missing_client.client_epoch, 0);
+    assert_eq!(missing_client.user_epoch, Some(11));
+    assert!(missing_client.subject_bound);
+    assert!(
+        repository
+            .token_principal_state(tenant_id, fixture.client_id, Some(Uuid::now_v7()), &subject)
+            .await
+            .is_err(),
+        "a private subject must not bind to a different user"
+    );
+    let foreign = repository
+        .token_principal_state(
+            Uuid::now_v7(),
+            fixture.client_id,
+            Some(fixture.user_id),
+            &subject,
+        )
+        .await
+        .unwrap();
+    assert_eq!(foreign.client_epoch, 0);
+    assert_eq!(foreign.user_epoch, Some(0));
+    assert!(!foreign.subject_bound);
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%pg_prepared_statements%'")
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        prepared.count, 1,
+        "parameter changes must reuse the query, not its previous result"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn issuance_commits_complete_audit_payloads_and_outbox_for_users_rotation_and_reuse() {
+async fn issuance_commits_complete_audit_payloads_and_pending_events_for_users_rotation_and_reuse()
+{
+    tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        assert_complete_issuance_audit_payloads(),
+    )
+    .await
+    .expect("issuance audit exceeded the bounded test window");
+}
+
+async fn assert_complete_issuance_audit_payloads() {
     let database_url =
         database_url().expect("audit regression requires a live PostgreSQL database");
     let fixture = fixture(&database_url).await;
@@ -612,6 +784,13 @@ async fn issuance_commits_complete_audit_payloads_and_outbox_for_users_rotation_
     for user_id in [None, Some(fixture.user_id)] {
         let mut input = make();
         input.user_id = user_id;
+        input.subject = user_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| fixture.client_public_id.clone());
+        input.principal_state = repository
+            .token_principal_state(tenant_id, fixture.client_id, user_id, &input.subject)
+            .await
+            .unwrap();
         input.refresh_token = None;
         assert_eq!(
             repository
@@ -1091,7 +1270,7 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
         .await
         .expect("test coordinator should connect");
     let (trigger, function) =
-        install_issuance_insert_gate(&mut coordinator, fixture.client_id, gate_key).await;
+        install_issuance_insert_gate(&mut coordinator, input.issuance_id, gate_key).await;
     sql_query("SELECT pg_advisory_lock($1)")
         .bind::<BigInt, _>(gate_key)
         .execute(&mut coordinator)
@@ -1150,7 +1329,16 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
     let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
     assert!(
         tokens
-            .access_token_revoked(tenant_id, &access_token_jti)
+            .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                tenant_id: &tenant_id.to_string(),
+                jti: &access_token_jti,
+                client_id: &fixture.client_public_id,
+                subject: &fixture.user_id.to_string(),
+                user_id: Some(&fixture.user_id.to_string()),
+                subject_type: Some("user"),
+                client_epoch: Some(0),
+                user_epoch: Some(0),
+            })
             .await
             .expect("access-token revocation should load"),
         "deactivation must revoke the access token committed while it was blocked"
@@ -1688,7 +1876,7 @@ async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compe
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
+async fn audit_repository_reads_active_scim_credentials_and_drives_logout_outbox() {
     let _claim_guard = BACKCHANNEL_CLAIM_TEST_LOCK.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -1709,23 +1897,46 @@ async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
         .await
         .expect("SCIM credential should load")
         .expect("SCIM credential should exist");
-    repository
-        .record_scim_token_use(
-            credential.id,
-            credential.tenant_id,
-            &["scim:read".to_owned()],
-            Some("a".repeat(64)),
-            Some("b".repeat(64)),
-        )
-        .await
-        .expect("SCIM use audit should commit");
-    let count =
-        sql_query("SELECT COUNT(*) AS count FROM scim_audit_events WHERE scim_token_id = $1")
-            .bind::<SqlUuid, _>(credential.id)
-            .get_result::<CountRow>(&mut connection)
-            .await
-            .expect("SCIM audit count should load");
+    assert_eq!(credential.tenant_id, tenant_id);
+    assert_eq!(credential.scopes, ["scim:read"]);
+    let count = sql_query(
+        "SELECT COUNT(*) AS count FROM scim_tokens \
+         WHERE id = $1 AND last_used_at IS NULL \
+           AND NOT EXISTS (SELECT 1 FROM scim_audit_events WHERE scim_token_id = $1)",
+    )
+    .bind::<SqlUuid, _>(credential.id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("SCIM lookup must not write use metadata");
     assert_eq!(count.count, 1);
+    sql_query(
+        "UPDATE scim_tokens SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(credential.id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    assert!(
+        repository
+            .active_scim_credential(&token_hash)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    sql_query(
+        "UPDATE scim_tokens SET expires_at = NULL, revoked_at = CURRENT_TIMESTAMP WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(credential.id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    assert!(
+        repository
+            .active_scim_credential(&token_hash)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     let logout_token = format!("logout-token-test-{}", Uuid::now_v7());
     repository
@@ -2106,7 +2317,7 @@ fn raw_refresh_row<'a>(
 /// Bounded retry for token-repository calls that may abort on transient
 /// lock-queue timeouts.  The shared test database serializes the gated
 /// concurrency tests' `CREATE`/`DROP TRIGGER` DDL on `oauth_refresh_spent_tokens`
-/// and `oauth_token_issuances` behind parked rotation transactions, so an
+/// and `security_audit_events` behind parked rotation transactions, so an
 /// unrelated commit can hit its 2s `lock_timeout` through no fault of the
 /// path under test.  An `Err` always means the transaction rolled back, so
 /// retrying is safe; business verdicts return immediately and deterministic
@@ -2152,8 +2363,8 @@ async fn commit_refresh_labeled(
 
 /// Durable facts that every ordinary-rotation business conflict must leave
 /// behind: the family carries exactly its current member plus the spent proofs
-/// of rotated generations, the losing issuance row is deleted, exactly one
-/// `refresh_reuse_detected` audit (pending in the outbox) is appended, and no
+/// of rotated generations, no Fresh issuance row is created, exactly one
+/// `refresh_reuse_detected` audit (pending delivery) is appended, and no
 /// `token_issued` audit exists for the losing issuance. `compromised` and
 /// `active` are family-level facts in the minimal model.
 async fn assert_rotation_conflict_facts(
@@ -2216,7 +2427,10 @@ async fn assert_rotation_conflict_facts(
     .get_result::<CountRow>(connection)
     .await
     .expect("losing issuance count should load");
-    assert_eq!(issuance.count, 0, "the losing issuance row must be deleted");
+    assert_eq!(
+        issuance.count, 0,
+        "Fresh rotation must create no issuance row"
+    );
     let rotated_from_id = losing
         .refresh_token
         .as_ref()
@@ -2285,6 +2499,91 @@ async fn insert_foreign_tenant_client(connection: &mut AsyncPgConnection) -> (Uu
     .expect("foreign tenant client should insert")
     .id;
     (tenant_id, client, public_id)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn new_family_collision_is_tenant_scoped_and_preserves_compromise_audit() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::from_u128(1);
+    let family_id = Uuid::now_v7();
+    let original = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        family_id,
+        format!("collision-original-{}", Uuid::now_v7()),
+        None,
+    );
+    assert_eq!(
+        commit_refresh(&database_url, original.clone()).await.0,
+        CommitTokenIssuanceResult::Committed
+    );
+
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let (foreign_tenant, foreign_client, foreign_public_id) =
+        insert_foreign_tenant_client(&mut connection).await;
+    let mut foreign = original.clone();
+    foreign.tenant_id = foreign_tenant;
+    foreign.client_id = foreign_client;
+    foreign.user_id = None;
+    foreign.subject = "client".to_owned();
+    foreign.authentication_context.audience = foreign_public_id;
+    foreign.member_id = Uuid::now_v7();
+    foreign.raw_token = format!("collision-foreign-{}", Uuid::now_v7());
+    assert_eq!(
+        commit_refresh(&database_url, foreign.clone()).await.0,
+        CommitTokenIssuanceResult::Committed,
+        "the same family UUID in another tenant is not a collision"
+    );
+
+    // Both a live and an already-compromised family must remain collisions.
+    let repository = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+    let mut first_revoked_at = None;
+    for _ in 0..2 {
+        let mut collision = original.clone();
+        collision.member_id = Uuid::now_v7();
+        collision.raw_token = format!("collision-loser-{}", Uuid::now_v7());
+        let losing_raw = collision.raw_token.clone();
+        let (result, losing) = commit_refresh(&database_url, collision).await;
+        assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+        assert_rotation_conflict_facts(
+            &mut connection,
+            tenant_id,
+            family_id,
+            &losing,
+            1,
+            true,
+            false,
+        )
+        .await;
+        assert!(
+            repository
+                .by_raw_refresh_token(tenant_id, &losing_raw)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let retained = repository
+            .by_raw_refresh_token(tenant_id, &original.raw_token)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.id, original.member_id);
+        assert!(retained.revoked_at.is_some());
+        if let Some(first) = first_revoked_at {
+            assert_eq!(retained.revoked_at, Some(first));
+        }
+        first_revoked_at = retained.revoked_at;
+    }
+    let untouched = repository
+        .by_raw_refresh_token(foreign_tenant, &foreign.raw_token)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(untouched.id, foreign.member_id);
+    assert!(untouched.revoked_at.is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2911,7 +3210,7 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
         left_input.issuance_id
     };
     let kept = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
+        "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type = 'token_issued' AND payload->>'issuance_id' = $1::text",
     )
     .bind::<SqlUuid, _>(winner_issuance)
     .get_result::<CountRow>(&mut coordinator)
@@ -2919,7 +3218,7 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
     .unwrap();
     assert_eq!(
         kept.count, 1,
-        "the winning issuance row must stay committed"
+        "the winning issuance audit must stay committed"
     );
 }
 
@@ -3689,5 +3988,488 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
             .unwrap()
             .is_none(),
         "another tenant must not resolve the redemption"
+    );
+}
+// ---------------------------------------------------------------------------
+// Refresh-contract ensure races: same-key concurrent creation, shared
+// references across families, and last-reference reclaim racing a new
+// reference. All use the real schema rows; interleavings are made
+// deterministic by holding transactions open across a lock-wait observation.
+// ---------------------------------------------------------------------------
+
+/// The contract identity a `refresh_token_fixture` token persists for this
+/// subject: the same serialized body and BLAKE3 digest the runtime path
+/// computes inside `persist_refresh_token`.
+fn contract_parts(fixture: &FixtureIds) -> (Vec<u8>, serde_json::Value) {
+    let authentication_time = chrono::DateTime::from_timestamp(1_700_000_000, 0)
+        .expect("fixed authentication time should be valid");
+    let contract = nazo_auth::RefreshContract {
+        subject: fixture.user_id.to_string(),
+        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        authorization_details: json!([]),
+        authentication_context: refresh_authentication_context(
+            &fixture.client_public_id,
+            authentication_time,
+        ),
+    };
+    let persisted = contract.persisted();
+    (
+        persisted.blake3_digest().to_vec(),
+        serde_json::to_value(&persisted).expect("contract serializes"),
+    )
+}
+
+async fn contract_count(
+    connection: &mut AsyncPgConnection,
+    tenant_id: Uuid,
+    contract_blake3: &[u8],
+) -> i64 {
+    sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_contracts \
+         WHERE tenant_id = $1 AND contract_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3.to_vec())
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("contract count should read")
+    .count
+}
+
+/// The same orphan-reclaim statement the janitor runs
+/// (`delete_orphan_refresh_contracts`), pinned to the test key so the race is
+/// exercised without sweeping unrelated rows.
+const RECLAIM_SQL: &str = r#"
+    WITH due AS (
+        SELECT c.tenant_id, c.contract_blake3
+        FROM oauth_refresh_contracts AS c
+        WHERE c.tenant_id = $1
+          AND c.contract_blake3 = $2
+          AND c.created_at < CURRENT_TIMESTAMP - make_interval(secs => 3600)
+          AND NOT EXISTS (
+              SELECT 1 FROM oauth_refresh_families AS f
+              WHERE f.tenant_id = c.tenant_id
+                AND f.contract_blake3 = c.contract_blake3)
+        ORDER BY c.created_at, c.contract_blake3
+        LIMIT 256 FOR UPDATE SKIP LOCKED
+    )
+    DELETE FROM oauth_refresh_contracts AS target
+    USING due
+    WHERE target.tenant_id = due.tenant_id
+      AND target.contract_blake3 = due.contract_blake3
+"#;
+
+/// `INSERT` for a refresh family bound to an already-ensured contract — the
+/// same statement shape the runtime persist path issues after `ensure`.
+const FAMILY_INSERT_SQL: &str = r#"
+    INSERT INTO oauth_refresh_families (
+        tenant_id, token_family_id, client_id, user_id, contract_blake3,
+        current_member_id, current_token_blake3, current_audience,
+        current_issued_at, current_expires_at, current_id_token_sid, created_at
+    ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, '["resource://default"]'::jsonb,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + interval '1 hour',
+        NULL, CURRENT_TIMESTAMP
+    )
+"#;
+
+#[tokio::test]
+async fn refresh_contract_ensure_serializes_same_key_create_race() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let (contract_blake3, contract_json) = contract_parts(&fixture);
+    let mut observer = AsyncPgConnection::establish(&database_url).await.unwrap();
+
+    // The loser's speculative INSERT blocks on the winner's in-flight key,
+    // then falls back to the FOR KEY SHARE reference when the winner commits.
+    let mut winner = AsyncPgConnection::establish(&database_url).await.unwrap();
+    winner.batch_execute("BEGIN").await.unwrap();
+    sql_query(
+        "INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract) \
+         VALUES ($1, $2, $3)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+    .bind::<diesel::sql_types::Jsonb, _>(contract_json.clone())
+    .execute(&mut winner)
+    .await
+    .expect("winner contract insert should apply");
+
+    let loser_app = format!("contract-loser-{}", Uuid::now_v7().simple());
+    let loser_url = tagged_database_url(&database_url, &loser_app);
+    let (loser_tenant, loser_digest, loser_json) =
+        (tenant_id, contract_blake3.clone(), contract_json.clone());
+    let mut loser = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&loser_url).await.unwrap();
+        connection.batch_execute("BEGIN").await.unwrap();
+        let result = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<SqlUuid, _>(loser_tenant)
+            .bind::<diesel::sql_types::Bytea, _>(loser_digest)
+            .bind::<diesel::sql_types::Jsonb, _>(loser_json)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string());
+        if result.is_ok() {
+            connection.batch_execute("COMMIT").await.unwrap();
+        }
+        result
+    });
+    wait_for_lock_wait_or_task(&mut observer, &loser_app, &mut loser).await;
+    winner.batch_execute("COMMIT").await.unwrap();
+    loser
+        .await
+        .expect("loser task should join")
+        .expect("loser ensure should resolve after the winner commits");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "a same-key create race must converge on one contract row"
+    );
+
+    // Winner rolls back: the loser's own INSERT wins on a different key.
+    let mut retry_digest = contract_blake3.clone();
+    retry_digest[1] ^= 0xff;
+    let mut winner = AsyncPgConnection::establish(&database_url).await.unwrap();
+    winner.batch_execute("BEGIN").await.unwrap();
+    sql_query(
+        "INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract) \
+         VALUES ($1, $2, $3)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(retry_digest.clone())
+    .bind::<diesel::sql_types::Jsonb, _>(contract_json.clone())
+    .execute(&mut winner)
+    .await
+    .expect("winner contract insert should apply");
+    let loser_app = format!("contract-retry-{}", Uuid::now_v7().simple());
+    let loser_url = tagged_database_url(&database_url, &loser_app);
+    let (loser_tenant, loser_digest, loser_json) =
+        (tenant_id, retry_digest.clone(), contract_json.clone());
+    let mut loser = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&loser_url).await.unwrap();
+        connection.batch_execute("BEGIN").await.unwrap();
+        let result = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<SqlUuid, _>(loser_tenant)
+            .bind::<diesel::sql_types::Bytea, _>(loser_digest)
+            .bind::<diesel::sql_types::Jsonb, _>(loser_json)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string());
+        if result.is_ok() {
+            connection.batch_execute("COMMIT").await.unwrap();
+        }
+        result
+    });
+    wait_for_lock_wait_or_task(&mut observer, &loser_app, &mut loser).await;
+    winner.batch_execute("ROLLBACK").await.unwrap();
+    loser
+        .await
+        .expect("loser task should join")
+        .expect("loser ensure must win the insert after the winner aborts");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &retry_digest).await,
+        1,
+        "exactly one contract row may remain after the retry path"
+    );
+}
+
+#[tokio::test]
+async fn refresh_contract_reference_survives_last_reference_reclaim_race() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let (contract_blake3, contract_json) = contract_parts(&fixture);
+
+    // Stage family_a holding the sole reference, then remove the family so
+    // the aged contract is genuinely reclaimable.
+    let family_a = Uuid::now_v7();
+    let raw_a = format!("race-reclaim-a-{}", Uuid::now_v7());
+    let (result, _) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(&fixture, tenant_id, family_a, raw_a.clone(), None),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let mut observer = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(
+        "UPDATE oauth_refresh_contracts \
+         SET created_at = CURRENT_TIMESTAMP - interval '2 hours' \
+         WHERE tenant_id = $1 AND contract_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+    .execute(&mut observer)
+    .await
+    .expect("contract aging should apply");
+    sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(family_a)
+        .execute(&mut observer)
+        .await
+        .expect("the last family reference should delete");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "the orphaned contract still exists before the race"
+    );
+
+    // Interleave A: the janitor holds the delete in flight while a new
+    // reference blocks on FOR KEY SHARE; the reclaim commits first and the
+    // ensure call re-creates the row inside its bounded attempt loop.
+    let mut janitor = AsyncPgConnection::establish(&database_url).await.unwrap();
+    janitor.batch_execute("BEGIN").await.unwrap();
+    sql_query(RECLAIM_SQL)
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+        .execute(&mut janitor)
+        .await
+        .expect("the janitor should delete the orphaned contract");
+
+    let new_app = format!("contract-newref-{}", Uuid::now_v7().simple());
+    let new_url = tagged_database_url(&database_url, &new_app);
+    let family_b = Uuid::now_v7();
+    let raw_b = format!("race-reclaim-b-{}", Uuid::now_v7());
+    let (new_tenant, new_digest, new_json) =
+        (tenant_id, contract_blake3.clone(), contract_json.clone());
+    let (new_client, new_user) = (fixture.client_id, fixture.user_id);
+    let new_token_hash = blake3::hash(raw_b.as_bytes()).as_bytes().to_vec();
+    let mut new_reference = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&new_url).await.unwrap();
+        connection.batch_execute("BEGIN").await.unwrap();
+        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<SqlUuid, _>(new_tenant)
+            .bind::<diesel::sql_types::Bytea, _>(new_digest.clone())
+            .bind::<diesel::sql_types::Jsonb, _>(new_json)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        sql_query(FAMILY_INSERT_SQL)
+            .bind::<SqlUuid, _>(new_tenant)
+            .bind::<SqlUuid, _>(family_b)
+            .bind::<SqlUuid, _>(new_client)
+            .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(new_user))
+            .bind::<diesel::sql_types::Bytea, _>(new_digest)
+            .bind::<SqlUuid, _>(Uuid::now_v7())
+            .bind::<diesel::sql_types::Bytea, _>(new_token_hash)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        connection
+            .batch_execute("COMMIT")
+            .await
+            .map_err(|error| error.to_string())
+    });
+    wait_for_lock_wait_or_task(&mut observer, &new_app, &mut new_reference).await;
+    janitor.batch_execute("COMMIT").await.unwrap();
+    new_reference
+        .await
+        .expect("new-reference task should join")
+        .expect("ensure must re-create the contract after the reclaim commits");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "the re-created contract must exist for the committed family"
+    );
+    let resolved = TokenRepository::new(create_pool(&database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &raw_b)
+        .await
+        .expect("lookup should execute");
+    assert!(
+        resolved.is_some(),
+        "the raced family must resolve its token"
+    );
+
+    // Interleave B: the same key becomes orphaned again, a new reference
+    // holds FOR KEY SHARE while parked, and the janitor's SKIP LOCKED
+    // selection must bypass the locked row instead of deleting it.
+    sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(family_b)
+        .execute(&mut observer)
+        .await
+        .expect("the second last-reference delete should apply");
+    sql_query(
+        "UPDATE oauth_refresh_contracts \
+         SET created_at = CURRENT_TIMESTAMP - interval '2 hours' \
+         WHERE tenant_id = $1 AND contract_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+    .execute(&mut observer)
+    .await
+    .expect("contract re-aging should apply");
+
+    let gate_key = family_lock_key(Uuid::now_v7());
+    let mut gatekeeper = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query("SELECT pg_advisory_lock($1)")
+        .bind::<BigInt, _>(gate_key)
+        .execute(&mut gatekeeper)
+        .await
+        .expect("gatekeeper should hold the gate lock");
+
+    let holder_app = format!("contract-holder-{}", Uuid::now_v7().simple());
+    let holder_url = tagged_database_url(&database_url, &holder_app);
+    let family_c = Uuid::now_v7();
+    let raw_c = format!("race-reclaim-c-{}", Uuid::now_v7());
+    let (holder_tenant, holder_digest, holder_json) =
+        (tenant_id, contract_blake3.clone(), contract_json.clone());
+    let (holder_client, holder_user) = (fixture.client_id, fixture.user_id);
+    let holder_token_hash = blake3::hash(raw_c.as_bytes()).as_bytes().to_vec();
+    let mut holder = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&holder_url).await.unwrap();
+        connection.batch_execute("BEGIN").await.unwrap();
+        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<SqlUuid, _>(holder_tenant)
+            .bind::<diesel::sql_types::Bytea, _>(holder_digest.clone())
+            .bind::<diesel::sql_types::Jsonb, _>(holder_json)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        // Park with the FOR KEY SHARE still held: the reference is locked
+        // but the family insert has not run yet — the exact window the
+        // reclaim race must survive.
+        sql_query("SELECT pg_advisory_xact_lock($1)")
+            .bind::<BigInt, _>(gate_key)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        sql_query(FAMILY_INSERT_SQL)
+            .bind::<SqlUuid, _>(holder_tenant)
+            .bind::<SqlUuid, _>(family_c)
+            .bind::<SqlUuid, _>(holder_client)
+            .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(holder_user))
+            .bind::<diesel::sql_types::Bytea, _>(holder_digest)
+            .bind::<SqlUuid, _>(Uuid::now_v7())
+            .bind::<diesel::sql_types::Bytea, _>(holder_token_hash)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        connection
+            .batch_execute("COMMIT")
+            .await
+            .map_err(|error| error.to_string())
+    });
+    wait_for_lock_wait_or_task(&mut observer, &holder_app, &mut holder).await;
+    let janitor_deleted = sql_query(RECLAIM_SQL)
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+        .execute(&mut observer)
+        .await
+        .expect("the janitor statement should run against the locked row");
+    assert_eq!(
+        janitor_deleted, 0,
+        "SKIP LOCKED must bypass the FOR KEY SHARE referenced contract"
+    );
+    sql_query("SELECT pg_advisory_unlock($1)")
+        .bind::<BigInt, _>(gate_key)
+        .execute(&mut gatekeeper)
+        .await
+        .expect("gatekeeper should release the gate lock");
+    holder
+        .await
+        .expect("holder task should join")
+        .expect("the holding transaction must commit");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "the referenced contract must survive the reclaim pass"
+    );
+    let resolved = TokenRepository::new(create_pool(&database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &raw_c)
+        .await
+        .expect("lookup should execute");
+    assert!(
+        resolved.is_some(),
+        "the shared contract family must resolve"
+    );
+
+    // Two concurrent real-path issuances on the same contract key both
+    // commit; the contract row stays singular (shared reference).
+    let family_d = Uuid::now_v7();
+    let family_e = Uuid::now_v7();
+    let ((result_d, _), (result_e, _)) = tokio::join!(
+        commit_refresh(
+            &database_url,
+            refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                family_d,
+                format!("race-shared-d-{}", Uuid::now_v7()),
+                None,
+            ),
+        ),
+        commit_refresh(
+            &database_url,
+            refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                family_e,
+                format!("race-shared-e-{}", Uuid::now_v7()),
+                None,
+            ),
+        )
+    );
+    assert_eq!(result_d, CommitTokenIssuanceResult::Committed);
+    assert_eq!(result_e, CommitTokenIssuanceResult::Committed);
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "concurrent same-contract issuances must share one contract row"
+    );
+}
+
+#[tokio::test]
+async fn refresh_contract_ensure_rolls_back_with_caller_and_validates_args() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let (contract_blake3, contract_json) = contract_parts(&fixture);
+
+    // The ensure INSERT participates in the caller's transaction: a later
+    // failure must roll it back atomically and leave no unreferenced row.
+    let mut fresh_digest = contract_blake3.clone();
+    fresh_digest[0] ^= 0xff;
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    connection.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<diesel::sql_types::Bytea, _>(fresh_digest.clone())
+        .bind::<diesel::sql_types::Jsonb, _>(contract_json.clone())
+        .execute(&mut connection)
+        .await
+        .expect("the in-transaction ensure should apply");
+    sql_query("SELECT 1 / 0")
+        .execute(&mut connection)
+        .await
+        .expect_err("the forced failure must abort the transaction");
+    connection.batch_execute("ROLLBACK").await.unwrap();
+    assert_eq!(
+        contract_count(&mut connection, tenant_id, &fresh_digest).await,
+        0,
+        "a rolled-back ensure must not leave an orphan contract row"
+    );
+
+    // Invalid arguments raise instead of silently referencing nothing.
+    let invalid = sql_query(
+        "SELECT public.nazo_oauth_refresh_contract_ensure($1, '\\x01'::bytea, '{}'::jsonb)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .execute(&mut connection)
+    .await;
+    let error = invalid.expect_err("a short digest must be rejected");
+    assert!(
+        error.to_string().contains("arguments are invalid"),
+        "unexpected ensure error classification: {error}"
     );
 }

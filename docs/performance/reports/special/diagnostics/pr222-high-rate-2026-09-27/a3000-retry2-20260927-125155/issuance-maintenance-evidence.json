@@ -1,0 +1,9 @@
+{
+  "status": "INVALID",
+  "pass": false,
+  "retention_seconds": 360,
+  "max_expired_age_seconds": 120,
+  "minimum_mature_observation_seconds": 180,
+  "max_sample_gap_seconds": 4,
+  "reason": "missing_measurement_window"
+}

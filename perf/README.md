@@ -3,6 +3,71 @@
 This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
+The runner image pins `orjson==3.12.0` for the streaming evidence decoder.
+Checkpoint evidence uses k6's buffered `--quiet --out json=-` output,
+redirected to the analyzer FIFO. The script writes summaries only to files;
+the runner closes its FIFO descriptor before sampler shutdown and waiting
+for the analyzer. This
+retains all metric points and flushes the final buffered batch without a
+relaxed lag gate.
+
+The native JSON periodic flusher also flushes its stdout buffer after each
+batch. Sparse initialization gauges must arrive at that boundary, before a
+later workload fills 4 KiB or `Stop()` closes output. Otherwise old VU samples
+can appear late although business samples are timely. A native regression
+feeds two sub-4-KiB batches and verifies their complete envelopes arrive before
+the next batch or shutdown. All samples and the five-second lag gate remain
+unchanged.
+
+The runner builds exact k6 v2.2.0 source `00a9a1b7f552d6bb4337278b10ae25aac0f4e666`
+from a checksum-verified archive. Its [small JSON output patch](runner/k6-json-throughput.patch)
+reuses bounded encodings of immutable tag sets and writes the same complete
+sample envelope without repeated reflection. Retained samples preserve every
+timestamp, value, tag and metadata field; metadata and invalid-value cases use
+the stock encoder. The runner sets `K6_JSON_OMIT_UNUSED_HTTP_TIMINGS=1` to omit
+only `http_req_blocked`, `http_req_connecting`, `http_req_tls_handshaking`,
+`http_req_sending`, `http_req_waiting` and `http_req_receiving` from JSON output.
+The evaluator does not consume these six auxiliary timings. Native k6 summaries
+and thresholds still receive every metric; complete-operation cohorts/quantiles,
+window contracts, outcomes, errors, drops, HTTP totals/duration, network bytes
+and VUs remain exhaustive in the stream. Setting the flag to `0` restores full
+JSON output. This output setting is recorded in `k6-started.json`; runner image
+identity separates its recipes from previous unfiltered images.
+Upstream output/metrics tests and added envelope equivalence,
+invalid-value and bounded-cache tests run during the image build. Per-point
+provenance records the resulting k6 binary hash and runner image.
+Install that same binary package when invoking its Python tools on the host:
+`python -m pip install --only-binary=:all: orjson==3.12.0`.
+Streaming evidence retains the existing cohort, diagnostic-selection and
+five-second consumer-lag rules; forensic gzip output uses compression level 1.
+
+For a measured stream-consumer bottleneck, the targeted controller accepts
+`--stream-workers 2` through `8` (default `1`). It registers this setting as
+part of the recipe and requires enough allocated generator CPUs for the workers
+and dispatcher. The application image does not need rebuilding for this change.
+Every Point is still decoded and validated; metric sharding preserves exact
+cohorts, counts, outcomes, drops and histogram buckets. Native k6 complete-flow
+quantiles remain one population. Window contracts reach every shard; missing,
+divergent, malformed, failed or late evidence retains its existing invalid gate.
+Analyzer stats record each worker's owned-point count and the unchanged
+five-second consumer-lag signal.
+
+The dispatcher sends complete input blocks to workers. Each worker selects
+its existing metric partition with a bounded native-row regex cache; new
+metrics, window contracts and other JSON layouts use the routing decoder.
+This removes per-Point work from the dispatcher. A worker still decodes and
+validates every owned Point, in input order, with the same forensic selection.
+Available complete input blocks are dispatched immediately. The dispatcher
+does not wait to accumulate 64 KiB: low-rate sidecars must reach their consumers
+before a later iteration or EOF, under the same five-second lag gate.
+
+Forensic selection remains per metric/second. With multiple workers, each
+metric belongs to one shard; each shard has an equal share of the existing
+512 MiB logical diagnostic budget. Concatenated gzip members form the single
+diagnostic artifact. Ordering and truncation of this sampled forensic copy may
+change; it remains separate from exhaustive authoritative counters and never
+feeds the business verdict. Keep worker count frozen within a capacity interval.
+
 ## Run
 
 Run the full matrix:
@@ -120,6 +185,15 @@ happy-path session:
 
 ## Capacity Curve Model
 
+Capacity measurements for mTLS issuance, signed PAR, logged-in FAPI, cold
+Argon2 login, and metadata/JWKS use the same scenario-clock cohort as `cap_*`.
+Their `cap_iter_ms` covers the complete operation, including signing and all
+HTTP steps. Any failed response check makes that operation unsuccessful even
+when a later step succeeds. Historical results retain their original accounting.
+`point_runner.stack_up_pinned` accepts optional `postgres_cpus` and
+`valkey_cpus` sets to separate those components from the generator's
+`infra_cpus`; application affinity is applied before the runtime starts.
+
 `perf/capacity.py` runs one fixed-arrival-rate point at a time, tears down the
 compose stack, and repeats for each selected replica count, scenario, and rate.
 The default long matrix covers:
@@ -187,3 +261,82 @@ isolated trusted perf network.
 The app-CPU and single-instance wrappers disable their own final commit by
 default, but inherited checkpoint settings must still be reviewed. The extended
 matrix's parent publication step has no equivalent opt-out.
+
+## Incremental current-B acceptance
+
+The [current incremental report](../docs/performance/reports/2026-09-28-incremental-b/report.md)
+and [structured baseline](results/data/capacity/current-capacity.json) distinguish
+reviewed service intervals, exploratory candidates and unestablished uppers.
+Read the per-row deployment and frozen recipe before reproducing a point.
+
+`perf/tools/current_capacity.py` evaluates the main workload and each of the
+four mixed sidecars through `capacity_search.evaluate` with required stream
+evidence. A naturally finished sidecar with a terminal summary is not by itself
+a business pass. Each sidecar retains its own rate, scenario-specific latency
+rules (including the separate cold-login class) and measurement cohort; the
+existing common-window check must also cover the main measurement.
+Offline reassessment exposes `complete_operation_latency_ms` from each
+sidecar's native `cap_iter_ms` cohort. A sidecar without that cohort reports
+`null`, never zero or an HTTP-duration substitute. The existing metadata/JWKS
+sidecar retains its whole-scenario iteration accounting and request-latency
+gate; its HTTP quantiles are labeled separately from complete-operation
+quantiles. This reporting field does not alter any verdict.
+
+Invalid measurement or local preparation takes precedence over a service
+failure when combining business, sidecar, health and maintenance verdicts.
+Individual failures are retained, but an invalid point cannot establish a
+service capacity upper bound. Missing summaries are invalid evidence.
+`evaluate_point(point, record, point_directory, confirmation=...)` exposes the
+same verdict path for offline reassessment of retained artifacts without load;
+keep the original records and publish reassessment separately. Only affected
+points with insufficient evidence require new measurement.
+
+For retained point directories, run an offline reassessment first (no Docker,
+SSH, image build or new load is performed):
+
+```sh
+python perf/tools/current_capacity.py --reevaluate \
+  "$POINT_A/point.json" "$POINT_B/point.json" --output "$REASSESSMENT_JSON"
+```
+
+For new load, `--mode single|multi` and `--scenarios ...` restrict the search.
+`--rates ...` runs only the requested rates for exactly one mode/scenario;
+`--window` is their effective duration (default 180 seconds). Existing valid
+observations with the same recipe/rate and at least that duration are reused;
+`--repeat` explicitly requests a new observation. Mixed `--confirm --window 660`
+also checks mature maintenance and preserves the journal. It is unnecessary to
+repeat an already valid confirmation under an unchanged recipe.
+
+```sh
+python perf/tools/current_capacity.py --stop-at "$STOP_AT" \
+  --mode multi --scenarios cap_mixed --rates 2400 3000 --window 180 \
+  --vus "$CALIBRATED_VUS" --users "$FIXED_USERS" \
+  --pool-connections "$CALIBRATED_POOL"
+```
+
+CPU IDs come only from the process affinity. With fewer than four available
+logical CPUs, infrastructure shares the available set; this topology is recorded
+and must not be described as isolated infrastructure. Default main VUs scale at
+64 per allocated application CPU, users at 16 per CPU with a minimum of 64,
+and the pool at two connections per allocated PostgreSQL CPU. These are initial
+calibration recipes, not resource availability guarantees or validated maxima.
+Use deployment-local observations to fit memory and database connection limits.
+`--application-cpus` sets the multicore application count after measuring
+component costs. CPU IDs still come from visible affinity; PostgreSQL keeps
+its default count unless `--database-cpus` explicitly calibrates its budget;
+released application/database CPUs go to the generator. Database CPU tuning
+does not change the connection pool or PostgreSQL durability settings.
+The override requires disjoint application/database/Valkey/generator sets and
+at least one generator CPU. Changing it creates a separate recipe: remeasure
+both endpoints and report the actual application count.
+`--vus`, `--users` and `--pool-connections` independently override them; increasing
+VU capacity does not silently change user cardinality. `--sidecar-vus` accepts
+four positive counts in argon2/metadata/FAPI/refresh order, without changing
+sidecar rates or users. Default sidecar VUs scale upward with application CPUs.
+
+Recipe-specific `registered-config-<id>.json` and `search-state-<id>.json` preserve
+independent histories when images, affinity, pool, VUs, users or sidecar settings
+change. Do not combine bounds from different recipes. The old unqualified
+`search-state.json` is not imported automatically: reassess its archived points
+and retain valid published results, then request only missing new points.
+Historical reports remain tied to their original controller and configuration.

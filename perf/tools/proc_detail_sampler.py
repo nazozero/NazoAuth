@@ -61,6 +61,10 @@ CONTAINERS = {
     "app": f"{PROJECT}-nazoauth-1",
     "postgres": f"{PROJECT}-postgres-1",
     "valkey": f"{PROJECT}-valkey-1",
+    # These are compose-run services, not docker-run SIS extras. Resolve
+    # their exact per-point names through the compose ownership label too.
+    "audit-receiver": f"sis-rcv-{RUN_ID}",
+    "audit-worker": f"sis-worker-{RUN_ID}",
 }
 
 
@@ -107,20 +111,23 @@ def sample(name: str) -> dict | None:
 
 def container_name(base: str) -> str | None:
     proc = subprocess.run(
-        ["docker", "ps", "--format", "{{.Names}}"],
+        ["docker", "ps", "--filter", f"label=com.docker.compose.project={PROJECT}",
+         "--format", "{{.Names}}"],
         text=True, capture_output=True, timeout=15)
     names = proc.stdout.split()
     if base in names:
         return base
-    for n in names:
-        if re.fullmatch(re.escape(base.rstrip("1")) + r"\d+", n):
-            return n
+    if base.startswith(f"{PROJECT}-") and base.endswith("-1"):
+        for n in names:
+            if re.fullmatch(re.escape(base[:-1]) + r"\d+", n):
+                return n
     return None
 
 
 def main() -> int:
     targets = {k: container_name(v) for k, v in CONTAINERS.items()}
-    # load containers (k6 runners) join dynamically by prefix
+    # Dynamic load containers must belong to this deployment. A familiar
+    # name prefix is not ownership and may belong to a concurrent run.
     out = open(OUT, "a", buffering=1)
     out.write(json.dumps({"kind": "meta", "run_id": RUN_ID,
                           "script_sha256": self_sha256(),
@@ -128,7 +135,8 @@ def main() -> int:
     while True:
         row = {"ts": time.time()}
         names = subprocess.run(
-            ["docker", "ps", "--format", "{{.Names}}"],
+            ["docker", "ps", "--filter", f"label=sis.owner={PROJECT}",
+             "--format", "{{.Names}}"],
             text=True, capture_output=True, timeout=15).stdout.split()
         dynamic = dict(targets)
         for n in names:
@@ -140,18 +148,8 @@ def main() -> int:
                 row[key] = None
                 continue
             row[key] = sample(cname)
-        try:
-            mem = {}
-            for line in open("/proc/meminfo"):
-                k, _, rest = line.partition(":")
-                p = rest.strip().split()
-                if p and p[0].isdigit():
-                    mem[k] = int(p[0])
-            row["host_mem_kb"] = {
-                "MemTotal": mem.get("MemTotal"),
-                "MemAvailable": mem.get("MemAvailable")}
-        except OSError:
-            pass
+        # /proc/meminfo is host-wide even inside most containers. The
+        # component-local RSS/cgroup samples above are the evidence scope.
         out.write(json.dumps(row) + "\n")
         time.sleep(TICK)
 

@@ -1,0 +1,38 @@
+{
+  "point.json": {
+    "sha256": "63e41dbd6a81ddf869c765be0dfcc7de04cabf2245c7b533df6f96ee4cfda811",
+    "bytes": 29814
+  },
+  "acceptance.json": {
+    "sha256": "4b9abec880f6316f741c7b261902c8cb07531991b400a054b93519e4b9880995",
+    "bytes": 3148
+  },
+  "pgss-pre.json": {
+    "sha256": "e8b63a16c04790ded6ea42009feb4c14cca280afbe89bb0326af317955b121cd",
+    "bytes": 1921
+  },
+  "pgss-post.json": {
+    "sha256": "af9f312917e3b8ffc2aeb7dc4cbc272971e396ebbf3b5e425f973c699c720e60",
+    "bytes": 102641
+  },
+  "wal-pre.json": {
+    "sha256": "bf15de743c1352925ad060e4becb050630a075b4afd60cda186fb1a95bb87565",
+    "bytes": 15546
+  },
+  "wal-post.json": {
+    "sha256": "af2bcafcb13698c7977283df1b0d046386bb51dc0571dbff7e7ca9fbac4d37e6",
+    "bytes": 15612
+  },
+  "soak-metrics.jsonl": {
+    "sha256": "50fa5ff59fd1fac05c7807d16782e309d5f82ca55a319cf32afd99b377af6b76",
+    "bytes": 2740537
+  },
+  "proc-detail.jsonl": {
+    "sha256": "f30ee0a93c8e8e630343c5e4e0a1a6ced6561db8576eb7a9b2aa2c923f985e40",
+    "bytes": 3679295
+  },
+  "residency.jsonl": {
+    "sha256": "741c0a686a75b4a559579060b16ddcfaae847361f57178de608ddc800d48e5a8",
+    "bytes": 211365724
+  }
+}

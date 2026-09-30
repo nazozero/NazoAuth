@@ -175,11 +175,11 @@ mod real_userinfo_contract {
         sql_types::{Bool, Text, Uuid as SqlUuid},
     };
     use diesel_async::RunQueryDsl;
+    use nazo_auth::PreparedTokenSubject;
     use nazo_auth::*;
     use nazo_identity::DEFAULT_ORGANIZATION_ID;
     use nazo_identity::DEFAULT_REALM_ID;
     use nazo_identity::DEFAULT_TENANT_ID;
-    use nazo_identity::SubjectClaims;
     use nazo_oauth_server::domain::userinfo::{
         ServerUserinfoOperations, UserinfoConfig, UserinfoHandles,
     };
@@ -193,15 +193,30 @@ mod real_userinfo_contract {
         calls: Arc<Mutex<Vec<&'static str>>>,
     }
     impl TokenRepositoryPort for ObservedRepository {
-        fn access_token_revoked<'a>(&'a self, tenant: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
+        fn token_principal_state<'a>(
+            &'a self,
+            tenant_id: Uuid,
+            client_id: Uuid,
+            user_id: Option<Uuid>,
+            subject: &'a str,
+        ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+            self.inner
+                .token_principal_state(tenant_id, client_id, user_id, subject)
+        }
+
+        fn access_token_revoked<'a>(
+            &'a self,
+            tenant: Uuid,
+            claims: &'a nazo_auth::Claims,
+        ) -> TokenFuture<'a, bool> {
             self.calls.lock().unwrap().push("revocation");
-            self.inner.access_token_revoked(tenant, jti)
+            self.inner.access_token_revoked(tenant, claims)
         }
         fn active_subject_claims(
             &self,
             tenant: Uuid,
             user: Uuid,
-        ) -> TokenFuture<'_, Option<SubjectClaims>> {
+        ) -> TokenFuture<'_, Option<PreparedTokenSubject>> {
             self.calls.lock().unwrap().push("subject");
             self.inner.active_subject_claims(tenant, user)
         }
@@ -239,9 +254,15 @@ mod real_userinfo_contract {
             &'a self,
             tenant: Uuid,
             jti: &'a str,
+            subject: &'a str,
         ) -> TokenFuture<'a, Option<Uuid>> {
             self.calls.lock().unwrap().push("subject");
-            TokenRepositoryPort::active_subject_id_by_access_token(&self.inner, tenant, jti)
+            TokenRepositoryPort::active_subject_id_by_access_token(
+                &self.inner,
+                tenant,
+                jti,
+                subject,
+            )
         }
         fn commit_token_issuance<'a>(
             &'a self,

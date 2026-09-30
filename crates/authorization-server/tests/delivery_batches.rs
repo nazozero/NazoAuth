@@ -6,8 +6,8 @@ use nazo_auth::BackchannelLogoutDelivery;
 use nazo_identity::ports::{RepositoryError, RepositoryFuture};
 use nazo_oauth_server::{
     ports::transient_state::{
-        CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome, CibaPingFinishResult,
-        TransientStateError, TransientStateFuture,
+        CibaPingClaimBatch, CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome,
+        CibaPingFinishResult, TransientStateError, TransientStateFuture,
     },
     workers::{
         backchannel_logout::{BackchannelLogoutSender, BackchannelLogoutWorker},
@@ -144,12 +144,15 @@ impl CibaPingDeliveryPort for PingStore {
         now: i64,
         lock_until: i64,
         limit: usize,
-    ) -> TransientStateFuture<'a, Vec<CibaPingDelivery>> {
+    ) -> TransientStateFuture<'a, CibaPingClaimBatch> {
         Box::pin(async move {
             self.claims.lock().unwrap().push((now, lock_until, limit));
             let mut pending = self.pending.lock().unwrap();
             let count = limit.min(pending.len());
-            Ok(pending.drain(..count).collect())
+            Ok(CibaPingClaimBatch {
+                scanned: count,
+                deliveries: pending.drain(..count).collect(),
+            })
         })
     }
     fn finish<'a>(

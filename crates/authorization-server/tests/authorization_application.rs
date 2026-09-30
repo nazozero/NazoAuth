@@ -17,6 +17,9 @@ use authorization_fixture::{Fixture, Ports, client, session};
 #[path = "support/par_application.rs"]
 mod par_application;
 
+#[path = "support/authorization_decision_application.rs"]
+mod authorization_decision_application;
+
 fn application(
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
     session: Result<Option<SessionSnapshot>, RepositoryError>,

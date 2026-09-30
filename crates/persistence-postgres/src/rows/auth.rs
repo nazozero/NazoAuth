@@ -56,8 +56,6 @@ pub(crate) struct SpentRefreshTokenRow {
     #[diesel(sql_type = diesel::sql_types::Binary)]
     pub(crate) refresh_token_blake3: Vec<u8>,
     #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) token_family_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) member_id: Uuid,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
     pub(crate) spent_at: DateTime<Utc>,

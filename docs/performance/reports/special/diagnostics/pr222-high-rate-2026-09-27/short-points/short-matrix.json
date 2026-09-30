@@ -1,0 +1,1296 @@
+{
+  "created_utc": "2026-09-27T08:53:46.292812+00:00",
+  "formal": {
+    "all_six_status": "PASS",
+    "measured_seconds": 600,
+    "order": [
+      "formal-a-2400",
+      "formal-b-2400",
+      "formal-b-3000",
+      "formal-a-3000",
+      "formal-a-3200",
+      "formal-b-3200"
+    ],
+    "warmup_seconds": 120
+  },
+  "frozen_configuration": {
+    "binary_sha256_by_variant": {
+      "A": "0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d",
+      "B": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b"
+    },
+    "cpu_plan_sha256": "34b858b9e0a7578d6eb437e703597f1f7cef2283ffe9f2988134d628b032fad8",
+    "effective_seeded_users": 1600,
+    "effective_user_count_basis": "runner log on both A/B 2400 confirms the same multi-user minimum expansion; vectors are fixed",
+    "harness_tree_sha256_unique": [
+      "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49"
+    ],
+    "main_logical_cpu_binding_count_by_run": {
+      "formal-a-2400": 32,
+      "formal-a-3000": 32,
+      "formal-a-3200": 32,
+      "formal-b-2400": 32,
+      "formal-b-3000": 32,
+      "formal-b-3200": 32
+    },
+    "main_max_vus": 1600,
+    "main_preallocated_vus": 1600,
+    "pool_size": 90,
+    "profile_sha256": "e459bfe9e77c2bbd043cd1f9ed31627345b0450cbcd77e160298691e9667ef0b",
+    "profile_user_count_input": 200,
+    "runner_harness_file_matches_workspace_all_runs": true,
+    "seeded_dataset_by_run": {
+      "formal-a-2400": {
+        "seeded_users": 1600,
+        "seeded_vectors": 38400
+      },
+      "formal-a-3000": {
+        "seeded_users": 1600,
+        "seeded_vectors": 38400
+      },
+      "formal-a-3200": {
+        "seeded_users": 1600,
+        "seeded_vectors": 38400
+      },
+      "formal-b-2400": {
+        "seeded_users": 1600,
+        "seeded_vectors": 38400
+      },
+      "formal-b-3000": {
+        "seeded_users": 1600,
+        "seeded_vectors": 38400
+      },
+      "formal-b-3200": {
+        "seeded_users": 1600,
+        "seeded_vectors": 38400
+      }
+    },
+    "sidecar_target_ops_s": {
+      "argon2": 8,
+      "fapi": 30,
+      "meta": 200,
+      "refresh": 600
+    },
+    "sidecar_vus": {
+      "argon2": {
+        "max_vus": 16,
+        "pre_vus": 16,
+        "target_ops_s": 8
+      },
+      "fapi": {
+        "max_vus": 66,
+        "pre_vus": 66,
+        "target_ops_s": 30
+      },
+      "meta": {
+        "max_vus": 33,
+        "pre_vus": 33,
+        "target_ops_s": 200
+      },
+      "refresh": {
+        "max_vus": 258,
+        "pre_vus": 258,
+        "target_ops_s": 600
+      }
+    },
+    "source_and_binary_provenance_by_run": {
+      "formal-a-2400": {
+        "binary_sha256": "0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "source_sha": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "workspace_k6_oauth_equal": true
+      },
+      "formal-a-3000": {
+        "binary_sha256": "0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "source_sha": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "workspace_k6_oauth_equal": true
+      },
+      "formal-a-3200": {
+        "binary_sha256": "0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "source_sha": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "workspace_k6_oauth_equal": true
+      },
+      "formal-b-2400": {
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "source_sha": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "workspace_k6_oauth_equal": true
+      },
+      "formal-b-3000": {
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "source_sha": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "workspace_k6_oauth_equal": true
+      },
+      "formal-b-3200": {
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "source_sha": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "workspace_k6_oauth_equal": true
+      }
+    },
+    "vectors": 38400
+  },
+  "interpretation": {
+    "capacity_boundary": "All six requested targets through 3200/s pass; maximum capacity was not searched or established.",
+    "http_vs_logical": "HTTP requests per second is reported separately from successful logical operations per second.",
+    "p99": "Each point reports its own complete-iteration P99; values are not averaged.",
+    "sidecars": "A/2400 raw refresh summary target_miss was evaluated by the specified capacity_search evaluator and passed the 99.5% success/0.1% drop gate.",
+    "wal": "WAL counters here are the exact effective 600-second global window with sampler span retained. PGSS statement-level Top10 is a later WAL attribution stage."
+  },
+  "production_sources": {
+    "A": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+    "B": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+    "H": "462626b29be202c04f2e4482ade6ab5f5f6267c5"
+  },
+  "runs": [
+    {
+      "audit": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 295051,
+        "pending": 0,
+        "persisted": 295051,
+        "reconciled": true
+      },
+      "effective_window_seconds": 600,
+      "health_checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "four_sidecars": true,
+        "journal_contiguous": true,
+        "main_natural_completion": true,
+        "measurement_length": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "queue_drained": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecar_timing": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "health_checks_pass": true,
+      "main": {
+        "complete_iteration_p50_p95_p99_ms": {
+          "p50": 5.0,
+          "p95": 28.0,
+          "p99": 90.0
+        },
+        "evaluator_gate_p95_p99_ms": {
+          "p95": 28.0,
+          "p99": 90.0
+        },
+        "expected_rejections": 1,
+        "http_requests_per_s": 3486.243,
+        "k6_exit_code": 0,
+        "measure_completed": 1440003,
+        "measure_drop_count": 0,
+        "measure_drop_fraction": 0.0,
+        "measure_scheduled": 1440003,
+        "oom_killed": false,
+        "prepare_sut_failures": 0,
+        "success_fraction_of_target": 1.00000125,
+        "successful_ops_s": 2400.003,
+        "unexpected_errors": 0,
+        "unfinished": 0
+      },
+      "main_gate": "PASS",
+      "name": "formal-a-2400",
+      "provenance": {
+        "binary_sha256": "0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "source_sha": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "workspace_k6_oauth_equal": true
+      },
+      "refresh_gate": {
+        "drop_count": 210,
+        "drop_fraction": 0.00046666666666666666,
+        "p95_ms": 18.0,
+        "p99_ms": 93.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "status": "PASS",
+        "successful_ops_s": 599.667,
+        "unexpected_errors": 0
+      },
+      "refresh_invariants": {
+        "max_active_per_scope": 10,
+        "spent_expired_backlog": 0,
+        "spent_max_per_family": 64
+      },
+      "sidecars": {
+        "argon2": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 7.369,
+            "p95": 125.22,
+            "p99": 137.443
+          },
+          "http_requests": 36000,
+          "http_requests_per_s": 47.999,
+          "logical_iterations": 6000
+        },
+        "fapi": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 5.634,
+            "p95": 15.934,
+            "p99": 47.778
+          },
+          "http_requests": 112505,
+          "http_requests_per_s": 150.002,
+          "logical_iterations": 22501
+        },
+        "meta": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 0.202,
+            "p95": 0.353,
+            "p99": 0.708
+          },
+          "http_requests": 300000,
+          "http_requests_per_s": 400.0,
+          "logical_iterations": 150000
+        },
+        "refresh": {
+          "capacity_gate": {
+            "drop_count": 210,
+            "drop_fraction": 0.00046666666666666666,
+            "p95_ms": 18.0,
+            "p99_ms": 93.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "status": "PASS",
+            "successful_ops_s": 599.667,
+            "unexpected_errors": 0
+          },
+          "drop_count": 210,
+          "drop_fraction": 0.000467,
+          "error_rate": 0.0,
+          "gate_status": "target_miss",
+          "http_latency_ms": {
+            "p50": 7.234,
+            "p95": 16.496,
+            "p99": 67.131
+          },
+          "http_requests": 450822,
+          "http_requests_per_s": 601.092,
+          "logical_iterations": 449790
+        }
+      },
+      "target_ops_s": 2400,
+      "variant": "A",
+      "wal_window_600s": {
+        "fsync_time_ms": null,
+        "fsync_time_raw_ms": 0.0,
+        "fsyncs": 575319.1520004272,
+        "generated_bytes": 6916259662.49696,
+        "mean_write_bytes": 28696.516564369882,
+        "timing_interpretation": "N/A when PostgreSQL reports a zero timing counter; zero is not interpreted as zero wait",
+        "wal_generated_sample_span": [
+          1790493196,
+          1790493984
+        ],
+        "wal_io_sample_span": [
+          1790493196,
+          1790493984
+        ],
+        "write_bytes": 16545670248.703125,
+        "write_operations": 576574.1710004807,
+        "write_time_ms": null,
+        "write_time_raw_ms": 0.0,
+        "write_to_generated_ratio": 2.392285867811054
+      },
+      "window_end_ms": 1790493925038,
+      "window_start_ms": 1790493325038
+    },
+    {
+      "audit": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 294511,
+        "pending": 0,
+        "persisted": 294511,
+        "reconciled": true
+      },
+      "effective_window_seconds": 600,
+      "health_checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "four_sidecars": true,
+        "journal_contiguous": true,
+        "main_natural_completion": true,
+        "measurement_length": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "queue_drained": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecar_timing": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "health_checks_pass": true,
+      "main": {
+        "complete_iteration_p50_p95_p99_ms": {
+          "p50": 4.0,
+          "p95": 19.0,
+          "p99": 29.0
+        },
+        "evaluator_gate_p95_p99_ms": {
+          "p95": 19.0,
+          "p99": 29.0
+        },
+        "expected_rejections": 0,
+        "http_requests_per_s": 3483.965,
+        "k6_exit_code": 0,
+        "measure_completed": 1440001,
+        "measure_drop_count": 0,
+        "measure_drop_fraction": 0.0,
+        "measure_scheduled": 1440001,
+        "oom_killed": false,
+        "prepare_sut_failures": 0,
+        "success_fraction_of_target": 1.00000083,
+        "successful_ops_s": 2400.002,
+        "unexpected_errors": 0,
+        "unfinished": 0
+      },
+      "main_gate": "PASS",
+      "name": "formal-b-2400",
+      "provenance": {
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "source_sha": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "workspace_k6_oauth_equal": true
+      },
+      "refresh_gate": {
+        "drop_count": 0,
+        "drop_fraction": 0.0,
+        "p95_ms": 11.0,
+        "p99_ms": 21.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "status": "PASS",
+        "successful_ops_s": 600.0,
+        "unexpected_errors": 0
+      },
+      "refresh_invariants": {
+        "max_active_per_scope": 10,
+        "spent_expired_backlog": 0,
+        "spent_max_per_family": 64
+      },
+      "sidecars": {
+        "argon2": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 5.764,
+            "p95": 122.524,
+            "p99": 127.09
+          },
+          "http_requests": 36000,
+          "http_requests_per_s": 48.0,
+          "logical_iterations": 6000
+        },
+        "fapi": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 4.392,
+            "p95": 10.3,
+            "p99": 19.119
+          },
+          "http_requests": 112505,
+          "http_requests_per_s": 150.0,
+          "logical_iterations": 22501
+        },
+        "meta": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 0.182,
+            "p95": 0.292,
+            "p99": 0.621
+          },
+          "http_requests": 300000,
+          "http_requests_per_s": 399.999,
+          "logical_iterations": 150000
+        },
+        "refresh": {
+          "capacity_gate": {
+            "drop_count": 0,
+            "drop_fraction": 0.0,
+            "p95_ms": 11.0,
+            "p99_ms": 21.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "status": "PASS",
+            "successful_ops_s": 600.0,
+            "unexpected_errors": 0
+          },
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 6.17,
+            "p95": 11.274,
+            "p99": 21.392
+          },
+          "http_requests": 451032,
+          "http_requests_per_s": 601.373,
+          "logical_iterations": 450000
+        }
+      },
+      "target_ops_s": 2400,
+      "variant": "B",
+      "wal_window_600s": {
+        "fsync_time_ms": null,
+        "fsync_time_raw_ms": 0.0,
+        "fsyncs": 624083.0400066376,
+        "generated_bytes": 6444129194.9643345,
+        "mean_write_bytes": 25747.9098998601,
+        "timing_interpretation": "N/A when PostgreSQL reports a zero timing counter; zero is not interpreted as zero wait",
+        "wal_generated_sample_span": [
+          1790494258,
+          1790495045
+        ],
+        "wal_io_sample_span": [
+          1790494258,
+          1790495045
+        ],
+        "write_bytes": 16099054424.829102,
+        "write_operations": 625256.7485066652,
+        "write_time_ms": null,
+        "write_time_raw_ms": 0.0,
+        "write_to_generated_ratio": 2.4982513444034393
+      },
+      "window_end_ms": 1790494987583,
+      "window_start_ms": 1790494387583
+    },
+    {
+      "audit": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 360016,
+        "pending": 0,
+        "persisted": 360016,
+        "reconciled": true
+      },
+      "effective_window_seconds": 600,
+      "health_checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "four_sidecars": true,
+        "journal_contiguous": true,
+        "main_natural_completion": true,
+        "measurement_length": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "queue_drained": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecar_timing": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "health_checks_pass": true,
+      "main": {
+        "complete_iteration_p50_p95_p99_ms": {
+          "p50": 4.0,
+          "p95": 20.0,
+          "p99": 31.0
+        },
+        "evaluator_gate_p95_p99_ms": {
+          "p95": 20.0,
+          "p99": 31.0
+        },
+        "expected_rejections": 0,
+        "http_requests_per_s": 4356.893,
+        "k6_exit_code": 0,
+        "measure_completed": 1800002,
+        "measure_drop_count": 0,
+        "measure_drop_fraction": 0.0,
+        "measure_scheduled": 1800002,
+        "oom_killed": false,
+        "prepare_sut_failures": 0,
+        "success_fraction_of_target": 1.000001,
+        "successful_ops_s": 3000.003,
+        "unexpected_errors": 0,
+        "unfinished": 0
+      },
+      "main_gate": "PASS",
+      "name": "formal-b-3000",
+      "provenance": {
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "source_sha": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "workspace_k6_oauth_equal": true
+      },
+      "refresh_gate": {
+        "drop_count": 0,
+        "drop_fraction": 0.0,
+        "p95_ms": 12.0,
+        "p99_ms": 23.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "status": "PASS",
+        "successful_ops_s": 600.0,
+        "unexpected_errors": 0
+      },
+      "refresh_invariants": {
+        "max_active_per_scope": 10,
+        "spent_expired_backlog": 0,
+        "spent_max_per_family": 64
+      },
+      "sidecars": {
+        "argon2": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 5.952,
+            "p95": 123.996,
+            "p99": 128.766
+          },
+          "http_requests": 36000,
+          "http_requests_per_s": 47.999,
+          "logical_iterations": 6000
+        },
+        "fapi": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 4.524,
+            "p95": 10.814,
+            "p99": 19.875
+          },
+          "http_requests": 112505,
+          "http_requests_per_s": 150.002,
+          "logical_iterations": 22501
+        },
+        "meta": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 0.188,
+            "p95": 0.309,
+            "p99": 0.672
+          },
+          "http_requests": 300002,
+          "http_requests_per_s": 400.002,
+          "logical_iterations": 150001
+        },
+        "refresh": {
+          "capacity_gate": {
+            "drop_count": 0,
+            "drop_fraction": 0.0,
+            "p95_ms": 12.0,
+            "p99_ms": 23.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "status": "PASS",
+            "successful_ops_s": 600.0,
+            "unexpected_errors": 0
+          },
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 6.397,
+            "p95": 12.031,
+            "p99": 22.934
+          },
+          "http_requests": 451033,
+          "http_requests_per_s": 601.373,
+          "logical_iterations": 450001
+        }
+      },
+      "target_ops_s": 3000,
+      "variant": "B",
+      "wal_window_600s": {
+        "fsync_time_ms": null,
+        "fsync_time_raw_ms": 0.0,
+        "fsyncs": 624245.3349757195,
+        "generated_bytes": 7625665912.848057,
+        "mean_write_bytes": 28956.83585822368,
+        "timing_interpretation": "N/A when PostgreSQL reports a zero timing counter; zero is not interpreted as zero wait",
+        "wal_generated_sample_span": [
+          1790495214,
+          1790496002
+        ],
+        "wal_io_sample_span": [
+          1790495214,
+          1790496002
+        ],
+        "write_bytes": 18116470333.027344,
+        "write_operations": 625637.0834758282,
+        "write_time_ms": null,
+        "write_time_raw_ms": 0.0,
+        "write_to_generated_ratio": 2.375723056855129
+      },
+      "window_end_ms": 1790495942499,
+      "window_start_ms": 1790495342499
+    },
+    {
+      "audit": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 360019,
+        "pending": 0,
+        "persisted": 360019,
+        "reconciled": true
+      },
+      "effective_window_seconds": 600,
+      "health_checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "four_sidecars": true,
+        "journal_contiguous": true,
+        "main_natural_completion": true,
+        "measurement_length": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "queue_drained": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecar_timing": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "health_checks_pass": true,
+      "main": {
+        "complete_iteration_p50_p95_p99_ms": {
+          "p50": 5.0,
+          "p95": 25.0,
+          "p99": 38.0
+        },
+        "evaluator_gate_p95_p99_ms": {
+          "p95": 25.0,
+          "p99": 38.0
+        },
+        "expected_rejections": 0,
+        "http_requests_per_s": 4356.885,
+        "k6_exit_code": 0,
+        "measure_completed": 1800002,
+        "measure_drop_count": 0,
+        "measure_drop_fraction": 0.0,
+        "measure_scheduled": 1800002,
+        "oom_killed": false,
+        "prepare_sut_failures": 0,
+        "success_fraction_of_target": 1.000001,
+        "successful_ops_s": 3000.003,
+        "unexpected_errors": 0,
+        "unfinished": 0
+      },
+      "main_gate": "PASS",
+      "name": "formal-a-3000",
+      "provenance": {
+        "binary_sha256": "0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "source_sha": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "workspace_k6_oauth_equal": true
+      },
+      "refresh_gate": {
+        "drop_count": 0,
+        "drop_fraction": 0.0,
+        "p95_ms": 14.0,
+        "p99_ms": 26.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "status": "PASS",
+        "successful_ops_s": 600.0,
+        "unexpected_errors": 0
+      },
+      "refresh_invariants": {
+        "max_active_per_scope": 10,
+        "spent_expired_backlog": 0,
+        "spent_max_per_family": 64
+      },
+      "sidecars": {
+        "argon2": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 7.407,
+            "p95": 126.536,
+            "p99": 132.863
+          },
+          "http_requests": 36006,
+          "http_requests_per_s": 47.999,
+          "logical_iterations": 6001
+        },
+        "fapi": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 5.735,
+            "p95": 14.633,
+            "p99": 30.051
+          },
+          "http_requests": 112505,
+          "http_requests_per_s": 150.0,
+          "logical_iterations": 22501
+        },
+        "meta": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 0.204,
+            "p95": 0.337,
+            "p99": 0.734
+          },
+          "http_requests": 300002,
+          "http_requests_per_s": 400.002,
+          "logical_iterations": 150001
+        },
+        "refresh": {
+          "capacity_gate": {
+            "drop_count": 0,
+            "drop_fraction": 0.0,
+            "p95_ms": 14.0,
+            "p99_ms": 26.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "status": "PASS",
+            "successful_ops_s": 600.0,
+            "unexpected_errors": 0
+          },
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 7.282,
+            "p95": 14.229,
+            "p99": 26.774
+          },
+          "http_requests": 451033,
+          "http_requests_per_s": 601.373,
+          "logical_iterations": 450001
+        }
+      },
+      "target_ops_s": 3000,
+      "variant": "A",
+      "wal_window_600s": {
+        "fsync_time_ms": null,
+        "fsync_time_raw_ms": 0.0,
+        "fsyncs": 606225.7630012035,
+        "generated_bytes": 8152874513.170099,
+        "mean_write_bytes": 31139.64069859375,
+        "timing_interpretation": "N/A when PostgreSQL reports a zero timing counter; zero is not interpreted as zero wait",
+        "wal_generated_sample_span": [
+          1790496160,
+          1790496950
+        ],
+        "wal_io_sample_span": [
+          1790496160,
+          1790496950
+        ],
+        "write_bytes": 18923849531.48828,
+        "write_operations": 607709.3090012074,
+        "write_time_ms": null,
+        "write_time_raw_ms": 0.0,
+        "write_to_generated_ratio": 2.3211260643002443
+      },
+      "window_end_ms": 1790496888454,
+      "window_start_ms": 1790496288454
+    },
+    {
+      "audit": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 381583,
+        "pending": 0,
+        "persisted": 381583,
+        "reconciled": true
+      },
+      "effective_window_seconds": 600,
+      "health_checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "four_sidecars": true,
+        "journal_contiguous": true,
+        "main_natural_completion": true,
+        "measurement_length": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "queue_drained": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecar_timing": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "health_checks_pass": true,
+      "main": {
+        "complete_iteration_p50_p95_p99_ms": {
+          "p50": 5.0,
+          "p95": 26.0,
+          "p99": 40.0
+        },
+        "evaluator_gate_p95_p99_ms": {
+          "p95": 26.0,
+          "p99": 40.0
+        },
+        "expected_rejections": 0,
+        "http_requests_per_s": 4646.738,
+        "k6_exit_code": 0,
+        "measure_completed": 1920000,
+        "measure_drop_count": 0,
+        "measure_drop_fraction": 0.0,
+        "measure_scheduled": 1920000,
+        "oom_killed": false,
+        "prepare_sut_failures": 0,
+        "success_fraction_of_target": 1.0,
+        "successful_ops_s": 3200.0,
+        "unexpected_errors": 0,
+        "unfinished": 0
+      },
+      "main_gate": "PASS",
+      "name": "formal-a-3200",
+      "provenance": {
+        "binary_sha256": "0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "source_sha": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+        "workspace_k6_oauth_equal": true
+      },
+      "refresh_gate": {
+        "drop_count": 0,
+        "drop_fraction": 0.0,
+        "p95_ms": 14.0,
+        "p99_ms": 27.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "status": "PASS",
+        "successful_ops_s": 600.0,
+        "unexpected_errors": 0
+      },
+      "refresh_invariants": {
+        "max_active_per_scope": 10,
+        "spent_expired_backlog": 0,
+        "spent_max_per_family": 64
+      },
+      "sidecars": {
+        "argon2": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 7.477,
+            "p95": 126.452,
+            "p99": 132.035
+          },
+          "http_requests": 36000,
+          "http_requests_per_s": 47.999,
+          "logical_iterations": 6000
+        },
+        "fapi": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 5.786,
+            "p95": 14.935,
+            "p99": 31.039
+          },
+          "http_requests": 112500,
+          "http_requests_per_s": 150.0,
+          "logical_iterations": 22500
+        },
+        "meta": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 0.203,
+            "p95": 0.339,
+            "p99": 0.736
+          },
+          "http_requests": 300002,
+          "http_requests_per_s": 400.002,
+          "logical_iterations": 150001
+        },
+        "refresh": {
+          "capacity_gate": {
+            "drop_count": 0,
+            "drop_fraction": 0.0,
+            "p95_ms": 14.0,
+            "p99_ms": 27.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "status": "PASS",
+            "successful_ops_s": 600.0,
+            "unexpected_errors": 0
+          },
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 7.312,
+            "p95": 14.587,
+            "p99": 27.701
+          },
+          "http_requests": 451033,
+          "http_requests_per_s": 601.372,
+          "logical_iterations": 450001
+        }
+      },
+      "target_ops_s": 3200,
+      "variant": "A",
+      "wal_window_600s": {
+        "fsync_time_ms": null,
+        "fsync_time_raw_ms": 0.0,
+        "fsyncs": 609224.5414725542,
+        "generated_bytes": 8554753366.905447,
+        "mean_write_bytes": 32163.175320734335,
+        "timing_interpretation": "N/A when PostgreSQL reports a zero timing counter; zero is not interpreted as zero wait",
+        "wal_generated_sample_span": [
+          1790497072,
+          1790497862
+        ],
+        "wal_io_sample_span": [
+          1790497072,
+          1790497862
+        ],
+        "write_bytes": 19644563224.046875,
+        "write_operations": 610778.103472352,
+        "write_time_ms": null,
+        "write_time_raw_ms": 0.0,
+        "write_to_generated_ratio": 2.2963330889284306
+      },
+      "window_end_ms": 1790497800219,
+      "window_start_ms": 1790497200219
+    },
+    {
+      "audit": {
+        "collected": true,
+        "dropped": 0,
+        "enqueued": 381845,
+        "pending": 0,
+        "persisted": 381845,
+        "reconciled": true
+      },
+      "effective_window_seconds": 600,
+      "health_checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "four_sidecars": true,
+        "journal_contiguous": true,
+        "main_natural_completion": true,
+        "measurement_length": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "queue_drained": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecar_timing": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "health_checks_pass": true,
+      "main": {
+        "complete_iteration_p50_p95_p99_ms": {
+          "p50": 4.0,
+          "p95": 21.0,
+          "p99": 32.0
+        },
+        "evaluator_gate_p95_p99_ms": {
+          "p95": 21.0,
+          "p99": 32.0
+        },
+        "expected_rejections": 0,
+        "http_requests_per_s": 4647.887,
+        "k6_exit_code": 0,
+        "measure_completed": 1920000,
+        "measure_drop_count": 0,
+        "measure_drop_fraction": 0.0,
+        "measure_scheduled": 1920000,
+        "oom_killed": false,
+        "prepare_sut_failures": 0,
+        "success_fraction_of_target": 1.0,
+        "successful_ops_s": 3200.0,
+        "unexpected_errors": 0,
+        "unfinished": 0
+      },
+      "main_gate": "PASS",
+      "name": "formal-b-3200",
+      "provenance": {
+        "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+        "harness_tree_sha256": "880181cf15e166b750a34b950f7b30db43abdff7f6aa9916dfde288b340b8e49",
+        "source_file_equal": true,
+        "source_image_equal": true,
+        "source_image_revision": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "source_sha": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+        "workspace_k6_oauth_equal": true
+      },
+      "refresh_gate": {
+        "drop_count": 0,
+        "drop_fraction": 0.0,
+        "p95_ms": 12.0,
+        "p99_ms": 23.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "status": "PASS",
+        "successful_ops_s": 600.0,
+        "unexpected_errors": 0
+      },
+      "refresh_invariants": {
+        "max_active_per_scope": 10,
+        "spent_expired_backlog": 0,
+        "spent_max_per_family": 64
+      },
+      "sidecars": {
+        "argon2": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 6.03,
+            "p95": 124.272,
+            "p99": 128.391
+          },
+          "http_requests": 36006,
+          "http_requests_per_s": 48.0,
+          "logical_iterations": 6001
+        },
+        "fapi": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 4.564,
+            "p95": 11.28,
+            "p99": 22.067
+          },
+          "http_requests": 112500,
+          "http_requests_per_s": 150.0,
+          "logical_iterations": 22500
+        },
+        "meta": {
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 0.188,
+            "p95": 0.31,
+            "p99": 0.696
+          },
+          "http_requests": 300002,
+          "http_requests_per_s": 400.002,
+          "logical_iterations": 150001
+        },
+        "refresh": {
+          "capacity_gate": {
+            "drop_count": 0,
+            "drop_fraction": 0.0,
+            "p95_ms": 12.0,
+            "p99_ms": 23.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "status": "PASS",
+            "successful_ops_s": 600.0,
+            "unexpected_errors": 0
+          },
+          "drop_count": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "gate_status": "passed",
+          "http_latency_ms": {
+            "p50": 6.467,
+            "p95": 12.375,
+            "p99": 24.043
+          },
+          "http_requests": 451033,
+          "http_requests_per_s": 601.372,
+          "logical_iterations": 450001
+        }
+      },
+      "target_ops_s": 3200,
+      "variant": "B",
+      "wal_window_600s": {
+        "fsync_time_ms": null,
+        "fsync_time_raw_ms": 0.0,
+        "fsyncs": 622920.2280102968,
+        "generated_bytes": 8027444362.243525,
+        "mean_write_bytes": 30064.747914222196,
+        "timing_interpretation": "N/A when PostgreSQL reports a zero timing counter; zero is not interpreted as zero wait",
+        "wal_generated_sample_span": [
+          1790498019,
+          1790498809
+        ],
+        "wal_io_sample_span": [
+          1790498019,
+          1790498809
+        ],
+        "write_bytes": 18771832995.25,
+        "write_operations": 624380.1893436114,
+        "write_time_ms": null,
+        "write_time_raw_ms": 0.0,
+        "write_to_generated_ratio": 2.3384569419804255
+      },
+      "window_end_ms": 1790498747232,
+      "window_start_ms": 1790498147232
+    }
+  ],
+  "stage": "six-point-formal-short-matrix"
+}

@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     future::Future,
     pin::Pin,
     sync::{Arc, RwLock},
@@ -165,18 +165,70 @@ impl CertificateRevocationSnapshot {
         }
         Ok(())
     }
+}
+
+/// An immutable snapshot with its structural validation and certificate index
+/// prepared once. Invalid public input retains its error and always fails
+/// closed; time-dependent freshness is still checked for every presentation.
+pub struct PreparedCertificateRevocationSnapshot {
+    snapshot: Arc<CertificateRevocationSnapshot>,
+    statuses:
+        Result<BTreeMap<String, IndexedCertificateStatuses>, CertificateRevocationSnapshotError>,
+}
+
+struct IndexedCertificateStatuses {
+    by_issuer: BTreeMap<String, CertificateRevocationStatus>,
+    unscoped: Option<CertificateRevocationStatus>,
+}
+
+impl PreparedCertificateRevocationSnapshot {
+    #[must_use]
+    pub fn new(snapshot: Arc<CertificateRevocationSnapshot>) -> Self {
+        let statuses = snapshot.validate_structure().map(|()| {
+            let mut statuses: BTreeMap<String, IndexedCertificateStatuses> = BTreeMap::new();
+            for entry in &snapshot.entries {
+                let certificate = statuses
+                    .entry(entry.certificate.clone())
+                    .or_insert_with(|| IndexedCertificateStatuses {
+                        by_issuer: BTreeMap::new(),
+                        unscoped: Some(entry.status),
+                    });
+                if certificate.unscoped != Some(entry.status) {
+                    certificate.unscoped = None;
+                }
+                certificate
+                    .by_issuer
+                    .insert(entry.issuer.clone(), entry.status);
+            }
+            statuses
+        });
+        Self { snapshot, statuses }
+    }
+
+    fn validate_freshness_at(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<(), CertificateRevocationSnapshotError> {
+        self.statuses.as_ref().map_err(|error| *error)?;
+        if now < self.snapshot.this_update {
+            return Err(CertificateRevocationSnapshotError::NotYetValid);
+        }
+        if now >= self.snapshot.next_update {
+            return Err(CertificateRevocationSnapshotError::Expired);
+        }
+        Ok(())
+    }
 
     fn status_for(
         &self,
         issuer: Option<&str>,
         certificate: &str,
     ) -> Option<CertificateRevocationStatus> {
-        let mut statuses = self.entries.iter().filter_map(|entry| {
-            (entry.certificate == certificate && issuer.is_none_or(|issuer| entry.issuer == issuer))
-                .then_some(entry.status)
-        });
-        let first = statuses.next()?;
-        statuses.all(|status| status == first).then_some(first)
+        let status = self.statuses.as_ref().ok()?.get(certificate)?;
+        match issuer {
+            Some(issuer) => status.by_issuer.get(issuer).copied(),
+            None => status.unscoped,
+        }
     }
 }
 
@@ -191,7 +243,7 @@ enum CertificateRevocationMode {
 }
 
 struct CertificateRevocationPolicyState {
-    snapshot: RwLock<Option<Arc<CertificateRevocationSnapshot>>>,
+    snapshot: RwLock<Option<Arc<PreparedCertificateRevocationSnapshot>>>,
     mode: CertificateRevocationMode,
 }
 
@@ -224,6 +276,13 @@ impl CertificateRevocationPolicy {
 
     #[must_use]
     pub fn optional(snapshot: Arc<CertificateRevocationSnapshot>) -> Self {
+        Self::optional_prepared(Arc::new(PreparedCertificateRevocationSnapshot::new(
+            snapshot,
+        )))
+    }
+
+    #[must_use]
+    pub fn optional_prepared(snapshot: Arc<PreparedCertificateRevocationSnapshot>) -> Self {
         Self {
             state: Arc::new(CertificateRevocationPolicyState {
                 snapshot: RwLock::new(Some(snapshot)),
@@ -234,6 +293,13 @@ impl CertificateRevocationPolicy {
 
     #[must_use]
     pub fn required(snapshot: Arc<CertificateRevocationSnapshot>) -> Self {
+        Self::required_prepared(Arc::new(PreparedCertificateRevocationSnapshot::new(
+            snapshot,
+        )))
+    }
+
+    #[must_use]
+    pub fn required_prepared(snapshot: Arc<PreparedCertificateRevocationSnapshot>) -> Self {
         Self {
             state: Arc::new(CertificateRevocationPolicyState {
                 snapshot: RwLock::new(Some(snapshot)),
@@ -270,6 +336,7 @@ impl CertificateRevocationPolicy {
         snapshot: Arc<CertificateRevocationSnapshot>,
         now: DateTime<Utc>,
     ) -> Result<(), CertificateRevocationSnapshotError> {
+        let snapshot = Arc::new(PreparedCertificateRevocationSnapshot::new(snapshot));
         snapshot.validate_freshness_at(now)?;
         let mut current = self
             .state
@@ -298,7 +365,7 @@ impl CertificateRevocationPolicy {
             .snapshot
             .read()
             .ok()
-            .and_then(|snapshot| snapshot.clone())
+            .and_then(|snapshot| snapshot.as_ref().map(|snapshot| snapshot.snapshot.clone()))
     }
 
     /// Check every supplied certificate against the already-loaded snapshot.

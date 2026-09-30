@@ -1,0 +1,45 @@
+{
+  "counter_window": {
+    "deleted": 3935295,
+    "deleted_per_s": 2734.4537185140307,
+    "end_s": 1790501677.410562,
+    "inserted": 3994225,
+    "inserted_per_s": 2775.4014384770912,
+    "start_s": 1790500238.258393
+  },
+  "due_count": {
+    "first": 36331,
+    "last": 152608,
+    "max": 165995,
+    "min": 2779,
+    "samples": 23,
+    "slope_per_s": -19.13738728516322
+  },
+  "mature_window_s": [
+    1790500237.49,
+    1790501677.49
+  ],
+  "max_expired_age_seconds": 120,
+  "max_sample_gap_seconds": 4,
+  "minimum_mature_observation_seconds": 180,
+  "observed_max_sample_gap_seconds": 2.2944259643554688,
+  "observed_sample_span_s": [
+    1790500238.258393,
+    1790501677.410562
+  ],
+  "oldest_expired_age": {
+    "first": 9.258393049240112,
+    "last": 30.41056203842163,
+    "max": 60.013473987579346,
+    "min": 0.0,
+    "samples": 687,
+    "slope_per_s": -0.0002013608101229781
+  },
+  "pass": true,
+  "problems": [],
+  "reason": "sampled_expiry_age_within_declared_slo",
+  "retention_seconds": 360,
+  "samples": 687,
+  "scope": "sampled issuance maintenance SLO; not all-state or indefinite steady state",
+  "status": "PASS"
+}

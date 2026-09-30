@@ -47,6 +47,8 @@ fn token_claim_constructors_are_locked_to_complete_reviewed_shapes() {
     let access_claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: &subject,
             user_id: Some(user_id),
@@ -362,6 +364,8 @@ fn access_token_claims_follow_jwt_profile_for_user_subjects() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "pairwise-subject",
             user_id: Some(user_id),
@@ -406,6 +410,8 @@ fn access_token_claims_keep_client_credentials_subject_separate() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "service-client",
             user_id: None,
@@ -451,6 +457,8 @@ fn access_token_without_sender_constraints_does_not_emit_cnf() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "subject-1",
             user_id: None,

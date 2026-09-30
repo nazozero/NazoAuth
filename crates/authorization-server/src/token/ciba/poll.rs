@@ -233,9 +233,7 @@ async fn poll_and_issue_ciba(
             .active_subject_claims(tenant_id, ciba.user_id)
             .await
         {
-            Ok(Some(claims)) => {
-                Some(crate::domain::oauth::PreparedTokenSubject { tenant_id, claims })
-            }
+            Ok(Some(subject)) => Some(subject),
             Ok(None) => {
                 return Err(OAuthEndpointError::token(
                     ProtocolStatusCode::BAD_REQUEST,

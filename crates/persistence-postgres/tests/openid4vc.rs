@@ -1,4 +1,7 @@
 use argon2::{Argon2, PasswordHasher};
+#[path = "support/password.rs"]
+mod password;
+
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
     OptionalExtension, QueryableByName, sql_query,
@@ -457,7 +460,11 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
 
     let now = Utc::now();
     let data_key = [23_u8; 32];
-    let issuer = Openid4vciRepository::new(pool.clone(), data_key);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        data_key,
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let offer_tenant_b_id = Uuid::now_v7();
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query(
@@ -1102,7 +1109,11 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
     drop(connection);
 
     let now = Utc::now();
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x37_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x37_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = CredentialAccess {
         token_id: Uuid::now_v7(),
         tenant_id,
@@ -1626,7 +1637,11 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     .unwrap();
     drop(connection);
 
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x48_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        rand::random::<[u8; 32]>(),
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let now = Utc::now();
     let access = CredentialAccess {
         token_id: Uuid::now_v7(),
@@ -3004,7 +3019,11 @@ async fn pre_authorized_persist_rejects_a_client_deactivated_after_authenticatio
     assert!(deactivated, "the seeded client must start active");
     drop(connection);
 
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x61_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x61_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
     let token_hash = blake3::hash(access.token_id.as_bytes())
         .to_hex()
@@ -3043,7 +3062,11 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
     let client_id = format!("openid4vc-vf03-{}", Uuid::now_v7().simple());
     let client_uuid = insert_openid4vc_client(&pool, &client_id).await;
 
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x62_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x62_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
     let token_hash = blake3::hash(access.token_id.as_bytes())
         .to_hex()
@@ -3088,6 +3111,7 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
         )
         .unwrap(),
         [0x62_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let persist_access = access.clone();
     let persist_hash = token_hash.clone();
@@ -3197,7 +3221,11 @@ async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-vf04").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x63_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x63_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     // The production anonymous fallback (offers.rs) resolves to the literal
     // "pre-authorized-wallet" client id with no registered client at all.
@@ -3269,7 +3297,11 @@ async fn pre_authorized_persist_distinguishes_mismatched_and_inactive_clients() 
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-vf05").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x64_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x64_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     let client_id = format!("openid4vc-vf05-{}", Uuid::now_v7().simple());
 
@@ -3365,7 +3397,11 @@ async fn revoked_access_grants_stay_revoked_through_every_persist_path() {
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-vf07").await;
     let client_id = format!("openid4vc-vf07-{}", Uuid::now_v7().simple());
     let client_uuid = insert_openid4vc_client(&pool, &client_id).await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x65_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x65_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     // Plain upsert path.
     let upserted =
@@ -3461,7 +3497,11 @@ async fn identical_access_upsert_leaves_the_row_version_untouched() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up01").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x66_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x66_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -3514,7 +3554,11 @@ async fn access_upsert_updates_each_mutable_projection_column() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up02").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x67_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x67_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let mut access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -3598,7 +3642,11 @@ async fn access_upsert_conflict_with_a_different_identity_is_a_noop() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up03").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x68_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x68_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -3674,7 +3722,11 @@ async fn access_upsert_preserves_the_revocation_marker() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up04").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x69_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x69_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -3743,7 +3795,11 @@ async fn anonymous_pre_authorized_persist_writes_the_upsert_row_shape() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up05").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x6a_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x6a_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     let mut via_upsert = openid4vc_access_fixture(
         tenant_id,
@@ -3815,7 +3871,11 @@ async fn concurrent_identical_access_upserts_are_noops() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up06").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x6b_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x6b_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -3831,8 +3891,16 @@ async fn concurrent_identical_access_upserts_are_noops() {
     let before = persisted_access_grant(&pool, &token_hash)
         .await
         .expect("the grant must exist");
-    let issuer_a = Openid4vciRepository::new(create_pool(&database_url, 1).unwrap(), [0x6b_u8; 32]);
-    let issuer_b = Openid4vciRepository::new(create_pool(&database_url, 1).unwrap(), [0x6b_u8; 32]);
+    let issuer_a = Openid4vciRepository::new(
+        create_pool(&database_url, 1).unwrap(),
+        [0x6b_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let issuer_b = Openid4vciRepository::new(
+        create_pool(&database_url, 1).unwrap(),
+        [0x6b_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let (first, second) = tokio::join!(
         issuer_a.upsert_access(&token_hash, &access),
         issuer_b.upsert_access(&token_hash, &access)
@@ -3896,7 +3964,11 @@ async fn deferred_claim_returns_joined_domain_state_and_writes_the_lease() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df01").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x6c_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x6c_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let mut access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -3964,7 +4036,11 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df02").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x6d_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x6d_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -4140,7 +4216,11 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df03").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x6e_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x6e_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -4160,8 +4240,16 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
     issuer.store_deferred(&deferred).await.unwrap();
 
     let claim_now = deferred.ready_at;
-    let issuer_a = Openid4vciRepository::new(create_pool(&database_url, 1).unwrap(), [0x6e_u8; 32]);
-    let issuer_b = Openid4vciRepository::new(create_pool(&database_url, 1).unwrap(), [0x6e_u8; 32]);
+    let issuer_a = Openid4vciRepository::new(
+        create_pool(&database_url, 1).unwrap(),
+        [0x6e_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let issuer_b = Openid4vciRepository::new(
+        create_pool(&database_url, 1).unwrap(),
+        [0x6e_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let (claim_a, claim_b) = tokio::join!(
         issuer_a.claim_ready_deferred(
             &deferred.transaction_hash,
@@ -4291,7 +4379,11 @@ async fn corrupt_deferred_payload_rolls_back_the_claim_lease() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df05").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x6f_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x6f_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -4354,7 +4446,11 @@ async fn deferred_claim_supports_grants_without_dpop_binding() {
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df06").await;
-    let issuer = Openid4vciRepository::new(pool.clone(), [0x70_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x70_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
     let access = openid4vc_access_fixture(
         tenant_id,
         subject_id,
@@ -4388,4 +4484,207 @@ async fn deferred_claim_supports_grants_without_dpop_binding() {
     assert_eq!(claim.credential.access, access);
 
     delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+struct PausedOfferVerifier {
+    entered: tokio::sync::Semaphore,
+    resume: tokio::sync::Semaphore,
+    result: Result<bool, nazo_identity::ports::SecretVerifyError>,
+}
+
+impl nazo_identity::ports::SecretVerifyPort for PausedOfferVerifier {
+    fn verify_secret(
+        &self,
+        _secret: String,
+        _password_hash: nazo_identity::PasswordHash,
+    ) -> nazo_identity::ports::SecretVerifyFuture<'_> {
+        Box::pin(async move {
+            self.entered.add_permits(1);
+            self.resume.acquire().await.unwrap().forget();
+            self.result
+        })
+    }
+}
+
+async fn paused_pre_authorized_offer(
+    pool: &nazo_postgres::DbPool,
+    result: Result<bool, nazo_identity::ports::SecretVerifyError>,
+) -> (
+    Openid4vciRepository,
+    std::sync::Arc<PausedOfferVerifier>,
+    StoredCredentialOffer,
+    String,
+) {
+    let (tenant_id, _, _) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(pool, tenant_id, "paused-offer").await;
+    let verifier = std::sync::Arc::new(PausedOfferVerifier {
+        entered: tokio::sync::Semaphore::new(0),
+        resume: tokio::sync::Semaphore::new(0),
+        result,
+    });
+    let repository =
+        Openid4vciRepository::new(pool.clone(), rand::random::<[u8; 32]>(), verifier.clone());
+    let code = format!("paused-offer-{}", Uuid::now_v7());
+    let code_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
+    let offer = StoredCredentialOffer {
+        id: Uuid::now_v7(),
+        tenant_id,
+        subject_id: Some(subject_id),
+        credential_configuration_ids: vec!["pid".to_owned()],
+        grants: CredentialOfferGrants::new(
+            None,
+            Some(PreAuthorizedCodeGrant {
+                pre_authorized_code: code,
+                tx_code: None,
+                authorization_server: None,
+            }),
+        ),
+        expires_at: Utc::now() + Duration::minutes(5),
+    };
+    repository
+        .insert_offer(&offer, None, Some(&code_hash), Some("paused-test-verifier"))
+        .await
+        .unwrap();
+    (repository, verifier, offer, code_hash)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pre_authorized_verification_releases_the_pool_and_has_one_consumer() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let (repository, verifier, offer, code_hash) =
+        paused_pre_authorized_offer(&pool, Ok(true)).await;
+    let mut attempts = Vec::new();
+    for client_id in ["wallet-a", "wallet-b"] {
+        let repository = repository.clone();
+        let code_hash = code_hash.clone();
+        let tenant_id = offer.tenant_id;
+        attempts.push(tokio::spawn(async move {
+            repository
+                .consume_pre_authorized_offer(
+                    tenant_id,
+                    &code_hash,
+                    Some("2468"),
+                    client_id,
+                    Utc::now(),
+                )
+                .await
+        }));
+    }
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        verifier.entered.acquire_many(2),
+    )
+    .await
+    .expect("both attempts must release the sole connection before verification")
+    .unwrap()
+    .forget();
+    let mut connection = tokio::time::timeout(std::time::Duration::from_secs(5), get_conn(&pool))
+        .await
+        .expect("password verification must not retain a pool connection")
+        .unwrap();
+    // The offer is also unlocked while both verifier calls are pending.
+    connection
+        .batch_execute("BEGIN; SET LOCAL lock_timeout = '1s'")
+        .await
+        .unwrap();
+    sql_query("SELECT id FROM openid4vci_offers WHERE id = $1 FOR UPDATE NOWAIT")
+        .bind::<SqlUuid, _>(offer.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    connection.batch_execute("ROLLBACK").await.unwrap();
+    drop(connection);
+    verifier.resume.add_permits(2);
+    let mut successes = 0;
+    for attempt in attempts {
+        successes += usize::from(attempt.await.unwrap().unwrap().is_some());
+    }
+    assert_eq!(
+        successes, 1,
+        "the conditional write must preserve single-use consumption"
+    );
+    delete_openid4vc_subject_and_client(&pool, offer.subject_id.unwrap(), None).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pre_authorized_verification_rechecks_snapshot_expiry_and_busy_result() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    for case in ["changed_hash", "changed_authorization", "expired", "busy"] {
+        let result = if case == "busy" {
+            Err(nazo_identity::ports::SecretVerifyError::Busy)
+        } else {
+            Ok(true)
+        };
+        let (repository, verifier, offer, code_hash) =
+            paused_pre_authorized_offer(&pool, result).await;
+        let mut read_at = Utc::now();
+        if case == "expired" {
+            let mut connection = get_conn(&pool).await.unwrap();
+            sql_query("UPDATE openid4vci_offers SET created_at = CURRENT_TIMESTAMP - interval '2 minutes', expires_at = CURRENT_TIMESTAMP - interval '1 minute' WHERE id = $1")
+                .bind::<SqlUuid, _>(offer.id).execute(&mut connection).await.unwrap();
+            // Simulates a request whose snapshot time predates verification.
+            read_at -= Duration::minutes(2);
+        }
+        let tenant_id = offer.tenant_id;
+        let attempt = tokio::spawn(async move {
+            repository
+                .consume_pre_authorized_offer(
+                    tenant_id,
+                    &code_hash,
+                    Some("2468"),
+                    "wallet",
+                    read_at,
+                )
+                .await
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            verifier.entered.acquire(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .forget();
+        if matches!(case, "changed_hash" | "changed_authorization") {
+            let mut connection = get_conn(&pool).await.unwrap();
+            let update = if case == "changed_hash" {
+                "UPDATE openid4vci_offers SET tx_code_hash = 'replacement-verifier' WHERE id = $1"
+            } else {
+                "UPDATE openid4vci_offers SET credential_configuration_ids = '[\"replacement-pid\"]'::jsonb WHERE id = $1"
+            };
+            sql_query(update)
+                .bind::<SqlUuid, _>(offer.id)
+                .execute(&mut connection)
+                .await
+                .unwrap();
+        }
+        verifier.resume.add_permits(1);
+        let result = attempt.await.unwrap();
+        if case == "busy" {
+            assert!(matches!(result, Err(CredentialStoreError::Unavailable)));
+        } else {
+            assert!(
+                result.unwrap().is_none(),
+                "{case} must not consume stale authorization"
+            );
+        }
+        let mut connection = get_conn(&pool).await.unwrap();
+        let row = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_offers WHERE id = $1 AND consumed_at IS NULL")
+            .bind::<SqlUuid, _>(offer.id).get_result::<CountRow>(&mut connection).await.unwrap();
+        assert_eq!(row.count, 1, "{case} must leave the offer unconsumed");
+        drop(connection);
+        delete_openid4vc_subject_and_client(&pool, offer.subject_id.unwrap(), None).await;
+    }
 }

@@ -1,10 +1,9 @@
 //! Atomic token-issuance commit coverage for the final issuance schema.
 //!
-//! The `oauth_token_issuances` table is the single durable fence: `Fresh`
-//! inserts unconditionally, `SingleUse` inserts under the partial unique
-//! index and re-checks the verified grant deadline inside the commit.  A
-//! refresh rotation conflict deletes only the current issuance row while the
-//! family compromise and the reuse audit commit.
+//! Fresh creates no issuance row; SingleUse keeps its durable grant receipt
+//! under the partial unique index and rechecks the deadline in the commit.
+//! A refresh conflict commits family compromise and reuse audit, with no
+//! token-issued event or receipt for the losing request.
 
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
@@ -138,6 +137,12 @@ fn issuance(
 ) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: Some(0),
+            subject_bound: false,
+        },
+        subject: fixture.user_id.to_string(),
         issuance_id,
         tenant_id,
         client_id: fixture.client_id,
@@ -361,7 +366,7 @@ async fn concurrent_single_use_commits_commit_exactly_once() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rotation_conflict_deletes_only_the_losing_issuance() {
+async fn rotation_conflict_keeps_family_compromise_and_only_reuse_audit() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -401,7 +406,7 @@ async fn rotation_conflict_deletes_only_the_losing_issuance() {
         CommitTokenIssuanceResult::Committed
     );
     // A second claimant rotating from the same consumed parent loses: its
-    // issuance row is deleted, the family compromise commits, and only the
+    // Fresh path creates no receipt, the family compromise commits, and only the
     // reuse audit for this issuance is written.
     let loser_raw = format!("rotation-loser-{}", Uuid::now_v7());
     let loser = refresh_token_fixture(&fixture, tenant_id, family_id, loser_raw, Some(root_id));
@@ -421,15 +426,15 @@ async fn rotation_conflict_deletes_only_the_losing_issuance() {
     .get_result::<CountRow>(&mut connection)
     .await
     .unwrap();
-    assert_eq!(rows.count, 0, "the losing issuance row must be deleted");
+    assert_eq!(rows.count, 0, "Fresh rotation must create no issuance row");
     let kept = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
+        "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type = 'token_issued' AND payload->>'issuance_id' = $1",
     )
-    .bind::<sql_types::Uuid, _>(child_issuance.issuance_id)
+    .bind::<sql_types::Text, _>(child_issuance.issuance_id.to_string())
     .get_result::<CountRow>(&mut connection)
     .await
     .unwrap();
-    assert_eq!(kept.count, 1, "the committed rotation stays");
+    assert_eq!(kept.count, 1, "the committed rotation audit stays");
     let reuse_audit = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM security_audit_events \
          WHERE event_type = 'refresh_reuse_detected' AND payload->>'issuance_id' = $1",
@@ -450,5 +455,116 @@ async fn rotation_conflict_deletes_only_the_losing_issuance() {
     assert_eq!(
         issued_audit.count, 0,
         "the loser must not audit a token issue"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn issuance_transaction_executes_on_the_connection_pool_runtime() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let owner = tokio::runtime::Handle::current().id();
+    let runtimes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observations = runtimes.clone();
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    connection.set_instrumentation(move |event: diesel::connection::InstrumentationEvent<'_>| {
+        if matches!(
+            event,
+            diesel::connection::InstrumentationEvent::StartQuery { .. }
+        ) {
+            observations
+                .lock()
+                .unwrap()
+                .push(tokio::runtime::Handle::current().id());
+        }
+    });
+    drop(connection);
+    let input = issuance(&fixture, tenant_id, TokenIssuanceMode::Fresh, None);
+    let repository = TokenIssuanceRepository::new(pool);
+    let result = tokio::task::spawn_blocking(move || {
+        let borrower = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        assert_ne!(borrower.handle().id(), owner);
+        borrower.block_on(repository.commit_token_issuance(input))
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let observed = runtimes.lock().unwrap();
+    assert!(
+        observed.len() >= 3,
+        "must observe the transaction, principal checks and audit"
+    );
+    assert!(
+        observed.iter().all(|runtime| *runtime == owner),
+        "every statement must execute on the pool runtime: {observed:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_issuance_on_pool_runtime_discards_the_blocked_connection() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let input = issuance(
+        &fixture,
+        tenant_id,
+        TokenIssuanceMode::SingleUse {
+            grant_key: format!("cancelled-{}", Uuid::now_v7()),
+            grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(1),
+        },
+        None,
+    );
+    let retry = input.clone();
+    let mut locker = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let backend = sql_query("SELECT pg_backend_pid()::bigint AS count")
+        .get_result::<CountRow>(&mut locker)
+        .await
+        .unwrap()
+        .count;
+    sql_query("BEGIN").execute(&mut locker).await.unwrap();
+    sql_query("SELECT id FROM oauth_clients WHERE id = $1 FOR UPDATE")
+        .bind::<sql_types::Uuid, _>(fixture.client_id)
+        .execute(&mut locker)
+        .await
+        .unwrap();
+    // Observe outside the lock-holding transaction: PostgreSQL caches its
+    // statistics snapshot until that transaction ends.
+    let mut observer = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let issuer = repository.clone();
+    let operation = tokio::spawn(async move { issuer.commit_token_issuance(input).await });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let blocked = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))")
+                .bind::<sql_types::BigInt, _>(backend).get_result::<CountRow>(&mut observer).await.unwrap().count;
+            if blocked > 0 { break; }
+            assert!(!operation.is_finished(), "issuance must wait for the principal lock");
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.expect("issuance must reach the blocked transaction");
+    operation.abort();
+    assert!(operation.await.unwrap_err().is_cancelled());
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while pool.status().size != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("cancelled transaction must discard its physical connection");
+    sql_query("ROLLBACK").execute(&mut locker).await.unwrap();
+    assert_eq!(
+        repository.commit_token_issuance(retry).await.unwrap(),
+        CommitTokenIssuanceResult::Committed,
+        "cancellation must not leave a receipt or poison the next checkout"
     );
 }

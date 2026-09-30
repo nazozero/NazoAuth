@@ -3034,6 +3034,7 @@ dependencies = [
  "nazo-postgres",
  "nazo-resource-server",
  "nazo-scim-events",
+ "tokio",
  "uuid",
 ]
 

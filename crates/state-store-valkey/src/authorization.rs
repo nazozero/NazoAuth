@@ -1,5 +1,8 @@
 use chrono::{DateTime, SecondsFormat, Utc};
-use nazo_auth::{AuthorizationCodeState, CodePayload, ConsentPayload, PushedAuthorizationRequest};
+use nazo_auth::{
+    AuthorizationCodeState, AuthorizationStateSnapshot, CodePayload, ConsentPayload,
+    PushedAuthorizationRequest,
+};
 
 use crate::{Error, ValkeyConnection, command, keys};
 
@@ -96,6 +99,13 @@ impl AuthorizationStore {
         self.load_json(keys::consent(request_id)).await
     }
 
+    pub async fn load_consent_snapshot(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<AuthorizationStateSnapshot<ConsentPayload>>, Error> {
+        self.load_snapshot(keys::consent(request_id)).await
+    }
+
     pub async fn take_consent(&self, request_id: &str) -> Result<Option<ConsentPayload>, Error> {
         self.take_json(keys::consent(request_id)).await
     }
@@ -103,9 +113,9 @@ impl AuthorizationStore {
     pub async fn compare_and_delete_consent(
         &self,
         request_id: &str,
-        expected: &ConsentPayload,
+        expected: &str,
     ) -> Result<bool, Error> {
-        self.compare_delete_json(keys::consent(request_id), expected)
+        self.compare_delete(keys::consent(request_id), expected)
             .await
     }
 
@@ -126,24 +136,16 @@ impl AuthorizationStore {
     pub async fn load_par(
         &self,
         request_uri: &str,
-    ) -> Result<Option<PushedAuthorizationRequest>, Error> {
-        self.load_json(keys::par(request_uri)).await
-    }
-
-    pub async fn take_par(
-        &self,
-        request_uri: &str,
-    ) -> Result<Option<PushedAuthorizationRequest>, Error> {
-        self.take_json(keys::par(request_uri)).await
+    ) -> Result<Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>, Error> {
+        self.load_snapshot(keys::par(request_uri)).await
     }
 
     pub async fn compare_and_delete_par(
         &self,
         request_uri: &str,
-        expected: &PushedAuthorizationRequest,
+        expected: &str,
     ) -> Result<bool, Error> {
-        self.compare_delete_json(keys::par(request_uri), expected)
-            .await
+        self.compare_delete(keys::par(request_uri), expected).await
     }
 
     pub async fn store_authorization_code_hash(
@@ -272,6 +274,24 @@ impl AuthorizationStore {
             .transpose()
     }
 
+    async fn load_snapshot<T: serde::de::DeserializeOwned>(
+        &self,
+        key: String,
+    ) -> Result<Option<AuthorizationStateSnapshot<T>>, Error> {
+        command::get(&self.connection, key)
+            .await?
+            .map(|raw| {
+                let payload = serde_json::from_str(&raw).map_err(|error| {
+                    Error::corrupt_data(format!("malformed authorization state: {error}"))
+                })?;
+                Ok(AuthorizationStateSnapshot {
+                    payload,
+                    version: raw,
+                })
+            })
+            .transpose()
+    }
+
     async fn take_json<T: serde::de::DeserializeOwned>(
         &self,
         key: String,
@@ -286,17 +306,8 @@ impl AuthorizationStore {
             .transpose()
     }
 
-    async fn compare_delete_json<T: serde::Serialize + ?Sized>(
-        &self,
-        key: String,
-        expected: &T,
-    ) -> Result<bool, Error> {
-        let expected = serde_json::to_string(expected).map_err(|error| {
-            Error::protocol(format!(
-                "failed to serialize expected authorization state: {error}"
-            ))
-        })?;
-        command::compare_delete_json(&self.connection, key, &expected)
+    async fn compare_delete(&self, key: String, expected: &str) -> Result<bool, Error> {
+        command::compare_delete(&self.connection, key, expected)
             .await
             .map(|outcome| matches!(outcome, command::CompareDelete::Deleted))
     }

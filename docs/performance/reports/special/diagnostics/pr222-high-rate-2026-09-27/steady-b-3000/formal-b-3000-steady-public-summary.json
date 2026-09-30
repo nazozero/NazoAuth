@@ -1,0 +1,146 @@
+{
+  "audit_queue": {
+    "collected": true,
+    "dropped": 0,
+    "enqueued": 954709,
+    "pending_in_process": 0,
+    "persisted": 954709
+  },
+  "health_checks": {
+    "active_per_scope_le_10": true,
+    "audit_reconciled": true,
+    "db_outbox_drained": true,
+    "dropped_required_zero": true,
+    "enqueued_eq_persisted": true,
+    "expired_backlog_zero": true,
+    "four_sidecars": true,
+    "journal_contiguous": true,
+    "main_natural_completion": true,
+    "measurement_length": true,
+    "no_restarts": true,
+    "oom_none": true,
+    "pending_zero_post_drain": true,
+    "point_completed": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "queue_drained": true,
+    "queue_dropped_zero": true,
+    "queue_full_zero": true,
+    "sidecar_timing": true,
+    "sidecars_complete": true,
+    "spent_per_family_le_64": true,
+    "unexpected_zero": true
+  },
+  "journal": {
+    "collected": true,
+    "duplicate_sequences": 0,
+    "events_in_range": 8168539,
+    "expected_in_range": 8168539,
+    "foreign_deployment_batches": 0,
+    "malformed_lines": 0,
+    "range_contiguous": true,
+    "sequence_gaps": 0,
+    "token_issued_in_range": 5350672
+  },
+  "main": {
+    "dropped_iterations": 0,
+    "http_reqs": 8355540,
+    "http_rps": 4351.708,
+    "iter_p95_ms": 21.0,
+    "iter_p99_ms": 32.0,
+    "measure_unfinished": 0,
+    "oom_killed": false,
+    "outcome_prepare_sut_failed": 0,
+    "outcome_success": 5400005,
+    "outcome_unexpected": 0,
+    "restart_count": 0,
+    "successful_ops_per_s": 3000.003,
+    "wait_per_acq_ms": 0.07,
+    "window_end_ms": 1790501677490,
+    "window_seconds": 1800,
+    "window_start_ms": 1790499877490
+  },
+  "main_gate": "PASS",
+  "profile_sha256": "e459bfe9e77c2bbd043cd1f9ed31627345b0450cbcd77e160298691e9667ef0b",
+  "refresh_capacity_gate": {
+    "diagnostic_stream_status": "TRUNCATED",
+    "diagnostic_stream_truncated": true,
+    "drop_fraction": 3.418800496751712e-06,
+    "drops": 4,
+    "evaluator": "capacity_search.evaluate",
+    "gate": "PASS",
+    "p95_ms": 12.075,
+    "p99_ms": 22.534,
+    "raw_status": "target_miss",
+    "success_ops_s": 599.998,
+    "target_ops_s": 600,
+    "unexpected_errors": 0,
+    "window_argument_s": 1830
+  },
+  "run": "formal-b-3000-steady",
+  "sidecars": {
+    "argon2": {
+      "dropped": 0,
+      "error_rate": 0.0,
+      "exit_code": 0,
+      "iterations_completed": 15600,
+      "latency_ms": {
+        "p50": 6.062,
+        "p95": 124.436,
+        "p99": 128.715
+      },
+      "rps": 48.0,
+      "status": "passed"
+    },
+    "fapi": {
+      "dropped": 0,
+      "error_rate": 0.0,
+      "exit_code": 0,
+      "iterations_completed": 58501,
+      "latency_ms": {
+        "p50": 4.58,
+        "p95": 10.898,
+        "p99": 20.217
+      },
+      "rps": 150.001,
+      "status": "passed"
+    },
+    "meta": {
+      "dropped": 0,
+      "error_rate": 0.0,
+      "exit_code": 0,
+      "iterations_completed": 390000,
+      "latency_ms": {
+        "p50": 0.187,
+        "p95": 0.308,
+        "p99": 0.678
+      },
+      "rps": 400.0,
+      "status": "passed"
+    },
+    "refresh": {
+      "dropped": 4,
+      "error_rate": 0.0,
+      "exit_code": 0,
+      "iterations_completed": 1169997,
+      "latency_ms": {
+        "p50": 6.467,
+        "p95": 12.075,
+        "p99": 22.534
+      },
+      "rps": 600.526,
+      "status": "target_miss"
+    }
+  },
+  "target_success_ops_s": 3000,
+  "versions": {
+    "binary_sha256": "13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b",
+    "diagnostic_patch": "dc72cf469a2c5465cbb8a8185e0cff7d9999ad96",
+    "image_id": "sha256:fa66161df52fab63cf06399e34387307e0e69dcf14b940d4005534f8e32d6cb8",
+    "production_B": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+    "runner_image_id": "sha256:5c82d2e82044342115e03f11a43620c07f439a4bef9a846e37573757bbf5954f",
+    "runner_k6_oauth_sha256": "b0b4790d72b58268bfc595351cd43a265b6dae7f3a8f00c9b0d5eaad0625721c",
+    "shared_harness_H": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+    "workspace_k6_oauth_sha256": "b0b4790d72b58268bfc595351cd43a265b6dae7f3a8f00c9b0d5eaad0625721c"
+  }
+}

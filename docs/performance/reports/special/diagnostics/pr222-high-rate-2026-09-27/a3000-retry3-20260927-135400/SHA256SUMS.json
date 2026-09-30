@@ -1,0 +1,34 @@
+{
+  "payload_sha256": {
+    "README.md": "26c89dca38a87e382666ea2b1ac2a4d447df626132bc8b27db264f1c0dc60e6b",
+    "acceptance-sanitized.json": "9d139a03342d14866baef37751dc9ba7d435bac1011f8d0ba485f9253241e62f",
+    "argon2-summary.json": "a065f48f408c3fdbc713953ca0a7dace5382b3fdbdcbf010b92de5dfbbb79fac",
+    "fapi-summary.json": "7263f2088626787b701a32d5f68e07769d5e94b057aa57c2a21b7cfbb1e72aeb",
+    "load-summary.json": "dea4579ca4504245b36d17aa5b60b647b41973f0559a8820c3464b82f0d29687",
+    "meta-summary.json": "3444e2d65448138191c73536793e752b9e54726474d233333639deffab845e92",
+    "pgss-snapshots-redacted.json": "aecd97e74eb6bff92f1699531337bf8452bd25bf428198f436f523c57b5d78e8",
+    "point-sanitized.json": "9e2e98de4163e4c7bd0317b2adc539d837982ed4f35e0d28d084503223c47619",
+    "proc-components-window.jsonl": "d2e3285ce6c2e004a3372a1f745a700b5aab58348cc947c28b36c547cad9f2df",
+    "provenance.json": "69c131ba954be739dfaca9c1551b8f02705956e76692b55569fd0144f979c150",
+    "refresh-summary.json": "15783a50d6bb9ab5508ce41d723ba0bd99fa7498db082a4e3d2ed0f80d8f699e",
+    "resource-profile.json": "ed27ed0646648566994771166980c2a76c9bdd8b8dbcd72017cce50a75808b5a",
+    "soak-counters-window.jsonl": "a59a7d226375a005e677a004ba3f82ce9b9840248524e1d6d75b568de84eb736",
+    "summary.json": "98979454ef06bdc27e782411fb596086e014e28707c51797ed264a70a81bc64c",
+    "wal-snapshots.json": "ad8038abd31576b110217bf69c69ad0c7191cf10f5e2079953b3cf97dd7649e3"
+  },
+  "source_input_sha256": {
+    "acceptance.json": "a61a46e5fc09d8b2b25b09765b84679d7306976cdf3e4af96b1c3946479232c6",
+    "load/cap-cap-mixed.summary.json": "ec9b96a69f79e038fd2953f1ac87233d11e7342bf26b5aaa0121fd03741a3a99",
+    "pgss-post.json": "67ad158f04ca518638738172c7d6bfd79d1f16dbfd966d00368ac41855d60a8c",
+    "pgss-pre.json": "3d05471b054e695c9da0e79765ef751c21f88a0b779b4109e5c4345702d093eb",
+    "point.json": "ffbb20fe74b755b334759b756e782ec8096b58c8f1cacc660f057c057ba37024",
+    "proc-detail.jsonl": "5cf44a45b89d28d89ab7755cab00faf26c5128190b79ab08566f624a48415c1f",
+    "provenance.json": "88f6edf35f0f1c66fb0b9df1c6e46a1348484819d5a82080b875a30c13ce9a65",
+    "refresh/cap-cap-refresh-token.summary.json": "5c88868493d6b1a36c3b8ca57a8178eac217d05f71c9b2b1457cd9112c9987e7",
+    "residency.jsonl": "1b7efa8998f0c62b860c8eb905fc825d10e56efc6cb75ab6c916e6f7a491debd",
+    "resource-profile.json": "e459bfe9e77c2bbd043cd1f9ed31627345b0450cbcd77e160298691e9667ef0b",
+    "soak-metrics.jsonl": "49ba414b5c91e2ee62495c8e98e2c52231fe4b28c36adb8cf9e7219f75c32655",
+    "wal-post.json": "75b4826d7090681025c565f6ba24b6052cd493a12b99caad035e88410f8a9255",
+    "wal-pre.json": "48802943b8cd96b760e4f5ad6c464cdd416580643fed4a18b619bafa65b8b792"
+  }
+}

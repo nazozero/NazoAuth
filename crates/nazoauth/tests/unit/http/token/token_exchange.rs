@@ -111,6 +111,8 @@ fn client() -> ClientRow {
 
 fn claims(client_id: &str, audience: Value, scope: &str) -> Claims {
     Claims {
+        client_epoch: None,
+        user_epoch: None,
         iss: "https://issuer.example".to_owned(),
         sub: "subject-1".to_owned(),
         tenant_id: DEFAULT_TENANT_ID.to_string(),
@@ -445,6 +447,7 @@ async fn token_exchange_subject_binding_requires_the_presented_sender_proof() {
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
+        client_epoch: 0,
         config: &config,
         modules: &modules,
         authorization: &authorization,
@@ -863,6 +866,7 @@ async fn token_exchange_request_policy_and_admission_wrappers_preserve_boundarie
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
+        client_epoch: 0,
         config: &config,
         modules: &modules,
         authorization: &authorization,

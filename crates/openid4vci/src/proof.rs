@@ -6,10 +6,7 @@ use crate::{ProofTypeMetadata, Proofs};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedProof {
-    pub proof_type: String,
     pub holder_binding: Value,
-    pub nonce: String,
-    pub key_attestation: Option<Value>,
 }
 
 pub trait ProofValidatorPort: Send + Sync {

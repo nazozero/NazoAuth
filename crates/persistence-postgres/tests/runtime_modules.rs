@@ -327,6 +327,35 @@ async fn registry_generated_transition_events_are_postgresql_compatible() {
         .expect("actual state should persist");
     assert_eq!(actual.state, ModuleState::Enabled);
     assert_eq!(actual.applied_revision, Some(ModuleRevision::new(1)));
+    let snapshot = repository
+        .read_reconcile_state("postgres-registry-test")
+        .await
+        .unwrap();
+    let current = snapshot
+        .iter()
+        .find(|state| state.desired.module_id == module_id)
+        .unwrap();
+    assert_eq!(current.desired.revision, ModuleRevision::new(1));
+    assert_eq!(current.instance.as_ref(), Some(&actual));
+    let absent_instance = repository
+        .read_reconcile_state("absent-instance")
+        .await
+        .unwrap();
+    let absent = absent_instance
+        .iter()
+        .find(|state| state.desired.module_id == module_id)
+        .unwrap();
+    assert_eq!(absent.desired, current.desired);
+    assert!(absent.instance.is_none());
+    let unrelated_tenant =
+        RuntimeModuleRepository::for_tenant(create_pool(&database_url, 1).unwrap(), Uuid::now_v7());
+    assert!(
+        unrelated_tenant
+            .read_reconcile_state("postgres-registry-test")
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     assert_eq!(

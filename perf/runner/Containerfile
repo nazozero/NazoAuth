@@ -1,12 +1,31 @@
-FROM docker.io/grafana/k6:2.2.0 AS k6
+FROM docker.io/library/golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS k6
+
+RUN apk add --no-cache patch
+# Exact upstream v2.2.0 source; the patch changes JSON output encoding only.
+ADD --checksum=sha256:d7299559ddb4b7fed2062f253ca4f24212a7946bc59e91b5e5add4522625e260 https://codeload.github.com/grafana/k6/tar.gz/00a9a1b7f552d6bb4337278b10ae25aac0f4e666 /tmp/k6.tar.gz
+RUN mkdir /src && tar -xzf /tmp/k6.tar.gz -C /src --strip-components=1
+WORKDIR /src
+COPY perf/runner/k6-json-throughput.patch /tmp/k6-json-throughput.patch
+RUN patch -p1 < /tmp/k6-json-throughput.patch \
+    && gofmt -w internal/output/json/json.go internal/output/json/json_test.go \
+    && GOMAXPROCS=2 go test -p 2 -timeout 180s ./internal/output/json ./metrics \
+    && CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -ldflags="-s -w" -o /usr/bin/k6 .
 
 FROM docker.io/library/python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
 
 RUN apk add --no-cache ca-certificates docker-cli \
-    && pip install --no-cache-dir "psycopg[binary]==3.3.4" "redis==7.1.0" "argon2-cffi==25.1.0" "cryptography==50.0.0" "blake3==1.0.9"
+    && pip install --no-cache-dir "psycopg[binary]==3.3.4" "redis==7.1.0" "argon2-cffi==25.1.0" "cryptography==50.0.0" "blake3==1.0.9" "orjson==3.12.0"
 
 COPY --from=k6 /usr/bin/k6 /usr/bin/k6
 COPY perf /perf
+
+# Keep acceptance samples and native summaries; omit six unused per-request
+# timing streams that otherwise compete with high-rate load generation.
+ENV K6_JSON_OMIT_UNUSED_HTTP_TIMINGS=1
+
+ARG SOURCE_SHA=unknown
+LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
+RUN printf "%s" "${SOURCE_SHA}" > /perf/.source-sha
 
 WORKDIR /perf
 

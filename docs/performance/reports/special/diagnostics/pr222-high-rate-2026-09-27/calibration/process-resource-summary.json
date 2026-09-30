@@ -1,0 +1,378 @@
+{
+  "points": [
+    {
+      "clk_tck": 100,
+      "components": {
+        "app": {
+          "cpu_cores_average_over_observed_intervals": 3.1182,
+          "cpu_observed_interval_seconds": 186.892,
+          "cpu_seconds_sampled": 582.77,
+          "max_process_summed_rss_kb": 172748,
+          "peak_observed_at_utc": "2026-09-27T06:04:30.247450Z",
+          "samples": 32
+        },
+        "postgres": {
+          "cpu_cores_average_over_observed_intervals": 3.4029,
+          "cpu_observed_interval_seconds": 186.892,
+          "cpu_seconds_sampled": 635.98,
+          "max_process_summed_rss_kb": 14385184,
+          "peak_observed_at_utc": "2026-09-27T06:06:00.317569Z",
+          "samples": 32
+        },
+        "sis-load-pilot-mid-a-retry3": {
+          "cpu_cores_average_over_observed_intervals": 1.5824,
+          "cpu_observed_interval_seconds": 115.789,
+          "cpu_seconds_sampled": 183.23,
+          "max_process_summed_rss_kb": 2207348,
+          "peak_observed_at_utc": "2026-09-27T06:04:48.911577Z",
+          "samples": 20
+        },
+        "sis-rcv-pilot-mid-a-retry3": {
+          "cpu_cores_average_over_observed_intervals": 0.0577,
+          "cpu_observed_interval_seconds": 181.13,
+          "cpu_seconds_sampled": 10.45,
+          "max_process_summed_rss_kb": 8580,
+          "peak_observed_at_utc": "2026-09-27T06:05:01.170808Z",
+          "samples": 32
+        },
+        "sis-side-argon2-pilot-mid-a-retry3": {
+          "cpu_cores_average_over_observed_intervals": 0.0565,
+          "cpu_observed_interval_seconds": 145.954,
+          "cpu_seconds_sampled": 8.24,
+          "max_process_summed_rss_kb": 247228,
+          "peak_observed_at_utc": "2026-09-27T06:04:30.247450Z",
+          "samples": 25
+        },
+        "sis-side-fapi-pilot-mid-a-retry3": {
+          "cpu_cores_average_over_observed_intervals": 0.3329,
+          "cpu_observed_interval_seconds": 145.941,
+          "cpu_seconds_sampled": 48.58,
+          "max_process_summed_rss_kb": 417196,
+          "peak_observed_at_utc": "2026-09-27T06:05:13.221101Z",
+          "samples": 25
+        },
+        "sis-side-meta-pilot-mid-a-retry3": {
+          "cpu_cores_average_over_observed_intervals": 0.2139,
+          "cpu_observed_interval_seconds": 139.904,
+          "cpu_seconds_sampled": 29.93,
+          "max_process_summed_rss_kb": 310512,
+          "peak_observed_at_utc": "2026-09-27T06:05:19.200752Z",
+          "samples": 25
+        },
+        "sis-side-refresh-pilot-mid-a-retry3": {
+          "cpu_cores_average_over_observed_intervals": 0.5689,
+          "cpu_observed_interval_seconds": 145.941,
+          "cpu_seconds_sampled": 83.03,
+          "max_process_summed_rss_kb": 1101240,
+          "peak_observed_at_utc": "2026-09-27T06:05:31.241797Z",
+          "samples": 25
+        },
+        "sis-worker-pilot-mid-a-retry3": {
+          "cpu_cores_average_over_observed_intervals": 0.0979,
+          "cpu_observed_interval_seconds": 186.892,
+          "cpu_seconds_sampled": 18.3,
+          "max_process_summed_rss_kb": 20412,
+          "peak_observed_at_utc": "2026-09-27T06:06:00.317569Z",
+          "samples": 32
+        },
+        "valkey": {
+          "cpu_cores_average_over_observed_intervals": 0.1553,
+          "cpu_observed_interval_seconds": 186.892,
+          "cpu_seconds_sampled": 29.03,
+          "max_process_summed_rss_kb": 34580,
+          "peak_observed_at_utc": "2026-09-27T06:05:37.398072Z",
+          "samples": 32
+        }
+      },
+      "peak_observed_at_utc": "2026-09-27T06:04:55.040188Z",
+      "peak_observed_sum_rss_kb": 18678296,
+      "run_id": "pilot-mid-a-retry3",
+      "sample_rows": 32,
+      "sampled_total_cpu_cores_average": 1.0045,
+      "sampled_total_cpu_seconds": 1629.54,
+      "scope": "deployment component processes only; excludes host_mem_kb and cgroup counters; process-summed RSS is not PSS",
+      "source_file_sha256": "a8f988e2836bc7b4a5616f672d09e215ca5ed232b75165610726d9980fee7a7d"
+    },
+    {
+      "clk_tck": 100,
+      "components": {
+        "app": {
+          "cpu_cores_average_over_observed_intervals": 2.8472,
+          "cpu_observed_interval_seconds": 185.609,
+          "cpu_seconds_sampled": 528.47,
+          "max_process_summed_rss_kb": 173416,
+          "peak_observed_at_utc": "2026-09-27T06:37:10.976009Z",
+          "samples": 32
+        },
+        "postgres": {
+          "cpu_cores_average_over_observed_intervals": 3.1403,
+          "cpu_observed_interval_seconds": 185.609,
+          "cpu_seconds_sampled": 582.86,
+          "max_process_summed_rss_kb": 13818460,
+          "peak_observed_at_utc": "2026-09-27T06:37:57.782226Z",
+          "samples": 32
+        },
+        "sis-load-pilot-mid-b-round1": {
+          "cpu_cores_average_over_observed_intervals": 1.5299,
+          "cpu_observed_interval_seconds": 120.857,
+          "cpu_seconds_sampled": 184.9,
+          "max_process_summed_rss_kb": 2199076,
+          "peak_observed_at_utc": "2026-09-27T06:36:52.801127Z",
+          "samples": 21
+        },
+        "sis-rcv-pilot-mid-b-round1": {
+          "cpu_cores_average_over_observed_intervals": 0.0575,
+          "cpu_observed_interval_seconds": 185.609,
+          "cpu_seconds_sampled": 10.67,
+          "max_process_summed_rss_kb": 8256,
+          "peak_observed_at_utc": "2026-09-27T06:35:10.182473Z",
+          "samples": 32
+        },
+        "sis-side-argon2-pilot-mid-b-round1": {
+          "cpu_cores_average_over_observed_intervals": 0.0558,
+          "cpu_observed_interval_seconds": 150.774,
+          "cpu_seconds_sampled": 8.42,
+          "max_process_summed_rss_kb": 246936,
+          "peak_observed_at_utc": "2026-09-27T06:36:52.801127Z",
+          "samples": 26
+        },
+        "sis-side-fapi-pilot-mid-b-round1": {
+          "cpu_cores_average_over_observed_intervals": 0.3291,
+          "cpu_observed_interval_seconds": 144.678,
+          "cpu_seconds_sampled": 47.62,
+          "max_process_summed_rss_kb": 414340,
+          "peak_observed_at_utc": "2026-09-27T06:36:28.581578Z",
+          "samples": 25
+        },
+        "sis-side-meta-pilot-mid-b-round1": {
+          "cpu_cores_average_over_observed_intervals": 0.2103,
+          "cpu_observed_interval_seconds": 144.678,
+          "cpu_seconds_sampled": 30.42,
+          "max_process_summed_rss_kb": 308256,
+          "peak_observed_at_utc": "2026-09-27T06:36:52.801127Z",
+          "samples": 25
+        },
+        "sis-side-refresh-pilot-mid-b-round1": {
+          "cpu_cores_average_over_observed_intervals": 0.5701,
+          "cpu_observed_interval_seconds": 144.678,
+          "cpu_seconds_sampled": 82.48,
+          "max_process_summed_rss_kb": 1090372,
+          "peak_observed_at_utc": "2026-09-27T06:37:28.809188Z",
+          "samples": 25
+        },
+        "sis-worker-pilot-mid-b-round1": {
+          "cpu_cores_average_over_observed_intervals": 0.1003,
+          "cpu_observed_interval_seconds": 185.609,
+          "cpu_seconds_sampled": 18.62,
+          "max_process_summed_rss_kb": 20608,
+          "peak_observed_at_utc": "2026-09-27T06:37:57.782226Z",
+          "samples": 32
+        },
+        "valkey": {
+          "cpu_cores_average_over_observed_intervals": 0.0913,
+          "cpu_observed_interval_seconds": 185.609,
+          "cpu_seconds_sampled": 16.94,
+          "max_process_summed_rss_kb": 35596,
+          "peak_observed_at_utc": "2026-09-27T06:36:16.474666Z",
+          "samples": 32
+        }
+      },
+      "peak_observed_at_utc": "2026-09-27T06:36:58.892061Z",
+      "peak_observed_sum_rss_kb": 18069632,
+      "run_id": "pilot-mid-b-round1",
+      "sample_rows": 32,
+      "sampled_total_cpu_cores_average": 0.9251,
+      "sampled_total_cpu_seconds": 1511.4,
+      "scope": "deployment component processes only; excludes host_mem_kb and cgroup counters; process-summed RSS is not PSS",
+      "source_file_sha256": "cda78d0794004fb2d032a2bb0742de788da626670d088ee7e99374653be7e4bb"
+    },
+    {
+      "clk_tck": 100,
+      "components": {
+        "app": {
+          "cpu_cores_average_over_observed_intervals": 5.0446,
+          "cpu_observed_interval_seconds": 184.73,
+          "cpu_seconds_sampled": 931.89,
+          "max_process_summed_rss_kb": 239964,
+          "peak_observed_at_utc": "2026-09-27T06:45:04.978757Z",
+          "samples": 31
+        },
+        "postgres": {
+          "cpu_cores_average_over_observed_intervals": 7.5964,
+          "cpu_observed_interval_seconds": 184.73,
+          "cpu_seconds_sampled": 1403.29,
+          "max_process_summed_rss_kb": 14879428,
+          "peak_observed_at_utc": "2026-09-27T06:45:39.966679Z",
+          "samples": 31
+        },
+        "sis-load-pilot-high-a-3200-round2-retry1": {
+          "cpu_cores_average_over_observed_intervals": 4.8758,
+          "cpu_observed_interval_seconds": 119.686,
+          "cpu_seconds_sampled": 583.57,
+          "max_process_summed_rss_kb": 11999344,
+          "peak_observed_at_utc": "2026-09-27T06:44:40.696785Z",
+          "samples": 20
+        },
+        "sis-rcv-pilot-high-a-3200-round2-retry1": {
+          "cpu_cores_average_over_observed_intervals": 0.054,
+          "cpu_observed_interval_seconds": 184.73,
+          "cpu_seconds_sampled": 9.97,
+          "max_process_summed_rss_kb": 8644,
+          "peak_observed_at_utc": "2026-09-27T06:45:04.978757Z",
+          "samples": 31
+        },
+        "sis-side-argon2-pilot-high-a-3200-round2-retry1": {
+          "cpu_cores_average_over_observed_intervals": 0.0684,
+          "cpu_observed_interval_seconds": 150.118,
+          "cpu_seconds_sampled": 10.27,
+          "max_process_summed_rss_kb": 380856,
+          "peak_observed_at_utc": "2026-09-27T06:45:11.128227Z",
+          "samples": 25
+        },
+        "sis-side-fapi-pilot-high-a-3200-round2-retry1": {
+          "cpu_cores_average_over_observed_intervals": 0.3789,
+          "cpu_observed_interval_seconds": 144.076,
+          "cpu_seconds_sampled": 54.59,
+          "max_process_summed_rss_kb": 730332,
+          "peak_observed_at_utc": "2026-09-27T06:44:40.696785Z",
+          "samples": 24
+        },
+        "sis-side-meta-pilot-high-a-3200-round2-retry1": {
+          "cpu_cores_average_over_observed_intervals": 0.2489,
+          "cpu_observed_interval_seconds": 144.076,
+          "cpu_seconds_sampled": 35.86,
+          "max_process_summed_rss_kb": 501188,
+          "peak_observed_at_utc": "2026-09-27T06:44:09.579804Z",
+          "samples": 24
+        },
+        "sis-side-refresh-pilot-high-a-3200-round2-retry1": {
+          "cpu_cores_average_over_observed_intervals": 0.6247,
+          "cpu_observed_interval_seconds": 144.076,
+          "cpu_seconds_sampled": 90.01,
+          "max_process_summed_rss_kb": 2173540,
+          "peak_observed_at_utc": "2026-09-27T06:45:11.128227Z",
+          "samples": 25
+        },
+        "sis-worker-pilot-high-a-3200-round2-retry1": {
+          "cpu_cores_average_over_observed_intervals": 0.0881,
+          "cpu_observed_interval_seconds": 184.73,
+          "cpu_seconds_sampled": 16.27,
+          "max_process_summed_rss_kb": 21240,
+          "peak_observed_at_utc": "2026-09-27T06:44:28.213735Z",
+          "samples": 31
+        },
+        "valkey": {
+          "cpu_cores_average_over_observed_intervals": 0.3059,
+          "cpu_observed_interval_seconds": 184.73,
+          "cpu_seconds_sampled": 56.5,
+          "max_process_summed_rss_kb": 46916,
+          "peak_observed_at_utc": "2026-09-27T06:45:22.945982Z",
+          "samples": 31
+        }
+      },
+      "peak_observed_at_utc": "2026-09-27T06:44:40.696785Z",
+      "peak_observed_sum_rss_kb": 30927512,
+      "run_id": "pilot-high-a-3200-round2-retry1",
+      "sample_rows": 31,
+      "sampled_total_cpu_cores_average": 1.9636,
+      "sampled_total_cpu_seconds": 3192.22,
+      "scope": "deployment component processes only; excludes host_mem_kb and cgroup counters; process-summed RSS is not PSS",
+      "source_file_sha256": "bb4b4eb3ea51e2216597b171368ff704de523961f796851502288c985cef56cf"
+    },
+    {
+      "clk_tck": 100,
+      "components": {
+        "app": {
+          "cpu_cores_average_over_observed_intervals": 4.7659,
+          "cpu_observed_interval_seconds": 183.346,
+          "cpu_seconds_sampled": 873.81,
+          "max_process_summed_rss_kb": 235132,
+          "peak_observed_at_utc": "2026-09-27T06:50:42.075338Z",
+          "samples": 31
+        },
+        "postgres": {
+          "cpu_cores_average_over_observed_intervals": 6.3481,
+          "cpu_observed_interval_seconds": 183.346,
+          "cpu_seconds_sampled": 1163.9,
+          "max_process_summed_rss_kb": 14812448,
+          "peak_observed_at_utc": "2026-09-27T06:51:16.941809Z",
+          "samples": 31
+        },
+        "sis-load-pilot-high-b-3200-round2": {
+          "cpu_cores_average_over_observed_intervals": 4.5931,
+          "cpu_observed_interval_seconds": 118.141,
+          "cpu_seconds_sampled": 542.63,
+          "max_process_summed_rss_kb": 12097052,
+          "peak_observed_at_utc": "2026-09-27T06:50:17.781132Z",
+          "samples": 21
+        },
+        "sis-rcv-pilot-high-b-3200-round2": {
+          "cpu_cores_average_over_observed_intervals": 0.0629,
+          "cpu_observed_interval_seconds": 177.637,
+          "cpu_seconds_sampled": 11.17,
+          "max_process_summed_rss_kb": 11556,
+          "peak_observed_at_utc": "2026-09-27T06:50:59.773208Z",
+          "samples": 31
+        },
+        "sis-side-argon2-pilot-high-b-3200-round2": {
+          "cpu_cores_average_over_observed_intervals": 0.0668,
+          "cpu_observed_interval_seconds": 148.435,
+          "cpu_seconds_sampled": 9.91,
+          "max_process_summed_rss_kb": 366032,
+          "peak_observed_at_utc": "2026-09-27T06:49:58.986507Z",
+          "samples": 25
+        },
+        "sis-side-fapi-pilot-high-b-3200-round2": {
+          "cpu_cores_average_over_observed_intervals": 0.362,
+          "cpu_observed_interval_seconds": 142.35,
+          "cpu_seconds_sampled": 51.53,
+          "max_process_summed_rss_kb": 744248,
+          "peak_observed_at_utc": "2026-09-27T06:50:30.138798Z",
+          "samples": 24
+        },
+        "sis-side-meta-pilot-high-b-3200-round2": {
+          "cpu_cores_average_over_observed_intervals": 0.2498,
+          "cpu_observed_interval_seconds": 148.435,
+          "cpu_seconds_sampled": 37.08,
+          "max_process_summed_rss_kb": 516212,
+          "peak_observed_at_utc": "2026-09-27T06:50:42.075338Z",
+          "samples": 25
+        },
+        "sis-side-refresh-pilot-high-b-3200-round2": {
+          "cpu_cores_average_over_observed_intervals": 0.5996,
+          "cpu_observed_interval_seconds": 148.311,
+          "cpu_seconds_sampled": 88.93,
+          "max_process_summed_rss_kb": 2240696,
+          "peak_observed_at_utc": "2026-09-27T06:50:11.561565Z",
+          "samples": 25
+        },
+        "sis-worker-pilot-high-b-3200-round2": {
+          "cpu_cores_average_over_observed_intervals": 0.097,
+          "cpu_observed_interval_seconds": 183.346,
+          "cpu_seconds_sampled": 17.79,
+          "max_process_summed_rss_kb": 21144,
+          "peak_observed_at_utc": "2026-09-27T06:51:11.270693Z",
+          "samples": 31
+        },
+        "valkey": {
+          "cpu_cores_average_over_observed_intervals": 0.1686,
+          "cpu_observed_interval_seconds": 183.346,
+          "cpu_seconds_sampled": 30.92,
+          "max_process_summed_rss_kb": 47000,
+          "peak_observed_at_utc": "2026-09-27T06:51:11.270693Z",
+          "samples": 31
+        }
+      },
+      "peak_observed_at_utc": "2026-09-27T06:50:11.561565Z",
+      "peak_observed_sum_rss_kb": 30898660,
+      "run_id": "pilot-high-b-3200-round2",
+      "sample_rows": 31,
+      "sampled_total_cpu_cores_average": 1.749,
+      "sampled_total_cpu_seconds": 2827.67,
+      "scope": "deployment component processes only; excludes host_mem_kb and cgroup counters; process-summed RSS is not PSS",
+      "source_file_sha256": "ee4c24efa932c90974a0d405f854d3e94370a3a7bc38cf0fcc1384df92d9c41a"
+    }
+  ],
+  "scope_note": "No host-wide memory, CPU topology, or cgroup parent values are used.",
+  "tool_sha256": "a1b8263f54a54838626cbe41e4ce10ae5215f0eded7bf1720a7998ae9d22f55a"
+}

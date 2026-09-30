@@ -36,9 +36,10 @@ impl nazo_oauth_server::contracts::scim::ScimBootstrapPasswordProvider
     > {
         use nazo_oauth_server::contracts::scim::ScimDependencyError;
         Box::pin(async {
-            let hash = hash_password_blocking_limited(random_urlsafe_token())
-                .await
-                .map_err(|_| ScimDependencyError::Unavailable)?;
+            // Provisioned accounts have no password to deliver or verify. Reuse the
+            // startup-prepared hash of an unknown random secret instead of competing
+            // with real password authentication for the Argon2 concurrency budget.
+            let hash = dummy_password_hash().map_err(|_| ScimDependencyError::Unavailable)?;
             nazo_identity::ports::PasswordHashInput::new(hash)
                 .map_err(|_| ScimDependencyError::Unavailable)
         })

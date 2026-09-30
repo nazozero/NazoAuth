@@ -80,9 +80,10 @@ pub use authorization_service::{
     AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
     AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
-    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort,
-    ClientAuthenticationSnapshot, GrantWrite, StoredAuthorizationGrant,
-    pushed_authorization_request_digest, stored_grant_covers_requested_authorization,
+    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateSnapshot,
+    AuthorizationStateStorePort, ClientAuthenticationSnapshot, GrantWrite,
+    StoredAuthorizationGrant, pushed_authorization_request_digest,
+    stored_grant_covers_requested_authorization,
 };
 pub use ciba::{
     CibaAtomicResult, CibaAuthenticationContext, CibaCommittedDecision, CibaCreateFailure,
@@ -214,10 +215,11 @@ pub use token_endpoint::{
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
     AuthorizationCodeTransitionResult, CommitTokenIssuance, CommitTokenIssuanceResult,
-    IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, SingleUseRedemption, TokenFuture,
-    TokenInspection, TokenIssuanceMode, TokenIssuedAuditFields, TokenPortError,
-    TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
-    UserinfoSnapshot, UserinfoSubjectRef, validate_sender_constraint,
+    IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, PreparedTokenSubject,
+    SingleUseRedemption, TokenFuture, TokenInspection, TokenIssuanceMode, TokenIssuedAuditFields,
+    TokenPortError, TokenPrincipalState, TokenRepositoryPort, TokenRevocation, TokenService,
+    TokenSignerPort, TokenStateStorePort, UserinfoSnapshot, UserinfoSubjectRef,
+    validate_sender_constraint,
 };
 pub use transaction::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,

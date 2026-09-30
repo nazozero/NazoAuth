@@ -173,6 +173,10 @@ class EvaluatorTest(unittest.TestCase):
             e = psa.point_evidence(p)
             self.assertFalse(e["strict_3000_gate"]["pass"])  # 2850<2985
         recs["B1"]["metrics"]["ops_per_s"] = 2990.0
+        e = psa.point_evidence(recs["B1"])
+        self.assertFalse(e["strict_3000_gate"]["pass"])
+        self.assertEqual(e["attainment"], round(2950 / 3000, 4))
+        recs["B1"]["metrics"]["successful_ops_per_s"] = 2985.0
         # gate reads the measurement cohort, not whole-run drop/latency
         recs["B1"]["metrics"]["drop_fraction"] = 0.4  # whole-run, ignored
         e = psa.point_evidence(recs["B1"])
@@ -181,6 +185,24 @@ class EvaluatorTest(unittest.TestCase):
         recs["B1"]["metrics"]["measure_drop_fraction"] = 0.002
         e = psa.point_evidence(recs["B1"])
         self.assertFalse(e["strict_3000_gate"]["pass"])
+
+    def test_strict_gate_rejects_any_preparation_failure(self):
+        m = _rec(ops=3000)["metrics"]
+        for outcome in ("prepare_failed", "prepare_local_failed", "prepare_sut_failed"):
+            with self.subTest(outcome=outcome):
+                changed = dict(m, **{f"outcome_{outcome}": 1})
+                self.assertFalse(psa._strict_gate(changed, 3000)["pass"])
+
+    def test_ab_preparation_failure_preserves_attribution(self):
+        for outcome, expected in (("prepare_failed", "INVALID"),
+                                  ("prepare_local_failed", "INVALID"),
+                                  ("prepare_sut_failed", "FAIL")):
+            with self.subTest(outcome=outcome):
+                records = self._records()
+                records['B1']['metrics'][f'outcome_{outcome}'] = 1
+                result = psa.evaluate(records)
+                self.assertEqual(result['verdict'], expected)
+                self.assertEqual(result['points']['B1']['verdict'], expected)
 
 
 class ClassifyStabilityTest(unittest.TestCase):

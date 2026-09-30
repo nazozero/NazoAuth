@@ -159,3 +159,62 @@ async fn saturated_batches_drain_immediately_until_unsaturated() {
     handle.abort();
     assert!(handle.await.unwrap_err().is_cancelled());
 }
+
+#[tokio::test(start_paused = true)]
+async fn saturated_cycle_can_drain_more_than_512_batches() {
+    struct LargeBacklog(AtomicUsize);
+    impl SecurityStateMaintenancePort for LargeBacklog {
+        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+            Box::pin(async move {
+                let call = self.0.fetch_add(1, Ordering::SeqCst) + 1;
+                Ok(CleanupBatchResult {
+                    issuances: 256,
+                    saturated: call < 600,
+                    ..CleanupBatchResult::default()
+                })
+            })
+        }
+    }
+    let store = Arc::new(LargeBacklog(AtomicUsize::new(0)));
+    let handle = spawn_security_state_maintenance_worker(store.clone());
+    for _ in 0..1200 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(store.0.load(Ordering::SeqCst), 600);
+    handle.abort();
+    assert!(handle.await.unwrap_err().is_cancelled());
+}
+
+#[tokio::test(start_paused = true)]
+async fn budget_exhaustion_rests_for_elapsed_work_before_resuming() {
+    struct TimedBacklog(AtomicUsize);
+    impl SecurityStateMaintenancePort for TimedBacklog {
+        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+            Box::pin(async move {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                // A single batch may cross the scheduling budget; it must
+                // finish and receive an equally long rest, not be cancelled.
+                tokio::time::sleep(CATCH_UP_BUDGET + StdDuration::from_secs(5)).await;
+                Ok(CleanupBatchResult {
+                    issuances: 256,
+                    saturated: true,
+                    ..CleanupBatchResult::default()
+                })
+            })
+        }
+    }
+    let store = Arc::new(TimedBacklog(AtomicUsize::new(0)));
+    let handle = spawn_security_state_maintenance_worker(store.clone());
+    tokio::task::yield_now().await;
+    assert_eq!(store.0.load(Ordering::SeqCst), 1);
+    tokio::time::advance(StdDuration::from_secs(35)).await;
+    tokio::task::yield_now().await;
+    tokio::time::advance(StdDuration::from_secs(35) - StdDuration::from_millis(1)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(store.0.load(Ordering::SeqCst), 1);
+    tokio::time::advance(StdDuration::from_millis(1)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(store.0.load(Ordering::SeqCst), 2);
+    handle.abort();
+    assert!(handle.await.unwrap_err().is_cancelled());
+}

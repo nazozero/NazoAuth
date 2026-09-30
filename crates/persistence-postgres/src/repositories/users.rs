@@ -100,7 +100,7 @@ impl UserRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> Result<Option<SubjectClaims>, RepositoryError> {
+    ) -> Result<Option<(SubjectClaims, i64)>, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
@@ -108,12 +108,12 @@ impl UserRepository {
             .find(user_id.as_uuid())
             .filter(users::tenant_id.eq(tenant_id.as_uuid()))
             .filter(users::is_active.eq(true))
-            .select(SubjectClaimsRow::as_select())
-            .first(&mut connection)
+            .select((SubjectClaimsRow::as_select(), users::access_token_epoch))
+            .first::<(SubjectClaimsRow, i64)>(&mut connection)
             .await
             .optional()
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-            .map(identity::active_subject_claims)
+            .map(|(row, epoch)| identity::active_subject_claims(row).map(|claims| (claims, epoch)))
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }

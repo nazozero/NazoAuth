@@ -1,0 +1,1819 @@
+{
+  "run_id": "s3-multi-1790679637",
+  "scenario": "cap_mixed",
+  "window_s": 570.0,
+  "ops": {
+    "successful_ops_per_s": 799.904,
+    "outcome_success": 455945,
+    "op_p99_ms": 448.0,
+    "unexpected": 0
+  },
+  "identity": {
+    "runtime_role": "nazoauth_perf_runtime",
+    "observer_sha256": "7500fd6e85f4c62372ef950a87dd569c668f60dc044560b5f2f5dccf707b1b18",
+    "interval_s": 0.25,
+    "role_checks_in_window": [
+      {
+        "kind": "role_check",
+        "ts": 1790679766.8536842,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679776.8581626,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679786.8680031,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679796.8651917,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679806.875259,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679816.87791,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679826.8817053,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679836.89111,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679846.895543,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679856.9027824,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679866.9080927,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679876.9109912,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679886.9145927,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679896.917915,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679906.9250162,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679916.9387422,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679926.9317317,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679936.93175,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679946.9349744,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679956.9381664,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679966.9437914,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679976.946571,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "postgres",
+            2
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679986.957611,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790679996.9539988,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680006.9568486,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680016.9607468,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680026.9633353,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680036.9681318,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680046.9741368,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680056.9771254,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680066.9839725,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680076.985968,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680086.9917293,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680096.9968088,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680106.9962382,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680116.9996977,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680127.0093389,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680137.009147,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680147.012249,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680157.0149124,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680167.0312674,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680177.0350416,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680187.038936,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680197.049162,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680207.0515904,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680217.0620031,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680227.091924,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680237.1110368,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680247.1388288,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680257.1674502,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680267.1884716,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680277.225902,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680287.2497675,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680297.2752945,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680307.3069847,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680317.3372655,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      }
+    ]
+  },
+  "validity": {
+    "samples": 2278,
+    "valid": 2073,
+    "valid_ratio": 0.91,
+    "invalid_reasons": {
+      "negative_idle_estimate": 205
+    }
+  },
+  "pool": {
+    "size": {
+      "n": 2073,
+      "mean": 32.0,
+      "median": 32,
+      "p95": 32,
+      "max": 32
+    },
+    "checked_out": {
+      "n": 2073,
+      "mean": 19.3309,
+      "median": 17,
+      "p95": 32,
+      "max": 32
+    },
+    "waiting_acquisitions": {
+      "n": 2073,
+      "mean": 27.1302,
+      "median": 0,
+      "p95": 176,
+      "max": 958
+    }
+  },
+  "runtime_state": {
+    "active": {
+      "n": 2073,
+      "mean": 6.1915,
+      "median": 5,
+      "p95": 15,
+      "max": 32
+    },
+    "idle_in_transaction": {
+      "n": 2073,
+      "mean": 5.1708,
+      "median": 4,
+      "p95": 13,
+      "max": 22
+    },
+    "pg_idle": {
+      "n": 2073,
+      "mean": 20.6377,
+      "median": 22,
+      "p95": 29,
+      "max": 32
+    },
+    "other": {
+      "n": 2073,
+      "mean": 0.0,
+      "median": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "checked_out_pg_idle_estimate": {
+      "n": 2073,
+      "mean": 7.9686,
+      "median": 7,
+      "p95": 20,
+      "max": 28
+    }
+  },
+  "shares_of_checked_out_mean": {
+    "active": 0.3203,
+    "idle_in_transaction": 0.2675,
+    "checked_out_pg_idle": 0.4122
+  },
+  "idle_in_tx": {
+    "age_clock": "postgres_clock_timestamp",
+    "weighting": "sampled_idle_age_not_cumulative_residence",
+    "samples": 10719,
+    "histogram_count": {
+      "<1ms": 5738,
+      "1-5ms": 4400,
+      "5-20ms": 573,
+      "20-100ms": 8,
+      "100-500ms": 0,
+      "500ms-1s": 0,
+      ">=1s": 0
+    },
+    "time_weighted_share": {
+      "<1ms": 0.1866,
+      "1-5ms": 0.5839,
+      "5-20ms": 0.2195,
+      "20-100ms": 0.0099,
+      "100-500ms": 0.0,
+      "500ms-1s": 0.0,
+      ">=1s": 0.0
+    },
+    "by_class": {
+      "other": {
+        "count": 2837,
+        "time_share": 0.2536,
+        "p50": 0.8280277252197266,
+        "p95": 5.012989044189453,
+        "max": 22.381,
+        "queries": [
+          "-6441974452854201730",
+          "275221827254537758",
+          "466848607471580836"
+        ],
+        "examples": [
+          "SELECT is_active, access_token_epoch FROM users WHERE tenant_id = $1 AND id = $2 FOR SHARE",
+          "SELECT pg_advisory_xact_lock($1)",
+          "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)"
+        ]
+      },
+      "set_local": {
+        "count": 1345,
+        "time_share": 0.1395,
+        "p50": 1.0988712310791016,
+        "p95": 5.482912063598633,
+        "max": 11.679,
+        "queries": [
+          "-1708461756726018533"
+        ],
+        "examples": [
+          "SET LOCAL lock_timeout = $1"
+        ]
+      },
+      "refresh_family": {
+        "count": 1572,
+        "time_share": 0.1364,
+        "p50": 0.8120536804199219,
+        "p95": 4.771947860717773,
+        "max": 24.367,
+        "queries": [
+          "-4627606135148110578",
+          "-4859543494755560605",
+          "3059364362978693673",
+          "8718669233736325932",
+          "988688075674336999"
+        ],
+        "examples": [
+          "DELETE FROM \"oauth_refresh_families\" WHERE (((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\"",
+          "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"curren",
+          "SET ROLE nazoauth_perf_runtime; EXPLAIN (GENERIC_PLAN TRUE,FORMAT JSON) SELECT \"oauth_refresh_families\".\"tenant_id\", \"oa",
+          "UPDATE \"oauth_refresh_families\" SET \"current_member_id\" = $1, \"current_token_blake3\" = $2, \"current_audience\" = $3, \"cur",
+          "WITH ranked AS ( SELECT token_family_id, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn,"
+        ]
+      },
+      "client": {
+        "count": 1335,
+        "time_share": 0.1328,
+        "p50": 0.9708404541015625,
+        "p95": 5.321979522705078,
+        "max": 15.527,
+        "queries": [
+          "1377802349626556515"
+        ],
+        "examples": [
+          "SELECT is_active, access_token_epoch FROM oauth_clients WHERE tenant_id = $1 AND id = $2 FOR SHARE"
+        ]
+      },
+      "audit_append": {
+        "count": 1460,
+        "time_share": 0.1295,
+        "p50": 0.8089542388916016,
+        "p95": 4.973173141479492,
+        "max": 20.288,
+        "queries": [
+          "7937354421020446243"
+        ],
+        "examples": [
+          "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+        ]
+      },
+      "refresh_spent": {
+        "count": 1091,
+        "time_share": 0.0991,
+        "p50": 0.8161067962646484,
+        "p95": 5.062103271484375,
+        "max": 12.87,
+        "queries": [
+          "-11707619807080382",
+          "-5288884251522700385"
+        ],
+        "examples": [
+          "DELETE FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND token_family_id = $2 AND member_id NOT IN ( SELECT membe",
+          "INSERT INTO \"oauth_refresh_spent_tokens\" (\"tenant_id\", \"refresh_token_blake3\", \"token_family_id\", \"member_id\", \"successo"
+        ]
+      },
+      "begin_commit": {
+        "count": 893,
+        "time_share": 0.093,
+        "p50": 1.1310577392578125,
+        "p95": 5.200862884521484,
+        "max": 22.496,
+        "queries": [
+          "4854991825702068830"
+        ],
+        "examples": [
+          "BEGIN"
+        ]
+      },
+      "issuance_insert": {
+        "count": 185,
+        "time_share": 0.0161,
+        "p50": 0.8101463317871094,
+        "p95": 4.601001739501953,
+        "max": 8.373,
+        "queries": [
+          "-4153571118784439691"
+        ],
+        "examples": [
+          "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, "
+        ]
+      },
+      "refresh_contract": {
+        "count": 1,
+        "time_share": 0.0,
+        "p50": 0.6630420684814453,
+        "p95": 0.6630420684814453,
+        "max": 0.663,
+        "queries": [
+          "3466544980921615760"
+        ],
+        "examples": [
+          "WITH scan AS MATERIALIZED ( SELECT tenant_id, contract_blake3, created_at, COALESCE($3, CURRENT_TIMESTAMP - make_interva"
+        ]
+      }
+    }
+  },
+  "active_wait": {
+    "by_wait_event": {
+      "LWLock:WALWrite": 4527,
+      "no_wait:-": 4349,
+      "Client:ClientRead": 2478,
+      "IO:WalSync": 1408,
+      "Lock:advisory": 37,
+      "IO:WalWrite": 17,
+      "LWLock:BufferContent": 9,
+      "IO:WalInitSync": 4,
+      "LWLock:WALInsert": 3,
+      "IO:DataFileExtend": 2,
+      "LWLock:LockManager": 1
+    },
+    "by_query_class": {
+      "begin_commit": 4601,
+      "other": 2438,
+      "audit_append": 1564,
+      "client": 1483,
+      "unknown": 1159,
+      "refresh_family": 757,
+      "refresh_spent": 660,
+      "issuance_insert": 85,
+      "audit_fn": 62,
+      "set_local": 25,
+      "refresh_contract": 1
+    }
+  },
+  "lock_blocks": [
+    {
+      "ts": 1790679791.1085873,
+      "blocks": {
+        "464": [
+          {
+            "pid": 445,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679795.8600957,
+      "blocks": {
+        "453": [
+          {
+            "pid": 444,
+            "qid": 7937354421020446243,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679811.3719683,
+      "blocks": {
+        "442": [
+          {
+            "pid": 462,
+            "qid": 988688075674336999,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679813.1226122,
+      "blocks": {
+        "446": [
+          {
+            "pid": 461,
+            "qid": -4627606135148110578,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679815.8734787,
+      "blocks": {
+        "92": []
+      }
+    },
+    {
+      "ts": 1790679827.877398,
+      "blocks": {
+        "460": [
+          {
+            "pid": 452,
+            "qid": 3059364362978693673,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679839.6365135,
+      "blocks": {
+        "441": [
+          {
+            "pid": 461,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679852.1428323,
+      "blocks": {
+        "462": [
+          {
+            "pid": 450,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679854.3934827,
+      "blocks": {
+        "93": [
+          {
+            "pid": 445,
+            "qid": -6441974452854201730,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679854.643563,
+      "blocks": {
+        "454": [
+          {
+            "pid": 452,
+            "qid": -4627606135148110578,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679863.1505501,
+      "blocks": {
+        "94": [
+          {
+            "pid": 458,
+            "qid": -11707619807080382,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679884.1590533,
+      "blocks": {
+        "453": []
+      }
+    },
+    {
+      "ts": 1790679906.4165728,
+      "blocks": {
+        "447": [
+          {
+            "pid": 449,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679915.9198422,
+      "blocks": {
+        "455": [
+          {
+            "pid": 443,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679920.6715105,
+      "blocks": {
+        "94": [
+          {
+            "pid": 456,
+            "qid": 7937354421020446243,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679926.1733909,
+      "blocks": {
+        "460": [
+          {
+            "pid": 459,
+            "qid": -6441974452854201730,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679944.1793625,
+      "blocks": {
+        "461": [
+          {
+            "pid": 462,
+            "qid": 7937354421020446243,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679962.4358416,
+      "blocks": {
+        "466": [
+          {
+            "pid": 94,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790679981.4435463,
+      "blocks": {
+        "445": []
+      }
+    },
+    {
+      "ts": 1790679986.1954021,
+      "blocks": {
+        "466": [
+          {
+            "pid": 467,
+            "qid": 7937354421020446243,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680015.9552908,
+      "blocks": {
+        "446": [
+          {
+            "pid": 449,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680028.209475,
+      "blocks": {
+        "465": [
+          {
+            "pid": 447,
+            "qid": 988688075674336999,
+            "state": "active",
+            "wet": null,
+            "we": null
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680049.4699743,
+      "blocks": {
+        "465": [
+          {
+            "pid": 455,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680056.72241,
+      "blocks": {
+        "466": [
+          {
+            "pid": 457,
+            "qid": 6097083398544187049,
+            "state": "idle",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680060.4736335,
+      "blocks": {
+        "461": [
+          {
+            "pid": 470,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680083.4834647,
+      "blocks": {
+        "443": [
+          {
+            "pid": 447,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680087.9849644,
+      "blocks": {
+        "467": [
+          {
+            "pid": 441,
+            "qid": 7937354421020446243,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680092.236318,
+      "blocks": {
+        "466": [
+          {
+            "pid": 446,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680092.486399,
+      "blocks": {
+        "459": [
+          {
+            "pid": 455,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680096.4877179,
+      "blocks": {
+        "92": [
+          {
+            "pid": 456,
+            "qid": -4859543494755560605,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680105.4908316,
+      "blocks": {
+        "455": [
+          {
+            "pid": 92,
+            "qid": -5288884251522700385,
+            "state": "idle in transaction",
+            "wet": null,
+            "we": null
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680160.7616487,
+      "blocks": {
+        "469": [
+          {
+            "pid": 94,
+            "qid": 7937354421020446243,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680170.02724,
+      "blocks": {
+        "469": [
+          {
+            "pid": 449,
+            "qid": 7937354421020446243,
+            "state": "active",
+            "wet": null,
+            "we": null
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680175.2801075,
+      "blocks": {
+        "446": []
+      }
+    },
+    {
+      "ts": 1790680178.0309763,
+      "blocks": {
+        "466": [
+          {
+            "pid": 448,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680245.8798916,
+      "blocks": {
+        "449": [
+          {
+            "pid": 469,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680321.8461356,
+      "blocks": {
+        "446": [
+          {
+            "pid": 444,
+            "qid": -5288884251522700385,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    }
+  ],
+  "waiting_conditioned": {
+    "p_waiting_gt0": 0.2499,
+    "p_checked_out_full_given_waiting": 1.0,
+    "active_given_waiting": {
+      "n": 518,
+      "mean": 7.7394,
+      "median": 6.0,
+      "p95": 22,
+      "max": 32
+    },
+    "idle_in_tx_given_waiting": {
+      "n": 518,
+      "mean": 9.5483,
+      "median": 10.0,
+      "p95": 16,
+      "max": 22
+    },
+    "pg_idle_est_given_waiting": {
+      "n": 518,
+      "mean": 14.7124,
+      "median": 15.5,
+      "p95": 23,
+      "max": 28
+    }
+  },
+  "littles_law": {
+    "acquire_rate_per_s": 8524.79,
+    "mean_checked_out": 19.331,
+    "implied_residency_ms": 2.268
+  },
+  "observer": {
+    "samples_in_window": 2278,
+    "sample_span_ms": {
+      "n": 2278,
+      "mean": 3.4573,
+      "median": 2.481,
+      "p95": 8.184,
+      "max": 18.508
+    },
+    "self_cpu": {
+      "utime_delta_s": 3.354,
+      "stime_delta_s": 0.956
+    },
+    "errors": {
+      "app_err": 0,
+      "pg_err": 0
+    }
+  }
+}

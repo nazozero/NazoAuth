@@ -287,6 +287,36 @@ fn rejects_duplicate_jwk_key_ids_at_configuration_time() {
 }
 
 #[test]
+fn prepared_keys_preserve_unrelated_invalid_key_and_unknown_key_errors() {
+    let fixture = fixture();
+    let mut jwks = fixture.jwks.clone();
+    jwks["keys"].as_array_mut().unwrap().extend([
+        json!({"kid":"invalid", "kty":"RSA", "alg":"RS256", "n":"!", "e":"AQAB"}),
+        json!({"kty":"RSA", "alg":"RS256", "n":"!", "e":"AQAB"}),
+    ]);
+    let verifier = verifier_with(ResourceServerVerifierConfig::new(
+        "https://issuer.example",
+        "resource://default",
+        jwks,
+    ));
+    assert!(verifier.verify(&token(&fixture, json!({}), None)).is_ok());
+    for (kid, expected) in [
+        ("invalid", ResourceServerVerifierError::InvalidKey),
+        ("missing", ResourceServerVerifierError::UnknownKeyId),
+    ] {
+        let mut header = Header::new(Algorithm::RS256);
+        header.typ = Some("at+jwt".to_owned());
+        header.kid = Some(kid.to_owned());
+        assert_eq!(
+            verifier
+                .verify(&token(&fixture, json!({}), Some(header)))
+                .unwrap_err(),
+            expected,
+        );
+    }
+}
+
+#[test]
 fn accepts_jwk_without_optional_key_id() {
     let fixture = fixture();
     let mut jwks = fixture.jwks.clone();

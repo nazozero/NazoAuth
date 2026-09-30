@@ -152,7 +152,7 @@ pub async fn issue_token_response(
     // Only OIDC claims construction consumes the subject profile; non-OIDC
     // user access tokens rely on the commit's principal lock recheck.
     let subject_claims_snapshot = if issue_includes_openid && let Some(user_id) = issue.user_id {
-        match issue.prepared_subject.as_ref() {
+        match issue.prepared_subject.take() {
             Some(prepared) => {
                 if prepared.tenant_id != client.tenant_id
                     || prepared.claims.subject.as_uuid() != user_id
@@ -174,13 +174,13 @@ pub async fn issue_token_response(
                         false,
                     ));
                 }
-                Some(prepared.claims.clone())
+                Some(prepared)
             }
             None => match token_service
                 .active_subject_claims(client.tenant_id, user_id)
                 .await
             {
-                Ok(Some(claims)) => Some(claims.clone()),
+                Ok(Some(claims)) => Some(claims),
                 Ok(None) => {
                     mark_failed_authorization_code_if_needed(
                         token_service,
@@ -217,18 +217,70 @@ pub async fn issue_token_response(
     } else {
         None
     };
+    let principal_state = if issue.user_id.is_none() {
+        // Authentication already read this version before signing. The commit
+        // still locks the client and rejects a deactivate/reactivate race.
+        nazo_auth::TokenPrincipalState {
+            client_epoch: context.client_epoch,
+            user_epoch: None,
+            subject_bound: false,
+        }
+    } else if let Some(snapshot) = subject_claims_snapshot.as_ref()
+        && issue.subject == snapshot.claims.subject.as_uuid().to_string()
+    {
+        // OIDC already read the active subject and its version in one snapshot.
+        // Public subjects have no private binding to resolve; commit rechecks both
+        // principal versions under lock before making the signed tokens usable.
+        nazo_auth::TokenPrincipalState {
+            client_epoch: context.client_epoch,
+            user_epoch: Some(snapshot.user_epoch),
+            subject_bound: false,
+        }
+    } else {
+        match token_service
+            .token_principal_state(client.tenant_id, client.id, issue.user_id, &issue.subject)
+            .await
+        {
+            Ok(state) => state,
+            Err(error) => {
+                tracing::warn!(%error, "failed to read token principal state");
+                mark_failed_authorization_code_if_needed(
+                    token_service,
+                    issue.authorization_code_hash.as_deref(),
+                    "token_principal_state_unavailable",
+                    auth_code_ttl_seconds,
+                )
+                .await;
+                return Err(OAuthEndpointError::token(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "令牌主体状态不可用.",
+                    false,
+                ));
+            }
+        }
+    };
     let issuance_id = Uuid::now_v7();
     // Commit-owned issuance: when the final commit transaction carries both
-    // the durable token fact and the required `token_issued` append, the
+    // the principal-version check and required `token_issued` append, the
     // commit itself is the fail-closed writer check, so the per-request
-    // static capability probe is redundant. Any path with a preceding
-    // durable side effect (refresh rotation bookkeeping is commit-owned but
-    // kept conservative here, authorization-code consumption, Native SSO
-    // device-secret persistence) keeps the full storage preflight.
+    // static capability probe is redundant. Normal refresh rotation and
+    // preserving an existing refresh token join the no-refresh shape: any
+    // family lock and spent-proof bookkeeping are owned by
+    // that same commit transaction. Any path
+    // with a preceding durable side effect (authorization-code consumption,
+    // Native SSO device-secret persistence) keeps the full storage
+    // preflight, and `RotateLostResponse` stays on it as well — the retry
+    // proves its direct-predecessor edge inside the commit but the
+    // lost-response recovery path is deliberately kept conservative.
     let commit_owned = matches!(mode, TokenIssuanceMode::Fresh)
-        && !will_issue_refresh
         && issue.authorization_code_hash.is_none()
-        && issue.native_sso.is_none();
+        && issue.native_sso.is_none()
+        && (!will_issue_refresh
+            || matches!(
+                issue.refresh_token_policy,
+                RefreshTokenPolicy::PreserveExisting | RefreshTokenPolicy::Rotate { .. }
+            ));
     let audit_ready = if commit_owned {
         context.security_audit.ensure_transactional_ready().await
     } else {
@@ -266,6 +318,8 @@ pub async fn issue_token_response(
     };
     let issued_access_token = match token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: Some(principal_state.client_epoch),
+            user_epoch: principal_state.user_epoch,
             issuer: &context.config.issuer,
             tenant_id: client.tenant_id,
             subject: &issue.subject,
@@ -335,7 +389,7 @@ pub async fn issue_token_response(
             .as_ref()
             .expect("openid token issues have a validated subject snapshot");
         let mut user_claims = Some(oidc_id_token_user_claims(
-            loaded_claims,
+            &loaded_claims.claims,
             id_token_claim_scopes,
             &issue.subject,
             &issue.id_token_claims,
@@ -549,6 +603,8 @@ pub async fn issue_token_response(
     };
     match token_service
         .commit_token_issuance(nazo_auth::CommitTokenIssuance {
+            principal_state,
+            subject: issue.subject.clone(),
             issuance_id,
             tenant_id: client.tenant_id,
             client_id: client.id,

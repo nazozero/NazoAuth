@@ -1,0 +1,142 @@
+{
+  "created_utc": "2026-09-27T09:25:07.279191+00:00",
+  "interpretation": {
+    "checkpoint": "Counter deltas use the nearest task-local sample at or before each effective-window boundary; this is sampled boundary attribution.",
+    "latency_correlation": "P95/P99 are whole effective-window complete-iteration values; no time-bucket latency series is present, so point-in-time correlation is unavailable.",
+    "pg_waits": "Sampled pg_stat_activity wait_event_type counts per snapshot; sums are snapshot observations, not wait duration or event totals.",
+    "wal_wait_event_detail": "Sampler records wait_event_type only. WALWrite/WALSync event-level counts are unavailable."
+  },
+  "points": [
+    {
+      "checkpoint_counter_delta": {
+        "baseline_sample_ts": 1790497199,
+        "end_sample_ts": 1790497800,
+        "values": {
+          "buffers_written": 4652,
+          "done": 1,
+          "requested": 0,
+          "sync_time_ms": 323.0,
+          "timed": 2,
+          "write_time_ms": 269999.0
+        }
+      },
+      "effective_window": {
+        "end_ms": 1790497800219,
+        "seconds": 600,
+        "start_ms": 1790497200219
+      },
+      "main_complete_iteration_p95_ms": 26.0,
+      "main_complete_iteration_p99_ms": 40.0,
+      "pool_wait_ms_per_acquire": 0.008,
+      "run": "formal-a-3200",
+      "sampler": {
+        "first_ts": 1790497201,
+        "last_ts": 1790497800,
+        "sample_count": 286,
+        "wait_event_type_snapshot_observations": {
+          "Activity": {
+            "max_simultaneous_observed": 8,
+            "snapshot_count_sum": 2043,
+            "snapshots_present": 286
+          },
+          "Client": {
+            "max_simultaneous_observed": 87,
+            "snapshot_count_sum": 21192,
+            "snapshots_present": 286
+          },
+          "IO": {
+            "max_simultaneous_observed": 3,
+            "snapshot_count_sum": 295,
+            "snapshots_present": 271
+          },
+          "LWLock": {
+            "max_simultaneous_observed": 87,
+            "snapshot_count_sum": 2310,
+            "snapshots_present": 278
+          },
+          "Lock": {
+            "max_simultaneous_observed": 1,
+            "snapshot_count_sum": 2,
+            "snapshots_present": 2
+          },
+          "Timeout": {
+            "max_simultaneous_observed": 2,
+            "snapshot_count_sum": 247,
+            "snapshots_present": 215
+          }
+        }
+      },
+      "wal_io_timing_ms": {
+        "fsync": 0.0,
+        "interpretation": "N/A because raw timing counters are zero; not zero wait",
+        "write": 0.0
+      }
+    },
+    {
+      "checkpoint_counter_delta": {
+        "baseline_sample_ts": 1790498147,
+        "end_sample_ts": 1790498747,
+        "values": {
+          "buffers_written": 2620,
+          "done": 1,
+          "requested": 0,
+          "sync_time_ms": 242.0,
+          "timed": 2,
+          "write_time_ms": 269490.0
+        }
+      },
+      "effective_window": {
+        "end_ms": 1790498747232,
+        "seconds": 600,
+        "start_ms": 1790498147232
+      },
+      "main_complete_iteration_p95_ms": 21.0,
+      "main_complete_iteration_p99_ms": 32.0,
+      "pool_wait_ms_per_acquire": 0.011,
+      "run": "formal-b-3200",
+      "sampler": {
+        "first_ts": 1790498150,
+        "last_ts": 1790498747,
+        "sample_count": 287,
+        "wait_event_type_snapshot_observations": {
+          "Activity": {
+            "max_simultaneous_observed": 8,
+            "snapshot_count_sum": 2042,
+            "snapshots_present": 287
+          },
+          "Client": {
+            "max_simultaneous_observed": 90,
+            "snapshot_count_sum": 21478,
+            "snapshots_present": 287
+          },
+          "IO": {
+            "max_simultaneous_observed": 3,
+            "snapshot_count_sum": 301,
+            "snapshots_present": 271
+          },
+          "LWLock": {
+            "max_simultaneous_observed": 83,
+            "snapshot_count_sum": 2519,
+            "snapshots_present": 280
+          },
+          "Lock": {
+            "max_simultaneous_observed": 2,
+            "snapshot_count_sum": 4,
+            "snapshots_present": 3
+          },
+          "Timeout": {
+            "max_simultaneous_observed": 2,
+            "snapshot_count_sum": 230,
+            "snapshots_present": 209
+          }
+        }
+      },
+      "wal_io_timing_ms": {
+        "fsync": 0.0,
+        "interpretation": "N/A because raw timing counters are zero; not zero wait",
+        "write": 0.0
+      }
+    }
+  ],
+  "stage": "wait-checkpoint-short-3200"
+}

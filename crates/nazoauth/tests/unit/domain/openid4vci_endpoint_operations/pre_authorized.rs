@@ -602,6 +602,7 @@ async fn live_pre_authorized_rejects_client_deactivated_before_persistence() {
         inner: Arc::new(nazo_postgres::Openid4vciRepository::new(
             wrapper_pool.clone(),
             [0x51; 32],
+            Arc::new(crate::bootstrap::LoginPasswordVerifier),
         )),
         pool: wrapper_pool,
     });

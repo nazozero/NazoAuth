@@ -20,7 +20,7 @@ async fn owner_revocation_streams_large_sets_and_rolls_back_all_batches() {
         .batch_execute(
             "CREATE TEMP TABLE oauth_token_issuances (
             tenant_id uuid, client_id uuid, user_id uuid,
-            access_token_jti text, access_token_expires_at timestamptz);
+            access_token_jti text, access_token_expires_at timestamptz, principal_epoch_bound boolean NOT NULL DEFAULT FALSE);
          CREATE TEMP TABLE oauth_clients (id uuid, tenant_id uuid, client_id text);
          CREATE TEMP TABLE openid4vci_access_grants (
             tenant_id uuid, client_id text, subject_id uuid, token_id uuid,
@@ -148,11 +148,18 @@ async fn owner_revocation_streams_large_sets_and_rolls_back_all_batches() {
 }
 
 fn valid_commit_input(mode: TokenIssuanceMode) -> CommitTokenIssuance {
+    let user_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: Some(0),
+            subject_bound: false,
+        },
+        subject: user_id.to_string(),
         issuance_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         client_id: Uuid::now_v7(),
-        user_id: Some(Uuid::now_v7()),
+        user_id: Some(user_id),
         mode,
         access_token_jti: "access-jti".to_owned(),
         access_token_expires_at: (Utc::now() + chrono::Duration::minutes(5)).timestamp(),

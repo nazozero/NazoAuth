@@ -302,7 +302,7 @@ impl ServerCredentialIssuerOperations {
         }
         if self
             .token_service
-            .access_token_revoked(tenant_id, &claims.jti)
+            .access_token_revoked(tenant_id, &claims)
             .await
             .unwrap_or(true)
         {
@@ -342,7 +342,7 @@ impl ServerCredentialIssuerOperations {
             }
             None => self
                 .token_service
-                .active_subject_id_by_access_token(tenant_id, &claims.jti)
+                .active_subject_id_by_access_token(tenant_id, &claims.jti, &claims.sub)
                 .await
                 .map_err(|_| {
                     vci_error(

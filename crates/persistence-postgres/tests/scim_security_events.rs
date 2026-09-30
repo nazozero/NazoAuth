@@ -241,3 +241,212 @@ async fn scim_outbox_is_atomic_receiver_scoped_and_terminally_acknowledged() {
         .await
         .unwrap();
 }
+
+#[derive(QueryableByName)]
+struct ReceiptRow {
+    #[diesel(sql_type = SqlUuid)]
+    event_id: Uuid,
+    #[diesel(sql_type = Text)]
+    disposition: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
+    error_code: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
+    error_description: Option<String>,
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn batched_receipts_preserve_visibility_terminal_outcomes_and_receiver_isolation() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let tenant_id = Uuid::now_v7();
+    let foreign_tenant_id = Uuid::now_v7();
+    let now = chrono::Utc::now();
+    let mut connection = get_conn(&pool).await.unwrap();
+    for id in [tenant_id, foreign_tenant_id] {
+        sql_query(
+            "INSERT INTO tenants (id, slug, display_name) VALUES ($1, $1::text, 'SCIM batch test')",
+        )
+        .bind::<SqlUuid, _>(id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    let receiver = EventReceiver {
+        token_id: Uuid::now_v7(),
+        tenant_id,
+        audience: "https://receiver.example/batch".to_owned(),
+    };
+    let other_receiver = EventReceiver {
+        token_id: Uuid::now_v7(),
+        ..receiver.clone()
+    };
+    for token in [&receiver, &other_receiver] {
+        sql_query(
+            "INSERT INTO scim_tokens (id, tenant_id, token_hash, label, scopes, event_audience, created_at) \
+             VALUES ($1, $2, $3, 'SCIM batch receiver', '[\"scim:events\"]'::jsonb, $4, $5)",
+        )
+        .bind::<SqlUuid, _>(token.token_id)
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<Text, _>(blake3::hash(token.token_id.as_bytes()).to_hex().to_string())
+        .bind::<Text, _>(&token.audience)
+        .bind::<diesel::sql_types::Timestamptz, _>(now - chrono::Duration::minutes(30))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    let acknowledged = Uuid::now_v7();
+    let failed = Uuid::now_v7();
+    let expired = Uuid::now_v7();
+    let before_receiver = Uuid::now_v7();
+    let foreign = Uuid::now_v7();
+    let pending = [Uuid::now_v7(), Uuid::now_v7()];
+    for (id, tenant, occurred_minutes_ago, expires_minutes_from_now) in [
+        (acknowledged, tenant_id, 1, 10),
+        (failed, tenant_id, 1, 10),
+        (expired, tenant_id, 20, -10),
+        (before_receiver, tenant_id, 40, 10),
+        (foreign, foreign_tenant_id, 1, 10),
+        (pending[0], tenant_id, 1, 10),
+        (pending[1], tenant_id, 1, 10),
+    ] {
+        sql_query(
+            "INSERT INTO scim_security_events \
+             (id, tenant_id, transaction_id, subject_uri, events, occurred_at, expires_at) \
+             VALUES ($1, $2, $1, $3, '{\"test-event\":{}}'::jsonb, $4, $5)",
+        )
+        .bind::<SqlUuid, _>(id)
+        .bind::<SqlUuid, _>(tenant)
+        .bind::<Text, _>(format!("/Users/{id}"))
+        .bind::<diesel::sql_types::Timestamptz, _>(
+            now - chrono::Duration::minutes(occurred_minutes_ago),
+        )
+        .bind::<diesel::sql_types::Timestamptz, _>(
+            now + chrono::Duration::minutes(expires_minutes_from_now),
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    drop(connection);
+    let store = ScimEventRepository::new(pool.clone());
+    let poll = ValidatedPollRequest {
+        max_events: 10,
+        return_immediately: true,
+        ack: Vec::new(),
+        set_errors: BTreeMap::new(),
+    };
+    let first_page = store
+        .apply_dispositions_and_poll(
+            &receiver,
+            &ValidatedPollRequest {
+                max_events: 1,
+                ..poll.clone()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(first_page.events.len(), 1);
+    assert!(first_page.more_available);
+    let batch = ValidatedPollRequest {
+        ack: vec![
+            acknowledged,
+            expired,
+            before_receiver,
+            foreign,
+            Uuid::now_v7(),
+        ],
+        set_errors: BTreeMap::from([(
+            failed,
+            SetError {
+                err: "jwtClaims".to_owned(),
+                description: "invalid claims".to_owned(),
+            },
+        )]),
+        ..poll.clone()
+    };
+    let page = store
+        .apply_dispositions_and_poll(&receiver, &batch)
+        .await
+        .unwrap();
+    assert_eq!(
+        page.events.iter().map(|event| event.id).collect::<Vec<_>>(),
+        pending
+    );
+    assert!(!page.more_available);
+    let other_page = store
+        .apply_dispositions_and_poll(&other_receiver, &poll)
+        .await
+        .unwrap();
+    assert_eq!(other_page.events.len(), 4);
+    let attempted_rewrite = ValidatedPollRequest {
+        ack: vec![failed],
+        set_errors: BTreeMap::from([(
+            acknowledged,
+            SetError {
+                err: "jwtClaims".to_owned(),
+                description: "must not overwrite acknowledgment".to_owned(),
+            },
+        )]),
+        ..poll
+    };
+    let replay_page = store
+        .apply_dispositions_and_poll(&receiver, &attempted_rewrite)
+        .await
+        .unwrap();
+    assert_eq!(
+        replay_page
+            .events
+            .iter()
+            .map(|event| event.id)
+            .collect::<Vec<_>>(),
+        pending
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    let receipts = sql_query(
+        "SELECT event_id, disposition, error_code, error_description \
+         FROM scim_security_event_receipts WHERE scim_token_id = $1 ORDER BY event_id",
+    )
+    .bind::<SqlUuid, _>(receiver.token_id)
+    .load::<ReceiptRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        receipts.len(),
+        2,
+        "ineligible events must never receive receipts"
+    );
+    let ack = receipts
+        .iter()
+        .find(|row| row.event_id == acknowledged)
+        .unwrap();
+    assert_eq!(ack.disposition, "acknowledged");
+    assert_eq!(ack.error_code, None);
+    assert_eq!(ack.error_description, None);
+    let error = receipts.iter().find(|row| row.event_id == failed).unwrap();
+    assert_eq!(error.disposition, "error");
+    assert_eq!(error.error_code.as_deref(), Some("jwtClaims"));
+    assert_eq!(error.error_description.as_deref(), Some("invalid claims"));
+
+    for id in [tenant_id, foreign_tenant_id] {
+        sql_query("DELETE FROM scim_tokens WHERE tenant_id = $1")
+            .bind::<SqlUuid, _>(id)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sql_query("DELETE FROM scim_security_events WHERE tenant_id = $1")
+            .bind::<SqlUuid, _>(id)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sql_query("DELETE FROM tenants WHERE id = $1")
+            .bind::<SqlUuid, _>(id)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    }
+}

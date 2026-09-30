@@ -8,8 +8,7 @@ contiguity, per-second CPU accounting, and post-run point health checks.
 This module carries the point-orchestration code that used to live in
 the one-shot A/B experiment drivers (prepared_rsa_ab, audit_batch_ab,
 group_commit_ab, token_audit_preflight_ab, residency_run). Those drivers
-are gone; the formal capacity/stability runner (pool_size_ab) is the
-sole consumer of what remains.
+are gone; pool_size_ab and the short current_capacity search reuse this lifecycle.
 """
 from __future__ import annotations
 
@@ -128,10 +127,10 @@ def _wire_hash_bytes(value) -> bytes | None:
 
 
 def db_chain_state() -> dict:
-    """security_audit_chain_state facts + outbox depth."""
+    """security_audit_chain_state facts + pending depth."""
     try:
         row = sis.psql(
-            "SELECT (SELECT count(*) FROM security_audit_event_outbox),"
+            "SELECT (SELECT count(*) FROM security_audit_events),"
             " last_sequence, encode(last_hash,'hex'),"
             " anchor_deployment_id, anchor_sequence,"
             " encode(anchor_hash,'hex')"
@@ -292,14 +291,15 @@ def journal_event_counts(run_id: str, deployment: str,
 
 def reconcile_audit_state(pre: dict, post: dict, point_name: str,
                           expected_issuances: int | None,
-                          journal: dict | None) -> dict:
+                          journal: dict | None, *, allow_empty_prefix: bool = False) -> dict:
     """Two-sided persisted-prefix check for one point.
 
     Passes only when ALL hold:
       pending == 0; DB last==anchor (sequence AND hash); receiver
       checkpoint sequence/hash equal the DB anchor; receiver and DB
       deployment identity match the run deployment; receiver fault none;
-      the receiver checkpoint advanced across the load; the receiver
+      the receiver checkpoint advanced across the load (or retained the
+      same sequence and hash for an explicitly audit-free PAR workload); the receiver
       journal is readable, carries only this deployment, has a contiguous
       non-duplicated sequence range matching the checkpoint delta and the
       receiver's own accepted_events increment.
@@ -347,9 +347,15 @@ def reconcile_audit_state(pre: dict, post: dict, point_name: str,
     pre_ckpt = pre.get("receiver_checkpoint") or {}
     pre_seq = pre_ckpt.get("last_sequence")
     post_seq = ckpt.get("last_sequence")
-    checks["checkpoint_advanced"] = (
+    advanced = (
         isinstance(pre_seq, int) and isinstance(post_seq, int)
         and post_seq > pre_seq)
+    result["checkpoint_advanced"] = advanced
+    result["empty_prefix_allowed"] = allow_empty_prefix
+    checks["checkpoint_progress_valid"] = advanced or (
+        allow_empty_prefix and isinstance(pre_seq, int) and post_seq == pre_seq
+        and _wire_hash_bytes(pre_ckpt.get("last_hash")) is not None
+        and _wire_hash_bytes(pre_ckpt.get("last_hash")) == rcv_hash)
     delta = (post_seq - pre_seq
              if isinstance(pre_seq, int) and isinstance(post_seq, int)
              else None)
@@ -525,10 +531,13 @@ def stack_up_pinned(point: dict) -> dict:
     evidence["pin"] = {
         "app_exec_mode": "pinset-exec",
         "app_cpus": app_cpus,
-        "postgres": sis.pin_container(sis.POSTGRES, infra_cpus),
-        "valkey": sis.pin_container(sis.VALKEY, infra_cpus),
+        "postgres": sis.pin_container(sis.POSTGRES, sis.format_cpu_list(
+            point.get("postgres_cpus", point["infra_cpus"]))),
+        "valkey": sis.pin_container(sis.VALKEY, sis.format_cpu_list(
+            point.get("valkey_cpus", point["infra_cpus"]))),
         "keyset": sis.pin_container(sis.KEYSET, infra_cpus),
-        "pg_verified": sis.verify_pin(sis.POSTGRES, infra_cpus),
+        "pg_verified": sis.verify_pin(sis.POSTGRES, sis.format_cpu_list(
+            point.get("postgres_cpus", point["infra_cpus"]))),
     }
     # Record the proc masks after exec-pinning for the thread/CPU evidence.
     evidence["pin"]["app"] = sis.pin_container(sis.APP, app_cpus)
@@ -670,6 +679,11 @@ def run_ab_point(point: dict) -> dict:
             sis._spend_load_budget(run_id, rec)
 
         rec["audit_drain"] = sis.audit_drain()
+        queue_path = out_dir / "perf-metrics-post-drain.json"
+        queue_schema = sis.app_perf_schema(out_path=queue_path)
+        queue_body = json.loads(queue_path.read_text()).get("response") or {}
+        rec["audit_queue_post_drain"] = dict(queue_body.get("audit_queue") or {})
+        rec["audit_queue_post_drain"]["collected"] = queue_schema["ok"]
         rec["audit_state_post"] = audit_state_snapshot(run_id)
         rec["audit_state_post"]["deployment_id"] = depid
 
@@ -809,11 +823,27 @@ def run_ab_point(point: dict) -> dict:
             and m.get("outcome_local_no_request") == 0
             and m.get("outcome_expected_rejection") == 0
             and m.get("outcome_prepare_failed") in (0, None)
+            and m.get("outcome_prepare_local_failed") in (0, None)
+            and m.get("outcome_prepare_sut_failed") in (0, None)
             and rec["load"].get("load_status") == "completed")
         expected = m.get("iterations_completed") if clean_run else None
         rec["audit_state_check"] = reconcile_audit_state(
             rec["audit_state_pre"], rec["audit_state_post"], run_id,
-            expected, rec["journal_stats"])
+            expected, rec["journal_stats"],
+            # Successful PAR stores the request in transient state; it does
+            # not emit an audit event. All two-sided reconciliation remains.
+            allow_empty_prefix=(point["scenario"] == "par_signed_request_object"
+                                and not point.get("sidecars")))
+        if point.get("capture_audit_journal"):
+            journal_path = out_dir / "audit-journal.jsonl"
+            sis.dc("cp", f"sis-rcv-{run_id}:/data/journal.jsonl", str(journal_path))
+            with journal_path.open("rb") as journal_file:
+                digest = hashlib.file_digest(journal_file, "sha256").hexdigest()
+            if digest != rec["journal_stats"].get("journal_sha256"):
+                raise RuntimeError("archived audit journal differs from reconciled journal")
+            rec["audit_journal_archive"] = {
+                "collected": True, "file": str(journal_path), "sha256": digest,
+                "bytes": journal_path.stat().st_size, "source_hash_match": True}
         rec["ok"] = True
     except Exception as e:  # noqa: BLE001 - evidence path
         rec["ok"] = False
@@ -1122,6 +1152,9 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
     checks = {
         "point_completed": rec.get("ok") is True,
         "unexpected_zero": m.get("outcome_unexpected") == 0,
+        "preparation_valid": (m.get("outcome_prepare_failed", 0) == 0
+                              and m.get("outcome_prepare_local_failed", 0) == 0),
+        "prepare_sut_zero": m.get("outcome_prepare_sut_failed", 0) == 0,
         "oom_none": m.get("oom_killed") is False,
         "no_restarts": m.get("restart_count") == 0,
         "queue_full_zero": scan.get("queue_full") == 0,
@@ -1138,7 +1171,7 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
         # issuance, so both classes must stay at zero. cap_mixed counts
         # protocol-correct bounded-family invalid_grant rejections and
         # dead-family local no-request exits by design, so the mixed gate
-        # only requires unexpected == 0.
+        # allows these outcomes diagnostically; neither is a success.
         checks["local_no_request_zero"] = (
             m.get("outcome_local_no_request") == 0)
         checks["expected_rejection_zero"] = (

@@ -1,0 +1,511 @@
+{
+  "run_id": "retry1-1790680409",
+  "scenario": "cap_mixed",
+  "window_s": 60.0,
+  "ops": {
+    "successful_ops_per_s": 400.0,
+    "outcome_success": 24000,
+    "op_p99_ms": 213.0,
+    "unexpected": 0
+  },
+  "identity": {
+    "runtime_role": "nazoauth_perf_runtime",
+    "observer_sha256": "7500fd6e85f4c62372ef950a87dd569c668f60dc044560b5f2f5dccf707b1b18",
+    "interval_s": 0.25,
+    "role_checks_in_window": [
+      {
+        "kind": "role_check",
+        "ts": 1790680507.9773936,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680517.9799786,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680527.9943056,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680537.9897408,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680547.9959743,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      },
+      {
+        "kind": "role_check",
+        "ts": 1790680557.9999425,
+        "roles": [
+          [
+            "nazoauth_perf_runtime",
+            32
+          ],
+          [
+            "nazoauth_perf_exporter",
+            1
+          ],
+          [
+            "postgres",
+            1
+          ]
+        ]
+      }
+    ]
+  },
+  "validity": {
+    "samples": 240,
+    "valid": 238,
+    "valid_ratio": 0.9917,
+    "invalid_reasons": {
+      "negative_idle_estimate": 2
+    }
+  },
+  "pool": {
+    "size": {
+      "n": 238,
+      "mean": 32.0,
+      "median": 32.0,
+      "p95": 32,
+      "max": 32
+    },
+    "checked_out": {
+      "n": 238,
+      "mean": 12.521,
+      "median": 11.0,
+      "p95": 32,
+      "max": 32
+    },
+    "waiting_acquisitions": {
+      "n": 238,
+      "mean": 0.5336,
+      "median": 0.0,
+      "p95": 2,
+      "max": 33
+    }
+  },
+  "runtime_state": {
+    "active": {
+      "n": 238,
+      "mean": 2.8193,
+      "median": 3.0,
+      "p95": 7,
+      "max": 17
+    },
+    "idle_in_transaction": {
+      "n": 238,
+      "mean": 4.4622,
+      "median": 3.0,
+      "p95": 15,
+      "max": 23
+    },
+    "pg_idle": {
+      "n": 238,
+      "mean": 24.7185,
+      "median": 26.0,
+      "p95": 31,
+      "max": 32
+    },
+    "other": {
+      "n": 238,
+      "mean": 0.0,
+      "median": 0.0,
+      "p95": 0,
+      "max": 0
+    },
+    "checked_out_pg_idle_estimate": {
+      "n": 238,
+      "mean": 5.2395,
+      "median": 4.0,
+      "p95": 14,
+      "max": 19
+    }
+  },
+  "shares_of_checked_out_mean": {
+    "active": 0.2252,
+    "idle_in_transaction": 0.3564,
+    "checked_out_pg_idle": 0.4185
+  },
+  "idle_in_tx": {
+    "age_clock": "postgres_clock_timestamp",
+    "weighting": "sampled_idle_age_not_cumulative_residence",
+    "samples": 1062,
+    "histogram_count": {
+      "<1ms": 411,
+      "1-5ms": 548,
+      "5-20ms": 81,
+      "20-100ms": 22,
+      "100-500ms": 0,
+      "500ms-1s": 0,
+      ">=1s": 0
+    },
+    "time_weighted_share": {
+      "<1ms": 0.0912,
+      "1-5ms": 0.4384,
+      "5-20ms": 0.2659,
+      "20-100ms": 0.2046,
+      "100-500ms": 0.0,
+      "500ms-1s": 0.0,
+      ">=1s": 0.0
+    },
+    "by_class": {
+      "other": {
+        "count": 261,
+        "time_share": 0.2534,
+        "p50": 1.3058185577392578,
+        "p95": 13.508081436157227,
+        "max": 28.224,
+        "queries": [
+          "-6441974452854201730",
+          "275221827254537758",
+          "466848607471580836"
+        ],
+        "examples": [
+          "SELECT is_active, access_token_epoch FROM users WHERE tenant_id = $1 AND id = $2 FOR SHARE",
+          "SELECT pg_advisory_xact_lock($1)",
+          "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)"
+        ]
+      },
+      "audit_append": {
+        "count": 184,
+        "time_share": 0.1811,
+        "p50": 1.222848892211914,
+        "p95": 13.664007186889648,
+        "max": 37.492,
+        "queries": [
+          "7937354421020446243"
+        ],
+        "examples": [
+          "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+        ]
+      },
+      "client": {
+        "count": 147,
+        "time_share": 0.155,
+        "p50": 1.463174819946289,
+        "p95": 13.933181762695312,
+        "max": 37.616,
+        "queries": [
+          "1377802349626556515"
+        ],
+        "examples": [
+          "SELECT is_active, access_token_epoch FROM oauth_clients WHERE tenant_id = $1 AND id = $2 FOR SHARE"
+        ]
+      },
+      "set_local": {
+        "count": 168,
+        "time_share": 0.1446,
+        "p50": 1.3298988342285156,
+        "p95": 8.709907531738281,
+        "max": 24.561,
+        "queries": [
+          "-1708461756726018533"
+        ],
+        "examples": [
+          "SET LOCAL lock_timeout = $1"
+        ]
+      },
+      "refresh_family": {
+        "count": 118,
+        "time_share": 0.1009,
+        "p50": 1.2538433074951172,
+        "p95": 5.727052688598633,
+        "max": 37.556,
+        "queries": [
+          "-4627606135148110578",
+          "-4859543494755560605",
+          "3059364362978693673",
+          "8718669233736325932",
+          "988688075674336999"
+        ],
+        "examples": [
+          "DELETE FROM \"oauth_refresh_families\" WHERE (((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\"",
+          "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"curren",
+          "SELECT \"oauth_refresh_families\".\"tenant_id\", \"oauth_refresh_families\".\"token_family_id\", \"oauth_refresh_families\".\"clien",
+          "UPDATE \"oauth_refresh_families\" SET \"current_member_id\" = $1, \"current_token_blake3\" = $2, \"current_audience\" = $3, \"cur",
+          "WITH ranked AS ( SELECT token_family_id, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn,"
+        ]
+      },
+      "begin_commit": {
+        "count": 95,
+        "time_share": 0.0783,
+        "p50": 1.4438629150390625,
+        "p95": 6.492137908935547,
+        "max": 20.061,
+        "queries": [
+          "4854991825702068830"
+        ],
+        "examples": [
+          "BEGIN"
+        ]
+      },
+      "refresh_spent": {
+        "count": 63,
+        "time_share": 0.0583,
+        "p50": 1.722097396850586,
+        "p95": 13.898134231567383,
+        "max": 23.147,
+        "queries": [
+          "-11707619807080382",
+          "-5288884251522700385"
+        ],
+        "examples": [
+          "DELETE FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND token_family_id = $2 AND member_id NOT IN ( SELECT membe",
+          "INSERT INTO \"oauth_refresh_spent_tokens\" (\"tenant_id\", \"refresh_token_blake3\", \"token_family_id\", \"member_id\", \"successo"
+        ]
+      },
+      "issuance_insert": {
+        "count": 26,
+        "time_share": 0.0284,
+        "p50": 1.561880111694336,
+        "p95": 22.470951080322266,
+        "max": 22.471,
+        "queries": [
+          "-4153571118784439691"
+        ],
+        "examples": [
+          "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, "
+        ]
+      }
+    }
+  },
+  "active_wait": {
+    "by_wait_event": {
+      "no_wait:-": 243,
+      "LWLock:WALWrite": 168,
+      "Client:ClientRead": 133,
+      "IO:WalSync": 115,
+      "Lock:advisory": 8,
+      "IO:WalWrite": 2,
+      "LWLock:BufferContent": 2
+    },
+    "by_query_class": {
+      "begin_commit": 193,
+      "client": 132,
+      "other": 122,
+      "audit_append": 98,
+      "unknown": 71,
+      "refresh_family": 30,
+      "refresh_spent": 18,
+      "audit_fn": 3,
+      "issuance_insert": 2,
+      "set_local": 2
+    }
+  },
+  "lock_blocks": [
+    {
+      "ts": 1790680519.7258754,
+      "blocks": {
+        "457": []
+      }
+    },
+    {
+      "ts": 1790680521.4764788,
+      "blocks": {
+        "424": [
+          {
+            "pid": 452,
+            "qid": -4627606135148110578,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680527.4797716,
+      "blocks": {
+        "446": [
+          {
+            "pid": 454,
+            "qid": 988688075674336999,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680528.2310584,
+      "blocks": {
+        "424": [
+          {
+            "pid": 454,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680533.2327425,
+      "blocks": {
+        "428": []
+      }
+    },
+    {
+      "ts": 1790680538.9846854,
+      "blocks": {
+        "430": [
+          {
+            "pid": 449,
+            "qid": -4627606135148110578,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680551.7405534,
+      "blocks": {
+        "442": [
+          {
+            "pid": 428,
+            "qid": 6097083398544187049,
+            "state": "active",
+            "wet": "LWLock",
+            "we": "WALWrite"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1790680553.7420826,
+      "blocks": {
+        "429": [
+          {
+            "pid": 457,
+            "qid": 7937354421020446243,
+            "state": "idle in transaction",
+            "wet": "Client",
+            "we": "ClientRead"
+          }
+        ]
+      }
+    }
+  ],
+  "waiting_conditioned": {
+    "p_waiting_gt0": 0.0672,
+    "p_checked_out_full_given_waiting": 1.0,
+    "active_given_waiting": {
+      "n": 16,
+      "mean": 3.125,
+      "median": 3.0,
+      "p95": 5,
+      "max": 5
+    },
+    "idle_in_tx_given_waiting": {
+      "n": 16,
+      "mean": 15.5625,
+      "median": 15.5,
+      "p95": 23,
+      "max": 23
+    },
+    "pg_idle_est_given_waiting": {
+      "n": 16,
+      "mean": 13.3125,
+      "median": 13.0,
+      "p95": 19,
+      "max": 19
+    }
+  },
+  "littles_law": {
+    "acquire_rate_per_s": 2476.43,
+    "mean_checked_out": 12.521,
+    "implied_residency_ms": 5.056
+  },
+  "observer": {
+    "samples_in_window": 240,
+    "sample_span_ms": {
+      "n": 240,
+      "mean": 4.2792,
+      "median": 3.176,
+      "p95": 10.682,
+      "max": 24.65
+    },
+    "self_cpu": {
+      "utime_delta_s": 0.361,
+      "stime_delta_s": 0.111
+    },
+    "errors": {
+      "app_err": 0,
+      "pg_err": 0
+    }
+  }
+}

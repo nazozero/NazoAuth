@@ -1,0 +1,105 @@
+{
+  "calibration_scale": 1.0,
+  "calibration_source": {
+    "main_vu": "ceil(3200 * 0.250 * 2) = 1600 for final cap; rate-specific pilot VUs use same formula",
+    "pool_size": "reused same-CNB verified pool90",
+    "sidecar_p99_data": "not present as complete-iteration metric in historical summaries; prescribed proportional fallback",
+    "sidecar_vu": "ceil(target rate * last verified preallocated VUs / last verified sidecar rate)",
+    "users_vectors": "existing profile rule users=max(64,ceil(main_cap/8)); vectors=max(1000,24*main_cap)"
+  },
+  "main_vu_cap": 1600,
+  "memory_evidence_note": "No new task-owned aggregate generator-memory peak available before pilot; collect per-container memory/OOM if visible.",
+  "multi": {
+    "abba_rate": 3200,
+    "sidecars": [
+      {
+        "duration": "120s",
+        "max_vus": 16,
+        "name": "argon2",
+        "pre_vus": 16,
+        "rate": 8,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 200
+      },
+      {
+        "duration": "120s",
+        "max_vus": 33,
+        "name": "meta",
+        "pre_vus": 33,
+        "rate": 200,
+        "scenario": "metadata_jwks",
+        "user_count": 200
+      },
+      {
+        "duration": "120s",
+        "max_vus": 66,
+        "name": "fapi",
+        "pre_vus": 66,
+        "rate": 30,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 200
+      },
+      {
+        "duration": "120s",
+        "max_vus": 258,
+        "name": "refresh",
+        "pre_vus": 258,
+        "rate": 600,
+        "scenario": "cap_refresh_token",
+        "user_count": 200
+      }
+    ],
+    "start_rate": 3200
+  },
+  "pilot_peak_bytes": null,
+  "pilot_peak_bytes_status": "UNMEASURED_ESTIMATE",
+  "pilot_total_vus": 1973,
+  "pool_size": 90,
+  "sidecar_source_profile_sha256": "d00ecf53ce2ec9f825a3616fbcdd60c2f6c8e0d4518265b03a11b98b591e3723",
+  "single": {
+    "abba_rate": 3200,
+    "sidecars": [
+      {
+        "duration": "120s",
+        "max_vus": 16,
+        "name": "argon2",
+        "pre_vus": 16,
+        "rate": 8,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 200
+      },
+      {
+        "duration": "120s",
+        "max_vus": 33,
+        "name": "meta",
+        "pre_vus": 33,
+        "rate": 200,
+        "scenario": "metadata_jwks",
+        "user_count": 200
+      },
+      {
+        "duration": "120s",
+        "max_vus": 66,
+        "name": "fapi",
+        "pre_vus": 66,
+        "rate": 30,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 200
+      },
+      {
+        "duration": "120s",
+        "max_vus": 258,
+        "name": "refresh",
+        "pre_vus": 258,
+        "rate": 600,
+        "scenario": "cap_refresh_token",
+        "user_count": 200
+      }
+    ],
+    "start_rate": 3200
+  },
+  "stage": "calibrated-fixed",
+  "total_vu_budget": 1973,
+  "user_count": 200,
+  "vector_count": 38400
+}

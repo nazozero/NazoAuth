@@ -66,6 +66,7 @@ pub(crate) async fn token_client_credentials(
             &service,
             &authorization_service,
             &TokenIssuanceContext {
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization_service,
@@ -357,13 +358,13 @@ async fn token_client_credentials_requires_configured_sender_constraints() {
 }
 
 #[actix_web::test]
-async fn token_client_credentials_binds_mtls_thumbprint_from_verified_certificate() {
+async fn token_client_credentials_accepts_verified_mtls_then_fails_closed_without_principal_store()
+{
     let mut state = client_credentials_state();
     let mut settings = (*state.settings).clone();
     settings.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
     state.settings = Arc::new(settings);
-    state.keyset = crate::test_support::failing_key_manager();
     let state = Data::new(state);
     let mut client = client();
     client.require_mtls_bound_tokens = true;
@@ -377,10 +378,28 @@ async fn token_client_credentials_binds_mtls_thumbprint_from_verified_certificat
         .insert_header(("client-cert", certificate.header.as_str()))
         .to_http_request();
 
+    let facts =
+        crate::http::token::issue::test_support::token_request_facts(&req, state.settings.as_ref());
+    assert_eq!(
+        facts
+            .certificate
+            .as_ref()
+            .and_then(|value| value.thumbprint.as_deref()),
+        Some(certificate.thumbprint.as_str())
+    );
+    // The fixture deliberately has no database. Valid mTLS passes the
+    // sender check, then the pre-signing principal read fails closed.
     let response = token_client_credentials(&state, &req, &client, &form(None, &[]), None).await;
 
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(oauth_error_code(response).await, "server_error");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["error"], "server_error");
+    // The OAuth presenter replaces non-ASCII internal descriptions with its
+    // RFC-compatible public fallback; the HTTP body must keep that contract.
+    assert_eq!(body["error_description"], "Request failed.");
 
     let retry_request = TestRequest::post()
         .uri("/token")
@@ -393,11 +412,16 @@ async fn token_client_credentials_binds_mtls_thumbprint_from_verified_certificat
         .to_http_request();
     // Generic Idempotency-Key replay handling was removed: the header is
     // ignored and a retry is an ordinary fresh request, so it hits the same
-    // signing failure.
+    // principal-store failure.
     let retry_response =
         token_client_credentials(&state, &retry_request, &client, &form(None, &[]), None).await;
-    assert_eq!(retry_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(oauth_error_code(retry_response).await, "server_error");
+    assert_eq!(retry_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = actix_web::body::to_bytes(retry_response.into_body())
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["error"], "server_error");
+    assert_eq!(body["error_description"], "Request failed.");
 }
 
 #[actix_web::test]

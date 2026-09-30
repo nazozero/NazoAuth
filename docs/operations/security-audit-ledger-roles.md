@@ -30,8 +30,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON TABLE
     public.security_audit_chain_state,
     public.security_audit_events,
-    public.security_audit_chain_entries,
-    public.security_audit_event_outbox
+    public.security_audit_chain_entries
 FROM nazoauth_audit_writer, nazoauth_audit_exporter;
 GRANT USAGE ON SCHEMA public TO nazoauth_audit_writer, nazoauth_audit_exporter;
 ```
@@ -44,7 +43,8 @@ the strict preflight reports effective privileges, not just direct grants.
 ## Function grants
 
 Grant only the capability required by each process. The writer persists event
-facts and their outbox entry atomically; the exporter owns chain assignment:
+facts atomically — the event row is the pending-delivery identity until the
+acknowledgement deletes it; the exporter owns chain assignment:
 
 ```sql
 GRANT EXECUTE ON FUNCTION
@@ -82,8 +82,8 @@ exporter grant: unblocking a permanently rejected batch is an owner/operator
 action after the receiver contract is reconciled.
 
 `public.nazo_ack_security_audit_batch(...)` is the only permitted delete path
-on the ledger tables: it removes the delivered outbox, chain-entry, and event
-rows inside the acknowledgement transaction, gated by a transaction-local
+on the ledger tables: it removes the delivered chain-entry and event rows
+inside the acknowledgement transaction, gated by a transaction-local
 permit. The `20260924000100_audit_delivery_scoped_retention` migration
 removed the earlier `security_audit_archive` copy and its sweeper function —
 the receiver is the sole durable audit history.
@@ -91,7 +91,7 @@ the receiver is the sole durable audit history.
 If one process intentionally performs both jobs, grant both function sets to
 one pre-created role and record that exception in the deployment inventory.
 Never grant `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, or
-`TRIGGER` on any of the four ledger tables to that combined role. Runtime login roles
+`TRIGGER` on any of the three ledger tables to that combined role. Runtime login roles
 must not be members of the migration owner, a superuser role, or any role that
 can acquire those privileges through `SET ROLE`.
 
@@ -166,3 +166,16 @@ Blocked batches (`batch_blocked_reason`) are operator-visible through
 `nazo_security_audit_shared_anchor_health()` and released only by the owner
 calling `nazo_unblock_security_audit_batch()` after the receiver contract is
 reconciled.
+
+## Pending-set cutover
+
+`20260927000100_audit_pending_event_set` removes the duplicated pending
+table: `security_audit_events` is the pending-delivery set itself, and the
+ordered `(occurred_at, event_id)` probe moves onto it. It is again a
+coordinated cutover: stop writers and exporters, back up, apply as the
+migration owner, then start the new binaries. The migration refuses to run
+when the mirrored pending sets diverge — it leaves the divergent state for
+reconciliation instead of deleting it; in-flight batches, the anchor, and
+the chain head carry over unchanged. Pending membership, oldest-pending age,
+and claim order are unchanged, so exporter health and drain verification now
+read `security_audit_events` directly.

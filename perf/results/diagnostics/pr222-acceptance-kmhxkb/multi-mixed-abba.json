@@ -1,0 +1,236 @@
+{
+  "task_revision": "163332e6b1249d0f330d7ad2a3901d15902fd3e2",
+  "stage": "multi_cap_mixed_abba",
+  "group_status": "NOT_PASS_SIDECAR_GATE",
+  "profile_sha256": "d00ecf53ce2ec9f825a3616fbcdd60c2f6c8e0d4518265b03a11b98b591e3723",
+  "configuration": {
+    "app_affinity_logical_cpu_count": 32,
+    "rate_successful_logical_ops_per_second": 1024,
+    "warmup_seconds": 120,
+    "measurement_seconds": 120,
+    "pool_size": 90,
+    "users": 64,
+    "vectors": 12288,
+    "sidecars": {
+      "argon2": {
+        "rate": 3,
+        "vus": 6
+      },
+      "meta": {
+        "rate": 68,
+        "vus": 11
+      },
+      "fapi": {
+        "rate": 10,
+        "vus": 22
+      },
+      "refresh": {
+        "rate": 205,
+        "vus": 88
+      }
+    }
+  },
+  "points": [
+    {
+      "name": "multi-mixed-a1",
+      "variant": "A",
+      "successful_ops_s": 1024.0,
+      "window_success": 122880,
+      "window_seconds": 120,
+      "http_requests_warmup_plus_measurement": 358310,
+      "p50_ms": 4.0,
+      "p95_ms": 21.0,
+      "p99_ms": 45.0,
+      "measurement_drops": 0,
+      "full_run_drops": 0,
+      "unexpected_errors": 0,
+      "main_gate": "PASS",
+      "sidecar_gate": "PASS",
+      "audit_verdict": "PASS",
+      "audit_events": 353823,
+      "audit_queue_enqueued": 41789,
+      "audit_queue_persisted": 41789,
+      "audit_queue_pending": 0,
+      "audit_queue_dropped": 0,
+      "journal_contiguous": true,
+      "journal_malformed": 0,
+      "journal_foreign_batches": 0,
+      "journal_gaps": 0,
+      "journal_duplicates": 0,
+      "sidecar_drops": {
+        "argon2": 0,
+        "meta": 0,
+        "fapi": 0,
+        "refresh": 0
+      },
+      "acceptance_sha256": "55dd806704782dd884fcf8dc6354dce8d71d28b7bf3028372bb2085fa32c9e8b",
+      "point_sha256": "8230cf415ab0c6b584e104658600ac9aa58c53a76f6e88debaae660588018578",
+      "latency_metric": "point.json metrics iter_pXX_ms (full logical iteration)"
+    },
+    {
+      "name": "multi-mixed-b1",
+      "variant": "B",
+      "successful_ops_s": 1024.0,
+      "window_success": 122880,
+      "window_seconds": 120,
+      "http_requests_warmup_plus_measurement": 357298,
+      "p50_ms": 4.0,
+      "p95_ms": 18.0,
+      "p99_ms": 27.0,
+      "measurement_drops": 0,
+      "full_run_drops": 666,
+      "unexpected_errors": 0,
+      "main_gate": "PASS",
+      "sidecar_gate": "NOT_PASS",
+      "audit_verdict": "PASS",
+      "audit_events": 352872,
+      "audit_queue_enqueued": 41665,
+      "audit_queue_persisted": 41665,
+      "audit_queue_pending": 0,
+      "audit_queue_dropped": 0,
+      "journal_contiguous": true,
+      "journal_malformed": 0,
+      "journal_foreign_batches": 0,
+      "journal_gaps": 0,
+      "journal_duplicates": 0,
+      "sidecars": {
+        "argon2": {
+          "status": "target_miss",
+          "full_run_drops": 3,
+          "exit": 0,
+          "natural": true,
+          "terminal_summary": true
+        },
+        "meta": {
+          "status": "passed",
+          "full_run_drops": 0,
+          "exit": 0,
+          "natural": true,
+          "terminal_summary": true
+        },
+        "fapi": {
+          "status": "target_miss",
+          "full_run_drops": 1,
+          "exit": 0,
+          "natural": true,
+          "terminal_summary": true
+        },
+        "refresh": {
+          "status": "target_miss",
+          "full_run_drops": 204,
+          "exit": 0,
+          "natural": true,
+          "terminal_summary": true,
+          "measurement_successful_ops_s": 205.0,
+          "measurement_p95_ms": 10.0,
+          "measurement_p99_ms": 22.0,
+          "measurement_drops": 0,
+          "measurement_errors": 0
+        }
+      },
+      "acceptance_sha256": "376e428d70d06315a1f252288f0f08a4d6736e360fdb20c946d468849a4259c4",
+      "point_sha256": "b0ef8a61dab3d5535e0a4507fd26a654675dbb3e7ee52dc3fa65b4925be573c8",
+      "latency_metric": "point.json metrics iter_pXX_ms (full logical iteration)"
+    },
+    {
+      "name": "multi-mixed-b2",
+      "variant": "B",
+      "successful_ops_s": 1024.0,
+      "window_success": 122880,
+      "window_seconds": 120,
+      "http_requests_warmup_plus_measurement": 358086,
+      "p50_ms": 4.0,
+      "p95_ms": 17.0,
+      "p99_ms": 35.0,
+      "measurement_drops": 0,
+      "full_run_drops": 0,
+      "unexpected_errors": 0,
+      "main_gate": "PASS",
+      "sidecar_gate": "PASS",
+      "audit_verdict": "PASS",
+      "audit_events": 353663,
+      "audit_queue_enqueued": 41719,
+      "audit_queue_persisted": 41719,
+      "audit_queue_pending": 0,
+      "audit_queue_dropped": 0,
+      "journal_contiguous": true,
+      "journal_malformed": 0,
+      "journal_foreign_batches": 0,
+      "journal_gaps": 0,
+      "journal_duplicates": 0,
+      "sidecar_drops": {
+        "argon2": 0,
+        "meta": 0,
+        "fapi": 0,
+        "refresh": 0
+      },
+      "refresh_measurement": {
+        "successful_ops_s": 205.0,
+        "p95_ms": 10.0,
+        "p99_ms": 28.0,
+        "drops": 0,
+        "errors": 0
+      },
+      "acceptance_sha256": "699453371527c666140f58eee992d91cb7ba4ef84dcc166801ce240eb4307d38",
+      "point_sha256": "60f66f6412b1c4517f09f9407ebb6f65f51f66a3374d381f970ab3beb7aa7513",
+      "latency_metric": "point.json metrics iter_pXX_ms (full logical iteration)"
+    },
+    {
+      "name": "multi-mixed-a2",
+      "variant": "A",
+      "successful_ops_s": 1024.0,
+      "window_success": 122880,
+      "window_seconds": 120,
+      "http_requests_warmup_plus_measurement": 357874,
+      "p50_ms": 4.0,
+      "p95_ms": 20.0,
+      "p99_ms": 45.0,
+      "measurement_drops": 0,
+      "full_run_drops": 0,
+      "unexpected_errors": 0,
+      "main_gate": "PASS",
+      "sidecar_gate": "PASS",
+      "audit_verdict": "PASS",
+      "audit_events": 353351,
+      "audit_queue_enqueued": 41644,
+      "audit_queue_persisted": 41644,
+      "audit_queue_pending": 0,
+      "audit_queue_dropped": 0,
+      "journal_contiguous": true,
+      "journal_malformed": 0,
+      "journal_foreign_batches": 0,
+      "journal_gaps": 0,
+      "journal_duplicates": 0,
+      "sidecar_drops": {
+        "argon2": 0,
+        "meta": 0,
+        "fapi": 0,
+        "refresh": 0
+      },
+      "refresh_measurement": {
+        "successful_ops_s": 205.0,
+        "p95_ms": 12.0,
+        "p99_ms": 36.0,
+        "drops": 0,
+        "errors": 0
+      },
+      "acceptance_sha256": "33560e4e8a0cc2f625be2cefda39bb66afe63e366462b74811c17958c2753522",
+      "point_sha256": "a050f7502876da2da2a928fdbb55e2b9b5e008176239b273dda8da69c399a9b8",
+      "latency_metric": "point.json metrics iter_pXX_ms (full logical iteration)"
+    }
+  ],
+  "steady_common_A": {
+    "point": "steady-common-a",
+    "rate": 1024,
+    "warmup_seconds": 120,
+    "measurement_seconds": 1800,
+    "status": "RUNNING",
+    "raw_evidence_root": "/tmp/pr222-acceptance-kMhxkB/results/acceptance/steady-common-a"
+  },
+  "p99_policy": "per_run_only_no_cross_run_averaging",
+  "percentile_source": "point.json metrics iter_p50_ms/iter_p95_ms/iter_p99_ms; full logical iteration; per-run, never averaged",
+  "acceptance_percentiles_note": "acceptance.json capacity_metrics pXX fields are retained in raw evidence but are not reported as full-iteration latency",
+  "status": "NOT_PASS_SIDECAR_GATE",
+  "main_load_status": "PASS",
+  "completed_at_utc": "2026-09-27T03:09:00Z"
+}

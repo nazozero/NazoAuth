@@ -1,0 +1,5 @@
+PR #222 A3000 rerun evidence. Fixed production A=0c70d7464576138af0b3f8a39530d6615ee7a363, shared harness H=462626b29be202c04f2e4482ade6ab5f5f6267c5, diagnostic patch dc72cf469a2c5465cbb8a8185e0cff7d9999ad96.
+
+The point ran to completion with runner exit 0, but is INVALID_TOOLING: the remote Docker output path did not yield the required main and sidecar summary JSON files. Therefore complete-iteration P95/P99, successful logical throughput, 1800 s gate, refresh gate, sidecar timing and mature issuance gate are not reported as passing or failing business outcomes. Runner log summaries are included only as diagnostics in the public summary.
+
+WAL snapshots and strict PGSS identity counts are retained as sanitized aggregates over their actual broad timestamps. They include setup, warmup, load and drain and are not relabeled as the 1800 s window. PGSS SQL text, raw k6/request logs, raw sampler rows, ledgers, audit journals, credentials and DSNs are excluded. The raw sampler evidence remains in the CNB task directory; only SHA-256 values are published here.

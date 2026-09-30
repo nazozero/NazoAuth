@@ -1,0 +1,14 @@
+{
+  "gate": "INVALID",
+  "reason": "required k6 summary and sidecar timing evidence are missing",
+  "summary_present": false,
+  "acceptance_sidecar_status": "MISSING_SUMMARY",
+  "runner_log_diagnostic": {
+    "scenario": "cap_refresh_token",
+    "status": "passed",
+    "runner_reported_rps": 600.528,
+    "runner_reported_p95_ms": 13.041,
+    "runner_reported_errors": 0.0,
+    "runner_reported_db_calls": 177597396
+  }
+}

@@ -12,6 +12,8 @@ async fn access_rejects_signed_token_for_different_tenant_before_revocation_look
     let issued = issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: None,
+            user_epoch: None,
             issuer: &issuer.issuer,
             tenant_id: other_tenant,
             subject: &subject_string,
@@ -53,6 +55,8 @@ async fn access_rejects_signed_token_with_another_audience_before_state_access()
     let issued = issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: None,
+            user_epoch: None,
             issuer: &issuer.issuer,
             tenant_id: issuer.tenant_id,
             subject: &subject_string,
@@ -94,6 +98,8 @@ async fn access_fails_closed_when_revocation_state_is_unavailable() {
     let issued = issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            client_epoch: None,
+            user_epoch: None,
             issuer: &issuer.issuer,
             tenant_id: issuer.tenant_id,
             subject: &subject_string,

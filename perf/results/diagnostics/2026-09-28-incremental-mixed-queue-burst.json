@@ -1,0 +1,316 @@
+{
+  "point": "multi-cap-mixed-r2610-w660-1790603691",
+  "scope": "Sampled resource evidence around synchronized FAPI and refresh VU warnings at 13:57:46 UTC; does not resolve between server burst and generator delivery pressure.",
+  "events": [
+    {
+      "ts": 1790603861,
+      "pool": {
+        "acq": 1759930,
+        "wait_ns": 1976139765699,
+        "wait_max_ns": 164370907,
+        "waiting": 0,
+        "size": 64,
+        "idle": 48
+      },
+      "pg": {
+        "backends": 74,
+        "active": 13,
+        "idle_in_tx": 7
+      },
+      "pg_waits": {
+        "Activity": 8,
+        "LWLock": 6,
+        "IO": 1,
+        "Client": 50
+      },
+      "audit": {
+        "pending": 242,
+        "chain_head": 407696,
+        "anchor": 407580
+      },
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 48482,
+        "pending_in_process": 3,
+        "persist_batch_events": 48479,
+        "persist_batches": 31986,
+        "persist_max_batch": 64,
+        "persisted": 48479
+      },
+      "checkpoints": {
+        "timed": 0,
+        "requested": 1,
+        "done": 0,
+        "write_time_ms": 10.0,
+        "sync_time_ms": 10.0,
+        "buffers_written": 943
+      }
+    },
+    {
+      "ts": 1790603864,
+      "pool": {
+        "acq": 1794427,
+        "wait_ns": 1976329806295,
+        "wait_max_ns": 164370907,
+        "waiting": 20,
+        "size": 64,
+        "idle": 0
+      },
+      "pg": {
+        "backends": 74,
+        "active": 12,
+        "idle_in_tx": 6
+      },
+      "pg_waits": {
+        "Activity": 8,
+        "LWLock": 64,
+        "IO": 1
+      },
+      "audit": {
+        "pending": 120,
+        "chain_head": 415840,
+        "anchor": 415840
+      },
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 49441,
+        "pending_in_process": 2,
+        "persist_batch_events": 49439,
+        "persist_batches": 32712,
+        "persist_max_batch": 64,
+        "persisted": 49439
+      },
+      "checkpoints": {
+        "timed": 0,
+        "requested": 1,
+        "done": 0,
+        "write_time_ms": 10.0,
+        "sync_time_ms": 10.0,
+        "buffers_written": 943
+      }
+    },
+    {
+      "ts": 1790603866,
+      "pool": {
+        "acq": 1822368,
+        "wait_ns": 2365764510084,
+        "wait_max_ns": 164370907,
+        "waiting": 1134,
+        "size": 64,
+        "idle": 0
+      },
+      "pg": {
+        "backends": 75,
+        "active": 66,
+        "idle_in_tx": 0
+      },
+      "pg_waits": {
+        "Activity": 7,
+        "LWLock": 63,
+        "Timeout": 1,
+        "IO": 1,
+        "Lock": 1,
+        "Client": 1
+      },
+      "audit": {
+        "pending": 719,
+        "chain_head": 421447,
+        "anchor": 421280
+      },
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 50101,
+        "pending_in_process": 50,
+        "persist_batch_events": 50051,
+        "persist_batches": 33138,
+        "persist_max_batch": 64,
+        "persisted": 50051
+      },
+      "checkpoints": {
+        "timed": 0,
+        "requested": 1,
+        "done": 0,
+        "write_time_ms": 10.0,
+        "sync_time_ms": 10.0,
+        "buffers_written": 943
+      }
+    },
+    {
+      "ts": 1790603868,
+      "pool": {
+        "acq": 1844799,
+        "wait_ns": 4578566667340,
+        "wait_max_ns": 269198991,
+        "waiting": 1268,
+        "size": 64,
+        "idle": 0
+      },
+      "pg": {
+        "backends": 75,
+        "active": 66,
+        "idle_in_tx": 0
+      },
+      "pg_waits": {
+        "Activity": 7,
+        "LWLock": 64,
+        "Timeout": 1,
+        "IO": 1,
+        "Client": 1
+      },
+      "audit": {
+        "pending": 4265,
+        "chain_head": 423239,
+        "anchor": 422983
+      },
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 50691,
+        "pending_in_process": 47,
+        "persist_batch_events": 50644,
+        "persist_batches": 33154,
+        "persist_max_batch": 64,
+        "persisted": 50644
+      },
+      "checkpoints": {
+        "timed": 0,
+        "requested": 1,
+        "done": 0,
+        "write_time_ms": 10.0,
+        "sync_time_ms": 10.0,
+        "buffers_written": 943
+      }
+    },
+    {
+      "ts": 1790603870,
+      "pool": {
+        "acq": 1878797,
+        "wait_ns": 5637733375264,
+        "wait_max_ns": 582737871,
+        "waiting": 0,
+        "size": 64,
+        "idle": 54
+      },
+      "pg": {
+        "backends": 75,
+        "active": 11,
+        "idle_in_tx": 8
+      },
+      "pg_waits": {
+        "Activity": 8,
+        "Timeout": 1,
+        "IO": 1,
+        "Client": 58
+      },
+      "audit": {
+        "pending": 1107,
+        "chain_head": 435015,
+        "anchor": 435015
+      },
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 51763,
+        "pending_in_process": 0,
+        "persist_batch_events": 51763,
+        "persist_batches": 33558,
+        "persist_max_batch": 64,
+        "persisted": 51763
+      },
+      "checkpoints": {
+        "timed": 0,
+        "requested": 1,
+        "done": 0,
+        "write_time_ms": 10.0,
+        "sync_time_ms": 10.0,
+        "buffers_written": 943
+      }
+    },
+    {
+      "ts": 1790603872,
+      "pool": {
+        "acq": 1912330,
+        "wait_ns": 5638046056778,
+        "wait_max_ns": 582737871,
+        "waiting": 0,
+        "size": 64,
+        "idle": 41
+      },
+      "pg": {
+        "backends": 75,
+        "active": 11,
+        "idle_in_tx": 6
+      },
+      "pg_waits": {
+        "Activity": 7,
+        "LWLock": 1,
+        "IO": 3,
+        "Client": 58
+      },
+      "audit": {
+        "pending": 104,
+        "chain_head": 444066,
+        "anchor": 443997
+      },
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 52679,
+        "pending_in_process": 3,
+        "persist_batch_events": 52676,
+        "persist_batches": 34240,
+        "persist_max_batch": 64,
+        "persisted": 52676
+      },
+      "checkpoints": {
+        "timed": 0,
+        "requested": 1,
+        "done": 0,
+        "write_time_ms": 10.0,
+        "sync_time_ms": 10.0,
+        "buffers_written": 943
+      }
+    },
+    {
+      "ts": 1790603874,
+      "pool": {
+        "acq": 1945675,
+        "wait_ns": 5638179607738,
+        "wait_max_ns": 582737871,
+        "waiting": 0,
+        "size": 64,
+        "idle": 45
+      },
+      "pg": {
+        "backends": 74,
+        "active": 30,
+        "idle_in_tx": 5
+      },
+      "pg_waits": {
+        "Activity": 8,
+        "LWLock": 13,
+        "IO": 1,
+        "Client": 43
+      },
+      "audit": {
+        "pending": 160,
+        "chain_head": 451944,
+        "anchor": 451822
+      },
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 53573,
+        "pending_in_process": 10,
+        "persist_batch_events": 53563,
+        "persist_batches": 34915,
+        "persist_max_batch": 64,
+        "persisted": 53563
+      },
+      "checkpoints": {
+        "timed": 0,
+        "requested": 1,
+        "done": 0,
+        "write_time_ms": 10.0,
+        "sync_time_ms": 10.0,
+        "buffers_written": 943
+      }
+    }
+  ]
+}

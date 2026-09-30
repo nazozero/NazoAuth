@@ -195,6 +195,7 @@ impl Openid4vciDatasetRepository {
         .await
         .optional()
         .map_err(|_| CredentialStoreError::Unavailable)?;
+        drop(connection);
         row.map(|row| {
             unprotect_dataset_claims(
                 &self.data_key,
@@ -227,7 +228,7 @@ impl Openid4vciDatasetRepository {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
-        sql_query(
+        let row = sql_query(
             "SELECT claims_ciphertext, valid_from, valid_until, updated_at
              FROM openid4vci_credential_datasets
              WHERE tenant_id = $1 AND subject_id = $2 AND credential_configuration_id = $3",
@@ -238,8 +239,9 @@ impl Openid4vciDatasetRepository {
         .get_result::<DatasetRow>(&mut connection)
         .await
         .optional()
-        .map_err(|_| CredentialStoreError::Unavailable)?
-        .map(|row| {
+        .map_err(|_| CredentialStoreError::Unavailable)?;
+        drop(connection);
+        row.map(|row| {
             Ok(ManagedCredentialDataset {
                 claims: unprotect_dataset_claims(
                     &self.data_key,

@@ -78,6 +78,7 @@ async fn issue_token_response_with_repository(
     client: &ClientRow,
     issue: TokenIssue,
     repository: std::sync::Arc<dyn TokenRepositoryPort>,
+    client_epoch: i64,
 ) -> HttpResponse {
     let service = ServerTokenService::from_port(
         repository,
@@ -91,6 +92,7 @@ async fn issue_token_response_with_repository(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                client_epoch,
                 config: &config,
                 modules: &state.active_module_snapshot(),
                 authorization: &authorization,
@@ -124,6 +126,7 @@ async fn issue_token_response_with_modules(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,
@@ -192,6 +195,7 @@ async fn issue_token_response_with_mode_and_modules_for_test(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,
@@ -278,6 +282,12 @@ pub(crate) async fn persist_consumed_single_use_grant_for_test(
     let issuance_id = Uuid::now_v7();
     let result = service
         .commit_token_issuance(CommitTokenIssuance {
+            principal_state: nazo_auth::TokenPrincipalState {
+                client_epoch: 0,
+                user_epoch: None,
+                subject_bound: false,
+            },
+            subject: "client".to_owned(),
             issuance_id,
             tenant_id: client.tenant_id,
             client_id: client.id,

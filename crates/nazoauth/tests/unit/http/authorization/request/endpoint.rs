@@ -2173,7 +2173,10 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
 
     let broken_state = Data::new(endpoint_state(false));
     let request = actix_web::test::TestRequest::get().to_http_request();
-    let mut parameters = query(&[("request_uri", "urn:ietf:params:oauth:request_uri:missing")]);
+    let mut parameters = query(&[
+        ("client_id", "client-1"),
+        ("request_uri", "urn:ietf:params:oauth:request_uri:missing"),
+    ]);
     let (status, body) =
         json_body(authorize_request(broken_state, request, &mut parameters).await).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);

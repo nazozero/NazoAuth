@@ -1386,7 +1386,8 @@ async fn par_persists_mtls_thumbprint_for_sender_constrained_request_uri() {
         .load_par(request_uri)
         .await
         .expect("PAR payload should be readable")
-        .expect("PAR payload should be persisted");
+        .expect("PAR payload should be persisted")
+        .payload;
     assert_eq!(
         stored.mtls_x5t_s256.as_deref(),
         Some(certificate.thumbprint.as_str()),
@@ -1461,7 +1462,8 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
         .load_par(request_uri)
         .await
         .expect("PAR payload should be readable")
-        .expect("PAR payload should be persisted");
+        .expect("PAR payload should be persisted")
+        .payload;
     assert!(
         !stored.params.contains_key("client_secret"),
         "PAR storage must not retain client authentication secret material"

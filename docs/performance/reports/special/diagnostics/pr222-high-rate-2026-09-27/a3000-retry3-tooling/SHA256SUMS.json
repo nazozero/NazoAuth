@@ -1,0 +1,17 @@
+[
+  {
+    "file": "README.md",
+    "sha256": "97cef006becaccc0f268241a43c780d49d79f1ac112c2df407b3d6b8dc365080",
+    "bytes": 485
+  },
+  {
+    "file": "task-local-tool-compat.patch",
+    "sha256": "e6849d96a53034dd5f5cff3ce5585df3f764d9f0cde14c1184b5d7dfa1ad227f",
+    "bytes": 17199
+  },
+  {
+    "file": "tool-compat-provenance.json",
+    "sha256": "2861f97a4640dfd2b85a05a3a0652b00ac0b1c86eaabcbe9c92a3da8491a3c05",
+    "bytes": 988
+  }
+]

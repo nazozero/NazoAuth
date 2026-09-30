@@ -114,6 +114,7 @@ pub(super) async fn build(
                             .openid4vc
                             .data_encryption_key
                             .expect("enabled OpenID4VCI requires a data encryption key"),
+                        Arc::new(LoginPasswordVerifier),
                     ),
                 )
             } else {
@@ -294,7 +295,7 @@ pub(super) async fn build(
         core.security_audit.clone(),
     ));
     let email_delivery =
-        SmtpVerificationEmailDelivery::from_delivery(&identity_settings.email.delivery);
+        SmtpVerificationEmailDelivery::from_delivery(&identity_settings.email.delivery)?;
     let registration = LocalRegistrationService::from_port(
         persistence.registration_accounts(),
         transient_state.email_verification(),
@@ -441,7 +442,7 @@ pub(super) async fn build(
         session.csrf_cookie_name.as_str(),
         session.session_ttl_seconds,
         session.cookie_secure,
-    ));
+    )?);
 
     Ok(IdentityServices {
         profile_logout_endpoint,

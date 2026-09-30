@@ -187,9 +187,12 @@ impl LiveOpenid4vcAdminFixture {
         .expect("runtime module fixture should build");
         let proof_validator = Openid4vcProofValidator::new(json!({"keys": []}))
             .expect("proof validator fixture should build");
-        let store: Arc<dyn nazo_persistence::Openid4vciStore> = Arc::new(
-            nazo_postgres::Openid4vciRepository::new(diesel_db.clone(), [0x51; 32]),
-        );
+        let store: Arc<dyn nazo_persistence::Openid4vciStore> =
+            Arc::new(nazo_postgres::Openid4vciRepository::new(
+                diesel_db.clone(),
+                [0x51; 32],
+                Arc::new(crate::bootstrap::LoginPasswordVerifier),
+            ));
         let users: Arc<dyn nazo_persistence::Openid4vcSubjectStore> =
             Arc::new(nazo_postgres::UserRepository::new(diesel_db.clone()));
         let datasets: Arc<dyn nazo_persistence::Openid4vciDatasetStore> = Arc::new(
@@ -362,9 +365,12 @@ impl LiveOpenid4vcAdminFixture {
         .expect("runtime module fixture should build");
         let proof_validator = Openid4vcProofValidator::new(json!({"keys": []}))
             .expect("proof validator fixture should build");
-        let store: Arc<dyn nazo_persistence::Openid4vciStore> = Arc::new(
-            nazo_postgres::Openid4vciRepository::new(self.state.diesel_db.clone(), [0x51; 32]),
-        );
+        let store: Arc<dyn nazo_persistence::Openid4vciStore> =
+            Arc::new(nazo_postgres::Openid4vciRepository::new(
+                self.state.diesel_db.clone(),
+                [0x51; 32],
+                Arc::new(crate::bootstrap::LoginPasswordVerifier),
+            ));
         let users: Arc<dyn nazo_persistence::Openid4vcSubjectStore> = Arc::new(
             nazo_postgres::UserRepository::new(self.state.diesel_db.clone()),
         );

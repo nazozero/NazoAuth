@@ -17,6 +17,9 @@
 #[allow(dead_code)]
 mod support;
 
+#[path = "support/password.rs"]
+mod password;
+
 use chrono::{DateTime, Duration, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
@@ -386,6 +389,14 @@ fn new_refresh_token(
 fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        principal_state: nazo_auth::TokenPrincipalState {
+            client_epoch: 0,
+            user_epoch: (token.user_id).map(|_| 0),
+            subject_bound: false,
+        },
+        subject: (token.user_id)
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "client".to_owned()),
         issuance_id,
         tenant_id: token.tenant_id,
         client_id: token.client_id,
@@ -515,11 +526,11 @@ async fn cleanup_seed(database_url: &str, tenant: TenantContext, seed: &Seed) {
 // RV-09: token revocation
 // ---------------------------------------------------------------------------
 
-/// RV-09 (access-token path): revoking one access-token JTI is a family lookup
-/// plus a single `INSERT .. ON CONFLICT` upsert — 2 data statements inside one
-/// transaction on one pooled connection.
+/// The mixed repository API preserves raw refresh priority even when the
+/// caller supplies an access-token JTI. Verified access-only requests use
+/// `revoke_issued_tokens` instead (covered below).
 #[tokio::test]
-async fn rv09_revoke_access_token_jti_is_lookup_plus_single_upsert() {
+async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -707,7 +718,7 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
     )
     .await;
 
-    let (client, salt) = result
+    let (client, salt, epoch) = result
         .expect("snapshot query should succeed")
         .expect("the seeded client must produce a snapshot");
     assert_eq!(client.client_id, seed.client.client_id);
@@ -716,6 +727,7 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
         Some(format!("qc-salt-{}", seed.client.id).as_str()),
         "the salt must be derived inside the same SELECT"
     );
+    assert_eq!(epoch, 0, "the client version is part of the same snapshot");
     // 1 data statement: SELECT oauth_clients row plus
     // split_part(client_secret_hash, ':', 2) as a computed column. No
     // transaction is opened for a read-only snapshot.
@@ -731,10 +743,9 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
 // ---------------------------------------------------------------------------
 
 /// RF-01: `commit_token_issuance` for an ordinary rotation issues every write
-/// inside one transaction on one connection. The rotated-from parent is
-/// updated with `UPDATE .. WHERE revoked_at IS NULL RETURNING
-/// oidc_auth_context` — the parent row is *not* loaded first; that removed
-/// SELECT is the remediation under test.
+/// inside one transaction on one connection. The family is read under its
+/// advisory lock to validate the current member and sender binding; rotation
+/// retains a bounded spent proof and updates the current member in place.
 #[tokio::test]
 async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     let _serial = SERIAL.lock().await;
@@ -794,21 +805,20 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         result.expect("rotation should commit"),
         CommitTokenIssuanceResult::Committed
     );
-    // 11 data statements inside the single commit transaction:
+    // 10 data statements inside the single commit transaction:
     //   SET LOCAL lock_timeout
     //   SELECT is_active FROM oauth_clients .. FOR SHARE
     //   SELECT is_active FROM users .. FOR SHARE          (user_id is Some)
-    //   INSERT INTO oauth_token_issuances                  (issuance fence)
     //   SELECT pg_advisory_xact_lock(grant scope)
     //   SELECT pg_advisory_xact_lock(family)
     //   SELECT oauth_refresh_families                      (current member check)
     //   INSERT INTO oauth_refresh_spent_tokens             (predecessor proof)
-    //   DELETE FROM oauth_refresh_spent_tokens .. LIMIT    (generation bound)
+    //   DELETE FROM oauth_refresh_spent_tokens .. OFFSET   (overflow proofs)
     //   UPDATE oauth_refresh_families SET current_*        (in-place rotation)
     //   SELECT nazo_persist_security_audit_event(..)       (token_issued)
     // Rotation writes one narrow family UPDATE plus one compact spent proof —
     // the immutable contract is never rewritten.
-    assert_eq!(delta.data_queries, 11);
+    assert_eq!(delta.data_queries, 10);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1, "the whole saga runs on one pooled checkout");
@@ -820,9 +830,8 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
 // RF-06: lost-response successor lookup
 // ---------------------------------------------------------------------------
 
-/// RF-06: `inspect_lost_response_successor` locates the non-compromised
-/// successor in one SELECT — the `NOT EXISTS` compromise guard is a subquery
-/// inside that same statement.
+/// RF-06: the spent edge, active direct-successor family and contract are read
+/// in one joined statement. Without sender binding recovery needs no checkout.
 #[tokio::test]
 async fn rf06_lost_response_successor_is_single_read() {
     let _serial = SERIAL.lock().await;
@@ -905,13 +914,32 @@ async fn rf06_lost_response_successor_is_single_read() {
         Some(child_id),
         "the seeded non-compromised child must be found"
     );
-    // 1 data statement: SELECT .. WHERE rotated_from_id = parent AND
-    // NOT EXISTS (compromised family member) — the compromise check lives in
-    // the same SQL statement as the successor predicates.
+    // One joined statement keeps the spent edge, current family and immutable
+    // contract in one snapshot, including the compromise and expiry predicates.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_eq!(acquires, 1);
     assert_clean(delta);
+    let mut unbound_parent = parent;
+    unbound_parent.dpop_jkt = None;
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.inspect_lost_response_successor(&unbound_parent, seed.client.id, Utc::now()),
+    )
+    .await;
+    assert!(
+        result
+            .expect("unbound presentations cannot recover successors")
+            .is_none()
+    );
+    assert_eq!(delta.data_queries, 0);
+    assert_no_transaction(delta);
+    assert_eq!(
+        acquires, 0,
+        "sender-binding rejection precedes pool acquisition"
+    );
+    assert_clean(delta);
+
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 
@@ -921,7 +949,7 @@ async fn rf06_lost_response_successor_is_single_read() {
 
 /// UI-01: `userinfo_snapshot` joins the subject row to the client row in a
 /// single SELECT for both subject reference kinds — direct user id, and
-/// access-token JTI resolved through an inner join to oauth_token_issuances.
+/// non-public subject resolved through its reusable identity binding.
 #[tokio::test]
 async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
     let _serial = SERIAL.lock().await;
@@ -938,6 +966,10 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
     {
         let mut connection = connect(&database_url).await;
         seed_token_issuance(&mut connection, tenant, &seed, &jti).await;
+        sql_query("INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, 'legacy-pairwise', $2) ON CONFLICT (tenant_id, subject) DO UPDATE SET user_id = EXCLUDED.user_id")
+            .bind::<diesel::sql_types::Uuid, _>(tenant_id)
+            .bind::<diesel::sql_types::Uuid, _>(seed.user_id)
+            .execute(&mut connection).await.expect("stable subject binding should seed");
     }
     let (pool, counter) = instrumented_pool(&database_url).await;
     let repository = TokenIssuanceRepository::new(pool);
@@ -964,13 +996,15 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
     assert_eq!(acquires, 1);
     assert_clean(delta);
 
-    // AccessTokenJti reference resolves through oauth_token_issuances in the
-    // same SELECT via an inner join.
+    // A stable subject binding resolves in the same SELECT via an inner join.
     let (result, delta, acquires) = measure(
         &counter,
         repository.userinfo_snapshot(
             tenant_id,
-            UserinfoSubjectRef::AccessTokenJti(jti.as_str()),
+            UserinfoSubjectRef::AccessToken {
+                subject: "legacy-pairwise",
+                jti: jti.as_str(),
+            },
             seed.client.client_id.as_str(),
         ),
     )
@@ -980,8 +1014,8 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
         .expect("the seeded issuance must produce a snapshot");
     assert_eq!(snapshot.subject.subject.as_uuid(), seed.user_id);
     assert!(snapshot.client.is_some());
-    // 1 data statement: SELECT users INNER JOIN oauth_token_issuances (jti
-    // + expiry horizon) LEFT JOIN oauth_clients — still one round trip.
+    // 1 data statement: SELECT users INNER JOIN oauth_subject_bindings
+    // LEFT JOIN oauth_clients — still one round trip.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_eq!(acquires, 1);
@@ -1053,7 +1087,11 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x51_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x51_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     // Fixture rows go through the production upsert/store on the instrumented
     // pool; the measurement baseline is taken after they complete.
@@ -1219,7 +1257,11 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x52_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x52_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     let token_hash = format!("qc-access-hash-{}", Uuid::now_v7());
     let access = CredentialAccess {
@@ -1273,7 +1315,11 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x53_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x53_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     let access = CredentialAccess {
         token_id: Uuid::now_v7(),

@@ -22,6 +22,7 @@ on:
       - "migrations/**"
       - "scripts/**/*.py"
       - "scripts/**/*.sh"
+      - "perf/**"
   pull_request:
     paths:
       - ".github/workflows/code-quality.yml"
@@ -42,6 +43,7 @@ on:
       - "migrations/**"
       - "scripts/**/*.py"
       - "scripts/**/*.sh"
+      - "perf/**"
   workflow_dispatch:
 
 permissions:
@@ -108,7 +110,6 @@ jobs:
       FEDERATION_SAML_GATEWAY_SECRET: ci-saml-gateway-secret-000000000000
       RUST_TEST_THREADS: "1"
       CARGO_TERM_COLOR: never
-      CARGO_BUILD_JOBS: "1"
       RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,6 +123,22 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: workspace-quality
+
+      - name: Budget build concurrency from runner resources
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          cpus = len(os.sched_getaffinity(0))
+          memory = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))) * 1024
+          limit = Path('/sys/fs/cgroup/memory.max')
+          if limit.exists() and limit.read_text().strip() != 'max':
+              memory = min(memory, int(limit.read_text()))
+          jobs = max(1, min(cpus, memory // (3 * 1024**3)))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'CARGO_BUILD_JOBS={jobs}\n')
+          print(f'available CPUs={cpus}, memory budget={memory}, cargo jobs={jobs}; shared-state test threads=1')
+          PY
 
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev postgresql-client
@@ -179,11 +196,12 @@ jobs:
 
       - name: Materialize the isolated CI schema through the persistence owner
         run: >-
-          cargo test --locked -p nazo-postgres --test migrations
+          cargo test --all-features --locked -p nazo-postgres --test migrations
           pending_migrations_create_all_runtime_module_state_tables
 
       - name: Test workspace with PostgreSQL and Valkey
-        run: cargo test --workspace --all-features --locked
+        # Stream test progress so an interrupted job retains its actual wait boundary.
+        run: cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture
 
   python-quality:
     name: Python script syntax gate
@@ -198,5 +216,20 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Install streaming evidence decoder
+        run: |
+          python -m pip install --only-binary=:all: orjson==3.12.0
+
       - name: Compile Python scripts
-        run: python -m compileall -q scripts
+        run: python -m compileall -q scripts perf
+
+      - name: Verify performance measurement and acceptance regressions
+        run: |
+          node --version
+          python -m unittest \
+            perf.tests.test_capacity_window perf.tests.test_capacity_producer \
+            perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \
+            perf.tests.test_pool_size_ab perf.tests.test_issuance_maintenance \
+            perf.tests.test_evidence_contract perf.tests.test_audit_reconciliation \
+            perf.tests.test_current_capacity perf.tests.test_short_baseline \
+            perf.tests.test_checkpoint_measurement.WindowContractTest

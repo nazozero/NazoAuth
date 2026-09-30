@@ -4,7 +4,8 @@
 //! batches (generic cleanup, refresh-token family reclaim and presentation
 //! cleanup inside the port) until the batch reports no saturated
 //! category, the catch-up budget is exhausted, or a failure occurs; then it
-//! waits the fixed interval. A failure is logged and the next interval runs;
+//! rests for the normal interval when drained, or for its elapsed work time
+//! when budget-limited. A failure is logged and the next interval runs;
 //! there is no fast retry loop and no leader election — PostgreSQL
 //! `SKIP LOCKED` plus the shared refresh-family advisory lock coordinate
 //! multiple server instances.
@@ -12,27 +13,42 @@ use nazo_persistence::SecurityStateMaintenancePort;
 use std::{sync::Arc, time::Duration as StdDuration};
 
 const MAINTENANCE_INTERVAL: StdDuration = StdDuration::from_secs(60);
-/// Wall-clock budget for draining backlog inside one cycle. The worker never
-/// spends more than this share of each interval reclaiming expired rows, so
-/// catch-up work cannot starve request traffic on the shared pool.
+/// Budget for scheduling successive batches. An in-flight bounded batch is
+/// allowed to finish. A saturated cycle rests for its actual elapsed time,
+/// leaving at least half of sustained catch-up time to request traffic.
 const CATCH_UP_BUDGET: StdDuration = StdDuration::from_secs(30);
-/// Belt bound on consecutive batches in one cycle; normally unreachable inside
-/// the wall-clock budget and guards against a pathological fast batch loop.
-const CATCH_UP_MAX_BATCHES: u32 = 512;
 
 pub(crate) fn spawn_security_state_maintenance_worker(
     maintenance: Arc<dyn SecurityStateMaintenancePort>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
-            let cycle_started = std::time::Instant::now();
-            let mut batches = 0_u32;
-            loop {
-                let started = std::time::Instant::now();
+            let cycle_started = tokio::time::Instant::now();
+            let mut batches = 0_u64;
+            let mut rows = 0_u64;
+            let mut issuances = 0_u64;
+            let (stop_reason, next_delay) = loop {
+                let started = tokio::time::Instant::now();
                 match maintenance.cleanup_batch().await {
                     Ok(counts) => {
                         batches += 1;
-                        tracing::info!(
+                        rows += counts.issuances
+                            + counts.refresh_tokens
+                            + counts.spent_refresh_proofs
+                            + counts.refresh_contracts
+                            + counts.revocations
+                            + counts.scim_audit_events
+                            + counts.logout_deliveries
+                            + counts.scim_security_events
+                            + counts.presentations
+                            + counts.credential_offers
+                            + counts.credential_nonces
+                            + counts.credential_access_grants
+                            + counts.deferred_credentials
+                            + counts.credential_notifications
+                            + counts.credential_responses;
+                        issuances += counts.issuances;
+                        tracing::debug!(
                             issuances = counts.issuances,
                             refresh_tokens = counts.refresh_tokens,
                             spent_refresh_proofs = counts.spent_refresh_proofs,
@@ -42,16 +58,23 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             logout_deliveries = counts.logout_deliveries,
                             scim_security_events = counts.scim_security_events,
                             presentations = counts.presentations,
+                            credential_offers = counts.credential_offers,
+                            credential_nonces = counts.credential_nonces,
+                            credential_access_grants = counts.credential_access_grants,
+                            deferred_credentials = counts.deferred_credentials,
+                            credential_notifications = counts.credential_notifications,
+                            credential_responses = counts.credential_responses,
                             saturated = counts.saturated,
                             batch = batches,
                             elapsed_ms = started.elapsed().as_millis() as u64,
                             "security-state maintenance batch completed"
                         );
-                        if !counts.saturated
-                            || batches >= CATCH_UP_MAX_BATCHES
-                            || cycle_started.elapsed() >= CATCH_UP_BUDGET
-                        {
-                            break;
+                        if !counts.saturated {
+                            break ("drained", MAINTENANCE_INTERVAL);
+                        }
+                        let elapsed = cycle_started.elapsed();
+                        if elapsed >= CATCH_UP_BUDGET {
+                            break ("budget_exhausted", elapsed);
                         }
                         // Cooperatively yield between batches so request tasks
                         // interleave; the next batch only runs while a previous
@@ -60,11 +83,20 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                     }
                     Err(error) => {
                         tracing::warn!(%error, "security-state maintenance batch failed");
-                        break;
+                        break ("error", MAINTENANCE_INTERVAL);
                     }
                 }
-            }
-            tokio::time::sleep(MAINTENANCE_INTERVAL).await;
+            };
+            tracing::info!(
+                stop_reason,
+                batches,
+                rows,
+                issuances,
+                elapsed_ms = cycle_started.elapsed().as_millis() as u64,
+                next_delay_ms = next_delay.as_millis() as u64,
+                "security-state maintenance cycle completed"
+            );
+            tokio::time::sleep(next_delay).await;
         }
     })
 }

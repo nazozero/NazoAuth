@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::email::normalize_email_address;
 use crate::ports::{
-    NewScimUser, PasswordHashInput, RepositoryError, ScimCredentialAuditPort, ScimCredentialUse,
-    ScimListQuery, ScimRepositoryPort, UserPage,
+    NewScimUser, PasswordHashInput, RepositoryError, ScimCredentialPort, ScimListQuery,
+    ScimRepositoryPort, UserPage,
 };
 use crate::{PublicAccount, TenantContext, UserId};
 
@@ -36,13 +36,13 @@ pub use query::{
 #[derive(Clone)]
 pub struct ScimService {
     repository: Arc<dyn ScimRepositoryPort>,
-    credentials: Arc<dyn ScimCredentialAuditPort>,
+    credentials: Arc<dyn ScimCredentialPort>,
 }
 
 impl ScimService {
     pub fn new(
         repository: Arc<dyn ScimRepositoryPort>,
-        credentials: Arc<dyn ScimCredentialAuditPort>,
+        credentials: Arc<dyn ScimCredentialPort>,
     ) -> Self {
         Self {
             repository,
@@ -190,13 +190,6 @@ impl ScimService {
         token_hash: &str,
     ) -> Result<Option<ScimTokenCredential>, RepositoryError> {
         self.credentials.active_credential(token_hash).await
-    }
-
-    pub async fn record_credential_use(
-        &self,
-        usage: ScimCredentialUse,
-    ) -> Result<(), RepositoryError> {
-        self.credentials.record_use(usage).await
     }
 }
 

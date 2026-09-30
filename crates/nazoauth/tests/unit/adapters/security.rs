@@ -270,6 +270,36 @@ fn dummy_password_hash_is_valid_and_never_matches_the_probe_password() {
 }
 
 #[tokio::test]
+async fn bootstrap_password_providers_reuse_the_prepared_unknown_secret_hash() {
+    use nazo_identity::ports::FederationPasswordHasherPort;
+    use nazo_oauth_server::contracts::scim::ScimBootstrapPasswordProvider;
+
+    let prepared = dummy_password_hash().expect("startup hash must initialize");
+    let scim = super::ServerScimBootstrapPasswordProvider
+        .password_hash()
+        .await
+        .unwrap()
+        .into_persistence_value();
+    let federation = crate::bootstrap::FederationBootstrapPasswordHasher
+        .hash_bootstrap_secret()
+        .await
+        .unwrap()
+        .into_persistence_value();
+    assert_eq!(scim, prepared);
+    assert_eq!(federation, prepared);
+    let repeated_scim = super::ServerScimBootstrapPasswordProvider
+        .password_hash()
+        .await
+        .unwrap()
+        .into_persistence_value();
+    assert_eq!(repeated_scim, prepared);
+    assert!(argon2::PasswordHash::new(prepared.as_str()).is_ok());
+    let hash = nazo_identity::PasswordHash::new(prepared).expect("valid Argon2 password hash");
+    assert!(!hash.verify_password("password"));
+    assert!(!hash.verify_password(""));
+}
+
+#[tokio::test]
 async fn mfa_secret_hasher_preserves_candidate_order_and_rejects_wrong_secret() {
     use nazo_identity::ports::MfaSecretHashPort;
     let hasher = super::ServerMfaSecretHasher;
@@ -302,21 +332,4 @@ async fn mfa_secret_hasher_preserves_candidate_order_and_rejects_wrong_secret() 
         None
     );
     assert!(hasher.hash_secrets(vec![]).await.unwrap().is_empty());
-}
-#[tokio::test]
-async fn scim_bootstrap_password_provider_returns_valid_independent_hashes() {
-    use nazo_oauth_server::contracts::scim::ScimBootstrapPasswordProvider;
-    let provider = super::ServerScimBootstrapPasswordProvider;
-    let first = provider
-        .password_hash()
-        .await
-        .unwrap()
-        .into_persistence_value();
-    let second = provider
-        .password_hash()
-        .await
-        .unwrap()
-        .into_persistence_value();
-    assert_ne!(first.as_str(), second.as_str());
-    assert!(argon2::PasswordHash::new(first.as_str()).is_ok());
 }
