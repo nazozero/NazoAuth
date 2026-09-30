@@ -2874,7 +2874,7 @@ async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users()
 /// `client_secret_salt` keeps serving the DCR path directly.
 #[tokio::test]
 async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
-    let Some((pool, tenant, user_id)) = database_fixture().await else {
+    let Some((pool, tenant, user_id)) = database_fixture_with_pool_size(1).await else {
         return;
     };
     let repository = OAuthClientRepository::new(pool.clone());
@@ -2899,6 +2899,21 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
         .unwrap()
         .expect("the registered client resolves a snapshot");
     assert_eq!(snapshot_epoch, 0);
+    // Inspect the same physical connection: only the query plan may be cached.
+    #[derive(QueryableByName)]
+    struct PreparedCount {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        count: i64,
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%split_part%' AND statement LIKE '%access_token_epoch%' AND statement NOT LIKE '%pg_prepared_statements%'")
+        .get_result::<PreparedCount>(&mut connection).await.unwrap();
+    assert_eq!(
+        prepared.count, 1,
+        "authentication metadata must reuse its prepared query"
+    );
+    drop(connection);
+
     let split_client = repository
         .by_client_id(client.tenant_id, &client.client_id)
         .await
@@ -2998,6 +3013,15 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
             .unwrap(),
         None
     );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%split_part%' AND statement LIKE '%access_token_epoch%' AND statement NOT LIKE '%pg_prepared_statements%'")
+        .get_result::<PreparedCount>(&mut connection).await.unwrap();
+    assert_eq!(
+        prepared.count, 1,
+        "new parameters and changed state must reuse the query, never a cached result"
+    );
+    drop(connection);
 
     cleanup_oauth_client(&pool, client.id).await;
     cleanup_oauth_client(&pool, public_client.id).await;

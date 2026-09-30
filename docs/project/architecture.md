@@ -169,8 +169,10 @@ only state required by their semantics:
   connection to the pool.
 
 Client-only issuance reuses the access-token epoch read in the request's client
-authentication snapshot. OIDC issuance with a public subject also reuses the user
-epoch returned with the active subject claims in `PreparedTokenSubject`. This
+authentication snapshot. Its fixed salt/epoch projection preserves prepared-query
+reuse while reading current values on every request. OIDC issuance with a public
+subject also reuses the user epoch returned with the active subject claims in
+`PreparedTokenSubject`. This
 request-local snapshot belongs to the authorization core; its security version
 is not serialized into the public subject claims. Non-OIDC or non-public user
 issuance keeps the narrow principal/binding read before signing. The commit

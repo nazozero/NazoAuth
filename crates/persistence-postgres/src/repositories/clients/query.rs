@@ -14,6 +14,35 @@ use crate::schema::{oauth_clients, user_client_grants};
 use super::base::OAuthClientRepository;
 use super::{OAuthClientRecord, map_error};
 
+// Both metadata expressions have fixed SQL. SqlLiteral would make the entire
+// client lookup uncacheable, including its wide registration projection. Cache
+// the prepared statement only; activity, salt and epoch remain per-read facts.
+#[derive(Debug, Clone, Copy, diesel::query_builder::QueryId, diesel::expression::ValidGrouping)]
+struct AuthenticationMetadata;
+
+impl diesel::Expression for AuthenticationMetadata {
+    type SqlType = (
+        diesel::sql_types::Nullable<diesel::sql_types::Text>,
+        diesel::sql_types::BigInt,
+    );
+}
+
+impl diesel::AppearsOnTable<oauth_clients::table> for AuthenticationMetadata {}
+impl diesel::SelectableExpression<oauth_clients::table> for AuthenticationMetadata {}
+
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuthenticationMetadata {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql(
+            "CASE WHEN is_active AND client_secret_hash LIKE 'client-secret-v1:%:%' \
+             THEN split_part(client_secret_hash, ':', 2) END, access_token_epoch",
+        );
+        Ok(())
+    }
+}
+
 impl OAuthClientRepository {
     pub async fn by_client_id(
         &self,
@@ -194,19 +223,12 @@ impl OAuthClientRepository {
         oauth_clients::table
             .filter(oauth_clients::tenant_id.eq(tenant_id))
             .filter(oauth_clients::client_id.eq(client_id))
-            .select((
-                OAuthClientRecord::as_select(),
-                diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
-                    "CASE WHEN is_active AND client_secret_hash LIKE 'client-secret-v1:%:%' \
-                     THEN split_part(client_secret_hash, ':', 2) END",
-                ),
-                diesel::dsl::sql::<diesel::sql_types::BigInt>("access_token_epoch"),
-            ))
-            .first::<(OAuthClientRecord, Option<String>, i64)>(&mut connection)
+            .select((OAuthClientRecord::as_select(), AuthenticationMetadata))
+            .first::<(OAuthClientRecord, (Option<String>, i64))>(&mut connection)
             .await
             .optional()
             .map_err(map_error)?
-            .map(|(record, secret_salt, epoch)| {
+            .map(|(record, (secret_salt, epoch))| {
                 record
                     .into_domain()
                     .map(|client| (client, secret_salt, epoch))
