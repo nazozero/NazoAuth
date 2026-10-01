@@ -73,7 +73,7 @@ Primary references: [RFC 8707 §2.2](https://www.rfc-editor.org/rfc/rfc8707.html
 | --- | --- | --- |
 | Active | Refresh token is not expired and `revoked_at` is null. | A valid refresh request rotates it to a new active successor. |
 | Rotated | A spent proof names this member and its direct successor; the family still names that successor as current. | A retry with the old token is accepted only during the lost-response retry window. |
-| Reused | A revoked token is presented outside the retry window, has no active successor, has multiple successors, or the family already has `reuse_detected_at`. | Mark the token family as reused and revoke any remaining active family tokens. |
+| Reused | A retained, unexpired spent token fails the authenticated lost-response rule. | Mark an otherwise active family as reused and revoke its current refresh token; already terminal families remain unavailable. |
 | Expired | Token expiry is in the past. | Reject with `invalid_grant`; do not issue a successor. |
 
 ## Lost-Response Retry
@@ -86,7 +86,11 @@ If a client successfully rotates a refresh token but loses the HTTP response bef
 - exactly one non-expired, non-revoked successor exists for the old token
 - the sender constraint on the old token still validates
 
-The retry continues from the active successor and rotates again. Any ambiguous or late reuse is treated as replay, not compatibility recovery.
+The retry continues from the active successor and rotates again. It requires an
+actual persisted DPoP or mTLS binding. An authenticated, retained, unexpired
+spent token outside this rule is replay, not compatibility recovery. An
+unknown or expired token returns `invalid_grant` without attributing it to a
+family or creating a compromise marker.
 
 ## Sender Constraints
 
@@ -98,6 +102,67 @@ the RFC 7638 thumbprint of the Client Instance public key in the attestation
 `cnf.jwk`. Every refresh request must use Client Attestation with that same key;
 the binding is retained by every rotated successor and by lost-response
 recovery.
+
+## Replay-Proof Retention
+
+[RFC 9700 section 4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
+requires public clients to use sender-constrained refresh tokens or rotation
+with replay detection. For an unbound public family, every spent proof is
+retained until that token's original expiry or the family's retirement. A
+replay at generation 65 or later therefore still identifies and revokes the
+active family. Proofs contain no duplicated authorization contract.
+
+Confidential clients are authenticated and their refresh tokens remain bound
+to that client under [RFC 6749 section 6](https://www.rfc-editor.org/rfc/rfc6749.html#section-6).
+The public-client rotation requirement does not require complete historical
+reuse detection for confidential clients. Confidential families, and families
+with a persisted DPoP or mTLS binding, retain at most the newest 64 proofs as
+an additional bounded reuse/lost-response signal. Beyond that window a spent
+presentation is unknown and does not trigger family compromise. This is an
+explicit local limit, not an all-history security guarantee. Client-instance
+attestation alone does not select the sender-bound retention exception.
+
+The Core policy uses the client type read under the existing principal lock
+and the actual family binding checked under the family lock. Configuration
+flags and a newly requested access-token binding are not substitutes. A
+confidential-to-public authentication-class change must atomically revoke
+existing refresh families: past proofs discarded under the confidential
+policy cannot become public rotation authority. The PostgreSQL adapter uses
+the client UPDATE's old/new values and the existing client-first lock order;
+management audit behavior is preserved and the revocation evidence commits
+with the mutation.
+
+Rotation sets the new current member's expiry to `now + REFRESH_TOKEN_TTL_SECONDS`
+(default 30 days); it does not extend any spent proof's original expiry.
+Unbound public proof volume is consequently proportional to rotations during
+the token lifetime, plus cleanup lag, rather than bounded to 64 per family.
+Expired proofs use the existing indexed, bounded maintenance sweep. This is
+not a promise to detect replay of tokens after their original expiry.
+
+### Upgrade and Rollback Boundary
+
+Migration `20261001000500_refresh_replay_retention` revokes existing unbound
+public refresh families once, preserving their rows and writing a Required
+`refresh_family_security_revoked` event with reason
+`public_replay_retention_cutover`. Old opaque-token associations already
+trimmed by previous releases cannot be reconstructed, and a small or empty
+proof set does not establish that none were lost. Affected clients must obtain
+a fresh authorization grant after upgrade. Existing confidential and DPoP/mTLS-
+bound families are unaffected by this one-time cutover.
+
+Stop old token issuers before applying the transactional migration, then admit
+traffic only through the new writer. Mixed-version writers could delete
+proofs the new writer must retain. An alternative gradual, no-forced-reauthorization
+transition would leave the old exposure until affected original tokens expire
+(up to the configured TTL); this release chooses an immediate guarantee instead.
+No token lifetime or benchmark workload is shortened to obtain it.
+
+The down migration removes the added downgrade guard only. It never restores
+`revoked_at`, reconstructs missing proofs, or deletes revocation evidence.
+Rolling code back loses the new public retention guarantee; do not resume
+public refresh traffic on the old writer without a separate security decision.
+Ordinary audit events follow the existing exporter-ACK lifecycle, so durable
+retention after ACK is the configured audit receiver's responsibility.
 
 ## Family Capacity and Contract Reclamation
 
@@ -137,3 +202,10 @@ in both orders, post-lock expiry, content/binding drift, and rotation after the
 actual legacy migration chain. `auth_repositories` retains Active -> Rotated ->
 Reused and lost-response coverage. These tests must pass against the final
 migration head before production guarantees are claimed.
+
+Additional real PostgreSQL regressions in `tests/refresh_authority.rs` cover
+unbound public reuse after 65 rotations, confidential and DPoP/mTLS 64-proof
+limits, original-expiry cleanup, unknown-token non-attribution, downgrade and
+rotation in both lock orders, genuine pre-005 migration data, restricted-role
+audit append, and rollback that cannot revive revoked credentials. Existing
+lost-response and HTTP proof-validation tests remain required.

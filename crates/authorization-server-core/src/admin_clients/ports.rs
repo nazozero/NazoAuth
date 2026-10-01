@@ -53,6 +53,12 @@ pub trait AdminClientRepositoryPort: Send + Sync {
         registration_access_token_blake3: Option<&'a str>,
     ) -> AdminClientFuture<'a, OAuthClient>;
 
+    /// A confidential-to-public authentication-class change must atomically
+    /// invalidate every existing refresh family of this client. Issuance and
+    /// mutation serialize on the same client authority before family state;
+    /// discarded confidential replay proofs cannot become public authority.
+    /// Retain revoked rows and durable revocation evidence; failure rolls back
+    /// both the class change and the invalidation.
     fn update<'a>(&'a self, client: &'a OAuthClient) -> AdminClientFuture<'a, OAuthClient>;
 }
 

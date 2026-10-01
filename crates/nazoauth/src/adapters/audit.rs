@@ -390,6 +390,13 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
         "token_lifecycle",
         AuditEventClass::Required,
     ),
+    // Durable family invalidation at the public replay-retention cutover or
+    // an authentication-class downgrade; the adapter appends atomically.
+    (
+        "refresh_family_security_revoked",
+        "token_lifecycle",
+        AuditEventClass::Required,
+    ),
     // Retired intent marker: issuance commits the token row and `token_issued`
     // in one transaction, so no producer emits this.  It stays defined as
     // Required so any future accidental emission fails closed instead of

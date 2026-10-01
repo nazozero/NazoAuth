@@ -95,7 +95,7 @@ unlisted or unknown event name is treated as required, never as telemetry.
 | `identity_lifecycle` | `external_identity_linked`, `external_identity_relink_denied`, `external_identity_unlinked` |
 | `provisioning` | `scim_token_denied`, `scim_token_used` |
 | `session_lifecycle` | `oidc_logout` |
-| `token_lifecycle` | `token_issued`, `token_issuance_intent`, `token_revoked` |
+| `token_lifecycle` | `token_issued`, `token_issuance_intent`, `token_revoked`, `refresh_family_security_revoked` |
 | `token_replay` | `refresh_reuse_detected` |
 | `trust_lifecycle` | `mtls_trust_anchor_approved`, `mtls_trust_bundle_exported`, `mtls_trust_anchor_rejected`, `mtls_trust_anchor_requested`, `mtls_trust_anchor_revoked` |
 
@@ -115,6 +115,18 @@ writes `tenant_resource_{operation}` with category `tenant_resource`. These
 producers own their transactional payloads and operation vocabulary. They do
 not pass through the application allowlist above; consumers must not assume
 all ledger payloads share its additional `nazo.audit.v1` fields.
+
+Refresh replay-retention migration and client authentication-class downgrade
+append `refresh_family_security_revoked` with category `token_lifecycle` in the
+same transaction as family invalidation. The payload contains tenant/client/
+family identities and a reason (`public_replay_retention_cutover` or
+`client_authentication_class_downgrade`), never raw tokens or guessed reuse
+facts. They reuse `nazo_persist_security_audit_event` and the existing canonical
+payload, pending-set, exporter and ACK lifecycle. The downgrade trigger is an
+invoker-rights adapter function; it adds no audit-table privileges or separate
+worker. A failed Required append rolls back the class change and revocations.
+The application registry also classifies this event as Required. Existing
+management intent/completion events retain their original behavior.
 
 Identity `identity_security_events` (including `mfa_totp_attempt`,
 `mfa_backup_code_attempt`, and `admin_user_update`), SCIM audit records and

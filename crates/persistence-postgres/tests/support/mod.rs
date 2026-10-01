@@ -5,7 +5,7 @@ use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
 
-const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 15] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 16] = [
     "20260805000100",
     "20260905000100",
     "20260909000100",
@@ -21,8 +21,10 @@ const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 15] = [
     "20261001000100",
     "20261001000200",
     "20261001000400",
+    // Public refresh-family cutover and trigger run once per database.
+    "20261001000500",
 ];
-const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 15] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 16] = [
     include_str!("../../../../migrations/20260805000100_security_audit_ledger/up.sql"),
     include_str!("../../../../migrations/20260905000100_shared_audit_anchor_state/up.sql"),
     include_str!("../../../../migrations/20260909000100_exporter_owned_audit_chain/up.sql"),
@@ -42,6 +44,7 @@ const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 15] = [
     include_str!(
         "../../../../migrations/20261001000400_refresh_contract_reference_integrity/up.sql"
     ),
+    include_str!("../../../../migrations/20261001000500_refresh_replay_retention/up.sql"),
 ];
 
 pub fn schema_database_url(base: &str, schema: &str) -> String {
