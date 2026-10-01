@@ -47,7 +47,7 @@ struct ExistsRow {
 async fn isolated_registry(
     case: &str,
 ) -> Option<(String, nazo_postgres::ControllerRegistryRepository)> {
-    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 11] = [
+    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 13] = [
         "20260805000100",
         "20260905000100",
         "20260909000100",
@@ -59,6 +59,9 @@ async fn isolated_registry(
         "20260925000100",
         "20260927000100",
         "20260927000200",
+        // Both migrations target shared public audit state, not this schema.
+        "20260929000400",
+        "20261001000100",
     ];
 
     let base = std::env::var("NAZO_TEST_DATABASE_URL")

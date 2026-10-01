@@ -34,6 +34,42 @@ def self_sha256():
         return "unavailable"
 
 
+def audit_event_predicates(connection):
+    """Called once per sampler run, not once per reconnect/sample.
+
+    This script is mounted standalone as /tmp/sampler.py, so it cannot import
+    the host-only single_instance_scaling helper.
+    """
+    has_exported_at = connection.execute(
+        "SELECT EXISTS (SELECT 1 FROM pg_attribute"
+        " WHERE attrelid = 'public.security_audit_events'::regclass"
+        " AND attname = 'exported_at' AND attnum > 0 AND NOT attisdropped)"
+    ).fetchone()[0]
+    if not isinstance(has_exported_at, bool):
+        raise ValueError("invalid audit schema probe result")
+    if has_exported_at:
+        return "exported_at IS NULL", "exported_at IS NOT NULL"
+    return "TRUE", "FALSE"
+
+
+def audit_snapshot(connection, predicates, include_totals=False):
+    pending_where, exported_where = predicates
+    result = dict(zip(
+        ["pending", "chain_head", "anchor"],
+        connection.execute(
+            "SELECT (SELECT count(*) FROM security_audit_events WHERE "
+            + pending_where + "), last_sequence, anchor_sequence "
+            "FROM security_audit_chain_state").fetchone()))
+    if include_totals:
+        # ACKed rows are retained decision facts. Count the full retained
+        # relation only on the existing sparse diagnostics cadence.
+        total, exported_retained = connection.execute(
+            "SELECT count(*), count(*) FILTER (WHERE " + exported_where + ")"
+            " FROM security_audit_events").fetchone()
+        result.update(total=total, exported_retained=exported_retained)
+    return result
+
+
 def main():
     out = open(OUT, "a", buffering=1)
     r = redis.Redis.from_url(VK, decode_responses=True)
@@ -43,6 +79,8 @@ def main():
         "started_at": int(time.time()),
     }) + "\n")
     next_issuance_count = 0.0
+    next_audit_count = 0.0
+    audit_predicates = None  # Survives the per-iteration connection lifecycle.
     while True:
         row = {"ts": int(time.time())}
         try:
@@ -219,13 +257,13 @@ def main():
                         "   'access_token_revocations','security_audit_events',"
                         "   'security_audit_chain_entries')"
                     ).fetchall()}
-                row["audit"] = dict(zip(
-                    ["pending", "chain_head", "anchor"],
-                    c.execute(
-                        "SELECT (SELECT count(*) FROM "
-                        " security_audit_events),"
-                        " last_sequence, anchor_sequence "
-                        "FROM security_audit_chain_state").fetchone()))
+                if audit_predicates is None:
+                    audit_predicates = audit_event_predicates(c)
+                include_audit_totals = time.monotonic() >= next_audit_count
+                row["audit"] = audit_snapshot(c, audit_predicates, include_audit_totals)
+                if include_audit_totals:
+                    row["audit"]["counts_sampled_at_s"] = int(time.time())
+                    next_audit_count = time.monotonic() + 60
                 # PG wait-event distribution by type: distinguishes
                 # connection-hold vs in-server wait when pool wait is high.
                 row["pg_waits"] = {
