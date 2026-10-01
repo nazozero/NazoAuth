@@ -15,9 +15,10 @@ use super::app::{
 };
 use chrono::Utc;
 use nazo_auth::{
-    AuthorizationCodeState, AuthorizationFuture, AuthorizationPortError,
+    AuthorizationCodeState, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
+    AuthorizationDecisionKind, AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationStateSnapshot,
-    AuthorizationStateStorePort, ConsentPayload, DpopNoncePolicy, GrantWrite, OAuthClient,
+    AuthorizationStateStorePort, ConsentPayload, DpopNoncePolicy, OAuthClient,
     PushedAuthorizationRequest, StoredAuthorizationGrant, ValidatedClientRegistration,
 };
 use nazo_identity::{
@@ -44,7 +45,17 @@ pub struct RecordedAuthorizationCode {
     pub ttl_seconds: u64,
 }
 
+/// A bounded, atomic repository double. Tests configure the adapter's admission
+/// result; they do not duplicate client, principal or grant-coverage policy.
+#[derive(Default)]
+pub struct DecisionState {
+    pub outcome: Option<Result<AuthorizationDecisionCommitResult, AuthorizationPortError>>,
+    pub facts: Vec<AuthorizationDecisionCommit>,
+    pub explicit_grant_writes: usize,
+}
+
 pub struct Ports {
+    pub decisions: Mutex<DecisionState>,
     pub assertion_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
     pub client_secret: Mutex<Option<(String, String)>>,
     pub par_rate: Mutex<Option<Result<u64, AuthorizationPortError>>>,
@@ -87,8 +98,34 @@ impl AuthorizationRepositoryPort for Ports {
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>> {
         panic!("unexpected AuthorizationRepositoryPort::grant call")
     }
-    fn upsert_grant<'a>(&'a self, _write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        panic!("unexpected AuthorizationRepositoryPort::upsert_grant call")
+    fn commit_decision(
+        &self,
+        input: AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, AuthorizationDecisionCommitResult> {
+        self.record("commit_decision");
+        Box::pin(async move {
+            let mut state = self.decisions.lock().unwrap();
+            let outcome = state.outcome.expect("decision admission must be configured");
+            if outcome != Ok(AuthorizationDecisionCommitResult::Committed) {
+                return outcome;
+            }
+            if state.facts.iter().any(|fact| {
+                fact.tenant_id == input.tenant_id
+                    && (fact.request_id == input.request_id
+                        || input.pushed_request_uri.as_ref().is_some_and(|uri| {
+                            fact.pushed_request_uri.as_ref() == Some(uri)
+                        }))
+            }) {
+                return Ok(AuthorizationDecisionCommitResult::Conflict);
+            }
+            if input.valid_until <= Utc::now() {
+                return Ok(AuthorizationDecisionCommitResult::Expired);
+            }
+            assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
+            state.explicit_grant_writes += usize::from(input.decision == AuthorizationDecisionKind::Approve);
+            state.facts.push(input);
+            Ok(AuthorizationDecisionCommitResult::Committed)
+        })
     }
     fn client_authentication_snapshot<'a>(
         &'a self,
@@ -197,11 +234,11 @@ impl AuthorizationStateStorePort for Ports {
                 .lock()
                 .unwrap()
                 .expect("unexpected PAR write")?;
-            self.stored_par.lock().unwrap().push((
-                request_uri.into(),
-                payload.clone(),
-                ttl_seconds,
-            ));
+            let mut stored = self.stored_par.lock().unwrap();
+            if stored.iter().any(|(uri, _, _)| uri == request_uri) {
+                return Err(AuthorizationPortError::Conflict);
+            }
+            stored.push((request_uri.into(), payload.clone(), ttl_seconds));
             Ok(())
         })
     }
@@ -550,6 +587,7 @@ impl Fixture {
         session: Result<Option<SessionSnapshot>, RepositoryError>,
     ) -> Self {
         let ports = Arc::new(Ports {
+            decisions: Mutex::new(DecisionState::default()),
             assertion_replay: Mutex::new(None),
             client_secret: Mutex::new(None),
             par_rate: Mutex::new(None),

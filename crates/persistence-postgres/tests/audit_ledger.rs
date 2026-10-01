@@ -892,7 +892,7 @@ const CHAINED_CLAIM_QUERY: &str = "\
         SELECT candidate.event_id, candidate.event_type, candidate.event_category,
                candidate.payload, candidate.occurred_at
         FROM public.security_audit_events AS candidate
-        WHERE candidate.event_id = chained.event_id
+        WHERE candidate.event_id = chained.event_id AND candidate.exported_at IS NULL
         LIMIT 1
     ) AS event
     ORDER BY chained.sequence";
@@ -902,6 +902,7 @@ const PENDING_CLAIM_QUERY: &str = "\
            event.event_category::TEXT, event.payload::TEXT, event.occurred_at,
            NULL::BYTEA, NULL::BYTEA
     FROM public.security_audit_events AS event
+    WHERE event.exported_at IS NULL
     ORDER BY event.occurred_at, event.event_id
     LIMIT 256";
 

@@ -6,14 +6,14 @@ use diesel::sql_query;
 use diesel_async::RunQueryDsl;
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRateDimension, AuthorizationRepositoryPort,
-    AuthorizationStateSnapshot, AuthorizationStateStorePort, ConsentPayload, GrantWrite,
+    AuthorizationStateSnapshot, AuthorizationStateStorePort, ConsentPayload,
     OAuthClient, StoredAuthorizationGrant,
 };
 use nazo_oauth_server::{
     authorization::{AuthorizationOutcome, AuthorizationRequestFacts},
     services::ServerAuthorizationService,
 };
-use nazo_postgres::{AuthorizationFlowRepository, create_pool, get_conn};
+use nazo_postgres::{AuthorizationFlowRepository, GrantRepository, create_pool, get_conn};
 use nazo_valkey::test_support::par_storage_key;
 use std::sync::{
     Arc,
@@ -59,9 +59,13 @@ impl AuthorizationRepositoryPort for GrantFailureRepository {
         self.reached.fetch_add(1, Ordering::SeqCst);
         self.failed.grant(user_id, client_id)
     }
-    fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        self.live.upsert_grant(write)
+    fn commit_decision(
+        &self,
+        input: nazo_auth::AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
+        self.live.commit_decision(input)
     }
+
     fn client_authentication_snapshot<'a>(
         &'a self,
         client_id: &'a str,
@@ -114,7 +118,11 @@ impl AuthorizationStateStorePort for PromptNoneStore {
                     replacement
                         .params
                         .insert("state".into(), "replacement-state".into());
-                    self.live.store_par(request_uri, &replacement, 60).await?;
+                    assert_eq!(
+                        self.live.store_par(request_uri, &replacement, 60).await,
+                        Err(nazo_auth::AuthorizationPortError::Conflict),
+                        "prepared PAR identities are immutable",
+                    );
                 }
                 Fault::ParRead => {
                     return self
@@ -364,15 +372,15 @@ impl PromptNoneFixture {
             .await
             .expect("client read")
             .expect("client exists");
-        repository
-            .upsert_grant(GrantWrite {
-                tenant_id: DEFAULT_TENANT_ID,
-                user_id: user.id,
-                client_id: client.id,
-                scopes: &["openid".to_owned(), "profile".to_owned()],
-                resource_indicators: &[],
-                authorization_details: &json!([]),
-            })
+        GrantRepository::new(live.state.diesel_db.clone())
+            .upsert(
+                DEFAULT_TENANT_ID,
+                user.id,
+                client.id,
+                &["openid".to_owned(), "profile".to_owned()],
+                &[],
+                &json!([]),
+            )
             .await
             .expect("prior consent should persist");
         let mut dependencies = TestAuthorizationDependencies::new(&live.state);
@@ -564,7 +572,7 @@ async fn prompt_none_issues_single_use_authorization_code_without_user_interacti
     }
 }
 #[actix_web::test]
-async fn prompt_none_consumes_valid_pushed_request_uri_before_issuing_code() {
+async fn prompt_none_discards_preparation_after_committing_and_publishing_code() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::None, None).await else {
         return;
     };
@@ -579,80 +587,102 @@ async fn prompt_none_consumes_valid_pushed_request_uri_before_issuing_code() {
             .await
             .expect("PAR lookup"),
         None,
-        "PAR consumed exactly once"
+        "committed PAR preparation is discarded"
     );
     assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 1);
 }
 #[actix_web::test]
-async fn prompt_none_fails_closed_when_authorization_code_cannot_be_persisted() {
+async fn prompt_none_undelivered_commit_keeps_par_fence_and_grant_count() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::CodeWrite, None).await else {
         return;
     };
+    let uri = fixture.push().await;
+    let original_request = fixture.q.clone();
     let response = fixture.authorize().await;
     assert!(
         response.headers().get(header::LOCATION).is_none(),
         "no redirect with unstored code"
     );
     assert_storage_failure(response).await;
+    assert!(fixture.dependencies.fixture.service.load_par(&uri).await.unwrap().is_some(),
+        "publication failure must not discard preparation or release the durable fence");
+    fixture.q = original_request;
+    let retry = redirect_query(&fixture.authorize().await);
+    assert_eq!(retry.get("error").map(String::as_str), Some("invalid_request_uri"));
+    assert!(!retry.contains_key("code"));
+    assert_eq!(decision_fact_count(&fixture, &uri).await, 1);
+    assert_eq!(authorization_count(&fixture).await, 1, "prompt-none never increments explicit consent count");
     assert_eq!(
         fixture.reached.as_ref().load(Ordering::SeqCst),
         1,
         "code write must reach unavailable Valkey"
     );
 }
-async fn assert_par_consumption_failure(fault: Fault, expected_error: &str) {
+#[derive(diesel::QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    count: i64,
+}
+
+async fn decision_fact_count(fixture: &PromptNoneFixture, uri: &str) -> i64 {
+    let mut connection = get_conn(&fixture.live.state.diesel_db).await.unwrap();
+    sql_query("SELECT count(*) AS count FROM security_audit_events \
+        WHERE event_type = 'authorization_decision_committed' \
+        AND authorization_tenant_id = $1 AND authorization_par_uri = $2")
+        .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
+        .bind::<diesel::sql_types::Text, _>(uri)
+        .get_result::<CountRow>(&mut connection).await.unwrap().count
+}
+
+async fn authorization_count(fixture: &PromptNoneFixture) -> i32 {
+    let repository = AuthorizationFlowRepository::new(fixture.live.state.diesel_db.clone(), DEFAULT_TENANT_ID);
+    let client = repository.client_by_id(&fixture.client_id).await.unwrap().unwrap();
+    GrantRepository::new(fixture.live.state.diesel_db.clone())
+        .authorization(DEFAULT_TENANT_ID, fixture.user_id, client.id)
+        .await.unwrap().unwrap().authorization_count
+}
+
+async fn assert_par_disposal_failure_keeps_committed_code(fault: Fault) {
     let Some(mut fixture) = PromptNoneFixture::new(fault, None).await else {
         return;
     };
-    fixture.push().await;
+    let uri = fixture.push().await;
     let response = fixture.authorize().await;
     let query = redirect_query(&response);
-    assert_eq!(query.get("error").map(String::as_str), Some(expected_error));
+    assert!(!query.contains_key("error"));
     assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
-    assert!(!query.contains_key("code"));
-    assert_eq!(
-        fixture.reached.as_ref().load(Ordering::SeqCst),
-        1,
-        "fault must occur at PAR consumption after successful validation"
-    );
-}
-#[actix_web::test]
-async fn prompt_none_redirects_invalid_request_uri_when_request_uri_is_missing() {
-    assert_par_consumption_failure(Fault::ParMissing, "invalid_request_uri").await;
-}
-#[actix_web::test]
-async fn prompt_none_rejects_request_uri_corrupted_after_validation() {
-    assert_par_consumption_failure(Fault::ParMalformed, "invalid_request_uri").await;
-}
-#[actix_web::test]
-async fn prompt_none_redirects_server_error_when_request_uri_read_fails() {
-    assert_par_consumption_failure(Fault::ParRead, "server_error").await;
+    let code = query.get("code").expect("committed decision still returns its published code");
+    assert!(valkey_get(&fixture.live.state.valkey, authorization_code_key(code)).await.unwrap().is_some());
+    assert_eq!(decision_fact_count(&fixture, &uri).await, 1);
+    assert_eq!(authorization_count(&fixture).await, 1);
+    assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 1,
+        "fault occurs only in post-commit preparation disposal");
 }
 
 #[actix_web::test]
-async fn prompt_none_preserves_par_replaced_after_validation_without_issuing_code() {
+async fn prompt_none_cache_eviction_during_disposal_keeps_committed_code() {
+    assert_par_disposal_failure_keeps_committed_code(Fault::ParMissing).await;
+}
+#[actix_web::test]
+async fn prompt_none_corrupt_disposal_snapshot_keeps_committed_code() {
+    assert_par_disposal_failure_keeps_committed_code(Fault::ParMalformed).await;
+}
+#[actix_web::test]
+async fn prompt_none_disposal_storage_failure_keeps_committed_code() {
+    assert_par_disposal_failure_keeps_committed_code(Fault::ParRead).await;
+}
+
+#[actix_web::test]
+async fn prompt_none_replacement_attempt_is_rejected_and_original_decision_commits() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::ParReplaced, None).await else {
         return;
     };
     let uri = fixture.push().await;
     let query = redirect_query(&fixture.authorize().await);
-    assert_eq!(
-        query.get("error").map(String::as_str),
-        Some("invalid_request_uri")
-    );
+    assert!(!query.contains_key("error"));
     assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
-    assert!(!query.contains_key("code"));
-    let retained = fixture
-        .dependencies
-        .fixture
-        .service
-        .load_par(&uri)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        retained.payload.params.get("state").map(String::as_str),
-        Some("replacement-state")
-    );
+    assert!(query.contains_key("code"));
+    assert!(fixture.dependencies.fixture.service.load_par(&uri).await.unwrap().is_none());
+    assert_eq!(decision_fact_count(&fixture, &uri).await, 1);
     assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 1);
 }

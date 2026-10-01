@@ -200,6 +200,8 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
         .ports
         .record_code_writes
         .store(true, Ordering::SeqCst);
+    fixture.ports.decisions.lock().unwrap().outcome =
+        Some(Ok(nazo_auth::AuthorizationDecisionCommitResult::Committed));
     let application = fixture.make_application();
     let payload = prompt_none_payload();
     let facts = AuthorizationRequestFacts {
@@ -212,6 +214,7 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
             &application.context(),
             &facts,
             payload.clone(),
+            None,
             None,
         ))
         .expect("the normalized private payload issues a code");
@@ -243,13 +246,18 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
     assert_eq!(stored.id_token_claims, payload.id_token_claims);
     assert_eq!(stored.userinfo_claims, payload.userinfo_claims);
     assert_eq!((stored.expires_at - stored.issued_at).num_seconds(), 60);
-    assert_eq!(fixture.ports.calls(), ["store_authorization_code"]);
+    assert_eq!(fixture.ports.calls(), ["commit_decision", "store_authorization_code"]);
+    let decisions = fixture.ports.decisions.lock().unwrap();
+    assert_eq!(decisions.facts.len(), 1);
+    assert_eq!(decisions.explicit_grant_writes, 0);
+    assert_eq!(decisions.facts[0].audit_fields["code_hash"], writes[0].hash);
 }
 
 fn pushed_prompt_none_fixture() -> (
     crate::test_support::authorization::Fixture,
     ConsentPayload,
     String,
+    chrono::DateTime<Utc>,
 ) {
     let fixture = crate::test_support::authorization::Fixture::new(
         Err(nazo_auth::AuthorizationPortError::Unavailable),
@@ -259,15 +267,18 @@ fn pushed_prompt_none_fixture() -> (
         .ports
         .record_code_writes
         .store(true, std::sync::atomic::Ordering::SeqCst);
+    fixture.ports.decisions.lock().unwrap().outcome =
+        Some(Ok(nazo_auth::AuthorizationDecisionCommitResult::Committed));
     let mut payload = prompt_none_payload();
     let uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    let par_expires_at = payload.expires_at + Duration::minutes(5);
     let pushed = nazo_auth::PushedAuthorizationRequest {
         client_id: payload.client_id.clone(),
         params: std::collections::HashMap::from([("state".into(), "original-state".into())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
         issued_at: payload.issued_at,
-        expires_at: payload.expires_at,
+        expires_at: par_expires_at,
     };
     payload.pushed_request_uri = Some(uri.clone());
     payload.pushed_request_digest =
@@ -282,12 +293,12 @@ fn pushed_prompt_none_fixture() -> (
         .unwrap()
         .unwrap()
         .version;
-    (fixture, payload, version)
+    (fixture, payload, version, par_expires_at)
 }
 
 #[test]
-fn prompt_none_keeps_replacement_par_and_never_writes_a_code() {
-    let (fixture, payload, version) = pushed_prompt_none_fixture();
+fn prompt_none_commit_uses_original_expiry_even_when_cleanup_snapshot_is_corrupt() {
+    let (fixture, payload, version, par_expires_at) = pushed_prompt_none_fixture();
     fixture.ports.stored_par.lock().unwrap()[0]
         .1
         .params
@@ -302,8 +313,9 @@ fn prompt_none_keeps_replacement_par_and_never_writes_a_code() {
         super::issue_authorization_code_without_interaction_with_context(
             &application.context(),
             &facts,
-            payload,
+            payload.clone(),
             Some(&version),
+            Some(par_expires_at),
         ),
     )
     .unwrap();
@@ -312,12 +324,13 @@ fn prompt_none_keeps_replacement_par_and_never_writes_a_code() {
     };
     let location = url::Url::parse(&location).unwrap();
     let query: std::collections::HashMap<_, _> = location.query_pairs().into_owned().collect();
-    assert_eq!(
-        query.get("error").map(String::as_str),
-        Some("invalid_request_uri")
-    );
-    assert!(!query.contains_key("code"));
-    assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+    assert!(query.contains_key("code"));
+    assert!(!query.contains_key("error"));
+    assert_eq!(fixture.ports.stored_codes.lock().unwrap().len(), 1);
+    let decisions = fixture.ports.decisions.lock().unwrap();
+    assert_eq!(decisions.facts[0].valid_until, payload.expires_at);
+    assert_eq!(decisions.facts[0].retain_until, par_expires_at);
+    drop(decisions);
     assert_eq!(
         fixture.ports.stored_par.lock().unwrap()[0].1.params["state"],
         "replacement-state"
@@ -326,7 +339,7 @@ fn prompt_none_keeps_replacement_par_and_never_writes_a_code() {
 
 #[test]
 fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
-    let (fixture, payload, version) = pushed_prompt_none_fixture();
+    let (fixture, payload, version, par_expires_at) = pushed_prompt_none_fixture();
     let application = fixture.make_application();
     let context = application.context();
     let facts = crate::authorization::AuthorizationRequestFacts {
@@ -340,13 +353,15 @@ fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
                 &context,
                 &facts,
                 payload.clone(),
-                Some(&version)
+                Some(&version),
+                Some(par_expires_at)
             ),
             super::issue_authorization_code_without_interaction_with_context(
                 &context,
                 &facts,
                 payload.clone(),
-                Some(&version)
+                Some(&version),
+                Some(par_expires_at)
             ),
         )
     });

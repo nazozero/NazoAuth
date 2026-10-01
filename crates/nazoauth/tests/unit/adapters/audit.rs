@@ -279,11 +279,10 @@ fn source_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
 }
 
 #[test]
-fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
-    // This is a source-level architecture guard for the fail-closed ordering
-    // around mutations. Runtime audit serialization is exercised above; this
-    // guard prevents a future refactor from moving the required intent behind
-    // a state change without pretending to be a protocol E2E test.
+fn high_impact_state_changes_have_durable_audit_boundaries() {
+    // Source-level guards keep authorization publication behind its atomic
+    // repository commit, and retain the distinct intent boundaries for device
+    // and CIBA flows. These assertions are not protocol or persistence E2E tests.
     let authorization =
         include_str!("../../../../authorization-server/src/domain/authorization_decision.rs");
     assert_source_order(
@@ -291,8 +290,36 @@ fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
         ".ensure_transactional_ready()",
         "preview_user_decision(",
     );
-    assert_source_order(authorization, "preview_user_decision(", "record_required(");
-    assert_source_order(authorization, "record_required(", "consume_user_decision(");
+    assert_source_order(authorization, "preview_user_decision(", "commit_decision(");
+    assert_source_order(authorization, "commit_decision(", "discard_decision_material(");
+    assert!(!authorization.contains(".record_required("));
+    assert!(!authorization.contains("authorization_approved"));
+    assert!(!authorization.contains("authorization_denied"));
+    let service = include_str!("../../../../authorization-server-core/src/authorization_service.rs");
+    let commit = source_body(
+        service,
+        "    pub async fn commit_decision(",
+        "    /// Loads and validates a consent",
+    )
+    .split_whitespace()
+    .collect::<String>();
+    assert_source_order(
+        &commit,
+        "self.repository.commit_decision(input).await?",
+        "self.state.store_authorization_code(",
+    );
+    assert!(commit.contains("result==AuthorizationDecisionCommitResult::Committed"));
+    let prompt_none = include_str!(
+        "../../../../authorization-server/src/authorization/request/prompt_none.rs"
+    )
+    .split_whitespace()
+    .collect::<String>();
+    assert_source_order(
+        &prompt_none,
+        "context.service.commit_decision(",
+        "context.service.discard_pushed_authorization_request(",
+    );
+    assert!(!prompt_none.contains(".record_required("));
     assert!(authorization.contains("AuthorizationDecisionError::AuditUnavailable"));
 
     let device = include_str!("../../../../authorization-server/src/token/device.rs");

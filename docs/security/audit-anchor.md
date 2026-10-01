@@ -69,9 +69,11 @@ acceptance; `duplicate` acknowledges an already-persisted identical batch; a
 `rejected` receipt with `permanent=true` blocks the batch until an operator
 runs `nazo_unblock_security_audit_batch()`, while a transient rejection or any
 missing/invalid receipt reschedules it. Acknowledgement deletes the batch's
-chain-entry and event rows in the same transaction that advances
-the anchor checkpoint — the accepted checkpoint is the durable evidence, so
-no delivered row is retained and no separate sweeper reclaims it.
+chain-entry rows and ordinary event rows in the same transaction that advances
+the anchor checkpoint. Committed authorization-decision facts are marked
+exported instead: they are still business consumption fences until their
+retention deadline closes. Bounded security-state maintenance then reclaims
+only facts that are both exported and no longer needed by the business.
 Transport and transient failures are rescheduled with bounded backoff. Claim,
 acknowledgement, and failure release are fenced by the batch generation, so an
 expired or stale worker cannot mutate a newer claim. The response body is
@@ -115,10 +117,14 @@ path accepts `last_sequence = anchor_sequence` as a fully delivered head
 while still demanding the head row whenever undelivered entries exist.
 Health reporting treats that state as `chain_valid` with no orphans.
 
-Only undelivered state is retained: pending events — unchained, or chained
-but unacknowledged — stay in the hot tables and fail closed. The append-only
-triggers still reject direct UPDATE/DELETE on the ledger; the
-acknowledgement function is the only permitted delete path and is gated by
+Undelivered events — unchained, or chained but unacknowledged — stay in the
+pending set and fail closed. Exported authorization-decision facts remain
+outside that set until their business retention ends. Both pending claim and
+the authoritative chain-append entry point reject exported facts, so retained
+facts cannot be chained a second time. The append-only triggers reject direct
+mutation; the narrow ACK metadata transition cannot alter fact identity,
+payload or retention. Acknowledgement and bounded retained-fact cleanup are
+controlled delete paths, gated by
 the transaction-local `nazo.audit_reclaim` permit inside its own
 transaction — application roles hold no DELETE privilege on any ledger
 table.

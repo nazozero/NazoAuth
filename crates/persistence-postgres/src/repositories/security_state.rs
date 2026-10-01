@@ -22,12 +22,10 @@
 //! authority; there is no member-history traversal. Family reclaim keeps the
 //! shared advisory key: a writer holding `refresh_family_lock_key` causes the
 //! candidate to be skipped this round, and expiry is rechecked under the lock
-//! so a just-rotated family is never reclaimed mid-commit. Audit-ledger rows
-//! are not a maintenance category: the
-//! exporter's ACK removes the delivered event and chain-entry rows in
-//! the same transaction that advances the durable anchor checkpoint, so
-//! nothing accumulates for a sweeper to reclaim and no local archive copy
-//! exists — the receiver is the sole authoritative audit history.
+//! so a just-rotated family is never reclaimed mid-commit. Ordinary audit
+//! events and chain entries leave at exporter ACK. Authorization decisions
+//! also own business consumption fences, so a bounded maintenance category
+//! reclaims them only after export AND business retention have completed.
 
 use std::sync::Arc;
 
@@ -112,6 +110,12 @@ struct GenericCleanupCounts {
 }
 
 #[derive(QueryableByName)]
+struct DecisionCleanupCount {
+    #[diesel(sql_type = sql_types::BigInt)]
+    deleted: i64,
+}
+
+#[derive(QueryableByName)]
 struct PresentationCleanupCount {
     #[diesel(sql_type = sql_types::Integer)]
     deleted_transactions: i32,
@@ -160,6 +164,16 @@ impl SecurityStateMaintenanceRepository {
             .get_result::<GenericCleanupCounts>(&mut connection)
             .await
             .map_err(map_error)
+    }
+
+    async fn decision_cleanup(&self) -> Result<u64, RepositoryError> {
+        let mut connection = self.connection().await?;
+        let row = sql_query("SELECT public.nazo_cleanup_authorization_decisions() AS deleted")
+            .get_result::<DecisionCleanupCount>(&mut connection)
+            .await
+            .map_err(map_error)?;
+        debug_assert!((0..=CLEANUP_BATCH_LIMIT).contains(&row.deleted));
+        Ok(row.deleted.max(0) as u64)
     }
 
     async fn presentation_cleanup(&self) -> Result<u64, RepositoryError> {
@@ -529,6 +543,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
     fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
         Box::pin(async move {
             let generic = self.generic_cleanup().await?;
+            let authorization_decisions = self.decision_cleanup().await?;
             let (refresh_tokens, families_saturated) =
                 self.delete_expired_refresh_families().await?;
             let (spent_refresh_proofs, spent_saturated) =
@@ -537,7 +552,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 self.delete_orphan_refresh_contracts().await?;
             let presentations = self.presentation_cleanup().await?;
             let credentials = self.credential_cleanup().await?;
-            let saturated = families_saturated
+            let saturated = authorization_decisions >= CLEANUP_BATCH_LIMIT as u64
+                || families_saturated
                 || spent_saturated
                 || contracts_saturated
                 || i64::from(generic.deleted_issuances) >= CLEANUP_BATCH_LIMIT
@@ -548,6 +564,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 || presentations >= CLEANUP_BATCH_LIMIT as u64
                 || credentials.saturated;
             Ok(CleanupBatchResult {
+                authorization_decisions,
                 issuances: generic.deleted_issuances.max(0) as u64,
                 refresh_tokens,
                 spent_refresh_proofs,

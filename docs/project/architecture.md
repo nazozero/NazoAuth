@@ -198,8 +198,31 @@ successful durable commit before callers continue. Queue saturation, channel
 closure, worker termination and append failure return errors. Failed Required
 batches report their first error without retrying or blocking subsequent
 batches; caller cancellation never turns an unconfirmed append into success.
-Required intents still commit before destructive state consumption. Token
-issuance keeps its Required audit inside the business transaction.
+Other cross-store Required intents still precede their destructive mutations.
+Browser authorization decisions instead use the domain-owned
+`AuthorizationRepositoryPort::commit_decision` capability: the effective
+grant change, independent tenant-scoped consent/PAR consumption fences, and
+immutable `authorization_decision_committed` fact commit together. This
+capability is backend-neutral; an adapter must implement genuine atomic
+conditional persistence rather than concatenate independent store writes.
+Token issuance keeps its own Required audit inside its business transaction.
+
+PAR and consent are immutable preparation material. Their cache deletion is
+post-commit cleanup, not authorization or cancellation authority. Explicit
+approval, denial, and prompt-none compete for the same durable consumption
+identities; prompt-none does not increment explicit approval counters. The
+code and its payload are prepared in memory and bound to the fact. Only an
+affirmative durable result permits code storage/publication. An unknown result
+fails closed. A later code-store or response failure leaves a committed,
+possibly undelivered decision; it never frees the fence or compensates the
+grant, and retries do not promise recovery of the original response.
+
+The audit guarantee covers committed decisions, including committed denials.
+A crash before a decision takes effect need not preserve an attempted-decision
+record. Chain construction and export derive from the same immutable fact;
+export ACK cannot delete a fact before its business retention closes. No new
+outbox or second audit copy is introduced. The concrete adapter's pending
+indexes, retention cleanup, and chain entry checks own this lifecycle.
 
 Telemetry retains its independent queue, FIFO whole-batch retry and overflow
 behavior. Its counters exclude Required records. Both channels reuse the same

@@ -85,13 +85,16 @@ impl AuthorizationStore {
         }
     }
 
+    /// Stores the initial immutable consent preparation. Even an identical
+    /// retry is rejected while the identity exists; changed material requires
+    /// a new request ID and cannot extend the original preparation's TTL.
     pub async fn store_consent(
         &self,
         request_id: &str,
         payload: &ConsentPayload,
         ttl_seconds: u64,
     ) -> Result<(), Error> {
-        self.store_json(keys::consent(request_id), payload, ttl_seconds)
+        self.store_preparation(keys::consent(request_id), payload, ttl_seconds)
             .await
     }
 
@@ -106,10 +109,14 @@ impl AuthorizationStore {
         self.load_snapshot(keys::consent(request_id)).await
     }
 
+    /// Removes transient material only. Deletion is not an authorization
+    /// decision, consumption fence, or cancellation of an observed preparation.
     pub async fn take_consent(&self, request_id: &str) -> Result<Option<ConsentPayload>, Error> {
         self.take_json(keys::consent(request_id)).await
     }
 
+    /// Best-effort cleanup after a durable decision; this does not authorize
+    /// or cancel a decision, including one already holding a snapshot.
     pub async fn compare_and_delete_consent(
         &self,
         request_id: &str,
@@ -119,17 +126,21 @@ impl AuthorizationStore {
             .await
     }
 
+    /// Removes transient material only, without revoking durable authority.
     pub async fn delete_consent(&self, request_id: &str) -> Result<i64, Error> {
         command::delete(&self.connection, keys::consent(request_id)).await
     }
 
+    /// Stores the initial immutable PAR preparation. An existing request URI
+    /// cannot be replaced or have its TTL refreshed, even after a preview.
+    /// Changed material requires a newly generated request URI.
     pub async fn store_par(
         &self,
         request_uri: &str,
         payload: &PushedAuthorizationRequest,
         ttl_seconds: u64,
     ) -> Result<(), Error> {
-        self.store_json(keys::par(request_uri), payload, ttl_seconds)
+        self.store_preparation(keys::par(request_uri), payload, ttl_seconds)
             .await
     }
 
@@ -140,6 +151,8 @@ impl AuthorizationStore {
         self.load_snapshot(keys::par(request_uri)).await
     }
 
+    /// Best-effort cleanup after a durable decision, never its consumption
+    /// authority or a cancellation mechanism.
     pub async fn compare_and_delete_par(
         &self,
         request_uri: &str,
@@ -246,6 +259,26 @@ impl AuthorizationStore {
                 })
             })
             .transpose()
+    }
+
+    async fn store_preparation<T: serde::Serialize + ?Sized>(
+        &self,
+        key: String,
+        value: &T,
+        ttl_seconds: u64,
+    ) -> Result<(), Error> {
+        let raw = serde_json::to_string(value).map_err(|error| {
+            Error::protocol(format!(
+                "failed to serialize authorization preparation: {error}"
+            ))
+        })?;
+        if command::set_ex_nx_string(&self.connection, key, raw, ttl_seconds).await? {
+            Ok(())
+        } else {
+            Err(Error::protocol(
+                "authorization preparation identity already exists",
+            ))
+        }
     }
 
     async fn store_json<T: serde::Serialize + ?Sized>(
