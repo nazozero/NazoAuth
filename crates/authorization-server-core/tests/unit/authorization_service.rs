@@ -1,6 +1,6 @@
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use chrono::{Duration, TimeZone, Utc};
@@ -27,6 +27,7 @@ struct RepositoryState {
     client: Mutex<Option<OAuthClient>>,
     decisions: Mutex<DecisionState>,
     publication_probe: Mutex<Option<Arc<StoreState>>>,
+    hold_commit_ack: AtomicBool,
 }
 
 /// Bounded persistence double: one lock represents one atomic repository call.
@@ -69,38 +70,47 @@ impl AuthorizationRepositoryPort for FakeRepository {
         input: AuthorizationDecisionCommit,
     ) -> AuthorizationFuture<'_, AuthorizationDecisionCommitResult> {
         Box::pin(async move {
-            if let Some(store) = self.0.publication_probe.lock().unwrap().as_ref() {
-                assert!(
-                    store.stored_code.lock().unwrap().is_none(),
-                    "a code must not be published before the repository commits"
-                );
-            }
-            let mut state = self.0.decisions.lock().unwrap();
-            if let Some(outcome) = state.outcome.take()
-                && outcome != Ok(AuthorizationDecisionCommitResult::Committed)
+            let result = (|| {
+                if let Some(store) = self.0.publication_probe.lock().unwrap().as_ref() {
+                    assert!(
+                        store.stored_code.lock().unwrap().is_none(),
+                        "a code must not be published before the repository commits"
+                    );
+                }
+                let mut state = self.0.decisions.lock().unwrap();
+                if let Some(outcome) = state.outcome.take()
+                    && outcome != Ok(AuthorizationDecisionCommitResult::Committed)
+                {
+                    return outcome;
+                }
+                if state.facts.iter().any(|fact| {
+                    fact.tenant_id == input.tenant_id
+                        && (fact.request_id == input.request_id
+                            || input
+                                .pushed_request_uri
+                                .as_ref()
+                                .is_some_and(|uri| fact.pushed_request_uri.as_ref() == Some(uri)))
+                }) {
+                    return Ok(AuthorizationDecisionCommitResult::Conflict);
+                }
+                if input.valid_until <= Utc::now() {
+                    return Ok(AuthorizationDecisionCommitResult::Expired);
+                }
+                assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
+                state.grant_writes +=
+                    usize::from(input.decision == AuthorizationDecisionKind::Approve);
+                state.facts.push(input);
+                if std::mem::take(&mut state.commit_then_error) {
+                    return Err(AuthorizationPortError::Unavailable);
+                }
+                Ok(AuthorizationDecisionCommitResult::Committed)
+            })();
+            if result == Ok(AuthorizationDecisionCommitResult::Committed)
+                && self.0.hold_commit_ack.load(Ordering::Relaxed)
             {
-                return outcome;
+                std::future::pending::<()>().await;
             }
-            if state.facts.iter().any(|fact| {
-                fact.tenant_id == input.tenant_id
-                    && (fact.request_id == input.request_id
-                        || input
-                            .pushed_request_uri
-                            .as_ref()
-                            .is_some_and(|uri| fact.pushed_request_uri.as_ref() == Some(uri)))
-            }) {
-                return Ok(AuthorizationDecisionCommitResult::Conflict);
-            }
-            if input.valid_until <= Utc::now() {
-                return Ok(AuthorizationDecisionCommitResult::Expired);
-            }
-            assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
-            state.grant_writes += usize::from(input.decision == AuthorizationDecisionKind::Approve);
-            state.facts.push(input);
-            if std::mem::take(&mut state.commit_then_error) {
-                return Err(AuthorizationPortError::Unavailable);
-            }
-            Ok(AuthorizationDecisionCommitResult::Committed)
+            result
         })
     }
 
@@ -814,6 +824,41 @@ fn approved_but_undelivered_keeps_fact_grant_and_consumption_fence() {
             assert_eq!(state.grant_writes, 1);
         }
     });
+}
+
+#[test]
+fn cancellation_before_decision_ack_never_publishes_a_code() {
+    let repository = FakeRepository::default();
+    repository.0.hold_commit_ack.store(true, Ordering::Relaxed);
+    let store = FakeStore::default();
+    let service = service(repository.clone(), store.clone());
+    let (input, code) =
+        decision_input(AuthorizationDecisionKind::Approve, "cancelled", Some("par"));
+    let retry = input.clone();
+    let retry_code = code.as_ref().map(|code| PreparedAuthorizationCode {
+        tenant_id: code.tenant_id,
+        hash: code.hash.clone(),
+        payload: code.payload.clone(),
+        ttl_seconds: code.ttl_seconds,
+    });
+    let mut pending = Box::pin(service.commit_decision(input, code));
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(std::future::Future::poll(pending.as_mut(), &mut context).is_pending());
+    // The repository has committed, but its durable acknowledgement is held.
+    // Dropping this service future cannot run the later code-publication step.
+    assert_eq!(repository.0.decisions.lock().unwrap().facts.len(), 1);
+    assert!(store.0.stored_code.lock().unwrap().is_none());
+    drop(pending);
+    assert!(store.0.stored_code.lock().unwrap().is_none());
+    assert_eq!(store.0.code_deletes.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        futures_executor::block_on(service.commit_decision(retry, retry_code)).unwrap(),
+        AuthorizationDecisionCommitResult::Conflict
+    );
+    assert!(store.0.stored_code.lock().unwrap().is_none());
+    let state = repository.0.decisions.lock().unwrap();
+    assert_eq!(state.facts.len(), 1);
+    assert_eq!(state.grant_writes, 1);
 }
 
 #[test]

@@ -137,7 +137,13 @@ Telemetry outcome. Historical event names remain readable.
 The fact means the decision committed, not that the browser received a code.
 Code publication occurs only after affirmative commit. Code-store failure,
 response loss, timeout or cancellation never frees a committed fence. Unknown
-commit results fail closed. This contract does not promise durable evidence
+commit results fail closed. Cancelling a request before commit acknowledgement
+prevents that request from publishing a code, but does not revoke a decision
+already sent to storage: its atomic grant/fact/fence may still commit. This can
+leave an approved-but-undelivered decision; retries must preserve the same
+request/PAR identity and cannot consume a committed fence again. Cancellation
+after acknowledgement may also leave a stored code whose response was lost.
+This contract does not promise durable evidence
 for pre-commit crash attempts that caused no effective authorization.
 
 The event type is reserved: ordinary audit append cannot create a business

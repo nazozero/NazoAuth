@@ -550,23 +550,135 @@ async fn verify_lock_expiry_and_cancellation(
     sql_query("SELECT authorization_count::bigint AS count FROM user_client_grants WHERE user_id = $1 FOR UPDATE")
         .bind::<sql_types::Uuid, _>(fixture.user_id).get_result::<CountRow>(&mut blocker).await.unwrap();
     let cancelled = decision(fixture, Kind::Approve);
+    let retry = cancelled.clone();
     let event_id = cancelled.event_id;
+    let before_cancel = grant_count(connection, fixture).await;
     let writer = repository.clone();
     let pending = tokio::spawn(async move { writer.commit_decision(cancelled).await });
     wait_for_lock(connection, &application).await;
+    let original_backend = sql_query(
+        "SELECT pid::bigint AS count FROM pg_stat_activity \
+         WHERE application_name = $1 AND wait_event_type = 'Lock'",
+    )
+    .bind::<sql_types::Text, _>(&application)
+    .get_result::<CountRow>(connection)
+    .await
+    .unwrap()
+    .count;
     pending.abort();
     assert!(pending.await.unwrap_err().is_cancelled());
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while pool.status().size != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("an unconfirmed decision must discard its physical pool connection");
     blocker.batch_execute("ROLLBACK").await.unwrap();
-    // A one-connection pool remains usable; no uncertain transaction leaks
-    // into this subsequent request or turns its cancellation into a commit.
+    // Dropping the client future cannot promise server-side rollback of an
+    // implicit transaction. Wait for this exact backend to exit before
+    // observing its final business outcome, rather than racing its commit.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let remaining = sql_query(
+                "SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE pid = $1",
+            )
+            .bind::<sql_types::BigInt, _>(original_backend)
+            .get_result::<CountRow>(connection)
+            .await
+            .unwrap();
+            if remaining.count == 0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the discarded backend must reach a terminal state");
+    let mut replacement = nazo_postgres::get_conn(&pool).await.unwrap();
+    let replacement_backend = sql_query("SELECT pg_backend_pid()::bigint AS count")
+        .get_result::<CountRow>(&mut replacement)
+        .await
+        .unwrap()
+        .count;
+    assert_ne!(
+        replacement_backend, original_backend,
+        "the unknown connection must never be reused by the pool"
+    );
+    drop(replacement);
+
+    match fact_count(connection, event_id).await {
+        0 => {
+            assert_eq!(
+                grant_count(connection, fixture).await,
+                before_cancel,
+                "rollback must leave neither a fact nor a grant mutation"
+            );
+            assert_eq!(
+                repository.commit_decision(retry.clone()).await.unwrap(),
+                Outcome::Committed,
+                "an uncommitted identity may make its first durable commit"
+            );
+        }
+        1 => {
+            assert_eq!(
+                grant_count(connection, fixture).await,
+                before_cancel + 1,
+                "a committed fact must include exactly one grant mutation"
+            );
+        }
+        count => panic!("one decision identity has {count} committed facts"),
+    }
+    let bound_fact = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM public.security_audit_events \
+         WHERE event_id = $1 AND authorization_tenant_id = $2 \
+           AND authorization_request_id = $3 \
+           AND authorization_par_uri IS NOT DISTINCT FROM $4 \
+           AND authorization_decision = 'approve'",
+    )
+    .bind::<sql_types::Uuid, _>(event_id)
+    .bind::<sql_types::Uuid, _>(retry.tenant_id)
+    .bind::<sql_types::Text, _>(&retry.request_id)
+    .bind::<sql_types::Nullable<sql_types::Text>, _>(retry.pushed_request_uri.as_deref())
+    .get_result::<CountRow>(connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        bound_fact.count, 1,
+        "the original consumption fences must remain bound"
+    );
+    assert_eq!(
+        repository.commit_decision(retry.clone()).await.unwrap(),
+        Outcome::Conflict,
+        "a confirmed or reconciled commit must never apply its identity twice"
+    );
+    // Independent request/PAR fences must reject fresh event identities too;
+    // event-id uniqueness alone is insufficient to prevent re-authorization.
+    let mut same_request = retry.clone();
+    same_request.event_id = Uuid::now_v7();
+    same_request.pushed_request_uri = None;
+    assert_eq!(
+        repository.commit_decision(same_request).await.unwrap(),
+        Outcome::Conflict
+    );
+    let mut same_par = retry;
+    same_par.event_id = Uuid::now_v7();
+    same_par.request_id = Uuid::now_v7().to_string();
+    assert_eq!(
+        repository.commit_decision(same_par).await.unwrap(),
+        Outcome::Conflict
+    );
+    assert_eq!(fact_count(connection, event_id).await, 1);
+    assert_eq!(grant_count(connection, fixture).await, before_cancel + 1);
     assert_eq!(
         repository
             .commit_decision(decision(fixture, Kind::Deny))
             .await
             .unwrap(),
-        Outcome::Committed
+        Outcome::Committed,
+        "the replacement pool connection remains usable after the unknown outcome"
     );
-    assert_eq!(fact_count(connection, event_id).await, 0);
+    assert_eq!(grant_count(connection, fixture).await, before_cancel + 1);
 }
 
 async fn verify_prompt_none_lock_order(
