@@ -244,7 +244,10 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
     // No decision facts exist yet. Move back to the real prior schema, with
     // its in-flight ordinary batch intact, then exercise the full migration
     // chain. Recreating the fact API also resets function-local configuration.
-    connection.batch_execute(STATEMENT_TIMEOUT_DOWN).await.unwrap();
+    connection
+        .batch_execute(STATEMENT_TIMEOUT_DOWN)
+        .await
+        .unwrap();
     connection.batch_execute(DOWN).await.unwrap();
     let suffix = Uuid::now_v7().simple().to_string();
     let audit_only = format!("decision_audit_{suffix}");
@@ -261,7 +264,10 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
          GRANT UPDATE ON public.user_client_grants TO {update_only},{runtime}"
     )).await.unwrap();
     connection.batch_execute(UP).await.unwrap();
-    connection.batch_execute(STATEMENT_TIMEOUT_UP).await.unwrap();
+    connection
+        .batch_execute(STATEMENT_TIMEOUT_UP)
+        .await
+        .unwrap();
     let configured_timeout = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM pg_proc \
          WHERE oid = 'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)'::regprocedure \
