@@ -86,7 +86,7 @@ unlisted or unknown event name is treated as required, never as telemetry.
 | --- | --- |
 | `administration` | `admin_mutation_intent`, `controller_identity_approval_issued`, `controller_slot_created`, `controller_slot_revoked`, `controller_slot_rotated`, `admin_user_created`, `admin_user_updated`, `admin_grant_revoked`, `admin_access_request_rejected` |
 | `authentication` | `federation_login_success`, `login_failure`, `login_success`, `mfa_backup_codes_regenerated`, `mfa_challenge_failure`, `mfa_challenge_success`, `mfa_disabled`, `mfa_step_up_success`, `mfa_totp_enabled`, `passkey_login_failure`, `passkey_login_success`, `passkey_registered`, `passkey_registration_rejected` |
-| `authorization` | `authorization_approved`, `authorization_denied`, `authorization_decision_intent`, `authorization_prompt_none_approved`, `ciba_authorization_approved`, `ciba_authorization_denied`, `ciba_authorization_started`, `ciba_authorization_intent`, `ciba_decision_intent`, `device_authorization_approved`, `device_authorization_denied`, `device_authorization_started`, `device_decision_intent` |
+| `authorization` | `authorization_decision_committed`, `authorization_approved`, `authorization_denied`, `authorization_decision_intent`, `authorization_prompt_none_approved`, `ciba_authorization_approved`, `ciba_authorization_denied`, `ciba_authorization_started`, `ciba_authorization_intent`, `ciba_decision_intent`, `device_authorization_approved`, `device_authorization_denied`, `device_authorization_started`, `device_decision_intent` |
 | `client_lifecycle` | `client_created`, `client_updated`, `dynamic_client_configuration_read`, `dynamic_client_configuration_updated`, `dynamic_client_deleted`, `dynamic_client_registered` |
 | `credential_lifecycle` | `openid4vci_credential_dataset_deleted`, `openid4vci_credential_dataset_updated` |
 | `credential_replay` | `client_assertion_replay_detected`, `dpop_replay_detected`, `federation_provider_mismatch_rejected`, `federation_saml_replay_rejected` |
@@ -124,3 +124,23 @@ Monitor `audit.persistence` failures and `audit.anchor` retries alongside
 business outcomes. A successful request, an intent record, a tracing line, a
 committed ledger event, and an externally accepted checkpoint are distinct
 observations and must not be reported interchangeably.
+
+## Committed browser authorization decisions
+
+Explicit approval, explicit denial and prompt-none use one durable
+`authorization_decision_committed` fact owned by the authorization decision
+repository. The same fact is its tenant-scoped consent/PAR consumption fence;
+necessary grant changes commit atomically with it. These flows no longer emit
+a separate `authorization_decision_intent` or duplicate approval/denial
+Telemetry outcome. Historical event names remain readable.
+
+The fact means the decision committed, not that the browser received a code.
+Code publication occurs only after affirmative commit. Code-store failure,
+response loss, timeout or cancellation never frees a committed fence. Unknown
+commit results fail closed. This contract does not promise durable evidence
+for pre-commit crash attempts that caused no effective authorization.
+
+The event type is reserved: ordinary audit append cannot create a business
+authority fact. Export and chain construction may happen later, but export
+acknowledgement does not erase a still-needed business fence. The exporter
+projects only audit-safe fact fields, not raw code or full code payload.

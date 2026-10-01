@@ -10,8 +10,8 @@ timeout, and partial-outage rules for both.
 
 | Store | State | Loss impact | Recovery expectation |
 | --- | --- | --- | --- |
-| PostgreSQL | users, clients, grants, refresh tokens, access-token revocation state, client metadata, audit-relevant durable rows | durable account, client, token, and grant state can be lost or rolled back | restore from tested backups or promote a consistent replica |
-| Valkey | sessions, authorization codes, PAR handles, DPoP proof replay keys, client assertion replay keys, rate-limit counters, consent transaction state | in-flight browser/API transactions fail; replay/rate controls must not silently weaken | fail closed for security-sensitive paths; restart transactions after recovery |
+| PostgreSQL | users, clients, grants, refresh tokens, access-token revocation state, client metadata, committed authorization-decision facts and consumption fences, audit-relevant durable rows | durable account, client, token, and grant state can be lost or rolled back | restore from tested backups or promote a consistent replica |
+| Valkey | sessions, authorization codes, PAR handles, DPoP proof replay keys, client assertion replay keys, rate-limit counters, immutable consent preparation | in-flight browser/API transactions fail; replay/rate controls must not silently weaken | fail closed for security-sensitive paths; restart transactions after recovery |
 | PostgreSQL signing-key generation + deployment wrapping root | active, prepublished, and retained token-signing private/public keys plus request-object recipient | issued tokens can become unverifiable or signing continuity can break | restore the matching encrypted row and wrapping root before serving traffic |
 | Configured avatar storage | tenant-isolated local files or S3-compatible objects | profile media can be lost or desynchronized from PostgreSQL metadata | restore objects and metadata consistently; independent local disks are not shared storage |
 
@@ -188,7 +188,7 @@ When Valkey is unavailable or times out:
 | DPoP replay cache | proof replay checks fail closed; a token must not be issued or accepted without replay state when the profile requires it |
 | `private_key_jwt` replay cache | assertion `jti` storage failures reject the assertion |
 | Rate limiting | rate-limit storage errors fail closed for protected auth/token-management paths instead of disabling limits |
-| Consent transactions | consent state lookup or consumption failures reject the transaction |
+| Consent preparation | missing/unavailable preparation fails closed before decision commit. After durable commit, preparation-disposal failure cannot release its consumption fence or undo the grant. Code-store failure still prevents a successful response |
 
 The CI real HTTP matrix includes Valkey outage injection to verify externally visible fail-closed behavior.
 
@@ -242,3 +242,17 @@ supported through their original JTI/ownership records and retention policy.
 After new issuance starts, application rollback to an epoch-unaware release is
 not supported. Database downgrade is explicitly refused by the principal-state
 migration. This changes no standalone offline-verifier revocation guarantee.
+
+## Authorization-decision ownership cutover
+
+Do not mix old cache-consumption authority and new durable-decision authority
+for authorization requests. Quiesce/drain the old authorization handlers before
+activating the new adapter contract across all serving instances. Apply the
+corresponding migration first. Existing authorization-code redemption retains
+its prior SingleUse fence; this change does not weaken that boundary.
+
+Do not roll back while retained or unexported decision facts remain. The
+audit checkpoint is not permission to drop a still-live consent/PAR fence.
+Restore durable grant state and decision facts from the same consistency
+boundary. Losing transient payloads can fail outstanding flows but must not
+permit an already committed decision to execute again.

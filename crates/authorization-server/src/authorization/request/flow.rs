@@ -55,6 +55,7 @@ pub(crate) async fn authorize_request_with_context(
     let mut pending_pushed_request_uri = None;
     let mut pending_pushed_request_digest = None;
     let mut pending_pushed_request_version = None;
+    let mut pending_pushed_request_expires_at = None;
     let mut pending_external_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         if !is_pushed_authorization_request_uri(&request_uri) {
@@ -112,6 +113,7 @@ pub(crate) async fn authorize_request_with_context(
                         pending_pushed_request_uri = Some(request_uri);
                         pending_pushed_request_digest = Some(digest);
                         pending_pushed_request_version = Some(snapshot.version);
+                        pending_pushed_request_expires_at = Some(pushed.expires_at);
                         *q = pushed.params;
                     }
                 }
@@ -552,6 +554,7 @@ pub(crate) async fn authorize_request_with_context(
                     facts,
                     payload,
                     pending_pushed_request_version.as_deref(),
+                    pending_pushed_request_expires_at,
                 )
                 .await;
             }

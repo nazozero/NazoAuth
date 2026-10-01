@@ -518,6 +518,13 @@ diesel::table! {
         event_category -> Varchar,
         payload -> Jsonb,
         occurred_at -> Timestamptz,
+        authorization_tenant_id -> Nullable<Uuid>,
+        authorization_request_id -> Nullable<Text>,
+        authorization_par_uri -> Nullable<Text>,
+        authorization_decision -> Nullable<Text>,
+        authorization_valid_until -> Nullable<Timestamptz>,
+        business_retain_until -> Nullable<Timestamptz>,
+        exported_at -> Nullable<Timestamptz>,
     }
 }
 

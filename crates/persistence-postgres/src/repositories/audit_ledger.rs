@@ -276,8 +276,9 @@ impl AuditLedgerRepository {
     }
 
     /// Durable whole-batch acknowledgement. The database verifies the fencing
-    /// generation and the receiver-bound range/content before deleting the
-    /// member rows and advancing the anchor in one transaction.
+    /// generation and receiver-bound range/content before reclaiming chain
+    /// proofs, deleting ordinary events, marking retained decisions exported,
+    /// and advancing the anchor in one transaction.
     pub async fn ack_batch(&self, ack: SecurityAuditBatchAck) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
         let result = sql_query(
@@ -753,6 +754,7 @@ struct SecurityAuditBatchMemberRow {
 
 fn validate_event(event: &SecurityAuditEvent) -> Result<(), RepositoryError> {
     if event.event_id.is_nil()
+        || event.event_type == "authorization_decision_committed"
         || !valid_identifier(&event.event_type)
         || !valid_identifier(&event.event_category)
         || !event.payload.is_object()

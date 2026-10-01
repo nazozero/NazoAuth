@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRepositoryPort, ClientAuthenticationSnapshot,
-    CommitTokenIssuance, CommitTokenIssuanceResult, GrantWrite, OAuthClient, RefreshToken,
+    CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken,
     SingleUseRedemption, StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort,
     TokenRevocation,
 };
@@ -267,8 +267,11 @@ impl AuthorizationRepositoryPort for CountingAuthorizationRepository {
         self.inner.grant(user_id, client_id)
     }
 
-    fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        self.inner.upsert_grant(write)
+    fn commit_decision(
+        &self,
+        input: nazo_auth::AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
+        self.inner.commit_decision(input)
     }
 
     fn client_secret_digest_matches<'a>(

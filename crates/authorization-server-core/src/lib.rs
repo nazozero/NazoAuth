@@ -77,11 +77,13 @@ pub use authorization_request::{
     validate_expanded_par_admission, validate_raw_par_admission, verify_request_object,
 };
 pub use authorization_service::{
-    AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
-    AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
+    AuthorizationApprovalInput,
+    AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
+    AuthorizationDecisionKind, PreparedAuthorizationCode, prepare_authorization_code,
+    AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
     AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateSnapshot,
-    AuthorizationStateStorePort, ClientAuthenticationSnapshot, GrantWrite,
+    AuthorizationStateStorePort, ClientAuthenticationSnapshot,
     StoredAuthorizationGrant, pushed_authorization_request_digest,
     stored_grant_covers_requested_authorization,
 };

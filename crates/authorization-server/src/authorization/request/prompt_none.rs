@@ -7,11 +7,11 @@ use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
 use crate::contracts::oauth_error::OAuthEndpointError;
 use crate::crypto::blake3_hex;
 use crate::crypto::random_urlsafe_token;
-use crate::domain::oauth::{AuthorizationCodeState, CodePayload, ConsentPayload};
+use crate::domain::oauth::ConsentPayload;
 use crate::ports::audit::audit_fields;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Utc};
 use http::StatusCode;
-use nazo_auth::PushedAuthorizationRequestConsumeError;
+use nazo_auth::{AuthorizationApprovalInput, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult, AuthorizationDecisionKind, prepare_authorization_code};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -51,6 +51,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     facts: &AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
     pushed_request_version: Option<&str>,
+    pushed_request_expires_at: Option<DateTime<Utc>>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
     let (Some(signed_response_required), Some(session_management_allowed), Some(ttl_seconds)) = (
         payload.signed_authorization_response_required,
@@ -68,9 +69,8 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         session_management_allowed,
         ttl_seconds,
     };
-    // A prompt=none approval is still a decision: the durable Required intent
-    // commits before the PAR consume/code store, carrying only validated
-    // request facts — never token or credential material.
+    // Prompt-none shares the same durable decision fence as interactive
+    // approval. Preparation/cache disposal cannot grant authorization.
     let mut intent_fields = audit_fields(&[
         ("request_id_hash", json!(blake3_hex(&payload.request_id))),
         ("user_id", json!(payload.user_id)),
@@ -99,123 +99,78 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     if let Some(digest) = payload.pushed_request_digest.as_deref() {
         intent_fields.insert("pushed_request_digest".to_owned(), json!(digest));
     }
-    context
-        .security_audit
-        .record_required("authorization_decision_intent", intent_fields)
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, "prompt=none decision audit intent failed");
-            OAuthEndpointError::json(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权决策审计记录失败.",
-            )
-        })?;
-    if let Some(request_uri) = payload.pushed_request_uri.as_deref() {
-        let Some(version) = pushed_request_version else {
+    let retain_until = pushed_request_expires_at
+        .map_or(payload.expires_at, |expires_at| payload.expires_at.max(expires_at));
+    let valid_until = match (payload.pushed_request_uri.as_ref(), pushed_request_expires_at) {
+        (Some(_), Some(expires_at)) => payload.expires_at.min(expires_at),
+        (None, _) => payload.expires_at,
+        (Some(_), None) => {
             return Err(OAuthEndpointError::json(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权请求状态不可用.",
+                StatusCode::SERVICE_UNAVAILABLE, "server_error", "授权请求期限不可用.",
             ));
-        };
-        match context
-            .service
-            .consume_pushed_authorization_request(request_uri, version)
-            .await
-        {
-            Ok(()) => {}
-            Err(PushedAuthorizationRequestConsumeError::Missing) => {
-                return authorization_response_redirect_with_context(
-                    context,
-                    AuthorizationResponseRedirect {
-                        redirect_uri: &payload.redirect_uri,
-                        client_id: &payload.client_id,
-                        response_mode: payload.response_mode.as_deref(),
-                        code: None,
-                        error: Some("invalid_request_uri"),
-                        state: payload.state.as_deref(),
-                        oidc_sid: None,
-                        client_policy: Some(response_policy),
-                    },
-                )
-                .await;
-            }
-            Err(PushedAuthorizationRequestConsumeError::Dependency(error)) => {
-                tracing::warn!(%error, "failed to consume PAR request_uri");
-                return authorization_response_redirect_with_context(
-                    context,
-                    AuthorizationResponseRedirect {
-                        redirect_uri: &payload.redirect_uri,
-                        client_id: &payload.client_id,
-                        response_mode: payload.response_mode.as_deref(),
-                        code: None,
-                        error: Some("server_error"),
-                        state: payload.state.as_deref(),
-                        oidc_sid: None,
-                        client_policy: Some(response_policy),
-                    },
-                )
-                .await;
-            }
         }
-    }
-
+    };
     let now = Utc::now();
+    let event_id = Uuid::now_v7();
     let code = random_urlsafe_token();
     let oidc_sid = payload.oidc_sid.clone();
-    let code_payload = CodePayload {
-        code_id: Uuid::now_v7().to_string(),
-        user_id: payload.user_id,
-        client_id: payload.client_id.clone(),
-        redirect_uri: payload.redirect_uri.clone(),
-        redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
-        scopes: payload.scopes.clone(),
-        resource_indicators: payload.resource_indicators,
-        authorization_details: payload.authorization_details,
-        nonce: payload.nonce,
-        auth_time: payload.auth_time,
-        amr: payload.amr,
-        oidc_sid: payload.oidc_sid,
-        acr: payload.acr,
-        userinfo_claims: payload.userinfo_claims,
-        userinfo_claim_requests: payload.userinfo_claim_requests,
-        id_token_claims: payload.id_token_claims,
-        id_token_claim_requests: payload.id_token_claim_requests,
-        code_challenge: payload.code_challenge,
-        code_challenge_method: payload.code_challenge_method,
-        dpop_jkt: payload.dpop_jkt,
-        mtls_x5t_s256: payload.mtls_x5t_s256,
+    let prepared = prepare_authorization_code(AuthorizationApprovalInput {
+        consent: &payload,
+        code_hash: &blake3_hex(&code),
+        code_id: &event_id.to_string(),
         issued_at: now,
-        expires_at: now + Duration::seconds(response_policy.ttl_seconds as i64),
-    };
-    if let Err(error) = context
-        .service
-        .store_authorization_code(
-            &blake3_hex(&code),
-            &AuthorizationCodeState::Pending {
-                payload: code_payload,
+        code_ttl_seconds: ttl_seconds,
+        tenant_id: context.tenant_id,
+    });
+    let result = context.service.commit_decision(
+        AuthorizationDecisionCommit {
+            tenant_id: context.tenant_id,
+            user_id: payload.user_id,
+            client_id: payload.client_id.clone(),
+            request_id: payload.request_id.clone(),
+            pushed_request_uri: payload.pushed_request_uri.clone(),
+            valid_until,
+            retain_until,
+            decision: AuthorizationDecisionKind::PromptNone,
+            event_id,
+            occurred_at: now,
+            audit_fields: Value::Object(intent_fields),
+            scopes: payload.scopes.clone(),
+            resource_indicators: payload.resource_indicators.clone(),
+            authorization_details: payload.authorization_details.clone(),
+        },
+        Some(prepared),
+    ).await.map_err(|error| {
+        tracing::warn!(%error, "prompt-none decision commit or code publication failed");
+        OAuthEndpointError::json(StatusCode::SERVICE_UNAVAILABLE, "server_error", "授权决定提交失败.")
+    })?;
+    if result != AuthorizationDecisionCommitResult::Committed {
+        let error = match result {
+            AuthorizationDecisionCommitResult::Conflict | AuthorizationDecisionCommitResult::Expired => {
+                if payload.pushed_request_uri.is_some() { "invalid_request_uri" } else { "invalid_request" }
             },
-            response_policy.ttl_seconds,
-        )
-        .await
-    {
-        tracing::warn!(%error, "failed to persist prompt=none authorization code");
-        return Err(OAuthEndpointError::json(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "授权码创建失败.",
-        ));
+            AuthorizationDecisionCommitResult::GrantUnavailable => "consent_required",
+            _ => "server_error",
+        };
+        return authorization_response_redirect_with_context(
+            context,
+            AuthorizationResponseRedirect {
+                redirect_uri: &payload.redirect_uri,
+                client_id: &payload.client_id,
+                response_mode: payload.response_mode.as_deref(),
+                code: None,
+                error: Some(error),
+                state: payload.state.as_deref(),
+                oidc_sid: None,
+                client_policy: Some(response_policy),
+            },
+        ).await;
     }
-    context.security_audit.record(
-        "authorization_prompt_none_approved",
-        audit_fields(&[
-            ("user_id", json!(payload.user_id)),
-            ("client_id", json!(payload.client_id)),
-            ("scope", json!(payload.scopes.join(" "))),
-            ("source_ip_hash", json!(blake3_hex(facts.source_ip))),
-        ]),
-    );
+    if let (Some(uri), Some(version)) = (payload.pushed_request_uri.as_deref(), pushed_request_version) {
+        if let Err(error) = context.service.discard_pushed_authorization_request(uri, version).await {
+            tracing::warn!(?error, "failed to discard committed PAR preparation");
+        }
+    }
     authorization_response_redirect_with_context(
         context,
         AuthorizationResponseRedirect {

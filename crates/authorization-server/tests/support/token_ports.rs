@@ -172,9 +172,13 @@ impl AuthorizationRepositoryPort for HolderFixture {
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>> {
         panic!("unexpected AuthorizationRepositoryPort::grant call")
     }
-    fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        panic!("unexpected AuthorizationRepositoryPort::upsert_grant call")
+    fn commit_decision(
+        &self,
+        input: nazo_auth::AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
+        panic!("unexpected AuthorizationRepositoryPort::commit_decision call")
     }
+
     fn client_authentication_snapshot<'a>(
         &'a self,
         client_id: &'a str,

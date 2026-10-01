@@ -16,6 +16,8 @@ pub type SecurityStateMaintenanceFuture<'a, T> =
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CleanupBatchResult {
     pub issuances: u64,
+    /// Exported authorization facts whose business retention has ended.
+    pub authorization_decisions: u64,
     /// Refresh families deleted because their current generation expired.
     pub refresh_tokens: u64,
     /// Compact spent/replay proofs deleted at their own expiry.
