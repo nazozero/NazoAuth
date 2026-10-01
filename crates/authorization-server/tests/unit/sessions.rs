@@ -414,7 +414,10 @@ fn recent_admin_mfa_requires_a_fresh_interactive_factor() {
 
 #[test]
 fn resolver_delete_delegates_to_the_existing_session_store() {
-    let store = Arc::new(FakeSessionStore::new(Ok(Some(snapshot(false, Some("sid-1"))))));
+    let store = Arc::new(FakeSessionStore::new(Ok(Some(snapshot(
+        false,
+        Some("sid-1"),
+    )))));
     let accounts = Arc::new(FakeAccounts::new(Ok(Some(account(true)))));
     let resolver = resolver(store.clone(), accounts.clone());
     block_on(resolver.delete_session("session-to-delete")).unwrap();

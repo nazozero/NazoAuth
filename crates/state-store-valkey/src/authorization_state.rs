@@ -305,9 +305,7 @@ fn map_preparation_write(
     }
 }
 
-fn map_discard_error(
-    error: DecisionMaterialDiscardError<Error>,
-) -> DecisionMaterialDiscardError {
+fn map_discard_error(error: DecisionMaterialDiscardError<Error>) -> DecisionMaterialDiscardError {
     match error {
         DecisionMaterialDiscardError::ConsentOrUnknown(source) => {
             DecisionMaterialDiscardError::ConsentOrUnknown(map_error(source))

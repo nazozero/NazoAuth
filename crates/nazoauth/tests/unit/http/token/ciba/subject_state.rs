@@ -480,7 +480,8 @@ async fn ciba_approved_poll_reads_subject_claims_once_for_oidc_and_never_for_pla
         let user_id = Uuid::now_v7();
         insert_ciba_user(&state, user_id).await;
         let auth_req_id = format!("oidc-claims-count-{}", Uuid::now_v7());
-        store_ciba_state_with_user(&state, &client, &auth_req_id, user_id, CibaStatus::Approved).await;
+        store_ciba_state_with_user(&state, &client, &auth_req_id, user_id, CibaStatus::Approved)
+            .await;
         let response = poll(auth_req_id).await;
         let status = response.status();
         let body = actix_web::body::to_bytes(response.into_body())
@@ -590,14 +591,7 @@ async fn ciba_subject_configuration_error_precedes_user_check_after_consumption(
         .unwrap();
     drop(connection);
     let auth_req_id = format!("subject-error-consumed-{}", Uuid::now_v7());
-    store_ciba_state_with_user(
-        &state,
-        &client,
-        &auth_req_id,
-        user_id,
-        CibaStatus::Approved,
-    )
-    .await;
+    store_ciba_state_with_user(&state, &client, &auth_req_id, user_id, CibaStatus::Approved).await;
     let response = call_ciba_token_with_mtls_for_test(&state, &client, auth_req_id.clone()).await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(response).await, "server_error");

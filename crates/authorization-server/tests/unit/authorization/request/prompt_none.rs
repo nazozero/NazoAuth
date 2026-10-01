@@ -524,15 +524,22 @@ fn prompt_none_success_binds_rp_in_persisted_session_after_durable_decision() {
             "session_compare_and_set",
         ]
     );
-    let stored = fixture.ports.session.lock().unwrap().clone().unwrap().unwrap();
+    let stored = fixture
+        .ports
+        .session
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .unwrap();
     assert_ne!(stored.version(), initial.version());
     let mut expected = initial.record().clone();
     expected.add_logged_in_client(&payload.client_id);
     assert_eq!(stored.record(), &expected);
     let current =
         futures_executor::block_on(fixture.sessions.current_session_by_id(session_id.as_str()))
-    .unwrap()
-    .unwrap();
+            .unwrap()
+            .unwrap();
     assert_eq!(
         current.logged_in_client_ids,
         ["existing-rp", payload.client_id.as_str()]
@@ -548,10 +555,13 @@ fn prompt_none_binding_conflict_reloads_and_preserves_another_rp() {
     let mut concurrent = initial.record().clone();
     concurrent.add_logged_in_client("concurrent-rp");
     let (fixture, payload) = ready_prompt_none_fixture(Ok(Some(initial)));
-    *fixture.ports.session_cas_conflict.lock().unwrap() = Some(nazo_identity::SessionSnapshot::new(
-        concurrent,
-        nazo_identity::SessionVersion::from_storage(b"concurrent-version".to_vec().into_boxed_slice()),
-    ));
+    *fixture.ports.session_cas_conflict.lock().unwrap() =
+        Some(nazo_identity::SessionSnapshot::new(
+            concurrent,
+            nazo_identity::SessionVersion::from_storage(
+                b"concurrent-version".to_vec().into_boxed_slice(),
+            ),
+        ));
     assert_prompt_none_returns_code(
         issue_prompt_none_for_session(
             &fixture,
@@ -560,7 +570,14 @@ fn prompt_none_binding_conflict_reloads_and_preserves_another_rp() {
         )
         .unwrap(),
     );
-    let stored = fixture.ports.session.lock().unwrap().clone().unwrap().unwrap();
+    let stored = fixture
+        .ports
+        .session
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .unwrap();
     assert_eq!(
         stored.record().logged_in_client_ids(),
         ["concurrent-rp", payload.client_id.as_str()]
@@ -675,7 +692,10 @@ fn assert_prompt_none_returns_login_required(outcome: crate::authorization::Auth
     };
     let location = url::Url::parse(&location).unwrap();
     let query: std::collections::HashMap<_, _> = location.query_pairs().into_owned().collect();
-    assert_eq!(query.get("error").map(String::as_str), Some("login_required"));
+    assert_eq!(
+        query.get("error").map(String::as_str),
+        Some("login_required")
+    );
     assert!(!query.contains_key("code"));
     assert!(!query.contains_key("session_state"));
 }
@@ -718,8 +738,9 @@ fn prompt_none_rejected_commit_never_writes_a_code_or_binds_a_session() {
         .ports
         .record_code_writes
         .store(false, std::sync::atomic::Ordering::SeqCst);
-    fixture.ports.decisions.lock().unwrap().outcome =
-        Some(Ok(nazo_auth::AuthorizationDecisionCommitResult::GrantUnavailable));
+    fixture.ports.decisions.lock().unwrap().outcome = Some(Ok(
+        nazo_auth::AuthorizationDecisionCommitResult::GrantUnavailable,
+    ));
     let outcome = issue_prompt_none_for_session(
         &fixture,
         payload,
@@ -731,7 +752,10 @@ fn prompt_none_rejected_commit_never_writes_a_code_or_binds_a_session() {
     };
     let location = url::Url::parse(&location).unwrap();
     let query: std::collections::HashMap<_, _> = location.query_pairs().into_owned().collect();
-    assert_eq!(query.get("error").map(String::as_str), Some("consent_required"));
+    assert_eq!(
+        query.get("error").map(String::as_str),
+        Some("consent_required")
+    );
     assert!(!query.contains_key("code"));
     assert_eq!(
         fixture.ports.calls(),

@@ -157,7 +157,12 @@ async fn decision_cleanup_uses_raw_versions_and_supports_consent_without_par() {
         );
         if !include_par {
             assert_eq!(
-                adapter.load_par(&request_uri).await.unwrap().unwrap().version,
+                adapter
+                    .load_par(&request_uri)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .version,
                 par.version
             );
             assert!(
@@ -182,7 +187,10 @@ async fn decision_cleanup_preserves_replacements_and_original_partial_cleanup_or
             let consent = consent_payload(&request_id, uuid::Uuid::from_u128(1));
             let par = par_payload();
             assert_eq!(
-                store.store_consent(&request_id, &consent, 30).await.unwrap(),
+                store
+                    .store_consent(&request_id, &consent, 30)
+                    .await
+                    .unwrap(),
                 AuthorizationPreparationWrite::Stored
             );
             assert_eq!(
@@ -367,29 +375,42 @@ async fn decision_cleanup_keeps_tenant_deployment_and_epoch_boundaries() {
         (other_deployment.as_str(), epoch, tenant),
         (deployment.as_str(), uuid::Uuid::now_v7(), tenant),
     ] {
-        let connection = ValkeyConnection::from_existing_client(
-            inspector.clone(),
-            deployment,
-            epoch,
-            tenant,
-        )
-        .unwrap();
+        let connection =
+            ValkeyConnection::from_existing_client(inspector.clone(), deployment, epoch, tenant)
+                .unwrap();
         let adapter: Arc<dyn AuthorizationStateStorePort> =
             Arc::new(AuthorizationStateAdapter::new(&connection));
-        adapter.store_consent(&request_id, &consent, 30).await.unwrap();
+        adapter
+            .store_consent(&request_id, &consent, 30)
+            .await
+            .unwrap();
         adapter.store_par(&request_uri, &par, 30).await.unwrap();
         adapters.push(adapter);
     }
-    let consent = adapters[0].load_consent(&request_id).await.unwrap().unwrap();
+    let consent = adapters[0]
+        .load_consent(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
     let par = adapters[0].load_par(&request_uri).await.unwrap().unwrap();
     // All namespaces intentionally contain the same logical identities and bytes.
     for (index, adapter) in adapters.iter().enumerate() {
         assert_eq!(
-            adapter.load_consent(&request_id).await.unwrap().unwrap().version,
+            adapter
+                .load_consent(&request_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .version,
             consent.version
         );
         assert_eq!(
-            adapter.load_par(&request_uri).await.unwrap().unwrap().version,
+            adapter
+                .load_par(&request_uri)
+                .await
+                .unwrap()
+                .unwrap()
+                .version,
             par.version
         );
         assert_eq!(
@@ -406,7 +427,12 @@ async fn decision_cleanup_keeps_tenant_deployment_and_epoch_boundaries() {
         assert!(adapter.load_par(&request_uri).await.unwrap().is_none());
         for other in &adapters[index + 1..] {
             assert_eq!(
-                other.load_consent(&request_id).await.unwrap().unwrap().version,
+                other
+                    .load_consent(&request_id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .version,
                 consent.version
             );
             assert_eq!(

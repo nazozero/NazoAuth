@@ -338,5 +338,9 @@ fn recent_interactive_mfa_has_one_strict_time_and_factor_policy() {
     }
     assert!(!recent_interactive_mfa(now, &["mfa".to_owned()], now));
     assert!(!recent_interactive_mfa(now, &["otp".to_owned()], now));
-    assert!(recent_interactive_mfa(now, &["mfa".to_owned(), "recovery_code".to_owned()], now));
+    assert!(recent_interactive_mfa(
+        now,
+        &["mfa".to_owned(), "recovery_code".to_owned()],
+        now
+    ));
 }

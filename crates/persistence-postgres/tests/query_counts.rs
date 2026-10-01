@@ -985,13 +985,15 @@ async fn oidc_subject_preparation_reads_claims_epoch_and_binding_once() {
 
     let mut connection = connect(&database_url).await;
     seed_user(&mut connection, tenant, other_user).await;
-    sql_query("INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Text, _>(&private_subject)
-        .bind::<sql_types::Uuid, _>(seed.user_id)
-        .execute(&mut connection)
-        .await
-        .unwrap();
+    sql_query(
+        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Text, _>(&private_subject)
+    .bind::<sql_types::Uuid, _>(seed.user_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
     sql_query("UPDATE users SET access_token_epoch = 7 WHERE tenant_id = $1 AND id = $2")
         .bind::<sql_types::Uuid, _>(tenant_id)
         .bind::<sql_types::Uuid, _>(seed.user_id)
@@ -1019,7 +1021,10 @@ async fn oidc_subject_preparation_reads_claims_epoch_and_binding_once() {
         repository.active_subject_claims(tenant_id, other_user, &private_subject),
     )
     .await;
-    assert!(matches!(result, Err(nazo_auth::TokenPortError::CorruptData)));
+    assert!(matches!(
+        result,
+        Err(nazo_auth::TokenPortError::CorruptData)
+    ));
     assert_eq!(delta.data_queries, 1);
     assert_eq!(acquires, 1);
     assert_no_transaction(delta);

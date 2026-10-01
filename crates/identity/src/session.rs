@@ -25,7 +25,9 @@ pub const ADMIN_MFA_MAX_AGE_SECONDS: i64 = 5 * 60;
 pub fn recent_interactive_mfa(auth_time: i64, amr: &[String], now: i64) -> bool {
     (0..=ADMIN_MFA_MAX_AGE_SECONDS).contains(&now.saturating_sub(auth_time))
         && amr.iter().any(|method| method == "mfa")
-        && amr.iter().any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
+        && amr
+            .iter()
+            .any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
 }
 
 pub fn add_amr(amr: &mut Vec<String>, value: &str) {
