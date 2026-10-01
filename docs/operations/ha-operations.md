@@ -119,14 +119,18 @@ instances from double-processing the same rows.
   the scheduling budget cannot interrupt an in-flight query.
 - Refresh-token leaf reclaim takes the same family advisory lock used by
   refresh-token writers (`pg_try_advisory_xact_lock`). A family whose lock is
-  held by an active writer is skipped for that pass, and lock-free rows are
-  rechecked inside the reclaim transaction. A batch uses one candidate read,
+  held by an active writer or PreserveExisting reader is skipped for that pass,
+  and lock-free rows are rechecked inside the reclaim transaction. A batch uses
+  one candidate read,
   one bounded advisory-lock query and one bulk delete. The delete is a separate
   READ COMMITTED statement so it sees a rotation committed before lock acquisition.
   Families with an active successor are never reclaimed. PreserveExisting token
-  issuance also takes the same family advisory lock plus a real family row lock
-  through its final commit; it cannot issue from a source retired or revoked
-  before that locked check. Expiry is checked after source lock acquisition.
+  issuance takes that advisory lock in shared mode plus `FOR SHARE OF f`
+  through its final commit. Independent preserves can overlap; the advisory
+  lock keeps reclaim nonblocking, while the row lock also fences direct
+  UPDATE/DELETE revokers that do not take the advisory lock. PreserveExisting
+  cannot issue from a source retired or revoked before that locked check. Expiry
+  is checked after source lock acquisition.
 - Expired spent proofs are removed at their own expiry. Unbound public families
   retain all unexpired proofs; confidential or actually DPoP/mTLS-bound families
   retain at most 64. Family deletion cascades remaining proofs. The public

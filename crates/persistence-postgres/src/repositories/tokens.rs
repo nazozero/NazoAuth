@@ -700,14 +700,20 @@ struct LockedRefreshFamily {
 }
 
 /// One locked family read, with the immutable payload checked independently
-/// of its stable content key. FOR UPDATE also fences direct family UPDATE
-/// writers which do not take the advisory lock.
+/// of its stable content key. Both row-lock modes fence direct family UPDATE
+/// writers which do not take the advisory lock; Preserve readers may overlap.
 async fn load_family(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     family_id: Uuid,
+    preserve: bool,
 ) -> diesel::QueryResult<Option<LockedRefreshFamily>> {
-    sql_query(
+    let lock = if preserve {
+        "FOR SHARE OF f"
+    } else {
+        "FOR UPDATE OF f"
+    };
+    sql_query(format!(
         "SELECT f.tenant_id, f.token_family_id, f.client_id, f.user_id, \
          f.contract_blake3, f.current_member_id, f.current_token_blake3, \
          f.current_audience, f.current_issued_at, f.current_expires_at, \
@@ -715,8 +721,8 @@ async fn load_family(
          f.client_attestation_jkt, f.revoked_at, f.reuse_detected_at, c.contract \
          FROM oauth_refresh_families f LEFT JOIN oauth_refresh_contracts c \
            ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 \
-         WHERE f.tenant_id = $1 AND f.token_family_id = $2 FOR UPDATE OF f",
-    )
+         WHERE f.tenant_id = $1 AND f.token_family_id = $2 {lock}",
+    ))
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Uuid, _>(family_id)
     .get_result(connection)
@@ -750,14 +756,27 @@ async fn persist_refresh_token_inner(
     if refresh.token().is_some() {
         lock_refresh_grant_scope(connection, tenant_id, user_id, client_id).await?;
     }
-    lock_refresh_family(connection, family_id).await?;
+    let preserve = matches!(
+        refresh,
+        RefreshTokenCommit::UseExisting { rotation: None, .. }
+    );
+    if preserve {
+        // Compatible readers still fence maintenance's exclusive try-lock:
+        // an expiring source must be skipped, not stall the reclaim batch.
+        sql_query("SELECT pg_advisory_xact_lock_shared($1)")
+            .bind::<sql_types::BigInt, _>(refresh_family_lock_key(family_id))
+            .execute(connection)
+            .await?;
+    } else {
+        lock_refresh_family(connection, family_id).await?;
+    }
 
     if let RefreshTokenCommit::UseExisting {
         authority,
         rotation,
     } = refresh
     {
-        let Some(locked) = load_family(connection, tenant_id, family_id).await? else {
+        let Some(locked) = load_family(connection, tenant_id, family_id, preserve).await? else {
             return Ok(RefreshTokenPersistResult::InvalidSource);
         };
         let family = locked.family;
