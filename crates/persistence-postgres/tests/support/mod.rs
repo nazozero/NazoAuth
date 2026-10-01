@@ -35,7 +35,9 @@ const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 14] = [
     include_str!("../../../../migrations/20260927000200_refresh_contract_ensure/up.sql"),
     include_str!("../../../../migrations/20260929000400_audit_claim_direct_reads/up.sql"),
     include_str!("../../../../migrations/20261001000100_authorization_decision_facts/up.sql"),
-    include_str!("../../../../migrations/20261001000200_authorization_decision_statement_timeout/up.sql"),
+    include_str!(
+        "../../../../migrations/20261001000200_authorization_decision_statement_timeout/up.sql"
+    ),
 ];
 
 pub fn schema_database_url(base: &str, schema: &str) -> String {

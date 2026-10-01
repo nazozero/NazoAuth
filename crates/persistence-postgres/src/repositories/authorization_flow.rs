@@ -371,7 +371,10 @@ async fn execute_decision(
     let row = rows.next().ok_or(diesel::result::Error::NotFound)?;
     if rows.next().is_some() {
         return Err(diesel::result::Error::DeserializationError(Box::new(
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "multiple decision outcomes"),
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "multiple decision outcomes",
+            ),
         )));
     }
     match row.outcome.as_str() {
@@ -380,7 +383,10 @@ async fn execute_decision(
         "expired" => Ok(AuthorizationDecisionCommitResult::Expired),
         "client_unavailable" => Ok(AuthorizationDecisionCommitResult::ClientUnavailable),
         _ => Err(diesel::result::Error::DeserializationError(Box::new(
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown authorization decision outcome"),
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "unknown authorization decision outcome",
+            ),
         ))),
     }
 }
@@ -414,4 +420,3 @@ fn map_device_repository_error(error: RepositoryError) -> DeviceGrantPortError {
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/authorization_flow.rs"]
 mod tests;
-
