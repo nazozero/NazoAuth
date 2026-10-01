@@ -127,8 +127,17 @@ instances from double-processing the same rows.
   issuance also takes the same family advisory lock plus a real family row lock
   through its final commit; it cannot issue from a source retired or revoked
   before that locked check. Expiry is checked after source lock acquisition.
-- Expired spent proofs are removed at their own expiry. Rotation also limits
-  proofs to 64 per family; family deletion cascades any remaining proofs.
+- Expired spent proofs are removed at their own expiry. Unbound public families
+  retain all unexpired proofs; confidential or actually DPoP/mTLS-bound families
+  retain at most 64. Family deletion cascades remaining proofs. The public
+  footprint depends on rotation rate × original token TTL plus cleanup lag;
+  the 60-second normal maintenance delay is not a deletion SLA.
+- Before migration `20261001000500`, stop old token writers. The migration
+  revokes existing unbound public refresh families once, with transactional
+  audit evidence, because previously trimmed opaque history cannot be restored.
+  These clients need fresh authorization; confidential/sender-bound families
+  are unaffected by the cutover. Do not mix old/new issuers or expect rollback
+  to revive revoked credentials. See the [upgrade contract](../protocol/refresh-token-rotation.md#upgrade-and-rollback-boundary).
   The current family row remains authoritative until its current token expires.
 - Capacity retirement removes the family and its proofs in the issuance
   transaction, retaining its Required audit. Orphan contract deletion runs only

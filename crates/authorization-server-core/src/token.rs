@@ -113,14 +113,28 @@ impl RefreshContract {
 /// limit bounds independent long-lived grants, never rotation generations.
 pub const MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE: i64 = 10;
 
-/// Maximum spent proofs retained per refresh family. Each rotation keeps the
-/// newest proofs for lost-response edge recovery and replay detection, then
-/// trims the tail, so spent state is bounded by
-/// `live families × MAX_SPENT_PROOFS_PER_REFRESH_FAMILY` rather than by
-/// family age or total rotations. A token replayed from beyond the retained
-/// window resolves as an unknown grant — still fail-closed, though without
-/// the compromise escalation the retained window provides.
+/// Maximum spent proofs for authenticated confidential clients or families
+/// protected by a persisted DPoP/mTLS sender constraint. This is a bounded
+/// additional reuse signal, not a complete history guarantee.
 pub const MAX_SPENT_PROOFS_PER_REFRESH_FAMILY: i64 = 64;
+
+/// RFC 9700 section 4.14.2 requires unbound public clients to retain rotation
+/// relationships throughout each token's acceptance lifetime. Client type must
+/// come from the locked client authority; bindings must come from the locked
+/// family, never from a requested AT binding or current client configuration.
+/// Unknown unbound client classes conservatively retain all unexpired proofs.
+#[must_use]
+pub fn refresh_spent_proof_limit(
+    client_type: &str,
+    dpop_jkt: Option<&str>,
+    mtls_x5t_s256: Option<&str>,
+) -> Option<i64> {
+    if client_type == "confidential" || dpop_jkt.is_some() || mtls_x5t_s256.is_some() {
+        Some(MAX_SPENT_PROOFS_PER_REFRESH_FAMILY)
+    } else {
+        None
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RefreshToken {

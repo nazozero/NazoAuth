@@ -19,6 +19,7 @@ diesel::table! {
         tenant_id -> Uuid,
         is_active -> Bool,
         access_token_epoch -> BigInt,
+        client_type -> Text,
     }
 }
 
@@ -89,21 +90,24 @@ pub(super) async fn snapshot(
 pub(super) async fn lock_and_recheck(
     connection: &mut AsyncPgConnection,
     input: &CommitTokenIssuance,
-) -> diesel::QueryResult<Option<CommitTokenIssuanceResult>> {
+) -> diesel::QueryResult<Result<String, CommitTokenIssuanceResult>> {
     let client = client_principals::table
         .filter(client_principals::tenant_id.eq(input.tenant_id))
         .filter(client_principals::id.eq(input.client_id))
         .select((
             client_principals::is_active,
             client_principals::access_token_epoch,
+            client_principals::client_type,
         ))
         .for_share()
-        .first::<(bool, i64)>(connection)
+        .first::<(bool, i64, String)>(connection)
         .await
         .optional()?;
-    if !client.is_some_and(|(active, epoch)| active && epoch == input.principal_state.client_epoch)
-    {
-        return Ok(Some(CommitTokenIssuanceResult::ClientInactive));
+    let Some((active, epoch, client_type)) = client else {
+        return Ok(Err(CommitTokenIssuanceResult::ClientInactive));
+    };
+    if !active || epoch != input.principal_state.client_epoch {
+        return Ok(Err(CommitTokenIssuanceResult::ClientInactive));
     }
     if let Some(user_id) = input.user_id {
         let user = user_principals::table
@@ -120,10 +124,12 @@ pub(super) async fn lock_and_recheck(
         if !user.is_some_and(|(active, epoch)| {
             active && Some(epoch) == input.principal_state.user_epoch
         }) {
-            return Ok(Some(CommitTokenIssuanceResult::SubjectInactive));
+            return Ok(Err(CommitTokenIssuanceResult::SubjectInactive));
         }
     }
-    Ok(None)
+    // The same client lock protects the returned classification until commit.
+    // Authentication-class changes invalidate old refresh authority atomically.
+    Ok(Ok(client_type))
 }
 
 #[derive(QueryableByName)]

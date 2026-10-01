@@ -205,7 +205,7 @@ pub use token::{
     BackchannelLogoutDelivery, LostResponseRetry, MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE,
     MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken, PendingBackchannelLogoutDelivery,
     RefreshContract, RefreshToken, RefreshTokenAuthenticationContext, RefreshTokenAuthority,
-    RefreshTokenCommit, RefreshTokenPersistResult,
+    RefreshTokenCommit, RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 pub use token_endpoint::{
     AdmittedTokenClient, AppliedSenderConstraint, AuthorizationCodeTokenRequest,

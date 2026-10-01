@@ -5,8 +5,8 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, RefreshContract,
-    RefreshToken, RefreshTokenCommit, RefreshTokenPersistResult,
+    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, RefreshContract, RefreshToken, RefreshTokenCommit,
+    RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::SecurityAuditEvent;
@@ -185,11 +185,12 @@ impl TokenRepository {
     pub(crate) async fn persist_refresh_token_on_connection(
         connection: &mut AsyncPgConnection,
         refresh: &RefreshTokenCommit,
+        client_type: &str,
         issuance_id: Uuid,
         prepared_contract: Option<&PreparedRefreshContract>,
     ) -> Result<RefreshTokenPersistResult, RepositoryError> {
         validate_refresh_commit(refresh)?;
-        persist_refresh_token_inner(connection, refresh, issuance_id, prepared_contract)
+        persist_refresh_token_inner(connection, refresh, client_type, issuance_id, prepared_contract)
             .await
             .map_err(map_error)
     }
@@ -720,6 +721,7 @@ async fn load_family(
 async fn persist_refresh_token_inner(
     connection: &mut AsyncPgConnection,
     refresh: &RefreshTokenCommit,
+    client_type: &str,
     issuance_id: Uuid,
     prepared_contract: Option<&PreparedRefreshContract>,
 ) -> diesel::QueryResult<RefreshTokenPersistResult> {
@@ -838,27 +840,31 @@ async fn persist_refresh_token_inner(
             ))
             .execute(connection)
             .await?;
-        // Bound the replay window: keep only the newest
-        // MAX_SPENT_PROOFS_PER_REFRESH_FAMILY proofs for this family so spent
-        // state cannot grow with rotation count or family age. Select only
-        // overflow digests, then delete those primary keys; do not rescan the
-        // family to test every retained proof against a NOT IN keep-set.
-        sql_query(
-            "DELETE FROM oauth_refresh_spent_tokens AS spent \
-             USING ( \
-                 SELECT refresh_token_blake3 FROM oauth_refresh_spent_tokens \
-                 WHERE tenant_id = $1 AND token_family_id = $2 \
-                 ORDER BY spent_at DESC, member_id DESC \
-                 OFFSET $3 \
-             ) AS excess \
-             WHERE spent.tenant_id = $1 AND spent.token_family_id = $2 \
-               AND spent.refresh_token_blake3 = excess.refresh_token_blake3",
-        )
-        .bind::<sql_types::Uuid, _>(token.tenant_id)
-        .bind::<sql_types::Uuid, _>(token.family_id)
-        .bind::<sql_types::BigInt, _>(MAX_SPENT_PROOFS_PER_REFRESH_FAMILY)
-        .execute(connection)
-        .await?;
+        // Core owns the retention policy. The client classification is locked
+        // by the caller; the family bindings were read and checked above.
+        // Never trim an unexpired unbound public proof merely by generation.
+        if let Some(limit) = refresh_spent_proof_limit(
+            client_type,
+            family.dpop_jkt.as_deref(),
+            family.mtls_x5t_s256.as_deref(),
+        ) {
+            sql_query(
+                "DELETE FROM oauth_refresh_spent_tokens AS spent \
+                 USING ( \
+                     SELECT refresh_token_blake3 FROM oauth_refresh_spent_tokens \
+                     WHERE tenant_id = $1 AND token_family_id = $2 \
+                     ORDER BY spent_at DESC, member_id DESC \
+                     OFFSET $3 \
+                 ) AS excess \
+                 WHERE spent.tenant_id = $1 AND spent.token_family_id = $2 \
+                   AND spent.refresh_token_blake3 = excess.refresh_token_blake3",
+            )
+            .bind::<sql_types::Uuid, _>(token.tenant_id)
+            .bind::<sql_types::Uuid, _>(token.family_id)
+            .bind::<sql_types::BigInt, _>(limit)
+            .execute(connection)
+            .await?;
+        }
         diesel::update(
             oauth_refresh_families::table
                 .filter(oauth_refresh_families::tenant_id.eq(token.tenant_id))

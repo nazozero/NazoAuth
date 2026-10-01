@@ -24,3 +24,23 @@ fn authentication_context_accepts_only_the_current_version() {
     };
     assert!(!unsupported.is_supported_version());
 }
+
+#[test]
+fn public_unbound_refresh_proofs_are_retained_until_token_expiry() {
+    use super::{MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, refresh_spent_proof_limit};
+
+    assert_eq!(refresh_spent_proof_limit("public", None, None), None);
+    assert_eq!(refresh_spent_proof_limit("unknown", None, None), None);
+    for client_type in ["public", "confidential"] {
+        for (dpop, mtls) in [(Some("dpop"), None), (None, Some("mtls"))] {
+            assert_eq!(
+                refresh_spent_proof_limit(client_type, dpop, mtls),
+                Some(MAX_SPENT_PROOFS_PER_REFRESH_FAMILY)
+            );
+        }
+    }
+    assert_eq!(
+        refresh_spent_proof_limit("confidential", None, None),
+        Some(MAX_SPENT_PROOFS_PER_REFRESH_FAMILY)
+    );
+}

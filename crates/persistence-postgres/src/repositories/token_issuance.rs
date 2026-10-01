@@ -505,12 +505,13 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                 diesel::sql_query("SET LOCAL lock_timeout = '2s'")
                                     .execute(connection)
                                     .await?;
-                                if let Some(result) =
+                                let client_type = match
                                     super::token_principals::lock_and_recheck(connection, &input)
                                         .await?
                                 {
-                                    return Ok(result);
-                                }
+                                    Ok(client_type) => client_type,
+                                    Err(result) => return Ok(result),
+                                };
                                 if let Some((digest, grant_expires_at)) = single_use {
                                     let inserted = sql_query(
                                         "INSERT INTO oauth_token_issuances (\
@@ -556,6 +557,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                     match TokenRepository::persist_refresh_token_on_connection(
                                         connection,
                                         refresh,
+                                        &client_type,
                                         input.issuance_id,
                                         prepared_contract.as_ref(),
                                     )
