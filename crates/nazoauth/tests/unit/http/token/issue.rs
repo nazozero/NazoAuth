@@ -578,7 +578,7 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
         refresh_token_mtls_x5t_s256: None,
         refresh_token_client_attestation_jkt: None,
         refresh_authority: None,
-            refresh_grant_audiences: None,
+        refresh_grant_audiences: None,
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,
@@ -612,7 +612,7 @@ fn token_issue_without_openid() -> TokenIssue {
         refresh_token_mtls_x5t_s256: None,
         refresh_token_client_attestation_jkt: None,
         refresh_authority: None,
-            refresh_grant_audiences: None,
+        refresh_grant_audiences: None,
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,
@@ -628,8 +628,15 @@ fn set_refresh_authority_for_issue(
     issue: &mut TokenIssue,
 ) {
     let (family_id, member_id) = match issue.refresh_token_policy {
-        RefreshTokenPolicy::Rotate { family_id, rotated_from_id } => (family_id, rotated_from_id),
-        RefreshTokenPolicy::RotateLostResponse { family_id, successor_id, .. } => (family_id, successor_id),
+        RefreshTokenPolicy::Rotate {
+            family_id,
+            rotated_from_id,
+        } => (family_id, rotated_from_id),
+        RefreshTokenPolicy::RotateLostResponse {
+            family_id,
+            successor_id,
+            ..
+        } => (family_id, successor_id),
         _ => (Uuid::now_v7(), Uuid::now_v7()),
     };
     let contract = nazo_auth::RefreshContract {
@@ -652,7 +659,8 @@ fn set_refresh_authority_for_issue(
             id_token_claims: issue.id_token_claims.clone(),
             id_token_claim_requests: issue.id_token_claim_requests.clone(),
         },
-    }.persisted();
+    }
+    .persisted();
     issue.refresh_id_token_sid.get_or_insert(None);
     issue.refresh_authority = Some(nazo_auth::RefreshTokenAuthority {
         tenant_id: client.tenant_id,
@@ -712,15 +720,26 @@ async fn persist_refresh_authority_for_issue(
             mode: TokenIssuanceMode::Fresh,
             access_token_jti: Uuid::now_v7().to_string(),
             access_token_expires_at: (issued_at + chrono::Duration::minutes(5)).timestamp(),
-            refresh_token: Some(nazo_auth::RefreshTokenCommit::IssueNew { token, contract: source.contract }),
+            refresh_token: Some(nazo_auth::RefreshTokenCommit::IssueNew {
+                token,
+                contract: source.contract,
+            }),
             audit_fields: TokenIssuedAuditFields {
                 client_id: client.client_id.clone(),
                 subject_hash: "fixture-source".to_owned(),
                 scope: issue.scopes.join(" "),
                 audience: issue.audiences.clone(),
             },
-        }).await.expect("source issuance should commit");
+        })
+        .await
+        .expect("source issuance should commit");
     assert_eq!(result, CommitTokenIssuanceResult::Committed);
-    issue.refresh_authority = Some(nazo_postgres::TokenRepository::new(state.diesel_db.clone())
-        .by_raw_refresh_token(client.tenant_id, &raw).await.unwrap().unwrap().authority());
+    issue.refresh_authority = Some(
+        nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+            .by_raw_refresh_token(client.tenant_id, &raw)
+            .await
+            .unwrap()
+            .unwrap()
+            .authority(),
+    );
 }
