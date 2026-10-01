@@ -1465,7 +1465,11 @@ async fn inactive_account_has_no_issuable_subject_claims() {
     drop(connection);
 
     let claims = repository
-        .active_subject_claims_by_tenant_id(tenant.tenant_id, user_id)
+        .active_subject_claims_by_tenant_id(
+            tenant.tenant_id,
+            user_id,
+            &user_id.as_uuid().to_string(),
+        )
         .await
         .unwrap();
 

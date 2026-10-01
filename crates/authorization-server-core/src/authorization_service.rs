@@ -110,6 +110,33 @@ pub struct AuthorizationStateSnapshot<T> {
     pub version: String,
 }
 
+/// Best-effort disposal of the exact preparation versions already observed.
+/// A PAR mismatch leaves that PAR intact after the consent has been removed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use]
+pub enum DecisionMaterialDiscardOutcome {
+    Discarded,
+    ConsentMissingOrChanged,
+    ParMissingOrChanged,
+}
+
+/// Failure of preparation cleanup, never a rollback of the durable decision.
+/// `ConsentOrUnknown` also covers a lost response from a combined operation:
+/// neither the completed phase nor whether anything was removed is then known.
+#[derive(Debug, Eq, PartialEq)]
+pub enum DecisionMaterialDiscardError<E = AuthorizationPortError> {
+    ConsentOrUnknown(E),
+    PushedRequest(E),
+}
+
+pub type DecisionMaterialDiscardFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<DecisionMaterialDiscardOutcome, DecisionMaterialDiscardError>>
+            + Send
+            + 'a,
+    >,
+>;
+
 /// Immutable preparation and original expiry observed during validation.
 /// The durable decision commit owns consumption; versions only protect later
 /// best-effort disposal of the preparation objects.
@@ -337,6 +364,35 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         request_id: &'a str,
         expected: &'a str,
     ) -> AuthorizationFuture<'a, bool>;
+    /// Discard consent first, then its optional PAR, using opaque raw versions.
+    /// A confirmed consent mismatch/error leaves PAR untouched; a later PAR
+    /// failure does not restore consent. A lost response can leave either
+    /// cleanup outcome unknown. This is not consumption authority.
+    fn discard_decision_material<'a>(
+        &'a self,
+        request_id: &'a str,
+        expected_consent: &'a str,
+        pushed_request: Option<(&'a str, &'a str)>,
+    ) -> DecisionMaterialDiscardFuture<'a> {
+        Box::pin(async move {
+            if !self
+                .compare_and_delete_consent(request_id, expected_consent)
+                .await
+                .map_err(DecisionMaterialDiscardError::ConsentOrUnknown)?
+            {
+                return Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged);
+            }
+            if let Some((request_uri, expected)) = pushed_request
+                && !self
+                    .compare_and_delete_par(request_uri, expected)
+                    .await
+                    .map_err(DecisionMaterialDiscardError::PushedRequest)?
+            {
+                return Ok(DecisionMaterialDiscardOutcome::ParMissingOrChanged);
+            }
+            Ok(DecisionMaterialDiscardOutcome::Discarded)
+        })
+    }
     fn store_consent<'a>(
         &'a self,
         request_id: &'a str,
@@ -451,6 +507,16 @@ where
     ) -> AuthorizationFuture<'a, bool> {
         self.as_ref()
             .compare_and_delete_consent(request_id, expected)
+    }
+
+    fn discard_decision_material<'a>(
+        &'a self,
+        request_id: &'a str,
+        expected_consent: &'a str,
+        pushed_request: Option<(&'a str, &'a str)>,
+    ) -> DecisionMaterialDiscardFuture<'a> {
+        self.as_ref()
+            .discard_decision_material(request_id, expected_consent, pushed_request)
     }
 
     fn store_consent<'a>(
@@ -797,8 +863,7 @@ where
     }
 
     /// Discards preparation after a committed decision. This is not authority.
-    /// Each
-    /// compare-and-delete fails when the stored row no longer matches the
+    /// Each compare-and-delete fails when the stored row no longer matches the
     /// previewed snapshot, so a concurrently replaced consent or pushed request
     /// is never consumed.
     pub async fn discard_decision_material(
@@ -807,47 +872,40 @@ where
         preview: &ConsentAdmissionPreview,
     ) -> Result<(), AuthorizationDecisionAdmissionError> {
         let consent = &preview.consent;
-        match self
-            .state
-            .compare_and_delete_consent(request_id, &preview.consent_version)
-            .await
-        {
-            Ok(true) => {}
-            Ok(false) => return Err(AuthorizationDecisionAdmissionError::ConsentMissing),
-            Err(error) => {
-                return Err(AuthorizationDecisionAdmissionError::ConsentReadFailed(
-                    error,
-                ));
-            }
-        }
-
-        if let Some(version) = preview.pushed_request_version.as_deref() {
+        let pushed_request = preview.pushed_request_version.as_deref().map(|version| {
             let request_uri = consent
                 .pushed_request_uri
                 .as_deref()
                 .expect("a previewed pushed request implies its consent uri");
-            match self
-                .state
-                .compare_and_delete_par(request_uri, version)
-                .await
-            {
-                Ok(true) => {}
-                Ok(false) => {
-                    return Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(
-                        Box::new(consent.clone()),
-                    ));
-                }
-                Err(source) => {
-                    return Err(
-                        AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
-                            consent: Box::new(consent.clone()),
-                            source,
-                        },
-                    );
-                }
+            (request_uri, version)
+        });
+        match self
+            .state
+            .discard_decision_material(request_id, &preview.consent_version, pushed_request)
+            .await
+        {
+            Ok(DecisionMaterialDiscardOutcome::Discarded) => Ok(()),
+            Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged) => {
+                Err(AuthorizationDecisionAdmissionError::ConsentMissing)
+            }
+            Ok(DecisionMaterialDiscardOutcome::ParMissingOrChanged) => Err(
+                AuthorizationDecisionAdmissionError::PushedRequestMissing(Box::new(
+                    consent.clone(),
+                )),
+            ),
+            // Keep the existing protocol mapping for an unconfirmed cleanup.
+            // A combined call may have removed either object before its reply
+            // was lost; this error does not establish a rollback or its phase.
+            Err(DecisionMaterialDiscardError::ConsentOrUnknown(error)) => {
+                Err(AuthorizationDecisionAdmissionError::ConsentReadFailed(error))
+            }
+            Err(DecisionMaterialDiscardError::PushedRequest(source)) => {
+                Err(AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
+                    consent: Box::new(consent.clone()),
+                    source,
+                })
             }
         }
-        Ok(())
     }
 
     pub async fn load_par(

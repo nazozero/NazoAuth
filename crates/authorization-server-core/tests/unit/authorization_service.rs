@@ -140,6 +140,8 @@ struct StoreState {
     code_error: Mutex<Option<AuthorizationPortError>>,
     jar_error: Mutex<Option<AuthorizationPortError>>,
     delete_error: Mutex<Option<AuthorizationPortError>>,
+    consent_discard_error: Mutex<Option<AuthorizationPortError>>,
+    par_discard_error: Mutex<Option<AuthorizationPortError>>,
     consent_takes: AtomicUsize,
     pushed_takes: AtomicUsize,
     code_deletes: AtomicUsize,
@@ -172,6 +174,9 @@ impl AuthorizationStateStorePort for FakeStore {
         expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.0.pushed_takes.fetch_add(1, Ordering::Relaxed);
+        if let Some(error) = self.0.par_discard_error.lock().unwrap().take() {
+            return Box::pin(async move { Err(error) });
+        }
         let mut current = self.0.pushed.lock().unwrap();
         let matches = current.as_ref().is_some_and(|current| {
             format!("revision:{}", serde_json::to_value(current).unwrap()) == expected
@@ -222,6 +227,9 @@ impl AuthorizationStateStorePort for FakeStore {
         expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.0.consent_takes.fetch_add(1, Ordering::Relaxed);
+        if let Some(error) = self.0.consent_discard_error.lock().unwrap().take() {
+            return Box::pin(async move { Err(error) });
+        }
         let mut current = self.0.consent.lock().unwrap();
         let matches = current.as_ref().is_some_and(|current| {
             format!("revision:{}", serde_json::to_value(current).unwrap()) == expected
@@ -591,6 +599,86 @@ async fn concurrent_preparation_disposal_removes_only_the_observed_snapshot_asyn
         1
     );
     assert_eq!(store.0.consent_takes.load(Ordering::Relaxed), 2);
+    assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn consent_cleanup_mismatch_does_not_attempt_par_cleanup() {
+    futures_executor::block_on(async {
+        let owner = Uuid::from_u128(10);
+        let store = FakeStore::default();
+        *store.0.consent.lock().unwrap() = Some(consent(owner, Some("request-uri-1")));
+        *store.0.pushed.lock().unwrap() = Some(pushed());
+        let service = service(FakeRepository::default(), store.clone());
+        let preview = service
+            .preview_user_decision("request-1", owner)
+            .await
+            .unwrap();
+        *store.0.consent.lock().unwrap() = Some(consent(Uuid::from_u128(11), None));
+
+        assert!(matches!(
+            service.discard_decision_material("request-1", &preview).await,
+            Err(AuthorizationDecisionAdmissionError::ConsentMissing)
+        ));
+        assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);
+        assert!(store.0.pushed.lock().unwrap().is_some());
+        assert_eq!(
+            store.0.consent.lock().unwrap().as_ref().unwrap().user_id,
+            Uuid::from_u128(11)
+        );
+    });
+}
+
+#[test]
+fn cleanup_dependency_errors_preserve_the_original_stage_mapping() {
+    futures_executor::block_on(async {
+        for fail_par in [false, true] {
+            for source in [
+                AuthorizationPortError::Unavailable,
+                AuthorizationPortError::Unexpected,
+            ] {
+                let owner = Uuid::from_u128(10);
+                let store = FakeStore::default();
+                *store.0.consent.lock().unwrap() = Some(consent(owner, Some("request-uri-1")));
+                *store.0.pushed.lock().unwrap() = Some(pushed());
+                let service = service(FakeRepository::default(), store.clone());
+                let preview = service
+                    .preview_user_decision("request-1", owner)
+                    .await
+                    .unwrap();
+                if fail_par {
+                    *store.0.par_discard_error.lock().unwrap() = Some(source);
+                } else {
+                    *store.0.consent_discard_error.lock().unwrap() = Some(source);
+                }
+
+                let error = service
+                    .discard_decision_material("request-1", &preview)
+                    .await
+                    .unwrap_err();
+                match error {
+                    AuthorizationDecisionAdmissionError::ConsentReadFailed(actual) => {
+                        assert!(!fail_par);
+                        assert_eq!(actual, source);
+                        assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);
+                        assert!(store.0.consent.lock().unwrap().is_some());
+                    }
+                    AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
+                        consent,
+                        source: actual,
+                    } => {
+                        assert!(fail_par);
+                        assert_eq!(actual, source);
+                        assert_eq!(consent.user_id, owner);
+                        assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 1);
+                        assert!(store.0.consent.lock().unwrap().is_none());
+                    }
+                    other => panic!("cleanup dependency failure became {other:?}"),
+                }
+                assert!(store.0.pushed.lock().unwrap().is_some());
+            }
+        }
+    });
 }
 
 #[test]
@@ -711,6 +799,7 @@ async fn corrupt_par_snapshot_between_load_and_disposal_is_preserved_async() {
         replacement.client_id
     );
     assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 1);
+    assert!(store.0.consent.lock().unwrap().is_none());
 }
 
 fn decision_input(

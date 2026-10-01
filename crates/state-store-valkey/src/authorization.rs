@@ -1,10 +1,44 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationStateSnapshot, CodePayload, ConsentPayload,
-    PushedAuthorizationRequest,
+    DecisionMaterialDiscardError, DecisionMaterialDiscardOutcome, PushedAuthorizationRequest,
 };
 
 use crate::{Error, ValkeyConnection, command, keys};
+
+// Preserve the sequential cleanup contract inside one command. A consent
+// failure leaves PAR untouched; a PAR failure never restores deleted consent.
+// This script does not grant, consume, or compensate durable authority.
+const DISCARD_DECISION_MATERIAL_SCRIPT: &str = r#"
+local function discard(key, expected)
+  local current = redis.pcall('GET', key)
+  if type(current) == 'table' and current.err then
+    return 'error'
+  end
+  if not current or current ~= expected then
+    return 'missing_or_changed'
+  end
+  local deleted = redis.pcall('DEL', key)
+  if type(deleted) == 'table' and deleted.err then
+    return 'error'
+  end
+  if deleted ~= 1 then
+    return 'error'
+  end
+  return 'discarded'
+end
+local consent = discard(KEYS[1], ARGV[1])
+if consent ~= 'discarded' then
+  return 'consent_' .. consent
+end
+if #KEYS == 2 then
+  local par = discard(KEYS[2], ARGV[2])
+  if par ~= 'discarded' then
+    return 'par_' .. par
+  end
+end
+return 'discarded'
+"#;
 
 const BEGIN_AUTHORIZATION_CODE_CONSUMPTION_SCRIPT: &str = r#"
 local raw = redis.call('GET', KEYS[1])
@@ -132,6 +166,31 @@ impl AuthorizationStore {
     ) -> Result<bool, Error> {
         self.compare_delete(keys::consent(request_id), expected)
             .await
+    }
+
+    /// One round trip, preserving the raw-version and partial-cleanup contract.
+    /// A transport failure has an unknown outcome, even if a key was removed.
+    pub async fn discard_decision_material(
+        &self,
+        request_id: &str,
+        expected_consent: &str,
+        pushed_request: Option<(&str, &str)>,
+    ) -> Result<DecisionMaterialDiscardOutcome, DecisionMaterialDiscardError<Error>> {
+        let mut state_keys = vec![keys::consent(request_id)];
+        let mut expected_versions = vec![expected_consent.to_owned()];
+        if let Some((request_uri, expected)) = pushed_request {
+            state_keys.push(keys::par(request_uri));
+            expected_versions.push(expected.to_owned());
+        }
+        let reply = command::eval_string(
+            &self.connection,
+            DISCARD_DECISION_MATERIAL_SCRIPT,
+            state_keys,
+            expected_versions,
+        )
+        .await
+        .map_err(DecisionMaterialDiscardError::ConsentOrUnknown)?;
+        parse_decision_material_discard_reply(&reply)
     }
 
     /// Removes transient material only, without revoking durable authority.
@@ -349,6 +408,27 @@ impl AuthorizationStore {
         command::compare_delete(&self.connection, key, expected)
             .await
             .map(|outcome| matches!(outcome, command::CompareDelete::Deleted))
+    }
+}
+
+fn parse_decision_material_discard_reply(
+    reply: &str,
+) -> Result<DecisionMaterialDiscardOutcome, DecisionMaterialDiscardError<Error>> {
+    match reply {
+        "discarded" => Ok(DecisionMaterialDiscardOutcome::Discarded),
+        "consent_missing_or_changed" => {
+            Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged)
+        }
+        "par_missing_or_changed" => Ok(DecisionMaterialDiscardOutcome::ParMissingOrChanged),
+        "consent_error" => Err(DecisionMaterialDiscardError::ConsentOrUnknown(
+            Error::protocol("consent preparation cleanup failed"),
+        )),
+        "par_error" => Err(DecisionMaterialDiscardError::PushedRequest(Error::protocol(
+            "pushed request preparation cleanup failed",
+        ))),
+        _ => Err(DecisionMaterialDiscardError::ConsentOrUnknown(
+            Error::unexpected("unexpected preparation cleanup reply; outcome is unknown"),
+        )),
     }
 }
 

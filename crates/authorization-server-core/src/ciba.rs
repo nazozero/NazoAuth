@@ -159,6 +159,20 @@ impl<V> CibaStoredRequest<V> {
     }
 }
 
+/// A validated, request-local decision snapshot bound to its storage handle.
+#[derive(Debug)]
+pub struct PreparedCibaDecision<V> {
+    auth_req_id: String,
+    stored: CibaStoredRequest<V>,
+}
+
+impl<V> PreparedCibaDecision<V> {
+    #[must_use]
+    pub const fn state(&self) -> &CibaRequestState {
+        self.stored.state()
+    }
+}
+
 pub trait CibaStateStorePort: Send + Sync {
     type Version: Send + Sync;
 
@@ -439,6 +453,31 @@ where
         Err(CibaCreateFailure::CollisionLimit)
     }
 
+    pub async fn prepare_decision(
+        &self,
+        auth_req_id: &str,
+    ) -> Result<Option<PreparedCibaDecision<S::Version>>, CibaStatePortError> {
+        Ok(self.load(auth_req_id).await?.map(|stored| PreparedCibaDecision {
+            auth_req_id: auth_req_id.to_owned(),
+            stored,
+        }))
+    }
+
+    /// Uses the audited snapshot once, then reloads only on a CAS conflict.
+    pub async fn decide_prepared<F>(
+        &self,
+        prepared: PreparedCibaDecision<S::Version>,
+        decision: CibaDecision,
+        expected_user_id: Option<Uuid>,
+        current_time: F,
+    ) -> Result<CibaCommittedDecision, CibaDecisionFailure>
+    where
+        F: FnMut() -> i64,
+    {
+        self.commit_prepared_decision(prepared, decision, expected_user_id, None, current_time)
+            .await
+    }
+
     pub async fn decide<F>(
         &self,
         auth_req_id: &str,
@@ -468,17 +507,43 @@ where
         decision: CibaDecision,
         expected_user_id: Option<Uuid>,
         authorization_deadline: Option<i64>,
+        current_time: F,
+    ) -> Result<CibaCommittedDecision, CibaDecisionFailure>
+    where
+        F: FnMut() -> i64,
+    {
+        let prepared = self.prepare_decision(auth_req_id).await
+            .map_err(CibaDecisionFailure::Storage)?
+            .ok_or(CibaDecisionFailure::Missing)?;
+        self.commit_prepared_decision(
+            prepared, decision, expected_user_id, authorization_deadline, current_time,
+        ).await
+    }
+
+    async fn commit_prepared_decision<F>(
+        &self,
+        prepared: PreparedCibaDecision<S::Version>,
+        decision: CibaDecision,
+        expected_user_id: Option<Uuid>,
+        authorization_deadline: Option<i64>,
         mut current_time: F,
     ) -> Result<CibaCommittedDecision, CibaDecisionFailure>
     where
         F: FnMut() -> i64,
     {
+        let PreparedCibaDecision { auth_req_id, stored } = prepared;
+        let expected_request = stored.state.clone();
+        let mut next_snapshot = Some(stored);
         for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
-            let stored = self
-                .load(auth_req_id)
-                .await
-                .map_err(CibaDecisionFailure::Storage)?
-                .ok_or(CibaDecisionFailure::Missing)?;
+            let stored = match next_snapshot.take() {
+                Some(stored) => stored,
+                None => self.load(&auth_req_id).await
+                    .map_err(CibaDecisionFailure::Storage)?
+                    .ok_or(CibaDecisionFailure::Missing)?,
+            };
+            if !same_ciba_authorization(&expected_request, &stored.state) {
+                return Err(CibaDecisionFailure::Storage(CibaStatePortError::CorruptData));
+            }
             match evaluate_ciba_decision(&stored.state, expected_user_id, &decision, current_time())
             {
                 CibaDecisionEvaluation::InvalidAuthenticationContext => {
@@ -494,7 +559,7 @@ where
                     match self
                         .store
                         .delete_with_authorization_deadline(
-                            auth_req_id,
+                            &auth_req_id,
                             &stored.version,
                             authorization_deadline,
                         )
@@ -511,7 +576,7 @@ where
                     match self
                         .store
                         .replace_with_authorization_deadline(
-                            auth_req_id,
+                            &auth_req_id,
                             &stored.version,
                             &next,
                             authorization_deadline,
@@ -738,6 +803,21 @@ pub fn evaluate_ciba_decision(
         notification.next_attempt_at = Some(now);
     }
     CibaDecisionEvaluation::Commit(Box::new(next))
+}
+
+// Polling changes only timing; a conflict must never retarget an already audited decision.
+fn same_ciba_authorization(expected: &CibaRequestState, current: &CibaRequestState) -> bool {
+    expected.client_id == current.client_id
+        && expected.user_id == current.user_id
+        && expected.scopes == current.scopes
+        && expected.audiences == current.audiences
+        && expected.acr == current.acr
+        && expected.binding_message == current.binding_message
+        && expected.issued_at == current.issued_at
+        && expected.expires_at == current.expires_at
+        && expected.retention_expires_at == current.retention_expires_at
+        && expected.ping_notification.as_ref().map(|ping| (&ping.auth_req_id, &ping.endpoint))
+            == current.ping_notification.as_ref().map(|ping| (&ping.auth_req_id, &ping.endpoint))
 }
 
 fn validate_stored_request<V>(

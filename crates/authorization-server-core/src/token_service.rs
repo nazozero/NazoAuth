@@ -18,6 +18,11 @@ pub struct PreparedTokenSubject {
     pub tenant_id: Uuid,
     pub claims: SubjectClaims,
     pub user_epoch: i64,
+    /// Exact token subject whose binding was checked in the claims snapshot.
+    pub token_subject: String,
+    /// The repository verified this subject's existing owner matches `claims`.
+    /// This is snapshot evidence, not an unchecked caller-supplied hint.
+    pub subject_bound: bool,
 }
 
 pub type TokenFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, TokenPortError>> + Send + 'a>>;
@@ -342,11 +347,12 @@ pub trait TokenRepositoryPort: Send + Sync {
         retry_started_at: DateTime<Utc>,
     ) -> TokenFuture<'a, Option<RefreshToken>>;
 
-    fn active_subject_claims(
-        &self,
+    fn active_subject_claims<'a>(
+        &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<PreparedTokenSubject>>;
+        token_subject: &'a str,
+    ) -> TokenFuture<'a, Option<PreparedTokenSubject>>;
 
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>>;
 
@@ -596,9 +602,10 @@ where
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
+        token_subject: &str,
     ) -> Result<Option<PreparedTokenSubject>, TokenPortError> {
         self.repository
-            .active_subject_claims(tenant_id, user_id)
+            .active_subject_claims(tenant_id, user_id, token_subject)
             .await
     }
 

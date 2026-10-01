@@ -68,11 +68,12 @@ impl TokenRepositoryPort for Ports {
     ) -> TokenFuture<'a, Option<RefreshToken>> {
         panic!("unexpected inspect_lost_response_successor call")
     }
-    fn active_subject_claims(
-        &self,
+    fn active_subject_claims<'a>(
+        &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<PreparedTokenSubject>> {
+        token_subject: &'a str,
+    ) -> TokenFuture<'a, Option<PreparedTokenSubject>> {
         panic!("unexpected active_subject_claims call")
     }
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>> {

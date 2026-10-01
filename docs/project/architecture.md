@@ -240,6 +240,23 @@ window. Old records drain under their existing retention policy. Principal-wide
 revocation enumerates only these legacy records and the separately owned
 OpenID4VC preauthorized grants; new SingleUse receipts are excluded.
 
+OIDC token preparation reads the active subject claims, their user epoch and
+ownership of the exact token subject in one snapshot. The request-local
+`PreparedTokenSubject` carries that checked subject and binding result; shared
+issuance validates tenant, user and token-subject identity before reusing it.
+It retains the authenticated client epoch and the claims snapshot's user epoch,
+never refreshing an epoch independently of the claims it endorses. The final
+principal locks, epoch checks and first-binding collision check remain mandatory.
+Public subjects require no binding lookup; non-OIDC issuance retains its narrow
+principal snapshot without reading a profile.
+
+CIBA Approved polling still consumes `auth_req_id` before token preparation.
+It now resolves the local token subject before reading claims and ownership,
+so an invalid pairwise-secret or subject-type configuration takes precedence
+when the user read would also fail. Both cases fail closed, and downstream
+failure does not restore the consumed request; error precedence is not claimed
+to be identical to the earlier claims-first order.
+
 The generic path accepts no `Idempotency-Key`, stores no request digest or
 response envelope, and implements no generic response recovery. Authorization
 code, device, JWT Bearer and CIBA atomic consumption, refresh-family reuse and
@@ -308,3 +325,19 @@ boundary; source checks do not establish deployment, conformance, or load-test
 results. Historical reports apply only to their recorded revisions.
 
 The new refresh-family collision probe deliberately uses an uncached parameterized query: a named plan selected for an empty family table can retain a sequential scan after rapid growth. It still checks only the tenant/family primary key before any retirement or insertion; collision compromise and audit semantics are unchanged. Other typed principal and lock queries retain prepared-plan reuse.
+
+### Shared session authority
+
+Identity `SessionService` owns browser-session resolution, invalidation and
+version-checked RP membership updates. The authorization-server resolver adapts
+its result without maintaining a second storage/validation algorithm. Both
+interactive and successful silent OIDC authorization bind the RP to the current
+OP session before returning an authorization code; a missing session or failed
+binding cannot return the code. A committed decision is not undone by a later
+session-binding or response failure.
+
+High-impact administration uses one identity-owned interactive-MFA predicate:
+`mfa` plus `otp` or `recovery_code`, with an authentication age from zero through
+300 seconds inclusive. Future authentication times do not count as completed
+step-ups. The separate 30-second clock allowance for ordinary session metadata
+is unchanged; endpoint-specific administrator levels remain separate policy.

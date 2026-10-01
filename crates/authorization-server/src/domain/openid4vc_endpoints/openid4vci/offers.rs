@@ -82,9 +82,14 @@ impl ServerCredentialIssuerOperations {
                         "Pre-authorized code or transaction code is invalid.",
                     )
                 })?;
+            let token_subject = authorization.subject_id.to_string();
             if self
                 .token_service
-                .active_subject_claims(authorization.tenant_id, authorization.subject_id)
+                .active_subject_claims(
+                    authorization.tenant_id,
+                    authorization.subject_id,
+                    &token_subject,
+                )
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -113,7 +118,7 @@ impl ServerCredentialIssuerOperations {
                     user_epoch: None,
                     issuer: &self.issuer,
                     tenant_id: authorization.tenant_id,
-                    subject: &authorization.subject_id.to_string(),
+                    subject: &token_subject,
                     user_id: Some(authorization.subject_id),
                     subject_type: "user",
                     client_id,

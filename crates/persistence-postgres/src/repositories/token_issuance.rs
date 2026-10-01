@@ -694,22 +694,27 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-    fn active_subject_claims(
-        &self,
+    fn active_subject_claims<'a>(
+        &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<nazo_auth::PreparedTokenSubject>> {
+        token_subject: &'a str,
+    ) -> TokenFuture<'a, Option<nazo_auth::PreparedTokenSubject>> {
         Box::pin(async move {
             let tenant_id = TenantId::new(tenant_id).map_err(|_| TokenPortError::CorruptData)?;
             let user_id = UserId::new(user_id).map_err(|_| TokenPortError::CorruptData)?;
             self.users
-                .active_subject_claims_by_tenant_id(tenant_id, user_id)
+                .active_subject_claims_by_tenant_id(tenant_id, user_id, token_subject)
                 .await
                 .map(|snapshot| {
-                    snapshot.map(|(claims, user_epoch)| nazo_auth::PreparedTokenSubject {
-                        tenant_id: tenant_id.as_uuid(),
-                        claims,
-                        user_epoch,
+                    snapshot.map(|(claims, user_epoch, subject_bound)| {
+                        nazo_auth::PreparedTokenSubject {
+                            tenant_id: tenant_id.as_uuid(),
+                            claims,
+                            user_epoch,
+                            token_subject: token_subject.to_owned(),
+                            subject_bound,
+                        }
                     })
                 })
                 .map_err(map_repository_error)

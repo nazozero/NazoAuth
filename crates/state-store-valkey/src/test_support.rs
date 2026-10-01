@@ -67,6 +67,12 @@ pub fn par_storage_key(request_uri: &str) -> String {
     state_storage_key(crate::keys::par(request_uri))
 }
 
+/// Returns the production consent key for raw-version and corruption tests.
+#[must_use]
+pub fn consent_storage_key(request_id: &str) -> String {
+    state_storage_key(crate::keys::consent(request_id))
+}
+
 /// Returns the actual storage key used for an OIDC federation state token.
 ///
 /// Raw cross-crate tests use this to inject malformed or legacy state without
@@ -83,6 +89,18 @@ pub fn oidc_federation_storage_key(state: &str) -> String {
 #[must_use]
 pub fn ciba_request_storage_key(auth_req_id: &str) -> String {
     state_storage_key(crate::keys::ciba(auth_req_id))
+}
+
+/// Inspect device state without duplicating its hash or namespace derivation.
+#[must_use]
+pub fn device_code_storage_key(device_code: &str) -> String {
+    state_storage_key(crate::keys::device_code(device_code))
+}
+
+/// Inspect the normalized user-code mapping used by the device store.
+#[must_use]
+pub fn device_user_code_storage_key(user_code: &str) -> String {
+    state_storage_key(crate::keys::device_user_code(user_code))
 }
 
 /// Returns the actual storage key used for an authorization code.
