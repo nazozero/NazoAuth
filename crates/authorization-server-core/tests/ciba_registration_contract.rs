@@ -62,3 +62,13 @@ fn ciba_user_code_and_weak_request_signing_are_not_supported() {
     none_alg.backchannel_authentication_request_signing_alg = Some("none".to_owned());
     assert!(prepare_dynamic_client_registration(none_alg, POLICY).is_err());
 }
+
+#[test]
+fn omitted_and_false_ciba_user_code_metadata_have_the_same_public_value() {
+    for value in [None, Some(false)] {
+        let mut request = ciba_request("poll");
+        request.backchannel_user_code_parameter = value;
+        let prepared = prepare_dynamic_client_registration(request, POLICY).unwrap();
+        assert!(!prepared.backchannel_user_code_parameter);
+    }
+}

@@ -5,8 +5,8 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken,
-    RefreshContract, RefreshToken, RefreshTokenPersistResult,
+    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, MAX_SPENT_PROOFS_PER_REFRESH_FAMILY,
+    RefreshContract, RefreshToken, RefreshTokenCommit, RefreshTokenPersistResult,
 };
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::SecurityAuditEvent;
@@ -14,7 +14,6 @@ use nazo_resource_server::{
     AccessTokenRevocationLookup, ProtectedResourceDependencyError, ResourceServerPortFuture,
     RevocationLookupKey,
 };
-use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -185,12 +184,12 @@ impl TokenRepository {
     /// compromise decision.
     pub(crate) async fn persist_refresh_token_on_connection(
         connection: &mut AsyncPgConnection,
-        token: NewRefreshToken,
+        refresh: &RefreshTokenCommit,
         issuance_id: Uuid,
-        prepared_contract: &PreparedRefreshContract,
+        prepared_contract: Option<&PreparedRefreshContract>,
     ) -> Result<RefreshTokenPersistResult, RepositoryError> {
-        validate_new_refresh_token(&token)?;
-        persist_refresh_token_inner(connection, &token, issuance_id, prepared_contract)
+        validate_refresh_commit(refresh)?;
+        persist_refresh_token_inner(connection, refresh, issuance_id, prepared_contract)
             .await
             .map_err(map_error)
     }
@@ -418,28 +417,61 @@ impl AccessTokenRevocationLookup for TokenRepository {
     }
 }
 
-/// The persisted contract subset mirrored by `oauth_refresh_contracts`.
-/// `nonce` and `id_token_sid` are always null here: the nonce has no
-/// refresh-time reader and the ID-token session id is per-generation state on
-/// the family row.
-#[derive(Debug, Deserialize)]
-struct PersistedRefreshContract {
-    subject: String,
-    scopes: Vec<String>,
-    audiences: Vec<String>,
-    #[serde(default)]
-    authorization_details: Value,
-    authentication_context: nazo_auth::RefreshTokenAuthenticationContext,
-}
-
-fn validate_new_refresh_token(token: &NewRefreshToken) -> Result<(), RepositoryError> {
-    if !token.authentication_context.is_well_formed()
-        || token.audiences.is_empty()
-        || token
-            .audiences
-            .iter()
-            .any(|audience| audience.trim().is_empty())
-        || token.authentication_context.auth_time > token.issued_at.timestamp()
+fn validate_refresh_commit(refresh: &RefreshTokenCommit) -> Result<(), RepositoryError> {
+    let contract = refresh.contract();
+    let valid_audiences = |values: &[String]| {
+        !values.is_empty() && values.iter().all(|value| !value.trim().is_empty())
+    };
+    if !contract.authentication_context.is_well_formed()
+        || contract.subject.trim().is_empty()
+        || !valid_audiences(&contract.audiences)
+        || *contract != contract.persisted()
+    {
+        return Err(RepositoryError::Consistency(
+            "refresh token requires a complete immutable authentication contract".to_owned(),
+        ));
+    }
+    match refresh {
+        RefreshTokenCommit::IssueNew { token, contract } => {
+            if token.rotated_from_id.is_some() || token.lost_response_retry.is_some()
+                || token.audiences != contract.audiences
+            {
+                return Err(RepositoryError::Consistency(
+                    "new refresh family must retain the complete original grant".to_owned(),
+                ));
+            }
+        }
+        RefreshTokenCommit::UseExisting { authority, rotation } => {
+            if authority.family_id.is_nil() || authority.member_id.is_nil()
+                || !valid_audiences(&authority.current_audiences)
+                || !nazo_auth::is_subset(&authority.current_audiences, &contract.audiences)
+            {
+                return Err(RepositoryError::Consistency(
+                    "refresh source audience exceeds its original grant".to_owned(),
+                ));
+            }
+            if let Some(token) = rotation
+                && (token.family_id != authority.family_id
+                    || token.tenant_id != authority.tenant_id
+                    || token.client_id != authority.client_id
+                    || token.user_id != authority.user_id
+                    || token.rotated_from_id != Some(authority.member_id)
+                    || !nazo_auth::is_subset(&token.audiences, &authority.current_audiences)
+                    || token.dpop_jkt != authority.dpop_jkt
+                    || token.mtls_x5t_s256 != authority.mtls_x5t_s256
+                    || token.client_attestation_jkt != authority.client_attestation_jkt)
+            {
+                return Err(RepositoryError::Consistency(
+                    "refresh replacement does not preserve its source authority".to_owned(),
+                ));
+            }
+        }
+    }
+    if let Some(token) = refresh.token()
+        && (token.family_id.is_nil() || token.member_id.is_nil() || token.raw_token.is_empty()
+            || !valid_audiences(&token.audiences)
+            || contract.authentication_context.auth_time > token.issued_at.timestamp()
+            || token.expires_at <= token.issued_at)
     {
         return Err(RepositoryError::Consistency(
             "refresh token requires a complete current authentication contract".to_owned(),
@@ -456,10 +488,9 @@ fn persisted_contract(contract: &RefreshContract) -> Result<(Vec<u8>, Value), Re
     Ok((persisted.blake3_digest().to_vec(), value))
 }
 
-/// Connection-free refresh-contract preparation: the persisted JSON shape
-/// and its BLAKE3 digest are pure functions of the token, so callers compute
-/// them before borrowing a connection. Everything that depends on database
-/// state still runs inside the caller's transaction unchanged.
+/// Only new families serialize/hash their original contract before borrowing
+/// a connection. Existing families keep their persisted key and revalidate
+/// the original content in the locked source query; there is no rekeying.
 #[derive(Debug)]
 pub(crate) struct PreparedRefreshContract {
     contract_blake3: Vec<u8>,
@@ -467,23 +498,18 @@ pub(crate) struct PreparedRefreshContract {
 }
 
 pub(crate) fn prepare_refresh_contract(
-    token: &NewRefreshToken,
-) -> Result<PreparedRefreshContract, RepositoryError> {
-    let (contract_blake3, contract_value) =
-        persisted_contract(&token.contract()).map_err(|error| {
-            // Preserve the pre-hoist classification: a prepare failure used to
-            // surface as a diesel deserialization error inside the persist
-            // transaction, which callers mapped to RepositoryError::Unexpected.
-            RepositoryError::Unexpected(error.to_string())
-        })?;
-    Ok(PreparedRefreshContract {
-        contract_blake3,
-        contract_value,
-    })
+    refresh: &RefreshTokenCommit,
+) -> Result<Option<PreparedRefreshContract>, RepositoryError> {
+    validate_refresh_commit(refresh)?;
+    let RefreshTokenCommit::IssueNew { contract, .. } = refresh else {
+        return Ok(None);
+    };
+    let (contract_blake3, contract_value) = persisted_contract(contract)?;
+    Ok(Some(PreparedRefreshContract { contract_blake3, contract_value }))
 }
 
-fn parse_contract(value: Value) -> Result<PersistedRefreshContract, RepositoryError> {
-    serde_json::from_value::<PersistedRefreshContract>(value).map_err(|error| {
+fn parse_contract(value: Value) -> Result<RefreshContract, RepositoryError> {
+    serde_json::from_value::<RefreshContract>(value).map_err(|error| {
         RepositoryError::Unexpected(format!("invalid persisted refresh contract: {error}"))
     })
 }
@@ -496,7 +522,7 @@ fn digest32(bytes: &[u8]) -> Result<[u8; 32], RepositoryError> {
 
 fn token_from_current(
     family: RefreshFamilyRow,
-    contract: PersistedRefreshContract,
+    contract: RefreshContract,
 ) -> Result<RefreshToken, RepositoryError> {
     let mut context = contract.authentication_context;
     context.id_token_sid = family.current_id_token_sid;
@@ -507,6 +533,8 @@ fn token_from_current(
         token_family_id: family.token_family_id,
         client_id: family.client_id,
         user_id: family.user_id,
+        contract_key: digest32(&family.contract_blake3)?,
+        contract_audiences: contract.audiences.clone(),
         scopes: Value::Array(contract.scopes.into_iter().map(Value::String).collect()),
         audience: family.current_audience,
         authorization_details: contract.authorization_details,
@@ -528,7 +556,7 @@ fn token_from_current(
 fn token_from_spent(
     spent: SpentRefreshTokenRow,
     family: RefreshFamilyRow,
-    contract: PersistedRefreshContract,
+    contract: RefreshContract,
 ) -> Result<RefreshToken, RepositoryError> {
     let mut context = contract.authentication_context;
     context.id_token_sid = family.current_id_token_sid;
@@ -539,6 +567,8 @@ fn token_from_spent(
         token_family_id: family.token_family_id,
         client_id: family.client_id,
         user_id: family.user_id,
+        contract_key: digest32(&family.contract_blake3)?,
+        contract_audiences: contract.audiences.clone(),
         scopes: Value::Array(contract.scopes.into_iter().map(Value::String).collect()),
         audience: Value::Array(contract.audiences.into_iter().map(Value::String).collect()),
         authorization_details: contract.authorization_details,
@@ -561,7 +591,7 @@ fn deserialization_error(error: RepositoryError) -> diesel::result::Error {
 
 fn require_contract(
     row: Option<RefreshContractRow>,
-) -> diesel::QueryResult<PersistedRefreshContract> {
+) -> diesel::QueryResult<RefreshContract> {
     let row = row.ok_or_else(|| {
         diesel::result::Error::DeserializationError(
             "refresh family references a missing contract".into(),
@@ -646,61 +676,96 @@ async fn lookup_refresh_token(
     Ok(None)
 }
 
+#[derive(diesel::QueryableByName)]
+struct LockedRefreshFamily {
+    #[diesel(embed)]
+    family: RefreshFamilyRow,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    contract: Option<Value>,
+}
+
+/// One locked family read, with the immutable payload checked independently
+/// of its stable content key. FOR UPDATE also fences direct family UPDATE
+/// writers which do not take the advisory lock.
 async fn load_family(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     family_id: Uuid,
-) -> diesel::QueryResult<Option<RefreshFamilyRow>> {
-    oauth_refresh_families::table
-        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-        .filter(oauth_refresh_families::token_family_id.eq(family_id))
-        .select(RefreshFamilyRow::as_select())
-        .first::<RefreshFamilyRow>(connection)
-        .await
-        .optional()
+) -> diesel::QueryResult<Option<LockedRefreshFamily>> {
+    sql_query(
+        "SELECT f.tenant_id, f.token_family_id, f.client_id, f.user_id, \
+         f.contract_blake3, f.current_member_id, f.current_token_blake3, \
+         f.current_audience, f.current_issued_at, f.current_expires_at, \
+         f.current_id_token_sid, f.dpop_jkt, f.mtls_x5t_s256, \
+         f.client_attestation_jkt, f.revoked_at, f.reuse_detected_at, c.contract \
+         FROM oauth_refresh_families f LEFT JOIN oauth_refresh_contracts c \
+           ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 \
+         WHERE f.tenant_id = $1 AND f.token_family_id = $2 FOR UPDATE OF f",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Uuid, _>(family_id)
+    .get_result(connection)
+    .await
+    .optional()
 }
 
 async fn persist_refresh_token_inner(
     connection: &mut AsyncPgConnection,
-    token: &NewRefreshToken,
+    refresh: &RefreshTokenCommit,
     issuance_id: Uuid,
-    prepared_contract: &PreparedRefreshContract,
+    prepared_contract: Option<&PreparedRefreshContract>,
 ) -> diesel::QueryResult<RefreshTokenPersistResult> {
-    // Contract serialization and digest were computed before this
-    // connection was borrowed (see prepare_refresh_contract); only the
-    // token hash and authoritative in-transaction state work remain here.
-    let contract_blake3 = &prepared_contract.contract_blake3;
-    let contract_value = &prepared_contract.contract_value;
-    let token_blake3 = blake3::hash(token.raw_token.as_bytes());
-    lock_refresh_grant_scope(connection, token.tenant_id, token.user_id, token.client_id).await?;
-    lock_refresh_family(connection, token.family_id).await?;
+    let (tenant_id, user_id, client_id, family_id) = match refresh {
+        RefreshTokenCommit::IssueNew { token, .. } =>
+            (token.tenant_id, token.user_id, token.client_id, token.family_id),
+        RefreshTokenCommit::UseExisting { authority, .. } =>
+            (authority.tenant_id, authority.user_id, authority.client_id, authority.family_id),
+    };
+    // Preserve owns no capacity mutation and never acquires scope after family.
+    // Rotation and creation retain the established scope -> family order.
+    if refresh.token().is_some() {
+        lock_refresh_grant_scope(connection, tenant_id, user_id, client_id).await?;
+    }
+    lock_refresh_family(connection, family_id).await?;
 
-    if let Some(rotated_from_id) = token.rotated_from_id {
-        // Rotation: the family row must name the presented member as its
-        // current generation, stay unrevoked/uncompromised, share the exact
-        // same contract content, and keep the grant's sender binding — a
-        // binding that drifts mid-family is indistinguishable from a replay
-        // of the grant to another key, so it compromises the family.
-        let family = load_family(connection, token.tenant_id, token.family_id).await?;
-        let family = match family {
-            Some(family)
-                if family.current_member_id == rotated_from_id
-                    && family.client_id == token.client_id
-                    && family.user_id == token.user_id
-                    && family.revoked_at.is_none()
-                    && family.reuse_detected_at.is_none()
-                    && family.contract_blake3 == *contract_blake3
-                    && family.dpop_jkt == token.dpop_jkt
-                    && family.mtls_x5t_s256 == token.mtls_x5t_s256
-                    && family.client_attestation_jkt == token.client_attestation_jkt =>
-            {
-                family
-            }
-            _ => {
-                compromise_family(connection, token.tenant_id, token.family_id).await?;
+    if let RefreshTokenCommit::UseExisting { authority, rotation } = refresh {
+        let Some(locked) = load_family(connection, tenant_id, family_id).await? else {
+            return Ok(RefreshTokenPersistResult::InvalidSource);
+        };
+        let family = locked.family;
+        // Read the clock only after all source locks have been acquired.
+        if family.revoked_at.is_some() || family.reuse_detected_at.is_some()
+            || family.current_expires_at <= Utc::now()
+        {
+            return Ok(RefreshTokenPersistResult::InvalidSource);
+        }
+        let contract = locked.contract.ok_or_else(|| deserialization_error(
+            RepositoryError::Consistency("refresh family references a missing contract".to_owned())
+        ))?;
+        let contract = parse_contract(contract).map_err(deserialization_error)?;
+        let source_matches = family.current_member_id == authority.member_id
+            && family.current_token_blake3 == authority.token_blake3.as_slice()
+            && family.client_id == authority.client_id
+            && family.user_id == authority.user_id
+            && family.contract_blake3 == authority.contract_key.as_slice()
+            && contract == authority.contract
+            && family.current_audience == serde_json::json!(authority.current_audiences)
+            && family.current_id_token_sid == authority.id_token_sid
+            && family.dpop_jkt == authority.dpop_jkt
+            && family.mtls_x5t_s256 == authority.mtls_x5t_s256
+            && family.client_attestation_jkt == authority.client_attestation_jkt;
+        if !source_matches {
+            if rotation.is_some() {
+                compromise_family(connection, tenant_id, family_id).await?;
                 return Ok(RefreshTokenPersistResult::RotationConflict);
             }
+            return Ok(RefreshTokenPersistResult::InvalidSource);
+        }
+        let Some(token) = rotation.as_ref() else {
+            return Ok(RefreshTokenPersistResult::Inserted);
         };
+        let rotated_from_id = authority.member_id;
+        let token_blake3 = blake3::hash(token.raw_token.as_bytes());
         if let Some(retry) = token.lost_response_retry {
             // The retry must prove the presented original is the current
             // member's direct spent predecessor within the 60s window.
@@ -783,13 +848,22 @@ async fn persist_refresh_token_inner(
             oauth_refresh_families::current_issued_at.eq(token.issued_at),
             oauth_refresh_families::current_expires_at.eq(token.expires_at),
             oauth_refresh_families::current_id_token_sid
-                .eq(token.authentication_context.id_token_sid.clone()),
+                .eq(token.id_token_sid.clone()),
         ))
         .execute(connection)
         .await?;
         return Ok(RefreshTokenPersistResult::Inserted);
     }
 
+    let RefreshTokenCommit::IssueNew { token, .. } = refresh else {
+        unreachable!("existing refresh source returned above");
+    };
+    let prepared_contract = prepared_contract.ok_or_else(|| deserialization_error(
+        RepositoryError::Consistency("new refresh family has no prepared contract".to_owned())
+    ))?;
+    let contract_blake3 = &prepared_contract.contract_blake3;
+    let contract_value = &prepared_contract.contract_value;
+    let token_blake3 = blake3::hash(token.raw_token.as_bytes());
     // New family issuance: a same-named family is a collision compromise,
     // then the (tenant, user, client) active-family cap retires the
     // deterministically oldest live families before the insert.
@@ -851,7 +925,7 @@ async fn persist_refresh_token_inner(
             oauth_refresh_families::current_issued_at.eq(token.issued_at),
             oauth_refresh_families::current_expires_at.eq(token.expires_at),
             oauth_refresh_families::current_id_token_sid
-                .eq(token.authentication_context.id_token_sid.clone()),
+                .eq(token.id_token_sid.clone()),
             oauth_refresh_families::dpop_jkt.eq(token.dpop_jkt.clone()),
             oauth_refresh_families::mtls_x5t_s256.eq(token.mtls_x5t_s256.clone()),
             oauth_refresh_families::client_attestation_jkt.eq(token.client_attestation_jkt.clone()),

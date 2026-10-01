@@ -130,6 +130,12 @@ requires natural autovacuum recovery without manual vacuum of that lifecycle.
 
 Targeted suites with their own entry points:
 
+- `crates/persistence-postgres/tests/schema_cleanup.rs` exercises the
+  inert-state migration's up/down data preservation, refusal of populated
+  legacy state and schema drift, external dependency blocking, and retained
+  tenant-composite foreign-key behavior. It uses transaction-local schemas
+  in the isolated test database. Existing controller, recovery, MFA and client
+  repository suites cover runtime behavior against the complete migration chain.
 - `crates/persistence-postgres/tests/token_issuance_atomicity.rs` covers the
   durable SingleUse fence, concurrent grant consumption, controlled
   `GrantExpired` rollback (including connection return to the pool), rotation

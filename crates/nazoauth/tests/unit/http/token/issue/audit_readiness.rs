@@ -186,6 +186,7 @@ async fn preserve_existing_refresh_uses_transactional_readiness() {
     issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
     issue.include_refresh = true;
     issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
+    persist_refresh_authority_for_issue(&state, &client, &mut issue).await;
     let audit = CountingSecurityAudit::default();
 
     let response = issue_counted_fresh(&state, &client, issue, &audit).await;
@@ -212,6 +213,7 @@ async fn preserve_existing_refresh_fails_before_commit_when_dynamic_audit_gate_r
     issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
     issue.include_refresh = true;
     issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
+    persist_refresh_authority_for_issue(&state, &client, &mut issue).await;
     let audit = CountingSecurityAudit {
         reject_transactional: true,
         ..Default::default()
@@ -248,6 +250,7 @@ async fn refresh_rotation_uses_transactional_readiness() {
         family_id: Uuid::now_v7(),
         rotated_from_id: Uuid::now_v7(),
     };
+    set_refresh_authority_for_issue(&state, &client, &mut issue);
     let audit = CountingSecurityAudit::default();
 
     let response = issue_counted_fresh(&state, &client, issue, &audit).await;
@@ -279,7 +282,8 @@ async fn lost_response_rotation_keeps_the_full_storage_preflight() {
     issue.refresh_token_policy = RefreshTokenPolicy::RotateLostResponse {
         family_id: Uuid::now_v7(),
         original_id: Uuid::now_v7(),
-        original_blake3: [0xAB; 32],
+        original_blake3: [0xAB;
+    set_refresh_authority_for_issue(&state, &client, &mut issue); 32],
         successor_id: Uuid::now_v7(),
         retry_started_at: Utc::now(),
     };

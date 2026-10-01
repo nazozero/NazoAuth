@@ -230,6 +230,10 @@ pub struct AuthorizationCodeIssueInput {
 }
 
 pub fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> TokenIssue {
+    // RFC 8707 section 2.2: a code may mint a narrower AT, while a returned
+    // refresh token retains the full original resource grant.
+    let refresh_grant_audiences = (!input.payload.resource_indicators.is_empty())
+        .then(|| input.payload.resource_indicators.clone());
     let native_sso = native_sso_requested(&input.payload.scopes)
         .then(|| new_native_sso_token_binding(input.payload.oidc_sid.as_deref()))
         .flatten();
@@ -257,7 +261,8 @@ pub fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -
         mtls_x5t_s256: input.mtls_x5t_s256,
         refresh_token_mtls_x5t_s256: input.refresh_token_mtls_x5t_s256,
         refresh_token_client_attestation_jkt: input.refresh_token_client_attestation_jkt,
-        refresh_token_scopes: None,
+        refresh_authority: None,
+            refresh_grant_audiences,
         authorization_code_hash: Some(input.code_hash),
         actor: None,
         issued_token_type: None,

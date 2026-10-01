@@ -6,7 +6,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, NewRefreshToken, OAuthClient,
+    AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, OAuthClient,
     OidcClaimRequest, RefreshToken,
 };
 
@@ -120,7 +120,7 @@ pub struct CommitTokenIssuance {
     pub mode: TokenIssuanceMode,
     pub access_token_jti: String,
     pub access_token_expires_at: i64,
-    pub refresh_token: Option<NewRefreshToken>,
+    pub refresh_token: Option<crate::RefreshTokenCommit>,
     pub audit_fields: TokenIssuedAuditFields,
 }
 
@@ -137,6 +137,8 @@ pub enum CommitTokenIssuanceResult {
     ClientInactive,
     /// The subject was disabled before durable token issuance could commit.
     SubjectInactive,
+    /// The refresh source became expired, revoked, or otherwise unavailable.
+    RefreshGrantUnavailable,
     /// Refresh-token reuse was detected and intentionally committed as a compromise.
     RotationConflict,
 }

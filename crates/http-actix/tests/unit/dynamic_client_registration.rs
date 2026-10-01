@@ -638,6 +638,7 @@ async fn configured_initial_access_update_preserves_security_policy() {
     .await;
     assert_eq!(created.status(), StatusCode::CREATED);
     let created: Value = test::read_body_json(created).await;
+    assert_eq!(created["backchannel_user_code_parameter"], false);
     let client_id = created["client_id"].as_str().expect("client id");
     assert!(
         store
@@ -810,6 +811,7 @@ async fn registration_and_management_methods_keep_wire_contracts() {
         Some(&header::HeaderValue::from_static("no-store"))
     );
     let created: Value = test::read_body_json(created).await;
+    assert_eq!(created["backchannel_user_code_parameter"], false);
     let client_id = created["client_id"].as_str().expect("client id");
     assert_eq!(created["registration_access_token"], "registration-token");
     assert!(created.get("client_secret").is_none());
@@ -925,6 +927,7 @@ async fn registration_and_management_methods_keep_wire_contracts() {
     .await;
     assert_eq!(update.status(), StatusCode::OK);
     let updated: Value = test::read_body_json(update).await;
+    assert_eq!(updated["backchannel_user_code_parameter"], false);
     assert_eq!(updated["client_name"], "Updated Client");
     let updated_client_id = updated["client_id"].as_str().expect("updated client id");
 

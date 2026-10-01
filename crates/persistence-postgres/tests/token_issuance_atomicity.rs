@@ -5,10 +5,14 @@
 //! A refresh conflict commits family compromise and reuse audit, with no
 //! token-issued event or receipt for the losing request.
 
+#[path = "support/refresh_fixture.rs"]
+mod refresh_fixture;
+use refresh_fixture::RefreshFixture;
+
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken,
+    CommitTokenIssuance, CommitTokenIssuanceResult,
     RefreshTokenAuthenticationContext, TokenIssuanceMode, TokenIssuedAuditFields,
     TokenRepositoryPort,
 };
@@ -89,29 +93,34 @@ fn refresh_token_fixture(
     family_id: Uuid,
     raw_token: String,
     rotated_from_id: Option<Uuid>,
-) -> NewRefreshToken {
+) -> RefreshFixture {
     let issued_at = chrono::Utc::now();
     let authentication_time = chrono::DateTime::from_timestamp(1_700_000_000, 0)
         .expect("fixed authentication time should be valid");
-    NewRefreshToken {
-        raw_token,
-        member_id: Uuid::now_v7(),
-        tenant_id,
-        family_id,
-        rotated_from_id,
-        lost_response_retry: None,
-        client_id: fixture.client_id,
-        user_id: Some(fixture.user_id),
-        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
-        audiences: vec!["resource://default".to_owned()],
-        authorization_details: json!([]),
-        issued_at,
-        expires_at: issued_at + chrono::Duration::hours(1),
-        subject: fixture.user_id.to_string(),
-        dpop_jkt: None,
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-        authentication_context: RefreshTokenAuthenticationContext {
+    RefreshFixture::new(
+        nazo_auth::NewRefreshToken {
+            raw_token,
+            member_id: Uuid::now_v7(),
+            tenant_id,
+            family_id,
+            rotated_from_id,
+            lost_response_retry: None,
+            client_id: fixture.client_id,
+            user_id: Some(fixture.user_id),
+            audiences: vec!["resource://default".to_owned()],
+            issued_at,
+            expires_at: issued_at + chrono::Duration::hours(1),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            client_attestation_jkt: None,
+            id_token_sid: None,
+        },
+        nazo_auth::RefreshContract {
+            scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+            audiences: vec!["resource://default".to_owned()],
+            authorization_details: json!([]),
+            subject: fixture.user_id.to_string(),
+            authentication_context: RefreshTokenAuthenticationContext {
             version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
             issuer: "https://issuer.example".to_owned(),
             audience: fixture.client_public_id.clone(),
@@ -126,14 +135,15 @@ fn refresh_token_fixture(
             id_token_claims: Vec::new(),
             id_token_claim_requests: Vec::new(),
         },
-    }
+        }.persisted(),
+    )
 }
 
-fn issuance(
+async fn issuance(
     fixture: &FixtureIds,
     tenant_id: Uuid,
     mode: TokenIssuanceMode,
-    refresh_token: Option<NewRefreshToken>,
+    refresh_token: Option<RefreshFixture>,
 ) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
@@ -150,7 +160,7 @@ fn issuance(
         mode,
         access_token_jti: issuance_id.to_string(),
         access_token_expires_at: (chrono::Utc::now() + chrono::Duration::minutes(5)).timestamp(),
-        refresh_token,
+        refresh_token: match refresh_token { Some(token) => Some(token.into_commit().await), None => None },
         audit_fields: TokenIssuedAuditFields {
             client_id: fixture.client_public_id.clone(),
             subject_hash: blake3::hash(fixture.user_id.to_string().as_bytes())
@@ -243,7 +253,7 @@ async fn expired_single_use_grant_rolls_back_everything() {
             grant_expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
         },
         Some(token),
-    );
+    ).await;
     assert_eq!(
         repository
             .commit_token_issuance(input.clone())
@@ -263,7 +273,7 @@ async fn expired_single_use_grant_rolls_back_everything() {
                 tenant_id,
                 TokenIssuanceMode::Fresh,
                 None
-            ))
+            ).await)
             .await
             .unwrap(),
         CommitTokenIssuanceResult::Committed,
@@ -331,7 +341,7 @@ async fn concurrent_single_use_commits_commit_exactly_once() {
                         grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
                     },
                     None,
-                ))
+                ).await)
                 .await
         }));
     }
@@ -384,7 +394,7 @@ async fn rotation_conflict_keeps_family_compromise_and_only_reuse_audit() {
                 tenant_id,
                 TokenIssuanceMode::Fresh,
                 Some(root)
-            ))
+            ).await)
             .await
             .unwrap(),
         CommitTokenIssuanceResult::Committed
@@ -397,7 +407,7 @@ async fn rotation_conflict_keeps_family_compromise_and_only_reuse_audit() {
         .id;
     let child_raw = format!("rotation-child-{}", Uuid::now_v7());
     let child = refresh_token_fixture(&fixture, tenant_id, family_id, child_raw, Some(root_id));
-    let child_issuance = issuance(&fixture, tenant_id, TokenIssuanceMode::Fresh, Some(child));
+    let child_issuance = issuance(&fixture, tenant_id, TokenIssuanceMode::Fresh, Some(child)).await;
     assert_eq!(
         repository
             .commit_token_issuance(child_issuance.clone())
@@ -410,7 +420,7 @@ async fn rotation_conflict_keeps_family_compromise_and_only_reuse_audit() {
     // reuse audit for this issuance is written.
     let loser_raw = format!("rotation-loser-{}", Uuid::now_v7());
     let loser = refresh_token_fixture(&fixture, tenant_id, family_id, loser_raw, Some(root_id));
-    let loser_issuance = issuance(&fixture, tenant_id, TokenIssuanceMode::Fresh, Some(loser));
+    let loser_issuance = issuance(&fixture, tenant_id, TokenIssuanceMode::Fresh, Some(loser)).await;
     assert_eq!(
         repository
             .commit_token_issuance(loser_issuance.clone())
@@ -482,7 +492,7 @@ async fn issuance_transaction_executes_on_the_connection_pool_runtime() {
         }
     });
     drop(connection);
-    let input = issuance(&fixture, tenant_id, TokenIssuanceMode::Fresh, None);
+    let input = issuance(&fixture, tenant_id, TokenIssuanceMode::Fresh, None).await;
     let repository = TokenIssuanceRepository::new(pool);
     let result = tokio::task::spawn_blocking(move || {
         let borrower = tokio::runtime::Builder::new_current_thread()
@@ -524,7 +534,7 @@ async fn cancelled_issuance_on_pool_runtime_discards_the_blocked_connection() {
             grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(1),
         },
         None,
-    );
+    ).await;
     let retry = input.clone();
     let mut locker = AsyncPgConnection::establish(&database_url).await.unwrap();
     let backend = sql_query("SELECT pg_backend_pid()::bigint AS count")

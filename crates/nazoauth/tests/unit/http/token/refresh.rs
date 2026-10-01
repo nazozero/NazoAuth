@@ -674,6 +674,8 @@ fn token_row_with_refresh_context(
         token_family_id: Uuid::now_v7(),
         client_id,
         user_id: Some(Uuid::now_v7()),
+        contract_key: [0; 32],
+        contract_audiences: vec!["resource://default".to_owned()],
         scopes: json!(["openid", "offline_access"]),
         audience: json!(["resource://default"]),
         authorization_details: json!([]),

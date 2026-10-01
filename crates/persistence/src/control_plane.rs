@@ -30,7 +30,6 @@ pub struct StoredControllerSlot {
     pub slot_index: i16,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
-    pub last_used_at: Option<DateTime<Utc>>,
     pub status: ControllerSlotStatus,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,

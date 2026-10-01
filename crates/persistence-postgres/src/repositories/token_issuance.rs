@@ -5,7 +5,7 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken,
+    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken, RefreshTokenCommit,
     RefreshTokenPersistResult, SingleUseRedemption, TokenFuture, TokenIssuanceMode, TokenPortError,
     TokenRepositoryPort, TokenRevocation, UserinfoSnapshot,
 };
@@ -339,14 +339,26 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
             "single-use token issuance grant key is empty".to_owned(),
         ));
     }
-    if let Some(refresh) = input.refresh_token.as_ref()
-        && (refresh.tenant_id != input.tenant_id
-            || refresh.client_id != input.client_id
-            || refresh.user_id != input.user_id)
-    {
-        return Err(RepositoryError::Consistency(
-            "refresh token owner does not match token issuance owner".to_owned(),
-        ));
+    if let Some(refresh) = input.refresh_token.as_ref() {
+        let (tenant_id, client_id, user_id) = match refresh {
+            RefreshTokenCommit::IssueNew { token, .. } =>
+                (token.tenant_id, token.client_id, token.user_id),
+            RefreshTokenCommit::UseExisting { authority, .. } => {
+                if !matches!(input.mode, TokenIssuanceMode::Fresh) {
+                    return Err(RepositoryError::Consistency(
+                        "refresh source cannot also redeem a single-use grant".to_owned(),
+                    ));
+                }
+                (authority.tenant_id, authority.client_id, authority.user_id)
+            }
+        };
+        if tenant_id != input.tenant_id || client_id != input.client_id
+            || user_id != input.user_id || refresh.contract().subject != input.subject
+        {
+            return Err(RepositoryError::Consistency(
+                "refresh token owner or subject does not match token issuance".to_owned(),
+            ));
+        }
     }
     DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0).ok_or_else(|| {
         RepositoryError::Consistency("token issuance access-token expiry is invalid".to_owned())
@@ -360,7 +372,7 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
 /// issuance identity and transaction either way.
 fn token_issued_audit_event(
     input: &CommitTokenIssuance,
-    refresh: Option<&NewRefreshToken>,
+    refresh: Option<&RefreshTokenCommit>,
 ) -> SecurityAuditEvent {
     SecurityAuditEvent {
         // One identity for the operation and its required event; the pending
@@ -374,8 +386,8 @@ fn token_issued_audit_event(
             "event_category": "token_lifecycle", "user_id": input.user_id,
             "client_id": input.audit_fields.client_id, "subject_hash": input.audit_fields.subject_hash, "scope": input.audit_fields.scope,
             "audience": input.audit_fields.audience, "access_token_jti": input.access_token_jti,
-            "refresh_token_family_id": refresh.map(|refresh| refresh.family_id),
-            "rotated_from_id": refresh.and_then(|refresh| refresh.rotated_from_id),
+            "refresh_token_family_id": refresh.map(RefreshTokenCommit::family_id),
+            "rotated_from_id": refresh.and_then(RefreshTokenCommit::token).and_then(|token| token.rotated_from_id),
         }),
         occurred_at: Utc::now(),
     }
@@ -467,7 +479,8 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .as_ref()
                 .map(prepare_refresh_contract)
                 .transpose()
-                .map_err(map_repository_error)?;
+                .map_err(map_repository_error)?
+                .flatten();
             // Keep the transaction's sequential SQL and its connection driver
             // on the same runtime. A request crosses that boundary once instead
             // of waking another runtime for each statement. Dropping JoinSet
@@ -520,7 +533,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                         input
                                             .refresh_token
                                             .as_ref()
-                                            .map(|refresh| refresh.family_id),
+                                            .map(RefreshTokenCommit::family_id),
                                     )
                                     .bind::<sql_types::Timestamptz, _>(grant_expires_at)
                                     .get_result::<SingleUseInsertRow>(connection)
@@ -537,24 +550,19 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                     }
                                 }
                                 if let Some(refresh) = input.refresh_token.as_ref() {
-                                    let prepared = prepared_contract.as_ref().ok_or_else(|| {
-                                        CommitTransactionError::Repository(
-                                            RepositoryError::Consistency(
-                                                "refresh token is missing its prepared contract"
-                                                    .to_owned(),
-                                            ),
-                                        )
-                                    })?;
                                     match TokenRepository::persist_refresh_token_on_connection(
                                         connection,
-                                        refresh.clone(),
+                                        refresh,
                                         input.issuance_id,
-                                        prepared,
+                                        prepared_contract.as_ref(),
                                     )
                                     .await
                                     .map_err(CommitTransactionError::Repository)?
                                     {
                                         RefreshTokenPersistResult::Inserted => {}
+                                        RefreshTokenPersistResult::InvalidSource => {
+                                            return Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable);
+                                        }
                                         RefreshTokenPersistResult::RotationConflict => {
                                             // Keep the family compromise written by the
                                             // rotation attempt, drop only this request's
@@ -576,7 +584,10 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                             }
                                             append_fresh_security_audit_on_connection(
                                                 connection,
-                                                &refresh_reuse_audit_event(&input, refresh),
+                                                &refresh_reuse_audit_event(
+                                                    &input,
+                                                    refresh.token().expect("only a rotation or new-family collision compromises"),
+                                                ),
                                             )
                                             .await?;
                                             return Ok(CommitTokenIssuanceResult::RotationConflict);

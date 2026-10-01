@@ -4,13 +4,17 @@
 //! deterministically oldest family inside the same authority transaction —
 //! the limit holds at every commit boundary, including under concurrency.
 
+#[path = "support/refresh_fixture.rs"]
+mod refresh_fixture;
+use refresh_fixture::RefreshFixture;
+
 use diesel::{
     QueryableByName, sql_query,
     sql_types::{BigInt, Text, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken,
+    CommitTokenIssuance, CommitTokenIssuanceResult,
     RefreshTokenAuthenticationContext, TokenIssuanceMode, TokenIssuedAuditFields,
     TokenRepositoryPort,
 };
@@ -97,26 +101,31 @@ fn new_refresh(
     raw_token: String,
     rotated_from_id: Option<Uuid>,
     issued_at: chrono::DateTime<chrono::Utc>,
-) -> NewRefreshToken {
-    NewRefreshToken {
-        raw_token,
-        member_id: Uuid::now_v7(),
-        tenant_id,
-        family_id,
-        rotated_from_id,
-        lost_response_retry: None,
-        client_id: fixture.client_id,
-        user_id: Some(fixture.user_id),
-        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
-        audiences: vec!["resource://default".to_owned()],
-        authorization_details: json!([]),
-        issued_at,
-        expires_at: issued_at + chrono::Duration::hours(1),
-        subject: fixture.user_id.to_string(),
-        dpop_jkt: None,
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-        authentication_context: RefreshTokenAuthenticationContext {
+) -> RefreshFixture {
+    RefreshFixture::new(
+        nazo_auth::NewRefreshToken {
+            raw_token,
+            member_id: Uuid::now_v7(),
+            tenant_id,
+            family_id,
+            rotated_from_id,
+            lost_response_retry: None,
+            client_id: fixture.client_id,
+            user_id: Some(fixture.user_id),
+            audiences: vec!["resource://default".to_owned()],
+            issued_at,
+            expires_at: issued_at + chrono::Duration::hours(1),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            client_attestation_jkt: None,
+            id_token_sid: None,
+        },
+        nazo_auth::RefreshContract {
+            scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+            audiences: vec!["resource://default".to_owned()],
+            authorization_details: json!([]),
+            subject: fixture.user_id.to_string(),
+            authentication_context: RefreshTokenAuthenticationContext {
             version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
             issuer: "https://issuer.example".to_owned(),
             audience: fixture.client_public_id.clone(),
@@ -133,10 +142,11 @@ fn new_refresh(
             id_token_claims: Vec::new(),
             id_token_claim_requests: Vec::new(),
         },
-    }
+        }.persisted(),
+    )
 }
 
-fn issuance(token: NewRefreshToken) -> CommitTokenIssuance {
+async fn issuance(token: RefreshFixture) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
         principal_state: nazo_auth::TokenPrincipalState {
@@ -155,12 +165,12 @@ fn issuance(token: NewRefreshToken) -> CommitTokenIssuance {
         access_token_jti: issuance_id.to_string(),
         access_token_expires_at: (token.issued_at + chrono::Duration::minutes(5)).timestamp(),
         audit_fields: TokenIssuedAuditFields {
-            client_id: token.authentication_context.audience.clone(),
-            subject_hash: blake3::hash(token.subject.as_bytes()).to_hex().to_string(),
-            scope: token.scopes.join(" "),
+            client_id: token.contract.authentication_context.audience.clone(),
+            subject_hash: blake3::hash(token.contract.subject.as_bytes()).to_hex().to_string(),
+            scope: token.contract.scopes.join(" "),
             audience: token.audiences.clone(),
         },
-        refresh_token: Some(token),
+        refresh_token: Some(token.into_commit().await),
     }
 }
 
@@ -187,7 +197,7 @@ async fn issue_family(
     );
     let member_id = token.member_id;
     let result = TokenIssuanceRepository::new(create_pool(database_url, 2).unwrap())
-        .commit_token_issuance(issuance(token))
+        .commit_token_issuance(issuance(token).await)
         .await
         .expect("family issuance should commit");
     assert_eq!(result, CommitTokenIssuanceResult::Committed);
@@ -422,7 +432,7 @@ async fn rotation_never_consumes_a_family_slot() {
         );
         member = child.member_id;
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(issuance(child))
+            .commit_token_issuance(issuance(child).await)
             .await
             .expect("rotation should commit");
         assert_eq!(result, CommitTokenIssuanceResult::Committed);
@@ -456,7 +466,7 @@ async fn retired_family_tokens_resolve_as_unknown_grant() {
         let raw = format!("cap-retire-{ordinal}-{}", Uuid::now_v7());
         let token = new_refresh(&fixture, tenant_id, family_id, raw.clone(), None, issued_at);
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(issuance(token))
+            .commit_token_issuance(issuance(token).await)
             .await
             .expect("family issuance should commit");
         assert_eq!(result, CommitTokenIssuanceResult::Committed);
@@ -488,7 +498,7 @@ async fn retired_family_tokens_resolve_as_unknown_grant() {
             chrono::Utc::now(),
         );
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(issuance(child))
+            .commit_token_issuance(issuance(child).await)
             .await
             .expect("rotation should commit");
         assert_eq!(result, CommitTokenIssuanceResult::Committed);
@@ -613,8 +623,9 @@ async fn machine_issuance_without_user_skips_the_cap() {
         chrono::Utc::now(),
     );
     machine.user_id = None;
+    machine.contract.subject = "client".to_owned();
     let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-        .commit_token_issuance(issuance(machine))
+        .commit_token_issuance(issuance(machine).await)
         .await
         .expect("machine issuance should commit");
     assert_eq!(result, CommitTokenIssuanceResult::Committed);
@@ -680,7 +691,7 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
         );
         member = child.member_id;
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(issuance(child))
+            .commit_token_issuance(issuance(child).await)
             .await
             .expect("rotation should commit");
         assert_eq!(result, CommitTokenIssuanceResult::Committed);
@@ -761,10 +772,10 @@ async fn retired_contract_is_reclaimed_after_grace_without_touching_live_referen
     // Give the oldest family an earlier authentication time, which is part
     // of the persisted contract. Nonce/id_token_sid are cleared by persisted()
     // and therefore cannot distinguish the orphan from the ten live families.
-    token.authentication_context.auth_time -= 60;
+    token.contract.authentication_context.auth_time -= 60;
     assert_eq!(
         issuance_repository
-            .commit_token_issuance(issuance(token))
+            .commit_token_issuance(issuance(token).await)
             .await
             .expect("oldest family should commit"),
         CommitTokenIssuanceResult::Committed

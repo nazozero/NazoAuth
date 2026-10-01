@@ -7,9 +7,9 @@ use crate::OidcClaimRequest;
 
 /// Versioned authentication and claim contract carried by a refresh family.
 ///
-/// OIDC Core 12.2 requires a refreshed ID Token to retain the original
-/// authentication context (notably `auth_time`) and the original claim
-/// contract. The immutable subset is persisted once per family in
+/// OIDC Core 12.2 preserves the original issuer, subject, audience and
+/// authentication time. NazoAuth also preserves its original claim contract.
+/// The immutable subset is persisted once per family in
 /// `oauth_refresh_contracts`; the per-generation `id_token_sid` rides on the
 /// family row because a refresh may emit a fresh ID-token session id.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -64,16 +64,18 @@ impl RefreshTokenAuthenticationContext {
 /// The immutable authorization contract shared by every generation of a
 /// refresh family. Serialized canonically (struct field order plus
 /// `serde_json`'s sorted map keys) and content-addressed by BLAKE3 so equal
-/// contracts share one `oauth_refresh_contracts` row.
+/// contracts share one `oauth_refresh_contracts` row. Legacy SQL content keys
+/// remain stable references; equality of the contract is checked separately.
 ///
 /// `nonce` and `id_token_sid` are deliberately absent from the persisted
 /// context: no refresh-time reader consumes the nonce, and the ID-token
 /// session id is per-generation family state.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RefreshContract {
     pub subject: String,
     pub scopes: Vec<String>,
     pub audiences: Vec<String>,
+    #[serde(default)]
     pub authorization_details: Value,
     pub authentication_context: RefreshTokenAuthenticationContext,
 }
@@ -129,6 +131,11 @@ pub struct RefreshToken {
     pub token_family_id: Uuid,
     pub client_id: Uuid,
     pub user_id: Option<Uuid>,
+    /// Stable persisted reference. Legacy families may use the migration's
+    /// SQL content key; this value is not recomputed when rotating.
+    pub contract_key: [u8; 32],
+    /// Original grant resources, independent of this member's current audience.
+    pub contract_audiences: Vec<String>,
     pub scopes: Value,
     pub audience: Value,
     pub authorization_details: Value,
@@ -140,6 +147,53 @@ pub struct RefreshToken {
     pub mtls_x5t_s256: Option<String>,
     pub client_attestation_jkt: Option<String>,
     pub authentication_context: RefreshTokenAuthenticationContext,
+}
+
+/// The source facts read before signing and revalidated at the durable commit.
+/// The contract is original grant authority; `current_audiences` belongs to
+/// the presented generation. Neither is rebuilt from the requested AT audience.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RefreshTokenAuthority {
+    pub tenant_id: Uuid,
+    pub client_id: Uuid,
+    pub user_id: Option<Uuid>,
+    pub family_id: Uuid,
+    pub member_id: Uuid,
+    pub token_blake3: [u8; 32],
+    pub contract_key: [u8; 32],
+    pub contract: RefreshContract,
+    pub current_audiences: Vec<String>,
+    pub id_token_sid: Option<String>,
+    pub dpop_jkt: Option<String>,
+    pub mtls_x5t_s256: Option<String>,
+    pub client_attestation_jkt: Option<String>,
+}
+
+impl RefreshToken {
+    #[must_use]
+    pub fn authority(&self) -> RefreshTokenAuthority {
+        RefreshTokenAuthority {
+            tenant_id: self.tenant_id,
+            client_id: self.client_id,
+            user_id: self.user_id,
+            family_id: self.token_family_id,
+            member_id: self.id,
+            token_blake3: self.token_blake3,
+            contract_key: self.contract_key,
+            contract: RefreshContract {
+                subject: self.subject.clone(),
+                scopes: crate::string_array_values(&self.scopes),
+                audiences: self.contract_audiences.clone(),
+                authorization_details: self.authorization_details.clone(),
+                authentication_context: self.authentication_context.clone(),
+            }.persisted(),
+            current_audiences: crate::string_array_values(&self.audience),
+            id_token_sid: self.authentication_context.id_token_sid.clone(),
+            dpop_jkt: self.dpop_jkt.clone(),
+            mtls_x5t_s256: self.mtls_x5t_s256.clone(),
+            client_attestation_jkt: self.client_attestation_jkt.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -163,28 +217,51 @@ pub struct NewRefreshToken {
     pub lost_response_retry: Option<LostResponseRetry>,
     pub client_id: Uuid,
     pub user_id: Option<Uuid>,
-    pub scopes: Vec<String>,
     pub audiences: Vec<String>,
-    pub authorization_details: Value,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
-    pub subject: String,
+    pub id_token_sid: Option<String>,
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
     pub client_attestation_jkt: Option<String>,
-    pub authentication_context: RefreshTokenAuthenticationContext,
 }
 
-impl NewRefreshToken {
-    /// The immutable contract this generation shares with its family.
+/// The original contract has one owner in either issuance path. A preserved
+/// refresh grant still carries its source even though it has no replacement.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RefreshTokenCommit {
+    IssueNew {
+        token: NewRefreshToken,
+        contract: RefreshContract,
+    },
+    UseExisting {
+        authority: RefreshTokenAuthority,
+        rotation: Option<NewRefreshToken>,
+    },
+}
+
+impl RefreshTokenCommit {
     #[must_use]
-    pub fn contract(&self) -> RefreshContract {
-        RefreshContract {
-            subject: self.subject.clone(),
-            scopes: self.scopes.clone(),
-            audiences: self.audiences.clone(),
-            authorization_details: self.authorization_details.clone(),
-            authentication_context: self.authentication_context.clone(),
+    pub fn token(&self) -> Option<&NewRefreshToken> {
+        match self {
+            Self::IssueNew { token, .. } => Some(token),
+            Self::UseExisting { rotation, .. } => rotation.as_ref(),
+        }
+    }
+
+    #[must_use]
+    pub fn contract(&self) -> &RefreshContract {
+        match self {
+            Self::IssueNew { contract, .. } => contract,
+            Self::UseExisting { authority, .. } => &authority.contract,
+        }
+    }
+
+    #[must_use]
+    pub fn family_id(&self) -> Uuid {
+        match self {
+            Self::IssueNew { token, .. } => token.family_id,
+            Self::UseExisting { authority, .. } => authority.family_id,
         }
     }
 }
@@ -192,6 +269,7 @@ impl NewRefreshToken {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RefreshTokenPersistResult {
     Inserted,
+    InvalidSource,
     RotationConflict,
 }
 

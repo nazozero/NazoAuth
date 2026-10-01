@@ -239,3 +239,23 @@ fn authorization_code_token_issue_preserves_requested_oidc_claims_and_acr() {
     assert_eq!(issue.id_token_claim_requests[0].name, "acr");
     assert!(issue.id_token_claim_requests[0].essential);
 }
+
+#[test]
+fn authorization_code_subset_access_keeps_the_full_initial_refresh_resource_grant() {
+    let mut payload = code_payload(true);
+    payload.resource_indicators = vec!["resource://a".to_owned(), "resource://b".to_owned()];
+    let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
+        payload,
+        subject: "subject-1".to_owned(),
+        audiences: vec!["resource://a".to_owned()],
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        code_hash: "code-hash".to_owned(),
+        refresh_token_dpop_jkt: None,
+        refresh_token_mtls_x5t_s256: None,
+        refresh_token_client_attestation_jkt: None,
+    });
+    assert_eq!(issue.audiences, vec!["resource://a"]);
+    assert_eq!(issue.refresh_grant_audiences, Some(vec!["resource://a".to_owned(), "resource://b".to_owned()]));
+    assert!(issue.refresh_authority.is_none());
+}

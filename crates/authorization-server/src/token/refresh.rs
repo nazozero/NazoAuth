@@ -337,6 +337,7 @@ pub async fn token_refresh_with_service(
         None => refresh_token_policy(client, &token),
     };
     let refresh_id_token_sid = Some(authentication_context.id_token_sid.clone());
+    let refresh_authority = token.authority();
     issue_token_response(
         issuance,
         token_service,
@@ -349,9 +350,8 @@ pub async fn token_refresh_with_service(
             scopes,
             authorization_details: token.authorization_details,
             audiences,
-            // Keep the original nonce in the persisted refresh contract, but
-            // issue.rs suppresses it from the refreshed ID Token as required
-            // by OIDC Core 12.2.
+            // A refreshed ID Token omits the original nonce; the immutable
+            // source contract also strips this first-response-only value.
             nonce: authentication_context.nonce.clone(),
             auth_time: Some(authentication_context.auth_time),
             amr: authentication_context.amr.clone(),
@@ -369,7 +369,8 @@ pub async fn token_refresh_with_service(
             mtls_x5t_s256: mtls_x5t_s256.clone(),
             refresh_token_mtls_x5t_s256: mtls_x5t_s256,
             refresh_token_client_attestation_jkt: token.client_attestation_jkt,
-            refresh_token_scopes: Some(original_scopes),
+            refresh_authority: Some(refresh_authority),
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,

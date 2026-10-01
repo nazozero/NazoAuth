@@ -20,12 +20,16 @@ mod support;
 #[path = "support/password.rs"]
 mod password;
 
+#[path = "support/refresh_fixture.rs"]
+mod refresh_fixture;
+use refresh_fixture::RefreshFixture;
+
 use chrono::{DateTime, Duration, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
     AccessTokenRevocation, ClientSecurityPolicy, CommitTokenIssuance, CommitTokenIssuanceResult,
-    NewRefreshToken, OAuthClient, RefreshToken, RefreshTokenAuthenticationContext,
+    OAuthClient, RefreshToken, RefreshTokenAuthenticationContext,
     TokenIssuanceMode, TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation,
     UserinfoSubjectRef, ValidatedClientRegistration,
 };
@@ -362,31 +366,37 @@ fn new_refresh_token(
     raw_token: String,
     rotated_from_id: Option<Uuid>,
     dpop_jkt: Option<String>,
-) -> NewRefreshToken {
+) -> RefreshFixture {
     let issued_at = Utc::now();
-    NewRefreshToken {
-        raw_token,
-        member_id: Uuid::now_v7(),
-        tenant_id,
-        family_id,
-        rotated_from_id,
-        lost_response_retry: None,
-        client_id: seed.client.id,
-        user_id: Some(seed.user_id),
-        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
-        audiences: vec!["resource://default".to_owned()],
-        authorization_details: json!([]),
-        issued_at,
-        expires_at: issued_at + Duration::hours(1),
-        subject: seed.user_id.to_string(),
-        dpop_jkt,
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-        authentication_context: refresh_context(&seed.client.client_id),
-    }
+    RefreshFixture::new(
+        nazo_auth::NewRefreshToken {
+            raw_token,
+            member_id: Uuid::now_v7(),
+            tenant_id,
+            family_id,
+            rotated_from_id,
+            lost_response_retry: None,
+            client_id: seed.client.id,
+            user_id: Some(seed.user_id),
+            audiences: vec!["resource://default".to_owned()],
+            issued_at,
+            expires_at: issued_at + Duration::hours(1),
+            dpop_jkt,
+            mtls_x5t_s256: None,
+            client_attestation_jkt: None,
+            id_token_sid: None,
+        },
+        nazo_auth::RefreshContract {
+            scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+            audiences: vec!["resource://default".to_owned()],
+            authorization_details: json!([]),
+            subject: seed.user_id.to_string(),
+            authentication_context: refresh_context(&seed.client.client_id),
+        }.persisted(),
+    )
 }
 
-fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
+async fn refresh_issuance(token: RefreshFixture) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
         principal_state: nazo_auth::TokenPrincipalState {
@@ -405,12 +415,12 @@ fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
         access_token_jti: issuance_id.to_string(),
         access_token_expires_at: (token.issued_at + Duration::minutes(5)).timestamp(),
         audit_fields: TokenIssuedAuditFields {
-            client_id: token.authentication_context.audience.clone(),
-            subject_hash: blake3::hash(token.subject.as_bytes()).to_hex().to_string(),
-            scope: token.scopes.join(" "),
+            client_id: token.contract.authentication_context.audience.clone(),
+            subject_hash: blake3::hash(token.contract.subject.as_bytes()).to_hex().to_string(),
+            scope: token.contract.scopes.join(" "),
             audience: token.audiences.clone(),
         },
-        refresh_token: Some(token),
+        refresh_token: Some(token.into_commit().await),
     }
 }
 
@@ -773,7 +783,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
             parent_raw.clone(),
             None,
             Some("qc-parent-dpop".to_owned()),
-        ));
+        )).await;
         let outcome = seeder
             .commit_token_issuance(input)
             .await
@@ -797,7 +807,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         // Sender binding is family authority: the successor carries the same
         // DPoP binding as the parent it replaces.
         Some("qc-parent-dpop".to_owned()),
-    ));
+    )).await;
     let (result, delta, acquires) =
         measure(&counter, repository.commit_token_issuance(child)).await;
 
@@ -889,6 +899,8 @@ async fn rf06_lost_response_successor_is_single_read() {
         token_family_id: family_id,
         client_id: seed.client.id,
         user_id: Some(seed.user_id),
+        contract_key: [0; 32],
+        contract_audiences: vec!["resource://default".to_owned()],
         scopes: json!(["openid", "offline_access"]),
         audience: json!(["resource://default"]),
         authorization_details: json!([]),

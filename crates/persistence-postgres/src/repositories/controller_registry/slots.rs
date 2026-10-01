@@ -71,7 +71,6 @@ pub struct StoredControllerSlot {
     pub slot_index: i16,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
-    pub last_used_at: Option<DateTime<Utc>>,
     pub status: ControllerSlotStatus,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -208,8 +207,6 @@ struct SlotRow {
     issued_at: DateTime<Utc>,
     #[diesel(sql_type = Timestamptz)]
     expires_at: DateTime<Utc>,
-    #[diesel(sql_type = Nullable<Timestamptz>)]
-    last_used_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = Varchar)]
     status: String,
     #[diesel(sql_type = Nullable<Timestamptz>)]
@@ -233,7 +230,6 @@ impl TryFrom<SlotRow> for StoredControllerSlot {
             slot_index: row.slot_index,
             issued_at: row.issued_at,
             expires_at: row.expires_at,
-            last_used_at: row.last_used_at,
             status: ControllerSlotStatus::from_str(&row.status)
                 .ok_or_else(|| anyhow::anyhow!("stored controller slot has unknown status"))?,
             revoked_at: row.revoked_at,
@@ -277,7 +273,7 @@ struct CountRow {
 macro_rules! slot_columns {
     () => {
         "deployment_id, controller_id, label, kid, public_key, \
-         slot_index, issued_at, expires_at, last_used_at, status, revoked_at, \
+         slot_index, issued_at, expires_at, status, revoked_at, \
          created_at, updated_at"
     };
 }
@@ -451,8 +447,8 @@ pub(crate) async fn insert_slot_on_connection(
     let inserted = sql_query(
         "INSERT INTO controller_registry_slots
             (deployment_id, controller_id, label, kid, public_key, slot_index,
-             issued_at, expires_at, last_used_at, status, revoked_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, 'active', NULL, $7, $7)",
+             issued_at, expires_at, status, revoked_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NULL, $7, $7)",
     )
     .bind::<Varchar, _>(&slot.deployment_id)
     .bind::<Varchar, _>(&controller_id)
@@ -512,7 +508,7 @@ pub(super) async fn rotate_slot_on_connection(
         "UPDATE controller_registry_slots
          SET label = $3, kid = $4, public_key = $5,
              issued_at = $6, expires_at = $7,
-             last_used_at = NULL, updated_at = $6
+             updated_at = $6
          WHERE deployment_id = $1 AND controller_id = $2",
     )
     .bind::<Varchar, _>(&rotation.deployment_id)
@@ -722,7 +718,6 @@ pub(crate) fn contract_slot(slot: StoredControllerSlot) -> contract::StoredContr
         slot_index: slot.slot_index,
         issued_at: slot.issued_at,
         expires_at: slot.expires_at,
-        last_used_at: slot.last_used_at,
         status: contract_status(slot.status),
         revoked_at: slot.revoked_at,
         created_at: slot.created_at,
