@@ -49,8 +49,9 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
             bind_decision_audit_digests(&mut input);
             let pool = self.pool.clone();
             // Same physical-connection protection as token issuance. Cancelling
-            // the request aborts the task; an unconfirmed transaction is never
-            // returned to the pool. Any unknown outcome fails closed.
+            // the request aborts the task and discards its unconfirmed connection.
+            // An already-sent implicit statement may still commit on the server;
+            // cancellation is an unknown outcome, not a confirmed rollback.
             let mut operation = tokio::task::JoinSet::new();
             operation.spawn_on(
                 async move {
