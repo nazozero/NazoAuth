@@ -229,6 +229,10 @@ pub struct NewRefreshToken {
 
 /// The original contract has one owner in either issuance path. A preserved
 /// refresh grant still carries its source even though it has no replacement.
+// One request-owned commit value, not a collection of variants. Keep its
+// authority and replacement inline rather than allocate on every rotation
+// solely to equalize enum variant sizes.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum RefreshTokenCommit {
     IssueNew {
