@@ -493,25 +493,139 @@ async fn preserve_rechecks_source_expiry_contract_and_sender_binding() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn two_legal_preserves_commit_without_consuming_or_mutating_the_source() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn two_legal_preserves_overlap_while_revocation_waits_for_both() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
-    let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
-    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    let before = state(&mut connection, source.token_family_id).await;
+    let (raw, source) = issue_at(&url, &fixture, Utc::now()).await;
+    let mut coordinator = AsyncPgConnection::establish(&url).await.unwrap();
+    let before = state(&mut coordinator, source.token_family_id).await;
     let left = preserve(&fixture, &source);
     let right = preserve(&fixture, &source);
-    let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
-    let (left_result, right_result) = tokio::join!(
-        repository.commit_token_issuance(left.clone()),
-        repository.commit_token_issuance(right.clone()),
+    let suffix = Uuid::now_v7().simple().to_string();
+    let gate = format!("test_preserve_overlap_{suffix}");
+    let left_key = i64::from_be_bytes(Uuid::now_v7().as_bytes()[8..].try_into().unwrap());
+    let right_key = left_key.wrapping_add(1);
+    let bytes = source.token_family_id.as_bytes();
+    let family_key = i64::from_be_bytes(bytes[..8].try_into().unwrap())
+        ^ i64::from_be_bytes(bytes[8..].try_into().unwrap());
+    coordinator
+        .batch_execute(&format!(
+            "CREATE FUNCTION {gate}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN \
+             IF NEW.event_id = '{}'::uuid THEN PERFORM pg_advisory_xact_lock({left_key}); \
+             ELSIF NEW.event_id = '{}'::uuid THEN PERFORM pg_advisory_xact_lock({right_key}); END IF; \
+             RETURN NEW; END $$; CREATE TRIGGER {gate} BEFORE INSERT ON security_audit_events \
+             FOR EACH ROW EXECUTE FUNCTION {gate}();",
+            left.issuance_id, right.issuance_id,
+        ))
+        .await
+        .unwrap();
+    for key in [left_key, right_key] {
+        sql_query("SELECT pg_advisory_lock($1)")
+            .bind::<sql_types::BigInt, _>(key)
+            .execute(&mut coordinator)
+            .await
+            .unwrap();
+    }
+    let left_app = format!("preserve-left-{suffix}");
+    let right_app = format!("preserve-right-{suffix}");
+    let left_repository =
+        TokenIssuanceRepository::new(create_pool(tagged_url(&url, &left_app), 1).unwrap());
+    let right_repository =
+        TokenIssuanceRepository::new(create_pool(tagged_url(&url, &right_app), 1).unwrap());
+    let left_input = left.clone();
+    let right_input = right.clone();
+    let mut left_task =
+        tokio::spawn(async move { left_repository.commit_token_issuance(left_input).await });
+    let mut right_task =
+        tokio::spawn(async move { right_repository.commit_token_issuance(right_input).await });
+    wait_for_lock(&mut coordinator, &left_app, &mut left_task).await;
+    assert_advisory_wait(&mut coordinator, &left_app, left_key).await;
+    wait_for_lock(&mut coordinator, &right_app, &mut right_task).await;
+    assert_advisory_wait(&mut coordinator, &right_app, right_key).await;
+    // Exact distinct audit gates prove simultaneous post-validation readers;
+    // a generic lock wait alone could hide serialization on the family.
+    assert_advisory_wait(&mut coordinator, &left_app, left_key).await;
+    let reclaim = sql_query(
+        "SELECT CASE WHEN pg_try_advisory_xact_lock($1) THEN 1 ELSE 0 END::bigint AS count",
+    )
+    .bind::<sql_types::BigInt, _>(family_key)
+    .get_result::<Count>(&mut coordinator)
+    .await
+    .unwrap();
+    assert_eq!(
+        reclaim.count, 0,
+        "maintenance must skip shared advisory holders"
     );
-    assert_eq!(left_result.unwrap(), CommitTokenIssuanceResult::Committed);
-    assert_eq!(right_result.unwrap(), CommitTokenIssuanceResult::Committed);
-    assert_eq!(state(&mut connection, source.token_family_id).await, before);
-    assert_issuance_writes(&mut connection, left.issuance_id, true).await;
-    assert_issuance_writes(&mut connection, right.issuance_id, true).await;
+
+    let revoke_app = format!("preserve-revoke-{suffix}");
+    let repository =
+        TokenIssuanceRepository::new(create_pool(tagged_url(&url, &revoke_app), 1).unwrap());
+    let client_id = fixture.client_id;
+    let mut revoking = tokio::spawn(async move {
+        repository
+            .revoke_token(TokenRevocation {
+                tenant_id: tenant(),
+                client_id,
+                raw_token: &raw,
+                access_token: None,
+            })
+            .await
+    });
+    wait_for_lock(&mut coordinator, &revoke_app, &mut revoking).await;
+    assert_advisory_wait(&mut coordinator, &revoke_app, family_key).await;
+    for (key, task) in [(left_key, left_task), (right_key, right_task)] {
+        sql_query("SELECT pg_advisory_unlock($1)")
+            .bind::<sql_types::BigInt, _>(key)
+            .execute(&mut coordinator)
+            .await
+            .unwrap();
+        assert_eq!(
+            task.await.unwrap().unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        if key == left_key {
+            // One committed reader must not release the other's authority.
+            assert_advisory_wait(&mut coordinator, &right_app, right_key).await;
+            assert_advisory_wait(&mut coordinator, &revoke_app, family_key).await;
+        }
+    }
+    assert_eq!(revoking.await.unwrap().unwrap(), 1);
+    coordinator
+        .batch_execute(&format!(
+            "DROP TRIGGER {gate} ON security_audit_events; DROP FUNCTION {gate}();",
+        ))
+        .await
+        .unwrap();
+    assert_issuance_writes(&mut coordinator, left.issuance_id, true).await;
+    assert_issuance_writes(&mut coordinator, right.issuance_id, true).await;
+    let mut after = state(&mut coordinator, source.token_family_id).await;
+    assert!(!after.family["revoked_at"].is_null());
+    after.family["revoked_at"] = Value::Null;
+    assert_eq!(after, before, "only the real revocation may change the source");
+}
+
+/// The existing wait helper establishes a lock wait; match the exact advisory
+/// key too so an earlier family lock cannot masquerade as reaching the audit.
+async fn assert_advisory_wait(connection: &mut AsyncPgConnection, application: &str, key: i64) {
+    let waiting = sql_query(
+        "SELECT count(*) AS count FROM pg_stat_activity AS activity \
+         JOIN pg_locks AS waiting ON waiting.pid = activity.pid \
+         WHERE activity.application_name = $1 AND activity.wait_event_type = 'Lock' \
+           AND waiting.locktype = 'advisory' AND NOT waiting.granted \
+           AND waiting.classid::bigint = (($2::bigint >> 32) & 4294967295) \
+           AND waiting.objid::bigint = ($2::bigint & 4294967295) \
+           AND waiting.objsubid = 1",
+    )
+    .bind::<sql_types::Text, _>(application)
+    .bind::<sql_types::BigInt, _>(key)
+    .get_result::<Count>(connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        waiting.count, 1,
+        "{application} must wait on its exact advisory key"
+    );
 }
 
 fn tagged_url(url: &str, application_name: &str) -> String {

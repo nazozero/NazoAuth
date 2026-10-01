@@ -813,6 +813,28 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         Some("qc-parent-dpop".to_owned()),
     ))
     .await;
+    // Preserve keeps the same six statements: timeout, two principal SHARE
+    // reads, shared family advisory, family SHARE read, and Required audit.
+    // Changing lock modes removes reader serialization, not a SQL round trip.
+    let mut preserved = child.clone();
+    preserved.issuance_id = Uuid::now_v7();
+    preserved.access_token_jti = preserved.issuance_id.to_string();
+    preserved.refresh_token = Some(nazo_auth::RefreshTokenCommit::UseExisting {
+        authority: parent.authority(),
+        rotation: None,
+    });
+    let (result, delta, acquires) =
+        measure(&counter, repository.commit_token_issuance(preserved)).await;
+    assert_eq!(
+        result.expect("preserve should commit"),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert_eq!(delta.data_queries, 6);
+    assert_eq!(delta.begins, 1);
+    assert_eq!(delta.commits, 1);
+    assert_eq!(acquires, 1);
+    assert_clean(delta);
+
     let (result, delta, acquires) =
         measure(&counter, repository.commit_token_issuance(child)).await;
 
