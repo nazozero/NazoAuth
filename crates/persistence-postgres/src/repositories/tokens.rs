@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, QueryableByName,
-    SelectableHelper, sql_query, sql_types,
+    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
+    QueryableByName, SelectableHelper, sql_query, sql_types,
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
