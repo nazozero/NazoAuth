@@ -192,14 +192,12 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     if let (Some(uri), Some(version)) = (
         payload.pushed_request_uri.as_deref(),
         pushed_request_version,
-    ) {
-        if let Err(error) = context
-            .service
-            .discard_pushed_authorization_request(uri, version)
-            .await
-        {
-            tracing::warn!(?error, "failed to discard committed PAR preparation");
-        }
+    ) && let Err(error) = context
+        .service
+        .discard_pushed_authorization_request(uri, version)
+        .await
+    {
+        tracing::warn!(?error, "failed to discard committed PAR preparation");
     }
     authorization_response_redirect_with_context(
         context,
