@@ -61,7 +61,6 @@ pub(in crate::repositories) struct OAuthClientRecord {
     backchannel_token_delivery_mode: String,
     backchannel_client_notification_endpoint: Option<String>,
     backchannel_authentication_request_signing_alg: Option<String>,
-    backchannel_user_code_parameter: bool,
     frontchannel_logout_uri: Option<String>,
     frontchannel_logout_session_required: bool,
     subject_type: String,
@@ -128,7 +127,8 @@ impl OAuthClientRecord {
                     .backchannel_client_notification_endpoint,
                 backchannel_authentication_request_signing_alg: self
                     .backchannel_authentication_request_signing_alg,
-                backchannel_user_code_parameter: self.backchannel_user_code_parameter,
+                // The optional CIBA user-code feature is unsupported.
+                backchannel_user_code_parameter: false,
                 frontchannel_logout_uri: self.frontchannel_logout_uri,
                 frontchannel_logout_session_required: self.frontchannel_logout_session_required,
                 tls_client_auth_subject_dn: self.tls_client_auth_subject_dn,

@@ -56,10 +56,12 @@ pub struct TokenIssue {
     pub mtls_x5t_s256: Option<String>,
     pub refresh_token_mtls_x5t_s256: Option<String>,
     pub refresh_token_client_attestation_jkt: Option<String>,
-    /// Original refresh-token authorization. A refresh request may narrow the
-    /// access-token scope, but RFC 6749 requires a rotated refresh token to
-    /// retain the scope of the token presented by the client.
-    pub refresh_token_scopes: Option<Vec<String>>,
+    /// The original refresh authority, retained even when no replacement RT
+    /// is issued. The durable commit revalidates this exact source.
+    pub refresh_authority: Option<nazo_auth::RefreshTokenAuthority>,
+    /// Original resources of a newly redeemed authorization grant. This is
+    /// only used to create a family; subsequent refreshes use their authority.
+    pub refresh_grant_audiences: Option<Vec<String>>,
     pub authorization_code_hash: Option<String>,
     pub actor: Option<Value>,
     pub issued_token_type: Option<String>,

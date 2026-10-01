@@ -1032,7 +1032,6 @@ impl RecoveryRootRepository {
                             slot_index,
                             issued_at,
                             expires_at,
-                            last_used_at: None,
                             status: ControllerSlotStatus::Active,
                             revoked_at: None,
                             created_at: issued_at,

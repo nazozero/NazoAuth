@@ -17,15 +17,6 @@ pub(super) struct PendingRefreshToken {
     pub(super) expires_at: DateTime<Utc>,
 }
 
-fn refresh_token_persistence_scopes(
-    access_token_scopes: &[String],
-    original_refresh_token_scopes: Option<&[String]>,
-) -> Vec<String> {
-    original_refresh_token_scopes
-        .unwrap_or(access_token_scopes)
-        .to_vec()
-}
-
 pub(super) fn refresh_authentication_context(
     issue: &TokenIssue,
     issuer: &str,
@@ -52,6 +43,38 @@ pub(super) fn refresh_authentication_context(
     context.is_well_formed().then_some(context)
 }
 
+/// Bind the values actually signed to the original source snapshot. Keeping
+/// an unchanged contract in the commit is insufficient if the signing input
+/// could independently change its subject, claims, or granted privileges.
+pub(super) fn refresh_issue_matches_source(
+    issue: &TokenIssue,
+    client: &ClientRow,
+    issuer: &str,
+) -> bool {
+    let Some(source) = issue.refresh_authority.as_ref() else { return true; };
+    let Some(mut context) = refresh_authentication_context(issue, issuer, &client.client_id, None) else {
+        return false;
+    };
+    context.nonce = None;
+    source.tenant_id == client.tenant_id
+        && source.client_id == client.id
+        && source.user_id == issue.user_id
+        && source.contract.subject == issue.subject
+        && source.contract.authorization_details == issue.authorization_details
+        && source.contract.authentication_context == context
+        && nazo_auth::is_subset(&issue.scopes, &source.contract.scopes)
+        && !issue.audiences.is_empty()
+        && nazo_auth::is_subset(&issue.audiences, &source.current_audiences)
+        && issue.refresh_id_token_sid.as_ref() == Some(&source.id_token_sid)
+        && issue.actor.is_none()
+        && source.dpop_jkt.as_ref().is_none_or(|binding| issue.dpop_jkt.as_ref() == Some(binding))
+        && source.mtls_x5t_s256.as_ref().is_none_or(|binding| issue.mtls_x5t_s256.as_ref() == Some(binding))
+        && issue.refresh_token_dpop_jkt == source.dpop_jkt
+        && issue.refresh_token_mtls_x5t_s256 == source.mtls_x5t_s256
+        && issue.refresh_token_client_attestation_jkt == source.client_attestation_jkt
+        && issue.refresh_grant_audiences.is_none()
+}
+
 pub fn should_issue_refresh_token(
     client: &ClientRow,
     scopes: &[String],
@@ -66,7 +89,7 @@ pub(super) fn prepare_refresh_token(
     client: &ClientRow,
     issue: &TokenIssue,
     refresh: &PendingRefreshToken,
-    authentication_context: nazo_auth::RefreshTokenAuthenticationContext,
+    id_token_sid: Option<String>,
 ) -> nazo_auth::NewRefreshToken {
     nazo_auth::NewRefreshToken {
         raw_token: refresh.raw.clone(),
@@ -83,19 +106,17 @@ pub(super) fn prepare_refresh_token(
         ),
         client_id: client.id,
         user_id: issue.user_id,
-        scopes: refresh_token_persistence_scopes(
-            &issue.scopes,
-            issue.refresh_token_scopes.as_deref(),
-        ),
-        audiences: issue.audiences.clone(),
-        authorization_details: issue.authorization_details.clone(),
+        audiences: if issue.refresh_authority.is_some() {
+            issue.audiences.clone()
+        } else {
+            issue.refresh_grant_audiences.as_ref().unwrap_or(&issue.audiences).clone()
+        },
         issued_at: refresh.issued_at,
         expires_at: refresh.expires_at,
-        subject: issue.subject.clone(),
         dpop_jkt: issue.refresh_token_dpop_jkt.clone(),
         mtls_x5t_s256: issue.refresh_token_mtls_x5t_s256.clone(),
         client_attestation_jkt: issue.refresh_token_client_attestation_jkt.clone(),
-        authentication_context,
+        id_token_sid,
     }
 }
 

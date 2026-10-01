@@ -549,8 +549,6 @@ pub(crate) async fn insert_client(
                 .eq(&prepared.backchannel_client_notification_endpoint),
             oauth_clients::backchannel_authentication_request_signing_alg
                 .eq(&prepared.backchannel_authentication_request_signing_alg),
-            oauth_clients::backchannel_user_code_parameter
-                .eq(prepared.backchannel_user_code_parameter),
             oauth_clients::frontchannel_logout_uri.eq(&prepared.frontchannel_logout_uri),
             oauth_clients::frontchannel_logout_session_required
                 .eq(prepared.frontchannel_logout_session_required),

@@ -1,4 +1,5 @@
 use super::*;
+use nazo_auth::NewRefreshToken;
 
 fn valid_context(auth_time: i64) -> nazo_auth::RefreshTokenAuthenticationContext {
     nazo_auth::RefreshTokenAuthenticationContext {
@@ -18,61 +19,67 @@ fn valid_context(auth_time: i64) -> nazo_auth::RefreshTokenAuthenticationContext
     }
 }
 
-fn valid_refresh_token() -> NewRefreshToken {
+fn valid_refresh_token() -> nazo_auth::RefreshTokenCommit {
     let issued_at = Utc::now();
-    NewRefreshToken {
-        raw_token: "refresh".to_owned(),
-        member_id: Uuid::now_v7(),
-        tenant_id: Uuid::now_v7(),
-        family_id: Uuid::now_v7(),
-        rotated_from_id: None,
-        lost_response_retry: None,
-        client_id: Uuid::now_v7(),
-        user_id: Some(Uuid::now_v7()),
-        scopes: vec!["openid".to_owned()],
-        audiences: vec!["resource".to_owned()],
-        authorization_details: serde_json::json!([]),
-        issued_at,
-        expires_at: issued_at + Duration::hours(1),
-        subject: "subject".to_owned(),
-        dpop_jkt: None,
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-        authentication_context: valid_context(issued_at.timestamp()),
+    nazo_auth::RefreshTokenCommit::IssueNew {
+        token: NewRefreshToken {
+            raw_token: "refresh".to_owned(),
+            member_id: Uuid::now_v7(),
+            tenant_id: Uuid::now_v7(),
+            family_id: Uuid::now_v7(),
+            rotated_from_id: None,
+            lost_response_retry: None,
+            client_id: Uuid::now_v7(),
+            user_id: Some(Uuid::now_v7()),
+            audiences: vec!["resource".to_owned()],
+            issued_at,
+            expires_at: issued_at + Duration::hours(1),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            client_attestation_jkt: None,
+            id_token_sid: None,
+        },
+        contract: nazo_auth::RefreshContract {
+            scopes: vec!["openid".to_owned()],
+            audiences: vec!["resource".to_owned()],
+            authorization_details: serde_json::json!([]),
+            subject: "subject".to_owned(),
+            authentication_context: valid_context(issued_at.timestamp()),
+        }.persisted(),
     }
 }
 
 #[test]
 fn refresh_token_validation_accepts_complete_current_context() {
     let token = valid_refresh_token();
-    validate_new_refresh_token(&token).expect("complete refresh token is valid");
+    validate_refresh_commit(&token).expect("complete refresh token is valid");
 }
 
 #[test]
 fn refresh_token_validation_rejects_malformed_context_and_audiences() {
     let mut invalid_version = valid_refresh_token();
-    invalid_version.authentication_context.version = 2;
+    contract_mut(&mut invalid_version).authentication_context.version = 2;
     assert!(matches!(
-        validate_new_refresh_token(&invalid_version),
-        Err(RepositoryError::Consistency(message)) if message.contains("complete current")
+        validate_refresh_commit(&invalid_version),
+        Err(RepositoryError::Consistency(message)) if message.contains("complete immutable")
     ));
 
     let mut no_audiences = valid_refresh_token();
-    no_audiences.audiences.clear();
-    assert!(validate_new_refresh_token(&no_audiences).is_err());
+    token_mut(&mut no_audiences).audiences.clear();
+    assert!(validate_refresh_commit(&no_audiences).is_err());
 
     let mut blank_audience = valid_refresh_token();
-    blank_audience.audiences = vec!["  ".to_owned()];
-    assert!(validate_new_refresh_token(&blank_audience).is_err());
+    token_mut(&mut blank_audience).audiences = vec!["  ".to_owned()];
+    assert!(validate_refresh_commit(&blank_audience).is_err());
 
     let mut future_authentication = valid_refresh_token();
-    future_authentication.authentication_context.auth_time =
-        future_authentication.issued_at.timestamp() + 1;
-    assert!(validate_new_refresh_token(&future_authentication).is_err());
+    let future_time = token_mut(&mut future_authentication).issued_at.timestamp() + 1;
+    contract_mut(&mut future_authentication).authentication_context.auth_time = future_time;
+    assert!(validate_refresh_commit(&future_authentication).is_err());
 
     let mut empty_amr = valid_refresh_token();
-    empty_amr.authentication_context.amr.clear();
-    assert!(validate_new_refresh_token(&empty_amr).is_err());
+    contract_mut(&mut empty_amr).authentication_context.amr.clear();
+    assert!(validate_refresh_commit(&empty_amr).is_err());
 }
 
 #[test]
@@ -86,4 +93,13 @@ fn refresh_family_lock_key_is_the_shared_high_xor_low_formula() {
     assert_eq!(refresh_family_lock_key(family_id), expected);
     assert_eq!(refresh_family_lock_key(Uuid::nil()), 0);
     assert_eq!(refresh_family_lock_key(Uuid::from_u128(u128::MAX)), 0);
+}
+
+fn token_mut(refresh: &mut nazo_auth::RefreshTokenCommit) -> &mut NewRefreshToken {
+    let nazo_auth::RefreshTokenCommit::IssueNew { token, .. } = refresh else { unreachable!() };
+    token
+}
+fn contract_mut(refresh: &mut nazo_auth::RefreshTokenCommit) -> &mut nazo_auth::RefreshContract {
+    let nazo_auth::RefreshTokenCommit::IssueNew { contract, .. } = refresh else { unreachable!() };
+    contract
 }

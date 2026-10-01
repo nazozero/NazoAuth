@@ -123,7 +123,10 @@ instances from double-processing the same rows.
   rechecked inside the reclaim transaction. A batch uses one candidate read,
   one bounded advisory-lock query and one bulk delete. The delete is a separate
   READ COMMITTED statement so it sees a rotation committed before lock acquisition.
-  Families with an active successor are never reclaimed.
+  Families with an active successor are never reclaimed. PreserveExisting token
+  issuance also takes the same family advisory lock plus a real family row lock
+  through its final commit; it cannot issue from a source retired or revoked
+  before that locked check. Expiry is checked after source lock acquisition.
 - Expired spent proofs are removed at their own expiry. Rotation also limits
   proofs to 64 per family; family deletion cascades any remaining proofs.
   The current family row remains authoritative until its current token expires.

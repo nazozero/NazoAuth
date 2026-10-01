@@ -434,6 +434,7 @@ async fn dynamic_profile_metadata_round_trips_through_postgres() {
         .await
         .unwrap();
     assert_eq!(replaced.client_id, client.client_id);
+    assert!(!replaced.backchannel_user_code_parameter);
 
     repository
         .deactivate(client.tenant_id, client.id, rotated_token.as_str())

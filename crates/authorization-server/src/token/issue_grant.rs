@@ -47,7 +47,7 @@ pub async fn issue_token_response(
             false,
         ));
     }
-    if issue_includes_openid && issue.refresh_token_scopes.is_some() && issue.auth_time.is_none() {
+    if issue_includes_openid && issue.refresh_authority.is_some() && issue.auth_time.is_none() {
         mark_failed_authorization_code_if_needed(
             token_service,
             issue.authorization_code_hash.as_deref(),
@@ -92,9 +92,27 @@ pub async fn issue_token_response(
             false,
         ));
     }
+    let refresh_source_matches_policy = match (&issue.refresh_token_policy, &issue.refresh_authority) {
+        (RefreshTokenPolicy::IssueNew, None) => true,
+        (RefreshTokenPolicy::PreserveExisting, Some(_)) => true,
+        (RefreshTokenPolicy::Rotate { family_id, rotated_from_id }, Some(source)) =>
+            *family_id == source.family_id && *rotated_from_id == source.member_id,
+        (RefreshTokenPolicy::RotateLostResponse { family_id, successor_id, .. }, Some(source)) =>
+            *family_id == source.family_id && *successor_id == source.member_id,
+        _ => false,
+    };
+    if !refresh_source_matches_policy
+        || !refresh_issue_matches_source(&issue, client, context.config.issuer())
+    {
+        return Err(OAuthEndpointError::token(
+            StatusCode::BAD_REQUEST, "invalid_grant",
+            "refresh token source authority is missing or inconsistent.", false,
+        ));
+    }
     let refresh_authorization_scopes = issue
-        .refresh_token_scopes
-        .as_deref()
+        .refresh_authority
+        .as_ref()
+        .map(|source| source.contract.scopes.as_slice())
         .unwrap_or(&issue.scopes);
     let openid4vci_credential_authorization = context
         .config
@@ -378,8 +396,9 @@ pub async fn issue_token_response(
     if issue_includes_openid {
         let sector_identifier_host = client.sector_identifier_host.as_deref();
         let id_token_claim_scopes = issue
-            .refresh_token_scopes
-            .as_deref()
+            .refresh_authority
+            .as_ref()
+            .map(|source| source.contract.scopes.as_slice())
             .unwrap_or(&issue.scopes);
         let loaded_claims = subject_claims_snapshot
             .as_ref()
@@ -403,7 +422,7 @@ pub async fn issue_token_response(
         let id_token_sid = id_token_session_sid(client, &issue, frontchannel_logout_enabled)
             .map(ToOwned::to_owned);
         issued_id_token_sid = id_token_sid.clone();
-        if issue.refresh_token_scopes.is_some()
+        if issue.refresh_authority.is_some()
             && !refreshed_id_token_essential_claims_satisfied(
                 &issue,
                 client,
@@ -434,7 +453,7 @@ pub async fn issue_token_response(
                 // nonce.  The original value remains in `issue.nonce` so
                 // the successor refresh contract can retain it, but it is
                 // never emitted for a refresh issuance.
-                nonce: if issue.refresh_token_scopes.is_some() {
+                nonce: if issue.refresh_authority.is_some() {
                     None
                 } else {
                     issue.nonce.as_deref()
@@ -532,18 +551,35 @@ pub async fn issue_token_response(
             };
             let id_token_sid_for_refresh_persistence =
                 persisted_id_token_sid(&issue, issued_id_token_sid.as_deref());
-            let mut authentication_context = refresh_authentication_context
-                .clone()
-                .expect("refresh issuance validated authentication context");
-            authentication_context.id_token_sid =
-                id_token_sid_for_refresh_persistence.map(ToOwned::to_owned);
-            let refresh_token =
-                prepare_refresh_token(client, &issue, &refresh, authentication_context);
+            let refresh_token = prepare_refresh_token(
+                client,
+                &issue,
+                &refresh,
+                id_token_sid_for_refresh_persistence.map(ToOwned::to_owned),
+            );
             body["refresh_token"] = json!(refresh.raw);
             refresh_token_family_id = Some(refresh.family);
             refresh_token_to_commit = Some(refresh_token);
         }
     }
+    let refresh_commit = if let Some(authority) = issue.refresh_authority.take() {
+        Some(nazo_auth::RefreshTokenCommit::UseExisting {
+            authority,
+            rotation: refresh_token_to_commit,
+        })
+    } else {
+        refresh_token_to_commit.map(|token| {
+            let contract = nazo_auth::RefreshContract {
+                subject: issue.subject.clone(),
+                scopes: issue.scopes.clone(),
+                audiences: token.audiences.clone(),
+                authorization_details: issue.authorization_details.clone(),
+                authentication_context: refresh_authentication_context
+                    .expect("new refresh family validated authentication context"),
+            }.persisted();
+            nazo_auth::RefreshTokenCommit::IssueNew { token, contract }
+        })
+    };
     if let Some(native_sso) = issue.native_sso.as_ref() {
         let Some(refresh_token_family_id) = refresh_token_family_id else {
             mark_failed_authorization_code_if_needed(
@@ -608,7 +644,7 @@ pub async fn issue_token_response(
             mode,
             access_token_jti: issued_access_token.jti,
             access_token_expires_at: issued_access_token.expires_at,
-            refresh_token: refresh_token_to_commit,
+            refresh_token: refresh_commit,
             audit_fields: nazo_auth::TokenIssuedAuditFields {
                 client_id: client.client_id.clone(),
                 subject_hash: blake3_hex(&issue.subject),
@@ -688,6 +724,12 @@ pub async fn issue_token_response(
                 "invalid_grant",
                 "令牌签发授权已使用.",
                 false,
+            ))
+        }
+        Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable) => {
+            Err(OAuthEndpointError::token(
+                StatusCode::BAD_REQUEST, "invalid_grant",
+                "refresh_token 授权已失效.", false,
             ))
         }
         Ok(CommitTokenIssuanceResult::GrantExpired) => {

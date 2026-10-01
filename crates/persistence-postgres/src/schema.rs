@@ -8,7 +8,6 @@ diesel::table! {
         slot_index -> Int2,
         issued_at -> Timestamptz,
         expires_at -> Timestamptz,
-        last_used_at -> Nullable<Timestamptz>,
         status -> Varchar,
         revoked_at -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
@@ -190,7 +189,7 @@ diesel::table! {
     user_mfa_remembered_devices (id) {
         id -> Uuid, tenant_id -> Uuid, user_id -> Uuid, token_hash -> Varchar,
         user_agent_hash -> Nullable<Varchar>, created_at -> Timestamptz,
-        last_used_at -> Nullable<Timestamptz>, expires_at -> Timestamptz,
+        expires_at -> Timestamptz,
     }
 }
 
@@ -438,7 +437,6 @@ diesel::table! {
         backchannel_token_delivery_mode -> Varchar,
         backchannel_client_notification_endpoint -> Nullable<Text>,
         backchannel_authentication_request_signing_alg -> Nullable<Varchar>,
-        backchannel_user_code_parameter -> Bool,
         frontchannel_logout_uri -> Nullable<Varchar>,
         frontchannel_logout_session_required -> Bool,
         subject_type -> Text,
