@@ -92,21 +92,35 @@ pub async fn issue_token_response(
             false,
         ));
     }
-    let refresh_source_matches_policy = match (&issue.refresh_token_policy, &issue.refresh_authority) {
-        (RefreshTokenPolicy::IssueNew, None) => true,
-        (RefreshTokenPolicy::PreserveExisting, Some(_)) => true,
-        (RefreshTokenPolicy::Rotate { family_id, rotated_from_id }, Some(source)) =>
-            *family_id == source.family_id && *rotated_from_id == source.member_id,
-        (RefreshTokenPolicy::RotateLostResponse { family_id, successor_id, .. }, Some(source)) =>
-            *family_id == source.family_id && *successor_id == source.member_id,
-        _ => false,
-    };
+    let refresh_source_matches_policy =
+        match (&issue.refresh_token_policy, &issue.refresh_authority) {
+            (RefreshTokenPolicy::IssueNew, None) => true,
+            (RefreshTokenPolicy::PreserveExisting, Some(_)) => true,
+            (
+                RefreshTokenPolicy::Rotate {
+                    family_id,
+                    rotated_from_id,
+                },
+                Some(source),
+            ) => *family_id == source.family_id && *rotated_from_id == source.member_id,
+            (
+                RefreshTokenPolicy::RotateLostResponse {
+                    family_id,
+                    successor_id,
+                    ..
+                },
+                Some(source),
+            ) => *family_id == source.family_id && *successor_id == source.member_id,
+            _ => false,
+        };
     if !refresh_source_matches_policy
         || !refresh_issue_matches_source(&issue, client, context.config.issuer())
     {
         return Err(OAuthEndpointError::token(
-            StatusCode::BAD_REQUEST, "invalid_grant",
-            "refresh token source authority is missing or inconsistent.", false,
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh token source authority is missing or inconsistent.",
+            false,
         ));
     }
     let refresh_authorization_scopes = issue
@@ -576,7 +590,8 @@ pub async fn issue_token_response(
                 authorization_details: issue.authorization_details.clone(),
                 authentication_context: refresh_authentication_context
                     .expect("new refresh family validated authentication context"),
-            }.persisted();
+            }
+            .persisted();
             nazo_auth::RefreshTokenCommit::IssueNew { token, contract }
         })
     };
@@ -726,12 +741,12 @@ pub async fn issue_token_response(
                 false,
             ))
         }
-        Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable) => {
-            Err(OAuthEndpointError::token(
-                StatusCode::BAD_REQUEST, "invalid_grant",
-                "refresh_token 授权已失效.", false,
-            ))
-        }
+        Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable) => Err(OAuthEndpointError::token(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh_token 授权已失效.",
+            false,
+        )),
         Ok(CommitTokenIssuanceResult::GrantExpired) => {
             mark_failed_authorization_code_if_needed(
                 token_service,

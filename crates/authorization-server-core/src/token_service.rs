@@ -6,8 +6,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, OAuthClient,
-    OidcClaimRequest, RefreshToken,
+    AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, OAuthClient, OidcClaimRequest,
+    RefreshToken,
 };
 
 /// Request-local subject claims snapshot for grants that already loaded the

@@ -45,7 +45,8 @@ fn valid_refresh_token() -> nazo_auth::RefreshTokenCommit {
             authorization_details: serde_json::json!([]),
             subject: "subject".to_owned(),
             authentication_context: valid_context(issued_at.timestamp()),
-        }.persisted(),
+        }
+        .persisted(),
     }
 }
 
@@ -58,7 +59,9 @@ fn refresh_token_validation_accepts_complete_current_context() {
 #[test]
 fn refresh_token_validation_rejects_malformed_context_and_audiences() {
     let mut invalid_version = valid_refresh_token();
-    contract_mut(&mut invalid_version).authentication_context.version = 2;
+    contract_mut(&mut invalid_version)
+        .authentication_context
+        .version = 2;
     assert!(matches!(
         validate_refresh_commit(&invalid_version),
         Err(RepositoryError::Consistency(message)) if message.contains("complete immutable")
@@ -74,11 +77,16 @@ fn refresh_token_validation_rejects_malformed_context_and_audiences() {
 
     let mut future_authentication = valid_refresh_token();
     let future_time = token_mut(&mut future_authentication).issued_at.timestamp() + 1;
-    contract_mut(&mut future_authentication).authentication_context.auth_time = future_time;
+    contract_mut(&mut future_authentication)
+        .authentication_context
+        .auth_time = future_time;
     assert!(validate_refresh_commit(&future_authentication).is_err());
 
     let mut empty_amr = valid_refresh_token();
-    contract_mut(&mut empty_amr).authentication_context.amr.clear();
+    contract_mut(&mut empty_amr)
+        .authentication_context
+        .amr
+        .clear();
     assert!(validate_refresh_commit(&empty_amr).is_err());
 }
 
@@ -96,10 +104,14 @@ fn refresh_family_lock_key_is_the_shared_high_xor_low_formula() {
 }
 
 fn token_mut(refresh: &mut nazo_auth::RefreshTokenCommit) -> &mut NewRefreshToken {
-    let nazo_auth::RefreshTokenCommit::IssueNew { token, .. } = refresh else { unreachable!() };
+    let nazo_auth::RefreshTokenCommit::IssueNew { token, .. } = refresh else {
+        unreachable!()
+    };
     token
 }
 fn contract_mut(refresh: &mut nazo_auth::RefreshTokenCommit) -> &mut nazo_auth::RefreshContract {
-    let nazo_auth::RefreshTokenCommit::IssueNew { contract, .. } = refresh else { unreachable!() };
+    let nazo_auth::RefreshTokenCommit::IssueNew { contract, .. } = refresh else {
+        unreachable!()
+    };
     contract
 }

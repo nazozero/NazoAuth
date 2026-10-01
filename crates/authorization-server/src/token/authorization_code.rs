@@ -262,7 +262,7 @@ pub fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -
         refresh_token_mtls_x5t_s256: input.refresh_token_mtls_x5t_s256,
         refresh_token_client_attestation_jkt: input.refresh_token_client_attestation_jkt,
         refresh_authority: None,
-            refresh_grant_audiences,
+        refresh_grant_audiences,
         authorization_code_hash: Some(input.code_hash),
         actor: None,
         issued_token_type: None,

@@ -1,6 +1,4 @@
-use nazo_auth::{
-    ClientSecurityPolicy, OAuthClient, RegisteredLogoutClient, ValidatedClientRegistration,
-};
+use nazo_auth::{ClientSecurityPolicy, OAuthClient, ValidatedClientRegistration};
 use nazo_identity::ports::RepositoryError;
 use serde_json::Value;
 use uuid::Uuid;
@@ -67,29 +65,6 @@ pub(in crate::repositories) struct OAuthClientRecord {
     sector_identifier_uri: Option<String>,
     sector_identifier_host: Option<String>,
     security_policy: Value,
-}
-
-pub(super) fn registered_logout_client(client: OAuthClient) -> RegisteredLogoutClient {
-    let OAuthClient {
-        id,
-        tenant_id,
-        registration,
-        is_active,
-        ..
-    } = client;
-    RegisteredLogoutClient {
-        id,
-        tenant_id,
-        client_id: registration.client_id,
-        active: is_active,
-        redirect_uris: registration.redirect_uris,
-        post_logout_redirect_uris: registration.post_logout_redirect_uris,
-        backchannel_logout_uri: registration.backchannel_logout_uri,
-        frontchannel_logout_uri: registration.frontchannel_logout_uri,
-        frontchannel_logout_session_required: registration.frontchannel_logout_session_required,
-        subject_type: registration.subject_type,
-        sector_identifier_host: registration.sector_identifier_host,
-    }
 }
 
 impl OAuthClientRecord {

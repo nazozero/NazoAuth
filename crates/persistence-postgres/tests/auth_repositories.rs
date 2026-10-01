@@ -5,10 +5,9 @@ use diesel::{
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     AccessTokenRevocation, AdminGrantRepositoryPort, CommitTokenIssuance,
-    CommitTokenIssuanceResult, NewRefreshToken, PendingBackchannelLogoutDelivery,
-    RefreshContract, RefreshTokenAuthority, RefreshTokenCommit,
-    RefreshTokenAuthenticationContext, TokenIssuanceMode, TokenIssuedAuditFields,
-    TokenRepositoryPort, TokenRevocation,
+    CommitTokenIssuanceResult, NewRefreshToken, PendingBackchannelLogoutDelivery, RefreshContract,
+    RefreshTokenAuthenticationContext, RefreshTokenAuthority, RefreshTokenCommit,
+    TokenIssuanceMode, TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation,
 };
 use nazo_postgres::{
     AuditRepository, AuthorizationRepository, GrantRepository, TokenIssuanceRepository,
@@ -238,11 +237,15 @@ struct RefreshFixture {
 
 impl std::ops::Deref for RefreshFixture {
     type Target = NewRefreshToken;
-    fn deref(&self) -> &Self::Target { &self.token }
+    fn deref(&self) -> &Self::Target {
+        &self.token
+    }
 }
 
 impl std::ops::DerefMut for RefreshFixture {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.token }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.token
+    }
 }
 
 // Fixture identities, not authority: every known source is loaded through the
@@ -305,11 +308,15 @@ async fn refresh_issuance(fixture: RefreshFixture) -> CommitTokenIssuance {
         let raw = REFRESH_FIXTURE_RAW.lock().unwrap().get(&member_id).cloned();
         let source = if let Some((tenant_id, raw)) = raw {
             TokenRepository::new(create_pool(database_url().unwrap(), 1).unwrap())
-                .by_raw_refresh_token(tenant_id, &raw).await.unwrap()
+                .by_raw_refresh_token(tenant_id, &raw)
+                .await
+                .unwrap()
         } else {
             None
         };
-        let mut authority = source.as_ref().map(nazo_auth::RefreshToken::authority)
+        let mut authority = source
+            .as_ref()
+            .map(nazo_auth::RefreshToken::authority)
             .unwrap_or_else(|| RefreshTokenAuthority {
                 tenant_id: token.tenant_id,
                 client_id: token.client_id,
@@ -336,14 +343,23 @@ async fn refresh_issuance(fixture: RefreshFixture) -> CommitTokenIssuance {
         authority.contract = contract.persisted();
         authority.dpop_jkt.clone_from(&token.dpop_jkt);
         authority.mtls_x5t_s256.clone_from(&token.mtls_x5t_s256);
-        authority.client_attestation_jkt.clone_from(&token.client_attestation_jkt);
-        RefreshTokenCommit::UseExisting { authority, rotation: Some(token.clone()) }
+        authority
+            .client_attestation_jkt
+            .clone_from(&token.client_attestation_jkt);
+        RefreshTokenCommit::UseExisting {
+            authority,
+            rotation: Some(token.clone()),
+        }
     } else {
-        RefreshTokenCommit::IssueNew { token: token.clone(), contract: contract.clone() }
+        RefreshTokenCommit::IssueNew {
+            token: token.clone(),
+            contract: contract.clone(),
+        }
     };
-    REFRESH_FIXTURE_RAW.lock().unwrap().insert(
-        token.member_id, (token.tenant_id, token.raw_token.clone()),
-    );
+    REFRESH_FIXTURE_RAW
+        .lock()
+        .unwrap()
+        .insert(token.member_id, (token.tenant_id, token.raw_token.clone()));
     CommitTokenIssuance {
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
@@ -360,7 +376,9 @@ async fn refresh_issuance(fixture: RefreshFixture) -> CommitTokenIssuance {
         access_token_expires_at: (token.issued_at + chrono::Duration::minutes(5)).timestamp(),
         audit_fields: TokenIssuedAuditFields {
             client_id: contract.authentication_context.audience.clone(),
-            subject_hash: blake3::hash(contract.subject.as_bytes()).to_hex().to_string(),
+            subject_hash: blake3::hash(contract.subject.as_bytes())
+                .to_hex()
+                .to_string(),
             scope: contract.scopes.join(" "),
             audience: token.audiences.clone(),
         },
@@ -650,7 +668,8 @@ async fn single_use_grant_retry_is_rejected_without_reissuing_or_duplicating_aud
     let mut retry = input.clone();
     retry.issuance_id = Uuid::now_v7();
     retry.access_token_jti = retry.issuance_id.to_string();
-    refresh_token_mut(retry.refresh_token.as_mut().unwrap()).raw_token = format!("loser-{}", retry.issuance_id);
+    refresh_token_mut(retry.refresh_token.as_mut().unwrap()).raw_token =
+        format!("loser-{}", retry.issuance_id);
     assert_eq!(
         repository.commit_token_issuance(retry).await.unwrap(),
         CommitTokenIssuanceResult::AlreadyUsed
@@ -909,7 +928,8 @@ async fn assert_complete_issuance_audit_payloads() {
             Uuid::now_v7(),
             format!("audit-{}", Uuid::now_v7()),
             None,
-        )).await
+        ))
+        .await
     };
     for user_id in [None, Some(fixture.user_id)] {
         let mut input = make().await;
@@ -958,7 +978,11 @@ async fn assert_complete_issuance_audit_payloads() {
         )],
     )
     .await;
-    let source = original.refresh_token.as_ref().and_then(RefreshTokenCommit::token).unwrap();
+    let source = original
+        .refresh_token
+        .as_ref()
+        .and_then(RefreshTokenCommit::token)
+        .unwrap();
     let source_snapshot = tokens
         .by_raw_refresh_token(tenant_id, &source.raw_token)
         .await
@@ -973,7 +997,8 @@ async fn assert_complete_issuance_audit_payloads() {
         refresh.clone()
     };
     rotated.refresh_token = Some(RefreshTokenCommit::UseExisting {
-        authority: source_snapshot.authority(), rotation: Some(rotation),
+        authority: source_snapshot.authority(),
+        rotation: Some(rotation),
     });
     assert_eq!(
         repository
@@ -995,7 +1020,8 @@ async fn assert_complete_issuance_audit_payloads() {
     let mut reuse = rotated;
     reuse.issuance_id = Uuid::now_v7();
     reuse.access_token_jti = reuse.issuance_id.to_string();
-    refresh_token_mut(reuse.refresh_token.as_mut().unwrap()).raw_token = format!("reuse-{}", reuse.issuance_id);
+    refresh_token_mut(reuse.refresh_token.as_mut().unwrap()).raw_token =
+        format!("reuse-{}", reuse.issuance_id);
     assert_eq!(
         repository
             .commit_token_issuance(reuse.clone())
@@ -1171,13 +1197,16 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
         .id;
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
-                &fixture,
-                tenant_id,
-                chain_family,
-                format!("direct-parent-grandchild-{}", Uuid::now_v7()),
-                Some(child_id),
-            )).await)
+            .commit_token_issuance(
+                refresh_issuance(refresh_token_fixture(
+                    &fixture,
+                    tenant_id,
+                    chain_family,
+                    format!("direct-parent-grandchild-{}", Uuid::now_v7()),
+                    Some(child_id),
+                ))
+                .await
+            )
             .await
             .expect("grandchild should rotate from its direct parent"),
         CommitTokenIssuanceResult::Committed
@@ -1186,26 +1215,32 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     let duplicate_root_family = Uuid::now_v7();
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
-                &fixture,
-                tenant_id,
-                duplicate_root_family,
-                format!("duplicate-root-first-{}", Uuid::now_v7()),
-                None,
-            )).await)
+            .commit_token_issuance(
+                refresh_issuance(refresh_token_fixture(
+                    &fixture,
+                    tenant_id,
+                    duplicate_root_family,
+                    format!("duplicate-root-first-{}", Uuid::now_v7()),
+                    None,
+                ))
+                .await
+            )
             .await
             .expect("first root refresh token should persist"),
         CommitTokenIssuanceResult::Committed
     );
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
-                &fixture,
-                tenant_id,
-                duplicate_root_family,
-                format!("duplicate-root-second-{}", Uuid::now_v7()),
-                None,
-            )).await)
+            .commit_token_issuance(
+                refresh_issuance(refresh_token_fixture(
+                    &fixture,
+                    tenant_id,
+                    duplicate_root_family,
+                    format!("duplicate-root-second-{}", Uuid::now_v7()),
+                    None,
+                ))
+                .await
+            )
             .await
             .expect("duplicate root should be classified"),
         CommitTokenIssuanceResult::RotationConflict
@@ -1221,13 +1256,16 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     let context_root_raw = format!("context-parent-root-{}", Uuid::now_v7());
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
-                &fixture,
-                tenant_id,
-                context_mismatch_family,
-                context_root_raw.clone(),
-                None,
-            )).await)
+            .commit_token_issuance(
+                refresh_issuance(refresh_token_fixture(
+                    &fixture,
+                    tenant_id,
+                    context_mismatch_family,
+                    context_root_raw.clone(),
+                    None,
+                ))
+                .await
+            )
             .await
             .expect("context root should persist"),
         CommitTokenIssuanceResult::Committed
@@ -1267,13 +1305,16 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     let owner_root_raw = format!("owner-parent-root-{}", Uuid::now_v7());
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
-                &fixture,
-                tenant_id,
-                owner_mismatch_family,
-                owner_root_raw.clone(),
-                None,
-            )).await)
+            .commit_token_issuance(
+                refresh_issuance(refresh_token_fixture(
+                    &fixture,
+                    tenant_id,
+                    owner_mismatch_family,
+                    owner_root_raw.clone(),
+                    None,
+                ))
+                .await
+            )
             .await
             .expect("owner root should persist"),
         CommitTokenIssuanceResult::Committed
@@ -1333,7 +1374,8 @@ async fn issuance_waits_for_principal_deactivation_and_rechecks_the_committed_st
             Uuid::now_v7(),
             raw_token.clone(),
             None,
-        )).await;
+        ))
+        .await;
         let application_name = format!("issuance-{principal_table}-{}", Uuid::now_v7().simple());
         let repository = TokenIssuanceRepository::new(
             create_pool(tagged_database_url(&database_url, &application_name), 1).unwrap(),
@@ -1399,7 +1441,8 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
     let raw_token = format!("issuance-before-deactivation-{}", Uuid::now_v7());
     let input = refresh_issuance(refresh_token_fixture(
         &fixture, tenant_id, family_id, raw_token, None,
-    )).await;
+    ))
+    .await;
     let access_token_jti = input.access_token_jti.clone();
     let gate_key = family_lock_key(family_id).wrapping_add(1);
     let mut coordinator = AsyncPgConnection::establish(&database_url)
@@ -1584,13 +1627,16 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
     let tokens = TokenRepository::new(create_pool(&database_url, 4).unwrap());
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
-                &fixture,
-                tenant_id,
-                family_id,
-                original_raw.clone(),
-                None,
-            )).await)
+            .commit_token_issuance(
+                refresh_issuance(refresh_token_fixture(
+                    &fixture,
+                    tenant_id,
+                    family_id,
+                    original_raw.clone(),
+                    None,
+                ))
+                .await
+            )
             .await
             .expect("original refresh token should persist"),
         CommitTokenIssuanceResult::Committed
@@ -1911,13 +1957,16 @@ async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compe
     let tokens = TokenRepository::new(create_pool(&database_url, 4).unwrap());
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
-                &fixture,
-                tenant_id,
-                family_id,
-                original_raw.clone(),
-                None,
-            )).await)
+            .commit_token_issuance(
+                refresh_issuance(refresh_token_fixture(
+                    &fixture,
+                    tenant_id,
+                    family_id,
+                    original_raw.clone(),
+                    None,
+                ))
+                .await
+            )
             .await
             .expect("original refresh token should persist"),
         CommitTokenIssuanceResult::Committed
@@ -2424,7 +2473,10 @@ async fn insert_refresh_row(connection: &mut AsyncPgConnection, row: &RawRefresh
     .await
     .expect("raw refresh token row should insert")
     .id;
-    REFRESH_FIXTURE_RAW.lock().unwrap().insert(inserted, (row.tenant_id, row.raw_token.to_owned()));
+    REFRESH_FIXTURE_RAW
+        .lock()
+        .unwrap()
+        .insert(inserted, (row.tenant_id, row.raw_token.to_owned()));
     inserted
 }
 
@@ -2504,10 +2556,16 @@ async fn assert_unavailable_issuance_facts(
     losing: &CommitTokenIssuance,
 ) {
     assert_issuance_audit(connection, losing, &[]).await;
-    let rows = sql_query("SELECT count(*) AS count FROM oauth_token_issuances WHERE issuance_id = $1")
-        .bind::<SqlUuid, _>(losing.issuance_id)
-        .get_result::<CountRow>(connection).await.unwrap();
-    assert_eq!(rows.count, 0, "an unavailable source must leave no grant receipt");
+    let rows =
+        sql_query("SELECT count(*) AS count FROM oauth_token_issuances WHERE issuance_id = $1")
+            .bind::<SqlUuid, _>(losing.issuance_id)
+            .get_result::<CountRow>(connection)
+            .await
+            .unwrap();
+    assert_eq!(
+        rows.count, 0,
+        "an unavailable source must leave no grant receipt"
+    );
 }
 
 /// Durable facts that every ordinary-rotation business conflict must leave
@@ -3108,7 +3166,10 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
         format!("serde-float-child-{}", Uuid::now_v7()),
         Some(float_parent),
     );
-    float_child.contract.authentication_context.userinfo_claim_requests = vec![claim_for(json!(1))];
+    float_child
+        .contract
+        .authentication_context
+        .userinfo_claim_requests = vec![claim_for(json!(1))];
     let float_input = refresh_issuance(float_child).await;
     let incoming_context = serde_json::to_value(
         float_input
@@ -3180,13 +3241,15 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
         format!("serde-shape-child-{}", Uuid::now_v7()),
         Some(shape_parent),
     );
-    shape_child.contract.authentication_context.userinfo_claim_requests =
-        vec![nazo_auth::OidcClaimRequest {
-            name: "claim".to_owned(),
-            essential: false,
-            value: None,
-            values: vec![json!(1)],
-        }];
+    shape_child
+        .contract
+        .authentication_context
+        .userinfo_claim_requests = vec![nazo_auth::OidcClaimRequest {
+        name: "claim".to_owned(),
+        essential: false,
+        value: None,
+        values: vec![json!(1)],
+    }];
     let (result, losing) = commit_refresh(&database_url, shape_child).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
     assert_rotation_conflict_facts(
@@ -3221,7 +3284,10 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
         format!("serde-equal-child-{}", Uuid::now_v7()),
         Some(equal_parent),
     );
-    equal_child.contract.authentication_context.userinfo_claim_requests = vec![claim_for(json!(1))];
+    equal_child
+        .contract
+        .authentication_context
+        .userinfo_claim_requests = vec![claim_for(json!(1))];
     let (result, _) = commit_refresh(&database_url, equal_child).await;
     assert_eq!(result, CommitTokenIssuanceResult::Committed);
     let state = sql_query(
@@ -3278,14 +3344,16 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
         family_id,
         format!("race-left-{}", Uuid::now_v7()),
         Some(root_id),
-    )).await;
+    ))
+    .await;
     let right_input = refresh_issuance(refresh_token_fixture(
         &fixture,
         tenant_id,
         family_id,
         format!("race-right-{}", Uuid::now_v7()),
         Some(root_id),
-    )).await;
+    ))
+    .await;
     let left_repository = TokenIssuanceRepository::new(
         create_pool(tagged_database_url(&database_url, &app_left), 1).unwrap(),
     );
@@ -3483,11 +3551,19 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
         "the in-lock recheck must see the compromise committed after the outer snapshot"
     );
     assert_unavailable_issuance_facts(&mut coordinator, &retry_input).await;
-    let marked = sql_query("SELECT count(*) AS count FROM oauth_refresh_families \
-        WHERE tenant_id = $1 AND token_family_id = $2 AND reuse_detected_at IS NOT NULL")
-        .bind::<SqlUuid, _>(tenant_id).bind::<SqlUuid, _>(family_id)
-        .get_result::<CountRow>(&mut coordinator).await.unwrap();
-    assert_eq!(marked.count, 1, "the already committed compromise remains authoritative");
+    let marked = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_families \
+        WHERE tenant_id = $1 AND token_family_id = $2 AND reuse_detected_at IS NOT NULL",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(family_id)
+    .get_result::<CountRow>(&mut coordinator)
+    .await
+    .unwrap();
+    assert_eq!(
+        marked.count, 1,
+        "the already committed compromise remains authoritative"
+    );
 }
 
 /// Stages a revoked original refresh row plus `successor_count` successor rows
@@ -3820,7 +3896,8 @@ async fn rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflic
         family_id,
         other_raw.clone(),
         Some(root_id),
-    )).await;
+    ))
+    .await;
     let failing_issuance_id = failing.issuance_id;
     let result = repository
         .commit_token_issuance(failing.clone())
@@ -4096,7 +4173,8 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
         Uuid::now_v7(),
         format!("fresh-{}", Uuid::now_v7()),
         None,
-    )).await;
+    ))
+    .await;
     assert_eq!(
         repository.commit_token_issuance(fresh).await.unwrap(),
         CommitTokenIssuanceResult::Committed

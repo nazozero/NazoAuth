@@ -29,9 +29,9 @@ use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
     AccessTokenRevocation, ClientSecurityPolicy, CommitTokenIssuance, CommitTokenIssuanceResult,
-    OAuthClient, RefreshToken, RefreshTokenAuthenticationContext,
-    TokenIssuanceMode, TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation,
-    UserinfoSubjectRef, ValidatedClientRegistration,
+    OAuthClient, RefreshToken, RefreshTokenAuthenticationContext, TokenIssuanceMode,
+    TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation, UserinfoSubjectRef,
+    ValidatedClientRegistration,
 };
 use nazo_digital_credentials::CredentialFormat;
 use nazo_identity::{AccessRequestStatus, TenantContext, TenantId, UserId};
@@ -392,7 +392,8 @@ fn new_refresh_token(
             authorization_details: json!([]),
             subject: seed.user_id.to_string(),
             authentication_context: refresh_context(&seed.client.client_id),
-        }.persisted(),
+        }
+        .persisted(),
     )
 }
 
@@ -416,7 +417,9 @@ async fn refresh_issuance(token: RefreshFixture) -> CommitTokenIssuance {
         access_token_expires_at: (token.issued_at + Duration::minutes(5)).timestamp(),
         audit_fields: TokenIssuedAuditFields {
             client_id: token.contract.authentication_context.audience.clone(),
-            subject_hash: blake3::hash(token.contract.subject.as_bytes()).to_hex().to_string(),
+            subject_hash: blake3::hash(token.contract.subject.as_bytes())
+                .to_hex()
+                .to_string(),
             scope: token.contract.scopes.join(" "),
             audience: token.audiences.clone(),
         },
@@ -783,7 +786,8 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
             parent_raw.clone(),
             None,
             Some("qc-parent-dpop".to_owned()),
-        )).await;
+        ))
+        .await;
         let outcome = seeder
             .commit_token_issuance(input)
             .await
@@ -807,7 +811,8 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         // Sender binding is family authority: the successor carries the same
         // DPoP binding as the parent it replaces.
         Some("qc-parent-dpop".to_owned()),
-    )).await;
+    ))
+    .await;
     let (result, delta, acquires) =
         measure(&counter, repository.commit_token_issuance(child)).await;
 

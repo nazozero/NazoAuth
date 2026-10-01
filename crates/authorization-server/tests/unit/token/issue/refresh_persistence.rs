@@ -27,7 +27,7 @@ fn openid_issue() -> TokenIssue {
         refresh_token_mtls_x5t_s256: None,
         refresh_token_client_attestation_jkt: None,
         refresh_authority: None,
-            refresh_grant_audiences: None,
+        refresh_grant_audiences: None,
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,
@@ -121,9 +121,14 @@ fn source_for_issue(issue: &TokenIssue, client: &ClientRow) -> nazo_auth::Refres
         audiences: vec!["resource://a".to_owned(), "resource://b".to_owned()],
         authorization_details: issue.authorization_details.clone(),
         authentication_context: refresh_authentication_context(
-            issue, "https://issuer.example", &client.client_id, None,
-        ).unwrap(),
-    }.persisted();
+            issue,
+            "https://issuer.example",
+            &client.client_id,
+            None,
+        )
+        .unwrap(),
+    }
+    .persisted();
     nazo_auth::RefreshTokenAuthority {
         tenant_id: client.tenant_id,
         client_id: client.id,
@@ -149,25 +154,41 @@ fn rotated_refresh_preserves_original_contract_while_selecting_current_audience(
     let original = source.contract.clone();
     let now = Utc::now();
     let pending = PendingRefreshToken {
-        raw: "replacement".to_owned(), member_id: Uuid::now_v7(),
-        family: source.family_id, rotated_from: Some(source.member_id),
-        lost_response_retry: None, issued_at: now, expires_at: now + chrono::Duration::hours(1),
+        raw: "replacement".to_owned(),
+        member_id: Uuid::now_v7(),
+        family: source.family_id,
+        rotated_from: Some(source.member_id),
+        lost_response_retry: None,
+        issued_at: now,
+        expires_at: now + chrono::Duration::hours(1),
     };
     issue.audiences = vec!["resource://a".to_owned()];
     issue.refresh_id_token_sid = Some(None);
     issue.refresh_authority = Some(source);
-    assert!(refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
     let replacement = prepare_refresh_token(&client, &issue, &pending, None);
     assert_eq!(replacement.audiences, vec!["resource://a"]);
     assert_eq!(issue.refresh_authority.as_ref().unwrap().contract, original);
     assert_eq!(original.scopes, vec!["openid", "offline_access"]);
     for audience in [vec!["resource://c".to_owned()], vec![]] {
         issue.audiences = audience;
-        assert!(!refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+        assert!(!refresh_issue_matches_source(
+            &issue,
+            &client,
+            "https://issuer.example"
+        ));
     }
     issue.audiences = vec!["resource://a".to_owned()];
     issue.auth_time = Some(issue.auth_time.unwrap() + 1);
-    assert!(!refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
 }
 
 #[test]
@@ -175,18 +196,22 @@ fn new_refresh_family_retains_full_code_grant_when_access_token_is_narrower() {
     let client = client_with_grants(&["authorization_code", "refresh_token"]);
     let mut issue = openid_issue();
     issue.audiences = vec!["resource://a".to_owned()];
-    issue.refresh_grant_audiences = Some(vec!["resource://a".to_owned(), "resource://b".to_owned()]);
+    issue.refresh_grant_audiences =
+        Some(vec!["resource://a".to_owned(), "resource://b".to_owned()]);
     let now = Utc::now();
     let pending = PendingRefreshToken {
-        raw: "initial".to_owned(), member_id: Uuid::now_v7(), family: Uuid::now_v7(),
-        rotated_from: None, lost_response_retry: None,
-        issued_at: now, expires_at: now + chrono::Duration::hours(1),
+        raw: "initial".to_owned(),
+        member_id: Uuid::now_v7(),
+        family: Uuid::now_v7(),
+        rotated_from: None,
+        lost_response_retry: None,
+        issued_at: now,
+        expires_at: now + chrono::Duration::hours(1),
     };
     let token = prepare_refresh_token(&client, &issue, &pending, None);
     assert_eq!(issue.audiences, vec!["resource://a"]);
     assert_eq!(token.audiences, vec!["resource://a", "resource://b"]);
 }
-
 
 #[test]
 fn refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor() {
@@ -198,11 +223,23 @@ fn refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor() {
     source.dpop_jkt = Some("original-key".to_owned());
     issue.refresh_token_dpop_jkt = source.dpop_jkt.clone();
     issue.refresh_authority = Some(source);
-    assert!(!refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
     issue.dpop_jkt = Some("different-key".to_owned());
-    assert!(!refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
     issue.dpop_jkt = Some("original-key".to_owned());
-    assert!(refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
 
     issue.dpop_jkt = None;
     issue.refresh_token_dpop_jkt = None;
@@ -210,11 +247,27 @@ fn refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor() {
     source.dpop_jkt = None;
     source.mtls_x5t_s256 = Some("original-certificate".to_owned());
     issue.refresh_token_mtls_x5t_s256 = Some("original-certificate".to_owned());
-    assert!(!refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
     issue.mtls_x5t_s256 = Some("different-certificate".to_owned());
-    assert!(!refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
     issue.mtls_x5t_s256 = Some("original-certificate".to_owned());
-    assert!(refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
     issue.actor = Some(json!({"sub": "different-actor"}));
-    assert!(!refresh_issue_matches_source(&issue, &client, "https://issuer.example"));
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
 }

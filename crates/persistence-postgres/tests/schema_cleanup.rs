@@ -1,11 +1,16 @@
 //! Inert-state migration regressions. Fixtures are transaction-local schemas;
 //! no deployed database or controller recovery state is modified.
-use diesel::{QueryableByName, sql_query, sql_types::{Bool, Text}};
+use diesel::{
+    QueryableByName, sql_query,
+    sql_types::{Bool, Text},
+};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use uuid::Uuid;
 
-const UP: &str = include_str!("../../../migrations/20261001000300_remove_inert_schema_state/up.sql");
-const DOWN: &str = include_str!("../../../migrations/20261001000300_remove_inert_schema_state/down.sql");
+const UP: &str =
+    include_str!("../../../migrations/20261001000300_remove_inert_schema_state/up.sql");
+const DOWN: &str =
+    include_str!("../../../migrations/20261001000300_remove_inert_schema_state/down.sql");
 
 #[derive(QueryableByName)]
 struct Flag {
@@ -20,16 +25,22 @@ struct Snapshot {
 }
 
 async fn fixture() -> Option<AsyncPgConnection> {
-    let url = match std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL")) {
-        Ok(url) => url,
-        Err(_) if std::env::var_os("CI").is_some() => panic!("CI schema cleanup tests require a test database"),
-        Err(_) => return None,
-    };
+    let url =
+        match std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL")) {
+            Ok(url) => url,
+            Err(_) if std::env::var_os("CI").is_some() => {
+                panic!("CI schema cleanup tests require a test database")
+            }
+            Err(_) => return None,
+        };
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     let schema = format!("inert_cleanup_{}", Uuid::now_v7().simple());
-    connection.batch_execute(&format!(
-        "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema};"
-    )).await.unwrap();
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema};"
+        ))
+        .await
+        .unwrap();
     connection.batch_execute(r#"
         CREATE TABLE tenants (id UUID PRIMARY KEY);
         CREATE TABLE realms (
@@ -108,12 +119,17 @@ async fn assert_old_columns_exist(connection: &mut AsyncPgConnection) {
             (attrelid = 'controller_registry_slots'::regclass AND attname = 'last_used_at') OR
             (attrelid = 'user_mfa_remembered_devices'::regclass AND attname = 'last_used_at'))"#)
         .get_result::<Flag>(connection).await.unwrap();
-    assert!(flag.value, "a rejected migration must leave all old columns intact");
+    assert!(
+        flag.value,
+        "a rejected migration must leave all old columns intact"
+    );
 }
 
 #[tokio::test]
 async fn constant_and_empty_state_cleanup_round_trips_without_losing_rows() {
-    let Some(mut connection) = fixture().await else { return };
+    let Some(mut connection) = fixture().await else {
+        return;
+    };
     let before = snapshot(&mut connection).await;
     connection.batch_execute(UP).await.unwrap();
     let state = sql_query(r#"SELECT
@@ -134,9 +150,16 @@ async fn constant_and_empty_state_cleanup_round_trips_without_losing_rows() {
                AND conname IN ('fk_users_realm', 'fk_users_organization',
                    'fk_oauth_clients_realm', 'fk_oauth_clients_organization'))
         AS value"#).get_result::<Flag>(&mut connection).await.unwrap();
-    assert!(state.value, "only the selected redundant schema objects should disappear");
+    assert!(
+        state.value,
+        "only the selected redundant schema objects should disappear"
+    );
     connection.batch_execute(DOWN).await.unwrap();
-    assert_eq!(snapshot(&mut connection).await, before, "down must restore the proven false/NULL/empty state exactly");
+    assert_eq!(
+        snapshot(&mut connection).await,
+        before,
+        "down must restore the proven false/NULL/empty state exactly"
+    );
     assert_old_columns_exist(&mut connection).await;
     connection.batch_execute(UP).await.unwrap();
     connection.batch_execute("ROLLBACK").await.unwrap();
@@ -144,65 +167,145 @@ async fn constant_and_empty_state_cleanup_round_trips_without_losing_rows() {
 
 #[tokio::test]
 async fn cleanup_refuses_legacy_information_without_partial_ddl_or_data_loss() {
-    let Some(mut connection) = fixture().await else { return };
+    let Some(mut connection) = fixture().await else {
+        return;
+    };
     for (change, reason) in [
-        ("INSERT INTO openid4vci_credential_configurations (id, tenant_id, configuration) VALUES ('legacy', '00000000-0000-0000-0000-000000000001', '{\"format\":\"legacy\"}')", "table is not empty"),
-        ("ALTER TABLE oauth_clients DROP CONSTRAINT ck_oauth_clients_ciba_user_code_disabled; UPDATE oauth_clients SET backchannel_user_code_parameter = TRUE", "non-false legacy value"),
-        ("UPDATE controller_registry_slots SET last_used_at = '2026-01-01T00:00:00Z'", "controller last-used state"),
-        ("UPDATE user_mfa_remembered_devices SET last_used_at = '2026-01-01T00:00:00Z'", "remembered-device last-used state"),
+        (
+            "INSERT INTO openid4vci_credential_configurations (id, tenant_id, configuration) VALUES ('legacy', '00000000-0000-0000-0000-000000000001', '{\"format\":\"legacy\"}')",
+            "table is not empty",
+        ),
+        (
+            "ALTER TABLE oauth_clients DROP CONSTRAINT ck_oauth_clients_ciba_user_code_disabled; UPDATE oauth_clients SET backchannel_user_code_parameter = TRUE",
+            "non-false legacy value",
+        ),
+        (
+            "UPDATE controller_registry_slots SET last_used_at = '2026-01-01T00:00:00Z'",
+            "controller last-used state",
+        ),
+        (
+            "UPDATE user_mfa_remembered_devices SET last_used_at = '2026-01-01T00:00:00Z'",
+            "remembered-device last-used state",
+        ),
     ] {
-        connection.batch_execute("SAVEPOINT fixture_change").await.unwrap();
+        connection
+            .batch_execute("SAVEPOINT fixture_change")
+            .await
+            .unwrap();
         connection.batch_execute(change).await.unwrap();
         let before = snapshot(&mut connection).await;
-        connection.batch_execute("SAVEPOINT migration_attempt").await.unwrap();
+        connection
+            .batch_execute("SAVEPOINT migration_attempt")
+            .await
+            .unwrap();
         let error = connection.batch_execute(UP).await.unwrap_err();
-        assert!(error.to_string().contains(reason), "unexpected refusal: {error}");
-        connection.batch_execute("ROLLBACK TO migration_attempt").await.unwrap();
+        assert!(
+            error.to_string().contains(reason),
+            "unexpected refusal: {error}"
+        );
+        connection
+            .batch_execute("ROLLBACK TO migration_attempt")
+            .await
+            .unwrap();
         assert_old_columns_exist(&mut connection).await;
-        assert_eq!(snapshot(&mut connection).await, before, "a refusal cannot erase legacy information");
-        connection.batch_execute("ROLLBACK TO fixture_change; RELEASE fixture_change").await.unwrap();
+        assert_eq!(
+            snapshot(&mut connection).await,
+            before,
+            "a refusal cannot erase legacy information"
+        );
+        connection
+            .batch_execute("ROLLBACK TO fixture_change; RELEASE fixture_change")
+            .await
+            .unwrap();
     }
     connection.batch_execute("ROLLBACK").await.unwrap();
 }
 
 #[tokio::test]
 async fn cleanup_refuses_directory_constraint_drift_and_external_dependencies() {
-    let Some(mut connection) = fixture().await else { return };
+    let Some(mut connection) = fixture().await else {
+        return;
+    };
     let has_enforcement_catalog = sql_query(
         "SELECT EXISTS (SELECT 1 FROM pg_attribute \
          WHERE attrelid = 'pg_catalog.pg_constraint'::regclass \
            AND attname = 'conenforced' AND NOT attisdropped) AS value",
-    ).get_result::<Flag>(&mut connection).await.unwrap().value;
+    )
+    .get_result::<Flag>(&mut connection)
+    .await
+    .unwrap()
+    .value;
     for (change, reason) in [
-        ("ALTER TABLE users DROP CONSTRAINT fk_users_realm_tenant", "missing fk_users_realm_tenant"),
-        ("ALTER TABLE users ALTER CONSTRAINT fk_users_realm_tenant DEFERRABLE INITIALLY DEFERRED", "unexpected semantics"),
-        ("ALTER TABLE users DROP CONSTRAINT fk_users_realm_tenant; ALTER TABLE users ADD CONSTRAINT fk_users_realm_tenant FOREIGN KEY (realm_id, tenant_id) REFERENCES realms(id, tenant_id) NOT VALID", "unexpected semantics"),
-        ("ALTER TABLE oauth_clients DROP CONSTRAINT fk_oauth_clients_organization_tenant; ALTER TABLE oauth_clients ADD CONSTRAINT fk_oauth_clients_organization_tenant FOREIGN KEY (organization_id, tenant_id) REFERENCES organizations(id, tenant_id) ON DELETE CASCADE", "unexpected semantics"),
-        ("ALTER TABLE users DROP CONSTRAINT fk_users_realm_tenant; ALTER TABLE users ADD CONSTRAINT fk_users_realm_tenant FOREIGN KEY (realm_id, tenant_id) REFERENCES realms(id, tenant_id) NOT ENFORCED", "unexpected semantics"),
-        ("ALTER TABLE users ALTER COLUMN tenant_id DROP NOT NULL", "non-null key shape drifted"),
-        ("CREATE VIEW external_client_observation AS SELECT backchannel_user_code_parameter FROM oauth_clients", "depend"),
-        ("CREATE VIEW external_configuration_observation AS SELECT id FROM openid4vci_credential_configurations", "depend"),
+        (
+            "ALTER TABLE users DROP CONSTRAINT fk_users_realm_tenant",
+            "missing fk_users_realm_tenant",
+        ),
+        (
+            "ALTER TABLE users ALTER CONSTRAINT fk_users_realm_tenant DEFERRABLE INITIALLY DEFERRED",
+            "unexpected semantics",
+        ),
+        (
+            "ALTER TABLE users DROP CONSTRAINT fk_users_realm_tenant; ALTER TABLE users ADD CONSTRAINT fk_users_realm_tenant FOREIGN KEY (realm_id, tenant_id) REFERENCES realms(id, tenant_id) NOT VALID",
+            "unexpected semantics",
+        ),
+        (
+            "ALTER TABLE oauth_clients DROP CONSTRAINT fk_oauth_clients_organization_tenant; ALTER TABLE oauth_clients ADD CONSTRAINT fk_oauth_clients_organization_tenant FOREIGN KEY (organization_id, tenant_id) REFERENCES organizations(id, tenant_id) ON DELETE CASCADE",
+            "unexpected semantics",
+        ),
+        (
+            "ALTER TABLE users DROP CONSTRAINT fk_users_realm_tenant; ALTER TABLE users ADD CONSTRAINT fk_users_realm_tenant FOREIGN KEY (realm_id, tenant_id) REFERENCES realms(id, tenant_id) NOT ENFORCED",
+            "unexpected semantics",
+        ),
+        (
+            "ALTER TABLE users ALTER COLUMN tenant_id DROP NOT NULL",
+            "non-null key shape drifted",
+        ),
+        (
+            "CREATE VIEW external_client_observation AS SELECT backchannel_user_code_parameter FROM oauth_clients",
+            "depend",
+        ),
+        (
+            "CREATE VIEW external_configuration_observation AS SELECT id FROM openid4vci_credential_configurations",
+            "depend",
+        ),
     ] {
         if change.contains("NOT ENFORCED") && !has_enforcement_catalog {
             continue;
         }
-        connection.batch_execute("SAVEPOINT fixture_change").await.unwrap();
+        connection
+            .batch_execute("SAVEPOINT fixture_change")
+            .await
+            .unwrap();
         connection.batch_execute(change).await.unwrap();
         let before = snapshot(&mut connection).await;
-        connection.batch_execute("SAVEPOINT migration_attempt").await.unwrap();
+        connection
+            .batch_execute("SAVEPOINT migration_attempt")
+            .await
+            .unwrap();
         let error = connection.batch_execute(UP).await.unwrap_err();
-        assert!(error.to_string().contains(reason), "unexpected refusal: {error}");
-        connection.batch_execute("ROLLBACK TO migration_attempt").await.unwrap();
+        assert!(
+            error.to_string().contains(reason),
+            "unexpected refusal: {error}"
+        );
+        connection
+            .batch_execute("ROLLBACK TO migration_attempt")
+            .await
+            .unwrap();
         assert_old_columns_exist(&mut connection).await;
         assert_eq!(snapshot(&mut connection).await, before);
-        connection.batch_execute("ROLLBACK TO fixture_change; RELEASE fixture_change").await.unwrap();
+        connection
+            .batch_execute("ROLLBACK TO fixture_change; RELEASE fixture_change")
+            .await
+            .unwrap();
     }
     connection.batch_execute("ROLLBACK").await.unwrap();
 }
 
 #[tokio::test]
 async fn retained_composite_fks_reject_cross_tenant_children_and_parent_mutations() {
-    let Some(mut connection) = fixture().await else { return };
+    let Some(mut connection) = fixture().await else {
+        return;
+    };
     connection.batch_execute(UP).await.unwrap();
     for change in [
         "UPDATE users SET realm_id = '00000000-0000-0000-0000-000000000012'",
@@ -216,11 +319,26 @@ async fn retained_composite_fks_reject_cross_tenant_children_and_parent_mutation
         "UPDATE realms SET id = '00000000-0000-0000-0000-000000000013' WHERE id = '00000000-0000-0000-0000-000000000011'",
         "UPDATE organizations SET tenant_id = '00000000-0000-0000-0000-000000000002' WHERE id = '00000000-0000-0000-0000-000000000021'",
     ] {
-        connection.batch_execute("SAVEPOINT forbidden_change").await.unwrap();
+        connection
+            .batch_execute("SAVEPOINT forbidden_change")
+            .await
+            .unwrap();
         let error = connection.batch_execute(change).await.unwrap_err();
-        assert!(matches!(&error, diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::ForeignKeyViolation, _)));
-        assert!(error.to_string().contains("_tenant"), "the retained composite FK must reject: {error}");
-        connection.batch_execute("ROLLBACK TO forbidden_change; RELEASE forbidden_change").await.unwrap();
+        assert!(matches!(
+            &error,
+            diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::ForeignKeyViolation,
+                _
+            )
+        ));
+        assert!(
+            error.to_string().contains("_tenant"),
+            "the retained composite FK must reject: {error}"
+        );
+        connection
+            .batch_execute("ROLLBACK TO forbidden_change; RELEASE forbidden_change")
+            .await
+            .unwrap();
     }
     connection.batch_execute("ROLLBACK").await.unwrap();
 }

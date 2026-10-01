@@ -6,10 +6,9 @@ use chrono::{DateTime, Duration, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshContract,
-    RefreshToken, RefreshTokenAuthenticationContext, RefreshTokenCommit,
-    TokenIssuanceMode, TokenIssuedAuditFields, TokenPrincipalState, TokenRepositoryPort,
-    TokenRevocation,
+    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshContract, RefreshToken,
+    RefreshTokenAuthenticationContext, RefreshTokenCommit, TokenIssuanceMode,
+    TokenIssuedAuditFields, TokenPrincipalState, TokenRepositoryPort, TokenRevocation,
 };
 use nazo_postgres::{TokenIssuanceRepository, TokenRepository, create_pool};
 use serde_json::{Value, json};
@@ -178,7 +177,9 @@ fn rotation(
     token.audiences = audiences.iter().map(|value| (*value).to_owned()).collect();
     token.dpop_jkt.clone_from(&source.dpop_jkt);
     token.mtls_x5t_s256.clone_from(&source.mtls_x5t_s256);
-    token.client_attestation_jkt.clone_from(&source.client_attestation_jkt);
+    token
+        .client_attestation_jkt
+        .clone_from(&source.client_attestation_jkt);
     let raw = token.raw_token.clone();
     (
         issuance(
@@ -200,7 +201,11 @@ async fn lookup(url: &str, raw: &str) -> RefreshToken {
         .expect("source refresh token should resolve")
 }
 
-async fn issue_at(url: &str, fixture: &Fixture, issued_at: DateTime<Utc>) -> (String, RefreshToken) {
+async fn issue_at(
+    url: &str,
+    fixture: &Fixture,
+    issued_at: DateTime<Utc>,
+) -> (String, RefreshToken) {
     let token = new_token(fixture, issued_at);
     let raw = token.raw_token.clone();
     let result = TokenIssuanceRepository::new(create_pool(url, 1).unwrap())
@@ -251,13 +256,21 @@ async fn assert_issuance_writes(connection: &mut AsyncPgConnection, id: Uuid, co
     .get_result::<Count>(&mut *connection)
     .await
     .unwrap();
-    assert_eq!(all_audits.count, i64::from(committed), "unavailability or malformed input must not emit reuse audit");
-    let receipts = sql_query("SELECT count(*) AS count FROM oauth_token_issuances WHERE issuance_id = $1")
-        .bind::<sql_types::Uuid, _>(id)
-        .get_result::<Count>(connection)
-        .await
-        .unwrap();
-    assert_eq!(receipts.count, 0, "Fresh refresh commits never allocate a grant receipt");
+    assert_eq!(
+        all_audits.count,
+        i64::from(committed),
+        "unavailability or malformed input must not emit reuse audit"
+    );
+    let receipts =
+        sql_query("SELECT count(*) AS count FROM oauth_token_issuances WHERE issuance_id = $1")
+            .bind::<sql_types::Uuid, _>(id)
+            .get_result::<Count>(connection)
+            .await
+            .unwrap();
+    assert_eq!(
+        receipts.count, 0,
+        "Fresh refresh commits never allocate a grant receipt"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -273,14 +286,23 @@ async fn rotation_narrows_and_reorders_current_audience_without_replacing_origin
     // becomes A, another A-only rotation still references the original A+B.
     for (generation, audiences) in [&[B, A][..], &[A][..], &[A][..]].into_iter().enumerate() {
         let (input, raw) = rotation(&fixture, &source, audiences);
-        assert_eq!(repository.commit_token_issuance(input.clone()).await.unwrap(), CommitTokenIssuanceResult::Committed);
+        assert_eq!(
+            repository
+                .commit_token_issuance(input.clone())
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
         source = lookup(&url, &raw).await;
         assert_eq!(source.contract_key, original_key);
         assert_eq!(source.contract_audiences, vec![A, B]);
         assert_eq!(source.audience, json!(audiences));
         let after = state(&mut connection, source.token_family_id).await;
         assert_eq!(after.contract, original.contract);
-        assert_eq!(after.family["contract_blake3"], original.family["contract_blake3"]);
+        assert_eq!(
+            after.family["contract_blake3"],
+            original.family["contract_blake3"]
+        );
         assert_eq!(after.spent, generation as i64 + 1);
         assert_issuance_writes(&mut connection, input.issuance_id, true).await;
     }
@@ -288,7 +310,10 @@ async fn rotation_narrows_and_reorders_current_audience_without_replacing_origin
         .bind::<sql_types::Uuid, _>(tenant())
         .bind::<sql_types::Text, _>(fixture.user_id.to_string())
         .get_result::<Count>(&mut connection).await.unwrap();
-    assert_eq!(contracts.count, 1, "audience changes must not create orphan replacement contracts");
+    assert_eq!(
+        contracts.count, 1,
+        "audience changes must not create orphan replacement contracts"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -298,13 +323,22 @@ async fn rotation_rejects_audience_expansion_without_compromising_the_family() {
     let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
     let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
     let (input, raw) = rotation(&fixture, &source, &[A]);
-    assert_eq!(repository.commit_token_issuance(input).await.unwrap(), CommitTokenIssuanceResult::Committed);
+    assert_eq!(
+        repository.commit_token_issuance(input).await.unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
     let narrowed = lookup(&url, &raw).await;
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     let before = state(&mut connection, source.token_family_id).await;
     for audiences in [&[A, B][..], &["resource://never-authorized"][..]] {
         let (input, _) = rotation(&fixture, &narrowed, audiences);
-        assert!(repository.commit_token_issuance(input.clone()).await.is_err(), "an expanded candidate is invalid input");
+        assert!(
+            repository
+                .commit_token_issuance(input.clone())
+                .await
+                .is_err(),
+            "an expanded candidate is invalid input"
+        );
         assert_issuance_writes(&mut connection, input.issuance_id, false).await;
         assert_eq!(state(&mut connection, source.token_family_id).await, before);
     }
@@ -328,12 +362,17 @@ async fn retire_oldest(url: &str, fixture: &Fixture, family_id: Uuid) {
     .get_result::<Count>(&mut connection)
     .await
     .unwrap();
-    assert_eq!(retired.count, 1, "the real capacity path must retire this source");
-    let remaining = sql_query("SELECT count(*) AS count FROM oauth_refresh_families WHERE token_family_id = $1")
-        .bind::<sql_types::Uuid, _>(family_id)
-        .get_result::<Count>(&mut connection)
-        .await
-        .unwrap();
+    assert_eq!(
+        retired.count, 1,
+        "the real capacity path must retire this source"
+    );
+    let remaining = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_families WHERE token_family_id = $1",
+    )
+    .bind::<sql_types::Uuid, _>(family_id)
+    .get_result::<Count>(&mut connection)
+    .await
+    .unwrap();
     assert_eq!(remaining.count, 0);
 }
 
@@ -352,23 +391,47 @@ async fn source_snapshot_cannot_commit_after_real_revocation_or_capacity_retirem
         if capacity {
             retire_oldest(&url, &fixture, source.token_family_id).await;
         } else {
-            assert_eq!(repository.revoke_token(TokenRevocation {
-                tenant_id: tenant(), client_id: fixture.client_id, raw_token: &raw, access_token: None,
-            }).await.unwrap(), 1);
+            assert_eq!(
+                repository
+                    .revoke_token(TokenRevocation {
+                        tenant_id: tenant(),
+                        client_id: fixture.client_id,
+                        raw_token: &raw,
+                        access_token: None,
+                    })
+                    .await
+                    .unwrap(),
+                1
+            );
         }
         let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
         for input in [preserved, rotated] {
-            assert_eq!(repository.commit_token_issuance(input.clone()).await.unwrap(), CommitTokenIssuanceResult::RefreshGrantUnavailable);
+            assert_eq!(
+                repository
+                    .commit_token_issuance(input.clone())
+                    .await
+                    .unwrap(),
+                CommitTokenIssuanceResult::RefreshGrantUnavailable
+            );
             assert_issuance_writes(&mut connection, input.issuance_id, false).await;
         }
         let compromise = sql_query(
             "SELECT count(*) AS count FROM security_audit_events \
              WHERE event_type = 'refresh_reuse_detected' AND payload->>'token_family_id' = $1",
-        ).bind::<sql_types::Text, _>(source.token_family_id.to_string())
-            .get_result::<Count>(&mut connection).await.unwrap();
-        assert_eq!(compromise.count, 0, "terminal unavailability is not a new compromise");
+        )
+        .bind::<sql_types::Text, _>(source.token_family_id.to_string())
+        .get_result::<Count>(&mut connection)
+        .await
+        .unwrap();
+        assert_eq!(
+            compromise.count, 0,
+            "terminal unavailability is not a new compromise"
+        );
         if !capacity {
-            assert!(state(&mut connection, source.token_family_id).await.family["reuse_detected_at"].is_null());
+            assert!(
+                state(&mut connection, source.token_family_id).await.family["reuse_detected_at"]
+                    .is_null()
+            );
         }
     }
 }
@@ -405,12 +468,25 @@ async fn preserve_rechecks_source_expiry_contract_and_sender_binding() {
         };
         let before = state(&mut connection, source.token_family_id).await;
         let repository = TokenIssuanceRepository::new(create_pool(&url, 1).unwrap());
-        assert_eq!(repository.commit_token_issuance(input.clone()).await.unwrap(), CommitTokenIssuanceResult::RefreshGrantUnavailable, "{mutation} drift must reject the stale source");
+        assert_eq!(
+            repository
+                .commit_token_issuance(input.clone())
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::RefreshGrantUnavailable,
+            "{mutation} drift must reject the stale source"
+        );
         assert_issuance_writes(&mut connection, input.issuance_id, false).await;
         assert_eq!(state(&mut connection, source.token_family_id).await, before);
         if mutation == "expiry" {
             let (input, _) = rotation(&fixture, &source, &[A]);
-            assert_eq!(repository.commit_token_issuance(input.clone()).await.unwrap(), CommitTokenIssuanceResult::RefreshGrantUnavailable);
+            assert_eq!(
+                repository
+                    .commit_token_issuance(input.clone())
+                    .await
+                    .unwrap(),
+                CommitTokenIssuanceResult::RefreshGrantUnavailable
+            );
             assert_issuance_writes(&mut connection, input.issuance_id, false).await;
             assert_eq!(state(&mut connection, source.token_family_id).await, before);
         }
@@ -482,58 +558,97 @@ async fn preserve_commit_serializes_before_real_revocation_and_capacity_retireme
             fill_capacity(&url, &fixture).await;
         }
         let preserved = preserve(&fixture, &source);
-        let replacement = issuance(&fixture, RefreshTokenCommit::IssueNew {
-            token: new_token(&fixture, Utc::now()), contract: contract(&fixture),
-        });
+        let replacement = issuance(
+            &fixture,
+            RefreshTokenCommit::IssueNew {
+                token: new_token(&fixture, Utc::now()),
+                contract: contract(&fixture),
+            },
+        );
         let mut coordinator = AsyncPgConnection::establish(&url).await.unwrap();
         let suffix = Uuid::now_v7().simple().to_string();
         let gate = format!("test_preserve_gate_{suffix}");
         let gate_key = i64::from_be_bytes(Uuid::now_v7().as_bytes()[8..].try_into().unwrap());
         // Park at the actual audit write, after source validation. The source
         // lock must remain held until the same transaction commits its audit.
-        coordinator.batch_execute(&format!(
-            "CREATE FUNCTION {gate}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN \
+        coordinator
+            .batch_execute(&format!(
+                "CREATE FUNCTION {gate}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN \
              IF NEW.event_id = '{}'::uuid THEN PERFORM pg_advisory_xact_lock({gate_key}); END IF; \
              RETURN NEW; END $$; \
              CREATE TRIGGER {gate} BEFORE INSERT ON security_audit_events \
              FOR EACH ROW EXECUTE FUNCTION {gate}();",
-            preserved.issuance_id,
-        )).await.unwrap();
+                preserved.issuance_id,
+            ))
+            .await
+            .unwrap();
         sql_query("SELECT pg_advisory_lock($1)")
             .bind::<sql_types::BigInt, _>(gate_key)
-            .execute(&mut coordinator).await.unwrap();
+            .execute(&mut coordinator)
+            .await
+            .unwrap();
         let preserve_app = format!("preserve-{suffix}");
-        let repository = TokenIssuanceRepository::new(create_pool(tagged_url(&url, &preserve_app), 1).unwrap());
+        let repository =
+            TokenIssuanceRepository::new(create_pool(tagged_url(&url, &preserve_app), 1).unwrap());
         let input = preserved.clone();
-        let mut preserving = tokio::spawn(async move { repository.commit_token_issuance(input).await });
+        let mut preserving =
+            tokio::spawn(async move { repository.commit_token_issuance(input).await });
         wait_for_lock(&mut coordinator, &preserve_app, &mut preserving).await;
         let mutate_app = format!("mutate-{suffix}");
-        let repository = TokenIssuanceRepository::new(create_pool(tagged_url(&url, &mutate_app), 1).unwrap());
+        let repository =
+            TokenIssuanceRepository::new(create_pool(tagged_url(&url, &mutate_app), 1).unwrap());
         let client_id = fixture.client_id;
         let mut mutating = tokio::spawn(async move {
             if capacity {
-                assert_eq!(repository.commit_token_issuance(replacement).await.unwrap(), CommitTokenIssuanceResult::Committed);
+                assert_eq!(
+                    repository.commit_token_issuance(replacement).await.unwrap(),
+                    CommitTokenIssuanceResult::Committed
+                );
             } else {
-                assert_eq!(repository.revoke_token(TokenRevocation {
-                    tenant_id: tenant(), client_id, raw_token: &raw, access_token: None,
-                }).await.unwrap(), 1);
+                assert_eq!(
+                    repository
+                        .revoke_token(TokenRevocation {
+                            tenant_id: tenant(),
+                            client_id,
+                            raw_token: &raw,
+                            access_token: None,
+                        })
+                        .await
+                        .unwrap(),
+                    1
+                );
             }
         });
         wait_for_lock(&mut coordinator, &mutate_app, &mut mutating).await;
         sql_query("SELECT pg_advisory_unlock($1)")
             .bind::<sql_types::BigInt, _>(gate_key)
-            .execute(&mut coordinator).await.unwrap();
-        assert_eq!(preserving.await.unwrap().unwrap(), CommitTokenIssuanceResult::Committed);
+            .execute(&mut coordinator)
+            .await
+            .unwrap();
+        assert_eq!(
+            preserving.await.unwrap().unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
         mutating.await.unwrap();
-        coordinator.batch_execute(&format!(
-            "DROP TRIGGER {gate} ON security_audit_events; DROP FUNCTION {gate}();",
-        )).await.unwrap();
+        coordinator
+            .batch_execute(&format!(
+                "DROP TRIGGER {gate} ON security_audit_events; DROP FUNCTION {gate}();",
+            ))
+            .await
+            .unwrap();
         assert_issuance_writes(&mut coordinator, preserved.issuance_id, true).await;
         if capacity {
-            let remaining = sql_query("SELECT count(*) AS count FROM oauth_refresh_families WHERE token_family_id = $1")
-                .bind::<sql_types::Uuid, _>(source.token_family_id)
-                .get_result::<Count>(&mut coordinator).await.unwrap();
-            assert_eq!(remaining.count, 0, "capacity retires the source after the valid Preserve commit");
+            let remaining = sql_query(
+                "SELECT count(*) AS count FROM oauth_refresh_families WHERE token_family_id = $1",
+            )
+            .bind::<sql_types::Uuid, _>(source.token_family_id)
+            .get_result::<Count>(&mut coordinator)
+            .await
+            .unwrap();
+            assert_eq!(
+                remaining.count, 0,
+                "capacity retires the source after the valid Preserve commit"
+            );
         } else {
             let after = state(&mut coordinator, source.token_family_id).await;
             assert!(!after.family["revoked_at"].is_null());
@@ -553,16 +668,24 @@ async fn contract_reference_reuses_equal_payload_and_rejects_same_key_different_
         .bind::<sql_types::Uuid, _>(tenant())
         .bind::<sql_types::Binary, _>(source.contract_key.to_vec())
         .bind::<sql_types::Jsonb, _>(before.contract.clone())
-        .execute(&mut connection).await;
-    assert!(same.is_ok(), "an equal existing payload is a reusable reference");
+        .execute(&mut connection)
+        .await;
+    assert!(
+        same.is_ok(),
+        "an equal existing payload is a reusable reference"
+    );
     let mut different = before.contract.clone();
     different["authentication_context"]["acr"] = json!("urn:example:different");
     let mismatch = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
         .bind::<sql_types::Uuid, _>(tenant())
         .bind::<sql_types::Binary, _>(source.contract_key.to_vec())
         .bind::<sql_types::Jsonb, _>(different)
-        .execute(&mut connection).await;
-    assert!(mismatch.is_err(), "the content key must never accept a different contract");
+        .execute(&mut connection)
+        .await;
+    assert!(
+        mismatch.is_err(),
+        "the content key must never accept a different contract"
+    );
     assert_eq!(state(&mut connection, source.token_family_id).await, before);
     // JSONB's ordinary equality considers 1 and 1.0 equal. The reference
     // contract must retain the stricter distinction used by serde_json.
@@ -573,22 +696,30 @@ async fn contract_reference_reuses_equal_payload_and_rejects_same_key_different_
         .bind::<sql_types::Uuid, _>(tenant())
         .bind::<sql_types::Binary, _>(&numeric_key)
         .bind::<sql_types::Jsonb, _>(&integer_contract)
-        .execute(&mut connection).await.unwrap();
+        .execute(&mut connection)
+        .await
+        .unwrap();
     let mut float_contract = integer_contract;
     float_contract["authorization_details"] = json!([{"type": "numeric", "value": 1.0}]);
-    assert!(sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(tenant())
-        .bind::<sql_types::Binary, _>(&numeric_key)
-        .bind::<sql_types::Jsonb, _>(&float_contract)
-        .execute(&mut connection).await.is_err());
-
+    assert!(
+        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<sql_types::Uuid, _>(tenant())
+            .bind::<sql_types::Binary, _>(&numeric_key)
+            .bind::<sql_types::Jsonb, _>(&float_contract)
+            .execute(&mut connection)
+            .await
+            .is_err()
+    );
 }
 
 async fn apply_migration(connection: &mut AsyncPgConnection, path: &std::path::Path) {
     let sql = std::fs::read_to_string(path.join("up.sql")).unwrap();
-    connection.transaction::<_, diesel::result::Error, _>(async |connection| {
-        connection.batch_execute(&sql).await
-    }).await.unwrap_or_else(|error| panic!("migration {} failed: {error}", path.display()));
+    connection
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            connection.batch_execute(&sql).await
+        })
+        .await
+        .unwrap_or_else(|error| panic!("migration {} failed: {error}", path.display()));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -598,20 +729,25 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
     // cannot exercise it. Follow audit_pending_upgrade's scratch-database pattern.
     let name = format!("refresh_authority_{}", Uuid::now_v7().simple());
     let mut admin = AsyncPgConnection::establish(&base).await.unwrap();
-    admin.batch_execute(&format!("CREATE DATABASE {name}")).await.unwrap();
+    admin
+        .batch_execute(&format!("CREATE DATABASE {name}"))
+        .await
+        .unwrap();
     let mut url = url::Url::parse(&base).unwrap();
     url.set_path(&name);
     let url = url.to_string();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let mut migrations: Vec<_> = std::fs::read_dir(migrations_dir).unwrap()
+    let mut migrations: Vec<_> = std::fs::read_dir(migrations_dir)
+        .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_dir() && path.join("up.sql").is_file())
         .collect();
     migrations.sort();
-    let cutover = migrations.iter().position(|path| {
-        path.file_name().unwrap() == "20260926000100_refresh_state_minimal"
-    }).expect("the real refresh migration should exist");
+    let cutover = migrations
+        .iter()
+        .position(|path| path.file_name().unwrap() == "20260926000100_refresh_state_minimal")
+        .expect("the real refresh migration should exist");
     for migration in &migrations[..cutover] {
         apply_migration(&mut connection, migration).await;
     }
@@ -648,28 +784,53 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
         apply_migration(&mut connection, migration).await;
     }
     let source = lookup(&url, &token.raw_token).await;
-    assert_ne!(source.contract_key, original_contract.persisted().blake3_digest(), "this source must use the genuine migration key, not a fabricated Rust key");
+    assert_ne!(
+        source.contract_key,
+        original_contract.persisted().blake3_digest(),
+        "this source must use the genuine migration key, not a fabricated Rust key"
+    );
     assert_eq!(source.contract_audiences, vec![A, B]);
     assert!(source.authentication_context.nonce.is_none());
-    assert_eq!(source.authentication_context.id_token_sid, token.id_token_sid);
+    assert_eq!(
+        source.authentication_context.id_token_sid,
+        token.id_token_sid
+    );
     let before = state(&mut connection, source.token_family_id).await;
     let (input, raw) = rotation(&fixture, &source, &[A]);
     let repository = TokenIssuanceRepository::new(create_pool(&url, 1).unwrap());
-    assert_eq!(repository.commit_token_issuance(input.clone()).await.unwrap(), CommitTokenIssuanceResult::Committed);
+    assert_eq!(
+        repository
+            .commit_token_issuance(input.clone())
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
     let current = lookup(&url, &raw).await;
     let after = state(&mut connection, source.token_family_id).await;
     assert_eq!(current.contract_key, source.contract_key);
     assert_eq!(current.contract_audiences, vec![A, B]);
     assert_eq!(current.audience, json!([A]));
     assert_eq!(after.contract, before.contract);
-    assert_eq!(after.family["contract_blake3"], before.family["contract_blake3"]);
+    assert_eq!(
+        after.family["contract_blake3"],
+        before.family["contract_blake3"]
+    );
     assert_eq!(after.spent, 1);
     assert_issuance_writes(&mut connection, input.issuance_id, true).await;
-    let contracts = sql_query("SELECT count(*) AS count FROM oauth_refresh_contracts WHERE tenant_id = $1")
-        .bind::<sql_types::Uuid, _>(tenant())
-        .get_result::<Count>(&mut connection).await.unwrap();
-    assert_eq!(contracts.count, 1, "rotation must not create a BLAKE3-keyed duplicate of the SQL-keyed contract");
+    let contracts =
+        sql_query("SELECT count(*) AS count FROM oauth_refresh_contracts WHERE tenant_id = $1")
+            .bind::<sql_types::Uuid, _>(tenant())
+            .get_result::<Count>(&mut connection)
+            .await
+            .unwrap();
+    assert_eq!(
+        contracts.count, 1,
+        "rotation must not create a BLAKE3-keyed duplicate of the SQL-keyed contract"
+    );
     drop(repository);
     drop(connection);
-    admin.batch_execute(&format!("DROP DATABASE {name} WITH (FORCE)")).await.unwrap();
+    admin
+        .batch_execute(&format!("DROP DATABASE {name} WITH (FORCE)"))
+        .await
+        .unwrap();
 }

@@ -368,7 +368,10 @@ fn admin_create_and_patch_keep_ciba_user_code_disabled_without_stored_state() {
             payload["backchannel_user_code_parameter"] = json!(value);
         }
         let request: nazo_auth::CreateClientRequest = serde_json::from_value(payload).unwrap();
-        assert_eq!(request.backchannel_user_code_parameter, value.unwrap_or(false));
+        assert_eq!(
+            request.backchannel_user_code_parameter,
+            value.unwrap_or(false)
+        );
         let created = futures_executor::block_on(nazo_auth::prepare_client_registration(
             request,
             &policy(None),
@@ -389,7 +392,12 @@ fn admin_create_and_patch_keep_ciba_user_code_disabled_without_stored_state() {
             assert!(matches!(created, Err(AdminClientError::InvalidRequest(_))));
             assert!(matches!(patched, Err(AdminClientError::InvalidRequest(_))));
         } else {
-            assert!(!created.unwrap().registration.backchannel_user_code_parameter);
+            assert!(
+                !created
+                    .unwrap()
+                    .registration
+                    .backchannel_user_code_parameter
+            );
             assert!(!patched.unwrap().backchannel_user_code_parameter);
         }
     }

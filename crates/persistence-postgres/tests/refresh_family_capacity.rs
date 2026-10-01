@@ -14,9 +14,8 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult,
-    RefreshTokenAuthenticationContext, TokenIssuanceMode, TokenIssuedAuditFields,
-    TokenRepositoryPort,
+    CommitTokenIssuance, CommitTokenIssuanceResult, RefreshTokenAuthenticationContext,
+    TokenIssuanceMode, TokenIssuedAuditFields, TokenRepositoryPort,
 };
 use nazo_postgres::{TokenIssuanceRepository, TokenRepository, create_pool};
 use serde_json::json;
@@ -126,23 +125,24 @@ fn new_refresh(
             authorization_details: json!([]),
             subject: fixture.user_id.to_string(),
             authentication_context: RefreshTokenAuthenticationContext {
-            version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
-            issuer: "https://issuer.example".to_owned(),
-            audience: fixture.client_public_id.clone(),
-            // Fixed: the immutable contract digest must stay identical across
-            // generations of the same family.
-            auth_time: 1_700_000_000,
-            amr: vec!["pwd".to_owned()],
-            oidc_sid: None,
-            id_token_sid: None,
-            acr: None,
-            nonce: None,
-            userinfo_claims: Vec::new(),
-            userinfo_claim_requests: Vec::new(),
-            id_token_claims: Vec::new(),
-            id_token_claim_requests: Vec::new(),
-        },
-        }.persisted(),
+                version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
+                issuer: "https://issuer.example".to_owned(),
+                audience: fixture.client_public_id.clone(),
+                // Fixed: the immutable contract digest must stay identical across
+                // generations of the same family.
+                auth_time: 1_700_000_000,
+                amr: vec!["pwd".to_owned()],
+                oidc_sid: None,
+                id_token_sid: None,
+                acr: None,
+                nonce: None,
+                userinfo_claims: Vec::new(),
+                userinfo_claim_requests: Vec::new(),
+                id_token_claims: Vec::new(),
+                id_token_claim_requests: Vec::new(),
+            },
+        }
+        .persisted(),
     )
 }
 
@@ -166,7 +166,9 @@ async fn issuance(token: RefreshFixture) -> CommitTokenIssuance {
         access_token_expires_at: (token.issued_at + chrono::Duration::minutes(5)).timestamp(),
         audit_fields: TokenIssuedAuditFields {
             client_id: token.contract.authentication_context.audience.clone(),
-            subject_hash: blake3::hash(token.contract.subject.as_bytes()).to_hex().to_string(),
+            subject_hash: blake3::hash(token.contract.subject.as_bytes())
+                .to_hex()
+                .to_string(),
             scope: token.contract.scopes.join(" "),
             audience: token.audiences.clone(),
         },
