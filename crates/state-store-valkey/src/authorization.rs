@@ -416,16 +416,14 @@ fn parse_decision_material_discard_reply(
 ) -> Result<DecisionMaterialDiscardOutcome, DecisionMaterialDiscardError<Error>> {
     match reply {
         "discarded" => Ok(DecisionMaterialDiscardOutcome::Discarded),
-        "consent_missing_or_changed" => {
-            Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged)
-        }
+        "consent_missing_or_changed" => Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged),
         "par_missing_or_changed" => Ok(DecisionMaterialDiscardOutcome::ParMissingOrChanged),
         "consent_error" => Err(DecisionMaterialDiscardError::ConsentOrUnknown(
             Error::protocol("consent preparation cleanup failed"),
         )),
-        "par_error" => Err(DecisionMaterialDiscardError::PushedRequest(Error::protocol(
-            "pushed request preparation cleanup failed",
-        ))),
+        "par_error" => Err(DecisionMaterialDiscardError::PushedRequest(
+            Error::protocol("pushed request preparation cleanup failed"),
+        )),
         _ => Err(DecisionMaterialDiscardError::ConsentOrUnknown(
             Error::unexpected("unexpected preparation cleanup reply; outcome is unknown"),
         )),

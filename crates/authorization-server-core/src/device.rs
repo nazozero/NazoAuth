@@ -631,7 +631,9 @@ where
     where
         F: FnMut() -> DateTime<Utc>,
     {
-        Ok(self.prepare_decision(user_code, current_time).await?
+        Ok(self
+            .prepare_decision(user_code, current_time)
+            .await?
             .map(|prepared| prepared.payload().clone()))
     }
 
@@ -683,19 +685,28 @@ where
         F: FnMut() -> DateTime<Utc>,
     {
         let expected_payload = prepared.payload().clone();
-        let PreparedDeviceDecision { user_code, device_hash, stored } = prepared;
+        let PreparedDeviceDecision {
+            user_code,
+            device_hash,
+            stored,
+        } = prepared;
         let mut next_snapshot = Some(stored);
         for _ in 0..DEVICE_TRANSITION_MAX_ATTEMPTS {
             let stored = match next_snapshot.take() {
                 Some(stored) => stored,
-                None => self.store.load_by_device_hash(&device_hash).await
+                None => self
+                    .store
+                    .load_by_device_hash(&device_hash)
+                    .await
                     .map_err(DeviceDecisionFailure::Storage)?
                     .ok_or(DeviceDecisionFailure::Missing)?,
             };
             if device_authorization_payload(&stored.state)
                 .is_some_and(|payload| payload != &expected_payload)
             {
-                return Err(DeviceDecisionFailure::Storage(DeviceStatePortError::CorruptData));
+                return Err(DeviceDecisionFailure::Storage(
+                    DeviceStatePortError::CorruptData,
+                ));
             }
             let now = current_time();
             let DeviceAuthorizationState::Pending { payload, .. } = &stored.state else {
@@ -743,19 +754,28 @@ where
     {
         let claim_id = Uuid::now_v7();
         let expected_payload = prepared.payload().clone();
-        let PreparedDeviceDecision { user_code, device_hash, stored } = prepared;
+        let PreparedDeviceDecision {
+            user_code,
+            device_hash,
+            stored,
+        } = prepared;
         let mut next_snapshot = Some(stored);
         for _ in 0..DEVICE_TRANSITION_MAX_ATTEMPTS {
             let stored = match next_snapshot.take() {
                 Some(stored) => stored,
-                None => self.store.load_by_device_hash(&device_hash).await
+                None => self
+                    .store
+                    .load_by_device_hash(&device_hash)
+                    .await
                     .map_err(DeviceDecisionFailure::Storage)?
                     .ok_or(DeviceDecisionFailure::Missing)?,
             };
             if device_authorization_payload(&stored.state)
                 .is_some_and(|payload| payload != &expected_payload)
             {
-                return Err(DeviceDecisionFailure::Storage(DeviceStatePortError::CorruptData));
+                return Err(DeviceDecisionFailure::Storage(
+                    DeviceStatePortError::CorruptData,
+                ));
             }
             let now = current_time();
             match &stored.state {
@@ -835,7 +855,12 @@ where
                             };
                             match self
                                 .store
-                                .claim_decision(&device_hash, &user_code, &stored.version, &reclaimed)
+                                .claim_decision(
+                                    &device_hash,
+                                    &user_code,
+                                    &stored.version,
+                                    &reclaimed,
+                                )
                                 .await
                                 .map_err(DeviceDecisionFailure::Storage)?
                             {

@@ -780,13 +780,15 @@ async fn oidc_subject_snapshot_reuses_statement_but_refreshes_epoch_and_binding(
         .execute(&mut connection)
         .await
         .unwrap();
-    sql_query("INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)")
-        .bind::<SqlUuid, _>(tenant_id)
-        .bind::<Text, _>(&private_subject)
-        .bind::<SqlUuid, _>(fixture.user_id)
-        .execute(&mut connection)
-        .await
-        .unwrap();
+    sql_query(
+        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<Text, _>(&private_subject)
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
     drop(connection);
     let current = repository
         .active_subject_claims(tenant_id, fixture.user_id, &private_subject)

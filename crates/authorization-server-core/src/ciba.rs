@@ -457,10 +457,13 @@ where
         &self,
         auth_req_id: &str,
     ) -> Result<Option<PreparedCibaDecision<S::Version>>, CibaStatePortError> {
-        Ok(self.load(auth_req_id).await?.map(|stored| PreparedCibaDecision {
-            auth_req_id: auth_req_id.to_owned(),
-            stored,
-        }))
+        Ok(self
+            .load(auth_req_id)
+            .await?
+            .map(|stored| PreparedCibaDecision {
+                auth_req_id: auth_req_id.to_owned(),
+                stored,
+            }))
     }
 
     /// Uses the audited snapshot once, then reloads only on a CAS conflict.
@@ -512,12 +515,19 @@ where
     where
         F: FnMut() -> i64,
     {
-        let prepared = self.prepare_decision(auth_req_id).await
+        let prepared = self
+            .prepare_decision(auth_req_id)
+            .await
             .map_err(CibaDecisionFailure::Storage)?
             .ok_or(CibaDecisionFailure::Missing)?;
         self.commit_prepared_decision(
-            prepared, decision, expected_user_id, authorization_deadline, current_time,
-        ).await
+            prepared,
+            decision,
+            expected_user_id,
+            authorization_deadline,
+            current_time,
+        )
+        .await
     }
 
     async fn commit_prepared_decision<F>(
@@ -531,18 +541,25 @@ where
     where
         F: FnMut() -> i64,
     {
-        let PreparedCibaDecision { auth_req_id, stored } = prepared;
+        let PreparedCibaDecision {
+            auth_req_id,
+            stored,
+        } = prepared;
         let expected_request = stored.state.clone();
         let mut next_snapshot = Some(stored);
         for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
             let stored = match next_snapshot.take() {
                 Some(stored) => stored,
-                None => self.load(&auth_req_id).await
+                None => self
+                    .load(&auth_req_id)
+                    .await
                     .map_err(CibaDecisionFailure::Storage)?
                     .ok_or(CibaDecisionFailure::Missing)?,
             };
             if !same_ciba_authorization(&expected_request, &stored.state) {
-                return Err(CibaDecisionFailure::Storage(CibaStatePortError::CorruptData));
+                return Err(CibaDecisionFailure::Storage(
+                    CibaStatePortError::CorruptData,
+                ));
             }
             match evaluate_ciba_decision(&stored.state, expected_user_id, &decision, current_time())
             {
@@ -816,8 +833,14 @@ fn same_ciba_authorization(expected: &CibaRequestState, current: &CibaRequestSta
         && expected.issued_at == current.issued_at
         && expected.expires_at == current.expires_at
         && expected.retention_expires_at == current.retention_expires_at
-        && expected.ping_notification.as_ref().map(|ping| (&ping.auth_req_id, &ping.endpoint))
-            == current.ping_notification.as_ref().map(|ping| (&ping.auth_req_id, &ping.endpoint))
+        && expected
+            .ping_notification
+            .as_ref()
+            .map(|ping| (&ping.auth_req_id, &ping.endpoint))
+            == current
+                .ping_notification
+                .as_ref()
+                .map(|ping| (&ping.auth_req_id, &ping.endpoint))
 }
 
 fn validate_stored_request<V>(

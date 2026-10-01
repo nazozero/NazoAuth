@@ -888,23 +888,23 @@ where
             Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged) => {
                 Err(AuthorizationDecisionAdmissionError::ConsentMissing)
             }
-            Ok(DecisionMaterialDiscardOutcome::ParMissingOrChanged) => Err(
-                AuthorizationDecisionAdmissionError::PushedRequestMissing(Box::new(
-                    consent.clone(),
-                )),
-            ),
+            Ok(DecisionMaterialDiscardOutcome::ParMissingOrChanged) => {
+                Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(
+                    Box::new(consent.clone()),
+                ))
+            }
             // Keep the existing protocol mapping for an unconfirmed cleanup.
             // A combined call may have removed either object before its reply
             // was lost; this error does not establish a rollback or its phase.
-            Err(DecisionMaterialDiscardError::ConsentOrUnknown(error)) => {
-                Err(AuthorizationDecisionAdmissionError::ConsentReadFailed(error))
-            }
-            Err(DecisionMaterialDiscardError::PushedRequest(source)) => {
-                Err(AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
+            Err(DecisionMaterialDiscardError::ConsentOrUnknown(error)) => Err(
+                AuthorizationDecisionAdmissionError::ConsentReadFailed(error),
+            ),
+            Err(DecisionMaterialDiscardError::PushedRequest(source)) => Err(
+                AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
                     consent: Box::new(consent.clone()),
                     source,
-                })
-            }
+                },
+            ),
         }
     }
 

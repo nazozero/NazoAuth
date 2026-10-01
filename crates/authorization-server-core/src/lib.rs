@@ -134,8 +134,8 @@ pub use device::{
     DeviceGrantFuture, DeviceGrantPortError, DeviceGrantRepositoryPort, DeviceGrantService,
     DeviceGrantWrite, DevicePollCommit, DevicePollFailure, DevicePollTransition, DeviceStateFuture,
     DeviceStatePortError, DeviceStateReplacement, DeviceStateStorePort, DeviceStateVersion,
-    PreparedDeviceDecision, StoredDeviceAuthorization,
-    device_authorization_payload, device_authorization_request_payload, evaluate_device_poll,
+    PreparedDeviceDecision, StoredDeviceAuthorization, device_authorization_payload,
+    device_authorization_request_payload, evaluate_device_poll,
 };
 pub use dpop::{
     DPOP_CLOCK_SKEW_SECONDS, DPOP_REPLAY_TTL_SECONDS, DpopError, DpopNoncePolicy, DpopProofRequest,

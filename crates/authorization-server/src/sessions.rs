@@ -52,7 +52,10 @@ impl SessionResolver {
     }
 
     pub async fn delete_session(&self, session_id: &str) -> Result<(), RepositoryError> {
-        self.service.delete(&SessionId::new(session_id)).await.map(|_| ())
+        self.service
+            .delete(&SessionId::new(session_id))
+            .await
+            .map(|_| ())
     }
 
     pub async fn bind_client(
@@ -67,7 +70,11 @@ impl SessionResolver {
         &self,
         session_id: &str,
     ) -> anyhow::Result<Option<CurrentSession>> {
-        match self.service.current(&SessionId::new(session_id), Utc::now().timestamp()).await? {
+        match self
+            .service
+            .current(&SessionId::new(session_id), Utc::now().timestamp())
+            .await?
+        {
             nazo_identity::SessionResolution::Present(session) => {
                 let auth_time = session.auth_time();
                 let amr = session.amr().to_vec();
@@ -81,7 +88,8 @@ impl SessionResolver {
                     logged_in_client_ids,
                 }))
             }
-            nazo_identity::SessionResolution::Missing | nazo_identity::SessionResolution::Invalidated => Ok(None),
+            nazo_identity::SessionResolution::Missing
+            | nazo_identity::SessionResolution::Invalidated => Ok(None),
         }
     }
 }

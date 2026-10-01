@@ -172,13 +172,9 @@ impl DeviceStore {
             keys.push(keys::device_user_code(user_code));
             arguments.push(device_hash.to_owned());
         }
-        let reply = command::eval_string(
-            &self.connection,
-            COMPARE_SET_DEVICE_SCRIPT,
-            keys,
-            arguments,
-        )
-        .await?;
+        let reply =
+            command::eval_string(&self.connection, COMPARE_SET_DEVICE_SCRIPT, keys, arguments)
+                .await?;
         Ok((parse_atomic_result(&reply)?, raw))
     }
 
@@ -290,13 +286,22 @@ impl DeviceStateStorePort for DeviceStore {
         replacement: &'a DeviceAuthorizationState,
     ) -> nazo_auth::DeviceStateFuture<'a, DeviceStateReplacement<Self::Version>> {
         Box::pin(async move {
-            let (result, raw) = self.replace_snapshot(
-                keys::device_code_hash(device_hash), version, replacement, None,
-            ).await.map_err(port_error)?;
+            let (result, raw) = self
+                .replace_snapshot(
+                    keys::device_code_hash(device_hash),
+                    version,
+                    replacement,
+                    None,
+                )
+                .await
+                .map_err(port_error)?;
             Ok(match result {
-                DeviceAtomicResult::Applied => DeviceStateReplacement::Applied(Box::new(
-                    StoredDeviceAuthorization::new(replacement.clone(), DeviceStateVersion::new(raw)),
-                )),
+                DeviceAtomicResult::Applied => {
+                    DeviceStateReplacement::Applied(Box::new(StoredDeviceAuthorization::new(
+                        replacement.clone(),
+                        DeviceStateVersion::new(raw),
+                    )))
+                }
                 DeviceAtomicResult::Conflict => DeviceStateReplacement::Conflict,
                 DeviceAtomicResult::DeadlineElapsed => DeviceStateReplacement::DeadlineElapsed,
             })

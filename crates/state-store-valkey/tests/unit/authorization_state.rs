@@ -18,9 +18,9 @@ fn unknown_cleanup_network_outcomes_remain_errors_without_claiming_a_phase() {
         );
     }
     assert_eq!(
-        map_discard_error(DecisionMaterialDiscardError::PushedRequest(Error::protocol(
-            "pushed request cleanup failed",
-        ))),
+        map_discard_error(DecisionMaterialDiscardError::PushedRequest(
+            Error::protocol("pushed request cleanup failed",)
+        )),
         DecisionMaterialDiscardError::PushedRequest(AuthorizationPortError::Unexpected)
     );
 }

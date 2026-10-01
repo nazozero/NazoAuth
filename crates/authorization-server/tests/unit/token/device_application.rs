@@ -6,9 +6,9 @@ use crate::sessions::CurrentSession;
 use crate::token::device::DeviceDecisionHandles;
 use nazo_auth::{
     AuthorizationPortError, DeviceAtomicResult, DeviceCreateResult, DeviceGrantFuture,
-    DeviceGrantRepositoryPort, DeviceGrantWrite, DeviceStateFuture, DeviceStateStorePort,
-    DeviceStateReplacement, DeviceStateVersion, RequestRateLimitBucket, RequestRateLimitFuture, RequestRateLimitPort,
-    StoredDeviceAuthorization,
+    DeviceGrantRepositoryPort, DeviceGrantWrite, DeviceStateFuture, DeviceStateReplacement,
+    DeviceStateStorePort, DeviceStateVersion, RequestRateLimitBucket, RequestRateLimitFuture,
+    RequestRateLimitPort, StoredDeviceAuthorization,
 };
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision, SnapshotStore};
 use std::sync::{Arc, Mutex};
@@ -60,7 +60,10 @@ impl Ports {
         replacement: &DeviceAuthorizationState,
     ) -> bool {
         let mut state = self.state.lock().unwrap();
-        if state.as_ref().map(|value| serde_json::to_string(value).unwrap()).as_deref()
+        if state
+            .as_ref()
+            .map(|value| serde_json::to_string(value).unwrap())
+            .as_deref()
             != Some(expected.comparison_token())
         {
             return false;
@@ -68,7 +71,6 @@ impl Ports {
         *state = Some(replacement.clone());
         true
     }
-
 }
 impl DeviceStateStorePort for Ports {
     type Version = DeviceStateVersion;
@@ -143,7 +145,8 @@ impl DeviceStateStorePort for Ports {
                 return Err(nazo_auth::DeviceStatePortError::Unavailable);
             }
             let written = StoredDeviceAuthorization::new(
-                state.clone(), DeviceStateVersion::new(serde_json::to_string(state).unwrap()),
+                state.clone(),
+                DeviceStateVersion::new(serde_json::to_string(state).unwrap()),
             );
             if let Some(competing) = self.after_recorded.lock().unwrap().take() {
                 *self.state.lock().unwrap() = Some(competing);
@@ -612,12 +615,38 @@ fn decision_rejects_invalid_requests_and_maps_dependency_failures() {
 fn prepared_device_decisions_preserve_audit_order_and_remove_only_redundant_reads() {
     futures_executor::block_on(async {
         for (decision, expected) in [
-            ("approve", vec!["resolve", "load", "audit_dynamic_readiness", "audit_intent", "claim", "load", "grant", "recorded", "complete", "outcome"]),
-            ("deny", vec!["resolve", "load", "audit_dynamic_readiness", "audit_intent", "complete", "outcome"]),
+            (
+                "approve",
+                vec![
+                    "resolve",
+                    "load",
+                    "audit_dynamic_readiness",
+                    "audit_intent",
+                    "claim",
+                    "load",
+                    "grant",
+                    "recorded",
+                    "complete",
+                    "outcome",
+                ],
+            ),
+            (
+                "deny",
+                vec![
+                    "resolve",
+                    "load",
+                    "audit_dynamic_readiness",
+                    "audit_intent",
+                    "complete",
+                    "outcome",
+                ],
+            ),
         ] {
             let (app, ports) = handles(Ok(Some(device_client())));
             pending(&ports);
-            app.decide("ABCD", decision, session(), "127.0.0.1").await.unwrap();
+            app.decide("ABCD", decision, session(), "127.0.0.1")
+                .await
+                .unwrap();
             assert_eq!(*ports.calls.lock().unwrap(), expected);
         }
     });
@@ -641,22 +670,49 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
             let (_, ports) = handles(Ok(Some(device_client())));
             pending(&ports);
             let service = ServerDeviceGrantService::new(ports.clone());
-            let prepared = service.prepare_decision("ABCD", Utc::now).await.unwrap().unwrap();
+            let prepared = service
+                .prepare_decision("ABCD", Utc::now)
+                .await
+                .unwrap()
+                .unwrap();
             *ports.mapping.lock().unwrap() = changed_mapping;
             assert!(matches!(
-                service.approve(prepared, device_approval(), &ports.client, ports.as_ref(), Utc::now).await,
+                service
+                    .approve(
+                        prepared,
+                        device_approval(),
+                        &ports.client,
+                        ports.as_ref(),
+                        Utc::now
+                    )
+                    .await,
                 Err(nazo_auth::DeviceDecisionFailure::Contended)
             ));
             assert!(!ports.calls.lock().unwrap().contains(&"grant"));
-            assert!(matches!(*ports.state.lock().unwrap(), Some(DeviceAuthorizationState::Pending { .. })));
+            assert!(matches!(
+                *ports.state.lock().unwrap(),
+                Some(DeviceAuthorizationState::Pending { .. })
+            ));
         }
         let (_, ports) = handles(Ok(Some(device_client())));
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
-        let prepared = service.prepare_decision("ABCD", Utc::now).await.unwrap().unwrap();
+        let prepared = service
+            .prepare_decision("ABCD", Utc::now)
+            .await
+            .unwrap()
+            .unwrap();
         let expired = prepared.payload().expires_at;
         assert!(matches!(
-            service.approve(prepared, device_approval(), &ports.client, ports.as_ref(), || expired).await,
+            service
+                .approve(
+                    prepared,
+                    device_approval(),
+                    &ports.client,
+                    ports.as_ref(),
+                    || expired
+                )
+                .await,
             Err(nazo_auth::DeviceDecisionFailure::Expired)
         ));
         assert!(!ports.calls.lock().unwrap().contains(&"claim"));
@@ -671,14 +727,38 @@ fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
             let (_, ports) = handles(Ok(Some(device_client())));
             pending(&ports);
             let service = ServerDeviceGrantService::new(ports.clone());
-            let prepared = service.prepare_decision("ABCD", Utc::now).await.unwrap().unwrap();
-            if let Some(DeviceAuthorizationState::Pending { payload, last_poll_at, .. }) = ports.state.lock().unwrap().as_mut() {
+            let prepared = service
+                .prepare_decision("ABCD", Utc::now)
+                .await
+                .unwrap()
+                .unwrap();
+            if let Some(DeviceAuthorizationState::Pending {
+                payload,
+                last_poll_at,
+                ..
+            }) = ports.state.lock().unwrap().as_mut()
+            {
                 *last_poll_at = Some(Utc::now());
-                if retarget { payload.scopes.push("changed-after-audit".into()); }
+                if retarget {
+                    payload.scopes.push("changed-after-audit".into());
+                }
             }
-            let result = service.approve(prepared, device_approval(), &ports.client, ports.as_ref(), Utc::now).await;
+            let result = service
+                .approve(
+                    prepared,
+                    device_approval(),
+                    &ports.client,
+                    ports.as_ref(),
+                    Utc::now,
+                )
+                .await;
             if retarget {
-                assert!(matches!(result, Err(nazo_auth::DeviceDecisionFailure::Storage(nazo_auth::DeviceStatePortError::CorruptData))));
+                assert!(matches!(
+                    result,
+                    Err(nazo_auth::DeviceDecisionFailure::Storage(
+                        nazo_auth::DeviceStatePortError::CorruptData
+                    ))
+                ));
                 assert!(!ports.calls.lock().unwrap().contains(&"grant"));
             } else {
                 result.unwrap();
@@ -697,16 +777,33 @@ fn device_claim_success_still_reloads_before_any_durable_grant_write() {
         let (_, ports) = handles(Ok(Some(device_client())));
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
-        let prepared = service.prepare_decision("ABCD", Utc::now).await.unwrap().unwrap();
+        let prepared = service
+            .prepare_decision("ABCD", Utc::now)
+            .await
+            .unwrap()
+            .unwrap();
         // Simulate another owner finishing while this owner was paused after its claim.
         *ports.after_claim.lock().unwrap() = Some(DeviceAuthorizationState::Approved {
-            payload: prepared.payload().clone(), approval: device_approval(), approved_at: Utc::now(),
+            payload: prepared.payload().clone(),
+            approval: device_approval(),
+            approved_at: Utc::now(),
         });
         assert!(matches!(
-            service.approve(prepared, device_approval(), &ports.client, ports.as_ref(), Utc::now).await,
+            service
+                .approve(
+                    prepared,
+                    device_approval(),
+                    &ports.client,
+                    ports.as_ref(),
+                    Utc::now
+                )
+                .await,
             Err(nazo_auth::DeviceDecisionFailure::AlreadyHandled)
         ));
-        assert_eq!(*ports.calls.lock().unwrap(), ["resolve", "load", "claim", "load"]);
+        assert_eq!(
+            *ports.calls.lock().unwrap(),
+            ["resolve", "load", "claim", "load"]
+        );
     });
 }
 
@@ -717,24 +814,52 @@ fn device_recorded_snapshot_is_version_fenced_and_unknown_writes_do_not_advance(
             let (app, ports) = handles(Ok(Some(device_client())));
             pending(&ports);
             *ports.failure.lock().unwrap() = failure;
-            assert_error(app.decide("ABCD", "approve", session(), "127.0.0.1").await.unwrap_err(), StatusCode::SERVICE_UNAVAILABLE, "server_error");
+            assert_error(
+                app.decide("ABCD", "approve", session(), "127.0.0.1")
+                    .await
+                    .unwrap_err(),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+            );
             let calls = ports.calls.lock().unwrap();
             assert!(!calls.contains(&"complete"));
             assert!(!calls.contains(&"outcome"));
-            assert_eq!(calls.iter().filter(|call| **call == "grant").count(), usize::from(failure == Failure::RecordedUnknown));
+            assert_eq!(
+                calls.iter().filter(|call| **call == "grant").count(),
+                usize::from(failure == Failure::RecordedUnknown)
+            );
         }
         let (_, ports) = handles(Ok(Some(device_client())));
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
-        let prepared = service.prepare_decision("ABCD", Utc::now).await.unwrap().unwrap();
+        let prepared = service
+            .prepare_decision("ABCD", Utc::now)
+            .await
+            .unwrap()
+            .unwrap();
         *ports.after_recorded.lock().unwrap() = Some(DeviceAuthorizationState::Approved {
-            payload: prepared.payload().clone(), approval: device_approval(), approved_at: Utc::now(),
+            payload: prepared.payload().clone(),
+            approval: device_approval(),
+            approved_at: Utc::now(),
         });
         assert!(matches!(
-            service.approve(prepared, device_approval(), &ports.client, ports.as_ref(), Utc::now).await,
+            service
+                .approve(
+                    prepared,
+                    device_approval(),
+                    &ports.client,
+                    ports.as_ref(),
+                    Utc::now
+                )
+                .await,
             Err(nazo_auth::DeviceDecisionFailure::AlreadyHandled)
         ));
-        assert_eq!(*ports.calls.lock().unwrap(), ["resolve", "load", "claim", "load", "grant", "recorded", "complete", "load"]);
+        assert_eq!(
+            *ports.calls.lock().unwrap(),
+            [
+                "resolve", "load", "claim", "load", "grant", "recorded", "complete", "load"
+            ]
+        );
     });
 }
 
@@ -744,15 +869,30 @@ fn device_recorded_snapshot_rechecks_expiry_before_final_cas() {
         let (_, ports) = handles(Ok(Some(device_client())));
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
-        let prepared = service.prepare_decision("ABCD", Utc::now).await.unwrap().unwrap();
+        let prepared = service
+            .prepare_decision("ABCD", Utc::now)
+            .await
+            .unwrap()
+            .unwrap();
         let now = prepared.payload().issued_at;
         let expires = prepared.payload().expires_at;
         let mut clock_calls = 0;
-        let result = service.approve(prepared, device_approval(), &ports.client, ports.as_ref(), || {
-            clock_calls += 1;
-            if clock_calls >= 3 { expires } else { now }
-        }).await;
-        assert!(matches!(result, Err(nazo_auth::DeviceDecisionFailure::Expired)));
+        let result = service
+            .approve(
+                prepared,
+                device_approval(),
+                &ports.client,
+                ports.as_ref(),
+                || {
+                    clock_calls += 1;
+                    if clock_calls >= 3 { expires } else { now }
+                },
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(nazo_auth::DeviceDecisionFailure::Expired)
+        ));
         let calls = ports.calls.lock().unwrap();
         assert_eq!(calls.iter().filter(|call| **call == "load").count(), 2);
         assert!(calls.contains(&"recorded"));

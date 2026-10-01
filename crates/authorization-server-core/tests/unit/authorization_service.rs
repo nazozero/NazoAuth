@@ -617,7 +617,9 @@ fn consent_cleanup_mismatch_does_not_attempt_par_cleanup() {
         *store.0.consent.lock().unwrap() = Some(consent(Uuid::from_u128(11), None));
 
         assert!(matches!(
-            service.discard_decision_material("request-1", &preview).await,
+            service
+                .discard_decision_material("request-1", &preview)
+                .await,
             Err(AuthorizationDecisionAdmissionError::ConsentMissing)
         ));
         assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);

@@ -72,14 +72,18 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         session_management_allowed,
         ttl_seconds,
     };
-    context.security_audit.ensure_transactional_ready().await.map_err(|error| {
-        tracing::error!(%error, "prompt-none authorization audit readiness failed");
-        OAuthEndpointError::json(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Authorization audit is unavailable.",
-        )
-    })?;
+    context
+        .security_audit
+        .ensure_transactional_ready()
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "prompt-none authorization audit readiness failed");
+            OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "Authorization audit is unavailable.",
+            )
+        })?;
     // Prompt-none shares the same durable decision fence as interactive
     // approval. Preparation/cache disposal cannot grant authorization.
     let mut intent_fields = audit_fields(&[
@@ -209,7 +213,10 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     }
     if payload.scopes.iter().any(|scope| scope == "openid") {
         let bound = match facts.session_id {
-            Some(session_id) => context.sessions.bind_client(session_id, &payload.client_id).await
+            Some(session_id) => context
+                .sessions
+                .bind_client(session_id, &payload.client_id)
+                .await
                 .map_err(|error| {
                     tracing::warn!(%error, "failed to bind silent RP login to OP browser session");
                     OAuthEndpointError::json(
@@ -233,7 +240,8 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
                     oidc_sid: None,
                     client_policy: Some(response_policy),
                 },
-            ).await;
+            )
+            .await;
         }
     }
     authorization_response_redirect_with_context(

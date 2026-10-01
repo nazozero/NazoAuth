@@ -219,7 +219,8 @@ mod real_userinfo_contract {
             token_subject: &'a str,
         ) -> TokenFuture<'a, Option<PreparedTokenSubject>> {
             self.calls.lock().unwrap().push("subject");
-            self.inner.active_subject_claims(tenant, user, token_subject)
+            self.inner
+                .active_subject_claims(tenant, user, token_subject)
         }
         fn single_use_redemption<'a>(
             &'a self,
