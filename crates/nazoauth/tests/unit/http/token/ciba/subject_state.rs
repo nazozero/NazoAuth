@@ -596,7 +596,12 @@ async fn ciba_subject_configuration_error_precedes_user_check_after_consumption(
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(response).await, "server_error");
     let service = ServerCibaService::new(Arc::new(CibaStore::new(&state.valkey_connection())));
-    assert!(service.load(&auth_req_id).await.unwrap().is_none());
+    assert!(
+        ServerCibaService::load(&service, &auth_req_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
     // Before subject-keyed preparation, the inactive user could win this
     // double-failure case with invalid_grant. Local configuration now wins,
     // but the already consumed authorization request is never restored.
