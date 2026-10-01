@@ -1,7 +1,8 @@
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationStateSnapshot, AuthorizationStateStorePort,
-    ConsentPayload, PushedAuthorizationRequest,
+    ConsentPayload, DecisionMaterialDiscardError, DecisionMaterialDiscardFuture,
+    PushedAuthorizationRequest,
 };
 
 use crate::{
@@ -105,6 +106,20 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
                 .compare_and_delete_consent(request_id, expected)
                 .await
                 .map_err(map_error)
+        })
+    }
+
+    fn discard_decision_material<'a>(
+        &'a self,
+        request_id: &'a str,
+        expected_consent: &'a str,
+        pushed_request: Option<(&'a str, &'a str)>,
+    ) -> DecisionMaterialDiscardFuture<'a> {
+        Box::pin(async move {
+            self.authorization
+                .discard_decision_material(request_id, expected_consent, pushed_request)
+                .await
+                .map_err(map_discard_error)
         })
     }
 
@@ -287,6 +302,19 @@ fn map_preparation_write(
     match outcome {
         AuthorizationPreparationWrite::Stored => Ok(()),
         AuthorizationPreparationWrite::Conflict => Err(AuthorizationPortError::Conflict),
+    }
+}
+
+fn map_discard_error(
+    error: DecisionMaterialDiscardError<Error>,
+) -> DecisionMaterialDiscardError {
+    match error {
+        DecisionMaterialDiscardError::ConsentOrUnknown(source) => {
+            DecisionMaterialDiscardError::ConsentOrUnknown(map_error(source))
+        }
+        DecisionMaterialDiscardError::PushedRequest(source) => {
+            DecisionMaterialDiscardError::PushedRequest(map_error(source))
+        }
     }
 }
 

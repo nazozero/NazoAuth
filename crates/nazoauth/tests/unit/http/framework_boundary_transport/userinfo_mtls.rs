@@ -212,13 +212,14 @@ mod real_userinfo_contract {
             self.calls.lock().unwrap().push("revocation");
             self.inner.access_token_revoked(tenant, claims)
         }
-        fn active_subject_claims(
-            &self,
+        fn active_subject_claims<'a>(
+            &'a self,
             tenant: Uuid,
             user: Uuid,
-        ) -> TokenFuture<'_, Option<PreparedTokenSubject>> {
+            token_subject: &'a str,
+        ) -> TokenFuture<'a, Option<PreparedTokenSubject>> {
             self.calls.lock().unwrap().push("subject");
-            self.inner.active_subject_claims(tenant, user)
+            self.inner.active_subject_claims(tenant, user, token_subject)
         }
         fn single_use_redemption<'a>(
             &'a self,

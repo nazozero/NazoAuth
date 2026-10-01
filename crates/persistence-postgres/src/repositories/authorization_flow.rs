@@ -228,18 +228,6 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
 }
 
 impl DeviceGrantRepositoryPort for AuthorizationFlowRepository {
-    fn client_by_id<'a>(
-        &'a self,
-        client_id: &'a str,
-    ) -> DeviceGrantFuture<'a, Option<OAuthClient>> {
-        Box::pin(async move {
-            self.clients
-                .by_client_id(self.tenant_id, client_id)
-                .await
-                .map_err(map_device_repository_error)
-        })
-    }
-
     fn upsert_grant<'a>(&'a self, write: DeviceGrantWrite<'a>) -> DeviceGrantFuture<'a, ()> {
         Box::pin(async move {
             if write.tenant_id != self.tenant_id {

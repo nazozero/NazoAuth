@@ -134,10 +134,12 @@ impl TokenRepositoryPort for CountingTokenRepository {
         &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
+        token_subject: &'a str,
     ) -> TokenFuture<'a, Option<nazo_auth::PreparedTokenSubject>> {
         self.active_subject_claims_calls
             .fetch_add(1, Ordering::SeqCst);
-        self.inner.active_subject_claims(tenant_id, user_id)
+        self.inner
+            .active_subject_claims(tenant_id, user_id, token_subject)
     }
 
     fn active_subject_id<'a>(

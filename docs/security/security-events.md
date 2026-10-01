@@ -20,7 +20,9 @@ required append commits before the business mutation, or in the same transaction
 may use `ensure_transactional_ready`: it retains the dynamic exporter-health gate
 and lets the append itself check writer capability. Authorization decisions,
 Device decisions, and CIBA creation/decisions use this path; a readiness or
-required-intent append failure prevents the business mutation. Fresh token
+required-intent append failure prevents the business mutation. Silent
+`prompt=none` authorization applies the same dynamic readiness gate before its
+atomic decision commit. Fresh token
 issuance without earlier authorization-code consumption or Native SSO persistence
 also uses it for no-refresh, normal rotation, and `PreserveExisting` policies.
 Other issuance shapes retain the full storage preflight.

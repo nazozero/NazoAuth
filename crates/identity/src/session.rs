@@ -17,6 +17,17 @@ pub fn valid_authentication_metadata(
         && oidc_sid.is_some_and(|sid| !sid.trim().is_empty())
 }
 
+/// High-impact administration requires an interactive MFA completed within five minutes.
+/// Future authentication times may be valid session metadata but are not completed step-ups.
+pub const ADMIN_MFA_MAX_AGE_SECONDS: i64 = 5 * 60;
+
+#[must_use]
+pub fn recent_interactive_mfa(auth_time: i64, amr: &[String], now: i64) -> bool {
+    (0..=ADMIN_MFA_MAX_AGE_SECONDS).contains(&now.saturating_sub(auth_time))
+        && amr.iter().any(|method| method == "mfa")
+        && amr.iter().any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
+}
+
 pub fn add_amr(amr: &mut Vec<String>, value: &str) {
     if !amr.iter().any(|method| method == value) {
         amr.push(value.to_owned());

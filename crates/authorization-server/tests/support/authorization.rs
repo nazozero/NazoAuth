@@ -65,7 +65,10 @@ pub struct Ports {
     pub stored_codes: Mutex<Vec<RecordedAuthorizationCode>>,
     pub consent: Mutex<Option<ConsentPayload>>,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
-    session: Result<Option<SessionSnapshot>, RepositoryError>,
+    pub session: Mutex<Result<Option<SessionSnapshot>, RepositoryError>>,
+    pub session_update_unavailable: AtomicBool,
+    pub session_cas_conflict: Mutex<Option<SessionSnapshot>>,
+    pub audit_transactional_unavailable: AtomicBool,
     calls: Mutex<Vec<&'static str>>,
     pub reauth_nonces: Mutex<HashMap<String, i64>>,
     pub reauth_unavailable: AtomicBool,
@@ -410,13 +413,18 @@ impl SessionStorePort for Ports {
         _session_id: &'a SessionId,
     ) -> RepositoryFuture<'a, Option<SessionSnapshot>> {
         self.record("session");
-        Box::pin(async { self.session.clone() })
+        Box::pin(async { self.session.lock().unwrap().clone() })
     }
     fn delete<'a>(
         &'a self,
         _session_id: &'a nazo_identity::session::SessionId,
     ) -> RepositoryFuture<'a, bool> {
-        panic!("unexpected SessionStorePort::delete call")
+        self.record("delete_session");
+        Box::pin(async {
+            let mut loaded = self.session.lock().unwrap();
+            let session = loaded.as_mut().map_err(|error| error.clone())?;
+            Ok(session.take().is_some())
+        })
     }
     fn rotate<'a>(
         &'a self,
@@ -431,10 +439,33 @@ impl SessionStorePort for Ports {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a nazo_identity::session::SessionId,
-        _expected: &'a nazo_identity::session::SessionSnapshot,
-        _replacement: &'a nazo_identity::session::SessionRecord,
+        expected: &'a nazo_identity::session::SessionSnapshot,
+        replacement: &'a nazo_identity::session::SessionRecord,
     ) -> RepositoryFuture<'a, nazo_identity::session::SessionUpdateOutcome> {
-        panic!("unexpected SessionStorePort::compare_and_set call")
+        self.record("session_compare_and_set");
+        Box::pin(async move {
+            use nazo_identity::session::SessionUpdateOutcome;
+            if self.session_update_unavailable.load(Ordering::SeqCst) {
+                return Err(RepositoryError::Unavailable);
+            }
+            let mut loaded = self.session.lock().unwrap();
+            let stored = loaded.as_mut().map_err(|error| error.clone())?;
+            if let Some(concurrent) = self.session_cas_conflict.lock().unwrap().take() {
+                *stored = Some(concurrent);
+                return Ok(SessionUpdateOutcome::Conflict);
+            }
+            let Some(current) = stored.as_ref() else {
+                return Ok(SessionUpdateOutcome::Missing);
+            };
+            if current.version() != expected.version() {
+                return Ok(SessionUpdateOutcome::Conflict);
+            }
+            *stored = Some(SessionSnapshot::new(
+                replacement.clone(),
+                SessionVersion::from_storage(Uuid::now_v7().as_bytes().to_vec().into_boxed_slice()),
+            ));
+            Ok(SessionUpdateOutcome::Applied)
+        })
     }
 }
 impl SessionAccountPort for Ports {
@@ -450,6 +481,15 @@ impl SessionAccountPort for Ports {
 impl SecurityAudit for Ports {
     fn ensure_storage(&self) -> AuditFuture<'_> {
         Box::pin(async { Ok(()) })
+    }
+    fn ensure_transactional_ready(&self) -> AuditFuture<'_> {
+        self.record("audit_transactional_ready");
+        Box::pin(async {
+            if self.audit_transactional_unavailable.load(Ordering::SeqCst) {
+                anyhow::bail!("required audit anchor is unavailable");
+            }
+            Ok(())
+        })
     }
     fn record(&self, _event: &str, _fields: Map<String, Value>) {}
     fn record_required<'a>(
@@ -601,7 +641,10 @@ impl Fixture {
             stored_codes: Mutex::new(Vec::new()),
             consent: Mutex::new(None),
             client,
-            session,
+            session: Mutex::new(session),
+            session_update_unavailable: AtomicBool::new(false),
+            session_cas_conflict: Mutex::new(None),
+            audit_transactional_unavailable: AtomicBool::new(false),
             calls: Mutex::new(Vec::new()),
             reauth_nonces: Mutex::new(HashMap::new()),
             reauth_unavailable: AtomicBool::new(false),

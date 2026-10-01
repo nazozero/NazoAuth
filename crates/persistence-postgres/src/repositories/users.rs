@@ -4,11 +4,11 @@ use crate::{
     get_conn,
     repositories::audit::insert_identity_security_event,
     rows::identity::{AuthenticationIdentityRow, PrincipalRow, PublicAccountRow, SubjectClaimsRow},
-    schema::{oauth_refresh_families, user_client_grants, users},
+    schema::{oauth_refresh_families, oauth_subject_bindings, user_client_grants, users},
 };
 use diesel::{
-    ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl, SelectableHelper,
-    sql_query, sql_types,
+    BoolExpressionMethods, ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl,
+    SelectableHelper, sql_query, sql_types,
 };
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
@@ -100,22 +100,49 @@ impl UserRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> Result<Option<(SubjectClaims, i64)>, RepositoryError> {
+        token_subject: &str,
+    ) -> Result<Option<(SubjectClaims, i64, bool)>, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        users::table
+        // Claims, their epoch and private-subject ownership must share one
+        // snapshot. Do not filter by owner: a different owner is a collision,
+        // not a missing binding. Public subjects need no binding lookup.
+        let private_subject = token_subject != user_id.as_uuid().to_string();
+        let bound_user = oauth_subject_bindings::table
+            .filter(oauth_subject_bindings::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(
+                oauth_subject_bindings::subject
+                    .eq(token_subject)
+                    .and::<_, sql_types::Bool>(private_subject),
+            )
+            .select(oauth_subject_bindings::user_id)
+            .single_value();
+        let snapshot = users::table
             .find(user_id.as_uuid())
             .filter(users::tenant_id.eq(tenant_id.as_uuid()))
             .filter(users::is_active.eq(true))
-            .select((SubjectClaimsRow::as_select(), users::access_token_epoch))
-            .first::<(SubjectClaimsRow, i64)>(&mut connection)
+            .select((
+                SubjectClaimsRow::as_select(),
+                users::access_token_epoch,
+                bound_user,
+            ))
+            .first::<(SubjectClaimsRow, i64, Option<Uuid>)>(&mut connection)
             .await
             .optional()
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-            .map(|(row, epoch)| identity::active_subject_claims(row).map(|claims| (claims, epoch)))
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+        snapshot
+            .map(|(row, epoch, bound_user)| {
+                let claims = identity::active_subject_claims(row)
+                    .map_err(|error| RepositoryError::Consistency(error.0))?;
+                if bound_user.is_some_and(|owner| owner != user_id.as_uuid()) {
+                    return Err(RepositoryError::Consistency(
+                        "subject ownership collision".to_owned(),
+                    ));
+                }
+                Ok((claims, epoch, bound_user.is_some()))
+            })
             .transpose()
-            .map_err(|error| RepositoryError::Consistency(error.0))
     }
 
     /// Narrow active-principal read: same tenant, same user, `is_active`, and

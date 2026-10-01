@@ -279,6 +279,15 @@ fn administrator_policy_requires_a_positive_admin_level() {
     }
 }
 
+fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
+    nazo_identity::session::valid_authentication_metadata(
+        payload.auth_time,
+        &payload.amr,
+        payload.oidc_sid.as_deref(),
+        now,
+    )
+}
+
 fn valid_payload() -> SessionPayload {
     SessionPayload {
         user_id: Uuid::now_v7(),
@@ -399,4 +408,19 @@ fn recent_admin_mfa_requires_a_fresh_interactive_factor() {
         "mfa".to_owned(),
     ];
     assert!(!recent_mfa_authentication(1_100, &future, 1_000));
+    assert!(!recent_mfa_authentication(1_001, &future, 1_000));
+    assert!(!recent_mfa_authentication(1_030, &future, 1_000));
+}
+
+#[test]
+fn resolver_delete_delegates_to_the_existing_session_store() {
+    let store = Arc::new(FakeSessionStore::new(Ok(Some(snapshot(false, Some("sid-1"))))));
+    let accounts = Arc::new(FakeAccounts::new(Ok(Some(account(true)))));
+    let resolver = resolver(store.clone(), accounts.clone());
+    block_on(resolver.delete_session("session-to-delete")).unwrap();
+    assert_eq!(
+        store.deleted.lock().unwrap().as_slice(),
+        &[SessionId::new("session-to-delete")]
+    );
+    assert!(accounts.lookups.lock().unwrap().is_empty());
 }

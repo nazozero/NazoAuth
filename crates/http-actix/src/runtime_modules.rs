@@ -1,6 +1,6 @@
 use std::{
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use actix_web::{
@@ -25,8 +25,6 @@ use crate::{
     oauth_error,
 };
 
-const MFA_STEP_UP_MAX_AGE: Duration = Duration::from_secs(5 * 60);
-const MFA_CLOCK_SKEW_SECONDS: i64 = 30;
 const MAX_REASON_CHARS: usize = 500;
 
 /// Focused dependencies for runtime-module administration endpoints.
@@ -243,14 +241,7 @@ fn admin_required() -> HttpResponse {
 }
 
 fn recent_mfa(session: &CurrentSession, now: i64) -> bool {
-    let max_age = i64::try_from(MFA_STEP_UP_MAX_AGE.as_secs()).expect("MFA max age fits i64");
-    let methods = session.amr();
-    methods.iter().any(|method| method == "mfa")
-        && methods
-            .iter()
-            .any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
-        && session.auth_time() <= now.saturating_add(MFA_CLOCK_SKEW_SECONDS)
-        && now.saturating_sub(session.auth_time()) <= max_age
+    nazo_identity::session::recent_interactive_mfa(session.auth_time(), session.amr(), now)
 }
 
 fn validated_reason(payload: &RuntimeModulePatch) -> Result<String, &'static str> {

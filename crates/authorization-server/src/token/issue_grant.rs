@@ -152,35 +152,13 @@ pub async fn issue_token_response(
     // Only OIDC claims construction consumes the subject profile; non-OIDC
     // user access tokens rely on the commit's principal lock recheck.
     let subject_claims_snapshot = if issue_includes_openid && let Some(user_id) = issue.user_id {
-        match issue.prepared_subject.take() {
-            Some(prepared) => {
-                if prepared.tenant_id != client.tenant_id
-                    || prepared.claims.subject.as_uuid() != user_id
-                {
-                    tracing::error!(
-                        "prepared subject snapshot does not match the issuance context"
-                    );
-                    mark_failed_authorization_code_if_needed(
-                        token_service,
-                        issue.authorization_code_hash.as_deref(),
-                        "token_subject_snapshot_mismatch",
-                        auth_code_ttl_seconds,
-                    )
-                    .await;
-                    return Err(OAuthEndpointError::token(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "server_error",
-                        "令牌签发失败.",
-                        false,
-                    ));
-                }
-                Some(prepared)
-            }
+        let prepared = match issue.prepared_subject.take() {
+            Some(prepared) => prepared,
             None => match token_service
-                .active_subject_claims(client.tenant_id, user_id)
+                .active_subject_claims(client.tenant_id, user_id, &issue.subject)
                 .await
             {
-                Ok(Some(claims)) => Some(claims),
+                Ok(Some(claims)) => claims,
                 Ok(None) => {
                     mark_failed_authorization_code_if_needed(
                         token_service,
@@ -213,7 +191,27 @@ pub async fn issue_token_response(
                     ));
                 }
             },
+        };
+        if prepared.tenant_id != client.tenant_id
+            || prepared.claims.subject.as_uuid() != user_id
+            || prepared.token_subject != issue.subject
+        {
+            tracing::error!("prepared subject snapshot does not match the issuance context");
+            mark_failed_authorization_code_if_needed(
+                token_service,
+                issue.authorization_code_hash.as_deref(),
+                "token_subject_snapshot_mismatch",
+                auth_code_ttl_seconds,
+            )
+            .await;
+            return Err(OAuthEndpointError::token(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                "令牌签发失败.",
+                false,
+            ));
         }
+        Some(prepared)
     } else {
         None
     };
@@ -225,16 +223,14 @@ pub async fn issue_token_response(
             user_epoch: None,
             subject_bound: false,
         }
-    } else if let Some(snapshot) = subject_claims_snapshot.as_ref()
-        && issue.subject == snapshot.claims.subject.as_uuid().to_string()
-    {
-        // OIDC already read the active subject and its version in one snapshot.
-        // Public subjects have no private binding to resolve; commit rechecks both
-        // principal versions under lock before making the signed tokens usable.
+    } else if let Some(snapshot) = subject_claims_snapshot.as_ref() {
+        // OIDC claims, their epoch and the exact subject's binding were read
+        // together. Never endorse old claims with a newer principal epoch.
+        // Commit still rechecks both principal versions under lock.
         nazo_auth::TokenPrincipalState {
             client_epoch: context.client_epoch,
             user_epoch: Some(snapshot.user_epoch),
-            subject_bound: false,
+            subject_bound: snapshot.subject_bound,
         }
     } else {
         match token_service

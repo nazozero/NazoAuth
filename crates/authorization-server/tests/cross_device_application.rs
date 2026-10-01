@@ -369,7 +369,6 @@ fn ciba_decision_persists_audit_intent_before_state_transition_and_result_audit(
                 "load",
                 "audit_dynamic_readiness",
                 "audit_intent",
-                "load",
                 "decide",
                 "audit_result"
             ]
@@ -423,7 +422,7 @@ fn ciba_decision_binds_expected_user_to_current_session() {
         assert_eq!(ports.state.lock().unwrap().status, CibaStatus::Pending);
         assert_eq!(
             ports.calls(),
-            ["load", "audit_dynamic_readiness", "audit_intent", "load"]
+            ["load", "audit_dynamic_readiness", "audit_intent"]
         );
         assert_eq!(
             ports.intents.lock().unwrap()[0]["expected_user_id"],

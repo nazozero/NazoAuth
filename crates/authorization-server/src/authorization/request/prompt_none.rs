@@ -72,6 +72,14 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         session_management_allowed,
         ttl_seconds,
     };
+    context.security_audit.ensure_transactional_ready().await.map_err(|error| {
+        tracing::error!(%error, "prompt-none authorization audit readiness failed");
+        OAuthEndpointError::json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Authorization audit is unavailable.",
+        )
+    })?;
     // Prompt-none shares the same durable decision fence as interactive
     // approval. Preparation/cache disposal cannot grant authorization.
     let mut intent_fields = audit_fields(&[
@@ -198,6 +206,35 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         .await
     {
         tracing::warn!(?error, "failed to discard committed PAR preparation");
+    }
+    if payload.scopes.iter().any(|scope| scope == "openid") {
+        let bound = match facts.session_id {
+            Some(session_id) => context.sessions.bind_client(session_id, &payload.client_id).await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to bind silent RP login to OP browser session");
+                    OAuthEndpointError::json(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "Session binding is unavailable.",
+                    )
+                })?,
+            None => false,
+        };
+        if !bound {
+            return authorization_response_redirect_with_context(
+                context,
+                AuthorizationResponseRedirect {
+                    redirect_uri: &payload.redirect_uri,
+                    client_id: &payload.client_id,
+                    response_mode: payload.response_mode.as_deref(),
+                    code: None,
+                    error: Some("login_required"),
+                    state: payload.state.as_deref(),
+                    oidc_sid: None,
+                    client_policy: Some(response_policy),
+                },
+            ).await;
+        }
     }
     authorization_response_redirect_with_context(
         context,

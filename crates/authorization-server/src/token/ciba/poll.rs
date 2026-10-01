@@ -224,13 +224,28 @@ async fn poll_and_issue_ciba(
             false,
         ));
     };
+    // Approved polling already consumed auth_req_id. Resolve the local subject
+    // before reading its binding; configuration errors therefore precede any
+    // subject-state error, without changing the one-shot consumption contract.
+    let subject = match ciba_subject_for_client(issuance.config, ciba.user_id, client) {
+        Ok(subject) => subject,
+        Err(error) => {
+            tracing::warn!(%error, "failed to compute CIBA subject");
+            return Err(OAuthEndpointError::token(
+                ProtocolStatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA failed.",
+                false,
+            ));
+        }
+    };
     // OIDC grants read the active subject claims once here and carry that
     // request-local snapshot into shared issuance. The snapshot is not the
     // final authority: the commit still revalidates the principal under its
     // lock. Non-OIDC CIBA grants keep the original active-user check.
     let prepared_subject = if ciba.scopes.iter().any(|scope| scope == "openid") {
         match token_service
-            .active_subject_claims(tenant_id, ciba.user_id)
+            .active_subject_claims(tenant_id, ciba.user_id, &subject)
             .await
         {
             Ok(Some(subject)) => Some(subject),
@@ -282,18 +297,6 @@ async fn poll_and_issue_ciba(
             }
         };
         None
-    };
-    let subject = match ciba_subject_for_client(issuance.config, ciba.user_id, client) {
-        Ok(subject) => subject,
-        Err(error) => {
-            tracing::warn!(%error, "failed to compute CIBA subject");
-            return Err(OAuthEndpointError::token(
-                ProtocolStatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "CIBA failed.",
-                false,
-            ));
-        }
     };
     let issue = ciba_token_issue(
         ciba.user_id,

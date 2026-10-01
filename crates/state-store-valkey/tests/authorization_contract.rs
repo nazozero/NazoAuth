@@ -1,16 +1,17 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use chrono::{TimeZone, Utc};
-use fred::interfaces::{ClientLike, KeysInterface};
-use fred::prelude::{Builder, Config};
+use fred::interfaces::{ClientLike, KeysInterface, LuaInterface};
+use fred::prelude::{Builder, Config, Expiration};
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationPortError, AuthorizationStateStorePort, CodePayload,
-    ConsentPayload, ConsumedAuthorizationCode, PushedAuthorizationRequest,
+    ConsentPayload, ConsumedAuthorizationCode, DecisionMaterialDiscardError,
+    DecisionMaterialDiscardOutcome, PushedAuthorizationRequest,
 };
 use nazo_identity::TenantId;
 use nazo_valkey::{
     AuthorizationCodeBegin, AuthorizationPreparationWrite, AuthorizationStateAdapter,
-    AuthorizationStore, AuthorizationTransition,
+    AuthorizationStore, AuthorizationTransition, ValkeyConnection,
 };
 use serde_json::json;
 
@@ -90,6 +91,329 @@ fn consent_payload(request_id: &str, user_id: uuid::Uuid) -> ConsentPayload {
         authorization_code_ttl_seconds: None,
         issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
         expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+    }
+}
+
+fn par_payload() -> PushedAuthorizationRequest {
+    PushedAuthorizationRequest {
+        client_id: "client-a".to_owned(),
+        params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
+        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+    }
+}
+
+#[tokio::test]
+async fn decision_cleanup_uses_raw_versions_and_supports_consent_without_par() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let connection = nazo_valkey::test_support::scoped_connection(inspector.clone());
+    let adapter: Arc<dyn AuthorizationStateStorePort> =
+        Arc::new(AuthorizationStateAdapter::new(&connection));
+    for include_par in [false, true] {
+        let request_id = uuid::Uuid::now_v7().to_string();
+        let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+        let consent = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+        let par = par_payload();
+        // Deliberately use different wire formatting from normal store writes.
+        // Only the observed bytes, never reserialized payloads, may be removed.
+        for (key, raw) in [
+            (
+                nazo_valkey::test_support::consent_storage_key(&request_id),
+                serde_json::to_string_pretty(&consent).unwrap(),
+            ),
+            (
+                nazo_valkey::test_support::par_storage_key(&request_uri),
+                serde_json::to_string_pretty(&par).unwrap(),
+            ),
+        ] {
+            inspector
+                .set::<(), _, _>(key, raw, Some(Expiration::EX(30)), None, false)
+                .await
+                .unwrap();
+        }
+        let consent = adapter.load_consent(&request_id).await.unwrap().unwrap();
+        let par = adapter.load_par(&request_uri).await.unwrap().unwrap();
+        let pushed_request = include_par.then_some((request_uri.as_str(), par.version.as_str()));
+        assert_eq!(
+            adapter
+                .discard_decision_material(&request_id, &consent.version, pushed_request)
+                .await,
+            Ok(DecisionMaterialDiscardOutcome::Discarded)
+        );
+        assert!(adapter.load_consent(&request_id).await.unwrap().is_none());
+        assert_eq!(
+            adapter.load_par(&request_uri).await.unwrap().is_none(),
+            include_par
+        );
+        assert_eq!(
+            adapter
+                .discard_decision_material(&request_id, &consent.version, pushed_request)
+                .await,
+            Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged)
+        );
+        if !include_par {
+            assert_eq!(
+                adapter.load_par(&request_uri).await.unwrap().unwrap().version,
+                par.version
+            );
+            assert!(
+                store
+                    .compare_and_delete_par(&request_uri, &par.version)
+                    .await
+                    .unwrap()
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn decision_cleanup_preserves_replacements_and_original_partial_cleanup_order() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    for change_consent in [false, true] {
+        for remove_instead in [false, true] {
+            let request_id = uuid::Uuid::now_v7().to_string();
+            let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+            let consent = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+            let par = par_payload();
+            assert_eq!(
+                store.store_consent(&request_id, &consent, 30).await.unwrap(),
+                AuthorizationPreparationWrite::Stored
+            );
+            assert_eq!(
+                store.store_par(&request_uri, &par, 30).await.unwrap(),
+                AuthorizationPreparationWrite::Stored
+            );
+            let consent_snapshot = store
+                .load_consent_snapshot(&request_id)
+                .await
+                .unwrap()
+                .unwrap();
+            let par_snapshot = store.load_par(&request_uri).await.unwrap().unwrap();
+            let (changed_key, replacement) = if change_consent {
+                (
+                    nazo_valkey::test_support::consent_storage_key(&request_id),
+                    serde_json::to_string_pretty(&consent).unwrap(),
+                )
+            } else {
+                (
+                    nazo_valkey::test_support::par_storage_key(&request_uri),
+                    serde_json::to_string_pretty(&par).unwrap(),
+                )
+            };
+            if remove_instead {
+                inspector.del::<i64, _>(&changed_key).await.unwrap();
+            } else {
+                inspector
+                    .set::<(), _, _>(
+                        &changed_key,
+                        &replacement,
+                        Some(Expiration::EX(30)),
+                        None,
+                        false,
+                    )
+                    .await
+                    .unwrap();
+            }
+            let outcome = store
+                .discard_decision_material(
+                    &request_id,
+                    &consent_snapshot.version,
+                    Some((&request_uri, &par_snapshot.version)),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                outcome,
+                if change_consent {
+                    DecisionMaterialDiscardOutcome::ConsentMissingOrChanged
+                } else {
+                    DecisionMaterialDiscardOutcome::ParMissingOrChanged
+                }
+            );
+            if change_consent {
+                assert_eq!(
+                    store.load_par(&request_uri).await.unwrap().unwrap().version,
+                    par_snapshot.version
+                );
+            } else {
+                assert!(
+                    store
+                        .load_consent_snapshot(&request_id)
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+            }
+            let current: Option<String> = inspector.get(&changed_key).await.unwrap();
+            assert_eq!(current, (!remove_instead).then_some(replacement));
+            if !remove_instead {
+                assert!((1..=30).contains(&inspector.ttl::<i64, _>(&changed_key).await.unwrap()));
+            }
+            inspector
+                .del::<i64, _>(vec![
+                    nazo_valkey::test_support::consent_storage_key(&request_id),
+                    nazo_valkey::test_support::par_storage_key(&request_uri),
+                ])
+                .await
+                .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn decision_cleanup_wrong_type_is_an_error_at_the_confirmed_stage() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let connection = nazo_valkey::test_support::scoped_connection(inspector.clone());
+    let adapter = AuthorizationStateAdapter::new(&connection);
+    for corrupt_consent in [false, true] {
+        let request_id = uuid::Uuid::now_v7().to_string();
+        let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+        adapter
+            .store_consent(
+                &request_id,
+                &consent_payload(&request_id, uuid::Uuid::from_u128(1)),
+                30,
+            )
+            .await
+            .unwrap();
+        adapter
+            .store_par(&request_uri, &par_payload(), 30)
+            .await
+            .unwrap();
+        let consent = adapter.load_consent(&request_id).await.unwrap().unwrap();
+        let par = adapter.load_par(&request_uri).await.unwrap().unwrap();
+        let key = if corrupt_consent {
+            nazo_valkey::test_support::consent_storage_key(&request_id)
+        } else {
+            nazo_valkey::test_support::par_storage_key(&request_uri)
+        };
+        inspector
+            .eval::<i64, _, _, _>(
+                "redis.call('DEL', KEYS[1]); \
+                 redis.call('LPUSH', KEYS[1], 'wrong-type'); \
+                 return redis.call('EXPIRE', KEYS[1], 30)",
+                vec![key.clone()],
+                Vec::<String>::new(),
+            )
+            .await
+            .unwrap();
+        let error = adapter
+            .discard_decision_material(
+                &request_id,
+                &consent.version,
+                Some((&request_uri, &par.version)),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error,
+            if corrupt_consent {
+                DecisionMaterialDiscardError::ConsentOrUnknown(AuthorizationPortError::Unexpected)
+            } else {
+                DecisionMaterialDiscardError::PushedRequest(AuthorizationPortError::Unexpected)
+            }
+        );
+        assert_eq!(inspector.exists::<i64, _>(&key).await.unwrap(), 1);
+        if corrupt_consent {
+            assert_eq!(
+                store.load_par(&request_uri).await.unwrap().unwrap().version,
+                par.version
+            );
+        } else {
+            assert!(
+                store
+                    .load_consent_snapshot(&request_id)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        inspector
+            .del::<i64, _>(vec![
+                nazo_valkey::test_support::consent_storage_key(&request_id),
+                nazo_valkey::test_support::par_storage_key(&request_uri),
+            ])
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn decision_cleanup_keeps_tenant_deployment_and_epoch_boundaries() {
+    let Some((_, inspector)) = setup().await else {
+        return;
+    };
+    let deployment = format!("cleanup-{}", uuid::Uuid::now_v7());
+    let other_deployment = format!("cleanup-other-{}", uuid::Uuid::now_v7());
+    let epoch = uuid::Uuid::now_v7();
+    let tenant = TenantId::new(uuid::Uuid::from_u128(0x700)).unwrap();
+    let other_tenant = TenantId::new(uuid::Uuid::from_u128(0x701)).unwrap();
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+    let consent = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+    let par = par_payload();
+    let mut adapters = Vec::new();
+    for (deployment, epoch, tenant) in [
+        (deployment.as_str(), epoch, tenant),
+        (deployment.as_str(), epoch, other_tenant),
+        (other_deployment.as_str(), epoch, tenant),
+        (deployment.as_str(), uuid::Uuid::now_v7(), tenant),
+    ] {
+        let connection = ValkeyConnection::from_existing_client(
+            inspector.clone(),
+            deployment,
+            epoch,
+            tenant,
+        )
+        .unwrap();
+        let adapter: Arc<dyn AuthorizationStateStorePort> =
+            Arc::new(AuthorizationStateAdapter::new(&connection));
+        adapter.store_consent(&request_id, &consent, 30).await.unwrap();
+        adapter.store_par(&request_uri, &par, 30).await.unwrap();
+        adapters.push(adapter);
+    }
+    let consent = adapters[0].load_consent(&request_id).await.unwrap().unwrap();
+    let par = adapters[0].load_par(&request_uri).await.unwrap().unwrap();
+    // All namespaces intentionally contain the same logical identities and bytes.
+    for (index, adapter) in adapters.iter().enumerate() {
+        assert_eq!(
+            adapter.load_consent(&request_id).await.unwrap().unwrap().version,
+            consent.version
+        );
+        assert_eq!(
+            adapter.load_par(&request_uri).await.unwrap().unwrap().version,
+            par.version
+        );
+        assert_eq!(
+            adapter
+                .discard_decision_material(
+                    &request_id,
+                    &consent.version,
+                    Some((&request_uri, &par.version)),
+                )
+                .await,
+            Ok(DecisionMaterialDiscardOutcome::Discarded)
+        );
+        assert!(adapter.load_consent(&request_id).await.unwrap().is_none());
+        assert!(adapter.load_par(&request_uri).await.unwrap().is_none());
+        for other in &adapters[index + 1..] {
+            assert_eq!(
+                other.load_consent(&request_id).await.unwrap().unwrap().version,
+                consent.version
+            );
+            assert_eq!(
+                other.load_par(&request_uri).await.unwrap().unwrap().version,
+                par.version
+            );
+        }
     }
 }
 

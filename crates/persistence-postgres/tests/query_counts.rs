@@ -944,6 +944,108 @@ async fn rf06_lost_response_successor_is_single_read() {
 }
 
 // ---------------------------------------------------------------------------
+// OIDC subject preparation: claims, epoch and binding in one read
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn oidc_subject_preparation_reads_claims_epoch_and_binding_once() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let seed = seed_principal(&database_url, tenant).await;
+    let other_user = Uuid::now_v7();
+    let public_subject = seed.user_id.to_string();
+    let private_subject = format!("qc-pairwise-{}", Uuid::now_v7());
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = TokenIssuanceRepository::new(pool);
+
+    for subject in [&public_subject, &private_subject] {
+        let (result, delta, acquires) = measure(
+            &counter,
+            repository.active_subject_claims(tenant_id, seed.user_id, subject),
+        )
+        .await;
+        let snapshot = result.unwrap().unwrap();
+        assert_eq!(snapshot.tenant_id, tenant_id);
+        assert_eq!(snapshot.claims.subject.as_uuid(), seed.user_id);
+        assert_eq!(snapshot.token_subject, *subject);
+        assert_eq!(snapshot.user_epoch, 0);
+        assert!(!snapshot.subject_bound);
+        assert_eq!(delta.data_queries, 1);
+        assert_eq!(acquires, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+
+    let mut connection = connect(&database_url).await;
+    seed_user(&mut connection, tenant, other_user).await;
+    sql_query("INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Text, _>(&private_subject)
+        .bind::<sql_types::Uuid, _>(seed.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("UPDATE users SET access_token_epoch = 7 WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.active_subject_claims(tenant_id, seed.user_id, &private_subject),
+    )
+    .await;
+    let snapshot = result.unwrap().unwrap();
+    assert!(snapshot.subject_bound);
+    assert_eq!(snapshot.user_epoch, 7);
+    assert_eq!(delta.data_queries, 1);
+    assert_eq!(acquires, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+
+    // The binding is looked up by tenant and subject, never pre-filtered by
+    // the requested user: a different owner must be a consistency failure.
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.active_subject_claims(tenant_id, other_user, &private_subject),
+    )
+    .await;
+    assert!(matches!(result, Err(nazo_auth::TokenPortError::CorruptData)));
+    assert_eq!(delta.data_queries, 1);
+    assert_eq!(acquires, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.active_subject_claims(Uuid::now_v7(), seed.user_id, &private_subject),
+    )
+    .await;
+    assert!(result.unwrap().is_none());
+    assert_eq!(delta.data_queries, 1);
+    assert_eq!(acquires, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+
+    sql_query("DELETE FROM users WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(other_user)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    cleanup_seed(&database_url, tenant, &seed).await;
+}
+
+// ---------------------------------------------------------------------------
 // UI-01: userinfo snapshot
 // ---------------------------------------------------------------------------
 

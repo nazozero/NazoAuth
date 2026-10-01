@@ -325,3 +325,18 @@ async fn step_up_builds_a_fresh_session_and_csrf_pair_for_atomic_rotation() {
     assert!(!call.replacement.pending_mfa());
     assert_eq!(call.replacement.amr(), ["password", "totp", "mfa"]);
 }
+
+#[test]
+fn recent_interactive_mfa_has_one_strict_time_and_factor_policy() {
+    let now = 10_000;
+    let amr = vec!["mfa".to_owned(), "otp".to_owned()];
+    for age in [0, 1, 299, 300] {
+        assert!(recent_interactive_mfa(now - age, &amr, now));
+    }
+    for age in [-31, -30, -1, 301] {
+        assert!(!recent_interactive_mfa(now - age, &amr, now));
+    }
+    assert!(!recent_interactive_mfa(now, &["mfa".to_owned()], now));
+    assert!(!recent_interactive_mfa(now, &["otp".to_owned()], now));
+    assert!(recent_interactive_mfa(now, &["mfa".to_owned(), "recovery_code".to_owned()], now));
+}

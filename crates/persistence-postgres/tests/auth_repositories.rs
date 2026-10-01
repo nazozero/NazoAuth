@@ -753,6 +753,57 @@ async fn principal_snapshot_reuses_prepared_query_without_caching_security_state
     );
 }
 
+#[tokio::test]
+async fn oidc_subject_snapshot_reuses_statement_but_refreshes_epoch_and_binding() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let public_subject = fixture.user_id.to_string();
+    let private_subject = format!("prepared-oidc-{}", Uuid::now_v7());
+    for subject in [&public_subject, &private_subject] {
+        let snapshot = repository
+            .active_subject_claims(tenant_id, fixture.user_id, subject)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(snapshot.token_subject, *subject);
+        assert!(!snapshot.subject_bound);
+    }
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET access_token_epoch = 9 WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<Text, _>(&private_subject)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let current = repository
+        .active_subject_claims(tenant_id, fixture.user_id, &private_subject)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.user_epoch, 9);
+    assert!(current.subject_bound);
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%pg_prepared_statements%'")
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        prepared.count, 1,
+        "public/private subjects must share a prepared query, never cached authority"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn issuance_commits_complete_audit_payloads_and_pending_events_for_users_rotation_and_reuse()
 {

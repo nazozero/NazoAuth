@@ -82,6 +82,7 @@ pub use authorization_service::{
     AuthorizationPortError, AuthorizationRateDimension, AuthorizationRepositoryPort,
     AuthorizationResponseSignInput, AuthorizationResponseSignerPort, AuthorizationService,
     AuthorizationStateSnapshot, AuthorizationStateStorePort, ClientAuthenticationSnapshot,
+    DecisionMaterialDiscardError, DecisionMaterialDiscardFuture, DecisionMaterialDiscardOutcome,
     PreparedAuthorizationCode, StoredAuthorizationGrant, prepare_authorization_code,
     pushed_authorization_request_digest, stored_grant_covers_requested_authorization,
 };
@@ -90,7 +91,7 @@ pub use ciba::{
     CibaDecision, CibaDecisionEvaluation, CibaDecisionFailure, CibaPingNotification,
     CibaPingNotificationStatus, CibaPollCommit, CibaPollFailure, CibaPollTransition,
     CibaRequestState, CibaService, CibaStateFuture, CibaStatePortError, CibaStateStorePort,
-    CibaStateVersion, CibaStatus, CibaStoredRequest, ciba_retention_deadline,
+    CibaStateVersion, CibaStatus, CibaStoredRequest, PreparedCibaDecision, ciba_retention_deadline,
     evaluate_ciba_decision, evaluate_ciba_poll,
 };
 pub use ciba_ping::{
@@ -132,7 +133,8 @@ pub use device::{
     DeviceAuthorizationState, DeviceCreateFailure, DeviceCreateResult, DeviceDecisionFailure,
     DeviceGrantFuture, DeviceGrantPortError, DeviceGrantRepositoryPort, DeviceGrantService,
     DeviceGrantWrite, DevicePollCommit, DevicePollFailure, DevicePollTransition, DeviceStateFuture,
-    DeviceStatePortError, DeviceStateStorePort, DeviceStateVersion, StoredDeviceAuthorization,
+    DeviceStatePortError, DeviceStateReplacement, DeviceStateStorePort, DeviceStateVersion,
+    PreparedDeviceDecision, StoredDeviceAuthorization,
     device_authorization_payload, device_authorization_request_payload, evaluate_device_poll,
 };
 pub use dpop::{
