@@ -495,8 +495,7 @@ fn prompt_none_required_audit_failure_prevents_decision_code_and_session_mutatio
         prompt_none_payload(),
         &nazo_identity::SessionId::new("session-1"),
     )
-    .err()
-    .expect("required audit failure must not return an authorization code");
+    .expect_err("required audit failure must not return an authorization code");
     assert_prompt_none_error(error, http::StatusCode::SERVICE_UNAVAILABLE, "server_error");
     assert_eq!(fixture.ports.calls(), ["audit_transactional_ready"]);
     assert!(fixture.ports.decisions.lock().unwrap().facts.is_empty());
@@ -615,8 +614,7 @@ fn prompt_none_session_binding_failure_never_returns_a_code_or_compensates_the_d
             payload,
             &nazo_identity::SessionId::new("session-1"),
         )
-        .err()
-        .expect("binding failure must not expose the issued code in a response");
+        .expect_err("binding failure must not expose the issued code in a response");
         assert_prompt_none_error(error, http::StatusCode::SERVICE_UNAVAILABLE, "server_error");
         assert_eq!(fixture.ports.decisions.lock().unwrap().facts.len(), 1);
         assert_eq!(fixture.ports.stored_codes.lock().unwrap().len(), 1);
