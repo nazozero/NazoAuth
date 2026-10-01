@@ -190,9 +190,15 @@ impl TokenRepository {
         prepared_contract: Option<&PreparedRefreshContract>,
     ) -> Result<RefreshTokenPersistResult, RepositoryError> {
         validate_refresh_commit(refresh)?;
-        persist_refresh_token_inner(connection, refresh, client_type, issuance_id, prepared_contract)
-            .await
-            .map_err(map_error)
+        persist_refresh_token_inner(
+            connection,
+            refresh,
+            client_type,
+            issuance_id,
+            prepared_contract,
+        )
+        .await
+        .map_err(map_error)
     }
 
     pub async fn inspect_lost_response_successor(

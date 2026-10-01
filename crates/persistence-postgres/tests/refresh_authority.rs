@@ -905,7 +905,10 @@ async fn public_unbound_replay_after_65_rotations_revokes_only_its_family() {
             .unwrap()
             .is_none()
     );
-    assert_eq!(state(&mut connection, current.token_family_id).await, before);
+    assert_eq!(
+        state(&mut connection, current.token_family_id).await,
+        before
+    );
     let original = lookup(&url, &original_raw).await;
     assert!(original.expires_at > Utc::now());
     assert!(original.revoked_at.is_some());
@@ -971,7 +974,13 @@ async fn confidential_and_public_sender_bound_families_keep_64_proofs() {
         assert_eq!(family.spent, nazo_auth::MAX_SPENT_PROOFS_PER_REFRESH_FAMILY);
         assert!(family.family["revoked_at"].is_null());
         let tokens = TokenRepository::new(create_pool(&url, 1).unwrap());
-        assert!(tokens.by_raw_refresh_token(tenant(), &first_raw).await.unwrap().is_none());
+        assert!(
+            tokens
+                .by_raw_refresh_token(tenant(), &first_raw)
+                .await
+                .unwrap()
+                .is_none()
+        );
         let recovered = tokens
             .inspect_lost_response_successor(&predecessor, fixture.client_id, Utc::now())
             .await
@@ -981,7 +990,10 @@ async fn confidential_and_public_sender_bound_families_keep_64_proofs() {
             binding.map(|_| current.id),
             "only a real sender-bound direct predecessor gets lost-response recovery"
         );
-        assert_eq!(state(&mut connection, current.token_family_id).await, family);
+        assert_eq!(
+            state(&mut connection, current.token_family_id).await,
+            family
+        );
     }
 }
 
@@ -999,7 +1011,10 @@ async fn public_proof_cleanup_respects_original_expiry_without_ending_live_famil
     let mut recent_raw = String::new();
     for _ in 0..2 {
         let (input, raw) = rotation(&fixture, &current, &[A]);
-        assert_eq!(repository.commit_token_issuance(input).await.unwrap(), CommitTokenIssuanceResult::Committed);
+        assert_eq!(
+            repository.commit_token_issuance(input).await.unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
         recent_raw = raw.clone();
         current = lookup(&url, &raw).await;
     }
@@ -1017,11 +1032,22 @@ async fn public_proof_cleanup_respects_original_expiry_without_ending_live_famil
     let tokens = TokenRepository::new(create_pool(&url, 1).unwrap());
     for _ in 0..64 {
         maintenance.cleanup_batch().await.unwrap();
-        if tokens.by_raw_refresh_token(tenant(), &first_raw).await.unwrap().is_none() {
+        if tokens
+            .by_raw_refresh_token(tenant(), &first_raw)
+            .await
+            .unwrap()
+            .is_none()
+        {
             break;
         }
     }
-    assert!(tokens.by_raw_refresh_token(tenant(), &first_raw).await.unwrap().is_none());
+    assert!(
+        tokens
+            .by_raw_refresh_token(tenant(), &first_raw)
+            .await
+            .unwrap()
+            .is_none()
+    );
     let after = state(&mut connection, current.token_family_id).await;
     assert_eq!(after.spent, 1);
     assert!(after.family["revoked_at"].is_null());
@@ -1038,15 +1064,13 @@ async fn authentication_class_downgrade_serializes_with_rotation_in_both_orders(
         let mut coordinator = AsyncPgConnection::establish(&url).await.unwrap();
         let suffix = Uuid::now_v7().simple().to_string();
         let rotate_app = format!("downgrade-rotate-{suffix}");
-        let repository = TokenIssuanceRepository::new(
-            create_pool(tagged_url(&url, &rotate_app), 1).unwrap(),
-        );
+        let repository =
+            TokenIssuanceRepository::new(create_pool(tagged_url(&url, &rotate_app), 1).unwrap());
         if downgrade_first {
             coordinator.batch_execute("BEGIN").await.unwrap();
             make_public(&mut coordinator, fixture.client_id).await;
-            let mut rotating = tokio::spawn(async move {
-                repository.commit_token_issuance(input).await
-            });
+            let mut rotating =
+                tokio::spawn(async move { repository.commit_token_issuance(input).await });
             let mut observer = AsyncPgConnection::establish(&url).await.unwrap();
             wait_for_lock(&mut observer, &rotate_app, &mut rotating).await;
             coordinator.batch_execute("COMMIT").await.unwrap();
@@ -1068,10 +1092,11 @@ async fn authentication_class_downgrade_serializes_with_rotation_in_both_orders(
             )).await.unwrap();
             sql_query("SELECT pg_advisory_lock($1)")
                 .bind::<sql_types::BigInt, _>(gate_key)
-                .execute(&mut coordinator).await.unwrap();
-            let mut rotating = tokio::spawn(async move {
-                repository.commit_token_issuance(input).await
-            });
+                .execute(&mut coordinator)
+                .await
+                .unwrap();
+            let mut rotating =
+                tokio::spawn(async move { repository.commit_token_issuance(input).await });
             wait_for_lock(&mut coordinator, &rotate_app, &mut rotating).await;
             let downgrade_app = format!("downgrade-mutate-{suffix}");
             let downgrade_url = tagged_url(&url, &downgrade_app);
@@ -1083,24 +1108,38 @@ async fn authentication_class_downgrade_serializes_with_rotation_in_both_orders(
             wait_for_lock(&mut coordinator, &downgrade_app, &mut mutating).await;
             sql_query("SELECT pg_advisory_unlock($1)")
                 .bind::<sql_types::BigInt, _>(gate_key)
-                .execute(&mut coordinator).await.unwrap();
-            assert_eq!(rotating.await.unwrap().unwrap(), CommitTokenIssuanceResult::Committed);
+                .execute(&mut coordinator)
+                .await
+                .unwrap();
+            assert_eq!(
+                rotating.await.unwrap().unwrap(),
+                CommitTokenIssuanceResult::Committed
+            );
             mutating.await.unwrap();
-            coordinator.batch_execute(&format!(
-                "DROP TRIGGER {gate} ON security_audit_events; DROP FUNCTION {gate}();",
-            )).await.unwrap();
+            coordinator
+                .batch_execute(&format!(
+                    "DROP TRIGGER {gate} ON security_audit_events; DROP FUNCTION {gate}();",
+                ))
+                .await
+                .unwrap();
             assert!(lookup(&url, &successor_raw).await.revoked_at.is_some());
         }
         let after = state(&mut coordinator, source.token_family_id).await;
         assert!(!after.family["revoked_at"].is_null());
-        assert!(after.family["reuse_detected_at"].is_null(), "a class change is not evidence of replay");
+        assert!(
+            after.family["reuse_detected_at"].is_null(),
+            "a class change is not evidence of replay"
+        );
         let audit = sql_query(
             "SELECT count(*) AS count FROM security_audit_events \
              WHERE event_type = 'refresh_family_security_revoked' \
              AND payload->>'token_family_id' = $1 \
              AND payload->>'reason' = 'client_authentication_class_downgrade'",
-        ).bind::<sql_types::Text, _>(source.token_family_id.to_string())
-            .get_result::<Count>(&mut coordinator).await.unwrap();
+        )
+        .bind::<sql_types::Text, _>(source.token_family_id.to_string())
+        .get_result::<Count>(&mut coordinator)
+        .await
+        .unwrap();
         assert_eq!(audit.count, 1);
     }
 }
@@ -1110,19 +1149,25 @@ async fn public_retention_upgrade_invalidates_unprovable_history_without_revivin
     let Some(base) = database_url() else { return };
     let name = format!("refresh_retention_{}", Uuid::now_v7().simple());
     let mut admin = AsyncPgConnection::establish(&base).await.unwrap();
-    admin.batch_execute(&format!("CREATE DATABASE {name}")).await.unwrap();
+    admin
+        .batch_execute(&format!("CREATE DATABASE {name}"))
+        .await
+        .unwrap();
     let mut parsed = url::Url::parse(&base).unwrap();
     parsed.set_path(&name);
     let url = parsed.to_string();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let mut migrations: Vec<_> = std::fs::read_dir(dir).unwrap()
+    let mut migrations: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
         .map(|entry| entry.unwrap().path())
-        .filter(|path| path.is_dir() && path.join("up.sql").is_file()).collect();
+        .filter(|path| path.is_dir() && path.join("up.sql").is_file())
+        .collect();
     migrations.sort();
-    let cutover = migrations.iter().position(|path|
-        path.file_name().unwrap() == "20261001000500_refresh_replay_retention"
-    ).expect("public replay retention migration must exist");
+    let cutover = migrations
+        .iter()
+        .position(|path| path.file_name().unwrap() == "20261001000500_refresh_replay_retention")
+        .expect("public replay retention migration must exist");
     for migration in &migrations[..cutover] {
         apply_migration(&mut connection, migration).await;
     }
@@ -1133,13 +1178,18 @@ async fn public_retention_upgrade_invalidates_unprovable_history_without_revivin
     let (old_raw, old) = issue_at(&url, &public, Utc::now()).await;
     let repository = TokenIssuanceRepository::new(create_pool(&url, 1).unwrap());
     let (rotated, latest_raw) = rotation(&public, &old, &[A]);
-    assert_eq!(repository.commit_token_issuance(rotated).await.unwrap(), CommitTokenIssuanceResult::Committed);
+    assert_eq!(
+        repository.commit_token_issuance(rotated).await.unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
     let legacy_current = lookup(&url, &latest_raw).await;
     // This deliberately models already-lost pre-upgrade evidence; the actual
     // migration must revoke the family, never try to recreate the opaque proof.
     sql_query("DELETE FROM oauth_refresh_spent_tokens WHERE token_family_id = $1")
         .bind::<sql_types::Uuid, _>(old.token_family_id)
-        .execute(&mut connection).await.unwrap();
+        .execute(&mut connection)
+        .await
+        .unwrap();
     let (_, public_no_proofs) = issue_at(&url, &public, Utc::now()).await;
     let (_, dpop) = issue_with_binding(&url, &public, Some("dpop")).await;
     let (_, mtls) = issue_with_binding(&url, &public, Some("mtls")).await;
@@ -1158,22 +1208,45 @@ async fn public_retention_upgrade_invalidates_unprovable_history_without_revivin
              WHERE event_type = 'refresh_family_security_revoked' \
              AND payload->>'token_family_id' = $1 \
              AND payload->>'reason' = 'public_replay_retention_cutover'",
-        ).bind::<sql_types::Text, _>(source.token_family_id.to_string())
-            .get_result::<Count>(&mut connection).await.unwrap();
+        )
+        .bind::<sql_types::Text, _>(source.token_family_id.to_string())
+        .get_result::<Count>(&mut connection)
+        .await
+        .unwrap();
         assert_eq!(audit.count, 1);
     }
     let (blocked_after_upgrade, _) = rotation(&public, &legacy_current, &[A]);
     assert_eq!(
-        repository.commit_token_issuance(blocked_after_upgrade).await.unwrap(),
+        repository
+            .commit_token_issuance(blocked_after_upgrade)
+            .await
+            .unwrap(),
         CommitTokenIssuanceResult::RefreshGrantUnavailable
     );
-    assert_eq!(state(&mut connection, dpop.token_family_id).await, dpop_before);
-    assert_eq!(state(&mut connection, mtls.token_family_id).await, mtls_before);
-    assert_eq!(state(&mut connection, confidential_source.token_family_id).await, confidential_before);
-    assert!(TokenRepository::new(create_pool(&url, 1).unwrap())
-        .by_raw_refresh_token(tenant(), &old_raw).await.unwrap().is_none());
+    assert_eq!(
+        state(&mut connection, dpop.token_family_id).await,
+        dpop_before
+    );
+    assert_eq!(
+        state(&mut connection, mtls.token_family_id).await,
+        mtls_before
+    );
+    assert_eq!(
+        state(&mut connection, confidential_source.token_family_id).await,
+        confidential_before
+    );
+    assert!(
+        TokenRepository::new(create_pool(&url, 1).unwrap())
+            .by_raw_refresh_token(tenant(), &old_raw)
+            .await
+            .unwrap()
+            .is_none()
+    );
     let (_, fresh_public) = issue_at(&url, &public, Utc::now()).await;
-    assert!(fresh_public.revoked_at.is_none(), "post-cutover grants start with complete proof retention");
+    assert!(
+        fresh_public.revoked_at.is_none(),
+        "post-cutover grants start with complete proof retention"
+    );
 
     // Existing client mutation also traverses the invoker-rights tenant-owner
     // guard, whose only additional relation read is tenant_resource_bindings.
@@ -1189,26 +1262,49 @@ async fn public_retention_upgrade_invalidates_unprovable_history_without_revivin
     )).await.unwrap();
     make_public(&mut connection, confidential.client_id).await;
     connection.batch_execute("RESET ROLE").await.unwrap();
-    assert!(!state(&mut connection, confidential_source.token_family_id).await.family["revoked_at"].is_null());
-    connection.batch_execute(&format!("DROP OWNED BY {role}; DROP ROLE {role};")).await.unwrap();
+    assert!(
+        !state(&mut connection, confidential_source.token_family_id)
+            .await
+            .family["revoked_at"]
+            .is_null()
+    );
+    connection
+        .batch_execute(&format!("DROP OWNED BY {role}; DROP ROLE {role};"))
+        .await
+        .unwrap();
 
     let revoked_before_down = state(&mut connection, old.token_family_id).await;
     let down = std::fs::read_to_string(migrations[cutover].join("down.sql")).unwrap();
     connection.batch_execute(&down).await.unwrap();
-    assert_eq!(state(&mut connection, old.token_family_id).await, revoked_before_down);
+    assert_eq!(
+        state(&mut connection, old.token_family_id).await,
+        revoked_before_down
+    );
     let (blocked_after_down, _) = rotation(&public, &legacy_current, &[A]);
     assert_eq!(
-        repository.commit_token_issuance(blocked_after_down).await.unwrap(),
+        repository
+            .commit_token_issuance(blocked_after_down)
+            .await
+            .unwrap(),
         CommitTokenIssuanceResult::RefreshGrantUnavailable
     );
     let audit = sql_query(
         "SELECT count(*) AS count FROM security_audit_events \
          WHERE event_type = 'refresh_family_security_revoked'",
-    ).get_result::<Count>(&mut connection).await.unwrap();
-    assert_eq!(audit.count, 3, "rollback preserves both cutover and downgrade evidence");
+    )
+    .get_result::<Count>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        audit.count, 3,
+        "rollback preserves both cutover and downgrade evidence"
+    );
     drop(repository);
     drop(connection);
-    admin.batch_execute(&format!("DROP DATABASE {name} WITH (FORCE)")).await.unwrap();
+    admin
+        .batch_execute(&format!("DROP DATABASE {name} WITH (FORCE)"))
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1237,9 +1333,12 @@ async fn authentication_class_downgrade_rolls_back_when_required_audit_fails() {
     ).bind::<sql_types::Uuid, _>(fixture.client_id)
         .get_result::<Count>(&mut connection).await.unwrap();
     assert_eq!(unchanged.count, 1);
-    connection.batch_execute(&format!(
-        "DROP TRIGGER {gate} ON security_audit_events; DROP FUNCTION {gate}();",
-    )).await.unwrap();
+    connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {gate} ON security_audit_events; DROP FUNCTION {gate}();",
+        ))
+        .await
+        .unwrap();
     make_public(&mut connection, fixture.client_id).await;
     assert!(!state(&mut connection, source.token_family_id).await.family["revoked_at"].is_null());
 }
