@@ -51,8 +51,11 @@ pub(super) fn refresh_issue_matches_source(
     client: &ClientRow,
     issuer: &str,
 ) -> bool {
-    let Some(source) = issue.refresh_authority.as_ref() else { return true; };
-    let Some(mut context) = refresh_authentication_context(issue, issuer, &client.client_id, None) else {
+    let Some(source) = issue.refresh_authority.as_ref() else {
+        return true;
+    };
+    let Some(mut context) = refresh_authentication_context(issue, issuer, &client.client_id, None)
+    else {
         return false;
     };
     context.nonce = None;
@@ -67,8 +70,14 @@ pub(super) fn refresh_issue_matches_source(
         && nazo_auth::is_subset(&issue.audiences, &source.current_audiences)
         && issue.refresh_id_token_sid.as_ref() == Some(&source.id_token_sid)
         && issue.actor.is_none()
-        && source.dpop_jkt.as_ref().is_none_or(|binding| issue.dpop_jkt.as_ref() == Some(binding))
-        && source.mtls_x5t_s256.as_ref().is_none_or(|binding| issue.mtls_x5t_s256.as_ref() == Some(binding))
+        && source
+            .dpop_jkt
+            .as_ref()
+            .is_none_or(|binding| issue.dpop_jkt.as_ref() == Some(binding))
+        && source
+            .mtls_x5t_s256
+            .as_ref()
+            .is_none_or(|binding| issue.mtls_x5t_s256.as_ref() == Some(binding))
         && issue.refresh_token_dpop_jkt == source.dpop_jkt
         && issue.refresh_token_mtls_x5t_s256 == source.mtls_x5t_s256
         && issue.refresh_token_client_attestation_jkt == source.client_attestation_jkt
@@ -109,7 +118,11 @@ pub(super) fn prepare_refresh_token(
         audiences: if issue.refresh_authority.is_some() {
             issue.audiences.clone()
         } else {
-            issue.refresh_grant_audiences.as_ref().unwrap_or(&issue.audiences).clone()
+            issue
+                .refresh_grant_audiences
+                .as_ref()
+                .unwrap_or(&issue.audiences)
+                .clone()
         },
         issued_at: refresh.issued_at,
         expires_at: refresh.expires_at,

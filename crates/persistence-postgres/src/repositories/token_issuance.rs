@@ -5,9 +5,9 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken, RefreshTokenCommit,
-    RefreshTokenPersistResult, SingleUseRedemption, TokenFuture, TokenIssuanceMode, TokenPortError,
-    TokenRepositoryPort, TokenRevocation, UserinfoSnapshot,
+    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken,
+    RefreshTokenCommit, RefreshTokenPersistResult, SingleUseRedemption, TokenFuture,
+    TokenIssuanceMode, TokenPortError, TokenRepositoryPort, TokenRevocation, UserinfoSnapshot,
 };
 use nazo_identity::{TenantId, UserId, ports::RepositoryError};
 use nazo_persistence::SecurityAuditEvent;
@@ -341,8 +341,9 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
     }
     if let Some(refresh) = input.refresh_token.as_ref() {
         let (tenant_id, client_id, user_id) = match refresh {
-            RefreshTokenCommit::IssueNew { token, .. } =>
-                (token.tenant_id, token.client_id, token.user_id),
+            RefreshTokenCommit::IssueNew { token, .. } => {
+                (token.tenant_id, token.client_id, token.user_id)
+            }
             RefreshTokenCommit::UseExisting { authority, .. } => {
                 if !matches!(input.mode, TokenIssuanceMode::Fresh) {
                     return Err(RepositoryError::Consistency(
@@ -352,8 +353,10 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
                 (authority.tenant_id, authority.client_id, authority.user_id)
             }
         };
-        if tenant_id != input.tenant_id || client_id != input.client_id
-            || user_id != input.user_id || refresh.contract().subject != input.subject
+        if tenant_id != input.tenant_id
+            || client_id != input.client_id
+            || user_id != input.user_id
+            || refresh.contract().subject != input.subject
         {
             return Err(RepositoryError::Consistency(
                 "refresh token owner or subject does not match token issuance".to_owned(),

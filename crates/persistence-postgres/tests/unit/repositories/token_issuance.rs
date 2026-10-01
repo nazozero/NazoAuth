@@ -198,21 +198,22 @@ fn refresh_token_for(input: &CommitTokenIssuance) -> nazo_auth::RefreshTokenComm
             authorization_details: serde_json::json!([]),
             subject: input.subject.clone(),
             authentication_context: nazo_auth::RefreshTokenAuthenticationContext {
-            version: 1,
-            issuer: "https://issuer.example".to_owned(),
-            audience: "resource".to_owned(),
-            auth_time: 1,
-            amr: vec!["pwd".to_owned()],
-            oidc_sid: None,
-            id_token_sid: None,
-            acr: None,
-            nonce: None,
-            userinfo_claims: vec![],
-            userinfo_claim_requests: vec![],
-            id_token_claims: vec![],
-            id_token_claim_requests: vec![],
-        },
-        }.persisted(),
+                version: 1,
+                issuer: "https://issuer.example".to_owned(),
+                audience: "resource".to_owned(),
+                auth_time: 1,
+                amr: vec!["pwd".to_owned()],
+                oidc_sid: None,
+                id_token_sid: None,
+                acr: None,
+                nonce: None,
+                userinfo_claims: vec![],
+                userinfo_claim_requests: vec![],
+                id_token_claims: vec![],
+                id_token_claim_requests: vec![],
+            },
+        }
+        .persisted(),
     }
 }
 
@@ -271,7 +272,11 @@ fn commit_input_validation_enforces_mode_ownership_and_expiry_contracts() {
 
     let mut wrong_owner = fresh.clone();
     wrong_owner.refresh_token = Some(refresh_token_for(&wrong_owner));
-    let Some(nazo_auth::RefreshTokenCommit::IssueNew { token, .. }) = wrong_owner.refresh_token.as_mut() else { unreachable!() };
+    let Some(nazo_auth::RefreshTokenCommit::IssueNew { token, .. }) =
+        wrong_owner.refresh_token.as_mut()
+    else {
+        unreachable!()
+    };
     token.tenant_id = Uuid::now_v7();
     assert!(matches!(
         validate_commit_input(&wrong_owner),
@@ -314,7 +319,9 @@ fn audit_events_cover_issuance_rotation_and_reuse_shapes() {
     );
 
     let mut refresh_commit = refresh_token_for(&input);
-    let nazo_auth::RefreshTokenCommit::IssueNew { token: refresh, .. } = &mut refresh_commit else { unreachable!() };
+    let nazo_auth::RefreshTokenCommit::IssueNew { token: refresh, .. } = &mut refresh_commit else {
+        unreachable!()
+    };
     refresh.rotated_from_id = Some(Uuid::now_v7());
     refresh.lost_response_retry = Some(nazo_auth::LostResponseRetry {
         original_id: Uuid::now_v7(),

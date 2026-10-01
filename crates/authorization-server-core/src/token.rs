@@ -186,7 +186,8 @@ impl RefreshToken {
                 audiences: self.contract_audiences.clone(),
                 authorization_details: self.authorization_details.clone(),
                 authentication_context: self.authentication_context.clone(),
-            }.persisted(),
+            }
+            .persisted(),
             current_audiences: crate::string_array_values(&self.audience),
             id_token_sid: self.authentication_context.id_token_sid.clone(),
             dpop_jkt: self.dpop_jkt.clone(),
