@@ -58,8 +58,7 @@ CREATE FUNCTION public.nazo_commit_authorization_decision(
     p_occurred_at TIMESTAMPTZ, p_audit_fields JSONB, p_scopes JSONB,
     p_resources JSONB, p_authorization_details JSONB
 ) RETURNS TEXT
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
-SET lock_timeout = '2s' AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     v_client_id UUID;
     v_active BOOLEAN;
