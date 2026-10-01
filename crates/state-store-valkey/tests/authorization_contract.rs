@@ -110,10 +110,7 @@ async fn par_preserves_exact_hashed_key_json_ttl_and_conditional_cleanup() {
     };
 
     assert_eq!(
-        store
-            .store_par(&request_uri, &payload, 30)
-            .await
-            .unwrap(),
+        store.store_par(&request_uri, &payload, 30).await.unwrap(),
         AuthorizationPreparationWrite::Stored
     );
     assert_eq!(
@@ -318,10 +315,7 @@ async fn par_rejects_replacement_and_retry_after_preview_without_refreshing_ttl(
     replacement.client_id = "client-b".to_owned();
     replacement.expires_at = Utc.timestamp_opt(1_300, 0).unwrap();
     assert_eq!(
-        store
-            .store_par(&request_uri, &observed, 30)
-            .await
-            .unwrap(),
+        store.store_par(&request_uri, &observed, 30).await.unwrap(),
         AuthorizationPreparationWrite::Stored
     );
     let snapshot = store.load_par(&request_uri).await.unwrap().unwrap();
@@ -330,10 +324,7 @@ async fn par_rejects_replacement_and_retry_after_preview_without_refreshing_ttl(
 
     for payload in [&replacement, &observed] {
         assert_eq!(
-            store
-                .store_par(&request_uri, payload, 300)
-                .await
-                .unwrap(),
+            store.store_par(&request_uri, payload, 300).await.unwrap(),
             AuthorizationPreparationWrite::Conflict
         );
         assert_eq!(
