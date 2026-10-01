@@ -21,7 +21,10 @@ mod token_issuance;
 mod token_state;
 
 pub use authentication::AuthenticationStore;
-pub use authorization::{AuthorizationCodeBegin, AuthorizationStore, AuthorizationTransition};
+pub use authorization::{
+    AuthorizationCodeBegin, AuthorizationPreparationWrite, AuthorizationStore,
+    AuthorizationTransition,
+};
 pub use authorization_state::AuthorizationStateAdapter;
 pub use avatar_upload_state::AvatarUploadStateStore;
 pub use ciba::{

@@ -9,7 +9,8 @@ use nazo_auth::{
 };
 use nazo_identity::TenantId;
 use nazo_valkey::{
-    AuthorizationCodeBegin, AuthorizationStateAdapter, AuthorizationStore, AuthorizationTransition,
+    AuthorizationCodeBegin, AuthorizationPreparationWrite, AuthorizationStateAdapter,
+    AuthorizationStore, AuthorizationTransition,
 };
 use serde_json::json;
 
@@ -108,7 +109,13 @@ async fn par_preserves_exact_hashed_key_json_ttl_and_conditional_cleanup() {
         expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
     };
 
-    store.store_par(&request_uri, &payload, 30).await.unwrap();
+    assert_eq!(
+        store
+            .store_par(&request_uri, &payload, 30)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&inspector.get::<String, _>(&key).await.unwrap())
             .unwrap(),
@@ -198,10 +205,13 @@ async fn consent_rejects_replacement_and_retry_after_preview_without_refreshing_
     let observed = consent_payload(&request_id, uuid::Uuid::from_u128(1));
     let mut replacement = consent_payload(&request_id, uuid::Uuid::from_u128(2));
     replacement.expires_at = Utc.timestamp_opt(1_300, 0).unwrap();
-    store
-        .store_consent(&request_id, &observed, 30)
-        .await
-        .unwrap();
+    assert_eq!(
+        store
+            .store_consent(&request_id, &observed, 30)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
     let snapshot = store
         .load_consent_snapshot(&request_id)
         .await
@@ -211,11 +221,13 @@ async fn consent_rejects_replacement_and_retry_after_preview_without_refreshing_
     assert!((1..=30_000).contains(&original_ttl));
 
     for payload in [&replacement, &observed] {
-        let error = store
-            .store_consent(&request_id, payload, 300)
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind(), nazo_valkey::ErrorKind::Protocol);
+        assert_eq!(
+            store
+                .store_consent(&request_id, payload, 300)
+                .await
+                .unwrap(),
+            AuthorizationPreparationWrite::Conflict
+        );
         assert_eq!(
             inspector.get::<String, _>(&key).await.unwrap(),
             snapshot.version
@@ -228,10 +240,13 @@ async fn consent_rejects_replacement_and_retry_after_preview_without_refreshing_
 
     let replacement_id = uuid::Uuid::now_v7().to_string();
     replacement.request_id = replacement_id.clone();
-    store
-        .store_consent(&replacement_id, &replacement, 30)
-        .await
-        .unwrap();
+    assert_eq!(
+        store
+            .store_consent(&replacement_id, &replacement, 30)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
     assert_eq!(
         store
             .load_consent(&replacement_id)
@@ -258,10 +273,13 @@ async fn concurrent_consent_cleanup_has_exactly_one_winner() {
     };
     let request_id = uuid::Uuid::now_v7().to_string();
     let observed = consent_payload(&request_id, uuid::Uuid::from_u128(1));
-    store
-        .store_consent(&request_id, &observed, 30)
-        .await
-        .unwrap();
+    assert_eq!(
+        store
+            .store_consent(&request_id, &observed, 30)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
 
     let snapshot = store
         .load_consent_snapshot(&request_id)
@@ -299,17 +317,25 @@ async fn par_rejects_replacement_and_retry_after_preview_without_refreshing_ttl(
     let mut replacement = observed.clone();
     replacement.client_id = "client-b".to_owned();
     replacement.expires_at = Utc.timestamp_opt(1_300, 0).unwrap();
-    store.store_par(&request_uri, &observed, 30).await.unwrap();
+    assert_eq!(
+        store
+            .store_par(&request_uri, &observed, 30)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
     let snapshot = store.load_par(&request_uri).await.unwrap().unwrap();
     let original_ttl = inspector.pttl::<i64, _>(&key).await.unwrap();
     assert!((1..=30_000).contains(&original_ttl));
 
     for payload in [&replacement, &observed] {
-        let error = store
-            .store_par(&request_uri, payload, 300)
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind(), nazo_valkey::ErrorKind::Protocol);
+        assert_eq!(
+            store
+                .store_par(&request_uri, payload, 300)
+                .await
+                .unwrap(),
+            AuthorizationPreparationWrite::Conflict
+        );
         assert_eq!(
             inspector.get::<String, _>(&key).await.unwrap(),
             snapshot.version
@@ -321,10 +347,13 @@ async fn par_rejects_replacement_and_retry_after_preview_without_refreshing_ttl(
     assert_eq!(unchanged.expires_at, observed.expires_at);
 
     let replacement_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
-    store
-        .store_par(&replacement_uri, &replacement, 30)
-        .await
-        .unwrap();
+    assert_eq!(
+        store
+            .store_par(&replacement_uri, &replacement, 30)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
     let replacement_snapshot = store.load_par(&replacement_uri).await.unwrap().unwrap();
     assert_eq!(
         replacement_snapshot.payload.client_id,
@@ -504,11 +533,13 @@ async fn malformed_snapshot_and_corrupt_replacement_fail_closed_without_deleting
     assert_eq!(error.kind(), nazo_valkey::ErrorKind::CorruptData);
     assert!(inspector.exists::<bool, _>(&key).await.unwrap());
 
-    let error = store
-        .store_consent(&request_id, &expected, 30)
-        .await
-        .unwrap_err();
-    assert_eq!(error.kind(), nazo_valkey::ErrorKind::Protocol);
+    assert_eq!(
+        store
+            .store_consent(&request_id, &expected, 30)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Conflict
+    );
     assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "{");
     // Reset this fault-injection fixture through the raw test inspector only.
     inspector
@@ -552,8 +583,16 @@ async fn concurrent_preparation_writes_have_one_initial_winner() {
         store.store_consent(&request_id, &consent_a, 30),
         store.store_consent(&request_id, &consent_b, 30),
     );
-    assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
-    let expected_user = if first.is_ok() {
+    let first = first.unwrap();
+    let second = second.unwrap();
+    assert_eq!(
+        [first, second]
+            .into_iter()
+            .filter(|outcome| *outcome == AuthorizationPreparationWrite::Stored)
+            .count(),
+        1
+    );
+    let expected_user = if first == AuthorizationPreparationWrite::Stored {
         consent_a.user_id
     } else {
         consent_b.user_id
@@ -584,8 +623,16 @@ async fn concurrent_preparation_writes_have_one_initial_winner() {
         store.store_par(&request_uri, &par_a, 30),
         store.store_par(&request_uri, &par_b, 30),
     );
-    assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
-    let expected_client = if first.is_ok() {
+    let first = first.unwrap();
+    let second = second.unwrap();
+    assert_eq!(
+        [first, second]
+            .into_iter()
+            .filter(|outcome| *outcome == AuthorizationPreparationWrite::Stored)
+            .count(),
+        1
+    );
+    let expected_client = if first == AuthorizationPreparationWrite::Stored {
         par_a.client_id
     } else {
         par_b.client_id
@@ -601,7 +648,7 @@ async fn concurrent_preparation_writes_have_one_initial_winner() {
 }
 
 #[tokio::test]
-async fn immutable_preparation_writes_and_cleanup_are_tenant_scoped() {
+async fn preparation_conflicts_and_cleanup_are_tenant_scoped() {
     let Some((_, inspector)) = setup().await else {
         return;
     };
@@ -629,7 +676,7 @@ async fn immutable_preparation_writes_and_cleanup_are_tenant_scoped() {
     for store in [&store_a, &store_b] {
         assert!(matches!(
             store.store_consent(&request_id, &consent_a, 300).await,
-            Err(AuthorizationPortError::Unexpected)
+            Err(AuthorizationPortError::Conflict)
         ));
     }
     let snapshot_a = store_a.load_consent(&request_id).await.unwrap().unwrap();
@@ -675,7 +722,7 @@ async fn immutable_preparation_writes_and_cleanup_are_tenant_scoped() {
     for store in [&store_a, &store_b] {
         assert!(matches!(
             store.store_par(&request_uri, &par_a, 300).await,
-            Err(AuthorizationPortError::Unexpected)
+            Err(AuthorizationPortError::Conflict)
         ));
     }
     let snapshot_a = store_a.load_par(&request_uri).await.unwrap().unwrap();
@@ -810,4 +857,35 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
         .delete_authorization_code_hash(&code_hash)
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn invalid_preparation_ttl_remains_an_unexpected_dependency_error() {
+    let Some((_, inspector)) = setup().await else {
+        return;
+    };
+    let connection = nazo_valkey::test_support::scoped_connection(inspector);
+    let store = AuthorizationStateAdapter::new(&connection);
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let consent = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+    assert_eq!(
+        store.store_consent(&request_id, &consent, 0).await,
+        Err(AuthorizationPortError::Unexpected)
+    );
+    assert!(store.load_consent(&request_id).await.unwrap().is_none());
+
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+    let par = PushedAuthorizationRequest {
+        client_id: "client-a".to_owned(),
+        params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
+        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+    };
+    assert_eq!(
+        store.store_par(&request_uri, &par, 0).await,
+        Err(AuthorizationPortError::Unexpected)
+    );
+    assert!(store.load_par(&request_uri).await.unwrap().is_none());
 }
