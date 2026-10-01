@@ -602,7 +602,10 @@ async fn two_legal_preserves_overlap_while_revocation_waits_for_both() {
     let mut after = state(&mut coordinator, source.token_family_id).await;
     assert!(!after.family["revoked_at"].is_null());
     after.family["revoked_at"] = Value::Null;
-    assert_eq!(after, before, "only the real revocation may change the source");
+    assert_eq!(
+        after, before,
+        "only the real revocation may change the source"
+    );
 }
 
 /// The existing wait helper establishes a lock wait; match the exact advisory
