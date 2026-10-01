@@ -103,6 +103,8 @@ struct RefreshFamilyTokenRow {
     revoked_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = Nullable<Timestamptz>)]
     reuse_detected_at: Option<DateTime<Utc>>,
+    #[diesel(sql_type = Nullable<Text>)]
+    mtls_x5t_s256: Option<String>,
 }
 
 fn test_state() -> TestInfrastructure {
@@ -498,7 +500,8 @@ async fn load_family_rows(
                encode(f.current_token_blake3, 'hex') AS refresh_token_blake3,
                p.member_id AS rotated_from_id,
                f.revoked_at,
-               f.reuse_detected_at
+               f.reuse_detected_at,
+               f.mtls_x5t_s256
         FROM oauth_refresh_families AS f
         LEFT JOIN oauth_refresh_spent_tokens AS p
           ON p.tenant_id = f.tenant_id
@@ -510,7 +513,8 @@ async fn load_family_rows(
                encode(s.refresh_token_blake3, 'hex'),
                NULL::uuid,
                s.spent_at,
-               f.reuse_detected_at
+               f.reuse_detected_at,
+               f.mtls_x5t_s256
         FROM oauth_refresh_spent_tokens AS s
         JOIN oauth_refresh_families AS f
           ON f.tenant_id = s.tenant_id
@@ -2566,6 +2570,11 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
         .cnf
         .expect("mTLS-bound refresh grants must issue sender-constrained access tokens");
     assert_eq!(cnf.x5t_s256.as_deref(), Some(thumbprint));
+    let family = load_family_rows(&state, token.token_family_id).await;
+    assert_eq!(family.len(), 1);
+    assert_eq!(family[0].id, token.id);
+    assert!(family[0].mtls_x5t_s256.is_none());
+    assert!(family[0].revoked_at.is_none());
     assert_eq!(body["token_type"], "Bearer");
     assert!(
         body.get("refresh_token").is_none(),

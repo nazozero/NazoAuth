@@ -366,8 +366,10 @@ pub async fn token_refresh_with_service(
             refresh_token_policy,
             dpop_jkt: dpop_jkt.clone(),
             refresh_token_dpop_jkt: token.dpop_jkt,
-            mtls_x5t_s256: mtls_x5t_s256.clone(),
-            refresh_token_mtls_x5t_s256: mtls_x5t_s256,
+            mtls_x5t_s256,
+            // Client policy can newly bind this access token; the source RT
+            // and any rotated successor retain their original sender binding.
+            refresh_token_mtls_x5t_s256: token.mtls_x5t_s256,
             refresh_token_client_attestation_jkt: token.client_attestation_jkt,
             refresh_authority: Some(refresh_authority),
             refresh_grant_audiences: None,

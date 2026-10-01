@@ -92,30 +92,7 @@ pub async fn issue_token_response(
             false,
         ));
     }
-    let refresh_source_matches_policy =
-        match (&issue.refresh_token_policy, &issue.refresh_authority) {
-            (RefreshTokenPolicy::IssueNew, None) => true,
-            (RefreshTokenPolicy::PreserveExisting, Some(_)) => true,
-            (
-                RefreshTokenPolicy::Rotate {
-                    family_id,
-                    rotated_from_id,
-                },
-                Some(source),
-            ) => *family_id == source.family_id && *rotated_from_id == source.member_id,
-            (
-                RefreshTokenPolicy::RotateLostResponse {
-                    family_id,
-                    successor_id,
-                    ..
-                },
-                Some(source),
-            ) => *family_id == source.family_id && *successor_id == source.member_id,
-            _ => false,
-        };
-    if !refresh_source_matches_policy
-        || !refresh_issue_matches_source(&issue, client, context.config.issuer())
-    {
+    if !refresh_issue_matches_source(&issue, client, context.config.issuer()) {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
@@ -551,7 +528,7 @@ pub async fn issue_token_response(
                 Some(successor_id),
                 Some((original_id, original_blake3, retry_started_at)),
             )),
-            RefreshTokenPolicy::PreserveExisting => None,
+            RefreshTokenPolicy::NoRefresh | RefreshTokenPolicy::PreserveExisting => None,
         };
         if let Some((family, rotated_from, lost_response_retry)) = refresh_family {
             let refresh = PendingRefreshToken {
