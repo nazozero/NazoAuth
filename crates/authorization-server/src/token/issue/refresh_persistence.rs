@@ -51,8 +51,26 @@ pub(super) fn refresh_issue_matches_source(
     client: &ClientRow,
     issuer: &str,
 ) -> bool {
-    let Some(source) = issue.refresh_authority.as_ref() else {
-        return true;
+    let source = match (&issue.refresh_token_policy, &issue.refresh_authority) {
+        (RefreshTokenPolicy::NoRefresh, None) => return !issue.include_refresh,
+        (RefreshTokenPolicy::IssueNew, None) => return true,
+        (RefreshTokenPolicy::PreserveExisting, Some(source)) => source,
+        (
+            RefreshTokenPolicy::Rotate {
+                family_id,
+                rotated_from_id,
+            },
+            Some(source),
+        ) if *family_id == source.family_id && *rotated_from_id == source.member_id => source,
+        (
+            RefreshTokenPolicy::RotateLostResponse {
+                family_id,
+                successor_id,
+                ..
+            },
+            Some(source),
+        ) if *family_id == source.family_id && *successor_id == source.member_id => source,
+        _ => return false,
     };
     let Some(mut context) = refresh_authentication_context(issue, issuer, &client.client_id, None)
     else {
@@ -78,6 +96,8 @@ pub(super) fn refresh_issue_matches_source(
             .mtls_x5t_s256
             .as_ref()
             .is_none_or(|binding| issue.mtls_x5t_s256.as_ref() == Some(binding))
+        // Actual AT constraints may be added to an unbound source, but the
+        // retained or replacement RT must keep the source's exact bindings.
         && issue.refresh_token_dpop_jkt == source.dpop_jkt
         && issue.refresh_token_mtls_x5t_s256 == source.mtls_x5t_s256
         && issue.refresh_token_client_attestation_jkt == source.client_attestation_jkt

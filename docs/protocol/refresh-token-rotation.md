@@ -37,6 +37,12 @@ client audience. NazoAuth also retains its original claim-request contract.
 
 ## Commit-Owned Source Authority
 
+Grants which neither create nor redeem a refresh token (client credentials,
+JWT bearer and token exchange) explicitly use NoRefresh. They require no source
+family or refresh authentication context and never return a refresh token.
+NoRefresh cannot carry a source authority or enable a refresh-token response;
+PreserveExisting always requires an existing source even when no RT is returned.
+
 Both rotation and PreserveExisting carry the source family/member, presented
 token digest, stable contract key, original contract, owner and sender bindings
 into the final token-issuance transaction. The signing input is checked against
@@ -102,6 +108,11 @@ the RFC 7638 thumbprint of the Client Instance public key in the attestation
 `cnf.jwk`. Every refresh request must use Client Attestation with that same key;
 the binding is retained by every rotated successor and by lost-response
 recovery.
+
+A confidential client's current mTLS requirement can bind the newly issued AT
+while preserving an existing unbound RT. The AT's verified certificate does not
+rewrite the RT's persisted binding. Existing RT bindings remain mandatory for
+the AT and are preserved exactly for retained members and rotated successors.
 
 ## Replay-Proof Retention
 

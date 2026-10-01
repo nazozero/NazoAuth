@@ -128,6 +128,9 @@ async fn commit_owned_fresh_issuance_uses_transactional_readiness() {
     issue.subject = client.client_id.clone();
     issue.scopes = vec!["accounts".to_owned()];
     issue.include_refresh = false;
+    issue.refresh_token_policy = RefreshTokenPolicy::NoRefresh;
+    issue.auth_time = None;
+    issue.amr.clear();
     let audit = CountingSecurityAudit::default();
 
     let response = issue_counted_fresh(&state, &client, issue, &audit).await;

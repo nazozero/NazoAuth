@@ -12,6 +12,8 @@ pub use nazo_auth::{
 /// token 签发函数所需的归一化输入。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefreshTokenPolicy {
+    /// This grant neither creates nor uses a refresh-token family.
+    NoRefresh,
     IssueNew,
     Rotate {
         family_id: Uuid,
@@ -26,6 +28,8 @@ pub enum RefreshTokenPolicy {
         successor_id: Uuid,
         retry_started_at: DateTime<Utc>,
     },
+    /// Reuse an existing refresh authority without replacing its member.
+    /// Its source is still checked under the final issuance transaction's lock.
     PreserveExisting,
 }
 
@@ -49,6 +53,9 @@ pub struct TokenIssue {
     /// the original ID Token omitted `sid`; `Some(Some(value))` preserves the
     /// exact SID emitted by the original ID Token (including Native SSO).
     pub refresh_id_token_sid: Option<Option<String>>,
+    /// Whether this issuance permits a refresh-token response, subject to the
+    /// client and scope policy. NoRefresh requires false; disabling a response
+    /// never removes an existing refresh authority from the final commit.
     pub include_refresh: bool,
     pub refresh_token_policy: RefreshTokenPolicy,
     pub dpop_jkt: Option<String>,

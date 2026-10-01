@@ -164,6 +164,10 @@ fn rotated_refresh_preserves_original_contract_while_selecting_current_audience(
     };
     issue.audiences = vec!["resource://a".to_owned()];
     issue.refresh_id_token_sid = Some(None);
+    issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
+        family_id: source.family_id,
+        rotated_from_id: source.member_id,
+    };
     issue.refresh_authority = Some(source);
     assert!(refresh_issue_matches_source(
         &issue,
@@ -221,6 +225,7 @@ fn refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor() {
     issue.refresh_id_token_sid = Some(None);
     let mut source = source_for_issue(&issue, &client);
     source.dpop_jkt = Some("original-key".to_owned());
+    issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
     issue.refresh_token_dpop_jkt = source.dpop_jkt.clone();
     issue.refresh_authority = Some(source);
     assert!(!refresh_issue_matches_source(
@@ -270,4 +275,108 @@ fn refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor() {
         &client,
         "https://issuer.example"
     ));
+}
+
+#[test]
+fn refresh_policy_requires_exact_source_shape_even_without_a_refresh_response() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = openid_issue();
+    let source = source_for_issue(&issue, &client);
+    issue.audiences = vec!["resource://a".to_owned()];
+    issue.refresh_id_token_sid = Some(None);
+    issue.include_refresh = false;
+    let matches = |issue: &TokenIssue| {
+        refresh_issue_matches_source(issue, &client, "https://issuer.example")
+    };
+
+    for policy in [RefreshTokenPolicy::NoRefresh, RefreshTokenPolicy::IssueNew] {
+        issue.refresh_token_policy = policy;
+        assert!(matches(&issue));
+        issue.refresh_authority = Some(source.clone());
+        assert!(!matches(&issue));
+        issue.refresh_authority = None;
+    }
+    issue.refresh_token_policy = RefreshTokenPolicy::NoRefresh;
+    issue.include_refresh = true;
+    assert!(!matches(&issue));
+    issue.include_refresh = false;
+
+    for policy in [
+        RefreshTokenPolicy::PreserveExisting,
+        RefreshTokenPolicy::Rotate {
+            family_id: source.family_id,
+            rotated_from_id: source.member_id,
+        },
+        RefreshTokenPolicy::RotateLostResponse {
+            family_id: source.family_id,
+            original_id: Uuid::now_v7(),
+            original_blake3: [5; 32],
+            successor_id: source.member_id,
+            retry_started_at: Utc::now(),
+        },
+    ] {
+        issue.refresh_token_policy = policy;
+        assert!(!matches(&issue));
+        issue.refresh_authority = Some(source.clone());
+        assert!(matches(&issue));
+        issue.subject = "changed-subject".to_owned();
+        assert!(!matches(&issue));
+        issue.subject = source.contract.subject.clone();
+        if !matches!(policy, RefreshTokenPolicy::PreserveExisting) {
+            issue.refresh_authority.as_mut().unwrap().family_id = Uuid::now_v7();
+            assert!(!matches(&issue));
+            issue.refresh_authority = Some(source.clone());
+            issue.refresh_authority.as_mut().unwrap().member_id = Uuid::now_v7();
+            assert!(!matches(&issue));
+        }
+        issue.refresh_authority = None;
+    }
+}
+
+#[test]
+fn unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_token() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = openid_issue();
+    let source = source_for_issue(&issue, &client);
+    issue.audiences = vec!["resource://a".to_owned()];
+    issue.refresh_id_token_sid = Some(None);
+    issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
+    issue.refresh_authority = Some(source.clone());
+    issue.dpop_jkt = Some("new-proof-key".to_owned());
+    let matches = |issue: &TokenIssue| {
+        refresh_issue_matches_source(issue, &client, "https://issuer.example")
+    };
+    assert!(matches(&issue));
+    issue.refresh_token_dpop_jkt = issue.dpop_jkt.clone();
+    assert!(!matches(&issue));
+    issue.refresh_token_dpop_jkt = None;
+    issue.dpop_jkt = None;
+    issue.mtls_x5t_s256 = Some("new-certificate".to_owned());
+    assert!(matches(&issue));
+    issue.refresh_token_mtls_x5t_s256 = issue.mtls_x5t_s256.clone();
+    assert!(!matches(&issue));
+    issue.refresh_token_mtls_x5t_s256 = None;
+    issue.refresh_token_client_attestation_jkt = Some("new-instance".to_owned());
+    assert!(!matches(&issue));
+    issue.refresh_token_client_attestation_jkt = None;
+
+    issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
+        family_id: source.family_id,
+        rotated_from_id: source.member_id,
+    };
+    assert!(matches(&issue));
+    let now = Utc::now();
+    let pending = PendingRefreshToken {
+        raw: "replacement".to_owned(),
+        member_id: Uuid::now_v7(),
+        family: source.family_id,
+        rotated_from: Some(source.member_id),
+        lost_response_retry: None,
+        issued_at: now,
+        expires_at: now + chrono::Duration::hours(1),
+    };
+    let replacement = prepare_refresh_token(&client, &issue, &pending, None);
+    assert!(replacement.dpop_jkt.is_none());
+    assert!(replacement.mtls_x5t_s256.is_none());
+    assert!(replacement.client_attestation_jkt.is_none());
 }

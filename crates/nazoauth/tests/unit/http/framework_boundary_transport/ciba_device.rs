@@ -695,7 +695,7 @@ mod ciba_device_contract {
             refresh_id_token_sid: None,
             include_refresh: false,
             refresh_token_policy:
-                nazo_oauth_server::domain::oauth::RefreshTokenPolicy::PreserveExisting,
+                nazo_oauth_server::domain::oauth::RefreshTokenPolicy::NoRefresh,
             dpop_jkt: None,
             refresh_token_dpop_jkt: None,
             mtls_x5t_s256: Some(ciba_test_mtls_certificate().thumbprint.clone()),
