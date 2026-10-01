@@ -231,5 +231,6 @@ jobs:
             perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \
             perf.tests.test_pool_size_ab perf.tests.test_issuance_maintenance \
             perf.tests.test_evidence_contract perf.tests.test_audit_reconciliation \
+            perf.tests.test_audit_pending_schema \
             perf.tests.test_current_capacity perf.tests.test_short_baseline \
             perf.tests.test_checkpoint_measurement.WindowContractTest

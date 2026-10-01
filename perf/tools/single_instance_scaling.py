@@ -249,6 +249,40 @@ def psql(sql: str, check: bool = True) -> str:
     return proc.stdout.strip()
 
 
+# Schema is fixed within a point. Scope the probe to its database target and
+# invalidate it at stack lifecycle boundaries, including a reused project.
+_AUDIT_SCHEMA_CACHE: dict[tuple[str, str, str], bool] = {}
+
+
+def reset_audit_schema_cache() -> None:
+    _AUDIT_SCHEMA_CACHE.clear()
+
+
+def audit_event_predicates() -> tuple[str, str]:
+    key = (PROJECT, POSTGRES, "oauth")
+    if key not in _AUDIT_SCHEMA_CACHE:
+        result = psql(
+            "SELECT EXISTS (SELECT 1 FROM pg_attribute"
+            " WHERE attrelid = 'public.security_audit_events'::regclass"
+            " AND attname = 'exported_at' AND attnum > 0 AND NOT attisdropped)")
+        if result not in ("t", "f"):
+            raise ValueError(f"invalid audit schema probe result: {result!r}")
+        _AUDIT_SCHEMA_CACHE[key] = result == "t"
+    if _AUDIT_SCHEMA_CACHE[key]:
+        return "exported_at IS NULL", "exported_at IS NOT NULL"
+    return "TRUE", "FALSE"
+
+
+def audit_event_counts() -> dict:
+    """Boundary-only totals; ACKed rows are retained committed decisions."""
+    _, exported = audit_event_predicates()
+    row = psql(
+        "SELECT count(*), count(*) FILTER (WHERE " + exported + ")"
+        " FROM security_audit_events")
+    total, exported_retained = row.split("|")
+    return {"total": int(total), "exported_retained": int(exported_retained)}
+
+
 def psql_file(path: str, out: Path, extra: list[str] | None = None) -> None:
     require_project()
     with open(path, "rb") as fh:
@@ -522,12 +556,14 @@ def stack_down() -> None:
     resources (other sis runs, scratch databases, historical soak
     projects, the shared nazoauth-perf project) are never touched —
     not by name prefix, not by prune."""
+    reset_audit_schema_cache()
     compose("down", "-v", "--remove-orphans", check=False)
     _remove_recorded_extras()
 
 
 def stack_up(point: dict) -> dict:
     """Fresh stack: tag app image, down -v, up, pin, audit pair, seed-ready."""
+    reset_audit_schema_cache()
     evidence: dict = {"point": point["name"], "image": point["image"]}
     # Tag the point's app image into every compose service name that
     # consumes perf-runtime, then bring the stack up from scratch.
@@ -1667,22 +1703,33 @@ def audit_drain(timeout_s: int = 120) -> dict:
     last = None
     while time.time() < deadline:
         try:
+            pending_where, _ = audit_event_predicates()
             row = psql(
-                "SELECT (SELECT count(*) FROM security_audit_events),"
-                " last_sequence, anchor_sequence"
+                "SELECT (SELECT count(*) FROM security_audit_events WHERE "
+                + pending_where + "), last_sequence, anchor_sequence"
                 " FROM security_audit_chain_state")
             pending, last_seq, anchor = row.split("|")
             last = {"pending": int(pending), "last_sequence": int(last_seq),
                     "anchor_sequence": int(anchor)}
             if int(pending) == 0:
                 last["drained"] = True
-                return last
+                return _audit_drain_with_totals(last)
         except Exception as e:  # noqa: BLE001 - evidence path
             last = {"error": str(e)[:200]}
         time.sleep(3)
     if last is not None:
         last["drained"] = False
-    return last or {"drained": False, "error": "no samples"}
+    return _audit_drain_with_totals(last or {"drained": False, "error": "no samples"})
+
+
+def _audit_drain_with_totals(last: dict) -> dict:
+    # Do not scan retained history on each three-second drain poll.
+    if "pending" in last:
+        try:
+            last.update(audit_event_counts())
+        except Exception as error:  # noqa: BLE001 - diagnostic evidence
+            last["counts_error"] = str(error)[:200]
+    return last
 
 
 def refresh_invariants(ledger_path: Path) -> dict:

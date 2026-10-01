@@ -129,8 +129,10 @@ def _wire_hash_bytes(value) -> bytes | None:
 def db_chain_state() -> dict:
     """security_audit_chain_state facts + pending depth."""
     try:
+        pending_where, _ = sis.audit_event_predicates()
         row = sis.psql(
-            "SELECT (SELECT count(*) FROM security_audit_events),"
+            "SELECT (SELECT count(*) FROM security_audit_events WHERE "
+            + pending_where + "),"
             " last_sequence, encode(last_hash,'hex'),"
             " anchor_deployment_id, anchor_sequence,"
             " encode(anchor_hash,'hex')"
@@ -140,6 +142,7 @@ def db_chain_state() -> dict:
         return {
             "collected": True,
             "pending": int(pending),
+            **sis.audit_event_counts(),
             "last_sequence": int(last_seq),
             "last_hash": last_hash or None,
             "anchor_deployment_id": dep or None,
@@ -465,6 +468,7 @@ def stack_up_pinned(point: dict) -> dict:
     lives on an EXTERNAL volume (not removed by `down -v`) so every point
     of the confirmation shares one controlled keyset while postgres /
     valkey / audit state still get fresh volumes per point."""
+    sis.reset_audit_schema_cache()
     evidence: dict = {"point": point["name"], "image": point["image"]}
     for svc in ("nazoauth", "migrate", "audit-worker"):
         sis.dc("tag", point["image"], f"{sis.PROJECT}-{svc}")
