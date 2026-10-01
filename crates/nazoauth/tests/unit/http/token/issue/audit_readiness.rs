@@ -282,11 +282,11 @@ async fn lost_response_rotation_keeps_the_full_storage_preflight() {
     issue.refresh_token_policy = RefreshTokenPolicy::RotateLostResponse {
         family_id: Uuid::now_v7(),
         original_id: Uuid::now_v7(),
-        original_blake3: [0xAB;
-    set_refresh_authority_for_issue(&state, &client, &mut issue); 32],
+        original_blake3: [0xAB; 32],
         successor_id: Uuid::now_v7(),
         retry_started_at: Utc::now(),
     };
+    set_refresh_authority_for_issue(&state, &client, &mut issue);
     let audit = CountingSecurityAudit::default();
 
     let response = issue_counted_fresh(&state, &client, issue, &audit).await;
