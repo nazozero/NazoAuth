@@ -76,10 +76,10 @@ impl AuthorizationRepositoryPort for FakeRepository {
                 );
             }
             let mut state = self.0.decisions.lock().unwrap();
-            if let Some(outcome) = state.outcome.take() {
-                if outcome != Ok(AuthorizationDecisionCommitResult::Committed) {
-                    return outcome;
-                }
+            if let Some(outcome) = state.outcome.take()
+                && outcome != Ok(AuthorizationDecisionCommitResult::Committed)
+            {
+                return outcome;
             }
             if state.facts.iter().any(|fact| {
                 fact.tenant_id == input.tenant_id
