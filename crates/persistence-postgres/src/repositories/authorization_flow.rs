@@ -59,14 +59,19 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                             .await
                             .map_err(|_| AuthorizationPortError::Unavailable)?,
                     ));
-                    let result = guard
-                        .connection()
-                        .transaction::<AuthorizationDecisionCommitResult, diesel::result::Error, _>(
-                            async |connection| {
-                                sql_query("SET LOCAL lock_timeout = '2s'")
-                                    .execute(connection)
-                                    .await?;
-                                if input.decision == AuthorizationDecisionKind::PromptNone {
+                    let result = if input.decision != AuthorizationDecisionKind::PromptNone {
+                        // Drain the complete result stream before publishing an outcome.
+                        // ReadyForQuery confirms the implicit commit; the first row alone
+                        // does not. Cancellation still discards the connection.
+                        execute_decision(guard.connection(), &input).await
+                    } else {
+                        guard
+                            .connection()
+                            .transaction::<AuthorizationDecisionCommitResult, diesel::result::Error, _>(
+                                async |connection| {
+                                    sql_query("SET LOCAL lock_timeout = '2s'")
+                                        .execute(connection)
+                                        .await?;
                                     // Keep the canonical coverage policy in the
                                     // core, evaluated against a locked live grant.
                                     // Lock principals first, in token-commit order.
@@ -123,39 +128,11 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                                     }) {
                                         return Ok(AuthorizationDecisionCommitResult::GrantUnavailable);
                                     }
-                                }
-                                let row = sql_query(
-                                    "SELECT public.nazo_commit_authorization_decision(\
-                                     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
-                                )
-                                .bind::<sql_types::Uuid, _>(input.tenant_id)
-                                .bind::<sql_types::Uuid, _>(input.user_id)
-                                .bind::<sql_types::Text, _>(&input.client_id)
-                                .bind::<sql_types::Text, _>(&input.request_id)
-                                .bind::<sql_types::Nullable<sql_types::Text>, _>(input.pushed_request_uri.as_deref())
-                                .bind::<sql_types::Timestamptz, _>(input.valid_until)
-                                .bind::<sql_types::Timestamptz, _>(input.retain_until)
-                                .bind::<sql_types::Text, _>(input.decision.as_str())
-                                .bind::<sql_types::Uuid, _>(input.event_id)
-                                .bind::<sql_types::Timestamptz, _>(input.occurred_at)
-                                .bind::<sql_types::Jsonb, _>(&input.audit_fields)
-                                .bind::<sql_types::Jsonb, _>(serde_json::json!(input.scopes))
-                                .bind::<sql_types::Jsonb, _>(serde_json::json!(input.resource_indicators))
-                                .bind::<sql_types::Jsonb, _>(&input.authorization_details)
-                                .get_result::<DecisionOutcomeRow>(connection)
-                                .await?;
-                                match row.outcome.as_str() {
-                                    "committed" => Ok(AuthorizationDecisionCommitResult::Committed),
-                                    "conflict" => Ok(AuthorizationDecisionCommitResult::Conflict),
-                                    "expired" => Ok(AuthorizationDecisionCommitResult::Expired),
-                                    "client_unavailable" => Ok(AuthorizationDecisionCommitResult::ClientUnavailable),
-                                    _ => Err(diesel::result::Error::DeserializationError(Box::new(
-                                        std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown authorization decision outcome"),
-                                    ))),
-                                }
-                            },
-                        )
-                        .await;
+                                    execute_decision(connection, &input).await
+                                },
+                            )
+                            .await
+                    };
                     if result.is_ok() {
                         guard.return_to_pool();
                     }
@@ -365,6 +342,49 @@ fn validate_decision_input(
     Ok(())
 }
 
+// Both execution modes share the exact statement and outcome validation.
+async fn execute_decision(
+    connection: &mut diesel_async::AsyncPgConnection,
+    input: &AuthorizationDecisionCommit,
+) -> diesel::QueryResult<AuthorizationDecisionCommitResult> {
+    let rows = sql_query(
+        "SELECT public.nazo_commit_authorization_decision(\
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+    )
+    .bind::<sql_types::Uuid, _>(input.tenant_id)
+    .bind::<sql_types::Uuid, _>(input.user_id)
+    .bind::<sql_types::Text, _>(&input.client_id)
+    .bind::<sql_types::Text, _>(&input.request_id)
+    .bind::<sql_types::Nullable<sql_types::Text>, _>(input.pushed_request_uri.as_deref())
+    .bind::<sql_types::Timestamptz, _>(input.valid_until)
+    .bind::<sql_types::Timestamptz, _>(input.retain_until)
+    .bind::<sql_types::Text, _>(input.decision.as_str())
+    .bind::<sql_types::Uuid, _>(input.event_id)
+    .bind::<sql_types::Timestamptz, _>(input.occurred_at)
+    .bind::<sql_types::Jsonb, _>(&input.audit_fields)
+    .bind::<sql_types::Jsonb, _>(serde_json::json!(input.scopes))
+    .bind::<sql_types::Jsonb, _>(serde_json::json!(input.resource_indicators))
+    .bind::<sql_types::Jsonb, _>(&input.authorization_details)
+    .load::<DecisionOutcomeRow>(connection)
+    .await?;
+    let mut rows = rows.into_iter();
+    let row = rows.next().ok_or(diesel::result::Error::NotFound)?;
+    if rows.next().is_some() {
+        return Err(diesel::result::Error::DeserializationError(Box::new(
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "multiple decision outcomes"),
+        )));
+    }
+    match row.outcome.as_str() {
+        "committed" => Ok(AuthorizationDecisionCommitResult::Committed),
+        "conflict" => Ok(AuthorizationDecisionCommitResult::Conflict),
+        "expired" => Ok(AuthorizationDecisionCommitResult::Expired),
+        "client_unavailable" => Ok(AuthorizationDecisionCommitResult::ClientUnavailable),
+        _ => Err(diesel::result::Error::DeserializationError(Box::new(
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown authorization decision outcome"),
+        ))),
+    }
+}
+
 fn map_repository_error(error: RepositoryError) -> AuthorizationPortError {
     match error {
         RepositoryError::Unavailable => AuthorizationPortError::Unavailable,
@@ -394,3 +414,4 @@ fn map_device_repository_error(error: RepositoryError) -> DeviceGrantPortError {
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/authorization_flow.rs"]
 mod tests;
+

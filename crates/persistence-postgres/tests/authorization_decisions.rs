@@ -825,3 +825,175 @@ async fn authorization_decisions_commit_once_and_survive_export_ack() {
         .await
         .unwrap();
 }
+
+/// Observe the exact advisory lock held by this test connection. A generic
+/// lock wait could be an earlier row lock and would not prove commit was reached.
+async fn wait_for_decision_commit_barrier(
+    connection: &mut AsyncPgConnection,
+    application: &str,
+    barrier: i64,
+) {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let waiting = sql_query(
+                "SELECT COUNT(*)::bigint AS count FROM pg_stat_activity AS activity \
+                 JOIN pg_locks AS waiting ON waiting.pid = activity.pid \
+                 WHERE activity.application_name = $1 \
+                   AND activity.wait_event_type = 'Lock' \
+                   AND waiting.locktype = 'advisory' AND NOT waiting.granted \
+                   AND waiting.classid = 0 AND waiting.objid::bigint = $2 \
+                   AND waiting.objsubid = 1 \
+                   AND pg_backend_pid() = ANY(pg_blocking_pids(activity.pid))",
+            )
+            .bind::<sql_types::Text, _>(application)
+            .bind::<sql_types::BigInt, _>(barrier)
+            .get_result::<CountRow>(connection)
+            .await
+            .unwrap();
+            if waiting.count == 1 {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the deferred constraint trigger should reach its commit barrier");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn authorization_decision_waits_for_implicit_commit_ack() {
+    let Some(base_url) = database_url() else {
+        return;
+    };
+    let name = format!("decision_commit_ack_{}", Uuid::now_v7().simple());
+    let mut coordinator = AsyncPgConnection::establish(&base_url).await.unwrap();
+    coordinator
+        .batch_execute(&format!("CREATE DATABASE \"{name}\""))
+        .await
+        .unwrap();
+    let mut isolated = url::Url::parse(&base_url).unwrap();
+    isolated.set_path(&format!("/{name}"));
+    let url = isolated.to_string();
+    nazo_postgres::run_pending_migrations(&url).await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let fixture = fixture(&mut connection).await;
+    let application = format!("decision-commit-ack-{}", Uuid::now_v7().simple());
+    isolated
+        .query_pairs_mut()
+        .append_pair("application_name", &application);
+    let pool = create_pool(isolated.to_string(), 1).unwrap();
+    let repository = AuthorizationFlowRepository::new(pool.clone(), fixture.tenant_id);
+    let barrier: i64 = 913_849;
+    connection
+        .batch_execute(&format!(
+            "CREATE FUNCTION public.decision_test_commit_barrier() RETURNS trigger \
+             LANGUAGE plpgsql AS $$ BEGIN \
+                 PERFORM pg_advisory_xact_lock({barrier}); \
+                 IF TG_ARGV[0] = 'reject' THEN \
+                     RAISE EXCEPTION 'injected deferred decision commit failure'; \
+                 END IF; \
+                 RETURN NEW; \
+             END $$"
+        ))
+        .await
+        .unwrap();
+
+    // The function has already produced its outcome row when these deferred
+    // triggers run. Neither a returned row nor CommandComplete alone permits
+    // the caller to publish a code before the implicit transaction finishes.
+    for (kind, reject_commit) in [
+        (Kind::Approve, false),
+        (Kind::Deny, false),
+        (Kind::Approve, true),
+    ] {
+        let input = decision(&fixture, kind);
+        let event_id = input.event_id;
+        let before = grant_count(&mut connection, &fixture).await;
+        let trigger_mode = if reject_commit { "reject" } else { "accept" };
+        connection
+            .batch_execute(&format!(
+                "CREATE CONSTRAINT TRIGGER decision_test_commit_barrier \
+                 AFTER INSERT ON public.security_audit_events \
+                 DEFERRABLE INITIALLY DEFERRED \
+                 FOR EACH ROW WHEN (NEW.event_id = '{event_id}'::uuid) \
+                 EXECUTE FUNCTION public.decision_test_commit_barrier('{trigger_mode}'); \
+                 SELECT pg_advisory_lock({barrier})"
+            ))
+            .await
+            .unwrap();
+        let writer = repository.clone();
+        let mut pending = tokio::spawn(async move { writer.commit_decision(input).await });
+        tokio::select! {
+            biased;
+            result = &mut pending => panic!(
+                "decision returned before the deferred commit barrier: {result:?}"
+            ),
+            () = wait_for_decision_commit_barrier(&mut connection, &application, barrier) => {}
+        }
+        // Keep polling the repository future while a different backend checks
+        // visibility. It must remain pending throughout this actual DB barrier;
+        // no fixed sleep is used to guess when commit started.
+        tokio::select! {
+            biased;
+            result = &mut pending => panic!(
+                "decision returned while implicit commit was blocked: {result:?}"
+            ),
+            () = async {
+                assert_eq!(fact_count(&mut connection, event_id).await, 0);
+                assert_eq!(grant_count(&mut connection, &fixture).await, before);
+            } => {}
+        }
+        assert!(
+            !pending.is_finished(),
+            "commit acknowledgement is still blocked"
+        );
+        connection
+            .batch_execute(&format!("SELECT pg_advisory_unlock({barrier})"))
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), pending)
+            .await
+            .expect("decision should finish once the commit barrier is released")
+            .unwrap();
+        if reject_commit {
+            assert!(
+                result.is_err(),
+                "a deferred commit failure must not authorize code publication"
+            );
+            assert_eq!(fact_count(&mut connection, event_id).await, 0);
+            assert_eq!(grant_count(&mut connection, &fixture).await, before);
+        } else {
+            assert_eq!(result.unwrap(), Outcome::Committed);
+            assert_eq!(fact_count(&mut connection, event_id).await, 1);
+            assert_eq!(
+                grant_count(&mut connection, &fixture).await,
+                before + i64::from(kind == Kind::Approve)
+            );
+        }
+        connection
+            .batch_execute(
+                "DROP TRIGGER decision_test_commit_barrier ON public.security_audit_events",
+            )
+            .await
+            .unwrap();
+    }
+    connection
+        .batch_execute("DROP FUNCTION public.decision_test_commit_barrier()")
+        .await
+        .unwrap();
+    // The failed implicit commit must not poison the one-connection pool.
+    assert_eq!(
+        repository
+            .commit_decision(decision(&fixture, Kind::Deny))
+            .await
+            .unwrap(),
+        Outcome::Committed
+    );
+    drop(repository);
+    drop(pool);
+    drop(connection);
+    coordinator
+        .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
+        .await
+        .unwrap();
+}
