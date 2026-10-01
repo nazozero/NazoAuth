@@ -580,13 +580,12 @@ async fn verify_lock_expiry_and_cancellation(
     // observing its final business outcome, rather than racing its commit.
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
-            let remaining = sql_query(
-                "SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE pid = $1",
-            )
-            .bind::<sql_types::BigInt, _>(original_backend)
-            .get_result::<CountRow>(connection)
-            .await
-            .unwrap();
+            let remaining =
+                sql_query("SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE pid = $1")
+                    .bind::<sql_types::BigInt, _>(original_backend)
+                    .get_result::<CountRow>(connection)
+                    .await
+                    .unwrap();
             if remaining.count == 0 {
                 break;
             }
