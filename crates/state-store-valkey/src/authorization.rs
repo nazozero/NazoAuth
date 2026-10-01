@@ -73,6 +73,14 @@ pub enum AuthorizationTransition {
     Failed,
 }
 
+/// A completed immutable preparation write may still reject an existing identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[must_use]
+pub enum AuthorizationPreparationWrite {
+    Stored,
+    Conflict,
+}
+
 #[derive(Clone, Debug)]
 pub struct AuthorizationStore {
     connection: ValkeyConnection,
@@ -93,7 +101,7 @@ impl AuthorizationStore {
         request_id: &str,
         payload: &ConsentPayload,
         ttl_seconds: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<AuthorizationPreparationWrite, Error> {
         self.store_preparation(keys::consent(request_id), payload, ttl_seconds)
             .await
     }
@@ -139,7 +147,7 @@ impl AuthorizationStore {
         request_uri: &str,
         payload: &PushedAuthorizationRequest,
         ttl_seconds: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<AuthorizationPreparationWrite, Error> {
         self.store_preparation(keys::par(request_uri), payload, ttl_seconds)
             .await
     }
@@ -266,18 +274,16 @@ impl AuthorizationStore {
         key: String,
         value: &T,
         ttl_seconds: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<AuthorizationPreparationWrite, Error> {
         let raw = serde_json::to_string(value).map_err(|error| {
             Error::protocol(format!(
                 "failed to serialize authorization preparation: {error}"
             ))
         })?;
         if command::set_ex_nx_string(&self.connection, key, raw, ttl_seconds).await? {
-            Ok(())
+            Ok(AuthorizationPreparationWrite::Stored)
         } else {
-            Err(Error::protocol(
-                "authorization preparation identity already exists",
-            ))
+            Ok(AuthorizationPreparationWrite::Conflict)
         }
     }
 

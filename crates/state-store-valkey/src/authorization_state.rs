@@ -5,8 +5,8 @@ use nazo_auth::{
 };
 
 use crate::{
-    AuthorizationStore, Error, ErrorKind, RateDimension, RateLimitStore, ReplayStore,
-    ValkeyConnection,
+    AuthorizationPreparationWrite, AuthorizationStore, Error, ErrorKind, RateDimension,
+    RateLimitStore, ReplayStore, ValkeyConnection,
 };
 
 /// Valkey mechanisms required by an authorization flow, grouped at the
@@ -67,6 +67,7 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
                 .store_par(request_uri, payload, ttl_seconds)
                 .await
                 .map_err(map_error)
+                .and_then(map_preparation_write)
         })
     }
 
@@ -118,6 +119,7 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
                 .store_consent(request_id, payload, ttl_seconds)
                 .await
                 .map_err(map_error)
+                .and_then(map_preparation_write)
         })
     }
 
@@ -279,6 +281,15 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
     }
 }
 
+fn map_preparation_write(
+    outcome: AuthorizationPreparationWrite,
+) -> Result<(), AuthorizationPortError> {
+    match outcome {
+        AuthorizationPreparationWrite::Stored => Ok(()),
+        AuthorizationPreparationWrite::Conflict => Err(AuthorizationPortError::Conflict),
+    }
+}
+
 fn map_error(error: Error) -> AuthorizationPortError {
     match error.kind() {
         ErrorKind::Timeout | ErrorKind::Unavailable => AuthorizationPortError::Unavailable,
@@ -286,3 +297,7 @@ fn map_error(error: Error) -> AuthorizationPortError {
         ErrorKind::Protocol | ErrorKind::UnexpectedResult => AuthorizationPortError::Unexpected,
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/authorization_state.rs"]
+mod tests;
