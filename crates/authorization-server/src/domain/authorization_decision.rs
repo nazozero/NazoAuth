@@ -7,11 +7,10 @@ use crate::contracts::authorization_decision::{
 use chrono::Utc;
 use nazo_auth::{
     AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
-    AuthorizationDecisionCommitResult, AuthorizationDecisionKind, prepare_authorization_code,
-    AuthorizationResponsePlan,
+    AuthorizationDecisionCommitResult, AuthorizationDecisionKind, AuthorizationResponsePlan,
     AuthorizationResponsePolicyError, AuthorizationResponsePolicyInput, CapabilityAdmission,
     SignedJarmAuthorizationResponse, UserAuthorizationDecision, module_admissible,
-    plain_authorization_response_uri, plan_authorization_response,
+    plain_authorization_response_uri, plan_authorization_response, prepare_authorization_code,
     signed_jarm_authorization_response_uri,
 };
 use nazo_identity::{SessionResolution, SessionService};
@@ -187,48 +186,54 @@ impl ServerAuthorizationDecisionOperations {
         let payload = preview.consent().clone();
         let now = Utc::now();
         let event_id = Uuid::now_v7();
-        let code = (command.decision == UserAuthorizationDecision::Approve)
-            .then(random_urlsafe_token);
-        let prepared = code.as_ref().map(|code| prepare_authorization_code(
-            AuthorizationApprovalInput {
+        let code =
+            (command.decision == UserAuthorizationDecision::Approve).then(random_urlsafe_token);
+        let prepared = code.as_ref().map(|code| {
+            prepare_authorization_code(AuthorizationApprovalInput {
                 consent: &payload,
                 code_hash: &blake3_hex(code),
                 code_id: &event_id.to_string(),
                 issued_at: now,
-                code_ttl_seconds: payload.authorization_code_ttl_seconds
+                code_ttl_seconds: payload
+                    .authorization_code_ttl_seconds
                     .unwrap_or(self.config.auth_code_ttl_seconds),
                 tenant_id: self.tenant_id.as_uuid(),
-            },
-        ));
-        let result = self.service.commit_decision(
-            AuthorizationDecisionCommit {
-                tenant_id: self.tenant_id.as_uuid(),
-                user_id: payload.user_id,
-                client_id: payload.client_id.clone(),
-                request_id: command.request_id.clone(),
-                pushed_request_uri: payload.pushed_request_uri.clone(),
-                valid_until,
-                retain_until,
-                decision: if command.decision == UserAuthorizationDecision::Approve {
-                    AuthorizationDecisionKind::Approve
-                } else {
-                    AuthorizationDecisionKind::Deny
+            })
+        });
+        let result = self
+            .service
+            .commit_decision(
+                AuthorizationDecisionCommit {
+                    tenant_id: self.tenant_id.as_uuid(),
+                    user_id: payload.user_id,
+                    client_id: payload.client_id.clone(),
+                    request_id: command.request_id.clone(),
+                    pushed_request_uri: payload.pushed_request_uri.clone(),
+                    valid_until,
+                    retain_until,
+                    decision: if command.decision == UserAuthorizationDecision::Approve {
+                        AuthorizationDecisionKind::Approve
+                    } else {
+                        AuthorizationDecisionKind::Deny
+                    },
+                    event_id,
+                    occurred_at: now,
+                    audit_fields: serde_json::Value::Object(intent_fields),
+                    scopes: payload.scopes.clone(),
+                    resource_indicators: payload.resource_indicators.clone(),
+                    authorization_details: payload.authorization_details.clone(),
                 },
-                event_id,
-                occurred_at: now,
-                audit_fields: serde_json::Value::Object(intent_fields),
-                scopes: payload.scopes.clone(),
-                resource_indicators: payload.resource_indicators.clone(),
-                authorization_details: payload.authorization_details.clone(),
-            },
-            prepared,
-        ).await.map_err(|error| {
-            tracing::warn!(%error, "authorization decision commit or code publication failed");
-            AuthorizationDecisionError::ApprovalUnavailable
-        })?;
+                prepared,
+            )
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "authorization decision commit or code publication failed");
+                AuthorizationDecisionError::ApprovalUnavailable
+            })?;
         match result {
             AuthorizationDecisionCommitResult::Committed => {}
-            AuthorizationDecisionCommitResult::Conflict | AuthorizationDecisionCommitResult::Expired => {
+            AuthorizationDecisionCommitResult::Conflict
+            | AuthorizationDecisionCommitResult::Expired => {
                 return Err(AuthorizationDecisionError::ConsentInvalid);
             }
             AuthorizationDecisionCommitResult::ClientUnavailable
@@ -238,11 +243,17 @@ impl ServerAuthorizationDecisionOperations {
         }
         // These are now disposable preparation objects, not consumption fences.
         // The durable fact survives cleanup failure, response loss, and audit ACK.
-        if let Err(error) = self.service.discard_decision_material(&command.request_id, &preview).await {
+        if let Err(error) = self
+            .service
+            .discard_decision_material(&command.request_id, &preview)
+            .await
+        {
             tracing::warn!(%error, "failed to discard committed authorization preparation");
         }
         let Some(code) = code else {
-            return self.response_location(&payload, None, Some("access_denied"), None).await;
+            return self
+                .response_location(&payload, None, Some("access_denied"), None)
+                .await;
         };
 
         if establishes_oidc_login

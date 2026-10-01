@@ -305,7 +305,10 @@ async fn par_rejects_replacement_and_retry_after_preview_without_refreshing_ttl(
     assert!((1..=30_000).contains(&original_ttl));
 
     for payload in [&replacement, &observed] {
-        let error = store.store_par(&request_uri, payload, 300).await.unwrap_err();
+        let error = store
+            .store_par(&request_uri, payload, 300)
+            .await
+            .unwrap_err();
         assert_eq!(error.kind(), nazo_valkey::ErrorKind::Protocol);
         assert_eq!(
             inspector.get::<String, _>(&key).await.unwrap(),
@@ -323,7 +326,10 @@ async fn par_rejects_replacement_and_retry_after_preview_without_refreshing_ttl(
         .await
         .unwrap();
     let replacement_snapshot = store.load_par(&replacement_uri).await.unwrap().unwrap();
-    assert_eq!(replacement_snapshot.payload.client_id, replacement.client_id);
+    assert_eq!(
+        replacement_snapshot.payload.client_id,
+        replacement.client_id
+    );
     assert!(
         store
             .compare_and_delete_par(&request_uri, &snapshot.version)
@@ -553,7 +559,12 @@ async fn concurrent_preparation_writes_have_one_initial_winner() {
         consent_b.user_id
     };
     assert_eq!(
-        store.load_consent(&request_id).await.unwrap().unwrap().user_id,
+        store
+            .load_consent(&request_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .user_id,
         expected_user
     );
     store.delete_consent(&request_id).await.unwrap();
@@ -679,7 +690,12 @@ async fn immutable_preparation_writes_and_cleanup_are_tenant_scoped() {
     );
     assert!(store_a.load_par(&request_uri).await.unwrap().is_none());
     assert_eq!(
-        store_b.load_par(&request_uri).await.unwrap().unwrap().version,
+        store_b
+            .load_par(&request_uri)
+            .await
+            .unwrap()
+            .unwrap()
+            .version,
         snapshot_b.version
     );
     assert!(
@@ -761,7 +777,10 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
     match replay {
         AuthorizationCodeBegin::Consumed(AuthorizationCodeState::Consumed { marker }) => {
             assert_eq!(marker.access_token_jti, "issued-jti");
-            assert_eq!(marker.redemption_binding.as_deref(), Some("request-binding"));
+            assert_eq!(
+                marker.redemption_binding.as_deref(),
+                Some("request-binding")
+            );
         }
         unexpected => panic!("expected terminal consumed marker, got {unexpected:?}"),
     }

@@ -16,12 +16,10 @@ use nazo_postgres::{
 use serde_json::json;
 use uuid::Uuid;
 
-const UP: &str = include_str!(
-    "../../../migrations/20261001000100_authorization_decision_facts/up.sql"
-);
-const DOWN: &str = include_str!(
-    "../../../migrations/20261001000100_authorization_decision_facts/down.sql"
-);
+const UP: &str =
+    include_str!("../../../migrations/20261001000100_authorization_decision_facts/up.sql");
+const DOWN: &str =
+    include_str!("../../../migrations/20261001000100_authorization_decision_facts/down.sql");
 
 #[test]
 fn decision_migration_has_independent_fences_and_safe_retention() {
@@ -109,7 +107,10 @@ fn decision(fixture: &Fixture, kind: Kind) -> AuthorizationDecisionCommit {
         user_id: fixture.user_id,
         client_id: fixture.client_public_id.clone(),
         request_id: Uuid::now_v7().to_string(),
-        pushed_request_uri: Some(format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7())),
+        pushed_request_uri: Some(format!(
+            "urn:ietf:params:oauth:request_uri:{}",
+            Uuid::now_v7()
+        )),
         valid_until: now + Duration::minutes(5),
         retain_until: now + Duration::minutes(10),
         decision: kind,
@@ -131,12 +132,14 @@ fn decision(fixture: &Fixture, kind: Kind) -> AuthorizationDecisionCommit {
 }
 
 async fn fact_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
-    sql_query("SELECT COUNT(*)::bigint AS count FROM public.security_audit_events WHERE event_id = $1")
-        .bind::<sql_types::Uuid, _>(event_id)
-        .get_result::<CountRow>(connection)
-        .await
-        .unwrap()
-        .count
+    sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM public.security_audit_events WHERE event_id = $1",
+    )
+    .bind::<sql_types::Uuid, _>(event_id)
+    .get_result::<CountRow>(connection)
+    .await
+    .unwrap()
+    .count
 }
 
 async fn grant_count(connection: &mut AsyncPgConnection, fixture: &Fixture) -> i64 {
@@ -185,36 +188,51 @@ async fn wait_for_lock(connection: &mut AsyncPgConnection, application: &str) {
 async fn acknowledge_all(audit: &AuditLedgerRepository) {
     tokio::time::timeout(std::time::Duration::from_secs(20), async {
         loop {
-            match audit.claim_batch("decision-test", 256, 1024 * 1024, 30).await.unwrap() {
+            match audit
+                .claim_batch("decision-test", 256, 1024 * 1024, 30)
+                .await
+                .unwrap()
+            {
                 SecurityAuditBatchClaim::Claimed(batch) => {
-                    audit.ack_batch(SecurityAuditBatchAck {
-                        generation: batch.generation,
-                        deployment_id: "decision-test".to_owned(),
-                        first_sequence: batch.first_sequence,
-                        last_sequence: batch.last_sequence,
-                        event_count: batch.event_count(),
-                        last_hash: batch.last_hash,
-                        batch_digest: batch.digest,
-                    }).await.unwrap();
+                    audit
+                        .ack_batch(SecurityAuditBatchAck {
+                            generation: batch.generation,
+                            deployment_id: "decision-test".to_owned(),
+                            first_sequence: batch.first_sequence,
+                            last_sequence: batch.last_sequence,
+                            event_count: batch.event_count(),
+                            last_hash: batch.last_hash,
+                            batch_digest: batch.digest,
+                        })
+                        .await
+                        .unwrap();
                 }
                 SecurityAuditBatchClaim::Empty => break,
                 other => panic!("isolated audit claim must not be busy or blocked: {other:?}"),
             }
         }
-    }).await.expect("bounded audit drain should finish");
+    })
+    .await
+    .expect("bounded audit drain should finish");
 }
 
 async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection, pool: &DbPool) {
     let audit = AuditLedgerRepository::new(pool.clone());
-    audit.append(SecurityAuditEvent {
-        event_id: Uuid::now_v7(),
-        event_type: "decision_upgrade_test".to_owned(),
-        event_category: "authorization".to_owned(),
-        payload: json!({"schema_version": "nazo.audit.v1"}),
-        occurred_at: Utc::now(),
-    }).await.unwrap();
+    audit
+        .append(SecurityAuditEvent {
+            event_id: Uuid::now_v7(),
+            event_type: "decision_upgrade_test".to_owned(),
+            event_category: "authorization".to_owned(),
+            payload: json!({"schema_version": "nazo.audit.v1"}),
+            occurred_at: Utc::now(),
+        })
+        .await
+        .unwrap();
     let SecurityAuditBatchClaim::Claimed(batch) = audit
-        .claim_batch("decision-test", 256, 1024 * 1024, 30).await.unwrap() else {
+        .claim_batch("decision-test", 256, 1024 * 1024, 30)
+        .await
+        .unwrap()
+    else {
         panic!("upgrade fixture must own an in-flight batch");
     };
     // No decision facts exist yet. Move back to the real prior schema, with
@@ -235,15 +253,25 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
          GRANT UPDATE ON public.user_client_grants TO {update_only},{runtime}"
     )).await.unwrap();
     connection.batch_execute(UP).await.unwrap();
-    for (role, expected) in [(&audit_only, 0), (&insert_only, 0), (&update_only, 0), (&runtime, 1)] {
+    for (role, expected) in [
+        (&audit_only, 0),
+        (&insert_only, 0),
+        (&update_only, 0),
+        (&runtime, 1),
+    ] {
         let row = sql_query(
             "SELECT COUNT(*)::bigint AS count FROM pg_roles WHERE rolname = $1 \
              AND has_function_privilege(oid, \
              'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)', 'EXECUTE')",
         ).bind::<sql_types::Text, _>(role).get_result::<CountRow>(connection).await.unwrap();
-        assert_eq!(row.count, expected, "audit-only or partial grant roles must not acquire business authority");
+        assert_eq!(
+            row.count, expected,
+            "audit-only or partial grant roles must not acquire business authority"
+        );
     }
-    nazo_postgres::configure_runtime_role(url, &runtime).await.unwrap();
+    nazo_postgres::configure_runtime_role(url, &runtime)
+        .await
+        .unwrap();
     let boundaries = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM pg_roles WHERE rolname = $1 \
          AND has_function_privilege(oid, \
@@ -251,16 +279,34 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
          AND has_function_privilege(oid, 'public.nazo_cleanup_authorization_decisions()', 'EXECUTE') \
          AND NOT has_table_privilege(oid, 'public.security_audit_events', 'SELECT,INSERT,UPDATE,DELETE')",
     ).bind::<sql_types::Text, _>(&runtime).get_result::<CountRow>(connection).await.unwrap();
-    assert_eq!(boundaries.count, 1, "runtime uses narrow APIs, never direct event-table DML");
+    assert_eq!(
+        boundaries.count, 1,
+        "runtime uses narrow APIs, never direct event-table DML"
+    );
     // Exercise the real adapter under the production runtime grants, not the
     // migration owner. The pool's effective role is restricted on every checkout.
     let restricted_fixture = fixture(connection).await;
     let mut runtime_url = url::Url::parse(url).unwrap();
-    runtime_url.query_pairs_mut().append_pair("options", &format!("-crole={runtime}"));
+    runtime_url
+        .query_pairs_mut()
+        .append_pair("options", &format!("-crole={runtime}"));
     let runtime_pool = create_pool(runtime_url.to_string(), 1).unwrap();
-    let restricted = AuthorizationFlowRepository::new(runtime_pool.clone(), restricted_fixture.tenant_id);
-    assert_eq!(restricted.commit_decision(decision(&restricted_fixture, Kind::Approve)).await.unwrap(), Outcome::Committed);
-    assert_eq!(restricted.commit_decision(decision(&restricted_fixture, Kind::PromptNone)).await.unwrap(), Outcome::Committed);
+    let restricted =
+        AuthorizationFlowRepository::new(runtime_pool.clone(), restricted_fixture.tenant_id);
+    assert_eq!(
+        restricted
+            .commit_decision(decision(&restricted_fixture, Kind::Approve))
+            .await
+            .unwrap(),
+        Outcome::Committed
+    );
+    assert_eq!(
+        restricted
+            .commit_decision(decision(&restricted_fixture, Kind::PromptNone))
+            .await
+            .unwrap(),
+        Outcome::Committed
+    );
     assert_eq!(grant_count(connection, &restricted_fixture).await, 1);
     let mut restricted_connection = nazo_postgres::get_conn(&runtime_pool).await.unwrap();
     for statement in [
@@ -269,22 +315,34 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
         "DELETE FROM public.security_audit_events WHERE FALSE",
         "SELECT public.nazo_persist_security_audit_event(uuidv7(),'authorization_decision_committed','authorization','{}',CURRENT_TIMESTAMP)",
     ] {
-        assert!(sql_query(statement).execute(&mut restricted_connection).await.is_err(), "restricted role must reject: {statement}");
+        assert!(
+            sql_query(statement)
+                .execute(&mut restricted_connection)
+                .await
+                .is_err(),
+            "restricted role must reject: {statement}"
+        );
     }
     drop(restricted_connection);
     drop(restricted);
     drop(runtime_pool);
-    audit.ack_batch(SecurityAuditBatchAck {
-        generation: batch.generation,
-        deployment_id: "decision-test".to_owned(),
-        first_sequence: batch.first_sequence,
-        last_sequence: batch.last_sequence,
-        event_count: batch.event_count(),
-        last_hash: batch.last_hash,
-        batch_digest: batch.digest,
-    }).await.unwrap();
+    audit
+        .ack_batch(SecurityAuditBatchAck {
+            generation: batch.generation,
+            deployment_id: "decision-test".to_owned(),
+            first_sequence: batch.first_sequence,
+            last_sequence: batch.last_sequence,
+            event_count: batch.event_count(),
+            last_hash: batch.last_hash,
+            batch_digest: batch.digest,
+        })
+        .await
+        .unwrap();
     for role in [&audit_only, &insert_only, &update_only, &runtime] {
-        connection.batch_execute(&format!("DROP OWNED BY {role}; DROP ROLE {role}")).await.unwrap();
+        connection
+            .batch_execute(&format!("DROP OWNED BY {role}; DROP ROLE {role}"))
+            .await
+            .unwrap();
     }
 }
 
@@ -299,67 +357,123 @@ async fn verify_atomicity(connection: &mut AsyncPgConnection, pool: &DbPool, fix
     );
     let approved = approved.unwrap();
     let denied = denied.unwrap();
-    assert!(matches!((approved, denied), (Outcome::Committed, Outcome::Conflict) | (Outcome::Conflict, Outcome::Committed)));
-    assert_eq!(fact_count(connection, approve.event_id).await + fact_count(connection, deny.event_id).await, 1);
-    assert_eq!(grant_count(connection, fixture).await, i64::from(approved == Outcome::Committed));
-    let winner = if approved == Outcome::Committed { approve } else { deny };
+    assert!(matches!(
+        (approved, denied),
+        (Outcome::Committed, Outcome::Conflict) | (Outcome::Conflict, Outcome::Committed)
+    ));
+    assert_eq!(
+        fact_count(connection, approve.event_id).await
+            + fact_count(connection, deny.event_id).await,
+        1
+    );
+    assert_eq!(
+        grant_count(connection, fixture).await,
+        i64::from(approved == Outcome::Committed)
+    );
+    let winner = if approved == Outcome::Committed {
+        approve
+    } else {
+        deny
+    };
     let mut repeated_request = decision(fixture, Kind::Approve);
     repeated_request.request_id = winner.request_id.clone();
-    assert_eq!(repository.commit_decision(repeated_request).await.unwrap(), Outcome::Conflict);
+    assert_eq!(
+        repository.commit_decision(repeated_request).await.unwrap(),
+        Outcome::Conflict
+    );
 
     // An explicit grant is counted exactly once; prompt-none uses the same
     // durable fence but the already granted coverage is not a new approval.
     let explicit = decision(fixture, Kind::Approve);
-    assert_eq!(repository.commit_decision(explicit).await.unwrap(), Outcome::Committed);
+    assert_eq!(
+        repository.commit_decision(explicit).await.unwrap(),
+        Outcome::Committed
+    );
     let before = grant_count(connection, fixture).await;
     let silent = decision(fixture, Kind::PromptNone);
-    assert_eq!(repository.commit_decision(silent.clone()).await.unwrap(), Outcome::Committed);
+    assert_eq!(
+        repository.commit_decision(silent.clone()).await.unwrap(),
+        Outcome::Committed
+    );
     assert_eq!(grant_count(connection, fixture).await, before);
-    assert_eq!(repository.commit_decision(silent).await.unwrap(), Outcome::Conflict);
+    assert_eq!(
+        repository.commit_decision(silent).await.unwrap(),
+        Outcome::Conflict
+    );
     let mut uncovered = decision(fixture, Kind::PromptNone);
     uncovered.scopes.push("email".to_owned());
-    assert_eq!(repository.commit_decision(uncovered.clone()).await.unwrap(), Outcome::GrantUnavailable);
+    assert_eq!(
+        repository.commit_decision(uncovered.clone()).await.unwrap(),
+        Outcome::GrantUnavailable
+    );
     assert_eq!(fact_count(connection, uncovered.event_id).await, 0);
     let denied = decision(fixture, Kind::Deny);
-    assert_eq!(repository.commit_decision(denied).await.unwrap(), Outcome::Committed);
+    assert_eq!(
+        repository.commit_decision(denied).await.unwrap(),
+        Outcome::Committed
+    );
     assert_eq!(grant_count(connection, fixture).await, before);
 
     let mut expired = decision(fixture, Kind::Approve);
     expired.valid_until = Utc::now() - Duration::seconds(1);
-    assert_eq!(repository.commit_decision(expired.clone()).await.unwrap(), Outcome::Expired);
+    assert_eq!(
+        repository.commit_decision(expired.clone()).await.unwrap(),
+        Outcome::Expired
+    );
     assert_eq!(fact_count(connection, expired.event_id).await, 0);
     let mut foreign = decision(fixture, Kind::Approve);
     foreign.tenant_id = Uuid::now_v7();
     assert!(repository.commit_decision(foreign).await.is_err());
     sql_query("UPDATE users SET is_active = FALSE WHERE id = $1")
-        .bind::<sql_types::Uuid, _>(fixture.user_id).execute(connection).await.unwrap();
+        .bind::<sql_types::Uuid, _>(fixture.user_id)
+        .execute(connection)
+        .await
+        .unwrap();
     let disabled = decision(fixture, Kind::Approve);
-    assert_eq!(repository.commit_decision(disabled.clone()).await.unwrap(), Outcome::ClientUnavailable);
+    assert_eq!(
+        repository.commit_decision(disabled.clone()).await.unwrap(),
+        Outcome::ClientUnavailable
+    );
     assert_eq!(fact_count(connection, disabled.event_id).await, 0);
     sql_query("UPDATE users SET is_active = TRUE WHERE id = $1")
-        .bind::<sql_types::Uuid, _>(fixture.user_id).execute(connection).await.unwrap();
+        .bind::<sql_types::Uuid, _>(fixture.user_id)
+        .execute(connection)
+        .await
+        .unwrap();
 
     // Force a database failure AFTER fact insertion, at the grant mutation.
-    connection.batch_execute(
-        "CREATE FUNCTION decision_test_fail_grant() RETURNS trigger LANGUAGE plpgsql AS $$ \
+    connection
+        .batch_execute(
+            "CREATE FUNCTION decision_test_fail_grant() RETURNS trigger LANGUAGE plpgsql AS $$ \
          BEGIN RAISE EXCEPTION 'injected grant failure'; END $$; \
          CREATE TRIGGER decision_test_fail_grant BEFORE INSERT OR UPDATE ON user_client_grants \
          FOR EACH ROW EXECUTE FUNCTION decision_test_fail_grant()",
-    ).await.unwrap();
+        )
+        .await
+        .unwrap();
     let failed = decision(fixture, Kind::Approve);
     assert!(repository.commit_decision(failed.clone()).await.is_err());
     assert_eq!(fact_count(connection, failed.event_id).await, 0);
     assert_eq!(grant_count(connection, fixture).await, before);
-    connection.batch_execute(
-        "DROP TRIGGER decision_test_fail_grant ON user_client_grants; \
+    connection
+        .batch_execute(
+            "DROP TRIGGER decision_test_fail_grant ON user_client_grants; \
          DROP FUNCTION decision_test_fail_grant()",
-    ).await.unwrap();
+        )
+        .await
+        .unwrap();
 }
 
-async fn verify_lock_expiry_and_cancellation(url: &str, connection: &mut AsyncPgConnection, fixture: &Fixture) {
+async fn verify_lock_expiry_and_cancellation(
+    url: &str,
+    connection: &mut AsyncPgConnection,
+    fixture: &Fixture,
+) {
     let mut tagged = url::Url::parse(url).unwrap();
     let application = format!("decision-lock-{}", Uuid::now_v7().simple());
-    tagged.query_pairs_mut().append_pair("application_name", &application);
+    tagged
+        .query_pairs_mut()
+        .append_pair("application_name", &application);
     let pool = create_pool(tagged.to_string(), 1).unwrap();
     let repository = AuthorizationFlowRepository::new(pool.clone(), fixture.tenant_id);
     let mut blocker = AsyncPgConnection::establish(url).await.unwrap();
@@ -418,11 +532,21 @@ async fn verify_lock_expiry_and_cancellation(url: &str, connection: &mut AsyncPg
     blocker.batch_execute("ROLLBACK").await.unwrap();
     // A one-connection pool remains usable; no uncertain transaction leaks
     // into this subsequent request or turns its cancellation into a commit.
-    assert_eq!(repository.commit_decision(decision(fixture, Kind::Deny)).await.unwrap(), Outcome::Committed);
+    assert_eq!(
+        repository
+            .commit_decision(decision(fixture, Kind::Deny))
+            .await
+            .unwrap(),
+        Outcome::Committed
+    );
     assert_eq!(fact_count(connection, event_id).await, 0);
 }
 
-async fn verify_prompt_none_lock_order(url: &str, connection: &mut AsyncPgConnection, fixture: &Fixture) {
+async fn verify_prompt_none_lock_order(
+    url: &str,
+    connection: &mut AsyncPgConnection,
+    fixture: &Fixture,
+) {
     let explicit = decision(fixture, Kind::Approve);
     let mut silent = decision(fixture, Kind::PromptNone);
     silent.pushed_request_uri = explicit.pushed_request_uri.clone();
@@ -430,33 +554,57 @@ async fn verify_prompt_none_lock_order(url: &str, connection: &mut AsyncPgConnec
     // Pause the approval after it owns the unique fence. With the wrong
     // grant/fence order, prompt-none now takes the grant and waits for this
     // fence; releasing the barrier then creates a real deadlock.
-    connection.batch_execute(&format!(
-        "CREATE FUNCTION decision_test_barrier() RETURNS trigger LANGUAGE plpgsql AS $$ \
+    connection
+        .batch_execute(&format!(
+            "CREATE FUNCTION decision_test_barrier() RETURNS trigger LANGUAGE plpgsql AS $$ \
          BEGIN PERFORM pg_advisory_xact_lock({barrier}); RETURN NEW; END $$; \
          CREATE TRIGGER decision_test_barrier AFTER INSERT ON public.security_audit_events \
          FOR EACH ROW WHEN (NEW.event_id = '{}') EXECUTE FUNCTION decision_test_barrier(); \
-         SELECT pg_advisory_lock({barrier})", explicit.event_id,
-    )).await.unwrap();
+         SELECT pg_advisory_lock({barrier})",
+            explicit.event_id,
+        ))
+        .await
+        .unwrap();
     let mut explicit_url = url::Url::parse(url).unwrap();
-    explicit_url.query_pairs_mut().append_pair("application_name", "decision-explicit-order");
-    let explicit_repo = AuthorizationFlowRepository::new(create_pool(explicit_url.to_string(), 1).unwrap(), fixture.tenant_id);
+    explicit_url
+        .query_pairs_mut()
+        .append_pair("application_name", "decision-explicit-order");
+    let explicit_repo = AuthorizationFlowRepository::new(
+        create_pool(explicit_url.to_string(), 1).unwrap(),
+        fixture.tenant_id,
+    );
     let mut silent_url = url::Url::parse(url).unwrap();
-    silent_url.query_pairs_mut().append_pair("application_name", "decision-silent-order");
-    let silent_repo = AuthorizationFlowRepository::new(create_pool(silent_url.to_string(), 1).unwrap(), fixture.tenant_id);
+    silent_url
+        .query_pairs_mut()
+        .append_pair("application_name", "decision-silent-order");
+    let silent_repo = AuthorizationFlowRepository::new(
+        create_pool(silent_url.to_string(), 1).unwrap(),
+        fixture.tenant_id,
+    );
     let approving = tokio::spawn(async move { explicit_repo.commit_decision(explicit).await });
     wait_for_lock(connection, "decision-explicit-order").await;
     let prompting = tokio::spawn(async move { silent_repo.commit_decision(silent).await });
     wait_for_lock(connection, "decision-silent-order").await;
-    connection.batch_execute(&format!("SELECT pg_advisory_unlock({barrier})")).await.unwrap();
+    connection
+        .batch_execute(&format!("SELECT pg_advisory_unlock({barrier})"))
+        .await
+        .unwrap();
     assert_eq!(approving.await.unwrap().unwrap(), Outcome::Committed);
     assert_eq!(prompting.await.unwrap().unwrap(), Outcome::Conflict);
-    connection.batch_execute(
-        "DROP TRIGGER decision_test_barrier ON public.security_audit_events; \
+    connection
+        .batch_execute(
+            "DROP TRIGGER decision_test_barrier ON public.security_audit_events; \
          DROP FUNCTION decision_test_barrier()",
-    ).await.unwrap();
+        )
+        .await
+        .unwrap();
 }
 
-async fn verify_audit_lifetime(connection: &mut AsyncPgConnection, pool: &DbPool, fixture: &Fixture) {
+async fn verify_audit_lifetime(
+    connection: &mut AsyncPgConnection,
+    pool: &DbPool,
+    fixture: &Fixture,
+) {
     let repository = AuthorizationFlowRepository::new(pool.clone(), fixture.tenant_id);
     let audit = AuditLedgerRepository::new(pool.clone());
     let mut retained = decision(fixture, Kind::Deny);
@@ -465,13 +613,23 @@ async fn verify_audit_lifetime(connection: &mut AsyncPgConnection, pool: &DbPool
         "request_id": "must-not-export-raw-handle",
         "authorization_details": {"private": "must-not-export"},
     });
-    assert_eq!(repository.commit_decision(retained.clone()).await.unwrap(), Outcome::Committed);
+    assert_eq!(
+        repository.commit_decision(retained.clone()).await.unwrap(),
+        Outcome::Committed
+    );
     let mut short = decision(fixture, Kind::Deny);
     short.valid_until = Utc::now() + Duration::seconds(2);
     short.retain_until = short.valid_until;
-    assert_eq!(repository.commit_decision(short.clone()).await.unwrap(), Outcome::Committed);
+    assert_eq!(
+        repository.commit_decision(short.clone()).await.unwrap(),
+        Outcome::Committed
+    );
     tokio::time::sleep(std::time::Duration::from_millis(2050)).await;
-    assert_eq!(cleanup(connection).await, 0, "an unexported fact never expires away");
+    assert_eq!(
+        cleanup(connection).await,
+        0,
+        "an unexported fact never expires away"
+    );
     assert_eq!(fact_count(connection, short.event_id).await, 1);
 
     let reserved = SecurityAuditEvent {
@@ -482,9 +640,22 @@ async fn verify_audit_lifetime(connection: &mut AsyncPgConnection, pool: &DbPool
         occurred_at: Utc::now(),
     };
     assert!(audit.append(reserved.clone()).await.is_err());
-    let ordinary = SecurityAuditEvent { event_id: Uuid::now_v7(), event_type: "decision_test".to_owned(), ..reserved.clone() };
-    assert!(audit.append_batch(&[ordinary.clone(), reserved]).await.is_err());
-    assert_eq!(fact_count(connection, ordinary.event_id).await, 0, "a rejected batch writes no prefix");
+    let ordinary = SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: "decision_test".to_owned(),
+        ..reserved.clone()
+    };
+    assert!(
+        audit
+            .append_batch(&[ordinary.clone(), reserved])
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        fact_count(connection, ordinary.event_id).await,
+        0,
+        "a rejected batch writes no prefix"
+    );
     assert!(sql_query("SELECT public.nazo_persist_security_audit_event($1, 'authorization_decision_committed', 'authorization', '{}'::jsonb, CURRENT_TIMESTAMP)")
         .bind::<sql_types::Uuid, _>(Uuid::now_v7()).execute(connection).await.is_err());
     audit.append(ordinary.clone()).await.unwrap();
@@ -498,12 +669,24 @@ async fn verify_audit_lifetime(connection: &mut AsyncPgConnection, pool: &DbPool
          $2,$1::text,'deny',CURRENT_TIMESTAMP+interval '1 hour',CURRENT_TIMESTAMP+interval '1 hour')",
     ).bind::<sql_types::Uuid, _>(numeric_id).bind::<sql_types::Uuid, _>(fixture.tenant_id)
         .execute(connection).await.unwrap();
-    connection.batch_execute("SET nazo.audit_ack = 'on'").await.unwrap();
-    assert!(sql_query(
-        "UPDATE public.security_audit_events SET payload = '{\"metric\":1.0}'::jsonb, \
+    connection
+        .batch_execute("SET nazo.audit_ack = 'on'")
+        .await
+        .unwrap();
+    assert!(
+        sql_query(
+            "UPDATE public.security_audit_events SET payload = '{\"metric\":1.0}'::jsonb, \
          exported_at = CURRENT_TIMESTAMP WHERE event_id = $1",
-    ).bind::<sql_types::Uuid, _>(numeric_id).execute(connection).await.is_err());
-    connection.batch_execute("RESET nazo.audit_ack").await.unwrap();
+        )
+        .bind::<sql_types::Uuid, _>(numeric_id)
+        .execute(connection)
+        .await
+        .is_err()
+    );
+    connection
+        .batch_execute("RESET nazo.audit_ack")
+        .await
+        .unwrap();
     acknowledge_all(&audit).await;
     assert_eq!(fact_count(connection, ordinary.event_id).await, 0);
     assert_eq!(fact_count(connection, retained.event_id).await, 1);
@@ -513,29 +696,65 @@ async fn verify_audit_lifetime(connection: &mut AsyncPgConnection, pool: &DbPool
            AND NOT payload ?| ARRAY['request_id','pushed_request_uri','resource_indicators','authorization_details']",
     ).bind::<sql_types::Uuid, _>(retained.event_id)
         .get_result::<CountRow>(connection).await.unwrap();
-    assert_eq!(safe_payload.count, 1, "export payload contains hashes, never raw private preparation");
+    assert_eq!(
+        safe_payload.count, 1,
+        "export payload contains hashes, never raw private preparation"
+    );
     assert_eq!(fact_count(connection, short.event_id).await, 1);
     assert!(!audit.anchor_health().await.unwrap().pending_exists);
-    assert!(matches!(audit.claim_batch("decision-test", 256, 1024 * 1024, 30).await.unwrap(), SecurityAuditBatchClaim::Empty));
+    assert!(matches!(
+        audit
+            .claim_batch("decision-test", 256, 1024 * 1024, 30)
+            .await
+            .unwrap(),
+        SecurityAuditBatchClaim::Empty
+    ));
 
     // Authoritative append API also rejects exported rows, not just its reader.
     let health = audit.anchor_health().await.unwrap();
-    assert!(sql_query("SELECT public.nazo_append_security_audit_chain($1,$2,$3,$4)")
-        .bind::<sql_types::BigInt, _>(health.head_sequence)
-        .bind::<sql_types::Binary, _>(health.head_hash)
-        .bind::<sql_types::Array<sql_types::Uuid>, _>(vec![retained.event_id])
-        .bind::<sql_types::Array<sql_types::Binary>, _>(vec![vec![7_u8; 32]])
-        .execute(connection).await.is_err());
-    connection.batch_execute("SET nazo.audit_ack = 'on'; SET nazo.audit_reclaim = 'on'").await.unwrap();
-    assert!(sql_query("UPDATE public.security_audit_events SET payload = '{}'::jsonb WHERE event_id = $1")
-        .bind::<sql_types::Uuid, _>(retained.event_id).execute(connection).await.is_err());
+    assert!(
+        sql_query("SELECT public.nazo_append_security_audit_chain($1,$2,$3,$4)")
+            .bind::<sql_types::BigInt, _>(health.head_sequence)
+            .bind::<sql_types::Binary, _>(health.head_hash)
+            .bind::<sql_types::Array<sql_types::Uuid>, _>(vec![retained.event_id])
+            .bind::<sql_types::Array<sql_types::Binary>, _>(vec![vec![7_u8; 32]])
+            .execute(connection)
+            .await
+            .is_err()
+    );
+    connection
+        .batch_execute("SET nazo.audit_ack = 'on'; SET nazo.audit_reclaim = 'on'")
+        .await
+        .unwrap();
+    assert!(
+        sql_query(
+            "UPDATE public.security_audit_events SET payload = '{}'::jsonb WHERE event_id = $1"
+        )
+        .bind::<sql_types::Uuid, _>(retained.event_id)
+        .execute(connection)
+        .await
+        .is_err()
+    );
     assert!(sql_query("UPDATE public.security_audit_events SET business_retain_until = CURRENT_TIMESTAMP WHERE event_id = $1")
         .bind::<sql_types::Uuid, _>(retained.event_id).execute(connection).await.is_err());
-    assert!(sql_query("UPDATE public.security_audit_events SET exported_at = NULL WHERE event_id = $1")
-        .bind::<sql_types::Uuid, _>(retained.event_id).execute(connection).await.is_err());
-    assert!(sql_query("DELETE FROM public.security_audit_events WHERE event_id = $1")
-        .bind::<sql_types::Uuid, _>(retained.event_id).execute(connection).await.is_err());
-    connection.batch_execute("RESET nazo.audit_ack; RESET nazo.audit_reclaim").await.unwrap();
+    assert!(
+        sql_query("UPDATE public.security_audit_events SET exported_at = NULL WHERE event_id = $1")
+            .bind::<sql_types::Uuid, _>(retained.event_id)
+            .execute(connection)
+            .await
+            .is_err()
+    );
+    assert!(
+        sql_query("DELETE FROM public.security_audit_events WHERE event_id = $1")
+            .bind::<sql_types::Uuid, _>(retained.event_id)
+            .execute(connection)
+            .await
+            .is_err()
+    );
+    connection
+        .batch_execute("RESET nazo.audit_ack; RESET nazo.audit_reclaim")
+        .await
+        .unwrap();
     assert_eq!(cleanup(connection).await, 1);
     assert_eq!(fact_count(connection, short.event_id).await, 0);
     assert_eq!(fact_count(connection, retained.event_id).await, 1);
@@ -543,7 +762,10 @@ async fn verify_audit_lifetime(connection: &mut AsyncPgConnection, pool: &DbPool
     // the same still-valid PAR must keep losing after ACK and cleanup.
     let mut another_consent = decision(fixture, Kind::Deny);
     another_consent.pushed_request_uri = retained.pushed_request_uri;
-    assert_eq!(repository.commit_decision(another_consent).await.unwrap(), Outcome::Conflict);
+    assert_eq!(
+        repository.commit_decision(another_consent).await.unwrap(),
+        Outcome::Conflict
+    );
 
     // Synthetic historical facts exercise the bounded cleanup budget without
     // sleeping through real business-retention windows. Above tests already
@@ -558,10 +780,16 @@ async fn verify_audit_lifetime(connection: &mut AsyncPgConnection, pool: &DbPool
          CURRENT_TIMESTAMP-interval '30 minutes' FROM unnest($1::uuid[]) AS history(id)",
     ).bind::<sql_types::Array<sql_types::Uuid>, _>(historical)
         .bind::<sql_types::Uuid, _>(fixture.tenant_id).execute(connection).await.unwrap();
-    connection.batch_execute("ANALYZE public.security_audit_events").await.unwrap();
+    connection
+        .batch_execute("ANALYZE public.security_audit_events")
+        .await
+        .unwrap();
     let health = audit.anchor_health().await.unwrap();
     assert!(!health.pending_exists);
-    assert_eq!(health.pending_estimate, 0, "retained rows must not inflate pending estimate");
+    assert_eq!(
+        health.pending_estimate, 0,
+        "retained rows must not inflate pending estimate"
+    );
     assert_eq!(cleanup(connection).await, 256);
     assert_eq!(cleanup(connection).await, 1);
     assert_eq!(cleanup(connection).await, 0);
@@ -569,10 +797,15 @@ async fn verify_audit_lifetime(connection: &mut AsyncPgConnection, pool: &DbPool
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn authorization_decisions_commit_once_and_survive_export_ack() {
-    let Some(base_url) = database_url() else { return };
+    let Some(base_url) = database_url() else {
+        return;
+    };
     let name = format!("authorization_decisions_{}", Uuid::now_v7().simple());
     let mut coordinator = AsyncPgConnection::establish(&base_url).await.unwrap();
-    coordinator.batch_execute(&format!("CREATE DATABASE \"{name}\"")).await.unwrap();
+    coordinator
+        .batch_execute(&format!("CREATE DATABASE \"{name}\""))
+        .await
+        .unwrap();
     let mut isolated = url::Url::parse(&base_url).unwrap();
     isolated.set_path(&format!("/{name}"));
     let url = isolated.to_string();
@@ -587,5 +820,8 @@ async fn authorization_decisions_commit_once_and_survive_export_ack() {
     verify_audit_lifetime(&mut connection, &pool, &fixture).await;
     drop(connection);
     drop(pool);
-    coordinator.batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)")).await.unwrap();
+    coordinator
+        .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
+        .await
+        .unwrap();
 }

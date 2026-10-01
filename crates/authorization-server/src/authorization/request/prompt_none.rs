@@ -11,7 +11,10 @@ use crate::domain::oauth::ConsentPayload;
 use crate::ports::audit::audit_fields;
 use chrono::{DateTime, Utc};
 use http::StatusCode;
-use nazo_auth::{AuthorizationApprovalInput, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult, AuthorizationDecisionKind, prepare_authorization_code};
+use nazo_auth::{
+    AuthorizationApprovalInput, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
+    AuthorizationDecisionKind, prepare_authorization_code,
+};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -99,14 +102,20 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     if let Some(digest) = payload.pushed_request_digest.as_deref() {
         intent_fields.insert("pushed_request_digest".to_owned(), json!(digest));
     }
-    let retain_until = pushed_request_expires_at
-        .map_or(payload.expires_at, |expires_at| payload.expires_at.max(expires_at));
-    let valid_until = match (payload.pushed_request_uri.as_ref(), pushed_request_expires_at) {
+    let retain_until = pushed_request_expires_at.map_or(payload.expires_at, |expires_at| {
+        payload.expires_at.max(expires_at)
+    });
+    let valid_until = match (
+        payload.pushed_request_uri.as_ref(),
+        pushed_request_expires_at,
+    ) {
         (Some(_), Some(expires_at)) => payload.expires_at.min(expires_at),
         (None, _) => payload.expires_at,
         (Some(_), None) => {
             return Err(OAuthEndpointError::json(
-                StatusCode::SERVICE_UNAVAILABLE, "server_error", "授权请求期限不可用.",
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权请求期限不可用.",
             ));
         }
     };
@@ -122,33 +131,46 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         code_ttl_seconds: ttl_seconds,
         tenant_id: context.tenant_id,
     });
-    let result = context.service.commit_decision(
-        AuthorizationDecisionCommit {
-            tenant_id: context.tenant_id,
-            user_id: payload.user_id,
-            client_id: payload.client_id.clone(),
-            request_id: payload.request_id.clone(),
-            pushed_request_uri: payload.pushed_request_uri.clone(),
-            valid_until,
-            retain_until,
-            decision: AuthorizationDecisionKind::PromptNone,
-            event_id,
-            occurred_at: now,
-            audit_fields: Value::Object(intent_fields),
-            scopes: payload.scopes.clone(),
-            resource_indicators: payload.resource_indicators.clone(),
-            authorization_details: payload.authorization_details.clone(),
-        },
-        Some(prepared),
-    ).await.map_err(|error| {
-        tracing::warn!(%error, "prompt-none decision commit or code publication failed");
-        OAuthEndpointError::json(StatusCode::SERVICE_UNAVAILABLE, "server_error", "授权决定提交失败.")
-    })?;
+    let result = context
+        .service
+        .commit_decision(
+            AuthorizationDecisionCommit {
+                tenant_id: context.tenant_id,
+                user_id: payload.user_id,
+                client_id: payload.client_id.clone(),
+                request_id: payload.request_id.clone(),
+                pushed_request_uri: payload.pushed_request_uri.clone(),
+                valid_until,
+                retain_until,
+                decision: AuthorizationDecisionKind::PromptNone,
+                event_id,
+                occurred_at: now,
+                audit_fields: Value::Object(intent_fields),
+                scopes: payload.scopes.clone(),
+                resource_indicators: payload.resource_indicators.clone(),
+                authorization_details: payload.authorization_details.clone(),
+            },
+            Some(prepared),
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "prompt-none decision commit or code publication failed");
+            OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权决定提交失败.",
+            )
+        })?;
     if result != AuthorizationDecisionCommitResult::Committed {
         let error = match result {
-            AuthorizationDecisionCommitResult::Conflict | AuthorizationDecisionCommitResult::Expired => {
-                if payload.pushed_request_uri.is_some() { "invalid_request_uri" } else { "invalid_request" }
-            },
+            AuthorizationDecisionCommitResult::Conflict
+            | AuthorizationDecisionCommitResult::Expired => {
+                if payload.pushed_request_uri.is_some() {
+                    "invalid_request_uri"
+                } else {
+                    "invalid_request"
+                }
+            }
             AuthorizationDecisionCommitResult::GrantUnavailable => "consent_required",
             _ => "server_error",
         };
@@ -164,10 +186,18 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
                 oidc_sid: None,
                 client_policy: Some(response_policy),
             },
-        ).await;
+        )
+        .await;
     }
-    if let (Some(uri), Some(version)) = (payload.pushed_request_uri.as_deref(), pushed_request_version) {
-        if let Err(error) = context.service.discard_pushed_authorization_request(uri, version).await {
+    if let (Some(uri), Some(version)) = (
+        payload.pushed_request_uri.as_deref(),
+        pushed_request_version,
+    ) {
+        if let Err(error) = context
+            .service
+            .discard_pushed_authorization_request(uri, version)
+            .await
+        {
             tracing::warn!(?error, "failed to discard committed PAR preparation");
         }
     }

@@ -86,7 +86,11 @@ enum AuditEventClass {
 const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
     // Reserved durable business fact: only the decision commit capability
     // creates this event; ordinary ledger append rejects it.
-    ("authorization_decision_committed", "authorization", AuditEventClass::Required),
+    (
+        "authorization_decision_committed",
+        "authorization",
+        AuditEventClass::Required,
+    ),
     (
         "admin_mutation_intent",
         "administration",

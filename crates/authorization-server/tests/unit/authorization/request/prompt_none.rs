@@ -246,7 +246,10 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
     assert_eq!(stored.id_token_claims, payload.id_token_claims);
     assert_eq!(stored.userinfo_claims, payload.userinfo_claims);
     assert_eq!((stored.expires_at - stored.issued_at).num_seconds(), 60);
-    assert_eq!(fixture.ports.calls(), ["commit_decision", "store_authorization_code"]);
+    assert_eq!(
+        fixture.ports.calls(),
+        ["commit_decision", "store_authorization_code"]
+    );
     let decisions = fixture.ports.decisions.lock().unwrap();
     assert_eq!(decisions.facts.len(), 1);
     assert_eq!(decisions.explicit_grant_writes, 0);

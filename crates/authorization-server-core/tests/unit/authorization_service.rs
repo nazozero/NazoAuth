@@ -13,12 +13,12 @@ use crate::{
 };
 
 use super::{
-    AuthorizationApprovalInput, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
-    AuthorizationDecisionKind, PreparedAuthorizationCode, prepare_authorization_code,
-    AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
-    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
-    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateSnapshot,
-    AuthorizationStateStorePort, StoredAuthorizationGrant,
+    AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
+    AuthorizationDecisionCommitResult, AuthorizationDecisionKind, AuthorizationFuture,
+    AuthorizationPortError, AuthorizationRateDimension, AuthorizationRepositoryPort,
+    AuthorizationResponseSignInput, AuthorizationResponseSignerPort, AuthorizationService,
+    AuthorizationStateSnapshot, AuthorizationStateStorePort, PreparedAuthorizationCode,
+    StoredAuthorizationGrant, prepare_authorization_code,
     stored_grant_covers_requested_authorization,
 };
 
@@ -70,8 +70,10 @@ impl AuthorizationRepositoryPort for FakeRepository {
     ) -> AuthorizationFuture<'_, AuthorizationDecisionCommitResult> {
         Box::pin(async move {
             if let Some(store) = self.0.publication_probe.lock().unwrap().as_ref() {
-                assert!(store.stored_code.lock().unwrap().is_none(),
-                    "a code must not be published before the repository commits");
+                assert!(
+                    store.stored_code.lock().unwrap().is_none(),
+                    "a code must not be published before the repository commits"
+                );
             }
             let mut state = self.0.decisions.lock().unwrap();
             if let Some(outcome) = state.outcome.take() {
@@ -82,9 +84,10 @@ impl AuthorizationRepositoryPort for FakeRepository {
             if state.facts.iter().any(|fact| {
                 fact.tenant_id == input.tenant_id
                     && (fact.request_id == input.request_id
-                        || input.pushed_request_uri.as_ref().is_some_and(|uri| {
-                            fact.pushed_request_uri.as_ref() == Some(uri)
-                        }))
+                        || input
+                            .pushed_request_uri
+                            .as_ref()
+                            .is_some_and(|uri| fact.pushed_request_uri.as_ref() == Some(uri)))
             }) {
                 return Ok(AuthorizationDecisionCommitResult::Conflict);
             }
@@ -538,7 +541,9 @@ async fn foreign_user_cannot_consume_an_observed_consent_async() {
 
 #[test]
 fn concurrent_preparation_disposal_removes_only_the_observed_snapshot() {
-    futures_executor::block_on(concurrent_preparation_disposal_removes_only_the_observed_snapshot_async());
+    futures_executor::block_on(
+        concurrent_preparation_disposal_removes_only_the_observed_snapshot_async(),
+    );
 }
 
 async fn concurrent_preparation_disposal_removes_only_the_observed_snapshot_async() {
@@ -596,7 +601,9 @@ async fn consent_replacement_between_load_and_claim_is_preserved_async() {
         .await
         .unwrap();
     assert!(matches!(
-        service.discard_decision_material("request-1", &preview).await,
+        service
+            .discard_decision_material("request-1", &preview)
+            .await,
         Err(AuthorizationDecisionAdmissionError::ConsentMissing)
     ));
     let retained = store.0.consent.lock().unwrap().clone().unwrap();
@@ -634,9 +641,7 @@ async fn admitted_consent_consumes_its_par_handle_once_async() {
 
 #[test]
 fn missing_par_preview_retains_consent_for_protocol_redirect() {
-    futures_executor::block_on(
-        missing_par_preview_retains_consent_for_protocol_redirect_async(),
-    );
+    futures_executor::block_on(missing_par_preview_retains_consent_for_protocol_redirect_async());
 }
 
 async fn missing_par_preview_retains_consent_for_protocol_redirect_async() {
@@ -698,9 +703,14 @@ async fn corrupt_par_snapshot_between_load_and_disposal_is_preserved_async() {
     assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 1);
 }
 
-fn decision_input(kind: AuthorizationDecisionKind, request_id: &str, par: Option<&str>)
-    -> (AuthorizationDecisionCommit, Option<PreparedAuthorizationCode>)
-{
+fn decision_input(
+    kind: AuthorizationDecisionKind,
+    request_id: &str,
+    par: Option<&str>,
+) -> (
+    AuthorizationDecisionCommit,
+    Option<PreparedAuthorizationCode>,
+) {
     let now = Utc::now();
     let tenant_id = Uuid::from_u128(1);
     let mut payload = consent(Uuid::from_u128(10), par);
@@ -717,22 +727,25 @@ fn decision_input(kind: AuthorizationDecisionKind, request_id: &str, par: Option
             tenant_id,
         })
     });
-    (AuthorizationDecisionCommit {
-        tenant_id,
-        user_id: payload.user_id,
-        client_id: payload.client_id.clone(),
-        request_id: payload.request_id.clone(),
-        pushed_request_uri: payload.pushed_request_uri.clone(),
-        valid_until: payload.expires_at,
-        retain_until: payload.expires_at,
-        decision: kind,
-        event_id: Uuid::now_v7(),
-        occurred_at: now,
-        audit_fields: json!({"request_id_hash": "request-hash"}),
-        scopes: payload.scopes.clone(),
-        resource_indicators: payload.resource_indicators.clone(),
-        authorization_details: payload.authorization_details.clone(),
-    }, code)
+    (
+        AuthorizationDecisionCommit {
+            tenant_id,
+            user_id: payload.user_id,
+            client_id: payload.client_id.clone(),
+            request_id: payload.request_id.clone(),
+            pushed_request_uri: payload.pushed_request_uri.clone(),
+            valid_until: payload.expires_at,
+            retain_until: payload.expires_at,
+            decision: kind,
+            event_id: Uuid::now_v7(),
+            occurred_at: now,
+            audit_fields: json!({"request_id_hash": "request-hash"}),
+            scopes: payload.scopes.clone(),
+            resource_indicators: payload.resource_indicators.clone(),
+            authorization_details: payload.authorization_details.clone(),
+        },
+        code,
+    )
 }
 
 #[test]
@@ -772,13 +785,28 @@ fn approved_but_undelivered_keeps_fact_grant_and_consumption_fence() {
                 *store.0.code_error.lock().unwrap() = Some(AuthorizationPortError::Unavailable);
             }
             let service = service(repository.clone(), store.clone());
-            let (input, code) = decision_input(AuthorizationDecisionKind::Approve, "request", Some("par"));
-            assert_eq!(service.commit_decision(input, code).await, Err(AuthorizationPortError::Unavailable));
+            let (input, code) =
+                decision_input(AuthorizationDecisionKind::Approve, "request", Some("par"));
+            assert_eq!(
+                service.commit_decision(input, code).await,
+                Err(AuthorizationPortError::Unavailable)
+            );
             assert!(store.0.stored_code.lock().unwrap().is_none());
-            let (retry, code) = decision_input(AuthorizationDecisionKind::Approve, "request", Some("par"));
-            assert_eq!(service.commit_decision(retry, code).await.unwrap(), AuthorizationDecisionCommitResult::Conflict);
-            let (other_consent, code) = decision_input(AuthorizationDecisionKind::PromptNone, "another-request", Some("par"));
-            assert_eq!(service.commit_decision(other_consent, code).await.unwrap(), AuthorizationDecisionCommitResult::Conflict);
+            let (retry, code) =
+                decision_input(AuthorizationDecisionKind::Approve, "request", Some("par"));
+            assert_eq!(
+                service.commit_decision(retry, code).await.unwrap(),
+                AuthorizationDecisionCommitResult::Conflict
+            );
+            let (other_consent, code) = decision_input(
+                AuthorizationDecisionKind::PromptNone,
+                "another-request",
+                Some("par"),
+            );
+            assert_eq!(
+                service.commit_decision(other_consent, code).await.unwrap(),
+                AuthorizationDecisionCommitResult::Conflict
+            );
             assert!(store.0.stored_code.lock().unwrap().is_none());
             assert_eq!(store.0.code_deletes.load(Ordering::Relaxed), 0);
             let state = repository.0.decisions.lock().unwrap();
@@ -797,11 +825,22 @@ fn successful_commit_binds_exact_prepared_code_before_publication() {
         let service = service(repository.clone(), store.clone());
         let (input, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
         let prepared = code.unwrap();
-        let expected_digest = blake3::hash(&serde_json::to_vec(&prepared.payload).unwrap()).to_hex().to_string();
+        let expected_digest = blake3::hash(&serde_json::to_vec(&prepared.payload).unwrap())
+            .to_hex()
+            .to_string();
         let issued_at = prepared.payload.issued_at;
-        assert!(store.0.stored_code.lock().unwrap().is_none(), "preparation is not publication");
+        assert!(
+            store.0.stored_code.lock().unwrap().is_none(),
+            "preparation is not publication"
+        );
         assert!(repository.0.decisions.lock().unwrap().facts.is_empty());
-        assert_eq!(service.commit_decision(input, Some(prepared)).await.unwrap(), AuthorizationDecisionCommitResult::Committed);
+        assert_eq!(
+            service
+                .commit_decision(input, Some(prepared))
+                .await
+                .unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
         let stored = store.0.stored_code.lock().unwrap().clone().unwrap();
         let AuthorizationCodeState::Pending { payload } = stored else {
             panic!("a committed approval publishes a pending authorization code")
@@ -817,23 +856,42 @@ fn successful_commit_binds_exact_prepared_code_before_publication() {
         assert_eq!(state.facts.len(), 1);
         assert_eq!(state.facts[0].audit_fields["code_id"], "code-id");
         assert_eq!(state.facts[0].audit_fields["code_hash"], "hash");
-        assert_eq!(state.facts[0].audit_fields["code_payload_digest"], expected_digest);
+        assert_eq!(
+            state.facts[0].audit_fields["code_payload_digest"],
+            expected_digest
+        );
     });
 }
 
 #[test]
 fn deny_and_prompt_none_share_par_fence_without_incrementing_explicit_grants() {
     futures_executor::block_on(async {
-        for winner in [AuthorizationDecisionKind::Deny, AuthorizationDecisionKind::PromptNone] {
+        for winner in [
+            AuthorizationDecisionKind::Deny,
+            AuthorizationDecisionKind::PromptNone,
+        ] {
             let repository = FakeRepository::default();
             let store = FakeStore::default();
             let service = service(repository.clone(), store.clone());
             let (input, code) = decision_input(winner, "first", Some("par"));
-            assert_eq!(service.commit_decision(input, code).await.unwrap(), AuthorizationDecisionCommitResult::Committed);
-            assert_eq!(store.0.stored_code.lock().unwrap().is_some(), winner == AuthorizationDecisionKind::PromptNone);
-            for loser in [AuthorizationDecisionKind::Approve, AuthorizationDecisionKind::Deny, AuthorizationDecisionKind::PromptNone] {
+            assert_eq!(
+                service.commit_decision(input, code).await.unwrap(),
+                AuthorizationDecisionCommitResult::Committed
+            );
+            assert_eq!(
+                store.0.stored_code.lock().unwrap().is_some(),
+                winner == AuthorizationDecisionKind::PromptNone
+            );
+            for loser in [
+                AuthorizationDecisionKind::Approve,
+                AuthorizationDecisionKind::Deny,
+                AuthorizationDecisionKind::PromptNone,
+            ] {
                 let (input, code) = decision_input(loser, "second", Some("par"));
-                assert_eq!(service.commit_decision(input, code).await.unwrap(), AuthorizationDecisionCommitResult::Conflict);
+                assert_eq!(
+                    service.commit_decision(input, code).await.unwrap(),
+                    AuthorizationDecisionCommitResult::Conflict
+                );
             }
             let state = repository.0.decisions.lock().unwrap();
             assert_eq!(state.facts.len(), 1);
@@ -853,7 +911,10 @@ fn mismatched_prepared_authorization_is_rejected_before_repository_commit() {
         let service = service(repository.clone(), store.clone());
         let (mut input, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
         input.scopes.push("unapproved".into());
-        assert_eq!(service.commit_decision(input, code).await, Err(AuthorizationPortError::CorruptData));
+        assert_eq!(
+            service.commit_decision(input, code).await,
+            Err(AuthorizationPortError::CorruptData)
+        );
         assert!(repository.0.decisions.lock().unwrap().facts.is_empty());
         assert!(store.0.stored_code.lock().unwrap().is_none());
     });
@@ -873,7 +934,10 @@ fn preview_preserves_longest_material_retention_and_shortest_admission_expiry() 
         *store.0.consent.lock().unwrap() = Some(payload);
         *store.0.pushed.lock().unwrap() = Some(par);
         let service = service(FakeRepository::default(), store);
-        let preview = service.preview_user_decision("request-1", owner).await.unwrap();
+        let preview = service
+            .preview_user_decision("request-1", owner)
+            .await
+            .unwrap();
         assert_eq!(preview.valid_until(), expected_valid_until);
         assert_eq!(preview.retain_until(), expected_retain_until);
     });
@@ -885,16 +949,41 @@ fn independent_request_fence_is_tenant_scoped_and_expired_input_cannot_commit() 
         let repository = FakeRepository::default();
         let store = FakeStore::default();
         let service = service(repository.clone(), store.clone());
-        let (input, code) = decision_input(AuthorizationDecisionKind::Deny, "request", Some("first-par"));
-        assert_eq!(service.commit_decision(input, code).await.unwrap(), AuthorizationDecisionCommitResult::Committed);
-        let (input, code) = decision_input(AuthorizationDecisionKind::Deny, "request", Some("different-par"));
-        assert_eq!(service.commit_decision(input, code).await.unwrap(), AuthorizationDecisionCommitResult::Conflict);
-        let (mut input, code) = decision_input(AuthorizationDecisionKind::Deny, "request", Some("first-par"));
+        let (input, code) = decision_input(
+            AuthorizationDecisionKind::Deny,
+            "request",
+            Some("first-par"),
+        );
+        assert_eq!(
+            service.commit_decision(input, code).await.unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        let (input, code) = decision_input(
+            AuthorizationDecisionKind::Deny,
+            "request",
+            Some("different-par"),
+        );
+        assert_eq!(
+            service.commit_decision(input, code).await.unwrap(),
+            AuthorizationDecisionCommitResult::Conflict
+        );
+        let (mut input, code) = decision_input(
+            AuthorizationDecisionKind::Deny,
+            "request",
+            Some("first-par"),
+        );
         input.tenant_id = Uuid::from_u128(2);
-        assert_eq!(service.commit_decision(input, code).await.unwrap(), AuthorizationDecisionCommitResult::Committed);
-        let (mut input, code) = decision_input(AuthorizationDecisionKind::Approve, "expired-request", None);
+        assert_eq!(
+            service.commit_decision(input, code).await.unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        let (mut input, code) =
+            decision_input(AuthorizationDecisionKind::Approve, "expired-request", None);
         input.valid_until = Utc::now() - Duration::seconds(1);
-        assert_eq!(service.commit_decision(input, code).await.unwrap(), AuthorizationDecisionCommitResult::Expired);
+        assert_eq!(
+            service.commit_decision(input, code).await.unwrap(),
+            AuthorizationDecisionCommitResult::Expired
+        );
         assert_eq!(repository.0.decisions.lock().unwrap().facts.len(), 2);
         assert!(store.0.stored_code.lock().unwrap().is_none());
     });
@@ -903,23 +992,50 @@ fn independent_request_fence_is_tenant_scoped_and_expired_input_cannot_commit() 
 #[test]
 fn competing_decision_kinds_share_one_par_commit() {
     futures_executor::block_on(async {
-        for first_kind in [AuthorizationDecisionKind::Approve, AuthorizationDecisionKind::Deny, AuthorizationDecisionKind::PromptNone] {
+        for first_kind in [
+            AuthorizationDecisionKind::Approve,
+            AuthorizationDecisionKind::Deny,
+            AuthorizationDecisionKind::PromptNone,
+        ] {
             let repository = FakeRepository::default();
             let store = FakeStore::default();
             let service = service(repository.clone(), store.clone());
-            let (first, first_code) = decision_input(first_kind, "first-request", Some("shared-par"));
-            let (second, second_code) = decision_input(AuthorizationDecisionKind::Approve, "second-request", Some("shared-par"));
+            let (first, first_code) =
+                decision_input(first_kind, "first-request", Some("shared-par"));
+            let (second, second_code) = decision_input(
+                AuthorizationDecisionKind::Approve,
+                "second-request",
+                Some("shared-par"),
+            );
             let (first, second) = futures_util::join!(
                 service.commit_decision(first, first_code),
                 service.commit_decision(second, second_code),
             );
             let results = [first.unwrap(), second.unwrap()];
-            assert_eq!(results.iter().filter(|result| **result == AuthorizationDecisionCommitResult::Committed).count(), 1);
-            assert_eq!(results.iter().filter(|result| **result == AuthorizationDecisionCommitResult::Conflict).count(), 1);
+            assert_eq!(
+                results
+                    .iter()
+                    .filter(|result| **result == AuthorizationDecisionCommitResult::Committed)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                results
+                    .iter()
+                    .filter(|result| **result == AuthorizationDecisionCommitResult::Conflict)
+                    .count(),
+                1
+            );
             let state = repository.0.decisions.lock().unwrap();
             assert_eq!(state.facts.len(), 1);
-            assert_eq!(state.grant_writes, usize::from(state.facts[0].decision == AuthorizationDecisionKind::Approve));
-            assert_eq!(store.0.stored_code.lock().unwrap().is_some(), state.facts[0].decision != AuthorizationDecisionKind::Deny);
+            assert_eq!(
+                state.grant_writes,
+                usize::from(state.facts[0].decision == AuthorizationDecisionKind::Approve)
+            );
+            assert_eq!(
+                store.0.stored_code.lock().unwrap().is_some(),
+                state.facts[0].decision != AuthorizationDecisionKind::Deny
+            );
         }
     });
 }
@@ -931,9 +1047,15 @@ fn decision_kind_requires_matching_code_presence() {
         let store = FakeStore::default();
         let service = service(repository.clone(), store.clone());
         let (approve, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
-        assert_eq!(service.commit_decision(approve, None).await, Err(AuthorizationPortError::CorruptData));
+        assert_eq!(
+            service.commit_decision(approve, None).await,
+            Err(AuthorizationPortError::CorruptData)
+        );
         let (deny, _) = decision_input(AuthorizationDecisionKind::Deny, "request", None);
-        assert_eq!(service.commit_decision(deny, code).await, Err(AuthorizationPortError::CorruptData));
+        assert_eq!(
+            service.commit_decision(deny, code).await,
+            Err(AuthorizationPortError::CorruptData)
+        );
         assert!(repository.0.decisions.lock().unwrap().facts.is_empty());
         assert!(store.0.stored_code.lock().unwrap().is_none());
     });
@@ -951,7 +1073,13 @@ fn code_expiry_extends_retention_without_extending_admission_expiry() {
         prepared.payload.expires_at = valid_until + Duration::minutes(5);
         prepared.ttl_seconds = 600;
         let code_expiry = prepared.payload.expires_at;
-        assert_eq!(service.commit_decision(input, Some(prepared)).await.unwrap(), AuthorizationDecisionCommitResult::Committed);
+        assert_eq!(
+            service
+                .commit_decision(input, Some(prepared))
+                .await
+                .unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
         let state = repository.0.decisions.lock().unwrap();
         assert_eq!(state.facts[0].valid_until, valid_until);
         assert_eq!(state.facts[0].retain_until, code_expiry);

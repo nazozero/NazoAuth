@@ -291,11 +291,16 @@ fn high_impact_state_changes_have_durable_audit_boundaries() {
         "preview_user_decision(",
     );
     assert_source_order(authorization, "preview_user_decision(", "commit_decision(");
-    assert_source_order(authorization, "commit_decision(", "discard_decision_material(");
+    assert_source_order(
+        authorization,
+        "commit_decision(",
+        "discard_decision_material(",
+    );
     assert!(!authorization.contains(".record_required("));
     assert!(!authorization.contains("authorization_approved"));
     assert!(!authorization.contains("authorization_denied"));
-    let service = include_str!("../../../../authorization-server-core/src/authorization_service.rs");
+    let service =
+        include_str!("../../../../authorization-server-core/src/authorization_service.rs");
     let commit = source_body(
         service,
         "    pub async fn commit_decision(",
@@ -309,11 +314,10 @@ fn high_impact_state_changes_have_durable_audit_boundaries() {
         "self.state.store_authorization_code(",
     );
     assert!(commit.contains("result==AuthorizationDecisionCommitResult::Committed"));
-    let prompt_none = include_str!(
-        "../../../../authorization-server/src/authorization/request/prompt_none.rs"
-    )
-    .split_whitespace()
-    .collect::<String>();
+    let prompt_none =
+        include_str!("../../../../authorization-server/src/authorization/request/prompt_none.rs")
+            .split_whitespace()
+            .collect::<String>();
     assert_source_order(
         &prompt_none,
         "context.service.commit_decision(",

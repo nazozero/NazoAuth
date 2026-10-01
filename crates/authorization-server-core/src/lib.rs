@@ -77,15 +77,13 @@ pub use authorization_request::{
     validate_expanded_par_admission, validate_raw_par_admission, verify_request_object,
 };
 pub use authorization_service::{
-    AuthorizationApprovalInput,
-    AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
-    AuthorizationDecisionKind, PreparedAuthorizationCode, prepare_authorization_code,
-    AuthorizationFuture, AuthorizationPortError,
-    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
-    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateSnapshot,
-    AuthorizationStateStorePort, ClientAuthenticationSnapshot,
-    StoredAuthorizationGrant, pushed_authorization_request_digest,
-    stored_grant_covers_requested_authorization,
+    AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
+    AuthorizationDecisionCommitResult, AuthorizationDecisionKind, AuthorizationFuture,
+    AuthorizationPortError, AuthorizationRateDimension, AuthorizationRepositoryPort,
+    AuthorizationResponseSignInput, AuthorizationResponseSignerPort, AuthorizationService,
+    AuthorizationStateSnapshot, AuthorizationStateStorePort, ClientAuthenticationSnapshot,
+    PreparedAuthorizationCode, StoredAuthorizationGrant, prepare_authorization_code,
+    pushed_authorization_request_digest, stored_grant_covers_requested_authorization,
 };
 pub use ciba::{
     CibaAtomicResult, CibaAuthenticationContext, CibaCommittedDecision, CibaCreateFailure,

@@ -307,16 +307,28 @@ struct DecisionOutcomeRow {
 // Only hashes of request handles and detailed authorization enter the audit
 // export. Bind them to the exact durable input, never caller-supplied labels.
 fn bind_decision_audit_digests(input: &mut AuthorizationDecisionCommit) {
-    let digest = |value: &str| serde_json::Value::String(
-        blake3::hash(value.as_bytes()).to_hex().to_string(),
-    );
-    let fields = input.audit_fields.as_object_mut().expect("validated audit object");
+    let digest = |value: &str| {
+        serde_json::Value::String(blake3::hash(value.as_bytes()).to_hex().to_string())
+    };
+    let fields = input
+        .audit_fields
+        .as_object_mut()
+        .expect("validated audit object");
     fields.insert("request_id_hash".to_owned(), digest(&input.request_id));
     for (key, value) in [
-        ("resource_digest", (!input.resource_indicators.is_empty())
-            .then(|| input.resource_indicators.join("\u{1f}"))),
-        ("authorization_details_digest", input.authorization_details.as_array()
-            .filter(|details| !details.is_empty()).map(|_| input.authorization_details.to_string())),
+        (
+            "resource_digest",
+            (!input.resource_indicators.is_empty())
+                .then(|| input.resource_indicators.join("\u{1f}")),
+        ),
+        (
+            "authorization_details_digest",
+            input
+                .authorization_details
+                .as_array()
+                .filter(|details| !details.is_empty())
+                .map(|_| input.authorization_details.to_string()),
+        ),
         ("pushed_request_uri_hash", input.pushed_request_uri.clone()),
     ] {
         if let Some(value) = value {
@@ -339,7 +351,10 @@ fn validate_decision_input(
         || input.request_id.len() > 512
         || input.client_id.is_empty()
         || input.client_id.len() > 512
-        || input.pushed_request_uri.as_ref().is_some_and(|uri| uri.is_empty() || uri.len() > 1024)
+        || input
+            .pushed_request_uri
+            .as_ref()
+            .is_some_and(|uri| uri.is_empty() || uri.len() > 1024)
         || input.retain_until < input.valid_until
         || input.retain_until < input.occurred_at
         || !input.audit_fields.is_object()
