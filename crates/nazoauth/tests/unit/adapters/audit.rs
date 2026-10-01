@@ -1269,7 +1269,10 @@ mod transactional_readiness {
 
 #[test]
 fn refresh_family_security_revocation_is_registered_required_evidence() {
-    assert_eq!(audit_event_category("refresh_family_security_revoked"), Some("token_lifecycle"));
+    assert_eq!(
+        audit_event_category("refresh_family_security_revoked"),
+        Some("token_lifecycle")
+    );
     assert!(audit_event_is_required("refresh_family_security_revoked"));
     assert!(prepare_event("refresh_family_security_revoked", serde_json::Map::new()).is_ok());
 }
