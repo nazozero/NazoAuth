@@ -677,23 +677,34 @@ where
             }
             let encoded = serde_json::to_vec(&code.payload)
                 .map_err(|_| AuthorizationPortError::CorruptData)?;
-            let fields = input.audit_fields.as_object_mut()
+            let fields = input
+                .audit_fields
+                .as_object_mut()
                 .ok_or(AuthorizationPortError::CorruptData)?;
-            fields.insert("code_id".to_owned(), Value::String(code.payload.code_id.clone()));
+            fields.insert(
+                "code_id".to_owned(),
+                Value::String(code.payload.code_id.clone()),
+            );
             fields.insert("code_hash".to_owned(), Value::String(code.hash.clone()));
-            fields.insert("code_payload_digest".to_owned(),
-                Value::String(blake3::hash(&encoded).to_hex().to_string()));
+            fields.insert(
+                "code_payload_digest".to_owned(),
+                Value::String(blake3::hash(&encoded).to_hex().to_string()),
+            );
             input.retain_until = input.retain_until.max(code.payload.expires_at);
         }
         let result = self.repository.commit_decision(input).await?;
         if result == AuthorizationDecisionCommitResult::Committed
             && let Some(code) = code
         {
-            self.state.store_authorization_code(
-                &code.hash,
-                &AuthorizationCodeState::Pending { payload: code.payload },
-                code.ttl_seconds,
-            ).await?;
+            self.state
+                .store_authorization_code(
+                    &code.hash,
+                    &AuthorizationCodeState::Pending {
+                        payload: code.payload,
+                    },
+                    code.ttl_seconds,
+                )
+                .await?;
         }
         Ok(result)
     }

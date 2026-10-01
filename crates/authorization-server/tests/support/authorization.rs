@@ -105,16 +105,19 @@ impl AuthorizationRepositoryPort for Ports {
         self.record("commit_decision");
         Box::pin(async move {
             let mut state = self.decisions.lock().unwrap();
-            let outcome = state.outcome.expect("decision admission must be configured");
+            let outcome = state
+                .outcome
+                .expect("decision admission must be configured");
             if outcome != Ok(AuthorizationDecisionCommitResult::Committed) {
                 return outcome;
             }
             if state.facts.iter().any(|fact| {
                 fact.tenant_id == input.tenant_id
                     && (fact.request_id == input.request_id
-                        || input.pushed_request_uri.as_ref().is_some_and(|uri| {
-                            fact.pushed_request_uri.as_ref() == Some(uri)
-                        }))
+                        || input
+                            .pushed_request_uri
+                            .as_ref()
+                            .is_some_and(|uri| fact.pushed_request_uri.as_ref() == Some(uri)))
             }) {
                 return Ok(AuthorizationDecisionCommitResult::Conflict);
             }
@@ -122,7 +125,8 @@ impl AuthorizationRepositoryPort for Ports {
                 return Ok(AuthorizationDecisionCommitResult::Expired);
             }
             assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
-            state.explicit_grant_writes += usize::from(input.decision == AuthorizationDecisionKind::Approve);
+            state.explicit_grant_writes +=
+                usize::from(input.decision == AuthorizationDecisionKind::Approve);
             state.facts.push(input);
             Ok(AuthorizationDecisionCommitResult::Committed)
         })

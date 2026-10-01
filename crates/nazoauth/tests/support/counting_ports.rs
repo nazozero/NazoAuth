@@ -9,9 +9,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRepositoryPort, ClientAuthenticationSnapshot,
-    CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken,
-    SingleUseRedemption, StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort,
-    TokenRevocation,
+    CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken, SingleUseRedemption,
+    StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort, TokenRevocation,
 };
 use uuid::Uuid;
 
