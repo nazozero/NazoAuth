@@ -256,6 +256,9 @@ fn authorization_code_subset_access_keeps_the_full_initial_refresh_resource_gran
         refresh_token_client_attestation_jkt: None,
     });
     assert_eq!(issue.audiences, vec!["resource://a"]);
-    assert_eq!(issue.refresh_grant_audiences, Some(vec!["resource://a".to_owned(), "resource://b".to_owned()]));
+    assert_eq!(
+        issue.refresh_grant_audiences,
+        Some(vec!["resource://a".to_owned(), "resource://b".to_owned()])
+    );
     assert!(issue.refresh_authority.is_none());
 }
