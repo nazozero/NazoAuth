@@ -285,9 +285,8 @@ fn refresh_policy_requires_exact_source_shape_even_without_a_refresh_response() 
     issue.audiences = vec!["resource://a".to_owned()];
     issue.refresh_id_token_sid = Some(None);
     issue.include_refresh = false;
-    let matches = |issue: &TokenIssue| {
-        refresh_issue_matches_source(issue, &client, "https://issuer.example")
-    };
+    let matches =
+        |issue: &TokenIssue| refresh_issue_matches_source(issue, &client, "https://issuer.example");
 
     for policy in [RefreshTokenPolicy::NoRefresh, RefreshTokenPolicy::IssueNew] {
         issue.refresh_token_policy = policy;
@@ -343,9 +342,8 @@ fn unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_t
     issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
     issue.refresh_authority = Some(source.clone());
     issue.dpop_jkt = Some("new-proof-key".to_owned());
-    let matches = |issue: &TokenIssue| {
-        refresh_issue_matches_source(issue, &client, "https://issuer.example")
-    };
+    let matches =
+        |issue: &TokenIssue| refresh_issue_matches_source(issue, &client, "https://issuer.example");
     assert!(matches(&issue));
     issue.refresh_token_dpop_jkt = issue.dpop_jkt.clone();
     assert!(!matches(&issue));
