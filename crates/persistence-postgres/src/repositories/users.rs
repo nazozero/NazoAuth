@@ -290,9 +290,8 @@ impl UserRepository {
             users::address_postal_code.eq(profile.address.postal_code),
             users::address_country.eq(profile.address.country),
             users::phone_number.eq(profile.phone_number.as_deref()),
-            users::phone_number_verified.eq(
-                users::phone_number_verified.and(users::phone_number.is_not_distinct_from(profile.phone_number.as_deref())),
-            ),
+            users::phone_number_verified.eq(users::phone_number_verified
+                .and(users::phone_number.is_not_distinct_from(profile.phone_number.as_deref()))),
             users::updated_at.eq(diesel::dsl::now),
         ))
         .returning(PublicAccountRow::as_returning())

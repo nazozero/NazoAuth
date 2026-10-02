@@ -192,7 +192,7 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
 }
 
 #[tokio::test]
-async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
+async fn concurrent_approved_ciba_polls_preserve_retryable_state_until_durable_commit() {
     let Some((connection, inspector)) = setup().await else {
         return;
     };
@@ -219,6 +219,8 @@ async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
         store.create(&auth_req_id, &state).await.unwrap(),
         AtomicResult::Applied
     );
+    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:ciba:{}", blake3::hash(auth_req_id.as_bytes()).to_hex()));
+    let deadline = inspector.expire_time::<i64,_>(&key).await.unwrap();
     let first = CibaService::new(store.clone());
     let second = CibaService::new(store);
     let first_stored = first.load(&auth_req_id).await.unwrap().unwrap();
@@ -232,10 +234,13 @@ async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
             .into_iter()
             .filter(|result| matches!(result, Ok(CibaPollCommit::Approved(_))))
             .count(),
-        1,
-        "approved auth_req_id must have exactly one successful redemption"
+        2,
+        "poll prepares issuance; PostgreSQL owns the final single-use fence"
     );
-    assert!(first.load(&auth_req_id).await.unwrap().is_none());
+    let retained = first.load(&auth_req_id).await.unwrap().unwrap();
+    assert_eq!(retained.state(), &state);
+    assert_eq!(inspector.expire_time::<i64,_>(&key).await.unwrap(), deadline);
+    inspector.del::<i64,_>(&key).await.unwrap();
 }
 
 #[tokio::test]

@@ -676,11 +676,29 @@ async fn assert_native_destination_rolled_back(url: &str, input: &CommitTokenIss
     }
 }
 
-async fn fill_native_capacity(owner: &FixtureIds, tenant: Uuid, repo: &TokenIssuanceRepository, count: usize) {
+async fn fill_native_capacity(
+    owner: &FixtureIds,
+    tenant: Uuid,
+    repo: &TokenIssuanceRepository,
+    count: usize,
+) {
     for index in 0..count {
-        let mut sibling = refresh_token_fixture(owner, tenant, Uuid::now_v7(), format!("native-sibling-{index}-{}", Uuid::now_v7()), None);
+        let mut sibling = refresh_token_fixture(
+            owner,
+            tenant,
+            Uuid::now_v7(),
+            format!("native-sibling-{index}-{}", Uuid::now_v7()),
+            None,
+        );
         sibling.issued_at -= chrono::Duration::minutes(10 - index as i64);
-        assert_eq!(repo.commit_token_issuance(issuance(owner, tenant, TokenIssuanceMode::Fresh, Some(sibling)).await).await.unwrap(), CommitTokenIssuanceResult::Committed);
+        assert_eq!(
+            repo.commit_token_issuance(
+                issuance(owner, tenant, TokenIssuanceMode::Fresh, Some(sibling)).await
+            )
+            .await
+            .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
     }
 }
 
@@ -724,10 +742,17 @@ async fn native_source_revoked_after_preparation_rolls_back_destination() {
         CommitTokenIssuanceResult::RefreshGrantUnavailable
     );
     assert_native_destination_rolled_back(&url, &input).await;
-    assert_eq!(native_active_count(&url, target.client_id).await, 10, "destination capacity retirement must roll back");
+    assert_eq!(
+        native_active_count(&url, target.client_id).await,
+        10,
+        "destination capacity retirement must roll back"
+    );
     let after_audit = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE payload->>'client_id'=$1")
         .bind::<sql_types::Text,_>(&target.client_public_id).get_result::<CountRow>(&mut conn).await.unwrap().count;
-    assert_eq!(after_audit, before_audit, "capacity retirement audit must roll back too");
+    assert_eq!(
+        after_audit, before_audit,
+        "capacity retirement audit must roll back too"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1008,31 +1033,65 @@ async fn native_source_share_lock_holds_through_required_audit_and_commit() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn native_source_cross_client_capacity_and_maintenance_complete_without_deadlock() {
     use nazo_persistence::SecurityStateMaintenancePort;
-    let Some(url) = database_url() else { return; };
+    let Some(url) = database_url() else {
+        return;
+    };
     let (one, token_one, repo) = native_source_fixture(&url).await;
     let mut two = fixture(&url).await;
     two.user_id = one.user_id;
-    let mut token_two = refresh_token_fixture(&two, token_one.tenant_id, Uuid::now_v7(), format!("native-opposing-source-{}", Uuid::now_v7()), None);
+    let mut token_two = refresh_token_fixture(
+        &two,
+        token_one.tenant_id,
+        Uuid::now_v7(),
+        format!("native-opposing-source-{}", Uuid::now_v7()),
+        None,
+    );
     token_two.issued_at -= chrono::Duration::minutes(20);
-    assert_eq!(repo.commit_token_issuance(issuance(&two, token_one.tenant_id, TokenIssuanceMode::Fresh, Some(token_two.clone())).await).await.unwrap(), CommitTokenIssuanceResult::Committed);
+    assert_eq!(
+        repo.commit_token_issuance(
+            issuance(
+                &two,
+                token_one.tenant_id,
+                TokenIssuanceMode::Fresh,
+                Some(token_two.clone())
+            )
+            .await
+        )
+        .await
+        .unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
     fill_native_capacity(&one, token_one.tenant_id, &repo, 9).await;
     fill_native_capacity(&two, token_one.tenant_id, &repo, 9).await;
     let into_two = native_destination(&one, &token_one, &two).await;
     let into_one = native_destination(&two, &token_two, &one).await;
-    let maintenance = nazo_postgres::SecurityStateMaintenanceRepository::new(create_pool(&url, 2).unwrap());
+    let maintenance =
+        nazo_postgres::SecurityStateMaintenanceRepository::new(create_pool(&url, 2).unwrap());
     let (a, b, cleanup) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        tokio::join!(repo.commit_token_issuance(into_two.clone()), repo.commit_token_issuance(into_one.clone()), maintenance.cleanup_batch())
-    }).await.expect("opposing capacity exchanges and bounded maintenance must not deadlock");
+        tokio::join!(
+            repo.commit_token_issuance(into_two.clone()),
+            repo.commit_token_issuance(into_one.clone()),
+            maintenance.cleanup_batch()
+        )
+    })
+    .await
+    .expect("opposing capacity exchanges and bounded maintenance must not deadlock");
     cleanup.expect("isolated maintenance should complete");
     let mut successes = 0;
     for (result, input) in [(a, &into_two), (b, &into_one)] {
         match result {
             Ok(CommitTokenIssuanceResult::Committed) => successes += 1,
-            Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable) | Err(nazo_auth::TokenPortError::Unavailable) => assert_native_destination_rolled_back(&url, input).await,
+            Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable)
+            | Err(nazo_auth::TokenPortError::Unavailable) => {
+                assert_native_destination_rolled_back(&url, input).await
+            }
             other => panic!("unexpected opposing exchange result: {other:?}"),
         }
     }
-    assert!(successes <= 1, "retiring a source must prevent the opposing exchange");
+    assert!(
+        successes <= 1,
+        "retiring a source must prevent the opposing exchange"
+    );
     assert_eq!(native_active_count(&url, one.client_id).await, 10);
     assert_eq!(native_active_count(&url, two.client_id).await, 10);
 }

@@ -3185,37 +3185,83 @@ async fn system_tenant_admin_outcomes_preserve_cross_tenant_audit_and_rollback()
     cleanup(&pool, actor).await;
 }
 
-
 #[tokio::test]
 async fn profile_update_cannot_restore_stale_phone_verification() {
-    let Some((pool, tenant, user)) = database_fixture().await else { return; };
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
     let repo = UserRepository::new(pool.clone());
     let mut conn = get_conn(&pool).await.unwrap();
-    sql_query("UPDATE users SET phone_number='+15550000001',phone_number_verified=true WHERE id=$1")
-        .bind::<SqlUuid,_>(user.as_uuid()).execute(&mut conn).await.unwrap();
+    sql_query(
+        "UPDATE users SET phone_number='+15550000001',phone_number_verified=true WHERE id=$1",
+    )
+    .bind::<SqlUuid, _>(user.as_uuid())
+    .execute(&mut conn)
+    .await
+    .unwrap();
     drop(conn);
-    let snapshot = repo.public_account_by_id(tenant.tenant_id, user).await.unwrap().unwrap().profile;
-    let same = repo.update_profile(tenant.tenant_id, user, ProfileUpdate { profile: snapshot.clone() }).await.unwrap();
-    assert!(same.profile.phone_number_verified, "unchanged verified phone remains verified");
+    let snapshot = repo
+        .public_account_by_id(tenant.tenant_id, user)
+        .await
+        .unwrap()
+        .unwrap()
+        .profile;
+    let same = repo
+        .update_profile(
+            tenant.tenant_id,
+            user,
+            ProfileUpdate {
+                profile: snapshot.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        same.profile.phone_number_verified,
+        "unchanged verified phone remains verified"
+    );
     for changed_phone in [false, true] {
         let mut conn = get_conn(&pool).await.unwrap();
-        sql_query("UPDATE users SET phone_number='+15550000001',phone_number_verified=true WHERE id=$1")
-            .bind::<SqlUuid,_>(user.as_uuid()).execute(&mut conn).await.unwrap();
+        sql_query(
+            "UPDATE users SET phone_number='+15550000001',phone_number_verified=true WHERE id=$1",
+        )
+        .bind::<SqlUuid, _>(user.as_uuid())
+        .execute(&mut conn)
+        .await
+        .unwrap();
         if changed_phone {
             sql_query("UPDATE users SET phone_number='+15550000002',phone_number_verified=true WHERE id=$1")
                 .bind::<SqlUuid,_>(user.as_uuid()).execute(&mut conn).await.unwrap();
         } else {
             sql_query("UPDATE users SET phone_number_verified=false WHERE id=$1")
-                .bind::<SqlUuid,_>(user.as_uuid()).execute(&mut conn).await.unwrap();
+                .bind::<SqlUuid, _>(user.as_uuid())
+                .execute(&mut conn)
+                .await
+                .unwrap();
         }
         drop(conn);
-        let mut stale = snapshot.clone(); stale.nickname = Some("nickname-only-patch".to_owned());
-        let result = repo.update_profile(tenant.tenant_id, user, ProfileUpdate { profile: stale }).await.unwrap();
-        assert!(!result.profile.phone_number_verified, "a stale profile must not restore verification after a concurrent write");
+        let mut stale = snapshot.clone();
+        stale.nickname = Some("nickname-only-patch".to_owned());
+        let result = repo
+            .update_profile(tenant.tenant_id, user, ProfileUpdate { profile: stale })
+            .await
+            .unwrap();
+        assert!(
+            !result.profile.phone_number_verified,
+            "a stale profile must not restore verification after a concurrent write"
+        );
     }
     // Existing nullable phone semantics remain unchanged; NULL is never
     // newly verified by the profile endpoint's supplied old snapshot flag.
-    let mut empty = snapshot; empty.phone_number = None;
-    assert!(!repo.update_profile(tenant.tenant_id, user, ProfileUpdate { profile: empty }).await.unwrap().profile.phone_number_verified);
+    let mut empty = snapshot;
+    empty.phone_number = None;
+    assert!(
+        !repo
+            .update_profile(tenant.tenant_id, user, ProfileUpdate { profile: empty })
+            .await
+            .unwrap()
+            .profile
+            .phone_number_verified
+    );
     cleanup(&pool, user).await;
 }

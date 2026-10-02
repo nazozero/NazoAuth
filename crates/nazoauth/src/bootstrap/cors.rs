@@ -39,20 +39,18 @@ impl<'a> CorsPolicy<'a> {
     pub(super) fn well_known(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_well_known(origins),
-            Self::Dynamic => nazo_http_actix::cors_well_known_with_origin_predicate(
-                origin_predicate(),
-            ),
+            Self::Dynamic => {
+                nazo_http_actix::cors_well_known_with_origin_predicate(origin_predicate())
+            }
         }
     }
 
     pub(super) fn browser_token_management(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_browser_token_management(origins),
-            Self::Dynamic => {
-                nazo_http_actix::cors_browser_token_management_with_origin_predicate(
-                    origin_predicate(),
-                )
-            }
+            Self::Dynamic => nazo_http_actix::cors_browser_token_management_with_origin_predicate(
+                origin_predicate(),
+            ),
         }
     }
 
@@ -68,27 +66,23 @@ impl<'a> CorsPolicy<'a> {
     pub(super) fn auth_api(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_auth_api(origins),
-            Self::Dynamic => nazo_http_actix::cors_auth_api_with_origin_predicate(
-                origin_predicate(),
-            ),
+            Self::Dynamic => {
+                nazo_http_actix::cors_auth_api_with_origin_predicate(origin_predicate())
+            }
         }
     }
 
     pub(super) fn admin(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_admin(origins),
-            Self::Dynamic => nazo_http_actix::cors_admin_with_origin_predicate(
-                origin_predicate(),
-            ),
+            Self::Dynamic => nazo_http_actix::cors_admin_with_origin_predicate(origin_predicate()),
         }
     }
 
     pub(super) fn scim(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_scim(origins),
-            Self::Dynamic => {
-                nazo_http_actix::cors_scim_with_origin_predicate(origin_predicate())
-            }
+            Self::Dynamic => nazo_http_actix::cors_scim_with_origin_predicate(origin_predicate()),
         }
     }
 }
@@ -110,10 +104,15 @@ pub(crate) fn canonical_request_host(request: &RequestHead) -> Option<String> {
 
 fn origin_predicate() -> impl Fn(&HeaderValue, &RequestHead) -> bool + 'static {
     move |origin, _| {
-        REQUEST_CORS_SETTINGS.try_with(|settings| {
-            settings.endpoint.cors_allowed_origins.iter()
-                .any(|allowed| origin.as_bytes() == allowed.as_bytes())
-        }).unwrap_or(false)
+        REQUEST_CORS_SETTINGS
+            .try_with(|settings| {
+                settings
+                    .endpoint
+                    .cors_allowed_origins
+                    .iter()
+                    .any(|allowed| origin.as_bytes() == allowed.as_bytes())
+            })
+            .unwrap_or(false)
     }
 }
 
