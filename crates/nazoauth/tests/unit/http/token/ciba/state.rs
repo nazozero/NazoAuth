@@ -635,7 +635,7 @@ async fn concurrent_ciba_decisions_retry_stale_cas_and_commit_one_terminal_state
             CibaStoreCall::Create(_) | CibaStoreCall::Delete(_) => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(replace_calls, vec![Some(2_000), Some(2_000)]);
+    assert_eq!(replace_calls, vec![Some(state.expires_at); 2]);
     let stored = service.load(auth_req_id).await.unwrap().unwrap();
     assert!(matches!(
         stored.state().status,
