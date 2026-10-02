@@ -517,6 +517,9 @@ async fn database_update_stops_after_the_cas_conflict_budget() {
         .downcast_ref::<crate::SigningKeyRepositoryUnavailable>()
         .expect("exhausted CAS conflicts must remain a typed persistence failure");
     assert!(unavailable.0.to_string().contains("did not converge"));
-    assert_eq!(AtomicUsize::load(&repository.conflicts_remaining, Ordering::Acquire), 0);
+    assert_eq!(
+        AtomicUsize::load(&repository.conflicts_remaining, Ordering::Acquire),
+        0
+    );
     assert_eq!(repository.load().await.unwrap().unwrap().revision, 1);
 }
