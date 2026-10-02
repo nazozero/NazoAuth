@@ -1205,7 +1205,8 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
     let Some((url, repository)) = isolated("hist_fail").await else {
         return;
     };
-    let deployment = "deployment-history-failure";
+    let deployment = format!("deployment-history-failure-{}", Uuid::now_v7());
+    let deployment = deployment.as_str();
     let first = recovery_material(deployment, 1);
     let second = recovery_material(deployment, 2);
     let third = recovery_material(deployment, 3);
@@ -1281,7 +1282,8 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
     let Some((url, repository)) = isolated("gen_max").await else {
         return;
     };
-    let deployment = "deployment-generation-exhaustion";
+    let deployment = format!("deployment-generation-exhaustion-{}", Uuid::now_v7());
+    let deployment = deployment.as_str();
     let first = recovery_material(deployment, 1);
     let second = recovery_material(deployment, 2);
     enroll_root(&repository, deployment, &first, at(0)).await;
@@ -1353,7 +1355,8 @@ async fn root_enrollment_and_replacement_return_rows_in_six_data_queries() {
     connection.set_instrumentation(counter.clone());
     drop(connection);
     let repository = RecoveryRootRepository::new(pool);
-    let deployment = "deployment-root-returning";
+    let deployment = format!("deployment-root-returning-{}", Uuid::now_v7());
+    let deployment = deployment.as_str();
     let mut first_created_at = None;
     for generation in [1u8, 2] {
         let material = recovery_material(deployment, generation);
@@ -1414,7 +1417,8 @@ async fn failed_rollback_does_not_reuse_a_connection_for_the_counter() {
     };
     let pool = create_pool(url.clone(), 1).unwrap();
     let repository = RecoveryRootRepository::new(pool.clone());
-    let deployment = "deployment-rollback-loss";
+    let deployment = format!("deployment-rollback-loss-{}", Uuid::now_v7());
+    let deployment = deployment.as_str();
     let first = recovery_material(deployment, 1);
     let second = recovery_material(deployment, 2);
     enroll_root(&repository, deployment, &first, at(0)).await;

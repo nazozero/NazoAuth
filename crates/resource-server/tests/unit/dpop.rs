@@ -74,3 +74,14 @@ fn cloned_replay_verifiers_have_one_atomic_winner() {
         1
     );
 }
+
+#[test]
+fn proof_http_method_is_case_sensitive_before_replay_reservation() {
+    let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+    let mut claims = DpopProofClaims { htm: "get".to_owned(), htu: "https://resource.example/userinfo".to_owned(), iat: 100, jti: "same-jti".to_owned(), ath: Some(access_token_hash("token")), nonce: None };
+    assert_eq!(verifier.validate_claims(&claims, "GET", &["https://resource.example/userinfo"], "token", 100), Err(DpopProofVerifierError::MethodMismatch));
+    assert!(verifier.replay_cache.lock().unwrap().keys.is_empty());
+    claims.htm = "GET".to_owned();
+    assert!(verifier.validate_claims(&claims, "GET", &["https://resource.example/userinfo"], "token", 100).is_ok());
+    verifier.check_replay("holder", "same-jti", 100).unwrap();
+}
