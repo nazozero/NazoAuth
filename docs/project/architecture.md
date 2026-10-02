@@ -389,8 +389,15 @@ is verified and its phone equals the newly stored phone, with nullable equality.
 A stale profile snapshot cannot restore verification after a concurrent change.
 
 Registration sends use one attempt owner for the email and peer cooldowns and
-stored code. Cleanup compares that owner atomically, so a late SMTP failure
+stored code. Code publication atomically checks the current email reservation
+owner before SET EX, so a delayed hash cannot overwrite a later sender's code.
+Cleanup compares that owner atomically, so a late SMTP failure
 cannot remove a later sender's state. Cooldown durations and code expiry are
 unchanged. This changes transient email-code records from raw hashes to owned
 records: drain pending registration sends/codes before switching writers; old
 unbound records fail closed without a compatibility fallback.
+
+Tenant graph retirement synchronously aborts both module reconciliation and
+CIBA ping loops before awaiting either join. Dropping the final lifecycle owner
+also aborts still-owned loops; retained snapshots delay that final drop. Signing
+key refresh uses its existing cooperative shutdown and completes current writes.

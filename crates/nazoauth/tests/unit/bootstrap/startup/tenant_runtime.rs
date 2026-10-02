@@ -1242,3 +1242,46 @@ async fn publication_stops_only_displaced_lifecycles() {
             .is_none()
     );
 }
+
+struct RetiredLoopGuard(Arc<AtomicUsize>);
+impl Drop for RetiredLoopGuard { fn drop(&mut self) { self.0.fetch_add(1, Ordering::SeqCst); } }
+
+async fn install_retirement_loops(runtime: &Arc<TenantRuntime>) -> Arc<AtomicUsize> {
+    let started = Arc::new(AtomicUsize::new(0));
+    let stopped = Arc::new(AtomicUsize::new(0));
+    let spawn = || {
+        let started = started.clone(); let stopped = stopped.clone();
+        tokio::spawn(async move {
+            let _guard = RetiredLoopGuard(stopped);
+            started.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<()>().await;
+        })
+    };
+    { let mut lifecycle = runtime.lifecycle.lock().unwrap(); lifecycle.runtime_module_reconciler = Some(spawn()); lifecycle.ciba_ping_worker = Some(spawn()); }
+    tokio::time::timeout(Duration::from_secs(1), async { while started.load(Ordering::SeqCst) < 2 { tokio::task::yield_now().await; } }).await.unwrap();
+    stopped
+}
+async fn assert_retirement_loops_stopped(stopped: &AtomicUsize) {
+    tokio::time::timeout(Duration::from_secs(1), async { while stopped.load(Ordering::SeqCst) < 2 { tokio::task::yield_now().await; } }).await.expect("both retired loops must stop");
+}
+#[tokio::test]
+async fn cancelled_tenant_retirement_aborts_both_extracted_worker_handles() {
+    let runtime = TenantRuntime::for_test(binding(501, "retire.example", "https://retire.example"));
+    let stopped = install_retirement_loops(&runtime).await;
+    let mut stopping = Box::pin(runtime.stop_lifecycle());
+    assert!(futures_util::poll!(&mut stopping).is_pending());
+    drop(stopping);
+    assert_retirement_loops_stopped(stopped.as_ref()).await;
+}
+#[tokio::test]
+async fn last_retained_runtime_snapshot_drop_aborts_both_owned_loops() {
+    let runtime = TenantRuntime::for_test(binding(601, "retained.example", "https://retained.example"));
+    let stopped = install_retirement_loops(&runtime).await;
+    let snapshot = Arc::new(TenantHostIndex { revision: 1, by_host: HashMap::from([("retained.example".to_owned(), runtime.clone())]) });
+    let retained = snapshot.clone();
+    drop(runtime); drop(snapshot);
+    tokio::task::yield_now().await;
+    assert_eq!(stopped.load(Ordering::SeqCst), 0, "a retained old graph still owns its lifecycle");
+    drop(retained);
+    assert_retirement_loops_stopped(stopped.as_ref()).await;
+}

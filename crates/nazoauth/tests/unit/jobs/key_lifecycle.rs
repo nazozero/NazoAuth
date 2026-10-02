@@ -203,3 +203,26 @@ async fn lifecycle_stop_awaits_in_flight_refresh_without_cancelling_it() {
     stop.await.expect("stop task should finish cleanly");
     assert!(repository.completed_loads.load(Ordering::SeqCst) > completed);
 }
+
+#[tokio::test(start_paused = true)]
+async fn lifecycle_drop_finishes_in_flight_key_refresh_cooperatively() {
+    let (manager, repository) = managed_repository().await;
+    let completed = repository.completed_loads.load(Ordering::SeqCst);
+    repository.block.store(true, Ordering::SeqCst);
+    let task = KeyLifecycleTask::start(manager, settings().prepublish_window);
+    let completion = task.task.abort_handle();
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(10)).await;
+    repository.entered.notified().await;
+    drop(task);
+    tokio::task::yield_now().await;
+    assert!(!completion.is_finished(), "drop must not abort the in-flight key write");
+    repository.block.store(false, Ordering::SeqCst);
+    repository.release.notify_one();
+    while !completion.is_finished() { tokio::task::yield_now().await; }
+    assert_eq!(repository.completed_loads.load(Ordering::SeqCst), completed + 1);
+    let loads = repository.loads.load(Ordering::SeqCst);
+    tokio::time::advance(Duration::from_secs(20)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(repository.loads.load(Ordering::SeqCst), loads);
+}
