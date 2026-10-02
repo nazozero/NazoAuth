@@ -643,6 +643,13 @@ async fn wait_for_lock<T: std::fmt::Debug>(
 ) {
     let wait = async {
         loop {
+            // The coordinator may hold an open transaction. PostgreSQL caches
+            // its backend roster, so refresh it before looking for a newly
+            // connected task; wait_event itself is read live.
+            connection
+                .batch_execute("SELECT pg_stat_clear_snapshot()")
+                .await
+                .unwrap();
             let blocked = sql_query(
                 "SELECT count(*) AS count FROM pg_stat_activity \
                  WHERE application_name = $1 AND wait_event_type = 'Lock'",
@@ -852,6 +859,12 @@ async fn family_contract_lookup_preserves_per_family_lock_scope() {
     }
 
     let same_app = format!("family-same-{suffix}");
+    // Freeze the coordinator's roster before the new task connects. The wait
+    // helper must refresh it rather than polling this incomplete snapshot.
+    coordinator
+        .batch_execute("SELECT count(*) FROM pg_stat_activity")
+        .await
+        .unwrap();
     let same_repository =
         TokenIssuanceRepository::new(create_pool(tagged_url(&url, &same_app), 1).unwrap());
     let same_input = preserve(&fixture, &first);
