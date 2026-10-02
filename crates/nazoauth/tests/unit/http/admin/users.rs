@@ -1,10 +1,6 @@
 use super::*;
+use crate::test_support::admin_mutations::{LiveAdminUsersFixture, admin_user_dependencies};
 use actix_web::cookie::Cookie;
-use diesel::prelude::SelectableHelper;
-use diesel::sql_query;
-use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
-use diesel_async::RunQueryDsl;
-use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
@@ -12,19 +8,10 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::http::sessions::SessionHttpConfig;
-use crate::schema::users;
 use crate::settings::Settings;
-use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use chrono::Utc;
-use diesel::prelude::*;
-use nazo_identity::DEFAULT_ORGANIZATION_ID;
-use nazo_identity::DEFAULT_REALM_ID;
-use nazo_identity::DEFAULT_TENANT_ID;
-use nazo_identity::ports::AdminUserRepositoryPort;
-use nazo_oauth_server::sessions::SessionPayload;
-use nazo_postgres::{UserRepository, create_pool, get_conn};
+use nazo_postgres::{UserRepository, create_pool};
 
 fn user_row() -> PublicAccount {
     let now = Utc::now();
@@ -100,37 +87,6 @@ fn test_state() -> TestInfrastructure {
     }
 }
 
-fn admin_user_dependencies(
-    state: &Data<TestInfrastructure>,
-) -> (
-    Data<AdminSessionHandles>,
-    Data<dyn AdminUserRepositoryPort>,
-    Data<ClientIpConfig>,
-) {
-    let session = &state.settings.session;
-    let endpoint = &state.settings.endpoint;
-    (
-        Data::new(AdminSessionHandles::new(
-            std::sync::Arc::new(nazo_oauth_server::sessions::SessionResolver::new(
-                Arc::new(nazo_valkey::SessionStore::new(&state.valkey_connection())),
-                Arc::new(UserRepository::new(state.diesel_db.clone())),
-                state.settings.tenant.context.tenant_id,
-            )),
-            SessionHttpConfig::new(
-                &session.session_cookie_name,
-                &session.csrf_cookie_name,
-                session.cookie_secure,
-            ),
-        )),
-        Data::from(Arc::new(UserRepository::new(state.diesel_db.clone()))
-            as Arc<dyn AdminUserRepositoryPort>),
-        Data::new(ClientIpConfig::new(
-            &endpoint.trusted_proxy_cidrs,
-            endpoint.client_ip_header_mode,
-        )),
-    )
-}
-
 async fn invoke_admin_users(
     state: Data<TestInfrastructure>,
     req: HttpRequest,
@@ -171,136 +127,6 @@ async fn oauth_error_name(response: actix_web::HttpResponse) -> Option<String> {
     body.get("error")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
-}
-
-struct LiveAdminUsersFixture {
-    state: Data<TestInfrastructure>,
-}
-
-impl LiveAdminUsersFixture {
-    async fn new() -> Option<Self> {
-        let database_url = std::env::var("DATABASE_URL").ok()?;
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
-        let config = ConfigSource::from_pairs_for_test([
-            ("ISSUER", "https://issuer.example"),
-            ("TRANSPORT_MODE", "direct-tls"),
-            (
-                "CLIENT_SECRET_PEPPER",
-                "client-secret-pepper-for-tests-000000000001",
-            ),
-            ("COOKIE_SECURE", "true"),
-            ("SESSION_COOKIE_NAME", "nazo_admin_users_session"),
-            ("CSRF_COOKIE_NAME", "nazo_admin_users_csrf"),
-        ]);
-        let settings = Settings::from_config(&config).expect("test settings should load");
-        let mut valkey_builder = ValkeyBuilder::from_config(
-            ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
-        );
-        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
-            performance.default_command_timeout = StdDuration::from_millis(1000);
-        });
-        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
-            connection.connection_timeout = StdDuration::from_millis(1000);
-            connection.internal_command_timeout = StdDuration::from_millis(1000);
-            connection.max_command_attempts = 1;
-        });
-        let valkey = valkey_builder.build().expect("valkey client should build");
-        valkey.init().await.expect("valkey should connect");
-        let diesel_db = create_pool(database_url, 4).expect("database pool should build");
-        crate::test_support::initialize_audit_dependencies(&diesel_db);
-
-        Some(Self {
-            state: Data::new(TestInfrastructure {
-                diesel_db,
-                valkey,
-                settings: Arc::new(settings),
-                keyset: crate::test_support::test_key_manager(),
-            }),
-        })
-    }
-
-    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> DatabaseUserFixture {
-        let email = format!("admin-users-{suffix}@example.com");
-        let username = format!("admin-users-{suffix}");
-        let mut conn = get_conn(&self.state.diesel_db)
-            .await
-            .expect("database connection");
-        sql_query(
-            r#"
-            INSERT INTO users (
-                tenant_id, realm_id, organization_id, username, email,
-                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
-            )
-            VALUES ($1, $2, $3, $4, $5, 'unused-admin-users-hash', true, false, true, $6, $7)
-            RETURNING *
-            "#,
-        )
-        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
-        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
-        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
-        .bind::<Text, _>(username)
-        .bind::<Text, _>(email)
-        .bind::<Text, _>(role.to_owned())
-        .bind::<Int4, _>(admin_level)
-        .get_result::<DatabaseUserFixture>(&mut conn)
-        .await
-        .expect("test user should insert")
-    }
-
-    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
-        let payload = SessionPayload {
-            user_id: user.id,
-            auth_time: Utc::now().timestamp(),
-            amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
-            pending_mfa: false,
-            oidc_sid: Some(format!("oidc-{sid}")),
-        };
-        valkey_set_ex(
-            &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
-            serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session.session_ttl_seconds,
-        )
-        .await
-        .expect("session should store");
-    }
-
-    fn admin_get_request(&self, sid: &str, uri: &str) -> HttpRequest {
-        actix_web::test::TestRequest::get()
-            .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .to_http_request()
-    }
-
-    fn admin_post_request(&self, sid: &str, csrf: &str, uri: &str) -> HttpRequest {
-        actix_web::test::TestRequest::post()
-            .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .cookie(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                csrf.to_owned(),
-            ))
-            .insert_header(("x-csrf-token", csrf))
-            .to_http_request()
-    }
-
-    async fn load_user(&self, user_id: Uuid) -> DatabaseUserFixture {
-        let mut conn = get_conn(&self.state.diesel_db)
-            .await
-            .expect("database connection");
-        users::table
-            .find(user_id)
-            .select(DatabaseUserFixture::as_select())
-            .first::<DatabaseUserFixture>(&mut conn)
-            .await
-            .expect("user should be readable")
-    }
 }
 
 fn empty_patch() -> PatchUserRequest {
@@ -888,4 +714,45 @@ async fn admin_patch_user_reports_not_found_for_each_requested_field_update() {
             Some("invalid_request")
         );
     }
+}
+
+#[actix_web::test]
+async fn system_tenant_admin_update_commits_state_and_registered_required_audit() {
+    use diesel::{sql_query, sql_types::{Text, Uuid as SqlUuid}};
+    use diesel_async::RunQueryDsl;
+    use nazo_identity::{TenantContext, TenantDirectoryBinding, TenantId, RealmId, OrganizationId};
+    let Some(fixture) = LiveAdminUsersFixture::new().await else { return; };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let admin = fixture.create_user(&format!("{suffix}-system-admin"), "admin", 10).await;
+    let target = fixture.create_user(&format!("{suffix}-tenant-admin"), "user", 0).await;
+    let tenant = Uuid::now_v7(); let realm = Uuid::now_v7(); let organization = Uuid::now_v7();
+    let mut conn = nazo_postgres::get_conn(&fixture.state.diesel_db).await.unwrap();
+    sql_query("INSERT INTO tenants (id, slug, display_name) VALUES ($1, $2, 'Audit regression')")
+        .bind::<SqlUuid,_>(tenant).bind::<Text,_>(format!("audit-{suffix}")).execute(&mut conn).await.unwrap();
+    sql_query("INSERT INTO realms (id, tenant_id, slug, display_name) VALUES ($1, $2, 'default', 'Default')")
+        .bind::<SqlUuid,_>(realm).bind::<SqlUuid,_>(tenant).execute(&mut conn).await.unwrap();
+    sql_query("INSERT INTO organizations (id, tenant_id, slug, display_name) VALUES ($1, $2, 'default', 'Default')")
+        .bind::<SqlUuid,_>(organization).bind::<SqlUuid,_>(tenant).execute(&mut conn).await.unwrap();
+    sql_query("UPDATE users SET tenant_id=$1, realm_id=$2, organization_id=$3 WHERE id=$4")
+        .bind::<SqlUuid,_>(tenant).bind::<SqlUuid,_>(realm).bind::<SqlUuid,_>(organization).bind::<SqlUuid,_>(target.id).execute(&mut conn).await.unwrap();
+    drop(conn);
+    let tenant = TenantId::new(tenant).unwrap();
+    let registry = crate::bootstrap::test_support::registry(TenantDirectoryBinding {
+        tenant: TenantContext {tenant_id:tenant, realm_id:RealmId::new(realm).unwrap(), organization_id:OrganizationId::new(organization).unwrap()},
+        runtime_revision:1, issuer:"https://tenant-audit.example".to_owned(), external_host:"tenant-audit.example".to_owned(),
+    });
+    let sid = format!("sid-{suffix}"); let csrf=format!("csrf-{suffix}");
+    fixture.store_session(&admin, &sid).await;
+    let (sessions, users, ip) = admin_user_dependencies(&fixture.state);
+    let control = fixture.state.settings.tenant.context.tenant_id;
+    let response = crate::adapters::audit::REQUEST_TENANT.scope(control, system_set_tenant_admin(
+        sessions, users, Data::new(registry), Data::new(crate::bootstrap::routes::ControlTenantId::new(control)), ip,
+        fixture.admin_post_request(&sid,&csrf,"/system/tenants/admin"), actix_web::web::Path::from((tenant.as_uuid(),target.id)), Json(SetTenantAdminRequest {admin_level:3}),
+    )).await;
+    assert_eq!(response.status(),StatusCode::OK);
+    let persisted=fixture.load_user(target.id).await;
+    assert_eq!(persisted.role,"admin"); assert_eq!(persisted.admin_level,3);
+    assert_eq!(fixture.audit_count("system_tenant_admin_updated","target_user_id",&target.id.to_string()).await,1);
+    // The registration fixes deterministic unknown-event failure. The handler's
+    // existing cross-transaction persistence contract is otherwise unchanged.
 }

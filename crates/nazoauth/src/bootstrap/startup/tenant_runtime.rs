@@ -721,3 +721,7 @@ fn validate_snapshot(snapshot: &TenantDirectorySnapshot) -> anyhow::Result<()> {
 #[cfg(test)]
 #[path = "../../../tests/unit/bootstrap/startup/tenant_runtime.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/support/tenant_runtime.rs"]
+pub(crate) mod test_support;
