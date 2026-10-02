@@ -80,7 +80,7 @@ pub fn security_audit_event_wire_length(
 }
 /// Count the final range header with an empty array and a fixed-width digest.
 /// Add each event's count and one comma between events to obtain exact bytes.
-/// Exact sizing requires a 32-byte committed digest; the ledger uses SHA-256.
+/// Exact sizing requires the ledger's 32-byte BLAKE3 committed digest.
 /// Its URL-safe unpadded representation is always 43 bytes.
 pub fn security_audit_empty_envelope_wire_length(
     deployment_id: &str,
