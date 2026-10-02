@@ -149,6 +149,15 @@ impl ServerTokenManagementOperations {
                 return Err(TokenManagementError::ClientLookupUnavailable);
             }
         };
+        if !client.is_active {
+            perform_dummy_client_secret_verification(
+                &credentials,
+                &self.config.client_secret_pepper,
+            );
+            return Err(TokenManagementError::InvalidClient {
+                basic_challenge: has_basic,
+            });
+        }
         let config = ClientAuthConfig::new(
             &self.config.issuer,
             &self.config.client_secret_pepper,

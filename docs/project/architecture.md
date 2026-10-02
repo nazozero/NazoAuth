@@ -366,3 +366,8 @@ High-impact administration uses one identity-owned interactive-MFA predicate:
 300 seconds inclusive. Future authentication times do not count as completed
 step-ups. The separate 30-second clock allowance for ordinary session metadata
 is unchanged; endpoint-specific administrator levels remain separate policy.
+
+Token-management authentication rejects an inactive requesting client immediately
+after its authentication snapshot, before key resolution, cryptographic proof
+validation or assertion consumption. Introspection and revocation share this
+requester gate; the token issuer's own activity checks remain separate.
