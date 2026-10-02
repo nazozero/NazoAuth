@@ -135,7 +135,7 @@ impl LiveFixture {
         let email = normalize_email_address(email).unwrap();
         let tenant_id = nazo_identity::TenantId::new(nazo_identity::DEFAULT_TENANT_ID)
             .expect("default tenant must be non-nil");
-        let store = nazo_valkey::AuthenticationStore::new(&self.state.valkey);
+        let store = nazo_valkey::AuthenticationStore::new(&self.state.valkey_connection());
         let owner = Uuid::now_v7().to_string();
         assert!(
             store
