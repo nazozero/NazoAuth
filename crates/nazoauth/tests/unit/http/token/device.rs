@@ -792,7 +792,11 @@ async fn approved_device_code_has_one_consumption_identity_across_valid_sender_k
             (a, b)
         };
         if a.status() != StatusCode::OK && b.status() != StatusCode::OK {
-            panic!("neither valid sender succeeded: {} / {}", oauth_error_code(a).await, oauth_error_code(b).await);
+            panic!(
+                "neither valid sender succeeded: {} / {}",
+                oauth_error_code(a).await,
+                oauth_error_code(b).await
+            );
         }
         assert_eq!(
             [a.status(), b.status()]
