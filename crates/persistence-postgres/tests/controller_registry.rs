@@ -720,7 +720,10 @@ async fn concurrent_duplicate_kids_have_one_winner_for_insert_and_rotation() {
         other => panic!("expected one duplicate-kid winner, got {other:?}"),
     };
     assert!(matches!(error, ControllerRegistryError::DuplicateKid));
-    assert_eq!(repository.list_slots(deployment).await.unwrap(), vec![created]);
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![created]
+    );
 
     let deployment = "deployment-duplicate-rotate";
     let first = repository
@@ -744,12 +747,18 @@ async fn concurrent_duplicate_kids_have_one_winner_for_insert_and_rotation() {
     let stored = repository.list_slots(deployment).await.unwrap();
     assert_eq!(stored.len(), 2);
     assert!(stored.contains(&rotated));
-    assert!(stored.contains(&untouched), "duplicate rotation must leave its row unchanged");
+    assert!(
+        stored.contains(&untouched),
+        "duplicate rotation must leave its row unchanged"
+    );
     assert_eq!(rotated.created_at, at(0));
 
     // A row may retain its own kid; the removed COUNT used to exclude it.
     let refreshed = repository
-        .rotate_slot(rotation_input(deployment, &rotated.controller_id, 83), at(2))
+        .rotate_slot(
+            rotation_input(deployment, &rotated.controller_id, 83),
+            at(2),
+        )
         .await
         .expect("the row's own kid is not a duplicate");
     assert_eq!(refreshed.controller_id, rotated.controller_id);
@@ -762,9 +771,18 @@ async fn concurrent_duplicate_kids_have_one_winner_for_insert_and_rotation() {
         .unwrap();
     assert_eq!(revoked.status, ControllerSlotStatus::Revoked);
     assert_eq!(revoked.revoked_at, Some(at(3)));
-    assert!(repository.list_slots(deployment).await.unwrap().contains(&revoked));
+    assert!(
+        repository
+            .list_slots(deployment)
+            .await
+            .unwrap()
+            .contains(&revoked)
+    );
     let error = repository
-        .rotate_slot(rotation_input(deployment, &untouched.controller_id, 83), at(4))
+        .rotate_slot(
+            rotation_input(deployment, &untouched.controller_id, 83),
+            at(4),
+        )
         .await
         .expect_err("revoked history still reserves its deployment kid");
     assert!(matches!(error, ControllerRegistryError::DuplicateKid));
@@ -792,7 +810,10 @@ async fn unrelated_unique_constraints_are_transport_errors_and_roll_back() {
         .await
         .expect_err("an unrelated unique constraint is an infrastructure error");
     assert!(matches!(error, ControllerRegistryError::Transport(_)));
-    assert_eq!(repository.list_slots(deployment).await.unwrap(), vec![first.clone()]);
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![first.clone()]
+    );
     let second = repository
         .create_slot(slot_input(deployment, "second", 91), at(2))
         .await
@@ -836,19 +857,31 @@ async fn slot_mutations_return_the_stored_rows_in_three_data_queries() {
         .await
         .unwrap();
     assert_mutation(before);
-    assert_eq!(repository.list_slots(deployment).await.unwrap(), vec![created.clone()]);
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![created.clone()]
+    );
     let before = counter.snapshot();
     let rotated = repository
-        .rotate_slot(rotation_input(deployment, &created.controller_id, 101), at(1))
+        .rotate_slot(
+            rotation_input(deployment, &created.controller_id, 101),
+            at(1),
+        )
         .await
         .unwrap();
     assert_mutation(before);
-    assert_eq!(repository.list_slots(deployment).await.unwrap(), vec![rotated.clone()]);
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![rotated.clone()]
+    );
     let before = counter.snapshot();
     let revoked = repository
         .revoke_slot(deployment, &rotated.controller_id, at(2))
         .await
         .unwrap();
     assert_mutation(before);
-    assert_eq!(repository.list_slots(deployment).await.unwrap(), vec![revoked]);
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![revoked]
+    );
 }
