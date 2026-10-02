@@ -221,12 +221,18 @@ impl RuntimeModules {
             let planning_registry = modules.registry.clone();
             let transition_registry = modules.registry.clone();
             run_reconciler(
-                move || { let registry = planning_registry.clone(); Box::pin(async move { registry.plan_reconciliation().await }) },
-                move |module_id| { let registry = transition_registry.clone(); Box::pin(async move { registry.reconcile_once(module_id).await }) },
-            ).await;
+                move || {
+                    let registry = planning_registry.clone();
+                    Box::pin(async move { registry.plan_reconciliation().await })
+                },
+                move |module_id| {
+                    let registry = transition_registry.clone();
+                    Box::pin(async move { registry.reconcile_once(module_id).await })
+                },
+            )
+            .await;
         })
     }
-
 }
 
 type ReconcileError = RegistryError<nazo_identity::ports::RepositoryError>;
@@ -235,7 +241,8 @@ type ReconcileError = RegistryError<nazo_identity::ports::RepositoryError>;
 // expose the existing registry operations to deterministic scheduling tests.
 async fn run_reconciler(
     mut plan: impl FnMut() -> BoxFuture<'static, Result<Vec<ModuleId>, ReconcileError>> + Send,
-    mut reconcile: impl FnMut(ModuleId) -> BoxFuture<'static, Result<ReconcileOutcome, ReconcileError>> + Send,
+    mut reconcile: impl FnMut(ModuleId) -> BoxFuture<'static, Result<ReconcileOutcome, ReconcileError>>
+    + Send,
 ) {
     type Error = ReconcileError;
     let mut interval = tokio::time::interval(Duration::from_secs(1));
