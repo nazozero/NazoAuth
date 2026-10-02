@@ -193,3 +193,8 @@ already accepted deployment sequence before resuming export. Do not erase the
 receiver's history or reset deployment identity merely to make a fork appear
 continuous. Database ownership can rewrite unanchored local state; only
 independently protected receiver history survives that boundary.
+
+
+New batch claims count the exact escaped JSON envelope using the same borrowed Serde wire view as delivery. Each candidate event is serialized once for sizing; the header and comma bytes complete the count. A single legal event up to the 64 KiB canonical payload limit may use the finite 135168-byte singleton exception. The configured normal batch limit applies to new claims.
+
+Committed, in-flight and imported historical batches retain their original membership, range, digest and retry bytes, including batches above the new limit. They are not split or dropped during delivery. Receivers requiring a uniform strict limit must drain those batches before switching that policy; a historical batch may otherwise remain rejected. Batch and genesis receipt bodies are bounded by the configured envelope byte limit using both declared length and actual chunk bytes before buffer extension.

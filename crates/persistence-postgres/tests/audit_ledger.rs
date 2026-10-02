@@ -1473,3 +1473,25 @@ async fn pending_set_cutover_guard_rejects_divergence_and_accepts_mirror() {
         .await
         .expect("guard transaction should roll back");
 }
+
+
+#[tokio::test]
+async fn new_claim_budget_counts_escaped_json_wire_bytes_and_keeps_legal_singletons() {
+    let _claim_guard=AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(url)=database_url() else {return;}; run_pending_migrations(&url).await.unwrap();
+    let pool=create_pool(url,4).unwrap(); let repository=AuditLedgerRepository::new(pool);
+    drain_pending(&repository).await;
+    for length in [27_000,27_000,32_740] {
+        repository.append(SecurityAuditEvent {event_id:Uuid::now_v7(),event_type:"wire_budget_fixture".into(),event_category:"security".into(),payload:json!({"text":"\\".repeat(length)}),occurred_at:Utc::now()}).await.unwrap();
+    }
+    let mut claimed=0;
+    loop {
+        let batch=match repository.claim_batch("test-deployment",256,128*1024,60).await.unwrap() {SecurityAuditBatchClaim::Claimed(batch)=>batch,SecurityAuditBatchClaim::Empty=>break,other=>panic!("unexpected {other:?}")};
+        let wire=nazo_persistence::audit_wire::security_audit_batch_body("test-deployment",&batch).unwrap();
+        assert_eq!(batch.event_count(),1,"escaping must stop the two-event prefix before commitment");
+        assert!(wire.len()<=nazo_persistence::audit_wire::MAX_SECURITY_AUDIT_SINGLETON_ENVELOPE_BYTES);
+        if wire.len()>128*1024 {assert_eq!(batch.event_count(),1);}
+        repository.ack_batch(batch_ack(&batch)).await.unwrap(); claimed+=1;
+    }
+    assert_eq!(claimed,3);
+}

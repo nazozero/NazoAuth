@@ -1739,3 +1739,61 @@ async fn repository_adapter_forwards_invalid_pool_calls_without_panicking() {
         .is_err()
     );
 }
+
+
+async fn oversized_receipt_endpoint(mode:&str,limit:usize)->(Url,tokio::task::JoinHandle<()>) {
+    let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); let address=listener.local_addr().unwrap();let mode=mode.to_owned();
+    let server=tokio::spawn(async move {
+        let (mut stream,_)=listener.accept().await.unwrap();read_anchor_request(&mut stream).await;
+        if mode=="chunked" {
+            let _=stream.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await;
+            for length in [limit,1] {
+                if stream.write_all(format!("{length:x}\r\n").as_bytes()).await.is_err() {break;}
+                if stream.write_all(&vec![b'x';length]).await.is_err(){break;}
+                if stream.write_all(b"\r\n").await.is_err(){break;}
+            }
+            let _=stream.write_all(b"0\r\n\r\n").await;
+        } else {
+            let declared=if mode=="lying"{limit}else{limit+1};
+            let _=stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n").as_bytes()).await;
+            let _=stream.write_all(&vec![b'x';limit+1]).await;
+        }
+    });
+    (Url::parse(&format!("http://{address}/checkpoint")).unwrap(),server)
+}
+
+#[tokio::test]
+async fn oversized_receipts_are_bounded_and_never_acknowledged_for_batch_or_genesis() {
+    for mode in ["known","chunked","lying"] {
+        let (endpoint,server)=oversized_receipt_endpoint(mode,128*1024).await;
+        let mut config=iteration_config(endpoint);config.max_envelope_bytes=128*1024;
+        let batch=batch(vec![delivery(7)]);
+        let repository=ScriptedRepository::with_health(Ok(health_snapshot()),Ok(SecurityAuditBatchClaim::Claimed(batch.clone())));
+        assert_eq!(run_iteration(&repository,&test_client(),&config,&mut None,&mut None).await,IterationOutcome::Retry(Duration::from_secs(1)));
+        assert!(repository.acked().is_empty());assert_eq!(repository.failures(),vec![(batch.generation,"invalid_receipt".to_owned(),false)]);
+        server.await.unwrap();
+        let (endpoint,server)=oversized_receipt_endpoint(mode,128*1024).await;
+        config.endpoint=endpoint;
+        assert!(matches!(send_genesis_checkpoint(&test_client(),&config,&[9;32]).await,Err(AnchorPushError::InvalidReceipt)));
+        server.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn historical_large_batch_retry_preserves_bytes_digest_range_and_membership() {
+    let mut deliveries=(1..=17).map(delivery).collect::<Vec<_>>();
+    for delivery in &mut deliveries {delivery.payload_canonical=serde_json::json!({"text":"\\".repeat(32_740)}).to_string();}
+    let committed=batch(deliveries);let expected=batch_body("deployment-1",&committed).unwrap();
+    assert!(expected.len()>2*1024*1024);
+    for _ in 0..2 {
+        let (endpoint,server)=local_anchor_endpoint_with_body(200,accepted_batch_receipt(&committed)).await;
+        let mut config=iteration_config(endpoint);config.max_envelope_bytes=128*1024;
+        assert_eq!(send_batch(&test_client(),&config,&committed).await.unwrap(),PushOutcome::Accepted {duplicate:false});
+        let request=server.await.unwrap();let header_end=request.windows(4).position(|bytes|bytes==b"\r\n\r\n").unwrap();
+        assert_eq!(&request[header_end+4..],expected.as_slice());
+        let headers=String::from_utf8_lossy(&request[..header_end]);
+        let identity=format!("batch:deployment-1:{}:{}:{}",committed.first_sequence,committed.last_sequence,encode_hash(&committed.digest));
+        assert_eq!(header_value(&headers,"idempotency-key"),Some(identity.as_str()));
+        assert_eq!(committed.event_count(),17);
+    }
+}

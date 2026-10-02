@@ -77,10 +77,7 @@ pub(super) async fn send_batch(
     if !status.is_success() {
         return Err(AnchorPushError::Http(status.as_u16()));
     }
-    let response_body = response
-        .bytes()
-        .await
-        .map_err(|_| AnchorPushError::Transport)?;
+    let response_body = bounded_receipt_body(response, config.max_envelope_bytes).await?;
     let expectation = batch_expectation(deployment_id, batch);
     decode_outcome(&response_body, config, &expectation)
 }
@@ -113,12 +110,20 @@ pub(super) async fn send_genesis_checkpoint(
     if !status.is_success() {
         return Err(AnchorPushError::Http(status.as_u16()));
     }
-    let response_body = response
-        .bytes()
-        .await
-        .map_err(|_| AnchorPushError::Transport)?;
+    let response_body = bounded_receipt_body(response, config.max_envelope_bytes).await?;
     let expectation = genesis_expectation(deployment_id, head_hash);
     decode_outcome(&response_body, config, &expectation)
+}
+
+async fn bounded_receipt_body(mut response:reqwest::Response,max_bytes:i64)->Result<Vec<u8>,AnchorPushError> {
+    let limit=usize::try_from(max_bytes).map_err(|_|AnchorPushError::InvalidReceipt)?;
+    if response.content_length().is_some_and(|length|length>limit as u64) { return Err(AnchorPushError::InvalidReceipt); }
+    let mut body=Vec::new();
+    while let Some(chunk)=response.chunk().await.map_err(|_|AnchorPushError::Transport)? {
+        if chunk.len()>limit.saturating_sub(body.len()) { return Err(AnchorPushError::InvalidReceipt); }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 fn decode_outcome(
