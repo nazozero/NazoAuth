@@ -205,7 +205,10 @@ where
         {
             // A timed-out store may have completed; only our owned code may
             // be removed while releasing the reservations we acquired.
-            let _ = self.verification.delete_code(self.tenant.tenant_id, normalized_email, &owner).await;
+            let _ = self
+                .verification
+                .delete_code(self.tenant.tenant_id, normalized_email, &owner)
+                .await;
             self.release_send_reservations(normalized_email, peer_subject, &owner)
                 .await;
             return Err(SendVerificationCodeError::CodeStore(error));
