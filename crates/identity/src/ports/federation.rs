@@ -83,6 +83,9 @@ pub trait FederationLoginRepositoryPort: Send + Sync {
     ) -> RepositoryFuture<'_, PublicAccount>;
 }
 
+/// Callback state is taken only when the stored browser hash matches. A missing,
+/// legacy, corrupt-JSON or nonmatching binding leaves the value and TTL untouched.
+/// A matching raw value is removed atomically before typed parsing.
 pub trait FederationStatePort: Send + Sync {
     fn store_oidc<'a>(
         &'a self,
@@ -94,6 +97,7 @@ pub trait FederationStatePort: Send + Sync {
     fn take_oidc<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::federation::OidcFederationState>>;
 
     fn store_social<'a>(
@@ -106,6 +110,7 @@ pub trait FederationStatePort: Send + Sync {
     fn take_social<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::federation::SocialFederationState>>;
 
     fn reserve_saml_replay<'a>(
@@ -131,8 +136,10 @@ where
     fn take_oidc<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::federation::OidcFederationState>> {
-        self.as_ref().take_oidc(state)
+        self.as_ref()
+            .take_oidc(state, expected_browser_binding_hash)
     }
 
     fn store_social<'a>(
@@ -147,8 +154,10 @@ where
     fn take_social<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::federation::SocialFederationState>> {
-        self.as_ref().take_social(state)
+        self.as_ref()
+            .take_social(state, expected_browser_binding_hash)
     }
 
     fn reserve_saml_replay<'a>(

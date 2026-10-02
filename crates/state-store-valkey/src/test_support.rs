@@ -82,6 +82,12 @@ pub fn oidc_federation_storage_key(state: &str) -> String {
     state_storage_key(crate::keys::oidc_federation(state))
 }
 
+/// Inspect social callback state using the owning key and namespace derivation.
+#[must_use]
+pub fn social_federation_storage_key(state: &str) -> String {
+    state_storage_key(crate::keys::social_federation(state))
+}
+
 /// Returns the actual storage key used for a CIBA authentication request.
 ///
 /// Raw cross-crate tests use this to inspect or inject state without copying

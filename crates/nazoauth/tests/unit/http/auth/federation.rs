@@ -541,6 +541,36 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
     (status, json)
 }
 
+const TEST_BROWSER_BINDING_SEED: [u8; 32] = [0x35; 32];
+
+fn bound_federation_test_request() -> actix_web::test::TestRequest {
+    let value = URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED);
+    // These existing policy tests span both dev and secure fixture settings.
+    // Dedicated binding tests below construct each configured name explicitly.
+    actix_web::test::TestRequest::get()
+        .cookie(actix_web::cookie::Cookie::new("nazo_federation_binding", value.clone()))
+        .cookie(actix_web::cookie::Cookie::new("__Host-nazo_federation_binding", value))
+}
+
+async fn bound_oidc_state(state: &TestInfrastructure) -> OidcFederationState {
+    // Obtain the hash through the owning identity service; tests do not duplicate
+    // domain separation or digest derivation.
+    let service = crate::test_support::federation_service(state);
+    let start = service
+        .start_oidc(TEST_OIDC_PROVIDER_ID.to_owned(), &TEST_BROWSER_BINDING_SEED, Utc::now())
+        .await
+        .expect("bound fixture start should persist");
+    service
+        .consume_oidc(
+            &start.state,
+            TEST_OIDC_PROVIDER_ID,
+            &TEST_BROWSER_BINDING_SEED,
+            Utc::now(),
+        )
+        .await
+        .expect("fixture owner should consume its setup state")
+}
+
 async fn store_oidc_state(state: &TestInfrastructure, state_token: &str, created_at: i64) {
     let nonce = random_urlsafe_token();
     store_oidc_state_with_nonce(state, state_token, &nonce, created_at).await;
@@ -552,13 +582,12 @@ async fn store_oidc_state_with_nonce(
     nonce: &str,
     created_at: i64,
 ) {
-    let body = serde_json::to_string(&OidcFederationState {
-        provider_id: None,
-        nonce: nonce.to_owned(),
-        pkce_verifier: "verifier-1".to_owned(),
-        created_at,
-    })
-    .expect("test federation state should serialize");
+    let mut stored = bound_oidc_state(state).await;
+    stored.nonce = nonce.to_owned();
+    stored.pkce_verifier = "verifier-1".to_owned();
+    stored.created_at = created_at;
+    let body =
+        serde_json::to_string(&stored).expect("test federation state should serialize");
     valkey_set_ex(
         &state.valkey,
         oidc_state_key(state_token),
@@ -773,7 +802,7 @@ async fn oidc_callback_input_requires_urlsafe_state_and_bounded_non_empty_code()
 async fn oidc_callback_after_rate_limit_rejects_provider_error_before_state_lookup() {
     let state = Data::new(oidc_callback_state());
     let provider = oidc_provider();
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?error=access_denied")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -797,7 +826,7 @@ async fn federation_provider_callback_rejects_unknown_provider_before_input_proc
         return;
     };
     let state = Data::new(state);
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/missing/callback?error=access_denied")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -821,7 +850,7 @@ async fn federation_provider_callback_rejects_unknown_provider_before_input_proc
 async fn oidc_callback_after_rate_limit_validates_input_before_state_storage_errors() {
     let state = Data::new(oidc_callback_state());
     let provider = oidc_provider();
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=valid&code=code")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -846,7 +875,7 @@ async fn oidc_callback_treats_missing_state_as_expired_before_token_exchange() {
         return;
     };
     let state = Data::new(state);
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=missing&code=code")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -880,7 +909,7 @@ async fn oidc_callback_rejects_malformed_stored_state_before_token_exchange() {
     .await
     .expect("malformed test OIDC state should be written");
     let state = Data::new(state);
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=bad&code=code")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -912,7 +941,7 @@ async fn oidc_callback_rejects_expired_stored_state_before_token_exchange() {
     )
     .await;
     let state = Data::new(state);
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=expired&code=code")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -937,12 +966,8 @@ async fn oidc_callback_rejects_state_bound_to_another_provider_before_token_exch
         return;
     };
     let state_token = random_urlsafe_token();
-    let stored = OidcFederationState {
-        provider_id: Some("another-provider".to_owned()),
-        nonce: random_urlsafe_token(),
-        pkce_verifier: random_urlsafe_token(),
-        created_at: Utc::now().timestamp(),
-    };
+    let mut stored = bound_oidc_state(&state).await;
+    stored.provider_id = Some("another-provider".to_owned());
     valkey_set_ex(
         &state.valkey,
         oidc_state_key(&state_token),
@@ -953,19 +978,23 @@ async fn oidc_callback_rejects_state_bound_to_another_provider_before_token_exch
     .expect("bound OIDC state should be written");
 
     let response = oidc_callback_after_rate_limit_for_provider(
-        Data::new(state),
-        actix_web::test::TestRequest::get()
+        Data::new(state.clone()),
+        bound_federation_test_request()
             .uri("/auth/federation/test-oidc/callback?state=mixup&code=code")
             .to_http_request(),
         OidcCallbackQuery {
             code: Some("code-1".to_owned()),
-            state: Some(state_token),
+            state: Some(state_token.clone()),
             error: None,
         },
         provider,
     )
     .await;
 
+    assert!(
+        valkey_get(&state.valkey, oidc_state_key(&state_token)).await.unwrap().is_none(),
+        "a matching browser retains the prior burn-on-provider-mismatch behavior",
+    );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         oauth_error_code(response).await.as_deref(),
@@ -983,7 +1012,7 @@ async fn oidc_callback_requires_normalized_email_claim_before_identity_resolutio
     let state_token = random_urlsafe_token();
     store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
     let state = Data::new(state);
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=email&code=code")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -1017,7 +1046,7 @@ async fn oidc_callback_rejects_unverified_email_before_identity_resolution() {
     let state_token = random_urlsafe_token();
     store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
     let state = Data::new(state);
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=email&code=code")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -1051,7 +1080,7 @@ async fn oidc_callback_rejects_missing_email_verification_before_identity_resolu
     let state_token = random_urlsafe_token();
     store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
     let state = Data::new(state);
-    let req = actix_web::test::TestRequest::get()
+    let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=email&code=code")
         .to_http_request();
     let query = OidcCallbackQuery {
@@ -1371,7 +1400,7 @@ async fn federation_provider_start_rejects_unknown_provider_after_rate_limit() {
     };
     let response = federation_provider_start(
         Data::new(state),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.10:443"
                     .parse()
@@ -1398,7 +1427,7 @@ async fn federation_provider_start_persists_oidc_state_nonce_and_pkce_binding() 
     let state = Data::new(state);
     let response = federation_provider_start(
         state.clone(),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.11:443"
                     .parse()
@@ -1464,7 +1493,7 @@ async fn oidc_callback_denies_failed_token_exchange_and_consumes_state() {
 
     let response = oidc_callback_after_rate_limit_for_provider(
         state.clone(),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.12:443"
                     .parse()
@@ -1517,7 +1546,7 @@ async fn oidc_callback_returns_server_error_when_jwks_response_is_invalid() {
 
     let response = oidc_callback_after_rate_limit_for_provider(
         state,
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.13:443"
                     .parse()
@@ -1560,7 +1589,7 @@ async fn oidc_callback_rejects_id_token_policy_failures_and_consumes_state() {
 
     let response = oidc_callback_after_rate_limit_for_provider(
         state.clone(),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.14:443"
                     .parse()
@@ -1613,7 +1642,7 @@ async fn oidc_callback_reports_identity_resolution_db_failure_without_session_co
 
     let response = oidc_callback_after_rate_limit_for_provider(
         state.clone(),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.21:443"
                     .parse()
@@ -1673,7 +1702,7 @@ async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
 
     let response = oidc_callback_after_rate_limit_for_provider(
         fixture.state.clone(),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.15:443"
                     .parse()
@@ -1754,7 +1783,7 @@ async fn oidc_callback_rejects_existing_active_email_account_without_explicit_li
 
     let response = oidc_callback_after_rate_limit_for_provider(
         fixture.state.clone(),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.16:443"
                     .parse()
@@ -1821,7 +1850,7 @@ async fn oidc_callback_rejects_existing_inactive_email_account_without_link_or_s
 
     let response = oidc_callback_after_rate_limit_for_provider(
         fixture.state.clone(),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.19:443"
                     .parse()
@@ -1899,7 +1928,7 @@ async fn oidc_callback_rejects_inactive_linked_user() {
 
     let response = oidc_callback_after_rate_limit_for_provider(
         fixture.state.clone(),
-        actix_web::test::TestRequest::get()
+        bound_federation_test_request()
             .peer_addr(
                 "198.51.100.17:443"
                     .parse()
@@ -1959,7 +1988,7 @@ async fn social_callback_without_email_rejects_inactive_linked_user() {
         Duration::from_secs(5),
         complete_social_callback(
             fixture.state.clone(),
-            actix_web::test::TestRequest::get()
+            bound_federation_test_request()
                 .peer_addr(
                     "198.51.100.23:443"
                         .parse()
@@ -2065,3 +2094,6 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
         "a signed SAML assertion must be accepted at most once"
     );
 }
+
+#[path = "federation/browser_binding.rs"]
+mod browser_binding;

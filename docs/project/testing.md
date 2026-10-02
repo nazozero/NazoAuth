@@ -130,6 +130,19 @@ requires natural autovacuum recovery without manual vacuum of that lifecycle.
 
 Targeted suites with their own entry points:
 
+- `crates/identity/tests/unit/federation.rs` defines tenant-separated digest and
+  legacy parsing checks. `crates/state-store-valkey/tests/federation_binding.rs`
+  defines real-Valkey matching-take concurrency, exact raw/deadline preservation,
+  matching-owner typed corruption and the single-EVAL call-path contract.
+- `crates/nazoauth/tests/unit/http/auth/federation/browser_binding.rs` defines
+  canonical cookie/security attributes, missing-cookie zero-store calls,
+  backend failure mapping, OIDC/social attacker-to-other-browser rejection with
+  subsequent owner completion, parallel established-cookie starts, and the
+  fail-closed simultaneous cold-start race. HTTP completion fixtures use the
+  isolated PostgreSQL and Valkey configured above; the state-only checks require
+  Valkey. These focused cases supplement existing nonce, PKCE and provider
+  mismatch regressions.
+
 - `crates/persistence-postgres/tests/schema_cleanup.rs` exercises the
   inert-state migration's up/down data preservation, refusal of populated
   legacy state and schema drift, external dependency blocking, and retained
