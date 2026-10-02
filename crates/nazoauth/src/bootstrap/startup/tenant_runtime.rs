@@ -57,6 +57,15 @@ struct TenantRuntimeLifecycle {
     ciba_ping_worker: Option<JoinHandle<()>>,
 }
 
+impl Drop for TenantRuntimeLifecycle {
+    fn drop(&mut self) {
+        if let Some(worker) = self.runtime_module_reconciler.take() { worker.abort(); }
+        if let Some(worker) = self.ciba_ping_worker.take() { worker.abort(); }
+        // KeyLifecycleTask's watch sender closes on drop. Its current refresh
+        // completes cooperatively; key material writes must never be aborted.
+    }
+}
+
 impl TenantRuntime {
     fn new(
         binding: TenantDirectoryBinding,
@@ -127,6 +136,10 @@ impl TenantRuntime {
                 lifecycle.ciba_ping_worker.take(),
             )
         };
+        // Abort both owned loops before the first await. Cancellation while
+        // joining either one must not detach the other extracted handle.
+        if let Some(worker) = runtime_module_reconciler.as_ref() { worker.abort(); }
+        if let Some(worker) = ciba_ping_worker.as_ref() { worker.abort(); }
         let stop_key = async {
             if let Some(worker) = key_lifecycle {
                 worker.stop().await;
@@ -134,7 +147,6 @@ impl TenantRuntime {
         };
         let stop_workers = async {
             if let Some(worker) = runtime_module_reconciler {
-                worker.abort();
                 if let Err(error) = worker.await
                     && !error.is_cancelled()
                 {
@@ -142,7 +154,6 @@ impl TenantRuntime {
                 }
             }
             if let Some(worker) = ciba_ping_worker {
-                worker.abort();
                 if let Err(error) = worker.await
                     && !error.is_cancelled()
                 {
