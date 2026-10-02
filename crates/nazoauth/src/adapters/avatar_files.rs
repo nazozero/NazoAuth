@@ -282,7 +282,7 @@ impl AvatarStoragePort for LocalAvatarStorage {
                 // cancelled before syncing its entry. Complete our own entire
                 // directory publication within the configured storage root before
                 // permitting the database CAS. The deployed root itself is
-                // provisioned durably at startup; unrelated OS parents are
+                // precreated and durably provisioned by deployment; unrelated OS parents are
                 // outside upload publication ownership.
                 for directory in versions.ancestors() {
                     sync_directory(directory).await?;

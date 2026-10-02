@@ -197,9 +197,9 @@ impl ServerTokenManagementOperations {
     async fn protected_introspection(
         &self,
         client: &OAuthClient,
-        inspection: &nazo_auth::TokenInspection,
+        inspection: nazo_auth::TokenInspection,
     ) -> Result<String, TokenManagementError> {
-        let body = inspection.clone().into_document();
+        let body = inspection.into_document();
         let token = self
             .token_service
             .sign_introspection_response(IntrospectionSignInput {
@@ -276,7 +276,7 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     TokenManagementError::ResponseProtectionFailed
                 })?;
                 return self
-                    .protected_introspection(&client, &inspection)
+                    .protected_introspection(&client, inspection)
                     .await
                     .map(TokenIntrospectionRepresentation::Jwt);
             }

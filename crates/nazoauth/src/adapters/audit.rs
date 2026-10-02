@@ -471,7 +471,7 @@ struct PersistentAuditSink {
 #[derive(Debug)]
 struct AuditPersistRequest {
     event: QueuedAuditEvent,
-    completion: Option<oneshot::Sender<anyhow::Result<()>>>,
+    completion: Option<oneshot::Sender<anyhow::Result<SecurityAuditEvent>>>,
 }
 
 impl From<QueuedAuditEvent> for AuditPersistRequest {
@@ -590,16 +590,19 @@ async fn run_audit_persist_worker(
                 .iter()
                 .all(|request| request.completion.is_some() == required)
         );
-        let events: Vec<SecurityAuditEvent> = batch
-            .iter()
-            .map(|request| SecurityAuditEvent {
-                event_id: request.event.event_id,
-                event_type: request.event.event_type.clone(),
-                event_category: request.event.event_category.clone(),
-                payload: request.event.payload.clone(),
-                occurred_at: request.event.occurred_at,
+        let (events, mut completions): (Vec<SecurityAuditEvent>, Vec<_>) = batch
+            .into_iter()
+            .map(|request| {
+                let event = request.event;
+                (SecurityAuditEvent {
+                    event_id: event.event_id,
+                    event_type: event.event_type,
+                    event_category: event.event_category,
+                    payload: event.payload,
+                    occurred_at: event.occurred_at,
+                }, request.completion)
             })
-            .collect();
+            .unzip();
         let batch_len = events.len() as u64;
         let mut retry_delay = Duration::from_millis(100);
         loop {
@@ -611,15 +614,16 @@ async fn run_audit_persist_worker(
                         AUDIT_PERSIST_BATCH_EVENTS.fetch_add(batch_len, Ordering::Relaxed);
                         AUDIT_PERSIST_MAX_BATCH.fetch_max(batch_len, Ordering::Relaxed);
                     }
-                    for request in &mut batch {
-                        if let Some(completion) = request.completion.take() {
-                            let _ = completion.send(Ok(()));
+                    let first_event_id = events[0].event_id;
+                    for (event, completion) in events.into_iter().zip(completions) {
+                        if let Some(completion) = completion {
+                            let _ = completion.send(Ok(event));
                         }
                     }
                     tracing::debug!(
                         target: "audit.persistence",
                         batch_len,
-                        first_event_id = %events[0].event_id,
+                        first_event_id = %first_event_id,
                         persistence_status = "durable",
                         "security audit batch appended"
                     );
@@ -634,8 +638,8 @@ async fn run_audit_persist_worker(
                         "security audit batch persistence failed"
                     );
                     if required {
-                        for request in &mut batch {
-                            if let Some(completion) = request.completion.take() {
+                        for completion in &mut completions {
+                            if let Some(completion) = completion.take() {
                                 let _ = completion.send(Err(anyhow::anyhow!(
                                     "security audit append failed: {error}"
                                 )));
@@ -747,7 +751,7 @@ async fn append_required_via(
 ) -> anyhow::Result<()> {
     let (completion, persisted) = oneshot::channel();
     sink.try_send(AuditPersistRequest {
-        event: queued.clone(),
+        event: queued,
         completion: Some(completion),
     })
     .map_err(|error| {
@@ -757,14 +761,14 @@ async fn append_required_via(
         };
         anyhow::anyhow!("required security audit event not accepted: {reason}")
     })?;
-    persisted
+    let persisted = persisted
         .await
         .map_err(|_| anyhow::anyhow!("required security audit worker stopped before commit"))??;
     tracing::info!(
         target: "audit",
         event,
-        fields = %queued.payload,
-        event_id = %queued.event_id,
+        fields = %persisted.payload,
+        event_id = %persisted.event_id,
         persistence_status = "durable",
         "security audit event"
     );

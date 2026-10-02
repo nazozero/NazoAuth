@@ -78,7 +78,11 @@ New local uploads store a complete pair at
 Exclusive directory creation makes a candidate unique to its request. Both
 files and the directory publication are synced before the service attempts
 the database avatar URL CAS. Preparation fails closed when the filesystem
-cannot sync directory entries.
+cannot sync directory entries. Deployment must precreate and durably provision
+the configured tenant storage root and its parent entry before serving uploads.
+Request publication syncs the candidate directory lineage through that root;
+it does not synchronize unrelated filesystem ancestors or establish the root's
+deployment durability.
 
 The version in the database URL is the sole read authority. Preparing another
 candidate does not move or overwrite the selected bytes. Local delete
