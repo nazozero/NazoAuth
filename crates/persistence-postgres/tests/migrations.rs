@@ -2241,3 +2241,29 @@ async fn refresh_state_minimal_migration_converges_family_cap_and_contracts() {
         .await
         .expect("migration fixture should roll back");
 }
+
+#[tokio::test]
+async fn recovery_coverage_migration_preserves_old_receipts_and_writer_default() {
+    let Some(url) = database_url() else { return };
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("recovery_coverage_migration_{}", Uuid::now_v7().simple());
+    connection.batch_execute(&format!("BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema};
+        CREATE TABLE tenants (id UUID PRIMARY KEY);
+        INSERT INTO tenants VALUES ('00000000-0000-0000-0000-000000000001')")).await.unwrap();
+    connection.batch_execute(include_str!("../../../migrations/20260828000200_recovery_invalidation/up.sql")).await.unwrap();
+    let insert = "INSERT INTO recovery_invalidations (operation_id, request_hash, tenant_id, state_epoch,
+        not_before, revoked_refresh_tokens, completed_at) VALUES (uuidv7(), repeat('a',64),
+        '00000000-0000-0000-0000-000000000001',uuidv7(),NOW()+INTERVAL '1 hour',4,NOW())";
+    connection.batch_execute(insert).await.unwrap();
+    connection.batch_execute(include_str!("../../../migrations/20261002000200_recovery_invalidation_coverage/up.sql")).await.unwrap();
+    connection.batch_execute(insert).await.unwrap();
+    let preserved = sql_query("SELECT COUNT(*)::bigint AS count FROM recovery_invalidations WHERE coverage_version=0 AND revoked_refresh_tokens=4")
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(preserved.count, 2, "history and omitted old-writer fields stay version zero");
+    connection.batch_execute("SAVEPOINT invalid_coverage").await.unwrap();
+    assert!(connection.batch_execute("INSERT INTO recovery_invalidations (operation_id,request_hash,tenant_id,state_epoch,not_before,revoked_refresh_tokens,completed_at,coverage_version)
+        VALUES(uuidv7(),repeat('a',64),'00000000-0000-0000-0000-000000000001',uuidv7(),NOW()+INTERVAL '1 hour',0,NOW(),2)").await.is_err());
+    connection.batch_execute("ROLLBACK TO invalid_coverage").await.unwrap();
+    connection.batch_execute(include_str!("../../../migrations/20261002000200_recovery_invalidation_coverage/down.sql")).await.unwrap();
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}

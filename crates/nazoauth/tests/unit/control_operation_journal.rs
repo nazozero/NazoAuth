@@ -691,6 +691,7 @@ fn torn_publication_windows_recover_monotonically_or_fail_closed() {
     let temporary = path.with_extension("journal.json.tmp");
     let accepted = OperationJournalRecord {
         schema: CONTROL_JOURNAL_SCHEMA,
+            recovery_coverage_version: None,
         operation_id: OPERATION_ID.to_owned(),
         request_hash: hash('a'),
         controller_id: CONTROLLER_ID.to_owned(),
@@ -771,6 +772,7 @@ fn journal_records_fail_closed_on_unknown_fields_schema_drift_and_binding_mismat
         let scratch = temporary_directory();
         let mut record = OperationJournalRecord {
             schema: CONTROL_JOURNAL_SCHEMA,
+            recovery_coverage_version: None,
             operation_id: OPERATION_ID.to_owned(),
             request_hash: hash('a'),
             controller_id: CONTROLLER_ID.to_owned(),
@@ -842,6 +844,7 @@ fn journal_records_fail_closed_on_unknown_fields_schema_drift_and_binding_mismat
         mutate(&mut result);
         let record = OperationJournalRecord {
             schema: CONTROL_JOURNAL_SCHEMA,
+            recovery_coverage_version: None,
             operation_id: OPERATION_ID.to_owned(),
             request_hash: hash('a'),
             controller_id: CONTROLLER_ID.to_owned(),
@@ -875,6 +878,7 @@ fn retention_deletes_only_terminal_records_past_the_cutoff() {
         result.accepted_at = 900;
         let record = OperationJournalRecord {
             schema: CONTROL_JOURNAL_SCHEMA,
+            recovery_coverage_version: None,
             operation_id: id.to_owned(),
             request_hash: hash('a'),
             controller_id: CONTROLLER_ID.to_owned(),
@@ -1062,5 +1066,89 @@ fn storage_inputs_are_validated_before_touching_the_filesystem() {
         accept(&directory, &operation(OPERATION_ID), &hash('a'), &zero_time),
         Err(JournalFlowError::Transport(_))
     ));
+    fs::remove_dir_all(directory).unwrap();
+}
+
+fn recovery_result() -> ControlResult {
+    ControlResult {
+        result: Some(ControlResultData::RecoveryInvalidation {
+            state_epoch: uuid::Uuid::now_v7().to_string(),
+            not_before: 2_000,
+            revoked_refresh_tokens: 7,
+        }),
+        ..succeeded_result(OPERATION_ID, &hash('a'))
+    }
+}
+
+#[test]
+fn covered_recovery_journal_requires_marker_without_changing_result_wire() {
+    let directory = temporary_directory();
+    accept(&directory, &operation(OPERATION_ID), &hash('a'), &snapshot()).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    let result = recovery_result();
+    complete(&directory, &result).unwrap();
+    let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
+    let record = read_record(&path).unwrap();
+    assert_eq!(record.recovery_coverage_version, Some(1));
+    assert!(!String::from_utf8(encode_control_result(&result).unwrap())
+        .unwrap().contains("recovery_coverage_version"));
+    assert_eq!(status(&directory, OPERATION_ID, &hash('a')).unwrap(),
+        Some(JournalCheckpoint::Completed(Box::new(result))));
+
+    let mut old = serde_json::to_value(&record).unwrap();
+    old.as_object_mut().unwrap().remove("recovery_coverage_version");
+    let old_bytes = serde_json::to_vec(&old).unwrap();
+    fs::write(&path, &old_bytes).unwrap();
+    assert!(status(&directory, OPERATION_ID, &hash('a')).is_err());
+    assert!(accepted_snapshot(&directory, OPERATION_ID, &hash('a')).is_err());
+    assert_eq!(fs::read(&path).unwrap(), old_bytes, "old success is never rewritten");
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn old_successful_recovery_temporary_is_not_adopted() {
+    let directory = temporary_directory();
+    accept(&directory, &operation(OPERATION_ID), &hash('a'), &snapshot()).unwrap();
+    let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
+    let accepted_bytes = fs::read(&path).unwrap();
+    let mut completed = read_record(&path).unwrap();
+    completed.phase = PHASE_COMPLETED.to_owned();
+    completed.result = Some(recovery_result());
+    let temporary = record_temporary_path(&path);
+    let temporary_bytes = serde_json::to_vec(&completed).unwrap();
+    fs::write(&temporary, &temporary_bytes).unwrap();
+    assert!(status(&directory, OPERATION_ID, &hash('a')).is_err());
+    assert_eq!(fs::read(&path).unwrap(), accepted_bytes);
+    assert_eq!(fs::read(&temporary).unwrap(), temporary_bytes);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn recovery_coverage_marker_is_closed_and_nonterminal_records_remain_resumable() {
+    let directory = temporary_directory();
+    accept(&directory, &operation(OPERATION_ID), &hash('a'), &snapshot()).unwrap();
+    let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
+    let mut record = read_record(&path).unwrap();
+    assert!(!serde_json::to_value(&record).unwrap().as_object().unwrap()
+        .contains_key("recovery_coverage_version"));
+    for marker in [0, 1, 2] {
+        record.recovery_coverage_version = Some(marker);
+        assert!(validate_record(&record).is_err());
+    }
+    record.recovery_coverage_version = None;
+    validate_record(&record).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    complete(&directory, &recovery_result()).unwrap();
+    record = read_record(&path).unwrap();
+    for marker in [None, Some(0), Some(2)] {
+        record.recovery_coverage_version = marker;
+        assert!(validate_record(&record).is_err());
+    }
+    record.result = Some(succeeded_result(OPERATION_ID, &hash('a')));
+    record.recovery_coverage_version = Some(1);
+    assert!(validate_record(&record).is_err(), "unrelated success cannot carry coverage");
+    record.recovery_coverage_version = None;
+    validate_record(&record).unwrap();
     fs::remove_dir_all(directory).unwrap();
 }

@@ -215,6 +215,9 @@ struct OperationJournalRecord {
     phase: String,
     /// Present if and only if `phase` is `completed`.
     result: Option<ControlResult>,
+    /// Only a completed deployment-wide recovery receipt carries version 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    recovery_coverage_version: Option<u8>,
 }
 
 const PHASE_ACCEPTED: &str = "accepted";
@@ -326,6 +329,14 @@ fn validate_record(record: &OperationJournalRecord) -> anyhow::Result<()> {
             }
         }
         other => bail!("control operation journal record has unknown phase '{other}'"),
+    }
+    let covered_recovery = record.result.as_ref().is_some_and(|result| {
+        result.outcome == ControlOutcome::Succeeded
+            && matches!(result.result, Some(ControlResultData::RecoveryInvalidation { .. }))
+    });
+    match (covered_recovery, record.recovery_coverage_version) {
+        (true, Some(1)) | (false, None) => {}
+        _ => bail!("control journal has unsupported or unrelated recovery coverage"),
     }
     Ok(())
 }
@@ -521,6 +532,7 @@ pub(crate) fn accept(
 
     let record = OperationJournalRecord {
         schema: CONTROL_JOURNAL_SCHEMA,
+        recovery_coverage_version: None,
         operation_id: operation.operation_id.clone(),
         request_hash: request_hash.to_owned(),
         controller_id: snapshot.controller_id.clone(),
@@ -640,7 +652,15 @@ pub(crate) fn complete(
         return Err(JournalFlowError::OperationIdConflict);
     }
     record.phase = PHASE_COMPLETED.to_owned();
+    record.recovery_coverage_version = if result.outcome == ControlOutcome::Succeeded
+        && matches!(result.result, Some(ControlResultData::RecoveryInvalidation { .. }))
+    {
+        Some(1)
+    } else {
+        None
+    };
     record.result = Some(result.clone());
+    validate_record(&record).map_err(transport)?;
     replace_record(&path, &record)
 }
 

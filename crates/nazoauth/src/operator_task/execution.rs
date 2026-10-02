@@ -525,9 +525,6 @@ async fn run_recovery_invalidation(
         )
         .into());
     }
-    let active_tenant = nazo_identity::TenantContext::default_system()
-        .tenant_id
-        .as_uuid();
     let access_token_ttl = crate::settings::bounded_access_token_ttl_seconds(&config)?;
     let id_token_ttl = crate::settings::bounded_id_token_ttl_seconds(&config)?;
     let completed_at = Utc::now();
@@ -543,7 +540,6 @@ async fn run_recovery_invalidation(
         .invalidate_after_restore(
             Uuid::parse_str(context.operation_id).context("operation id is invalid")?,
             context.request_hash,
-            active_tenant,
             configured_epoch,
             not_before,
             completed_at,

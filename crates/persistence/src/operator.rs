@@ -21,14 +21,13 @@ pub struct RecoveryInvalidation {
 /// Atomic restore invalidation boundary.
 ///
 /// Implementations must fence by operation id/request hash and revoke the
-/// restored tenant's active refresh-token state in the same transaction that
+/// restored deployment's unrevoked refresh-family state in the same transaction that
 /// publishes the durable ingress-reopen boundary.
 pub trait RecoveryInvalidationStore: Send + Sync {
     fn invalidate_after_restore<'a>(
         &'a self,
         operation_id: Uuid,
         request_hash: &'a str,
-        tenant_id: Uuid,
         state_epoch: Uuid,
         not_before: DateTime<Utc>,
         completed_at: DateTime<Utc>,
