@@ -1,4 +1,5 @@
 use super::*;
+use base64::Engine as _;
 use nazo_identity::PublicAccount;
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
