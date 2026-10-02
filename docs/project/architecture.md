@@ -378,3 +378,8 @@ the exact active source retired by this transaction's successful UPDATE
 RETURNING, with its original expiry and owner preserved under the row lock.
 A device secret prepared before a failed commit cannot authorize an exchange
 without its committed refresh family; its existing expiry bounds cache residue.
+
+Host binding selects one immutable tenant runtime graph for request data and
+CORS policy. Dynamic CORS uses that request's selected settings, including
+synchronous preflight admission; missing selection denies the origin. Runtime
+replacement affects subsequent requests without changing an in-flight policy.

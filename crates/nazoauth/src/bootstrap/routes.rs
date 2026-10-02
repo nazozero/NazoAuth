@@ -94,7 +94,7 @@ use nazo_http_actix::{
     scim_service_provider_config,
 };
 
-use super::{cors, startup::tenant_runtime::TenantRuntimeRegistry};
+use super::cors;
 
 /// Process-selected tenant allowed to reach deployment-global HTTP controls.
 pub(crate) struct ControlTenantId(pub(crate) nazo_identity::TenantId);
@@ -180,13 +180,12 @@ pub(super) fn configure_dynamic(
     cfg: &mut web::ServiceConfig,
     settings: &Settings,
     perf_metrics_enabled: bool,
-    registry: TenantRuntimeRegistry,
 ) {
     configure_with_cors(
         cfg,
         settings,
         perf_metrics_enabled,
-        cors::CorsPolicy::dynamic(registry),
+        cors::CorsPolicy::dynamic(),
         true,
     );
 }

@@ -76,17 +76,6 @@ impl TenantRuntime {
             .expect("test tenant runtime has no HTTP service assembly")
     }
 
-    /// Used only by the HTTP CORS predicate after a host lookup in this same
-    /// in-process registry. It never reads an external source.
-    pub(in crate::bootstrap) fn cors_allowed_origins(&self) -> &[String] {
-        &self
-            .assembly()
-            .startup
-            .settings
-            .endpoint
-            .cors_allowed_origins
-    }
-
     async fn start_lifecycle(&self) -> anyhow::Result<()> {
         let Some(assembly) = self.assembly.as_ref() else {
             return Ok(());
