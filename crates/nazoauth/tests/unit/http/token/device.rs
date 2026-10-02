@@ -791,6 +791,9 @@ async fn approved_device_code_has_one_consumption_identity_across_valid_sender_k
                 call_device_token_with_request_for_test(&state, &client, &code, request_b).await;
             (a, b)
         };
+        if a.status() != StatusCode::OK && b.status() != StatusCode::OK {
+            panic!("neither valid sender succeeded: {} / {}", oauth_error_code(a).await, oauth_error_code(b).await);
+        }
         assert_eq!(
             [a.status(), b.status()]
                 .into_iter()

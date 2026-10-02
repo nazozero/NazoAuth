@@ -553,3 +553,13 @@ pub(crate) fn dpop_token_request(
         .insert_header(("dpop", key.encode_jwt(&header, &claims)))
         .to_http_request()
 }
+
+#[test]
+fn dpop_token_fixture_has_valid_signature_and_target() {
+    let settings=crate::settings::Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    let key=client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);let request=dpop_token_request(&settings,&key);
+    let proof=request.headers().get("dpop").unwrap().to_str().unwrap();
+    let target=format!("{}/token",settings.endpoint.issuer.trim_end_matches('/'));
+    let result=nazo_auth::DpopProofVerifier.verify_at(nazo_auth::DpopProofRequest {proof:Some(proof),method:"POST",target_uris:&[target.as_str()],expected_jkt:None,access_token:None},chrono::Utc::now().timestamp());
+    assert!(result.is_ok(),"signed DPoP fixture must validate: {result:?}");
+}
