@@ -280,9 +280,13 @@ impl AvatarStoragePort for LocalAvatarStorage {
                 sync_directory(&candidate).await?;
                 // Another request may have created a parent and then been
                 // cancelled before syncing its entry. Complete our own entire
-                // directory publication before permitting the database CAS.
+                // directory publication within the configured storage root before
+                // permitting the database CAS. The deployed root itself is
+                // provisioned durably at startup; unrelated OS parents are
+                // outside upload publication ownership.
                 for directory in versions.ancestors() {
                     sync_directory(directory).await?;
+                    if directory == self.root.as_path() { break; }
                 }
                 Ok::<(), AvatarStorageError>(())
             }

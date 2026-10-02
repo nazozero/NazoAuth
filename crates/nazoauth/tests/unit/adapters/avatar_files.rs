@@ -326,3 +326,42 @@ async fn concurrent_instances_choose_one_winner_through_database_cas_and_keep_it
     first.read(&current).await.unwrap();
     assert_eq!(version_count(&fixture).await, 1);
 }
+
+
+#[cfg(unix)]
+#[tokio::test]
+async fn upload_sync_stays_within_preexisting_storage_root_below_execute_only_ancestor() {
+    use std::os::unix::{fs::{MetadataExt,PermissionsExt},process::CommandExt};
+    const ENV:&str="NAZO_AVATAR_EXECUTE_ONLY_FIXTURE";
+    async fn upload(root:PathBuf) {
+        let ancestor=root.parent().unwrap();
+        assert_eq!(fs::read_dir(ancestor).await.unwrap_err().kind(),io::ErrorKind::PermissionDenied,"fixture must truly lack read permission above configured root");
+        let storage=LocalAvatarStorage::new(root);
+        let user=UserId::new(Uuid::now_v7()).unwrap();let version=Uuid::now_v7().to_string();
+        let expected=object(&version);
+        let mutation=storage.begin_replace(user,None,expected.clone()).await.unwrap();
+        let candidate=storage.user_dir(user).join(VERSIONS_DIRECTORY).join(&version);
+        assert_eq!(fs::read(candidate.join(AVATAR_FILE_NAME)).await.unwrap(),expected.bytes);
+        assert!(fs::metadata(candidate.join(METADATA_FILE_NAME)).await.unwrap().is_file());
+        storage.commit(&mutation).await.unwrap();
+        assert_eq!(storage.read(user,&version).await.unwrap(),expected);
+    }
+    if let Some(root)=std::env::var_os(ENV) {upload(root.into()).await;return;}
+    let ancestor=std::env::temp_dir().join(format!("avatar-owned-root-{}",Uuid::now_v7()));
+    let root=ancestor.join("owned-storage");fs::create_dir_all(&root).await.unwrap();
+    let is_root=fs::metadata(&root).await.unwrap().uid()==0;
+    // A root-run test drops only the child UID. This proves the permission
+    // boundary instead of relying on root's DAC override.
+    fs::set_permissions(&root,std::fs::Permissions::from_mode(if is_root {0o777}else{0o700})).await.unwrap();
+    fs::set_permissions(&ancestor,std::fs::Permissions::from_mode(0o111)).await.unwrap();
+    let result=if is_root {
+        let output=std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact").arg("adapters::avatar_files::tests::upload_sync_stays_within_preexisting_storage_root_below_execute_only_ancestor")
+            .arg("--nocapture").env(ENV,&root).uid(65534).gid(65534).output().unwrap();
+        let stdout=String::from_utf8_lossy(&output.stdout);
+        output.status.success() && stdout.contains("1 passed")
+    } else {upload(root).await;true};
+    fs::set_permissions(&ancestor,std::fs::Permissions::from_mode(0o700)).await.unwrap();
+    fs::remove_dir_all(&ancestor).await.unwrap();
+    assert!(result,"unprivileged upload below execute-only ancestor must complete its candidate before CAS");
+}
