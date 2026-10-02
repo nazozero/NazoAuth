@@ -3031,3 +3031,54 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     cleanup_oauth_client(&pool, public_client.id).await;
     cleanup(&pool, user_id).await;
 }
+
+
+#[tokio::test]
+async fn system_tenant_admin_outcomes_preserve_cross_tenant_audit_and_rollback() {
+    let Some((pool, control, actor)) = database_fixture().await else { return; };
+    let (target_tenant, target) = foreign_tenant_user_fixture(&pool).await;
+    let repository = UserRepository::new(pool.clone());
+    let mut conn = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET role='admin', admin_level=10 WHERE id=$1")
+        .bind::<SqlUuid,_>(actor.as_uuid()).execute(&mut conn).await.unwrap();
+    drop(conn);
+    let missing = UserId::new(Uuid::now_v7()).unwrap();
+    assert_eq!(repository.set_tenant_admin_authorized(control.tenant_id, actor, target_tenant.tenant_id, missing, 3, "test-ip-hash".to_owned()).await.unwrap(), AdminUserUpdateOutcome::TargetNotFound);
+    // A known foreign actor must not be attached to a control-tenant event.
+    assert_eq!(repository.set_tenant_admin_authorized(control.tenant_id, target, target_tenant.tenant_id, target, 3, "test-ip-hash".to_owned()).await.unwrap(), AdminUserUpdateOutcome::Denied(AdminPolicyError::ActorNotAuthorized));
+    assert_eq!(repository.set_tenant_admin_authorized(control.tenant_id, missing, target_tenant.tenant_id, target, 3, "test-ip-hash".to_owned()).await.unwrap(), AdminUserUpdateOutcome::Denied(AdminPolicyError::ActorNotAuthorized));
+
+    // This trigger affects only this fixture's canonical success outcome.
+    // Force failure inside the real ledger append, after the role/event writes.
+    let name = format!("nazo_admin_audit_fail_{}", Uuid::now_v7().simple());
+    let mut conn = get_conn(&pool).await.unwrap();
+    sql_query(format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture ledger append failure'; END $$"))
+        .execute(&mut conn).await.unwrap();
+    sql_query(format!("CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type='system_tenant_admin_updated' AND NEW.payload->>'target_user_id'='{}' AND NEW.payload->>'outcome'='success') EXECUTE FUNCTION {name}()", target.as_uuid()))
+        .execute(&mut conn).await.unwrap();
+    drop(conn);
+    let failed = repository.set_tenant_admin_authorized(control.tenant_id, actor, target_tenant.tenant_id, target, 3, "test-ip-hash".to_owned()).await;
+    let mut conn = get_conn(&pool).await.unwrap();
+    sql_query(format!("DROP TRIGGER {name} ON security_audit_events")).execute(&mut conn).await.unwrap();
+    sql_query(format!("DROP FUNCTION {name}()")).execute(&mut conn).await.unwrap();
+    drop(conn);
+    assert!(failed.is_err(), "ledger SQL failure must fail the mutation");
+    assert_eq!(repository.public_account_by_id(target_tenant.tenant_id, target).await.unwrap().unwrap().admin_level(), 0);
+    assert!(identity_security_events(&pool, target).await.into_iter().all(|event| event.reason_code != "admin_updated"));
+    assert!(matches!(repository.set_tenant_admin_authorized(control.tenant_id, actor, target_tenant.tenant_id, target, 3, "test-ip-hash".to_owned()).await.unwrap(), AdminUserUpdateOutcome::Updated(_)));
+    #[derive(QueryableByName)]
+    struct Ledger { #[diesel(sql_type=Jsonb)] payload: serde_json::Value }
+    let mut conn = get_conn(&pool).await.unwrap();
+    let events = sql_query("SELECT payload FROM security_audit_events WHERE event_type='system_tenant_admin_updated' AND payload->>'target_user_id'=$1")
+        .bind::<Text,_>(target.as_uuid().to_string()).load::<Ledger>(&mut conn).await.unwrap();
+    assert_eq!(events.iter().filter(|event| event.payload["outcome"] == "success").count(), 1);
+    let success = events.iter().find(|event| event.payload["outcome"] == "success").unwrap();
+    assert_eq!(success.payload["actor_tenant_id"], json!(control.tenant_id.as_uuid()));
+    assert_eq!(success.payload["target_tenant_id"], json!(target_tenant.tenant_id.as_uuid()));
+    assert_eq!(success.payload["actor_user_id"], json!(actor.as_uuid()));
+    assert_eq!(success.payload["admin_level"], 3);
+    assert_eq!(success.payload["source_ip_hash"], "test-ip-hash");
+    drop(conn);
+    cleanup_foreign_tenant(&pool, target_tenant, target).await;
+    cleanup(&pool, actor).await;
+}

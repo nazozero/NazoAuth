@@ -52,6 +52,7 @@ pub trait AdminUserRepositoryPort: Send + Sync {
     /// Explicit system-boundary operation for managing an administrator in a
     /// different tenant. Implementations must re-check both tenant bindings
     /// and the actor's system-admin level in the same transaction.
+    #[allow(clippy::too_many_arguments)]
     fn set_tenant_admin_authorized(
         &self,
         _control_tenant_id: TenantId,
@@ -59,6 +60,7 @@ pub trait AdminUserRepositoryPort: Send + Sync {
         _target_tenant_id: TenantId,
         _target_id: UserId,
         _admin_level: i32,
+        _source_ip_hash: String,
     ) -> RepositoryFuture<'_, crate::AdminUserUpdateOutcome> {
         Box::pin(async {
             Ok(crate::AdminUserUpdateOutcome::Denied(
