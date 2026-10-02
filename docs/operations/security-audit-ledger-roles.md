@@ -37,8 +37,9 @@ GRANT USAGE ON SCHEMA public TO nazoauth_audit_writer, nazoauth_audit_exporter;
 
 The migration itself also revokes table and function privileges from `PUBLIC`.
 The explicit role revocation above is still required when a deployment role
-inherits privileges from another application role. `has_table_privilege` in
-the strict preflight reports effective privileges, not just direct grants.
+inherits privileges from another application role. Table and column privilege
+probes in the strict preflight report effective privileges, including grants
+through inheritance and PUBLIC.
 
 ## Function grants
 
@@ -102,7 +103,14 @@ uses `(require_least_privilege, require_append, require_exporter) =
  (true, true, false)`; an exporter uses `(true, false, true)`. Strict mode
 requires the requested function `EXECUTE` grants, and all of
 the following to be false for `session_user` or any role it can assume:
-superuser, ledger table owner, or any effective ledger table privilege.
+superuser/ledger-owner membership, or any effective ledger table or column
+privilege. The preflight traverses the login's complete membership graph and
+checks the login plus each role it can assume with SET ROLE (PostgreSQL 16+
+SET permission; MEMBER on earlier versions). A NOINHERIT login's reachable
+roles still count. Each assumed role's inherited and PUBLIC privileges count,
+including privileges inherited from a role the login cannot itself assume.
+A role reachable only through SET FALSE and INHERIT FALSE does not grant ledger
+access; superuser and ledger-owner membership remain rejected independently.
 Therefore a writer cannot rewrite or
 truncate the ledger and an exporter cannot bypass the claim/ack state machine.
 
@@ -179,3 +187,20 @@ reconciliation instead of deleting it; in-flight batches, the anchor, and
 the chain head carry over unchanged. Pending membership, oldest-pending age,
 and claim order are unchanged, so exporter health and drain verification now
 read `security_audit_events` directly.
+
+## Reachable-role privilege preflight upgrade
+
+The 20261002000300_audit_reachable_role_privileges migration replaces only the
+preflight function body. Its SECURITY DEFINER owner, function identity, search
+path, existing EXECUTE grants and strict-mode opt-out are preserved. Strict
+preflight additionally rejects column-level SELECT, INSERT, UPDATE and
+REFERENCES on any ledger table. Applying the down migration restores the
+previous privilege policy without dropping the function or changing its ACL.
+
+Verify with a real connection authenticated as the runtime LOGIN role. A
+superuser connection followed by SET ROLE keeps the superuser session_user and
+does not exercise the runtime policy. Run the isolated PostgreSQL 18 regression
+in crates/persistence-postgres/tests/audit_preflight_roles.rs before integrating
+this change; it covers direct and column grants, PUBLIC, indirect/diamond role
+graphs, disabled SET edges, inherited privileges behind an assumed role, owner
+and superuser membership, and function identity/ACL/EXECUTE preservation.
