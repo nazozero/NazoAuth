@@ -594,13 +594,16 @@ async fn run_audit_persist_worker(
             .into_iter()
             .map(|request| {
                 let event = request.event;
-                (SecurityAuditEvent {
-                    event_id: event.event_id,
-                    event_type: event.event_type,
-                    event_category: event.event_category,
-                    payload: event.payload,
-                    occurred_at: event.occurred_at,
-                }, request.completion)
+                (
+                    SecurityAuditEvent {
+                        event_id: event.event_id,
+                        event_type: event.event_type,
+                        event_category: event.event_category,
+                        payload: event.payload,
+                        occurred_at: event.occurred_at,
+                    },
+                    request.completion,
+                )
             })
             .unzip();
         let batch_len = events.len() as u64;
