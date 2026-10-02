@@ -391,10 +391,23 @@ mod real_userinfo_contract {
         client: &str,
         bound: bool,
     ) -> String {
-        signed_token_with_bindings(state, user, client, None, bound.then_some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8")).await
+        signed_token_with_bindings(
+            state,
+            user,
+            client,
+            None,
+            bound.then_some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8"),
+        )
+        .await
     }
 
-    async fn signed_token_with_bindings(state: &TestInfrastructure, user: Uuid, client: &str, jkt: Option<&str>, x5t: Option<&str>) -> String {
+    async fn signed_token_with_bindings(
+        state: &TestInfrastructure,
+        user: Uuid,
+        client: &str,
+        jkt: Option<&str>,
+        x5t: Option<&str>,
+    ) -> String {
         use crate::adapters::security::tokens::{AccessTokenJwtInput, make_jwt};
         make_jwt(
             &state.keyset,
@@ -582,7 +595,8 @@ mod real_userinfo_contract {
     }
 
     #[actix_web::test]
-    async fn dual_bound_userinfo_bearer_rejects_missing_dpop_even_with_matching_verified_certificate() {
+    async fn dual_bound_userinfo_bearer_rejects_missing_dpop_even_with_matching_verified_certificate()
+     {
         let state = state().await;
         let client = format!("userinfo-dual-{}", Uuid::now_v7().simple());
         let user = insert_subject_and_client(&state, &client).await;
@@ -590,34 +604,72 @@ mod real_userinfo_contract {
         let calls = Arc::new(Mutex::new(Vec::new()));
         for dual in [true, false] {
             calls.lock().unwrap().clear();
-            let token = signed_token_with_bindings(&state, user, &client, dual.then_some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ"), Some(&certificate.thumbprint)).await;
-            let request = actix_web::test::TestRequest::get().uri("/userinfo")
-                .app_data(Data::new(crate::http::mtls::MtlsCertificateSource::new(crate::http::mtls::MtlsCertificateSourceMode::Rfc9440)))
+            let token = signed_token_with_bindings(
+                &state,
+                user,
+                &client,
+                dual.then_some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ"),
+                Some(&certificate.thumbprint),
+            )
+            .await;
+            let request = actix_web::test::TestRequest::get()
+                .uri("/userinfo")
+                .app_data(Data::new(crate::http::mtls::MtlsCertificateSource::new(
+                    crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
+                )))
                 .peer_addr("127.0.0.1:12345".parse().unwrap())
                 .insert_header(("client-cert", certificate.header.as_str()))
-                .insert_header((header::AUTHORIZATION, format!("Bearer {token}"))).to_http_request();
-            assert_eq!(crate::http::mtls::request_mtls_thumbprint(&request, &state.settings.endpoint.trusted_proxy_cidrs).as_deref(), Some(certificate.thumbprint.as_str()));
-            let response = nazo_http_actix::userinfo(endpoint(&state, calls.clone()), request, Bytes::new()).await;
+                .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+                .to_http_request();
+            assert_eq!(
+                crate::http::mtls::request_mtls_thumbprint(
+                    &request,
+                    &state.settings.endpoint.trusted_proxy_cidrs
+                )
+                .as_deref(),
+                Some(certificate.thumbprint.as_str())
+            );
+            let response =
+                nazo_http_actix::userinfo(endpoint(&state, calls.clone()), request, Bytes::new())
+                    .await;
             if dual {
                 assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-                let challenge = response.headers().get(header::WWW_AUTHENTICATE).unwrap().to_str().unwrap();
+                let challenge = response
+                    .headers()
+                    .get(header::WWW_AUTHENTICATE)
+                    .unwrap()
+                    .to_str()
+                    .unwrap();
                 assert!(challenge.contains("invalid_token"));
                 assert!(response.headers().get(header::SET_COOKIE).is_none());
-                let body = actix_web::body::to_bytes(response.into_body()).await.unwrap();
+                let body = actix_web::body::to_bytes(response.into_body())
+                    .await
+                    .unwrap();
                 let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
                 assert_eq!(body["error"], "invalid_token");
                 assert!(body.get("sub").is_none());
                 assert_eq!(*calls.lock().unwrap(), ["revocation"]);
             } else {
                 assert_eq!(response.status(), StatusCode::OK);
-                let body = actix_web::body::to_bytes(response.into_body()).await.unwrap();
+                let body = actix_web::body::to_bytes(response.into_body())
+                    .await
+                    .unwrap();
                 assert_eq!(body.as_ref(), format!("{{\"sub\":\"{user}\"}}").as_bytes());
                 assert_eq!(*calls.lock().unwrap(), ["revocation", "subject", "client"]);
             }
         }
         let mut connection = nazo_postgres::get_conn(&state.diesel_db).await.unwrap();
-        sql_query("DELETE FROM oauth_clients WHERE tenant_id=$1 AND client_id=$2").bind::<SqlUuid,_>(DEFAULT_TENANT_ID).bind::<Text,_>(&client).execute(&mut connection).await.unwrap();
-        sql_query("DELETE FROM users WHERE tenant_id=$1 AND id=$2").bind::<SqlUuid,_>(DEFAULT_TENANT_ID).bind::<SqlUuid,_>(user).execute(&mut connection).await.unwrap();
+        sql_query("DELETE FROM oauth_clients WHERE tenant_id=$1 AND client_id=$2")
+            .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+            .bind::<Text, _>(&client)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sql_query("DELETE FROM users WHERE tenant_id=$1 AND id=$2")
+            .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+            .bind::<SqlUuid, _>(user)
+            .execute(&mut connection)
+            .await
+            .unwrap();
     }
-
 }
