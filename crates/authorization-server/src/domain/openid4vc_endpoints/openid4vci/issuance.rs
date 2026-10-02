@@ -53,8 +53,12 @@ impl ServerCredentialIssuerOperations {
                         "Credential configuration is unknown.",
                     )
                 })?;
-            let nonce = extract_proof_nonce(request.proofs.as_ref())
-                .ok_or_else(|| vci_error(400, "invalid_proof", "Credential proof is missing."))?;
+            let nonce = if configuration.proof_types_supported.is_empty() {
+                None
+            } else {
+                Some(extract_proof_nonce(request.proofs.as_ref())
+                    .ok_or_else(|| vci_error(400, "invalid_proof", "Credential proof is missing."))?)
+            };
             let now = Utc::now();
             let disposition = if self.deferred_configurations.contains(&configuration_id) {
                 IssuanceDisposition::Deferred {
@@ -75,7 +79,7 @@ impl ServerCredentialIssuerOperations {
                         status: None,
                         expires_at: now + Duration::days(365),
                     },
-                    &nonce,
+                    nonce.as_deref().unwrap_or(""),
                     nazo_openid4vci::IssuanceIdentity {
                         issuance_id,
                         request_digest: request_digest.clone(),

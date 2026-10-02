@@ -401,3 +401,8 @@ Tenant graph retirement synchronously aborts both module reconciliation and
 CIBA ping loops before awaiting either join. Dropping the final lifecycle owner
 also aborts still-owned loops; retained snapshots delay that final drop. Signing
 key refresh uses its existing cooperative shutdown and completes current writes.
+
+Credential issuance enforces the batch limit on validated holder bindings after
+proof expansion and before nonce claiming. A configuration without proof types
+and holder-binding methods issues its unbound credential without a proof nonce;
+stray proofs remain invalid. The same rules apply to deferred preparation.

@@ -65,7 +65,7 @@ mod pre_authorized;
 mod policy;
 
 struct IssuerFixture {
-    operations: ServerCredentialIssuerOperations,
+    operations: Arc<ServerCredentialIssuerOperations>,
     issuer: String,
     tenant_id: Uuid,
     token_service: Arc<ServerTokenService>,
@@ -77,7 +77,7 @@ impl std::ops::Deref for IssuerFixture {
     type Target = ServerCredentialIssuerOperations;
 
     fn deref(&self) -> &Self::Target {
-        &self.operations
+        self.operations.as_ref()
     }
 }
 
@@ -236,6 +236,20 @@ async fn operations_with_overrides(
     store_override: Option<Arc<dyn nazo_persistence::Openid4vciStore>>,
     token_repository: Option<Arc<dyn nazo_auth::TokenRepositoryPort>>,
 ) -> IssuerFixture {
+    operations_with_proof_validator(pool, valkey_connection, enabled, configurations, deferred_configurations, store_override, token_repository, None).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn operations_with_proof_validator(
+    pool: nazo_postgres::DbPool,
+    valkey_connection: nazo_valkey::ValkeyConnection,
+    enabled: bool,
+    configurations: BTreeMap<String, CredentialConfiguration>,
+    deferred_configurations: BTreeSet<String>,
+    store_override: Option<Arc<dyn nazo_persistence::Openid4vciStore>>,
+    token_repository: Option<Arc<dyn nazo_auth::TokenRepositoryPort>>,
+    proof_override: Option<Openid4vcProofValidator>,
+) -> IssuerFixture {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("unit settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
@@ -266,8 +280,7 @@ async fn operations_with_overrides(
     let runtime =
         runtime_module_registry_with_modules_for_test(pool.clone(), &settings, active_modules)
             .expect("runtime module fixture should build");
-    let proof_validator = Openid4vcProofValidator::new(json!({ "keys": [] }))
-        .expect("proof validator fixture should build");
+    let proof_validator = proof_override.unwrap_or_else(|| Openid4vcProofValidator::new(json!({ "keys": [] })).expect("proof validator fixture should build"));
     let crypto = fixture_crypto().await;
     let store: Arc<dyn nazo_persistence::Openid4vciStore> = store_override.unwrap_or_else(|| {
         Arc::new(nazo_postgres::Openid4vciRepository::new(
@@ -304,7 +317,7 @@ async fn operations_with_overrides(
     )
     .expect("credential issuer fixture should build");
     IssuerFixture {
-        operations,
+        operations: Arc::new(operations),
         issuer,
         tenant_id: DEFAULT_TENANT_ID,
         token_service,
@@ -484,6 +497,17 @@ impl LiveEndpointFixture {
         store_override: Option<Arc<dyn nazo_persistence::Openid4vciStore>>,
         token_repository: Option<Arc<dyn TokenRepositoryPort>>,
     ) -> Option<Self> {
+        Self::new_with_configuration(configuration_id, deferred, store_override, token_repository, None, None).await
+    }
+
+    async fn new_with_configuration(
+        configuration_id: &str,
+        deferred: bool,
+        store_override: Option<Arc<dyn nazo_persistence::Openid4vciStore>>,
+        token_repository: Option<Arc<dyn TokenRepositoryPort>>,
+        configuration_override: Option<CredentialConfiguration>,
+        proof_override: Option<Openid4vcProofValidator>,
+    ) -> Option<Self> {
         let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
             .ok();
@@ -526,7 +550,8 @@ impl LiveEndpointFixture {
             .expect("OpenID4VC endpoint fixture Valkey should connect");
         let valkey_connection = nazo_valkey::test_support::scoped_connection(valkey);
         let (configuration_key, configuration) = live_configuration(configuration_id);
-        let issuer = operations_with_overrides(
+        let configuration = configuration_override.unwrap_or(configuration);
+        let issuer = operations_with_proof_validator(
             pool.clone(),
             valkey_connection,
             true,
@@ -538,6 +563,7 @@ impl LiveEndpointFixture {
             },
             store_override,
             token_repository,
+            proof_override,
         )
         .await;
 
