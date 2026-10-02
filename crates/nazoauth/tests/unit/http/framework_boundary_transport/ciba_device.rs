@@ -464,7 +464,7 @@ mod ciba_device_contract {
         );
         token_error(
             call_ciba_token_with_mtls_for_test(&state, &client, approved).await,
-            r#"{"error":"invalid_grant","error_description":"令牌签发授权已使用."}"#.as_bytes(),
+            br#"{"error":"invalid_grant","error_description":"Request failed."}"#,
         )
         .await;
     }

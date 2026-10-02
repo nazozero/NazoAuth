@@ -1434,10 +1434,10 @@ async fn failed_rollback_does_not_reuse_a_connection_for_the_counter() {
     let interrupted = rollback_interrupted.clone();
     let attempted = attempted_counter.clone();
     connection.set_instrumentation(move |event: InstrumentationEvent<'_>| {
-        if let InstrumentationEvent::StartQuery { query, .. } = &event {
-            if query.to_string().contains("SET attempts = attempts + 1") {
-                attempted.store(true, Ordering::SeqCst);
-            }
+        if let InstrumentationEvent::StartQuery { query, .. } = &event
+            && query.to_string().contains("SET attempts = attempts + 1")
+        {
+            attempted.store(true, Ordering::SeqCst);
         }
         if matches!(&event, InstrumentationEvent::RollbackTransaction { .. })
             && !interrupted.swap(true, Ordering::SeqCst)
