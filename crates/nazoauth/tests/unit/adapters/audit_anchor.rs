@@ -1862,3 +1862,43 @@ async fn historical_large_batch_retry_preserves_bytes_digest_range_and_membershi
         assert_eq!(committed.event_count(), 17);
     }
 }
+
+async fn chunked_signed_receipt_endpoint(body: Vec<u8>) -> (Url,tokio::task::JoinHandle<()>) {
+    let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address=listener.local_addr().unwrap();
+    let task=tokio::spawn(async move {
+        let (mut stream,_) = listener.accept().await.unwrap();
+        read_anchor_request(&mut stream).await;
+        if stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.is_err() {return;}
+        for chunk in body.chunks(4096) {
+            if stream.write_all(format!("{:x}\r\n",chunk.len()).as_bytes()).await.is_err() {return;}
+            if stream.write_all(chunk).await.is_err() {return;}
+            if stream.write_all(b"\r\n").await.is_err() {return;}
+        }
+        let _ = stream.write_all(b"0\r\n\r\n").await;
+    });
+    (Url::parse(&format!("http://{address}/checkpoint")).unwrap(),task)
+}
+#[tokio::test]
+async fn signed_receipt_valid_json_whitespace_at_cap_succeeds_and_cap_plus_one_never_acks() {
+    let limit=128*1024;
+    for extra in [0,1] {
+        let committed=batch(vec![delivery(7)]);
+        let mut receipt=accepted_batch_receipt(&committed); receipt.resize(limit+extra,b' ');
+        let (endpoint,server)=chunked_signed_receipt_endpoint(receipt).await;
+        let mut config=iteration_config(endpoint); config.max_envelope_bytes=limit;
+        let repository=ScriptedRepository::with_health(Ok(health_snapshot()),Ok(SecurityAuditBatchClaim::Claimed(committed.clone())))
+            .with_acknowledgement(Ok(()));
+        let result=run_iteration(&repository,&test_client(),&config,&mut None,&mut None).await;
+        if extra==0 { assert_eq!(result,IterationOutcome::Continue); assert_eq!(repository.acked().len(),1); }
+        else { assert_eq!(result,IterationOutcome::Retry(Duration::from_secs(1))); assert!(repository.acked().is_empty());
+            assert_eq!(repository.failures(),vec![(committed.generation,"invalid_receipt".to_owned(),false)]); }
+        server.await.unwrap();
+        let mut receipt=accepted_genesis_receipt(&[9;32]); receipt.resize(limit+extra,b' ');
+        let (endpoint,server)=chunked_signed_receipt_endpoint(receipt).await; config.endpoint=endpoint;
+        let result=send_genesis_checkpoint(&test_client(),&config,&[9;32]).await;
+        if extra==0 { assert_eq!(result.unwrap(),PushOutcome::Accepted {duplicate:false}); }
+        else { assert!(matches!(result,Err(AnchorPushError::InvalidReceipt))); }
+        server.await.unwrap();
+    }
+}
