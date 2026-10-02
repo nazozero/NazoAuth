@@ -46,7 +46,7 @@ use diesel::sql_query;
 use diesel::sql_types::{
     BigInt, Binary, Integer, Nullable, SmallInt, Timestamptz, Uuid as DieselUuid, Varchar,
 };
-use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, TransactionManager as _};
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
@@ -493,24 +493,23 @@ pub(crate) async fn enroll_initial_root_on_connection(
     root: &NewRecoveryRoot,
     now: DateTime<Utc>,
 ) -> Result<StoredRecoveryRoot, RecoveryRootError> {
-    sql_query(
+    let row = sql_query(format!(
         "INSERT INTO controller_recovery_roots
             (deployment_id, recovery_kid, recovery_public_key, kdf, generation,
              created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 1, $5, $5)",
-    )
+         VALUES ($1, $2, $3, $4, 1, $5, $5)
+         RETURNING {ROOT_COLUMNS}"
+    ))
     .bind::<Varchar, _>(&root.deployment_id)
     .bind::<Varchar, _>(&root.kid)
     .bind::<Binary, _>(&root.public_key[..])
     .bind::<Varchar, _>(RECOVERY_KDF_ID)
     .bind::<Timestamptz, _>(now)
-    .execute(connection)
+    .get_result::<RecoveryRootRow>(connection)
     .await
     .map_err(transport)?;
     record_fresh_root_key_on_connection(connection, root, now).await?;
-    read_root_on_connection(connection, &root.deployment_id)
-        .await?
-        .ok_or_else(|| transport(anyhow::anyhow!("recovery root missing after insert")))
+    StoredRecoveryRoot::try_from(row).map_err(transport)
 }
 
 async fn record_fresh_root_key_on_connection(
@@ -546,20 +545,36 @@ async fn replace_root_on_connection(
     root: &NewRecoveryRoot,
     now: DateTime<Utc>,
 ) -> Result<StoredRecoveryRoot, RecoveryRootError> {
-    let current = read_root_on_connection(connection, &root.deployment_id).await?;
-    if let Some(current) = &current {
-        if digest_matches(&current.recovery_public_key, &root.public_key) {
-            return Err(RecoveryRootError::InvalidIdentity(
-                "replacement recovery key must differ from the current root",
-            ));
-        }
-        record_fresh_root_key_on_connection(connection, root, now).await?;
-    }
-    // A root replacement invalidates every proof made by the old root.  Close
-    // any in-flight challenge in the same transaction so old authority cannot
-    // occupy the one-pending slot after a proactive rotation.  During a
-    // successful recovery this closes the challenge being committed; its
-    // immutable result receipt is filled before the transaction returns.
+    let row = sql_query(format!(
+        "INSERT INTO controller_recovery_roots
+            (deployment_id, recovery_kid, recovery_public_key, kdf, generation,
+             created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 1, $5, $5)
+         ON CONFLICT (deployment_id) DO UPDATE
+         SET recovery_kid = EXCLUDED.recovery_kid,
+             recovery_public_key = EXCLUDED.recovery_public_key,
+             generation = controller_recovery_roots.generation + 1,
+             updated_at = EXCLUDED.updated_at
+         WHERE controller_recovery_roots.recovery_public_key <> EXCLUDED.recovery_public_key
+         RETURNING {ROOT_COLUMNS}"
+    ))
+    .bind::<Varchar, _>(&root.deployment_id)
+    .bind::<Varchar, _>(&root.kid)
+    .bind::<Binary, _>(&root.public_key[..])
+    .bind::<Varchar, _>(RECOVERY_KDF_ID)
+    .bind::<Timestamptz, _>(now)
+    .get_result::<RecoveryRootRow>(connection)
+    .await
+    .optional()
+    .map_err(transport)?
+    .ok_or(RecoveryRootError::InvalidIdentity(
+        "replacement recovery key must differ from the current root",
+    ))?;
+    // The caller holds the deployment lock and transaction. A reused key
+    // rejects this replacement and rolls back its generation and approval.
+    record_fresh_root_key_on_connection(connection, root, now).await?;
+    // A root replacement invalidates every proof made by the old root. Close
+    // in-flight challenges atomically; recovery fills its exact receipt next.
     sql_query(
         "UPDATE controller_recovery_challenges
          SET consumed_at = $2
@@ -570,31 +585,7 @@ async fn replace_root_on_connection(
     .execute(connection)
     .await
     .map_err(transport)?;
-    sql_query(
-        "INSERT INTO controller_recovery_roots
-            (deployment_id, recovery_kid, recovery_public_key, kdf, generation,
-             created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 1, $5, $5)
-         ON CONFLICT (deployment_id) DO UPDATE
-         SET recovery_kid = EXCLUDED.recovery_kid,
-             recovery_public_key = EXCLUDED.recovery_public_key,
-             generation = controller_recovery_roots.generation + 1,
-             updated_at = EXCLUDED.updated_at",
-    )
-    .bind::<Varchar, _>(&root.deployment_id)
-    .bind::<Varchar, _>(&root.kid)
-    .bind::<Binary, _>(&root.public_key[..])
-    .bind::<Varchar, _>(RECOVERY_KDF_ID)
-    .bind::<Timestamptz, _>(now)
-    .execute(connection)
-    .await
-    .map_err(transport)?;
-    if current.is_none() {
-        record_fresh_root_key_on_connection(connection, root, now).await?;
-    }
-    read_root_on_connection(connection, &root.deployment_id)
-        .await?
-        .ok_or_else(|| transport(anyhow::anyhow!("recovery root missing after upsert")))
+    StoredRecoveryRoot::try_from(row).map_err(transport)
 }
 
 fn validate_challenge_input(challenge: &NewRecoveryChallenge) -> Result<(), RecoveryRootError> {
@@ -928,24 +919,33 @@ impl RecoveryRootRepository {
     /// counter survives the rollback of the rejected attempt.  The challenge
     /// dies (becomes consumed) with the attempt that reaches the cap.
     async fn record_failed_attempt(
-        &self,
+        connection: &mut AsyncPgConnection,
+        deployment_id: &str,
         challenge_id: Uuid,
         now: DateTime<Utc>,
     ) -> Result<(), RecoveryRootError> {
-        let mut connection = get_conn(&self.pool).await.map_err(transport)?;
+        // Diesel may preserve the user error when rollback reports a broken
+        // transaction manager. Reuse requires a confirmed idle transaction.
+        if <AsyncPgConnection as AsyncConnection>::TransactionManager::is_broken_transaction_manager(
+            connection,
+        ) {
+            return Err(transport(QueryError::BrokenTransactionManager));
+        }
         sql_query(
             "UPDATE controller_recovery_challenges
              SET attempts = attempts + 1,
                  consumed_at = CASE
                      WHEN attempts + 1 >= $2 THEN $3 ELSE consumed_at END
-             WHERE challenge_id = $1
+             WHERE challenge_id = $1 AND deployment_id = $4
                AND consumed_at IS NULL
-               AND expires_at > $3",
+               AND expires_at > $3
+               AND attempts < $2",
         )
         .bind::<DieselUuid, _>(challenge_id)
         .bind::<Integer, _>(MAX_RECOVERY_CHALLENGE_ATTEMPTS)
         .bind::<Timestamptz, _>(now)
-        .execute(&mut connection)
+        .bind::<Varchar, _>(deployment_id)
+        .execute(connection)
         .await
         .map_err(transport)?;
         Ok(())
@@ -968,6 +968,7 @@ impl RecoveryRootRepository {
         submission: RecoverySubmission,
         now: DateTime<Utc>,
     ) -> Result<RecoveredSlotCommit, RecoveryRootError> {
+        let submission = &submission;
         validate_deployment_id(&submission.deployment_id)
             .map_err(|_| RecoveryRootError::InvalidIdentity("deployment_id is invalid"))?;
         let mut connection = get_conn(&self.pool).await.map_err(transport)?;
@@ -1180,8 +1181,13 @@ impl RecoveryRootRepository {
             Err(
                 error @ (RecoveryRootError::NonceMismatch | RecoveryRootError::InvalidSignature),
             ) => {
-                self.record_failed_attempt(submission.challenge_id, now)
-                    .await?;
+                Self::record_failed_attempt(
+                    &mut connection,
+                    &submission.deployment_id,
+                    submission.challenge_id,
+                    now,
+                )
+                .await?;
                 Err(error)
             }
             Err(error) => Err(error),
@@ -1382,3 +1388,7 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/repositories/recovery_root.rs"]
+mod tests;
