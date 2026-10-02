@@ -226,13 +226,13 @@ mod scheduler {
         tokio::time::advance(Duration::from_secs(1)).await;
         settle().await;
         {
-        let starts = counts.starts.lock().unwrap();
-        assert_eq!(starts[&released], 2);
-        assert!(
-            ids.iter()
-                .filter(|id| **id != released)
-                .all(|id| starts[id] == 1)
-        );
+            let starts = counts.starts.lock().unwrap();
+            assert_eq!(starts[&released], 2);
+            assert!(
+                ids.iter()
+                    .filter(|id| **id != released)
+                    .all(|id| starts[id] == 1)
+            );
         }
 
         assert!(counts.max_live.load(Ordering::SeqCst) <= ids.len());

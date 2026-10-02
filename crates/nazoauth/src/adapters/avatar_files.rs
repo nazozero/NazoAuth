@@ -286,7 +286,9 @@ impl AvatarStoragePort for LocalAvatarStorage {
                 // outside upload publication ownership.
                 for directory in versions.ancestors() {
                     sync_directory(directory).await?;
-                    if directory == self.root.as_path() { break; }
+                    if directory == self.root.as_path() {
+                        break;
+                    }
                 }
                 Ok::<(), AvatarStorageError>(())
             }

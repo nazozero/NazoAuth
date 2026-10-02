@@ -91,8 +91,11 @@ pub(super) enum ReceiptError {
     BindingMismatch,
 }
 
-pub(super) fn batch_body(deployment_id:&str,batch:&SecurityAuditBatch)->Result<Vec<u8>,serde_json::Error> {
-    nazo_persistence::audit_wire::security_audit_batch_body(deployment_id,batch)
+pub(super) fn batch_body(
+    deployment_id: &str,
+    batch: &SecurityAuditBatch,
+) -> Result<Vec<u8>, serde_json::Error> {
+    nazo_persistence::audit_wire::security_audit_batch_body(deployment_id, batch)
 }
 
 pub(super) fn genesis_body(

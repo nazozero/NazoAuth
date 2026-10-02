@@ -498,32 +498,77 @@ async fn claim_fresh(
     }
     let mut next_sequence = head.last_sequence;
     let mut next_hash = head.last_hash.clone();
-    let budget = usize::try_from(max_envelope_bytes).map_err(|_| invariant_error("invalid audit envelope budget"))?;
-    let mut used_event_bytes=0_usize;
-    let mut deliveries:Vec<SecurityAuditPendingDelivery> = Vec::with_capacity(rows.len());
+    let budget = usize::try_from(max_envelope_bytes)
+        .map_err(|_| invariant_error("invalid audit envelope budget"))?;
+    let mut used_event_bytes = 0_usize;
+    let mut deliveries: Vec<SecurityAuditPendingDelivery> = Vec::with_capacity(rows.len());
     let mut new_event_ids = Vec::new();
     let mut new_event_hashes = Vec::new();
     for row in rows {
-        let (sequence, previous_hash, event_hash, newly_chained) = match (row.sequence,row.previous_hash,row.event_hash) {
-            (Some(sequence),Some(previous_hash),Some(event_hash)) => (sequence,previous_hash,event_hash,false),
-            (None,None,None) => {
-                let sequence=next_sequence.checked_add(1).ok_or_else(|| invariant_error("security audit sequence overflow"))?;
-                let event_hash=security_audit_event_hash(sequence,&next_hash,row.event_id,&row.event_type,&row.event_category,row.occurred_at,row.payload_canonical.as_bytes()).to_vec();
-                (sequence,next_hash.clone(),event_hash,true)
-            }
-            _ => return Err(invariant_error("security audit chain entry is incomplete")),
+        let (sequence, previous_hash, event_hash, newly_chained) =
+            match (row.sequence, row.previous_hash, row.event_hash) {
+                (Some(sequence), Some(previous_hash), Some(event_hash)) => {
+                    (sequence, previous_hash, event_hash, false)
+                }
+                (None, None, None) => {
+                    let sequence = next_sequence
+                        .checked_add(1)
+                        .ok_or_else(|| invariant_error("security audit sequence overflow"))?;
+                    let event_hash = security_audit_event_hash(
+                        sequence,
+                        &next_hash,
+                        row.event_id,
+                        &row.event_type,
+                        &row.event_category,
+                        row.occurred_at,
+                        row.payload_canonical.as_bytes(),
+                    )
+                    .to_vec();
+                    (sequence, next_hash.clone(), event_hash, true)
+                }
+                _ => return Err(invariant_error("security audit chain entry is incomplete")),
+            };
+        let delivery = SecurityAuditPendingDelivery {
+            event_id: row.event_id,
+            sequence,
+            event_type: row.event_type,
+            event_category: row.event_category,
+            payload_canonical: row.payload_canonical,
+            occurred_at: row.occurred_at,
+            previous_hash,
+            event_hash,
         };
-        let delivery=SecurityAuditPendingDelivery {event_id:row.event_id,sequence,event_type:row.event_type,event_category:row.event_category,payload_canonical:row.payload_canonical,occurred_at:row.occurred_at,previous_hash,event_hash};
-        let event_bytes=nazo_persistence::audit_wire::security_audit_event_wire_length(&delivery).map_err(|_| invariant_error("audit event wire serialization failed"))?;
-        let header_bytes=nazo_persistence::audit_wire::security_audit_empty_envelope_wire_length(deployment_id,deliveries.first().unwrap_or(&delivery),&delivery,(deliveries.len()+1) as i64).map_err(|_| invariant_error("audit envelope wire serialization failed"))?;
-        let bytes=header_bytes.checked_add(used_event_bytes).and_then(|count|count.checked_add(event_bytes)).and_then(|count|count.checked_add(deliveries.len())).ok_or_else(|| invariant_error("audit envelope byte count overflow"))?;
-        if !deliveries.is_empty() && bytes>budget { break; }
-        if deliveries.is_empty() && bytes>nazo_persistence::audit_wire::MAX_SECURITY_AUDIT_SINGLETON_ENVELOPE_BYTES { return Err(invariant_error("audit singleton exceeds the legal-event wire bound")); }
-        if newly_chained {
-            next_sequence=sequence; next_hash=delivery.event_hash.clone();
-            new_event_ids.push(delivery.event_id);new_event_hashes.push(delivery.event_hash.clone());
+        let event_bytes = nazo_persistence::audit_wire::security_audit_event_wire_length(&delivery)
+            .map_err(|_| invariant_error("audit event wire serialization failed"))?;
+        let header_bytes = nazo_persistence::audit_wire::security_audit_empty_envelope_wire_length(
+            deployment_id,
+            deliveries.first().unwrap_or(&delivery),
+            &delivery,
+            (deliveries.len() + 1) as i64,
+        )
+        .map_err(|_| invariant_error("audit envelope wire serialization failed"))?;
+        let bytes = header_bytes
+            .checked_add(used_event_bytes)
+            .and_then(|count| count.checked_add(event_bytes))
+            .and_then(|count| count.checked_add(deliveries.len()))
+            .ok_or_else(|| invariant_error("audit envelope byte count overflow"))?;
+        if !deliveries.is_empty() && bytes > budget {
+            break;
         }
-        used_event_bytes+=event_bytes;
+        if deliveries.is_empty()
+            && bytes > nazo_persistence::audit_wire::MAX_SECURITY_AUDIT_SINGLETON_ENVELOPE_BYTES
+        {
+            return Err(invariant_error(
+                "audit singleton exceeds the legal-event wire bound",
+            ));
+        }
+        if newly_chained {
+            next_sequence = sequence;
+            next_hash = delivery.event_hash.clone();
+            new_event_ids.push(delivery.event_id);
+            new_event_hashes.push(delivery.event_hash.clone());
+        }
+        used_event_bytes += event_bytes;
         deliveries.push(delivery);
     }
     if deliveries.is_empty() {
