@@ -387,3 +387,10 @@ replacement affects subsequent requests without changing an in-flight policy.
 Profile updates retain phone verification only when the current database row
 is verified and its phone equals the newly stored phone, with nullable equality.
 A stale profile snapshot cannot restore verification after a concurrent change.
+
+Registration sends use one attempt owner for the email and peer cooldowns and
+stored code. Cleanup compares that owner atomically, so a late SMTP failure
+cannot remove a later sender's state. Cooldown durations and code expiry are
+unchanged. This changes transient email-code records from raw hashes to owned
+records: drain pending registration sends/codes before switching writers; old
+unbound records fail closed without a compatibility fallback.
