@@ -7,41 +7,12 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use uuid::Uuid;
 
-pub(super) const CHECKPOINT_SCHEMA_VERSION: &str = "nazo.audit.anchor.v2";
+pub(super) use nazo_persistence::audit_wire::AUDIT_ANCHOR_SCHEMA_VERSION as CHECKPOINT_SCHEMA_VERSION;
 pub(super) const RECEIPT_SCHEMA_VERSION: &str = "nazo.audit.anchor.receipt.v1";
 pub(super) const GENESIS_EVENT_ID: Uuid = Uuid::from_u128(0);
 pub(super) const MAX_REJECT_REASON_BYTES: usize = 128;
 
 type HmacSha256 = Hmac<Sha256>;
-
-/// Wire identity of one committed batch. The receiver recomputes every event
-/// hash from `payload_canonical` and the batch digest from the ordered event
-/// hashes, so nothing in this envelope is trusted until it verifies.
-#[derive(Serialize)]
-pub(super) struct AnchorBatchEnvelope<'a> {
-    pub(super) schema_version: &'static str,
-    pub(super) checkpoint_kind: &'static str,
-    pub(super) deployment_id: &'a str,
-    pub(super) first_sequence: i64,
-    pub(super) last_sequence: i64,
-    pub(super) event_count: i64,
-    pub(super) previous_hash: String,
-    pub(super) last_hash: String,
-    pub(super) batch_digest: String,
-    pub(super) events: Vec<AnchorBatchEvent<'a>>,
-}
-
-#[derive(Serialize)]
-pub(super) struct AnchorBatchEvent<'a> {
-    pub(super) event_id: Uuid,
-    pub(super) sequence: i64,
-    pub(super) previous_hash: String,
-    pub(super) event_hash: String,
-    pub(super) event_type: &'a str,
-    pub(super) event_category: &'a str,
-    pub(super) occurred_at: DateTime<Utc>,
-    pub(super) payload_canonical: &'a str,
-}
 
 #[derive(Serialize)]
 pub(super) struct GenesisCheckpointEnvelope<'a> {
@@ -120,35 +91,8 @@ pub(super) enum ReceiptError {
     BindingMismatch,
 }
 
-pub(super) fn batch_body(
-    deployment_id: &str,
-    batch: &SecurityAuditBatch,
-) -> Result<Vec<u8>, serde_json::Error> {
-    serde_json::to_vec(&AnchorBatchEnvelope {
-        schema_version: CHECKPOINT_SCHEMA_VERSION,
-        checkpoint_kind: "batch",
-        deployment_id,
-        first_sequence: batch.first_sequence,
-        last_sequence: batch.last_sequence,
-        event_count: batch.event_count(),
-        previous_hash: encode_hash(&batch.previous_hash),
-        last_hash: encode_hash(&batch.last_hash),
-        batch_digest: encode_hash(&batch.digest),
-        events: batch
-            .deliveries
-            .iter()
-            .map(|delivery| AnchorBatchEvent {
-                event_id: delivery.event_id,
-                sequence: delivery.sequence,
-                previous_hash: encode_hash(&delivery.previous_hash),
-                event_hash: encode_hash(&delivery.event_hash),
-                event_type: &delivery.event_type,
-                event_category: &delivery.event_category,
-                occurred_at: delivery.occurred_at,
-                payload_canonical: &delivery.payload_canonical,
-            })
-            .collect(),
-    })
+pub(super) fn batch_body(deployment_id:&str,batch:&SecurityAuditBatch)->Result<Vec<u8>,serde_json::Error> {
+    nazo_persistence::audit_wire::security_audit_batch_body(deployment_id,batch)
 }
 
 pub(super) fn genesis_body(

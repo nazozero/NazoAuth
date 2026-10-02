@@ -7,6 +7,7 @@
 //! generic CRUD interface. Database adapters implement these focused ports.
 
 pub mod audit_chain;
+pub mod audit_wire;
 pub mod control_plane;
 pub mod directory_control;
 pub mod maintenance;
