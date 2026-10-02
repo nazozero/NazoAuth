@@ -90,7 +90,7 @@ impl MfaRepositoryPort for ConfirmRepository {
         _tenant_id: crate::TenantId,
         _user_id: UserId,
         _candidate_id: Uuid,
-    ) -> RepositoryFuture<'_, bool> {
+    ) -> RepositoryFuture<'_, Option<Uuid>> {
         unreachable!()
     }
 
@@ -106,8 +106,9 @@ impl MfaRepositoryPort for ConfirmRepository {
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
+        _credential_id: Uuid,
         _hashes: Vec<EncodedSecretHash>,
-    ) -> RepositoryFuture<'a, ()> {
+    ) -> RepositoryFuture<'a, bool> {
         unreachable!()
     }
 
@@ -123,10 +124,11 @@ impl MfaRepositoryPort for ConfirmRepository {
         &self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
+        _credential_id: Uuid,
         _token_hash: String,
         _user_agent_hash: Option<String>,
         _expires_at: DateTime<Utc>,
-    ) -> RepositoryFuture<'_, ()> {
+    ) -> RepositoryFuture<'_, bool> {
         unreachable!()
     }
 }

@@ -104,7 +104,7 @@ impl MfaRepositoryPort for MfaRepository {
         tenant_id: TenantId,
         user_id: UserId,
         candidate_id: uuid::Uuid,
-    ) -> RepositoryFuture<'_, bool> {
+    ) -> RepositoryFuture<'_, Option<uuid::Uuid>> {
         Box::pin(async move {
             self.consume_backup_code_candidate(tenant_id, user_id, candidate_id)
                 .await
@@ -126,12 +126,14 @@ impl MfaRepositoryPort for MfaRepository {
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: uuid::Uuid,
         hashes: Vec<EncodedSecretHash>,
-    ) -> RepositoryFuture<'a, ()> {
+    ) -> RepositoryFuture<'a, bool> {
         Box::pin(async move {
             self.replace_backup_code_hashes(
                 tenant_id,
                 user_id,
+                credential_id,
                 hashes
                     .into_iter()
                     .map(|hash| hash.as_str().to_owned())
@@ -152,12 +154,13 @@ impl MfaRepositoryPort for MfaRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: uuid::Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> RepositoryFuture<'_, ()> {
+    ) -> RepositoryFuture<'_, bool> {
         Box::pin(async move {
-            self.remember_device(tenant_id, user_id, token_hash, user_agent_hash, expires_at)
+            self.remember_device(tenant_id, user_id, credential_id, token_hash, user_agent_hash, expires_at)
                 .await
         })
     }

@@ -197,13 +197,14 @@ impl MfaRepository {
                     .filter(user_totp_credentials::confirmed_at.is_null())
                     .for_update()
                     .select((
+                        user_totp_credentials::id,
                         user_totp_credentials::secret_ciphertext,
                         user_totp_credentials::secret_key_id,
                     ))
-                    .first::<(Vec<u8>, String)>(connection)
+                    .first::<(uuid::Uuid, Vec<u8>, String)>(connection)
                     .await
                     .optional()?;
-                let Some((ciphertext, key_id)) = credential else {
+                let Some((credential_id, ciphertext, key_id)) = credential else {
                     insert_identity_security_event(
                         connection,
                         &mfa_event(
@@ -249,14 +250,6 @@ impl MfaRepository {
                 ))
                 .execute(connection)
                 .await?;
-                diesel::update(
-                    users::table
-                        .find(user_id.as_uuid())
-                        .filter(users::tenant_id.eq(tenant_id.as_uuid())),
-                )
-                .set((users::mfa_enabled.eq(true), users::updated_at.eq(now)))
-                .execute(connection)
-                .await?;
                 diesel::delete(
                     user_mfa_backup_codes::table
                         .filter(user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()))
@@ -280,6 +273,14 @@ impl MfaRepository {
                         .execute(connection)
                         .await?;
                 }
+                diesel::update(
+                    users::table
+                        .find(user_id.as_uuid())
+                        .filter(users::tenant_id.eq(tenant_id.as_uuid())),
+                )
+                .set((users::mfa_enabled.eq(true), users::updated_at.eq(now)))
+                .execute(connection)
+                .await?;
                 insert_identity_security_event(
                     connection,
                     &mfa_event(
@@ -292,7 +293,7 @@ impl MfaRepository {
                 )
                 .await
                 .map_err(MfaAuditError::Repository)?;
-                Ok(TotpVerificationOutcome::Accepted)
+                Ok(TotpVerificationOutcome::Accepted(credential_id))
             })
             .await
             .map_err(MfaAuditError::into_repository)
@@ -337,15 +338,16 @@ impl MfaRepository {
                     .filter(user_totp_credentials::confirmed_at.is_not_null())
                     .for_update()
                     .select((
+                        user_totp_credentials::id,
                         user_totp_credentials::secret_ciphertext,
                         user_totp_credentials::secret_key_id,
                         user_totp_credentials::last_used_step,
                     ))
-                    .first::<(Vec<u8>, String, Option<i64>)>(connection)
+                    .first::<(uuid::Uuid, Vec<u8>, String, Option<i64>)>(connection)
                     .await
                     .optional()?;
                 let outcome = match credential {
-                    Some((ciphertext, key_id, last_step)) => {
+                    Some((credential_id, ciphertext, key_id, last_step)) => {
                         let secret = decode_totp_secret(
                             totp_keys.as_ref(),
                             tenant_id,
@@ -375,7 +377,7 @@ impl MfaRepository {
                                 ))
                                 .execute(connection)
                                 .await?;
-                                TotpVerificationOutcome::Accepted
+                                TotpVerificationOutcome::Accepted(credential_id)
                             }
                             None => TotpVerificationOutcome::Invalid,
                         }
@@ -383,7 +385,7 @@ impl MfaRepository {
                     None => TotpVerificationOutcome::Invalid,
                 };
                 let (audit_outcome, reason) = match outcome {
-                    TotpVerificationOutcome::Accepted => (
+                    TotpVerificationOutcome::Accepted(_) => (
                         IdentitySecurityOutcome::Success,
                         IdentitySecurityReason::TotpAccepted,
                     ),

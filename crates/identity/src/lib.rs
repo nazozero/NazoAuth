@@ -41,6 +41,7 @@ pub use federation::{
     VerifiedExternalIdentity,
 };
 pub use mfa_service::{
+    MfaVerificationProof,
     MfaService, MfaServiceError, MfaServiceErrorKind, PreparedTotpConfirmation,
     TotpConfirmationOutcome, TotpEnrollmentStart,
 };
