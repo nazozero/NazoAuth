@@ -855,10 +855,7 @@ async fn token_exchange_request_policy_and_admission_wrappers_preserve_boundarie
     let input = form();
     let request = token_exchange_request(&input);
     assert_eq!(request.subject_token, Some("subject-token"));
-    assert_eq!(
-        request.subject_token_type,
-        Some(ACCESS_TOKEN_TYPE)
-    );
+    assert_eq!(request.subject_token_type, Some(ACCESS_TOKEN_TYPE));
     assert_eq!(request.audiences, input.audiences);
 
     let state = token_exchange_state();
