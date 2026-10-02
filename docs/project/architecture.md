@@ -383,3 +383,7 @@ Host binding selects one immutable tenant runtime graph for request data and
 CORS policy. Dynamic CORS uses that request's selected settings, including
 synchronous preflight admission; missing selection denies the origin. Runtime
 replacement affects subsequent requests without changing an in-flight policy.
+
+Profile updates retain phone verification only when the current database row
+is verified and its phone equals the newly stored phone, with nullable equality.
+A stale profile snapshot cannot restore verification after a concurrent change.
