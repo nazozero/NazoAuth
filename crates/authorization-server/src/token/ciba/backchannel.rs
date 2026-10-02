@@ -32,8 +32,8 @@ use crate::{
 use chrono::Utc;
 use http::StatusCode;
 use nazo_auth::{
-    CibaPingNotification, CibaPingNotificationStatus, CibaRequestState,
-    CibaStatus, ClientAuthenticationContext, PresentedClientCredentials, ciba_retention_deadline,
+    CibaPingNotification, CibaPingNotificationStatus, CibaRequestState, CibaStatus,
+    ClientAuthenticationContext, PresentedClientCredentials, ciba_retention_deadline,
     unverified_client_assertion_client_id,
 };
 use serde_json::json;
@@ -280,7 +280,7 @@ impl CibaApplication {
                     ("client_id", json!(client.client_id)),
                     ("user_id", json!(user.id())),
                     ("scope", json!(scopes.join(" "))),
-                    ("audience", json!([config.default_audience.as_str()])),
+                    ("audience", json!([config.default_audience])),
                     ("source_ip_hash", json!(blake3_hex(source_ip))),
                 ]),
             )
@@ -294,17 +294,31 @@ impl CibaApplication {
             ));
         }
         consume_token_management_client_assertion_with_authorization_service(
-            authorization_service, &client, assertion.as_ref(), security_audit,
-        ).await.map_err(token_management_auth_error)?;
+            authorization_service,
+            &client,
+            assertion.as_ref(),
+            security_audit,
+        )
+        .await
+        .map_err(token_management_auth_error)?;
         if let Some(replay) = request_object_replay {
-            match authorization_service.consume_ciba_request_object(
-                &client.client_id, &replay.jti, replay.ttl_seconds,
-            ).await {
+            match authorization_service
+                .consume_ciba_request_object(&client.client_id, &replay.jti, replay.ttl_seconds)
+                .await
+            {
                 Ok(true) => {}
-                Ok(false) => return Err(ciba_invalid_request("CIBA request object has already been used.")),
+                Ok(false) => {
+                    return Err(ciba_invalid_request(
+                        "CIBA request object has already been used.",
+                    ));
+                }
                 Err(error) => {
                     tracing::warn!(%error, "failed to persist CIBA request object replay state");
-                    return Err(OAuthEndpointError::json(StatusCode::SERVICE_UNAVAILABLE, "server_error", "CIBA failed."));
+                    return Err(OAuthEndpointError::json(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "CIBA failed.",
+                    ));
                 }
             }
         }
@@ -342,10 +356,18 @@ impl CibaApplication {
         };
         let auth_req_id = ciba_service
             .create_unique_with_authorization_deadline(
-                &state_payload, Some(state_payload.expires_at), random_urlsafe_token,
-            ).await.map_err(|error| {
+                &state_payload,
+                Some(state_payload.expires_at),
+                random_urlsafe_token,
+            )
+            .await
+            .map_err(|error| {
                 tracing::warn!(%error, "failed to create CIBA auth_req_id");
-                OAuthEndpointError::json(StatusCode::SERVICE_UNAVAILABLE, "server_error", "CIBA failed.")
+                OAuthEndpointError::json(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "CIBA failed.",
+                )
             })?;
         security_audit.record(
             "ciba_authorization_started",
