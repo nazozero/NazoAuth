@@ -1047,7 +1047,9 @@ async fn typed_passkey_authentication_keeps_legacy_default_fields() {
 
 #[tokio::test]
 async fn typed_passkey_duplicate_recognized_field_fails_closed_after_atomic_consumption() {
-    let Some((connection, inspector)) = setup().await else { return; };
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
     let store = AuthenticationStore::new(&connection);
     let id = format!("typed-duplicate-{}", uuid::Uuid::now_v7());
     let wire = json!({
@@ -1056,11 +1058,30 @@ async fn typed_passkey_duplicate_recognized_field_fails_closed_after_atomic_cons
         "dummy": false,
         "state": {"challenge": vec![7_u8;32], "allow_credentials": []},
     });
-    let raw = wire.to_string().replace("\"dummy\":false", "\"dummy\":false,\"dummy\":true");
-    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:passkey:authentication:{id}"));
-    inspector.set::<(),_,_>(&key, raw, Some(fred::prelude::Expiration::EX(30)), None, false).await.unwrap();
-    assert!(matches!(PasskeyCeremonyPort::take_authentication(&store,&id).await,
-        Err(nazo_identity::ports::RepositoryError::Consistency(_))));
-    assert!(PasskeyCeremonyPort::take_authentication(&store,&id).await.unwrap().is_none(),
-        "malformed ceremony must stay one-time after GETDEL");
+    let raw = wire
+        .to_string()
+        .replace("\"dummy\":false", "\"dummy\":false,\"dummy\":true");
+    let key =
+        nazo_valkey::test_support::state_storage_key(format!("oauth:passkey:authentication:{id}"));
+    inspector
+        .set::<(), _, _>(
+            &key,
+            raw,
+            Some(fred::prelude::Expiration::EX(30)),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        PasskeyCeremonyPort::take_authentication(&store, &id).await,
+        Err(nazo_identity::ports::RepositoryError::Consistency(_))
+    ));
+    assert!(
+        PasskeyCeremonyPort::take_authentication(&store, &id)
+            .await
+            .unwrap()
+            .is_none(),
+        "malformed ceremony must stay one-time after GETDEL"
+    );
 }
