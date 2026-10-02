@@ -204,3 +204,5 @@ in crates/persistence-postgres/tests/audit_preflight_roles.rs before integrating
 this change; it covers direct and column grants, PUBLIC, indirect/diamond role
 graphs, disabled SET edges, inherited privileges behind an assumed role, owner
 and superuser membership, and function identity/ACL/EXECUTE preservation.
+
+The pinned Diesel migration harness wraps migration-body SQL errors in a private type without a source chain. Those opaque errors retain the original boxed source and remain terminal; they are not classified from display text. Public typed connection/serialization errors and advisory-lock timeout paths retain their retry classification.

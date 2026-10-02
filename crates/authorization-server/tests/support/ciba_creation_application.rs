@@ -227,7 +227,7 @@ fn short_creation_validity_starts_after_required_audit_and_request_replay_comple
         client.backchannel_authentication_request_signing_alg = Some("PS256".to_owned());
         let kid = keys.snapshot().verification_keys[0].kid.clone();
         let now = chrono::Utc::now().timestamp();
-        let input = format!("{}.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg":"PS256","kid":kid,"typ":"oauth-authz-req+jwt"})).unwrap()), URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"iss":"client-1","aud":"https://issuer.example","iat":now,"exp":now+60,"jti":Uuid::now_v7().to_string()})).unwrap()));
+        let input = format!("{}.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg":"PS256","kid":kid,"typ":"oauth-authz-req+jwt"})).unwrap()), URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"iss":"client-1","aud":"https://issuer.example","iat":now,"exp":now+60,"scope":"openid","login_hint":"alice@example.test","requested_expiry":1,"jti":Uuid::now_v7().to_string()})).unwrap()));
         let signature = nazo_auth::Signer::sign(
             &keys,
             nazo_auth::SignRequest {

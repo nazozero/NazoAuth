@@ -544,8 +544,7 @@ async fn closed_key_pool_preserves_typed_unavailable_through_context() {
     let pool = create_pool("postgres://unused.invalid/unused", 1).unwrap();
     pool.close();
     let repository = SigningKeysetRepository::for_tenant(pool, Uuid::now_v7());
-    let error = repository
-        .load()
+    let error = SigningKeyRepository::load(&repository)
         .await
         .unwrap_err()
         .context("operator key load");
