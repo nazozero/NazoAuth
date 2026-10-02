@@ -366,14 +366,12 @@ async fn retire_oldest(url: &str, fixture: &Fixture, family_id: Uuid) {
         retired.count, 1,
         "the real capacity path must retire this source"
     );
-    let remaining = sql_query(
-        "SELECT count(*) AS count FROM oauth_refresh_families WHERE token_family_id = $1",
-    )
-    .bind::<sql_types::Uuid, _>(family_id)
-    .get_result::<Count>(&mut connection)
-    .await
-    .unwrap();
-    assert_eq!(remaining.count, 0);
+    let retired_state = state(&mut connection, family_id).await;
+    assert!(
+        !retired_state.family["revoked_at"].is_null(),
+        "capacity retirement must retain a revoked tombstone"
+    );
+    assert!(retired_state.family["reuse_detected_at"].is_null());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -427,12 +425,9 @@ async fn source_snapshot_cannot_commit_after_real_revocation_or_capacity_retirem
             compromise.count, 0,
             "terminal unavailability is not a new compromise"
         );
-        if !capacity {
-            assert!(
-                state(&mut connection, source.token_family_id).await.family["reuse_detected_at"]
-                    .is_null()
-            );
-        }
+        let after = state(&mut connection, source.token_family_id).await;
+        assert!(!after.family["revoked_at"].is_null());
+        assert!(after.family["reuse_detected_at"].is_null());
     }
 }
 
@@ -761,23 +756,12 @@ async fn preserve_commit_serializes_before_real_revocation_and_capacity_retireme
             .await
             .unwrap();
         assert_issuance_writes(&mut coordinator, preserved.issuance_id, true).await;
-        if capacity {
-            let remaining = sql_query(
-                "SELECT count(*) AS count FROM oauth_refresh_families WHERE token_family_id = $1",
-            )
-            .bind::<sql_types::Uuid, _>(source.token_family_id)
-            .get_result::<Count>(&mut coordinator)
-            .await
-            .unwrap();
-            assert_eq!(
-                remaining.count, 0,
-                "capacity retires the source after the valid Preserve commit"
-            );
-        } else {
-            let after = state(&mut coordinator, source.token_family_id).await;
-            assert!(!after.family["revoked_at"].is_null());
-            assert!(after.family["reuse_detected_at"].is_null());
-        }
+        let after = state(&mut coordinator, source.token_family_id).await;
+        assert!(
+            !after.family["revoked_at"].is_null(),
+            "the source must be revoked after the valid Preserve commit"
+        );
+        assert!(after.family["reuse_detected_at"].is_null());
     }
 }
 
