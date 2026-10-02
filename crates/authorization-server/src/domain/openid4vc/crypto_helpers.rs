@@ -150,12 +150,17 @@ pub(super) fn parse_x509<'a>(
     Ok((remainder, certificate))
 }
 
-pub(super) fn verify_openid4vc_chain<'a>(certificates: &[Vec<u8>], anchors: &'a [Vec<u8>]) -> anyhow::Result<&'a [u8]> {
+pub(super) fn verify_openid4vc_chain<'a>(
+    certificates: &[Vec<u8>],
+    anchors: &'a [Vec<u8>],
+) -> anyhow::Result<&'a [u8]> {
     verify_openid4vc_chain_with_scoped(certificates, anchors, &[])
 }
 
 pub(super) fn verify_openid4vc_chain_with_scoped<'a>(
-    certificates: &[Vec<u8>], anchors: &'a [Vec<u8>], scoped: &'a [Vec<u8>],
+    certificates: &[Vec<u8>],
+    anchors: &'a [Vec<u8>],
+    scoped: &'a [Vec<u8>],
 ) -> anyhow::Result<&'a [u8]> {
     let (_, mut current) = parse_x509(&certificates[0], "OpenID4VC signing leaf")?;
     if current.is_ca() || !current.validity().is_valid() {
@@ -176,14 +181,18 @@ pub(super) fn verify_openid4vc_chain_with_scoped<'a>(
         }
         current = issuer;
     }
-    let anchored = scoped.iter().chain(anchors.iter().filter(|anchor| !scoped.contains(anchor))).find(|anchor| {
-        parse_x509(anchor, "OpenID4VC trust anchor").is_ok_and(|(_, anchor)| {
-            anchor.is_ca()
-                && anchor.validity().is_valid()
-                && current.issuer() == anchor.subject()
-                && nazo_crypto::certificate::verify_signature(&current, anchor.public_key()).is_ok()
-        })
-    });
+    let anchored = scoped
+        .iter()
+        .chain(anchors.iter().filter(|anchor| !scoped.contains(anchor)))
+        .find(|anchor| {
+            parse_x509(anchor, "OpenID4VC trust anchor").is_ok_and(|(_, anchor)| {
+                anchor.is_ca()
+                    && anchor.validity().is_valid()
+                    && current.issuer() == anchor.subject()
+                    && nazo_crypto::certificate::verify_signature(&current, anchor.public_key())
+                        .is_ok()
+            })
+        });
     let Some(anchored) = anchored else {
         anyhow::bail!(
             "OpenID4VC signing certificate is not anchored by the configured trust store"

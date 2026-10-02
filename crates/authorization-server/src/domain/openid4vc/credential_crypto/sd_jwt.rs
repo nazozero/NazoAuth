@@ -236,9 +236,15 @@ pub(super) fn validate_sd_jwt_chain(
         .ok_or(CredentialTrustError::UntrustedIssuer)?
         .clone();
     let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
-    let authenticated_anchor = super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(&certificates, &anchors, additional_trust_anchors)
-        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-    let scoped_anchor_authenticated = additional_trust_anchors.iter().any(|anchor| anchor.as_slice() == authenticated_anchor);
+    let authenticated_anchor = super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(
+        &certificates,
+        &anchors,
+        additional_trust_anchors,
+    )
+    .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    let scoped_anchor_authenticated = additional_trust_anchors
+        .iter()
+        .any(|anchor| anchor.as_slice() == authenticated_anchor);
     let (_, leaf) = x509_parser::parse_x509_certificate(&leaf_der)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     Ok(ValidatedSdJwtChain {

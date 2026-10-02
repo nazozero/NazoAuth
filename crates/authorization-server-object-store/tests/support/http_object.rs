@@ -1,7 +1,10 @@
 use std::{
     io::{Read as _, Write as _},
     net::{SocketAddr, TcpListener, TcpStream},
-    sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -28,7 +31,9 @@ impl ObjectServer {
                     break;
                 }
                 let mut stream = stream.unwrap();
-                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
                 let mut raw = Vec::new();
                 let mut buffer = [0; 1024];
                 while !raw.windows(4).any(|window| window == b"\r\n\r\n") {
@@ -41,18 +46,26 @@ impl ObjectServer {
                 let request = String::from_utf8(raw).unwrap();
                 let head = request.starts_with("HEAD ");
                 received.lock().unwrap().push(request);
-                let mime = content_type.as_deref().map(|value|
-                    format!("Content-Type: {value}\r\n")).unwrap_or_default();
+                let mime = content_type
+                    .as_deref()
+                    .map(|value| format!("Content-Type: {value}\r\n"))
+                    .unwrap_or_default();
                 let response = format!(
                     "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\n{mime}Connection: close\r\n\r\n",
-                    body.len());
+                    body.len()
+                );
                 let _ = stream.write_all(response.as_bytes());
                 if !head {
                     let _ = stream.write_all(&body);
                 }
             }
         });
-        Self { address, requests, stopping, thread: Some(thread) }
+        Self {
+            address,
+            requests,
+            stopping,
+            thread: Some(thread),
+        }
     }
 
     pub fn endpoint(&self) -> String {

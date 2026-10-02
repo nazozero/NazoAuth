@@ -190,18 +190,51 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
         &state
     );
     let expired_id = format!("ciba-create-auth-expired-{}", uuid::Uuid::now_v7());
-    let mut expired_state = state.clone(); expired_state.expires_at = now;
+    let mut expired_state = state.clone();
+    expired_state.expires_at = now;
     assert!(expired_state.retention_expires_at > server_time(&inspector).await);
-    assert_eq!(store.create_with_authorization_deadline(&expired_id, &expired_state, Some(now)).await.unwrap(), AtomicResult::DeadlineElapsed);
-    assert!(store.load(&expired_id).await.unwrap().is_none(), "Lua create must not write expired authority despite live retention");
-    assert_eq!(store.create(&expired_id, &expired_state).await.unwrap(), AtomicResult::Applied);
+    assert_eq!(
+        store
+            .create_with_authorization_deadline(&expired_id, &expired_state, Some(now))
+            .await
+            .unwrap(),
+        AtomicResult::DeadlineElapsed
+    );
+    assert!(
+        store.load(&expired_id).await.unwrap().is_none(),
+        "Lua create must not write expired authority despite live retention"
+    );
+    assert_eq!(
+        store.create(&expired_id, &expired_state).await.unwrap(),
+        AtomicResult::Applied
+    );
     let expired = store.load(&expired_id).await.unwrap().unwrap();
-    assert_eq!(store.replace_with_authorization_deadline(&expired_id, expired.version(), &replacement, Some(now)).await.unwrap(), AtomicResult::DeadlineElapsed);
-    assert_eq!(store.load(&expired_id).await.unwrap().unwrap().state(), &expired_state);
-    assert_eq!(store.delete_with_authorization_deadline(&expired_id, expired.version(), None).await.unwrap(), AtomicResult::Applied, "ordinary expired cleanup must remain available");
+    assert_eq!(
+        store
+            .replace_with_authorization_deadline(
+                &expired_id,
+                expired.version(),
+                &replacement,
+                Some(now)
+            )
+            .await
+            .unwrap(),
+        AtomicResult::DeadlineElapsed
+    );
+    assert_eq!(
+        store.load(&expired_id).await.unwrap().unwrap().state(),
+        &expired_state
+    );
+    assert_eq!(
+        store
+            .delete_with_authorization_deadline(&expired_id, expired.version(), None)
+            .await
+            .unwrap(),
+        AtomicResult::Applied,
+        "ordinary expired cleanup must remain available"
+    );
     assert!(store.load(&expired_id).await.unwrap().is_none());
     store.delete(&auth_req_id, stored.version()).await.unwrap();
-
 }
 
 #[tokio::test]

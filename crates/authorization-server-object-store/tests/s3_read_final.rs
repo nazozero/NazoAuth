@@ -18,7 +18,8 @@ fn store(server: &ObjectServer) -> S3AvatarObjectStore {
             path_style: true,
         },
         TenantContext::default_system().tenant_id,
-    ).unwrap()
+    )
+    .unwrap()
 }
 
 fn assert_one_signed_get(server: &ObjectServer) {
@@ -26,7 +27,11 @@ fn assert_one_signed_get(server: &ObjectServer) {
     assert_eq!(requests.len(), 1, "final read must not issue HEAD");
     assert!(requests[0].starts_with("GET /avatars/avatars/final/"));
     assert!(requests[0].contains("/final-a HTTP/1.1"));
-    assert!(requests[0].to_ascii_lowercase().contains("authorization: aws4-hmac-sha256 "));
+    assert!(
+        requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: aws4-hmac-sha256 ")
+    );
 }
 
 #[tokio::test]
@@ -44,8 +49,10 @@ async fn final_read_gets_mime_and_body_from_one_signed_response() {
 async fn final_read_rejects_missing_or_unknown_mime_without_an_extra_request() {
     for mime in [None, Some("text/plain")] {
         let server = ObjectServer::new(200, mime, b"body".to_vec());
-        assert_eq!(store(&server).read_final("final-a").await,
-            Err(AvatarStorageError::InvalidState));
+        assert_eq!(
+            store(&server).read_final("final-a").await,
+            Err(AvatarStorageError::InvalidState)
+        );
         assert_one_signed_get(&server);
     }
 }
@@ -56,8 +63,14 @@ async fn final_read_preserves_status_mapping_and_rejects_unsafe_ids_without_io()
         (404, AvatarStorageError::Missing),
         (409, AvatarStorageError::Conflict),
         (412, AvatarStorageError::Conflict),
-        (500, AvatarStorageError::Unavailable("S3 returned HTTP 500".to_owned())),
-        (503, AvatarStorageError::Unavailable("S3 returned HTTP 503".to_owned())),
+        (
+            500,
+            AvatarStorageError::Unavailable("S3 returned HTTP 500".to_owned()),
+        ),
+        (
+            503,
+            AvatarStorageError::Unavailable("S3 returned HTTP 503".to_owned()),
+        ),
     ] {
         let server = ObjectServer::new(status, Some("image/png"), Vec::new());
         assert_eq!(store(&server).read_final("final-a").await, Err(expected));
@@ -66,7 +79,10 @@ async fn final_read_preserves_status_mapping_and_rejects_unsafe_ids_without_io()
     let server = ObjectServer::new(200, Some("image/png"), Vec::new());
     let storage = store(&server);
     for id in ["", "../outside", "a/b", "a?x", "a#x", "a\\b"] {
-        assert_eq!(storage.read_final(id).await, Err(AvatarStorageError::InvalidState));
+        assert_eq!(
+            storage.read_final(id).await,
+            Err(AvatarStorageError::InvalidState)
+        );
     }
     assert!(server.requests().is_empty());
 }

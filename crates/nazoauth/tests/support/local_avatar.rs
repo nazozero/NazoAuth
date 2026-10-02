@@ -1,9 +1,12 @@
-use std::{path::PathBuf, sync::{Arc, Mutex}};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use nazo_identity::{
-    AccountIdentity, AvatarObject, AvatarContentType, Principal, PublicAccount,
-    TenantContext, TenantId, UserId, UserProfile, UserRole,
+    AccountIdentity, AvatarContentType, AvatarObject, Principal, PublicAccount, TenantContext,
+    TenantId, UserId, UserProfile, UserRole,
     ports::{AvatarRepositoryPort, GrantSummaryRepositoryPort, RepositoryError, RepositoryFuture},
 };
 use tokio::sync::Notify;
@@ -134,7 +137,11 @@ impl AvatarRepositoryPort for CasRepository {
 pub(crate) struct NoGrants;
 
 impl GrantSummaryRepositoryPort for NoGrants {
-    fn authorized_client_count(&self, _tenant_id: TenantId, _user_id: Uuid) -> RepositoryFuture<'_, i64> {
+    fn authorized_client_count(
+        &self,
+        _tenant_id: TenantId,
+        _user_id: Uuid,
+    ) -> RepositoryFuture<'_, i64> {
         Box::pin(async { Ok(0) })
     }
 }
@@ -152,7 +159,11 @@ impl<R: AvatarRepositoryPort> AvatarRepositoryPort for CommitThenError<R> {
         avatar_url: Option<String>,
     ) -> RepositoryFuture<'a, Option<PublicAccount>> {
         Box::pin(async move {
-            match self.0.compare_and_set_avatar(tenant_id, user_id, expected_avatar_url, avatar_url).await? {
+            match self
+                .0
+                .compare_and_set_avatar(tenant_id, user_id, expected_avatar_url, avatar_url)
+                .await?
+            {
                 Some(_) => Err(RepositoryError::Unavailable),
                 None => Ok(None),
             }
