@@ -137,14 +137,22 @@ impl LiveFixture {
             .expect("default tenant must be non-nil");
         let store = nazo_valkey::AuthenticationStore::new(&self.state.valkey);
         let owner = Uuid::now_v7().to_string();
-        assert!(store.reserve_email_send(tenant_id, &email, &owner, 300).await.unwrap());
-        store.store_code(
-            tenant_id,
-            &email,
-            &owner,
-            nazo_identity::ports::PasswordHashInput::new(hash_password(code).unwrap()).unwrap(),
-            300,
-        ).await.unwrap();
+        assert!(
+            store
+                .reserve_email_send(tenant_id, &email, &owner, 300)
+                .await
+                .unwrap()
+        );
+        store
+            .store_code(
+                tenant_id,
+                &email,
+                &owner,
+                nazo_identity::ports::PasswordHashInput::new(hash_password(code).unwrap()).unwrap(),
+                300,
+            )
+            .await
+            .unwrap();
     }
 
     async fn key_exists(&self, key: &str) -> bool {
