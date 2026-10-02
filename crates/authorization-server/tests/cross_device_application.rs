@@ -24,7 +24,10 @@ use serde_json::{Map, Value, json};
 use std::{
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 use uuid::Uuid;
 
@@ -83,14 +86,22 @@ impl CibaStateStorePort for Ports {
         })
     }
     fn create_with_authorization_deadline<'a>(
-        &'a self, id: &'a str, state: &'a CibaRequestState, deadline: Option<i64>,
+        &'a self,
+        id: &'a str,
+        state: &'a CibaRequestState,
+        deadline: Option<i64>,
     ) -> CibaStateFuture<'a, CibaAtomicResult> {
         Box::pin(async move {
             self.create_deadlines.lock().unwrap().push(deadline);
-            std::thread::sleep(std::time::Duration::from_millis(self.create_delay_ms.load(Ordering::Relaxed)));
+            std::thread::sleep(std::time::Duration::from_millis(
+                self.create_delay_ms.load(Ordering::Relaxed),
+            ));
             let now = chrono::Utc::now().timestamp();
             if deadline.is_some_and(|deadline| now >= deadline) {
-                assert!(now < state.retention_expires_at, "retention must still be alive at the authorization fence");
+                assert!(
+                    now < state.retention_expires_at,
+                    "retention must still be alive at the authorization fence"
+                );
                 return Ok(CibaAtomicResult::DeadlineElapsed);
             }
             self.create(id, state).await
@@ -150,7 +161,9 @@ impl SecurityAudit for Ports {
         self.record_call("audit_intent");
         self.intents.lock().unwrap().push(fields);
         Box::pin(async {
-            std::thread::sleep(std::time::Duration::from_millis(self.audit_delay_ms.load(Ordering::Relaxed)));
+            std::thread::sleep(std::time::Duration::from_millis(
+                self.audit_delay_ms.load(Ordering::Relaxed),
+            ));
             if matches!(self.failure, AuditFailure::Intent) {
                 anyhow::bail!("audit intent unavailable");
             }

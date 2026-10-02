@@ -376,8 +376,15 @@ impl AuthorizationStateStorePort for Ports {
     ) -> AuthorizationFuture<'a, bool> {
         self.record("ciba_request_object_replay");
         Box::pin(async {
-            std::thread::sleep(std::time::Duration::from_millis(self.ciba_replay_delay_ms.load(Ordering::Relaxed)));
-            *self.ciba_request_replay.lock().unwrap().as_ref().expect("CIBA replay must be configured")
+            std::thread::sleep(std::time::Duration::from_millis(
+                self.ciba_replay_delay_ms.load(Ordering::Relaxed),
+            ));
+            *self
+                .ciba_request_replay
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("CIBA replay must be configured")
         })
     }
     fn consume_dpop<'a>(

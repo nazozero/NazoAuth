@@ -228,12 +228,28 @@ fn short_creation_validity_starts_after_required_audit_and_request_replay_comple
         let kid = keys.snapshot().verification_keys[0].kid.clone();
         let now = chrono::Utc::now().timestamp();
         let input = format!("{}.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg":"PS256","kid":kid,"typ":"oauth-authz-req+jwt"})).unwrap()), URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"iss":"client-1","aud":"https://issuer.example","iat":now,"exp":now+60,"jti":Uuid::now_v7().to_string()})).unwrap()));
-        let signature = nazo_auth::Signer::sign(&keys, nazo_auth::SignRequest { purpose: nazo_auth::SigningPurpose::IdToken, algorithm: "PS256", signing_input: input.as_bytes() }).await.unwrap();
-        let mut request = form(); request.requested_expiry_seconds = Some(1);
-        request.request = Some(format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature.as_bytes())));
+        let signature = nazo_auth::Signer::sign(
+            &keys,
+            nazo_auth::SignRequest {
+                purpose: nazo_auth::SigningPurpose::IdToken,
+                algorithm: "PS256",
+                signing_input: input.as_bytes(),
+            },
+        )
+        .await
+        .unwrap();
+        let mut request = form();
+        request.requested_expiry_seconds = Some(1);
+        request.request = Some(format!(
+            "{input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.as_bytes())
+        ));
         let (application, ports, _, authorization) = creation_fixture(AuditFailure::None, client);
         ports.audit_delay_ms.store(1_100, Ordering::Relaxed);
-        authorization.ports.ciba_replay_delay_ms.store(1_100, Ordering::Relaxed);
+        authorization
+            .ports
+            .ciba_replay_delay_ms
+            .store(1_100, Ordering::Relaxed);
         *authorization.ports.ciba_request_replay.lock().unwrap() = Some(Ok(true));
         let started = std::time::Instant::now();
         let response = create(&application, request).await.unwrap();
@@ -243,9 +259,17 @@ fn short_creation_validity_starts_after_required_audit_and_request_replay_comple
         let state = ports.state.lock().unwrap();
         assert_eq!(state.issued_at, now);
         assert_eq!(state.expires_at, now + 1);
-        assert_eq!(*ports.create_deadlines.lock().unwrap(), [Some(state.expires_at)]);
+        assert_eq!(
+            *ports.create_deadlines.lock().unwrap(),
+            [Some(state.expires_at)]
+        );
         assert!(ports.calls().contains(&"audit_result"));
-        assert!(authorization.ports.calls().contains(&"ciba_request_object_replay"));
+        assert!(
+            authorization
+                .ports
+                .calls()
+                .contains(&"ciba_request_object_replay")
+        );
     });
 }
 
@@ -254,11 +278,19 @@ fn delayed_create_crossing_authorization_expiry_cannot_report_success_while_rete
     block_on(async {
         let (application, ports, _, _) = creation_fixture(AuditFailure::None, client());
         ports.create_delay_ms.store(1_100, Ordering::Relaxed);
-        let mut request = form(); request.requested_expiry_seconds = Some(1);
-        let error = create(&application, request).await.err().expect("atomic authorization deadline must reject delayed creation");
+        let mut request = form();
+        request.requested_expiry_seconds = Some(1);
+        let error = create(&application, request)
+            .await
+            .err()
+            .expect("atomic authorization deadline must reject delayed creation");
         assert_eq!(fields(&error).status, StatusCode::SERVICE_UNAVAILABLE);
         assert!(!ports.calls().contains(&"create"));
         assert!(!ports.calls().contains(&"audit_result"));
-        assert_eq!(ports.create_deadlines.lock().unwrap().len(), 1, "deadline failure must not generate a new handle or retry");
+        assert_eq!(
+            ports.create_deadlines.lock().unwrap().len(),
+            1,
+            "deadline failure must not generate a new handle or retry"
+        );
     });
 }
