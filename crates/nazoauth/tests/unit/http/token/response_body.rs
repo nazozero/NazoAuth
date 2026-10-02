@@ -13,4 +13,3 @@ where
         .expect("OAuth JSON should contain a string error code")
         .to_owned()
 }
-
