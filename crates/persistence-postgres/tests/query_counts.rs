@@ -400,6 +400,7 @@ fn new_refresh_token(
 async fn refresh_issuance(token: RefreshFixture) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
             user_epoch: (token.user_id).map(|_| 0),

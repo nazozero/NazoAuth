@@ -395,6 +395,13 @@ pub async fn token_native_sso_exchange(
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: Some(nazo_auth::NativeSsoSourceFence {
+                tenant_id: secret.tenant_id,
+                user_id: secret.user_id,
+                source_client_id: secret.source_client_id,
+                family_id: secret.refresh_token_family_id,
+                device_secret_expires_at: secret.expires_at,
+            }),
             user_id: Some(secret.user_id),
             prepared_subject: None,
             subject,

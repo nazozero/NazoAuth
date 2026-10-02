@@ -66,6 +66,8 @@ pub struct TokenIssue {
     /// The original refresh authority, retained even when no replacement RT
     /// is issued. The durable commit revalidates this exact source.
     pub refresh_authority: Option<nazo_auth::RefreshTokenAuthority>,
+    /// Source family fenced separately from the destination refresh family.
+    pub native_sso_source: Option<nazo_auth::NativeSsoSourceFence>,
     /// Original resources of a newly redeemed authorization grant. This is
     /// only used to create a family; subsequent refreshes use their authority.
     pub refresh_grant_audiences: Option<Vec<String>>,

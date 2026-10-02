@@ -515,6 +515,7 @@ pub async fn token_exchange(
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: None,
             user_id,
             prepared_subject: None,
             subject: validated_subject.subject,

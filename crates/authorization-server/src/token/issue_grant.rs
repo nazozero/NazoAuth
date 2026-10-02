@@ -636,6 +636,7 @@ pub async fn issue_token_response(
     };
     match token_service
         .commit_token_issuance(nazo_auth::CommitTokenIssuance {
+            native_sso_source: issue.native_sso_source,
             principal_state,
             subject: issue.subject.clone(),
             issuance_id,

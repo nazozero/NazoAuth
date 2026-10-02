@@ -71,6 +71,7 @@ async fn fixture(database_url: &str) -> FixtureIds {
 fn fresh_issuance(fixture: &FixtureIds, tenant_id: Uuid) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
             user_epoch: None,

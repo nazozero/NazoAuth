@@ -150,6 +150,7 @@ async fn owner_revocation_streams_large_sets_and_rolls_back_all_batches() {
 fn valid_commit_input(mode: TokenIssuanceMode) -> CommitTokenIssuance {
     let user_id = Uuid::now_v7();
     CommitTokenIssuance {
+        native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
             user_epoch: Some(0),

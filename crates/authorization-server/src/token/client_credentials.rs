@@ -146,6 +146,7 @@ pub async fn token_client_credentials_with_service(
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: None,
             user_id: None,
             prepared_subject: None,
             subject: client.client_id.clone(),

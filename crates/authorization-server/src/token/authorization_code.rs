@@ -238,6 +238,7 @@ pub fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -
         .then(|| new_native_sso_token_binding(input.payload.oidc_sid.as_deref()))
         .flatten();
     TokenIssue {
+        native_sso_source: None,
         user_id: Some(input.payload.user_id),
         prepared_subject: None,
         subject: input.subject,

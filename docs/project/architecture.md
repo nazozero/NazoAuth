@@ -365,3 +365,16 @@ Token-management authentication rejects an inactive requesting client immediatel
 after its authentication snapshot, before key resolution, cryptographic proof
 validation or assertion consumption. Introspection and revocation share this
 requester gate; the token issuer's own activity checks remain separate.
+
+
+Native SSO exchange carries a separate family-level source fence into the
+final destination issuance transaction. After destination writes and capacity
+retirement, a source `FOR SHARE NOWAIT` lock rechecks tenant, user, source client,
+revocation, reuse and both family/device-secret expiry using a fresh clock, and
+holds through required audit and commit. Normal source member rotation remains
+valid. Busy source locks return retryable dependency failure; invalid sources
+roll back every destination write. Same-client capacity transfer accepts only
+the exact active source retired by this transaction's successful UPDATE
+RETURNING, with its original expiry and owner preserved under the row lock.
+A device secret prepared before a failed commit cannot authorize an exchange
+without its committed refresh family; its existing expiry bounds cache residue.

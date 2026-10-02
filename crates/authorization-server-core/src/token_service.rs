@@ -108,6 +108,17 @@ pub struct TokenPrincipalState {
     pub subject_bound: bool,
 }
 
+/// Family-level source authority for a Native SSO exchange. Normal member
+/// rotation remains valid; the final transaction fences revocation and expiry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeSsoSourceFence {
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub source_client_id: String,
+    pub family_id: Uuid,
+    pub device_secret_expires_at: DateTime<Utc>,
+}
+
 /// Owned input for the one durable token-issuance commit boundary.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommitTokenIssuance {
@@ -121,6 +132,7 @@ pub struct CommitTokenIssuance {
     pub access_token_jti: String,
     pub access_token_expires_at: i64,
     pub refresh_token: Option<crate::RefreshTokenCommit>,
+    pub native_sso_source: Option<NativeSsoSourceFence>,
     pub audit_fields: TokenIssuedAuditFields,
 }
 

@@ -147,6 +147,7 @@ async fn issuance(
 ) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
             user_epoch: Some(0),
@@ -579,4 +580,459 @@ async fn cancelled_issuance_on_pool_runtime_discards_the_blocked_connection() {
         CommitTokenIssuanceResult::Committed,
         "cancellation must not leave a receipt or poison the next checkout"
     );
+}
+
+async fn native_source_fixture(url: &str) -> (FixtureIds, RefreshFixture, TokenIssuanceRepository) {
+    let owner = fixture(url).await;
+    let tenant = nazo_identity::TenantContext::default_system()
+        .tenant_id
+        .as_uuid();
+    let mut source = refresh_token_fixture(
+        &owner,
+        tenant,
+        Uuid::now_v7(),
+        format!("native-source-{}", Uuid::now_v7()),
+        None,
+    );
+    source.issued_at -= chrono::Duration::minutes(20);
+    let repo = TokenIssuanceRepository::new(create_pool(url, 8).unwrap());
+    assert_eq!(
+        repo.commit_token_issuance(
+            issuance(
+                &owner,
+                tenant,
+                TokenIssuanceMode::Fresh,
+                Some(source.clone())
+            )
+            .await
+        )
+        .await
+        .unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+    (owner, source, repo)
+}
+
+async fn native_destination(
+    source: &FixtureIds,
+    token: &RefreshFixture,
+    destination: &FixtureIds,
+) -> CommitTokenIssuance {
+    let mut fresh = refresh_token_fixture(
+        destination,
+        token.tenant_id,
+        Uuid::now_v7(),
+        format!("native-destination-{}", Uuid::now_v7()),
+        None,
+    );
+    // Exercise rollback of a newly inserted private subject binding too.
+    fresh.contract.subject = format!("native-private-{}", destination.client_id);
+    let mut input = issuance(
+        destination,
+        token.tenant_id,
+        TokenIssuanceMode::Fresh,
+        Some(fresh),
+    )
+    .await;
+    input.subject = format!("native-private-{}", destination.client_id);
+    input.native_sso_source = Some(nazo_auth::NativeSsoSourceFence {
+        tenant_id: token.tenant_id,
+        user_id: source.user_id,
+        source_client_id: source.client_public_id.clone(),
+        family_id: token.family_id,
+        device_secret_expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+    });
+    input
+}
+
+async fn assert_native_destination_rolled_back(url: &str, input: &CommitTokenIssuance) {
+    let mut conn = AsyncPgConnection::establish(url).await.unwrap();
+    let family = input.refresh_token.as_ref().unwrap().family_id();
+    for (table, clause) in [
+        (
+            "oauth_refresh_families",
+            format!("token_family_id='{family}'"),
+        ),
+        (
+            "security_audit_events",
+            format!("payload->>'issuance_id'='{}'", input.issuance_id),
+        ),
+        (
+            "oauth_subject_bindings",
+            format!("subject='{}'", input.subject),
+        ),
+    ] {
+        let count = sql_query(format!(
+            "SELECT COUNT(*)::bigint AS count FROM {table} WHERE {clause}"
+        ))
+        .get_result::<CountRow>(&mut conn)
+        .await
+        .unwrap()
+        .count;
+        assert_eq!(
+            count, 0,
+            "{table} must roll back on invalid Native SSO authority"
+        );
+    }
+}
+
+async fn fill_native_capacity(owner: &FixtureIds, tenant: Uuid, repo: &TokenIssuanceRepository, count: usize) {
+    for index in 0..count {
+        let mut sibling = refresh_token_fixture(owner, tenant, Uuid::now_v7(), format!("native-sibling-{index}-{}", Uuid::now_v7()), None);
+        sibling.issued_at -= chrono::Duration::minutes(10 - index as i64);
+        assert_eq!(repo.commit_token_issuance(issuance(owner, tenant, TokenIssuanceMode::Fresh, Some(sibling)).await).await.unwrap(), CommitTokenIssuanceResult::Committed);
+    }
+}
+
+async fn native_active_count(url: &str, client: Uuid) -> i64 {
+    let mut conn = AsyncPgConnection::establish(url).await.unwrap();
+    sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE client_id=$1 AND revoked_at IS NULL AND reuse_detected_at IS NULL")
+        .bind::<sql_types::Uuid,_>(client).get_result::<CountRow>(&mut conn).await.unwrap().count
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_source_revoked_after_preparation_rolls_back_destination() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    let (source, token, repo) = native_source_fixture(&url).await;
+    let mut target = fixture(&url).await;
+    target.user_id = source.user_id;
+    fill_native_capacity(&target, token.tenant_id, &repo, 10).await;
+    let mut conn = AsyncPgConnection::establish(&url).await.unwrap();
+    let before_audit = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE payload->>'client_id'=$1")
+        .bind::<sql_types::Text,_>(&target.client_public_id).get_result::<CountRow>(&mut conn).await.unwrap().count;
+    let input = native_destination(&source, &token, &target).await;
+    assert!(
+        repo.refresh_family_active(token.tenant_id, token.family_id, source.user_id)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        repo.revoke_token(nazo_auth::TokenRevocation {
+            tenant_id: token.tenant_id,
+            client_id: source.client_id,
+            raw_token: &token.raw_token,
+            access_token: None
+        })
+        .await
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        repo.commit_token_issuance(input.clone()).await.unwrap(),
+        CommitTokenIssuanceResult::RefreshGrantUnavailable
+    );
+    assert_native_destination_rolled_back(&url, &input).await;
+    assert_eq!(native_active_count(&url, target.client_id).await, 10, "destination capacity retirement must roll back");
+    let after_audit = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE payload->>'client_id'=$1")
+        .bind::<sql_types::Text,_>(&target.client_public_id).get_result::<CountRow>(&mut conn).await.unwrap().count;
+    assert_eq!(after_audit, before_audit, "capacity retirement audit must roll back too");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_source_normal_member_rotation_does_not_invalidate_family_authority() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    let (source, token, repo) = native_source_fixture(&url).await;
+    let mut target = fixture(&url).await;
+    target.user_id = source.user_id;
+    let input = native_destination(&source, &token, &target).await;
+    let rotation = refresh_token_fixture(
+        &source,
+        token.tenant_id,
+        token.family_id,
+        format!("native-rotated-{}", Uuid::now_v7()),
+        Some(token.member_id),
+    );
+    assert_eq!(
+        repo.commit_token_issuance(
+            issuance(
+                &source,
+                token.tenant_id,
+                TokenIssuanceMode::Fresh,
+                Some(rotation)
+            )
+            .await
+        )
+        .await
+        .unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert_eq!(
+        repo.commit_token_issuance(input).await.unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_source_busy_nowait_rolls_back_and_returns_retryable_dependency_failure() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    let (source, token, repo) = native_source_fixture(&url).await;
+    let mut target = fixture(&url).await;
+    target.user_id = source.user_id;
+    let input = native_destination(&source, &token, &target).await;
+    let mut locker = AsyncPgConnection::establish(&url).await.unwrap();
+    sql_query("BEGIN").execute(&mut locker).await.unwrap();
+    sql_query(
+        "SELECT token_family_id FROM oauth_refresh_families WHERE token_family_id=$1 FOR UPDATE",
+    )
+    .bind::<sql_types::Uuid, _>(token.family_id)
+    .execute(&mut locker)
+    .await
+    .unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        repo.commit_token_issuance(input.clone()),
+    )
+    .await
+    .expect("NOWAIT must not await source lock release");
+    sql_query("ROLLBACK").execute(&mut locker).await.unwrap();
+    assert_eq!(result, Err(nazo_auth::TokenPortError::Unavailable));
+    assert_native_destination_rolled_back(&url, &input).await;
+    assert_eq!(
+        repo.commit_token_issuance(input).await.unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_source_same_client_capacity_transfer_requires_own_live_retirement() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    for pre_revoked in [false, true] {
+        let (source, token, repo) = native_source_fixture(&url).await;
+        for index in 0..9 {
+            let mut sibling = refresh_token_fixture(
+                &source,
+                token.tenant_id,
+                Uuid::now_v7(),
+                format!("native-cap-{index}-{}", Uuid::now_v7()),
+                None,
+            );
+            sibling.issued_at -= chrono::Duration::minutes(10 - index);
+            assert_eq!(
+                repo.commit_token_issuance(
+                    issuance(
+                        &source,
+                        token.tenant_id,
+                        TokenIssuanceMode::Fresh,
+                        Some(sibling)
+                    )
+                    .await
+                )
+                .await
+                .unwrap(),
+                CommitTokenIssuanceResult::Committed
+            );
+        }
+        if pre_revoked {
+            repo.revoke_token(nazo_auth::TokenRevocation {
+                tenant_id: token.tenant_id,
+                client_id: source.client_id,
+                raw_token: &token.raw_token,
+                access_token: None,
+            })
+            .await
+            .unwrap();
+        }
+        let input = native_destination(&source, &token, &source).await;
+        let result = repo.commit_token_issuance(input.clone()).await.unwrap();
+        if pre_revoked {
+            assert_eq!(result, CommitTokenIssuanceResult::RefreshGrantUnavailable);
+            assert_native_destination_rolled_back(&url, &input).await;
+        } else {
+            assert_eq!(result, CommitTokenIssuanceResult::Committed);
+            assert!(
+                !repo
+                    .refresh_family_active(token.tenant_id, token.family_id, source.user_id)
+                    .await
+                    .unwrap(),
+                "the original oldest-first capacity policy must still retire the source"
+            );
+            let mut conn = AsyncPgConnection::establish(&url).await.unwrap();
+            let active = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE client_id=$1 AND revoked_at IS NULL AND reuse_detected_at IS NULL")
+                .bind::<sql_types::Uuid,_>(source.client_id).get_result::<CountRow>(&mut conn).await.unwrap().count;
+            assert_eq!(active, 10);
+        }
+    }
+}
+
+async fn wait_for_fixture_blocker(conn: &mut AsyncPgConnection, backend: i64) {
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if sql_query("SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))")
+                .bind::<sql_types::BigInt,_>(backend).get_result::<CountRow>(conn).await.unwrap().count > 0 { return; }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }).await.expect("fixture operation must reach the held lock");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_source_and_device_secret_expiry_are_rechecked_after_destination_wait() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    for source_expires in [false, true] {
+        let (source, token, repo) = native_source_fixture(&url).await;
+        let mut target = fixture(&url).await;
+        target.user_id = source.user_id;
+        let mut input = native_destination(&source, &token, &target).await;
+        let deadline = chrono::Utc::now() + chrono::Duration::milliseconds(300);
+        let mut locker = AsyncPgConnection::establish(&url).await.unwrap();
+        if source_expires {
+            sql_query(
+                "UPDATE oauth_refresh_families SET current_expires_at=$1 WHERE token_family_id=$2",
+            )
+            .bind::<sql_types::Timestamptz, _>(deadline)
+            .bind::<sql_types::Uuid, _>(token.family_id)
+            .execute(&mut locker)
+            .await
+            .unwrap();
+        } else {
+            input
+                .native_sso_source
+                .as_mut()
+                .unwrap()
+                .device_secret_expires_at = deadline;
+        }
+        let backend = sql_query("SELECT pg_backend_pid()::bigint AS count")
+            .get_result::<CountRow>(&mut locker)
+            .await
+            .unwrap()
+            .count;
+        sql_query("BEGIN").execute(&mut locker).await.unwrap();
+        sql_query("SELECT id FROM oauth_clients WHERE id=$1 FOR UPDATE")
+            .bind::<sql_types::Uuid, _>(target.client_id)
+            .execute(&mut locker)
+            .await
+            .unwrap();
+        let issuer = repo.clone();
+        let candidate = input.clone();
+        let operation = tokio::spawn(async move { issuer.commit_token_issuance(candidate).await });
+        let mut observer = AsyncPgConnection::establish(&url).await.unwrap();
+        wait_for_fixture_blocker(&mut observer, backend).await;
+        let remaining = deadline
+            .signed_duration_since(chrono::Utc::now())
+            .num_milliseconds()
+            .max(0) as u64;
+        tokio::time::sleep(std::time::Duration::from_millis(remaining + 20)).await;
+        sql_query("ROLLBACK").execute(&mut locker).await.unwrap();
+        assert_eq!(
+            operation.await.unwrap().unwrap(),
+            CommitTokenIssuanceResult::RefreshGrantUnavailable
+        );
+        assert_native_destination_rolled_back(&url, &input).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_source_share_lock_holds_through_required_audit_and_commit() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    let (source, token, repo) = native_source_fixture(&url).await;
+    let mut target = fixture(&url).await;
+    target.user_id = source.user_id;
+    let input = native_destination(&source, &token, &target).await;
+    let name = format!("native_commit_gate_{}", Uuid::now_v7().simple());
+    let gate = input.issuance_id.as_u128() as i64;
+    let mut locker = AsyncPgConnection::establish(&url).await.unwrap();
+    let backend = sql_query("SELECT pg_backend_pid()::bigint AS count")
+        .get_result::<CountRow>(&mut locker)
+        .await
+        .unwrap()
+        .count;
+    sql_query(format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({gate}); RETURN NEW; END $$"))
+        .execute(&mut locker).await.unwrap();
+    sql_query(format!("CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.payload->>'issuance_id'='{}') EXECUTE FUNCTION {name}()", input.issuance_id))
+        .execute(&mut locker).await.unwrap();
+    sql_query("SELECT pg_advisory_lock($1)")
+        .bind::<sql_types::BigInt, _>(gate)
+        .execute(&mut locker)
+        .await
+        .unwrap();
+    let issuer = repo.clone();
+    let candidate = input.clone();
+    let operation = tokio::spawn(async move { issuer.commit_token_issuance(candidate).await });
+    let mut observer = AsyncPgConnection::establish(&url).await.unwrap();
+    wait_for_fixture_blocker(&mut observer, backend).await;
+    let issuer = repo.clone();
+    let raw = token.raw_token.clone();
+    let tenant = token.tenant_id;
+    let client = source.client_id;
+    let revocation = tokio::spawn(async move {
+        issuer
+            .revoke_token(nazo_auth::TokenRevocation {
+                tenant_id: tenant,
+                client_id: client,
+                raw_token: &raw,
+                access_token: None,
+            })
+            .await
+    });
+    // The audit gate has one waiter; source UPDATE must add a second blocked
+    // operation rather than finish while the source SHARE lock is held.
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            let blocked = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid))>0")
+                .get_result::<CountRow>(&mut observer).await.unwrap().count;
+            if blocked >= 2 { break; }
+            assert!(!revocation.is_finished(), "source revocation must wait until destination commits");
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }).await.expect("source revocation must block behind final fence");
+    sql_query("SELECT pg_advisory_unlock($1)")
+        .bind::<sql_types::BigInt, _>(gate)
+        .execute(&mut locker)
+        .await
+        .unwrap();
+    let committed = operation.await.unwrap();
+    let revoked = revocation.await.unwrap();
+    sql_query(format!("DROP TRIGGER {name} ON security_audit_events"))
+        .execute(&mut locker)
+        .await
+        .unwrap();
+    sql_query(format!("DROP FUNCTION {name}()"))
+        .execute(&mut locker)
+        .await
+        .unwrap();
+    assert_eq!(committed.unwrap(), CommitTokenIssuanceResult::Committed);
+    assert_eq!(revoked.unwrap(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_source_cross_client_capacity_and_maintenance_complete_without_deadlock() {
+    use nazo_persistence::SecurityStateMaintenancePort;
+    let Some(url) = database_url() else { return; };
+    let (one, token_one, repo) = native_source_fixture(&url).await;
+    let mut two = fixture(&url).await;
+    two.user_id = one.user_id;
+    let mut token_two = refresh_token_fixture(&two, token_one.tenant_id, Uuid::now_v7(), format!("native-opposing-source-{}", Uuid::now_v7()), None);
+    token_two.issued_at -= chrono::Duration::minutes(20);
+    assert_eq!(repo.commit_token_issuance(issuance(&two, token_one.tenant_id, TokenIssuanceMode::Fresh, Some(token_two.clone())).await).await.unwrap(), CommitTokenIssuanceResult::Committed);
+    fill_native_capacity(&one, token_one.tenant_id, &repo, 9).await;
+    fill_native_capacity(&two, token_one.tenant_id, &repo, 9).await;
+    let into_two = native_destination(&one, &token_one, &two).await;
+    let into_one = native_destination(&two, &token_two, &one).await;
+    let maintenance = nazo_postgres::SecurityStateMaintenanceRepository::new(create_pool(&url, 2).unwrap());
+    let (a, b, cleanup) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(repo.commit_token_issuance(into_two.clone()), repo.commit_token_issuance(into_one.clone()), maintenance.cleanup_batch())
+    }).await.expect("opposing capacity exchanges and bounded maintenance must not deadlock");
+    cleanup.expect("isolated maintenance should complete");
+    let mut successes = 0;
+    for (result, input) in [(a, &into_two), (b, &into_one)] {
+        match result {
+            Ok(CommitTokenIssuanceResult::Committed) => successes += 1,
+            Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable) | Err(nazo_auth::TokenPortError::Unavailable) => assert_native_destination_rolled_back(&url, input).await,
+            other => panic!("unexpected opposing exchange result: {other:?}"),
+        }
+    }
+    assert!(successes <= 1, "retiring a source must prevent the opposing exchange");
+    assert_eq!(native_active_count(&url, one.client_id).await, 10);
+    assert_eq!(native_active_count(&url, two.client_id).await, 10);
 }
