@@ -42,7 +42,7 @@ impl AuditLedgerRepository {
 
     /// Verify that the durable writer API is available before a
     /// caller starts a high-impact management operation. Strict mode rejects
-    /// superusers, table owners, and any direct ledger table privilege.
+    /// superuser/owner membership and reachable ledger table or column privileges.
     pub async fn check_available(&self) -> Result<(), RepositoryError> {
         self.check_available_with_policy(true).await
     }
