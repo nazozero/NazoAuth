@@ -498,7 +498,7 @@ async fn database_update_stops_after_the_cas_conflict_budget() {
         settings,
         None,
         Uuid::now_v7(),
-        repository,
+        repository.clone(),
         SigningKeyWrappingKeyRing::new("current", [13_u8; 32], None).unwrap(),
     )
     .await
@@ -513,5 +513,10 @@ async fn database_update_stops_after_the_cas_conflict_budget() {
         })
         .await
         .expect_err("an unbounded conflict stream must fail closed");
-    assert!(error.to_string().contains("did not converge"));
+    let unavailable = error
+        .downcast_ref::<crate::SigningKeyRepositoryUnavailable>()
+        .expect("exhausted CAS conflicts must remain a typed persistence failure");
+    assert!(unavailable.0.to_string().contains("did not converge"));
+    assert_eq!(AtomicUsize::load(&repository.conflicts_remaining, Ordering::Acquire), 0);
+    assert_eq!(repository.load().await.unwrap().unwrap().revision, 1);
 }
