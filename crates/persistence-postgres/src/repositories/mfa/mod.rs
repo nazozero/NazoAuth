@@ -3,7 +3,7 @@ use crate::{
     schema::{user_mfa_backup_codes, user_mfa_remembered_devices, user_totp_credentials, users},
 };
 use diesel::{ExpressionMethods, QueryDsl, dsl::now};
-use diesel_async::{AsyncConnection, RunQueryDsl};
+use diesel_async::RunQueryDsl;
 use nazo_identity::{
     IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
     IdentitySecurityReason, TenantId, UserId, ports::RepositoryError,

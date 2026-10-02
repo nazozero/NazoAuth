@@ -670,13 +670,13 @@ mod real_userinfo_contract {
                     .unwrap()
                     .to_str()
                     .unwrap();
-                assert!(challenge.contains("invalid_token"));
+                assert!(challenge.contains("invalid_dpop_proof"));
                 assert!(response.headers().get(header::SET_COOKIE).is_none());
                 let body = actix_web::body::to_bytes(response.into_body())
                     .await
                     .unwrap();
                 let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-                assert_eq!(body["error"], "invalid_token");
+                assert_eq!(body["error"], "invalid_dpop_proof");
                 assert!(body.get("sub").is_none());
                 assert_eq!(*calls.lock().unwrap(), ["revocation"]);
             } else {

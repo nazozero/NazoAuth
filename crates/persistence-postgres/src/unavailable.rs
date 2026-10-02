@@ -45,9 +45,10 @@ pub(crate) fn migration_query(error: Error) -> anyhow::Error {
 // Error::source. Preserve that box intact; only a publicly identifiable query
 // is classified here. Opaque harness failures retain their existing category.
 pub(crate) fn migration_harness(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
-    let unavailable = error.downcast_ref::<Error>().is_some_and(query_is_unavailable);
-    let source = anyhow::Error::from_boxed(error);
-    if unavailable { nazo_persistence::MigrationUnavailable(source).into() } else { source }
+    match error.downcast::<Error>() {
+        Ok(error) => migration_query(*error),
+        Err(opaque) => anyhow::Error::from_boxed(opaque),
+    }
 }
 
 pub(crate) fn migration_outcome(
