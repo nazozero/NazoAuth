@@ -146,9 +146,9 @@ pub(crate) enum JournalFlowError {
     /// proven-idempotent owner, so re-entry could duplicate a mutation.
     /// Fail-closed; requires operator resolution.
     UnknownOutcome,
-    /// A resumable side effect proved it did not reach its durable owner
-    /// because that owner was temporarily unavailable. The executing record
-    /// remains authoritative and may be resumed with the same operation.
+    /// A resumable state owner reported a typed temporary failure. Its
+    /// mutation may already be committed; the executing record stays durable
+    /// and the owner's idempotent re-entry resolves the same operation.
     RetryableExecution(anyhow::Error),
     /// Durable-state or I/O failure.  Nothing about the operation outcome
     /// can be inferred from it.
@@ -174,9 +174,10 @@ impl std::fmt::Display for JournalFlowError {
 }
 
 /// Execution-layer classification deliberately has only the two facts the
-/// journal can safely act on. It is not a general retry mechanism: an engine
-/// may mark an error retryable only after proving no side effect reached its
-/// own durable owner.
+/// journal can safely act on. It is not a general retry mechanism: only
+/// explicit owner boundaries classify typed temporary failures, and re-entry
+/// requires that operation's durable owner to provide idempotent convergence.
+/// Retryability alone does not prove that the owner has not committed.
 #[derive(Debug)]
 pub(crate) enum SideEffectError {
     Terminal(anyhow::Error),
