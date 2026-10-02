@@ -171,7 +171,9 @@ pub(crate) async fn system_set_tenant_admin(
         )
         .await
     {
-        Ok(nazo_identity::AdminUserUpdateOutcome::Updated(user)) => json_response(admin_user_json(*user)),
+        Ok(nazo_identity::AdminUserUpdateOutcome::Updated(user)) => {
+            json_response(admin_user_json(*user))
+        }
         Ok(nazo_identity::AdminUserUpdateOutcome::TargetNotFound) => {
             HttpResponse::NotFound().finish()
         }

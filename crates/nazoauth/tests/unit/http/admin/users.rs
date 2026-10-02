@@ -805,8 +805,13 @@ async fn system_tenant_admin_update_commits_state_and_registered_required_audit(
         1
     );
     #[derive(diesel::QueryableByName)]
-    struct Ledger { #[diesel(sql_type = diesel::sql_types::Jsonb)] payload: serde_json::Value }
-    let mut conn = nazo_postgres::get_conn(&fixture.state.diesel_db).await.unwrap();
+    struct Ledger {
+        #[diesel(sql_type = diesel::sql_types::Jsonb)]
+        payload: serde_json::Value,
+    }
+    let mut conn = nazo_postgres::get_conn(&fixture.state.diesel_db)
+        .await
+        .unwrap();
     let audit = sql_query("SELECT payload FROM security_audit_events WHERE event_type='system_tenant_admin_updated' AND payload->>'target_user_id'=$1")
         .bind::<Text,_>(target.id.to_string()).get_result::<Ledger>(&mut conn).await.unwrap();
     assert_eq!(audit.payload["tenant_id"], json!(tenant.as_uuid()));
@@ -814,7 +819,10 @@ async fn system_tenant_admin_update_commits_state_and_registered_required_audit(
     assert_eq!(audit.payload["actor_user_id"], json!(admin.id));
     assert_eq!(audit.payload["outcome"], "success");
     #[derive(diesel::QueryableByName)]
-    struct LocalEvent { #[diesel(sql_type = diesel::sql_types::Nullable<SqlUuid>)] actor_id: Option<Uuid> }
+    struct LocalEvent {
+        #[diesel(sql_type = diesel::sql_types::Nullable<SqlUuid>)]
+        actor_id: Option<Uuid>,
+    }
     let local = sql_query("SELECT actor_id FROM identity_security_events WHERE tenant_id=$1 AND target_user_id=$2 AND reason_code='admin_updated'")
         .bind::<SqlUuid,_>(tenant.as_uuid()).bind::<SqlUuid,_>(target.id).get_result::<LocalEvent>(&mut conn).await.unwrap();
     assert!(local.actor_id.is_none());
