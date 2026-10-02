@@ -43,8 +43,10 @@ where
         lifecycle: Arc<L>,
         catalog: ModuleCatalog,
         instance_id: String,
-        initial_snapshot: ActiveModuleSnapshot,
+        mut initial_snapshot: ActiveModuleSnapshot,
     ) -> Self {
+        initial_snapshot.accepting.retain(|id| catalog.is_available(*id));
+        initial_snapshot.draining.retain(|id| catalog.is_available(*id));
         Self {
             repository,
             lifecycle,

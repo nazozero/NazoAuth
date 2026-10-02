@@ -40,6 +40,13 @@ where
         Ok(outcomes)
     }
 
+    pub async fn plan_reconciliation(&self) -> Result<Vec<ModuleId>, RegistryError<R::Error>> {
+        let states = self.repository.read_reconcile_state(&self.instance_id).await
+            .map_err(RegistryError::Repository)?.into_iter()
+            .map(|state| (state.desired.module_id, state)).collect::<BTreeMap<_, _>>();
+        Ok(ModuleId::ALL.into_iter().filter(|id| !self.is_settled(*id, &states)).collect())
+    }
+
     fn is_settled(
         &self,
         module_id: ModuleId,
@@ -48,7 +55,7 @@ where
         let Some(state) = states.get(&module_id) else {
             return false;
         };
-        let enabled = state.desired.mode.is_enabled();
+        let enabled = self.catalog.effective_enabled(module_id, state.desired.mode.is_enabled());
         if !state.instance.as_ref().is_some_and(|instance| {
             instance.applied_revision == Some(state.desired.revision)
                 && ((enabled && instance.state == ModuleState::Enabled)
@@ -59,12 +66,15 @@ where
         // Re-read the in-process admission snapshot after any earlier transition
         // in this pass. Desired mode alone never proves dependency readiness.
         let snapshot = self.snapshot();
+        if snapshot.admits(module_id) != enabled || snapshot.draining.contains(&module_id) {
+            return false;
+        }
         if enabled {
             self.catalog.spec(module_id).is_some_and(|spec| {
                 spec.dependencies.iter().all(|dependency| {
                     states
                         .get(dependency)
-                        .is_some_and(|state| state.desired.mode.is_enabled())
+                        .is_some_and(|state| self.catalog.effective_enabled(*dependency, state.desired.mode.is_enabled()))
                         && snapshot.admits(*dependency)
                 })
             })
@@ -76,8 +86,9 @@ where
                 .all(|dependent| {
                     states
                         .get(&dependent.id)
-                        .is_some_and(|state| !state.desired.mode.is_enabled())
+                        .is_some_and(|state| !self.catalog.effective_enabled(dependent.id, state.desired.mode.is_enabled()))
                         && !snapshot.admits(dependent.id)
+                        && !snapshot.draining.contains(&dependent.id)
                 })
         }
     }
@@ -104,7 +115,7 @@ where
             .await
             .map_err(RegistryError::Repository)?
             .ok_or(RegistryError::MissingDesiredState(module_id))?;
-        let enabled = desired.mode.is_enabled();
+        let enabled = self.catalog.effective_enabled(module_id, desired.mode.is_enabled());
         let current = self
             .repository
             .read_instance(&self.instance_id, module_id)
@@ -131,7 +142,10 @@ where
                 dependent,
             });
         }
-        if current.as_ref().is_some_and(|instance| {
+        let snapshot = self.snapshot();
+        if snapshot.admits(module_id) == enabled
+            && !snapshot.draining.contains(&module_id)
+            && current.as_ref().is_some_and(|instance| {
             instance.applied_revision == Some(desired.revision)
                 && ((enabled && instance.state == ModuleState::Enabled)
                     || (!enabled && instance.state == ModuleState::Disabled))

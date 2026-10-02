@@ -396,10 +396,10 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
     let unavailable_request = disabled
         .request(Uuid::now_v7(), None)
         .await
-        .expect_err("request lookup must report unavailable storage");
+        .expect_err("request must reject disabled admission before storage");
     assert_eq!(
         (unavailable_request.status, unavailable_request.error),
-        (503, "server_error")
+        (503, "temporarily_unavailable")
     );
     let unavailable_response = disabled
         .respond(
@@ -412,18 +412,18 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
             }),
         )
         .await
-        .expect_err("response lookup must report unavailable storage");
+        .expect_err("response must reject disabled admission before storage");
     assert_eq!(
         (unavailable_response.status, unavailable_response.error),
-        (503, "server_error")
+        (503, "temporarily_unavailable")
     );
     let unavailable_result = disabled
         .result(Uuid::now_v7())
         .await
-        .expect_err("result lookup must report unavailable storage");
+        .expect_err("result must reject disabled admission before storage");
     assert_eq!(
         (unavailable_result.status, unavailable_result.error),
-        (503, "server_error")
+        (503, "temporarily_unavailable")
     );
 }
 

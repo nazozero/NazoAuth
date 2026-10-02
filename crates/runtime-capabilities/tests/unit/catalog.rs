@@ -8,6 +8,7 @@ fn security_profile_block_is_reflected_only_in_effective_policy() {
         authorization_code: Duration::from_secs(3),
         refresh_token: Duration::from_secs(4),
         session: Duration::from_secs(5),
+        presentation_transaction: Duration::from_secs(5),
         scim_security_events: Duration::from_secs(6),
     };
     let base = ModuleCatalog::fixed(durations).unwrap();
