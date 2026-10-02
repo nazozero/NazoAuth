@@ -1,17 +1,29 @@
+use super::{DatabaseUserFixture, TestInfrastructure, valkey::valkey_set_ex};
+use crate::{
+    config::ConfigSource,
+    http::sessions::{AdminSessionHandles, SessionHttpConfig},
+    schema::users,
+    settings::Settings,
+};
 use actix_web::{HttpRequest, cookie::Cookie, web::Data};
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use fred::{interfaces::ClientLike, prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig}};
-use std::{sync::Arc, time::Duration as StdDuration};
-use uuid::Uuid;
+use fred::{
+    interfaces::ClientLike,
+    prelude::{
+        Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+    },
+};
 use nazo_http_actix::ClientIpConfig;
-use nazo_identity::{DEFAULT_TENANT_ID, DEFAULT_REALM_ID, DEFAULT_ORGANIZATION_ID, ports::AdminUserRepositoryPort};
+use nazo_identity::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, ports::AdminUserRepositoryPort,
+};
 use nazo_oauth_server::sessions::SessionPayload;
 use nazo_postgres::{UserRepository, create_pool, get_conn};
-use crate::{config::ConfigSource, settings::Settings, schema::users, http::sessions::{AdminSessionHandles, SessionHttpConfig}};
-use super::{DatabaseUserFixture, TestInfrastructure, valkey::valkey_set_ex};
+use std::{sync::Arc, time::Duration as StdDuration};
+use uuid::Uuid;
 
 pub(crate) fn admin_user_dependencies(
     state: &Data<TestInfrastructure>,
@@ -43,7 +55,6 @@ pub(crate) fn admin_user_dependencies(
         )),
     )
 }
-
 
 pub(crate) struct LiveAdminUsersFixture {
     pub(crate) state: Data<TestInfrastructure>,
@@ -91,7 +102,12 @@ impl LiveAdminUsersFixture {
         })
     }
 
-    pub(crate) async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> DatabaseUserFixture {
+    pub(crate) async fn create_user(
+        &self,
+        suffix: &str,
+        role: &str,
+        admin_level: i32,
+    ) -> DatabaseUserFixture {
         let email = format!("admin-users-{suffix}@example.com");
         let username = format!("admin-users-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -175,12 +191,14 @@ impl LiveAdminUsersFixture {
     }
 }
 
-
 impl LiveAdminUsersFixture {
     pub(crate) async fn audit_count(&self, event: &str, field: &str, value: &str) -> i64 {
         #[derive(diesel::QueryableByName)]
-        struct Count { #[diesel(sql_type = diesel::sql_types::BigInt)] count: i64 }
-        let mut conn=get_conn(&self.state.diesel_db).await.unwrap();
+        struct Count {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            count: i64,
+        }
+        let mut conn = get_conn(&self.state.diesel_db).await.unwrap();
         diesel::sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type=$1 AND payload->>$2=$3")
             .bind::<Text,_>(event).bind::<Text,_>(field).bind::<Text,_>(value).get_result::<Count>(&mut conn).await.unwrap().count
     }
