@@ -691,7 +691,7 @@ fn torn_publication_windows_recover_monotonically_or_fail_closed() {
     let temporary = path.with_extension("journal.json.tmp");
     let accepted = OperationJournalRecord {
         schema: CONTROL_JOURNAL_SCHEMA,
-            recovery_coverage_version: None,
+        recovery_coverage_version: None,
         operation_id: OPERATION_ID.to_owned(),
         request_hash: hash('a'),
         controller_id: CONTROLLER_ID.to_owned(),
@@ -1083,32 +1083,55 @@ fn recovery_result() -> ControlResult {
 #[test]
 fn covered_recovery_journal_requires_marker_without_changing_result_wire() {
     let directory = temporary_directory();
-    accept(&directory, &operation(OPERATION_ID), &hash('a'), &snapshot()).unwrap();
+    accept(
+        &directory,
+        &operation(OPERATION_ID),
+        &hash('a'),
+        &snapshot(),
+    )
+    .unwrap();
     begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
     let result = recovery_result();
     complete(&directory, &result).unwrap();
     let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
     let record = read_record(&path).unwrap();
     assert_eq!(record.recovery_coverage_version, Some(1));
-    assert!(!String::from_utf8(encode_control_result(&result).unwrap())
-        .unwrap().contains("recovery_coverage_version"));
-    assert_eq!(status(&directory, OPERATION_ID, &hash('a')).unwrap(),
-        Some(JournalCheckpoint::Completed(Box::new(result))));
+    assert!(
+        !String::from_utf8(encode_control_result(&result).unwrap())
+            .unwrap()
+            .contains("recovery_coverage_version")
+    );
+    assert_eq!(
+        status(&directory, OPERATION_ID, &hash('a')).unwrap(),
+        Some(JournalCheckpoint::Completed(Box::new(result)))
+    );
 
     let mut old = serde_json::to_value(&record).unwrap();
-    old.as_object_mut().unwrap().remove("recovery_coverage_version");
+    old.as_object_mut()
+        .unwrap()
+        .remove("recovery_coverage_version");
     let old_bytes = serde_json::to_vec(&old).unwrap();
     fs::write(&path, &old_bytes).unwrap();
     assert!(status(&directory, OPERATION_ID, &hash('a')).is_err());
     assert!(accepted_snapshot(&directory, OPERATION_ID, &hash('a')).is_err());
-    assert_eq!(fs::read(&path).unwrap(), old_bytes, "old success is never rewritten");
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        old_bytes,
+        "old success is never rewritten"
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
 fn old_successful_recovery_temporary_is_not_adopted() {
     let directory = temporary_directory();
-    accept(&directory, &operation(OPERATION_ID), &hash('a'), &snapshot()).unwrap();
+    accept(
+        &directory,
+        &operation(OPERATION_ID),
+        &hash('a'),
+        &snapshot(),
+    )
+    .unwrap();
     let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
     let accepted_bytes = fs::read(&path).unwrap();
     let mut completed = read_record(&path).unwrap();
@@ -1126,11 +1149,22 @@ fn old_successful_recovery_temporary_is_not_adopted() {
 #[test]
 fn recovery_coverage_marker_is_closed_and_nonterminal_records_remain_resumable() {
     let directory = temporary_directory();
-    accept(&directory, &operation(OPERATION_ID), &hash('a'), &snapshot()).unwrap();
+    accept(
+        &directory,
+        &operation(OPERATION_ID),
+        &hash('a'),
+        &snapshot(),
+    )
+    .unwrap();
     let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
     let mut record = read_record(&path).unwrap();
-    assert!(!serde_json::to_value(&record).unwrap().as_object().unwrap()
-        .contains_key("recovery_coverage_version"));
+    assert!(
+        !serde_json::to_value(&record)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .contains_key("recovery_coverage_version")
+    );
     for marker in [0, 1, 2] {
         record.recovery_coverage_version = Some(marker);
         assert!(validate_record(&record).is_err());
@@ -1147,7 +1181,10 @@ fn recovery_coverage_marker_is_closed_and_nonterminal_records_remain_resumable()
     }
     record.result = Some(succeeded_result(OPERATION_ID, &hash('a')));
     record.recovery_coverage_version = Some(1);
-    assert!(validate_record(&record).is_err(), "unrelated success cannot carry coverage");
+    assert!(
+        validate_record(&record).is_err(),
+        "unrelated success cannot carry coverage"
+    );
     record.recovery_coverage_version = None;
     validate_record(&record).unwrap();
     fs::remove_dir_all(directory).unwrap();

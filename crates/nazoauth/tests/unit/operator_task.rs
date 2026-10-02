@@ -713,17 +713,45 @@ async fn dispatch_maps_precondition_failures_to_engine_errors_without_a_database
 
 #[test]
 fn owner_markers_survive_context_but_anyhow_default_stays_terminal() {
-    let marked = anyhow::Error::new(nazo_persistence::MigrationUnavailable(anyhow::anyhow!("fixture"))).context("outer");
-    assert!(matches!(control_journal::SideEffectError::from(marked), control_journal::SideEffectError::Terminal(_)));
-    let marked = anyhow::Error::new(nazo_key_management::SigningKeyRepositoryUnavailable(anyhow::anyhow!("fixture"))).context("outer");
-    assert!(matches!(execution::map_owned_persistence_error(marked), control_journal::SideEffectError::Retryable(_)));
-    let marked = anyhow::Error::new(nazo_persistence::MigrationUnavailable(anyhow::anyhow!("fixture"))).context("outer");
-    assert!(matches!(execution::map_owned_persistence_error(marked), control_journal::SideEffectError::Retryable(_)));
-    for message in ["material invalid", "JWK invalid", "profile invalid", "permission denied",
-        "schema mismatch", "constraint failure", "fixed expected revision conflict",
-        "BadConnection timeout", "Unknown closed connection"] {
-        assert!(matches!(execution::map_owned_persistence_error(anyhow::anyhow!(message).context("outer")),
-            control_journal::SideEffectError::Terminal(_)));
+    let marked = anyhow::Error::new(nazo_persistence::MigrationUnavailable(anyhow::anyhow!(
+        "fixture"
+    )))
+    .context("outer");
+    assert!(matches!(
+        control_journal::SideEffectError::from(marked),
+        control_journal::SideEffectError::Terminal(_)
+    ));
+    let marked = anyhow::Error::new(nazo_key_management::SigningKeyRepositoryUnavailable(
+        anyhow::anyhow!("fixture"),
+    ))
+    .context("outer");
+    assert!(matches!(
+        execution::map_owned_persistence_error(marked),
+        control_journal::SideEffectError::Retryable(_)
+    ));
+    let marked = anyhow::Error::new(nazo_persistence::MigrationUnavailable(anyhow::anyhow!(
+        "fixture"
+    )))
+    .context("outer");
+    assert!(matches!(
+        execution::map_owned_persistence_error(marked),
+        control_journal::SideEffectError::Retryable(_)
+    ));
+    for message in [
+        "material invalid",
+        "JWK invalid",
+        "profile invalid",
+        "permission denied",
+        "schema mismatch",
+        "constraint failure",
+        "fixed expected revision conflict",
+        "BadConnection timeout",
+        "Unknown closed connection",
+    ] {
+        assert!(matches!(
+            execution::map_owned_persistence_error(anyhow::anyhow!(message).context("outer")),
+            control_journal::SideEffectError::Terminal(_)
+        ));
     }
 }
 
@@ -734,29 +762,68 @@ async fn typed_owner_failure_keeps_executing_then_resumes_without_duplicate_muta
     let hash = "a".repeat(64);
     let snapshot = control_journal::AuthorizationSnapshot {
         controller_id: "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90".to_owned(),
-        kid: operation.kid.clone(), accepted_at: 1_000,
+        kid: operation.kid.clone(),
+        accepted_at: 1_000,
     };
     let marker = directory.join("migration-owner-ledger");
-    let first = control_journal::run_journaled_operation(&directory, &operation, &hash, &snapshot,
-        true, &|_| {}, || async {
+    let first = control_journal::run_journaled_operation(
+        &directory,
+        &operation,
+        &hash,
+        &snapshot,
+        true,
+        &|_| {},
+        || async {
             // The owner committed, then its response was lost. Re-entry sees its ledger.
             fs::write(&marker, b"committed").unwrap();
-            Err(execution::map_owned_persistence_error(anyhow::Error::new(
-                nazo_persistence::MigrationUnavailable(anyhow::anyhow!("response lost"))).context("owner")))
-        }).await;
-    assert!(matches!(first, Err(control_journal::JournalFlowError::RetryableExecution(_))));
-    let journal = directory.join("control-journal").join(format!("{}.journal.json", operation.operation_id));
+            Err(execution::map_owned_persistence_error(
+                anyhow::Error::new(nazo_persistence::MigrationUnavailable(anyhow::anyhow!(
+                    "response lost"
+                )))
+                .context("owner"),
+            ))
+        },
+    )
+    .await;
+    assert!(matches!(
+        first,
+        Err(control_journal::JournalFlowError::RetryableExecution(_))
+    ));
+    let journal = directory
+        .join("control-journal")
+        .join(format!("{}.journal.json", operation.operation_id));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
     assert_eq!(value["phase"], "executing");
     assert!(value["result"].is_null());
-    let resumed = control_journal::run_journaled_operation(&directory, &operation, &hash, &snapshot,
-        true, &|_| {}, || async {
+    let resumed = control_journal::run_journaled_operation(
+        &directory,
+        &operation,
+        &hash,
+        &snapshot,
+        true,
+        &|_| {},
+        || async {
             assert_eq!(fs::read(&marker).unwrap(), b"committed");
             Ok(None)
-        }).await.unwrap();
-    assert_eq!(resumed.result.outcome, nazo_operator_protocol::ControlOutcome::Succeeded);
-    let recovered = control_journal::run_journaled_operation(&directory, &operation, &hash, &snapshot,
-        true, &|_| {}, || async { panic!("completed owner must never run again") }).await.unwrap();
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        resumed.result.outcome,
+        nazo_operator_protocol::ControlOutcome::Succeeded
+    );
+    let recovered = control_journal::run_journaled_operation(
+        &directory,
+        &operation,
+        &hash,
+        &snapshot,
+        true,
+        &|_| {},
+        || async { panic!("completed owner must never run again") },
+    )
+    .await
+    .unwrap();
     assert!(recovered.recovered);
     fs::remove_dir_all(directory).unwrap();
 }
@@ -768,15 +835,39 @@ async fn permanent_owner_failure_is_terminal_and_never_rerun() {
     let hash = "b".repeat(64);
     let snapshot = control_journal::AuthorizationSnapshot {
         controller_id: "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90".to_owned(),
-        kid: operation.kid.clone(), accepted_at: 1_000,
+        kid: operation.kid.clone(),
+        accepted_at: 1_000,
     };
-    let failed = control_journal::run_journaled_operation(&directory, &operation, &hash, &snapshot,
-        true, &|_| {}, || async {
-            Err(execution::map_owned_persistence_error(anyhow::anyhow!("fixed revision mismatch")))
-        }).await.unwrap();
-    assert_eq!(failed.result.outcome, nazo_operator_protocol::ControlOutcome::Failed);
-    let recovered = control_journal::run_journaled_operation(&directory, &operation, &hash, &snapshot,
-        true, &|_| {}, || async { panic!("terminal journal must never retry") }).await.unwrap();
+    let failed = control_journal::run_journaled_operation(
+        &directory,
+        &operation,
+        &hash,
+        &snapshot,
+        true,
+        &|_| {},
+        || async {
+            Err(execution::map_owned_persistence_error(anyhow::anyhow!(
+                "fixed revision mismatch"
+            )))
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        failed.result.outcome,
+        nazo_operator_protocol::ControlOutcome::Failed
+    );
+    let recovered = control_journal::run_journaled_operation(
+        &directory,
+        &operation,
+        &hash,
+        &snapshot,
+        true,
+        &|_| {},
+        || async { panic!("terminal journal must never retry") },
+    )
+    .await
+    .unwrap();
     assert!(recovered.recovered);
     assert_eq!(recovered.result, failed.result);
     fs::remove_dir_all(directory).unwrap();

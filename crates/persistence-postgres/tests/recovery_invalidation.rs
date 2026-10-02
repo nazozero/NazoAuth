@@ -16,21 +16,32 @@ struct Count {
 
 async fn isolated() -> Option<(String, String)> {
     let base = std::env::var("NAZO_TEST_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL")).ok();
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .ok();
     let Some(base) = base else {
-        assert!(std::env::var_os("CI").is_none(), "CI restore coverage requires PostgreSQL");
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI restore coverage requires PostgreSQL"
+        );
         return None;
     };
     let schema = format!("restore_coverage_{}", Uuid::now_v7().simple());
     let mut connection = AsyncPgConnection::establish(&base).await.unwrap();
-    connection.batch_execute(&format!("CREATE SCHEMA {schema}")).await.unwrap();
+    connection
+        .batch_execute(&format!("CREATE SCHEMA {schema}"))
+        .await
+        .unwrap();
     let url = support::schema_database_url(&base, &schema);
     support::run_isolated_application_migrations(&url).await;
     Some((url, schema))
 }
 
 async fn count(connection: &mut AsyncPgConnection, sql: &str) -> i64 {
-    sql_query(sql).get_result::<Count>(connection).await.unwrap().count
+    sql_query(sql)
+        .get_result::<Count>(connection)
+        .await
+        .unwrap()
+        .count
 }
 
 // Seed the actual migrated tables, including tenant/client/user composite FKs.
@@ -80,74 +91,194 @@ async fn family(connection: &mut AsyncPgConnection, tenant: Uuid, client_subject
         .bind::<sql_types::Uuid,_>(client)
         .bind::<sql_types::Nullable<sql_types::Uuid>,_>(if client_subject { None } else { Some(user) })
         .bind::<sql_types::Binary,_>(&digest).execute(connection).await.unwrap();
-    connection.batch_execute(&format!(
-        "UPDATE oauth_clients SET is_active = FALSE WHERE id = '{client}';
+    connection
+        .batch_execute(&format!(
+            "UPDATE oauth_clients SET is_active = FALSE WHERE id = '{client}';
          UPDATE users SET is_active = FALSE WHERE id = '{user}'"
-    )).await.unwrap();
+        ))
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn restore_covers_all_tenants_and_exact_receipt_never_revokes_new_families() {
-    let Some((url, schema)) = isolated().await else { return };
+    let Some((url, schema)) = isolated().await else {
+        return;
+    };
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    let system = nazo_identity::TenantContext::default_system().tenant_id.as_uuid();
+    let system = nazo_identity::TenantContext::default_system()
+        .tenant_id
+        .as_uuid();
     let other = Uuid::now_v7();
     family(&mut connection, system, false).await;
     family(&mut connection, other, false).await;
     family(&mut connection, other, true).await;
-    connection.batch_execute(&format!("UPDATE tenants SET status='suspended' WHERE id='{other}'")).await.unwrap();
+    connection
+        .batch_execute(&format!(
+            "UPDATE tenants SET status='suspended' WHERE id='{other}'"
+        ))
+        .await
+        .unwrap();
     let repository = TokenRepository::new(create_pool(url.clone(), 2).unwrap());
     let operation = Uuid::now_v7();
     let epoch = Uuid::now_v7();
     let hash = "a".repeat(64);
     let completed = chrono::DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap();
     let deadline = completed + Duration::minutes(10);
-    let first = repository.invalidate_after_restore(operation, &hash, epoch, deadline, completed).await.unwrap();
+    let first = repository
+        .invalidate_after_restore(operation, &hash, epoch, deadline, completed)
+        .await
+        .unwrap();
     assert_eq!(first.revoked_refresh_tokens, 3);
-    assert_eq!(count(&mut connection, "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE revoked_at IS NULL").await, 0);
+    assert_eq!(
+        count(
+            &mut connection,
+            "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE revoked_at IS NULL"
+        )
+        .await,
+        0
+    );
     assert_eq!(count(&mut connection, "SELECT COUNT(*)::bigint AS count FROM recovery_invalidations WHERE coverage_version=1 AND tenant_id='00000000-0000-0000-0000-000000000001'").await, 1);
     family(&mut connection, system, true).await;
-    let replay = repository.invalidate_after_restore(operation, &hash, epoch,
-        deadline + Duration::hours(1), completed + Duration::seconds(1)).await.unwrap();
-    assert_eq!(replay, first, "the original absolute deadline and count own replay");
-    assert_eq!(count(&mut connection, "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE revoked_at IS NULL").await, 1);
-    assert!(matches!(repository.invalidate_after_restore(Uuid::now_v7(), &hash, epoch, deadline, completed).await, Err(RepositoryError::Conflict)));
+    let replay = repository
+        .invalidate_after_restore(
+            operation,
+            &hash,
+            epoch,
+            deadline + Duration::hours(1),
+            completed + Duration::seconds(1),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        replay, first,
+        "the original absolute deadline and count own replay"
+    );
+    assert_eq!(
+        count(
+            &mut connection,
+            "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE revoked_at IS NULL"
+        )
+        .await,
+        1
+    );
+    assert!(matches!(
+        repository
+            .invalidate_after_restore(Uuid::now_v7(), &hash, epoch, deadline, completed)
+            .await,
+        Err(RepositoryError::Conflict)
+    ));
 
     // An actual old writer omits the added field and remains version 0.
     let old_operation = Uuid::now_v7();
     let old_epoch = Uuid::now_v7();
-    sql_query("INSERT INTO recovery_invalidations (operation_id, request_hash, tenant_id, state_epoch,
-        not_before, revoked_refresh_tokens, completed_at) VALUES ($1,$2,$3,$4,$5,2,$6)")
-        .bind::<sql_types::Uuid,_>(old_operation).bind::<sql_types::Text,_>(&hash)
-        .bind::<sql_types::Uuid,_>(system).bind::<sql_types::Uuid,_>(old_epoch)
-        .bind::<sql_types::Timestamptz,_>(deadline).bind::<sql_types::Timestamptz,_>(completed)
-        .execute(&mut connection).await.unwrap();
-    assert!(matches!(repository.invalidate_after_restore(old_operation, &hash, old_epoch, deadline, completed).await, Err(RepositoryError::Consistency(_))));
-    assert_eq!(count(&mut connection, "SELECT COUNT(*)::bigint AS count FROM recovery_invalidations WHERE coverage_version=0").await, 1);
-    assert_eq!(count(&mut connection, "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE revoked_at IS NULL").await, 1);
+    sql_query(
+        "INSERT INTO recovery_invalidations (operation_id, request_hash, tenant_id, state_epoch,
+        not_before, revoked_refresh_tokens, completed_at) VALUES ($1,$2,$3,$4,$5,2,$6)",
+    )
+    .bind::<sql_types::Uuid, _>(old_operation)
+    .bind::<sql_types::Text, _>(&hash)
+    .bind::<sql_types::Uuid, _>(system)
+    .bind::<sql_types::Uuid, _>(old_epoch)
+    .bind::<sql_types::Timestamptz, _>(deadline)
+    .bind::<sql_types::Timestamptz, _>(completed)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    assert!(matches!(
+        repository
+            .invalidate_after_restore(old_operation, &hash, old_epoch, deadline, completed)
+            .await,
+        Err(RepositoryError::Consistency(_))
+    ));
+    assert_eq!(
+        count(
+            &mut connection,
+            "SELECT COUNT(*)::bigint AS count FROM recovery_invalidations WHERE coverage_version=0"
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        count(
+            &mut connection,
+            "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE revoked_at IS NULL"
+        )
+        .await,
+        1
+    );
 
     // A receipt failure rolls back every tenant update, and consumes no epoch.
     connection.batch_execute("ALTER TABLE recovery_invalidations ADD CONSTRAINT injected_receipt_failure CHECK(false) NOT VALID").await.unwrap();
     let repair = Uuid::now_v7();
     let repair_epoch = Uuid::now_v7();
-    assert!(repository.invalidate_after_restore(repair, &hash, repair_epoch, deadline, completed).await.is_err());
-    assert_eq!(count(&mut connection, "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE revoked_at IS NULL").await, 1);
-    connection.batch_execute("ALTER TABLE recovery_invalidations DROP CONSTRAINT injected_receipt_failure").await.unwrap();
-    assert_eq!(repository.invalidate_after_restore(repair, &hash, repair_epoch, deadline, completed).await.unwrap().revoked_refresh_tokens, 1);
-    connection.batch_execute(&format!("DROP SCHEMA {schema} CASCADE")).await.unwrap();
+    assert!(
+        repository
+            .invalidate_after_restore(repair, &hash, repair_epoch, deadline, completed)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        count(
+            &mut connection,
+            "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE revoked_at IS NULL"
+        )
+        .await,
+        1
+    );
+    connection
+        .batch_execute(
+            "ALTER TABLE recovery_invalidations DROP CONSTRAINT injected_receipt_failure",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        repository
+            .invalidate_after_restore(repair, &hash, repair_epoch, deadline, completed)
+            .await
+            .unwrap()
+            .revoked_refresh_tokens,
+        1
+    );
+    connection
+        .batch_execute(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn one_global_epoch_has_one_operation_winner() {
-    let Some((url, schema)) = isolated().await else { return };
+    let Some((url, schema)) = isolated().await else {
+        return;
+    };
     let repository = TokenRepository::new(create_pool(url.clone(), 2).unwrap());
     let now = Utc::now();
     let epoch = Uuid::now_v7();
     let hash = "b".repeat(64);
     let (left, right) = tokio::join!(
-        repository.invalidate_after_restore(Uuid::now_v7(), &hash, epoch, now + Duration::minutes(10), now),
-        repository.invalidate_after_restore(Uuid::now_v7(), &hash, epoch, now + Duration::minutes(10), now)
+        repository.invalidate_after_restore(
+            Uuid::now_v7(),
+            &hash,
+            epoch,
+            now + Duration::minutes(10),
+            now
+        ),
+        repository.invalidate_after_restore(
+            Uuid::now_v7(),
+            &hash,
+            epoch,
+            now + Duration::minutes(10),
+            now
+        )
     );
-    assert!(matches!((left, right), (Ok(_), Err(RepositoryError::Conflict)) | (Err(RepositoryError::Conflict), Ok(_))));
-    AsyncPgConnection::establish(&url).await.unwrap().batch_execute(&format!("DROP SCHEMA {schema} CASCADE")).await.unwrap();
+    assert!(matches!(
+        (left, right),
+        (Ok(_), Err(RepositoryError::Conflict)) | (Err(RepositoryError::Conflict), Ok(_))
+    ));
+    AsyncPgConnection::establish(&url)
+        .await
+        .unwrap()
+        .batch_execute(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
 }

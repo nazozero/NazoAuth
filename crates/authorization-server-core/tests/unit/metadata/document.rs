@@ -589,16 +589,50 @@ fn protected_resource_metadata_uses_the_same_rar_snapshot() {
 
 #[test]
 fn token_management_auth_metadata_projects_its_actual_endpoint_policies() {
-    for profile in [MetadataAuthorizationServerProfile::Composable, MetadataAuthorizationServerProfile::Fapi2Security] {
+    for profile in [
+        MetadataAuthorizationServerProfile::Composable,
+        MetadataAuthorizationServerProfile::Fapi2Security,
+    ] {
         for mtls_enabled in [false, true] {
             for vci in [false, true] {
-                let snapshot = snapshot(if vci { vec![ModuleId::Openid4vciIssuer] } else { vec![] });
-                let metadata = authorization_server_metadata(AuthorizationServerMetadataInput { profile, mtls_enabled, ..input() }, &snapshot);
-                let token = metadata["token_endpoint_auth_methods_supported"].as_array().unwrap();
-                let revoke = metadata["revocation_endpoint_auth_methods_supported"].as_array().unwrap();
-                let introspect = metadata["introspection_endpoint_auth_methods_supported"].as_array().unwrap();
-                assert_eq!(revoke, &token.iter().filter(|method| **method != "attest_jwt_client_auth").cloned().collect::<Vec<_>>());
-                assert_eq!(introspect, &revoke.iter().filter(|method| **method != "none").cloned().collect::<Vec<_>>());
+                let snapshot = snapshot(if vci {
+                    vec![ModuleId::Openid4vciIssuer]
+                } else {
+                    vec![]
+                });
+                let metadata = authorization_server_metadata(
+                    AuthorizationServerMetadataInput {
+                        profile,
+                        mtls_enabled,
+                        ..input()
+                    },
+                    &snapshot,
+                );
+                let token = metadata["token_endpoint_auth_methods_supported"]
+                    .as_array()
+                    .unwrap();
+                let revoke = metadata["revocation_endpoint_auth_methods_supported"]
+                    .as_array()
+                    .unwrap();
+                let introspect = metadata["introspection_endpoint_auth_methods_supported"]
+                    .as_array()
+                    .unwrap();
+                assert_eq!(
+                    revoke,
+                    &token
+                        .iter()
+                        .filter(|method| **method != "attest_jwt_client_auth")
+                        .cloned()
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    introspect,
+                    &revoke
+                        .iter()
+                        .filter(|method| **method != "none")
+                        .cloned()
+                        .collect::<Vec<_>>()
+                );
             }
         }
     }

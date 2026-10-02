@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::web;
-use futures_util::{future::BoxFuture, stream::FuturesUnordered, StreamExt};
+use futures_util::{StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use nazo_oauth_server::contracts::runtime_modules::{
     RuntimeModuleAdminError, RuntimeModuleAdminFuture, RuntimeModuleAdministration,
 };
@@ -222,7 +222,9 @@ impl RuntimeModules {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut planning: Option<BoxFuture<'static, Result<Vec<ModuleId>, Error>>> = None;
-            let mut transitions: FuturesUnordered<BoxFuture<'static, (ModuleId, Result<ReconcileOutcome, Error>)>> = FuturesUnordered::new();
+            let mut transitions: FuturesUnordered<
+                BoxFuture<'static, (ModuleId, Result<ReconcileOutcome, Error>)>,
+            > = FuturesUnordered::new();
             let mut busy = BTreeSet::new();
             loop {
                 tokio::select! {
@@ -256,7 +258,6 @@ impl RuntimeModules {
             }
         })
     }
-
 }
 
 struct ServerRuntimeModuleAdministration {
@@ -299,7 +300,9 @@ fn map_management_error(
             tracing::warn!(%error, "runtime module administration repository failed");
             RuntimeModuleAdminError::Unavailable
         }
-        RuntimeModuleManagementError::Registry(RegistryError::ServiceNotConstructed(_)) => RuntimeModuleAdminError::ServiceNotConstructed,
+        RuntimeModuleManagementError::Registry(RegistryError::ServiceNotConstructed(_)) => {
+            RuntimeModuleAdminError::ServiceNotConstructed
+        }
         RuntimeModuleManagementError::Registry(
             RegistryError::RuntimeDisableBlocked(_)
             | RegistryError::ActiveDependent { .. }
@@ -331,12 +334,20 @@ fn module_catalog(settings: &Settings) -> anyhow::Result<ModuleCatalog> {
                 .map_err(|_| anyhow::anyhow!("REFRESH_TOKEN_TTL_SECONDS cannot be negative"))?,
         ),
         session: Duration::from_secs(session.session_ttl_seconds),
-        presentation_transaction: Duration::from_secs(settings.openid4vc.transaction_ttl_seconds.max(30)),
+        presentation_transaction: Duration::from_secs(
+            settings.openid4vc.transaction_ttl_seconds.max(30),
+        ),
         scim_security_events: Duration::from_secs(settings.storage.scim_event_retention_seconds),
     })?;
     catalog = catalog.with_constructed_availability([
-        (ModuleId::Openid4vciIssuer, settings.modules.enable_openid4vci_issuer),
-        (ModuleId::Openid4vpVerifier, settings.modules.enable_openid4vp_verifier),
+        (
+            ModuleId::Openid4vciIssuer,
+            settings.modules.enable_openid4vci_issuer,
+        ),
+        (
+            ModuleId::Openid4vpVerifier,
+            settings.modules.enable_openid4vp_verifier,
+        ),
     ]);
     let mut runtime_disable_blocked = BTreeSet::new();
     if protocol
@@ -370,20 +381,33 @@ async fn load_explicit_desired_states(
 ) -> anyhow::Result<(BTreeSet<ModuleId>, BTreeSet<ModuleId>)> {
     let mut accepting = BTreeSet::new();
     let mut draining = BTreeSet::new();
-    let states = repository.read_reconcile_state(instance_id).await?.into_iter()
-        .map(|state| (state.desired.module_id, state)).collect::<std::collections::BTreeMap<_, _>>();
+    let states = repository
+        .read_reconcile_state(instance_id)
+        .await?
+        .into_iter()
+        .map(|state| (state.desired.module_id, state))
+        .collect::<std::collections::BTreeMap<_, _>>();
     for module_id in ModuleId::ALL {
-        let state = states.get(&module_id).ok_or_else(|| anyhow::anyhow!("runtime desired state is missing"))?;
+        let state = states
+            .get(&module_id)
+            .ok_or_else(|| anyhow::anyhow!("runtime desired state is missing"))?;
         let enabled = catalog.effective_enabled(module_id, state.desired.mode.is_enabled());
         if catalog.runtime_disable_blocked(module_id) && !enabled {
-            anyhow::bail!("runtime module {module_id:?} is required by the active security profile");
+            anyhow::bail!(
+                "runtime module {module_id:?} is required by the active security profile"
+            );
         }
         if enabled {
             accepting.insert(module_id);
-        } else if catalog.is_available(module_id) && state.instance.as_ref().is_some_and(|instance| {
-            matches!(instance.state, ModuleState::Enabled | ModuleState::Draining)
-                && matches!(catalog.spec(module_id).map(|spec| spec.disable_policy), Some(nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { .. }))
-        }) {
+        } else if catalog.is_available(module_id)
+            && state.instance.as_ref().is_some_and(|instance| {
+                matches!(instance.state, ModuleState::Enabled | ModuleState::Draining)
+                    && matches!(
+                        catalog.spec(module_id).map(|spec| spec.disable_policy),
+                        Some(nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { .. })
+                    )
+            })
+        {
             draining.insert(module_id);
         }
     }

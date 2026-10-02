@@ -34,9 +34,13 @@ fn drain_waits_for_all_retained_generations_and_rejects_delayed_acquisition() {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
     let tracker = RequestLeaseTracker::default();
-    let snapshot = |revision| Arc::new(ActiveModuleSnapshot {
-        revision: ModuleRevision::new(revision), accepting: BTreeSet::from([ModuleId::Ciba]), draining: BTreeSet::new(),
-    });
+    let snapshot = |revision| {
+        Arc::new(ActiveModuleSnapshot {
+            revision: ModuleRevision::new(revision),
+            accepting: BTreeSet::from([ModuleId::Ciba]),
+            draining: BTreeSet::new(),
+        })
+    };
     let old = tracker.acquire(snapshot(7), ModuleId::Ciba).unwrap();
     let newer = tracker.acquire(snapshot(8), ModuleId::Ciba).unwrap();
     tracker.close_generation(ModuleId::Ciba, ModuleRevision::new(8));

@@ -101,7 +101,8 @@ pub(super) async fn execute_inner(
             let persistence = require_persistence(persistence)?;
             Ok(super::migrate_and_initialize_tenant_directory(persistence)
                 .await
-                .map(|_| None).map_err(map_owned_persistence_error)?)
+                .map(|_| None)
+                .map_err(map_owned_persistence_error)?)
         }
         ControlOperationPayload::KeysList => {
             let persistence = require_persistence(persistence)?;
@@ -110,7 +111,8 @@ pub(super) async fn execute_inner(
             Ok(
                 crate::keyctl::operator_list_database_for_tenant(&config, &binding, persistence)
                     .await
-                    .map(|_| None).map_err(map_owned_persistence_error)?,
+                    .map(|_| None)
+                    .map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::KeysValidate => {
@@ -124,7 +126,8 @@ pub(super) async fn execute_inner(
                     persistence,
                 )
                 .await
-                .map(|_| None).map_err(map_owned_persistence_error)?,
+                .map(|_| None)
+                .map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::KeysGenerateLocal { alg, purposes } => {
@@ -139,7 +142,8 @@ pub(super) async fn execute_inner(
                 purposes,
             )
             .await
-            .map(|_| None).map_err(map_owned_persistence_error)?)
+            .map(|_| None)
+            .map_err(map_owned_persistence_error)?)
         }
         ControlOperationPayload::TenantKeysGenerateLocal {
             tenant_id,
@@ -157,7 +161,8 @@ pub(super) async fn execute_inner(
                     alg,
                     purposes,
                 )
-                .await.map_err(map_owned_persistence_error)?;
+                .await
+                .map_err(map_owned_persistence_error)?;
             Ok(Some(ControlResultData::TenantKeyGenerated {
                 tenant_id: tenant_id.clone(),
                 kid,
@@ -193,7 +198,8 @@ pub(super) async fn execute_inner(
                     &public_jwk,
                 )
                 .await
-                .map(|_| None).map_err(map_owned_persistence_error)?,
+                .map(|_| None)
+                .map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::TenantResourceEnumerate {

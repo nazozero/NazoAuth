@@ -83,7 +83,9 @@ impl TokenRepository {
             ));
         }
         // Keep the existing system namespace and advisory key shared with old writers.
-        let tenant_id = nazo_identity::TenantContext::default_system().tenant_id.as_uuid();
+        let tenant_id = nazo_identity::TenantContext::default_system()
+            .tenant_id
+            .as_uuid();
         let mut connection = self.connection().await?;
         connection
             .transaction::<RecoveryInvalidation, RecoveryInvalidationFailure, _>(async |connection| {

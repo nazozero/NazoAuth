@@ -44,7 +44,11 @@ where
                     .await
                     .map_err(RegistryError::Repository)?
                     .ok_or(RegistryError::MissingDesiredState(*dependency))?;
-                if !self.catalog.effective_enabled(*dependency, dependency_desired.mode.is_enabled()) || !snapshot.admits(*dependency) {
+                if !self
+                    .catalog
+                    .effective_enabled(*dependency, dependency_desired.mode.is_enabled())
+                    || !snapshot.admits(*dependency)
+                {
                     return Err(RegistryError::DependencyUnavailable {
                         module_id,
                         dependency: *dependency,
@@ -71,7 +75,12 @@ where
                     .await
                     .map_err(RegistryError::Repository)?
                     .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
-                if dependent_self.catalog.effective_enabled(dependent.id, desired.mode.is_enabled()) || snapshot.admits(dependent.id) || snapshot.draining.contains(&dependent.id) {
+                if self
+                    .catalog
+                    .effective_enabled(dependent.id, dependent_desired.mode.is_enabled())
+                    || snapshot.admits(dependent.id)
+                    || snapshot.draining.contains(&dependent.id)
+                {
                     return Err(RegistryError::ActiveDependent {
                         module_id,
                         dependent: dependent.id,

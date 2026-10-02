@@ -385,7 +385,8 @@ where
     }
     Err(crate::SigningKeyRepositoryUnavailable(anyhow!(
         "signing keyset update did not converge after {MAX_CAS_ATTEMPTS} conflicts"
-    )).into())
+    ))
+    .into())
 }
 
 fn initial_payload() -> anyhow::Result<Value> {

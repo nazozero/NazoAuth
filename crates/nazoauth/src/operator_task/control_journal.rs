@@ -333,7 +333,10 @@ fn validate_record(record: &OperationJournalRecord) -> anyhow::Result<()> {
     }
     let covered_recovery = record.result.as_ref().is_some_and(|result| {
         result.outcome == ControlOutcome::Succeeded
-            && matches!(result.result, Some(ControlResultData::RecoveryInvalidation { .. }))
+            && matches!(
+                result.result,
+                Some(ControlResultData::RecoveryInvalidation { .. })
+            )
     });
     match (covered_recovery, record.recovery_coverage_version) {
         (true, Some(1)) | (false, None) => {}
@@ -654,8 +657,10 @@ pub(crate) fn complete(
     }
     record.phase = PHASE_COMPLETED.to_owned();
     record.recovery_coverage_version = if result.outcome == ControlOutcome::Succeeded
-        && matches!(result.result, Some(ControlResultData::RecoveryInvalidation { .. }))
-    {
+        && matches!(
+            result.result,
+            Some(ControlResultData::RecoveryInvalidation { .. })
+        ) {
         Some(1)
     } else {
         None

@@ -32,9 +32,8 @@ pub use model::{
 pub use mtls_trust::{MtlsTrustAnchorError, ValidatedMtlsTrustAnchor, validate_mtls_trust_anchor};
 pub use repository::{
     PersistedSigningKeyset, SealedKeyMaterial, SigningKeyRepository, SigningKeyRepositoryFuture,
-    SigningKeyRepositoryUnavailable,
-    SigningKeyWrappingKeyError, SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult,
-    SigningKeysetCreateResult,
+    SigningKeyRepositoryUnavailable, SigningKeyWrappingKeyError, SigningKeyWrappingKeyRing,
+    SigningKeysetCompareAndSwapResult, SigningKeysetCreateResult,
 };
 pub use serialization::{signing_algorithm_from_name, signing_algorithm_name};
 
