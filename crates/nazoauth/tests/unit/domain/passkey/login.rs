@@ -378,9 +378,13 @@ impl LivePasskeyFixture {
     }
 
     async fn session_ttl(&self, sid: &str) -> i64 {
-        self.state.valkey.ttl(nazo_valkey::test_support::state_storage_key(
-            format!("oauth:session:{sid}")
-        )).await.expect("session TTL lookup should succeed")
+        self.state
+            .valkey
+            .ttl(nazo_valkey::test_support::state_storage_key(format!(
+                "oauth:session:{sid}"
+            )))
+            .await
+            .expect("session TTL lookup should succeed")
     }
 
     fn register_credential(
@@ -652,7 +656,10 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
         finish_response.headers().contains_key(header::SET_COOKIE),
         "successful passkey login must establish bound cookies"
     );
-    let session_id = session_cookie_value(&finish_response, &fixture.state.settings.session.session_cookie_name);
+    let session_id = session_cookie_value(
+        &finish_response,
+        &fixture.state.settings.session.session_cookie_name,
+    );
     assert!((28..=30).contains(&fixture.session_ttl(&session_id).await));
     let body = actix_web::body::to_bytes(finish_response.into_body())
         .await
@@ -758,9 +765,15 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
     assert!((0..=1).contains(&fixture.session_ttl(&session_id).await));
     tokio::time::sleep(StdDuration::from_millis(1_100)).await;
     let loaded = nazo_identity::ports::SessionStorePort::load(
-        &nazo_valkey::SessionStore::new(&fixture.state.valkey_connection()), &nazo_identity::session::SessionId::new(session_id)
-    ).await.expect("expired session lookup should succeed");
-    assert!(loaded.is_none(), "pending MFA session must expire at the configured short TTL");
+        &nazo_valkey::SessionStore::new(&fixture.state.valkey_connection()),
+        &nazo_identity::session::SessionId::new(session_id),
+    )
+    .await
+    .expect("expired session lookup should succeed");
+    assert!(
+        loaded.is_none(),
+        "pending MFA session must expire at the configured short TTL"
+    );
 }
 
 #[actix_web::test]
