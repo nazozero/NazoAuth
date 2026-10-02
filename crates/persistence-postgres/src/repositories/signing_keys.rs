@@ -33,7 +33,7 @@ impl SigningKeysetRepository {
         .bind::<sql_types::Uuid, _>(self.tenant_id)
         .get_result::<KeysetRow>(connection)
         .await
-        .optional()?
+        .optional().map_err(crate::unavailable::signing_query)?
         .map(Into::into))
     }
 }
@@ -41,7 +41,7 @@ impl SigningKeysetRepository {
 impl SigningKeyRepository for SigningKeysetRepository {
     fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
         Box::pin(async move {
-            let mut connection = get_conn(&self.pool).await?;
+            let mut connection = get_conn(&self.pool).await.map_err(crate::unavailable::signing_checkout)?;
             self.load_on(&mut connection).await
         })
     }
@@ -55,7 +55,7 @@ impl SigningKeyRepository for SigningKeysetRepository {
                 candidate.revision == 1,
                 "initial signing-key revision must be 1"
             );
-            let mut connection = get_conn(&self.pool).await?;
+            let mut connection = get_conn(&self.pool).await.map_err(crate::unavailable::signing_checkout)?;
             let created = sql_query(
                 "INSERT INTO tenant_signing_keysets \
                  (tenant_id, revision, public_metadata, encrypted_private_material, wrapping_key_id) \
@@ -69,7 +69,7 @@ impl SigningKeyRepository for SigningKeysetRepository {
             .bind::<sql_types::Text, _>(candidate.wrapping_key_id)
             .get_result::<KeysetRow>(&mut connection)
             .await
-            .optional()?;
+            .optional().map_err(crate::unavailable::signing_query)?;
             if let Some(row) = created {
                 return Ok(SigningKeysetCreateResult::Created(row.into()));
             }
@@ -94,7 +94,7 @@ impl SigningKeyRepository for SigningKeysetRepository {
                     && expected_revision.checked_add(1) == Some(candidate.revision),
                 "signing-key update must advance exactly one revision"
             );
-            let mut connection = get_conn(&self.pool).await?;
+            let mut connection = get_conn(&self.pool).await.map_err(crate::unavailable::signing_checkout)?;
             let updated = sql_query(
                 "UPDATE tenant_signing_keysets SET revision = $2, public_metadata = $3, \
                  encrypted_private_material = $4, wrapping_key_id = $5, updated_at = CURRENT_TIMESTAMP \
@@ -109,7 +109,7 @@ impl SigningKeyRepository for SigningKeysetRepository {
             .bind::<sql_types::BigInt, _>(expected_revision)
             .get_result::<KeysetRow>(&mut connection)
             .await
-            .optional()?;
+            .optional().map_err(crate::unavailable::signing_query)?;
             if let Some(row) = updated {
                 return Ok(SigningKeysetCompareAndSwapResult::Applied(row.into()));
             }

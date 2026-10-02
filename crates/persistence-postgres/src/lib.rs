@@ -18,6 +18,7 @@ mod repositories;
 pub(crate) mod rows;
 pub(crate) mod schema;
 mod tenant_resource_executor;
+mod unavailable;
 
 pub use pool::{
     DbConnection, DbPool, DbPoolMetrics, configure_runtime_role, create_pool, db_pool_metrics,

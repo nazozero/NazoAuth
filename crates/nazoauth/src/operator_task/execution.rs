@@ -101,7 +101,7 @@ pub(super) async fn execute_inner(
             let persistence = require_persistence(persistence)?;
             Ok(super::migrate_and_initialize_tenant_directory(persistence)
                 .await
-                .map(|_| None)?)
+                .map(|_| None).map_err(map_owned_persistence_error)?)
         }
         ControlOperationPayload::KeysList => {
             let persistence = require_persistence(persistence)?;
@@ -110,7 +110,7 @@ pub(super) async fn execute_inner(
             Ok(
                 crate::keyctl::operator_list_database_for_tenant(&config, &binding, persistence)
                     .await
-                    .map(|_| None)?,
+                    .map(|_| None).map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::KeysValidate => {
@@ -124,7 +124,7 @@ pub(super) async fn execute_inner(
                     persistence,
                 )
                 .await
-                .map(|_| None)?,
+                .map(|_| None).map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::KeysGenerateLocal { alg, purposes } => {
@@ -139,7 +139,7 @@ pub(super) async fn execute_inner(
                 purposes,
             )
             .await
-            .map(|_| None)?)
+            .map(|_| None).map_err(map_owned_persistence_error)?)
         }
         ControlOperationPayload::TenantKeysGenerateLocal {
             tenant_id,
@@ -157,7 +157,7 @@ pub(super) async fn execute_inner(
                     alg,
                     purposes,
                 )
-                .await?;
+                .await.map_err(map_owned_persistence_error)?;
             Ok(Some(ControlResultData::TenantKeyGenerated {
                 tenant_id: tenant_id.clone(),
                 kid,
@@ -193,7 +193,7 @@ pub(super) async fn execute_inner(
                     &public_jwk,
                 )
                 .await
-                .map(|_| None)?,
+                .map(|_| None).map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::TenantResourceEnumerate {
@@ -571,6 +571,18 @@ pub(super) fn map_recovery_persistence_error(
         | nazo_identity::ports::RepositoryError::AlreadyProcessed => SideEffectError::Terminal(
             anyhow::anyhow!("recovery invalidation persistence rejected the operation"),
         ),
+    }
+}
+
+/// Only established resumable persistence owners opt into this mapping.
+/// Every unmarked anyhow error keeps the journal's default Terminal behavior.
+pub(super) fn map_owned_persistence_error(error: anyhow::Error) -> SideEffectError {
+    if error.is::<nazo_key_management::SigningKeyRepositoryUnavailable>()
+        || error.is::<nazo_persistence::MigrationUnavailable>()
+    {
+        SideEffectError::Retryable(error)
+    } else {
+        SideEffectError::Terminal(error)
     }
 }
 

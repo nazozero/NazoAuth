@@ -7,6 +7,22 @@ use chrono::{DateTime, Utc};
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
+/// A typed temporary failure at this persistence owner; Context preserves it.
+#[derive(Debug)]
+pub struct MigrationUnavailable(pub anyhow::Error);
+
+impl std::fmt::Display for MigrationUnavailable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("migration persistence is temporarily unavailable")
+    }
+}
+
+impl std::error::Error for MigrationUnavailable {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref())
+    }
+}
+
 pub type OperatorPersistenceFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, RepositoryError>> + Send + 'a>>;
 

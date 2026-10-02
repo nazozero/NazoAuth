@@ -199,3 +199,17 @@ operations have their own target prerequisites; consult the controller's
 
 Use `nazoauthctl --help` and subcommand help as the only command-surface
 authority. This document describes the current v0.2 model only.
+
+## Operator persistence retries
+
+Migration and signing-key operations remain executing only when their existing
+state owner reports a typed temporary failure: pool checkout timeout/closure,
+a closed SQL connection, serialization failure, the migration advisory wait
+limit, or exhaustion of the bounded signing-key CAS loop. Context wrappers
+retain that type. Configuration, key material, algorithm/profile, permissions,
+schema/constraints and a caller's fixed expected revision remain terminal.
+
+Opaque BadConnection(String) and unknown database errors remain terminal;
+their text is not used to guess retryability. Completed failure journals are
+never rerun. Key retries converge through existing create-if-absent/CAS/ensure
+owners; they do not recover an original historical kid after a later rotation.
