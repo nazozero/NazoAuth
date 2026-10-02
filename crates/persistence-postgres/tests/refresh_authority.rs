@@ -774,6 +774,98 @@ async fn preserve_commit_serializes_before_real_revocation_and_capacity_retireme
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn family_contract_lookup_preserves_per_family_lock_scope() {
+    let Some(url) = database_url() else { return };
+    let fixture = fixture(&url).await;
+    let (_, first) = issue_at(&url, &fixture, Utc::now()).await;
+    let (_, second) = issue_at(&url, &fixture, Utc::now()).await;
+    assert_ne!(first.token_family_id, second.token_family_id);
+    assert_eq!(first.contract_key, second.contract_key);
+
+    let mut coordinator = AsyncPgConnection::establish(&url).await.unwrap();
+    coordinator.batch_execute("BEGIN").await.unwrap();
+    sql_query(
+        "SELECT 1::bigint AS count FROM oauth_refresh_contracts \
+         WHERE tenant_id = $1 AND contract_blake3 = $2 FOR UPDATE",
+    )
+    .bind::<sql_types::Uuid, _>(tenant())
+    .bind::<sql_types::Binary, _>(first.contract_key.to_vec())
+    .get_result::<Count>(&mut coordinator)
+    .await
+    .unwrap();
+
+    let suffix = Uuid::now_v7().simple().to_string();
+    let other_app = format!("family-contract-other-{suffix}");
+    let other_repository =
+        TokenIssuanceRepository::new(create_pool(tagged_url(&url, &other_app), 1).unwrap());
+    let other_input = preserve(&fixture, &second);
+    let mut other_task =
+        tokio::spawn(async move { other_repository.commit_token_issuance(other_input).await });
+    match tokio::time::timeout(std::time::Duration::from_secs(5), &mut other_task).await {
+        Ok(result) => assert_eq!(
+            result.unwrap().unwrap(),
+            CommitTokenIssuanceResult::Committed,
+            "a shared contract row lock must not block a family's scalar contract read"
+        ),
+        Err(_) => {
+            coordinator.batch_execute("ROLLBACK").await.unwrap();
+            let _ = other_task.await;
+            panic!("a family read must not lock its shared contract row");
+        }
+    }
+    coordinator.batch_execute("ROLLBACK").await.unwrap();
+
+    // Lock one family exclusively. A different family sharing the contract
+    // remains independent, while a Preserve on the locked family still waits.
+    coordinator.batch_execute("BEGIN").await.unwrap();
+    sql_query(
+        "SELECT 1::bigint AS count FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2 FOR UPDATE",
+    )
+    .bind::<sql_types::Uuid, _>(tenant())
+    .bind::<sql_types::Uuid, _>(first.token_family_id)
+    .get_result::<Count>(&mut coordinator)
+    .await
+    .unwrap();
+
+    let distinct_app = format!("family-distinct-{suffix}");
+    let distinct_repository =
+        TokenIssuanceRepository::new(create_pool(tagged_url(&url, &distinct_app), 1).unwrap());
+    let distinct_input = preserve(&fixture, &second);
+    let mut distinct_task = tokio::spawn(async move {
+        distinct_repository
+            .commit_token_issuance(distinct_input)
+            .await
+    });
+    match tokio::time::timeout(std::time::Duration::from_secs(5), &mut distinct_task).await {
+        Ok(result) => assert_eq!(
+            result.unwrap().unwrap(),
+            CommitTokenIssuanceResult::Committed,
+            "distinct families sharing a contract must have separate row-lock scopes"
+        ),
+        Err(_) => {
+            coordinator.batch_execute("ROLLBACK").await.unwrap();
+            let _ = distinct_task.await;
+            panic!("a different family's Preserve must not wait on this family row");
+        }
+    }
+
+    let same_app = format!("family-same-{suffix}");
+    let same_repository =
+        TokenIssuanceRepository::new(create_pool(tagged_url(&url, &same_app), 1).unwrap());
+    let same_input = preserve(&fixture, &first);
+    let mut same_task =
+        tokio::spawn(async move { same_repository.commit_token_issuance(same_input).await });
+    wait_for_lock(&mut coordinator, &same_app, &mut same_task).await;
+    coordinator.batch_execute("ROLLBACK").await.unwrap();
+    assert_eq!(
+        same_task.await.unwrap().unwrap(),
+        CommitTokenIssuanceResult::Committed,
+        "the locked family's Preserve must proceed after the family lock is released"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn contract_reference_reuses_equal_payload_and_rejects_same_key_different_payload() {
     let Some(url) = database_url() else { return };

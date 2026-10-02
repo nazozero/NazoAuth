@@ -24,7 +24,11 @@ pub struct QuerySnapshot {
     pub commits: u64,
     /// `RollbackTransaction` events at any depth.
     pub rollbacks: u64,
-    /// Every other event variant (start/cache/establish/unknown). Kept so the
+    /// Statements inserted into Diesel's prepared statement cache.
+    pub cache_queries: u64,
+    /// Cached family/contract lookup statements, without retaining SQL text.
+    pub family_contract_cache_queries: u64,
+    /// Every other event variant (start/establish/unknown). Kept so the
     /// non-exhaustive enum never silently drops information.
     pub other_events: u64,
 }
@@ -37,6 +41,9 @@ impl QuerySnapshot {
             begins: self.begins + other.begins,
             commits: self.commits + other.commits,
             rollbacks: self.rollbacks + other.rollbacks,
+            cache_queries: self.cache_queries + other.cache_queries,
+            family_contract_cache_queries: self.family_contract_cache_queries
+                + other.family_contract_cache_queries,
             other_events: self.other_events + other.other_events,
         }
     }
@@ -52,6 +59,9 @@ impl std::ops::Sub for QuerySnapshot {
             begins: self.begins - earlier.begins,
             commits: self.commits - earlier.commits,
             rollbacks: self.rollbacks - earlier.rollbacks,
+            cache_queries: self.cache_queries - earlier.cache_queries,
+            family_contract_cache_queries: self.family_contract_cache_queries
+                - earlier.family_contract_cache_queries,
             other_events: self.other_events - earlier.other_events,
         }
     }
@@ -108,6 +118,13 @@ impl Instrumentation for QueryCounter {
             InstrumentationEvent::BeginTransaction { .. } => counts.begins += 1,
             InstrumentationEvent::CommitTransaction { .. } => counts.commits += 1,
             InstrumentationEvent::RollbackTransaction { .. } => counts.rollbacks += 1,
+            InstrumentationEvent::CacheQuery { sql, .. } => {
+                counts.cache_queries += 1;
+                if sql.contains("oauth_refresh_families") && sql.contains("oauth_refresh_contracts")
+                {
+                    counts.family_contract_cache_queries += 1;
+                }
+            }
             _ => counts.other_events += 1,
         }
     }

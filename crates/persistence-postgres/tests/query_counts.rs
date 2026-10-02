@@ -755,6 +755,51 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
 // RF-01: ordinary refresh rotation
 // ---------------------------------------------------------------------------
 
+/// Malformed immutable input is rejected before the repository checks out a
+/// database connection.
+#[tokio::test]
+async fn rf00_malformed_refresh_contract_is_rejected_before_pool_checkout() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let seed = seed_principal(&database_url, tenant).await;
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = TokenIssuanceRepository::new(pool);
+
+    let mut malformed = new_refresh_token(
+        &seed,
+        tenant_id,
+        Uuid::now_v7(),
+        format!("qc-malformed-{}", Uuid::now_v7()),
+        None,
+        None,
+    );
+    malformed.contract.audiences.clear();
+    let input = refresh_issuance(malformed).await;
+    let (result, delta, acquires) =
+        measure(&counter, repository.commit_token_issuance(input)).await;
+    assert!(
+        result.is_err(),
+        "malformed immutable contracts must be rejected"
+    );
+    assert_eq!(
+        delta,
+        QuerySnapshot::default(),
+        "validation must precede DB work"
+    );
+    assert_eq!(
+        acquires, 0,
+        "malformed input must fail before pool checkout"
+    );
+    cleanup_seed(&database_url, tenant, &seed).await;
+}
+
 /// RF-01: `commit_token_issuance` for an ordinary rotation issues every write
 /// inside one transaction on one connection. The family is read under its
 /// advisory lock to validate the current member and sender binding; rotation
@@ -799,6 +844,33 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
             .expect("parent lookup should succeed")
             .expect("the committed parent must exist")
     };
+    let second_family_id = Uuid::now_v7();
+    let second_parent_raw = format!("qc-parent-{}", Uuid::now_v7());
+    let second_parent = {
+        let seed_pool = create_pool(database_url.as_str(), 2).expect("second seed pool");
+        let seeder = TokenIssuanceRepository::new(seed_pool.clone());
+        let input = refresh_issuance(new_refresh_token(
+            &seed,
+            tenant_id,
+            second_family_id,
+            second_parent_raw.clone(),
+            None,
+            Some("qc-parent-dpop".to_owned()),
+        ))
+        .await;
+        let outcome = seeder
+            .commit_token_issuance(input)
+            .await
+            .expect("second parent issuance should commit");
+        assert_eq!(outcome, CommitTokenIssuanceResult::Committed);
+        TokenRepository::new(seed_pool)
+            .by_raw_refresh_token(tenant_id, &second_parent_raw)
+            .await
+            .expect("second parent lookup should succeed")
+            .expect("the second committed parent must exist")
+    };
+    assert_ne!(family_id, second_family_id);
+    assert_eq!(parent.contract_key, second_parent.contract_key);
 
     let (pool, counter) = instrumented_pool(&database_url).await;
     let repository = TokenIssuanceRepository::new(pool);
@@ -823,8 +895,11 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         authority: parent.authority(),
         rotation: None,
     });
-    let (result, delta, acquires) =
-        measure(&counter, repository.commit_token_issuance(preserved)).await;
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.commit_token_issuance(preserved.clone()),
+    )
+    .await;
     assert_eq!(
         result.expect("preserve should commit"),
         CommitTokenIssuanceResult::Committed
@@ -833,6 +908,32 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1);
+    assert_eq!(delta.family_contract_cache_queries, 1);
+    assert_clean(delta);
+
+    // The next Preserve reads another family on the same one-slot connection
+    // with the same typed query shape. Its prepared statement is already cached.
+    let mut preserved_second = preserved;
+    preserved_second.issuance_id = Uuid::now_v7();
+    preserved_second.access_token_jti = preserved_second.issuance_id.to_string();
+    preserved_second.refresh_token = Some(nazo_auth::RefreshTokenCommit::UseExisting {
+        authority: second_parent.authority(),
+        rotation: None,
+    });
+    let (result, delta, acquires) =
+        measure(&counter, repository.commit_token_issuance(preserved_second)).await;
+    assert_eq!(
+        result.expect("second-family preserve should commit"),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert_eq!(delta.data_queries, 6);
+    assert_eq!(delta.begins, 1);
+    assert_eq!(delta.commits, 1);
+    assert_eq!(acquires, 1);
+    assert_eq!(
+        delta.family_contract_cache_queries, 0,
+        "the same-mode family query must not emit CacheQuery again"
+    );
     assert_clean(delta);
 
     let (result, delta, acquires) =

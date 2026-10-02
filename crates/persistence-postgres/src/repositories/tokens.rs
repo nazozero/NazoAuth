@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
-    QueryableByName, SelectableHelper, sql_query, sql_types,
+    SelectableHelper, sql_query, sql_types,
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
@@ -189,7 +189,6 @@ impl TokenRepository {
         issuance_id: Uuid,
         prepared_contract: Option<&PreparedRefreshContract>,
     ) -> Result<RefreshTokenPersistResult, RepositoryError> {
-        validate_refresh_commit(refresh)?;
         persist_refresh_token_inner(
             connection,
             refresh,
@@ -691,11 +690,8 @@ async fn lookup_refresh_token(
     Ok(None)
 }
 
-#[derive(diesel::QueryableByName)]
 struct LockedRefreshFamily {
-    #[diesel(embed)]
     family: RefreshFamilyRow,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
     contract: Option<Value>,
 }
 
@@ -708,26 +704,33 @@ async fn load_family(
     family_id: Uuid,
     preserve: bool,
 ) -> diesel::QueryResult<Option<LockedRefreshFamily>> {
-    let lock = if preserve {
-        "FOR SHARE OF f"
+    // Keep the immutable contract as a correlated scalar subquery. The row
+    // lock applies only to the outer family row, so different families that
+    // reference one contract do not contend with each other.
+    let contract = oauth_refresh_contracts::table
+        .select(oauth_refresh_contracts::contract)
+        .filter(oauth_refresh_contracts::tenant_id.eq(oauth_refresh_families::tenant_id))
+        .filter(
+            oauth_refresh_contracts::contract_blake3.eq(oauth_refresh_families::contract_blake3),
+        )
+        .single_value();
+    let query = oauth_refresh_families::table
+        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
+        .filter(oauth_refresh_families::token_family_id.eq(family_id))
+        .select((RefreshFamilyRow::as_select(), contract));
+    let row = if preserve {
+        query
+            .for_share()
+            .get_result::<(RefreshFamilyRow, Option<Value>)>(connection)
+            .await
     } else {
-        "FOR UPDATE OF f"
+        query
+            .for_update()
+            .get_result::<(RefreshFamilyRow, Option<Value>)>(connection)
+            .await
     };
-    sql_query(format!(
-        "SELECT f.tenant_id, f.token_family_id, f.client_id, f.user_id, \
-         f.contract_blake3, f.current_member_id, f.current_token_blake3, \
-         f.current_audience, f.current_issued_at, f.current_expires_at, \
-         f.current_id_token_sid, f.dpop_jkt, f.mtls_x5t_s256, \
-         f.client_attestation_jkt, f.revoked_at, f.reuse_detected_at, c.contract \
-         FROM oauth_refresh_families f LEFT JOIN oauth_refresh_contracts c \
-           ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 \
-         WHERE f.tenant_id = $1 AND f.token_family_id = $2 {lock}",
-    ))
-    .bind::<sql_types::Uuid, _>(tenant_id)
-    .bind::<sql_types::Uuid, _>(family_id)
-    .get_result(connection)
-    .await
-    .optional()
+    row.optional()
+        .map(|row| row.map(|(family, contract)| LockedRefreshFamily { family, contract }))
 }
 
 async fn persist_refresh_token_inner(
