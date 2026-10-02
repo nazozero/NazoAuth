@@ -1,5 +1,6 @@
 pub(crate) mod admin_mutations;
 pub(crate) mod local_avatar;
+pub(crate) mod federation_binding;
 #[path = "../unit/http/token/response_body.rs"]
 pub(crate) mod token_response_body;
 

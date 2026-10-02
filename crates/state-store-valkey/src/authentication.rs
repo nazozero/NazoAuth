@@ -26,6 +26,19 @@ redis.call('DEL', KEYS[1])
 return 'deleted'
 "#;
 
+const TAKE_BOUND_FEDERATION_STATE: &str = r#"
+local raw = redis.call('GET', KEYS[1])
+if not raw then return '' end
+local ok, value = pcall(cjson.decode, raw)
+if not ok or type(value) ~= 'table'
+    or type(value.browser_binding_hash) ~= 'string'
+    or value.browser_binding_hash ~= ARGV[1] then
+  return ''
+end
+redis.call('DEL', KEYS[1])
+return raw
+"#;
+
 #[derive(Clone, Debug)]
 pub struct AuthenticationStore {
     connection: ValkeyConnection,
@@ -188,8 +201,16 @@ impl AuthenticationStore {
         self.store_value(keys::oidc_federation(state), value, ttl)
             .await
     }
-    pub async fn take_oidc_federation(&self, state: &str) -> Result<Option<Value>, Error> {
-        self.take_value(keys::oidc_federation(state)).await
+    pub async fn take_oidc_federation(
+        &self,
+        state: &str,
+        expected_browser_binding_hash: &str,
+    ) -> Result<Option<Value>, Error> {
+        self.take_federation_value(
+            keys::oidc_federation(state),
+            expected_browser_binding_hash,
+        )
+        .await
     }
     pub async fn store_social_federation(
         &self,
@@ -200,8 +221,16 @@ impl AuthenticationStore {
         self.store_value(keys::social_federation(state), value, ttl)
             .await
     }
-    pub async fn take_social_federation(&self, state: &str) -> Result<Option<Value>, Error> {
-        self.take_value(keys::social_federation(state)).await
+    pub async fn take_social_federation(
+        &self,
+        state: &str,
+        expected_browser_binding_hash: &str,
+    ) -> Result<Option<Value>, Error> {
+        self.take_federation_value(
+            keys::social_federation(state),
+            expected_browser_binding_hash,
+        )
+        .await
     }
     pub async fn reserve_saml_federation_replay(
         &self,
@@ -222,6 +251,28 @@ impl AuthenticationStore {
         })?;
         command::set_ex_string(&self.connection, key, raw, ttl).await
     }
+    async fn take_federation_value(
+        &self,
+        key: String,
+        expected_browser_binding_hash: &str,
+    ) -> Result<Option<Value>, Error> {
+        // One namespaced EVAL owns comparison and consumption. Nonowners never
+        // refresh or delete the initiating browser's state.
+        let raw = command::eval_string(
+            &self.connection,
+            TAKE_BOUND_FEDERATION_STATE,
+            vec![key],
+            vec![expected_browser_binding_hash.to_owned()],
+        )
+        .await?;
+        if raw.is_empty() {
+            return Ok(None);
+        }
+        serde_json::from_str(&raw)
+            .map(Some)
+            .map_err(|error| Error::corrupt_data(format!("malformed authentication state: {error}")))
+    }
+
     async fn take_value<T: serde::de::DeserializeOwned>(&self, key: String) -> Result<Option<T>, Error> {
         command::take(&self.connection, key)
             .await?
@@ -466,10 +517,11 @@ impl nazo_identity::ports::FederationStatePort for AuthenticationStore {
     fn take_oidc<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::OidcFederationState>>
     {
         Box::pin(async move {
-            self.take_oidc_federation(state)
+            self.take_oidc_federation(state, expected_browser_binding_hash)
                 .await
                 .map_err(crate::identity_repository_error)?
                 .map(serde_json::from_value)
@@ -499,10 +551,11 @@ impl nazo_identity::ports::FederationStatePort for AuthenticationStore {
     fn take_social<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::SocialFederationState>>
     {
         Box::pin(async move {
-            self.take_social_federation(state)
+            self.take_social_federation(state, expected_browser_binding_hash)
                 .await
                 .map_err(crate::identity_repository_error)?
                 .map(serde_json::from_value)

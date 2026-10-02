@@ -407,6 +407,17 @@ proof expansion and before nonce claiming. A configuration without proof types
 and holder-binding methods issues its unbound credential without a proof nonce;
 stray proofs remain invalid. The same rules apply to deferred preparation.
 
+### Federation browser ownership
+
+OIDC/social HTTP owns canonical browser-seed cookies and their secure/dev
+attributes. Identity owns domain-separated tenant-and-seed hashing and passes
+the expected digest through `FederationStatePort`. The Valkey adapter owns
+atomic matching take: nonowners preserve raw state and expiry; only the matching
+browser removes it before the existing typed and protocol checks. Callback
+never rotates or clears the seed, so established-cookie flows can run in
+parallel. Deployment cutover and the cold-start race are documented in
+[external federation](../features/federation.md#browser-binding-and-callback-state).
+
 ### Short authentication validity boundaries
 
 Passkey login uses the configured pending MFA session TTL until MFA is satisfied; remembered MFA and users without MFA retain the full session TTL. The login cookie and response presentation remain consistent with password login.

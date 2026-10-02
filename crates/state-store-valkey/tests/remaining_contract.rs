@@ -103,6 +103,7 @@ async fn social_federation_state_is_consumed_once_and_keeps_provider_binding() {
     let store = AuthenticationStore::new(&connection);
     let state = format!("social-{}", uuid::Uuid::now_v7());
     let value = nazo_identity::federation::SocialFederationState {
+        browser_binding_hash: Some("owner-browser".to_owned()),
         provider_id: "github".to_owned(),
         pkce_verifier: "verifier".to_owned(),
         created_at: 1_700_000_000,
@@ -112,14 +113,14 @@ async fn social_federation_state_is_consumed_once_and_keeps_provider_binding() {
         .await
         .unwrap();
     assert_eq!(
-        FederationStatePort::take_social(&store, &state)
+        FederationStatePort::take_social(&store, &state, "owner-browser")
             .await
             .unwrap()
             .map(|stored| (stored.provider_id, stored.pkce_verifier, stored.created_at)),
         Some(("github".to_owned(), "verifier".to_owned(), 1_700_000_000))
     );
     assert!(
-        FederationStatePort::take_social(&store, &state)
+        FederationStatePort::take_social(&store, &state, "owner-browser")
             .await
             .unwrap()
             .is_none(),

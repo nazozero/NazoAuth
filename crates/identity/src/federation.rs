@@ -25,7 +25,10 @@ pub fn normalize_federation_token(value: &str) -> Option<String> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OidcFederationState {
-    /// Absent only on callback state written by a pre-binding server during a rolling deploy.
+    /// Legacy state can deserialize, but an unbound callback can never consume it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_binding_hash: Option<String>,
+    /// Absent only in legacy persisted state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_id: Option<String>,
     pub nonce: String,
@@ -35,6 +38,9 @@ pub struct OidcFederationState {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SocialFederationState {
+    /// Legacy state can deserialize, but an unbound callback can never consume it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_binding_hash: Option<String>,
     pub provider_id: String,
     pub pkce_verifier: String,
     pub created_at: i64,
@@ -169,6 +175,7 @@ where
     pub async fn start_oidc(
         &self,
         provider_id: String,
+        browser_binding_seed: &[u8; 32],
         now: DateTime<Utc>,
     ) -> Result<OidcFederationStart, FederationError> {
         let start = OidcFederationStart {
@@ -180,6 +187,10 @@ where
             .store_oidc(
                 &start.state,
                 &OidcFederationState {
+                    browser_binding_hash: Some(browser_binding_hash(
+                        self.config.tenant.tenant_id,
+                        browser_binding_seed,
+                    )),
                     provider_id: Some(provider_id),
                     nonce: start.nonce.clone(),
                     pkce_verifier: start.pkce_verifier.clone(),
@@ -196,12 +207,15 @@ where
         &self,
         state: &str,
         expected_provider_id: &str,
+        browser_binding_seed: &[u8; 32],
         now: DateTime<Utc>,
     ) -> Result<OidcFederationState, FederationError> {
         let state = normalize_federation_token(state).ok_or(FederationError::InvalidState)?;
+        let expected_browser_binding_hash =
+            browser_binding_hash(self.config.tenant.tenant_id, browser_binding_seed);
         let stored = self
             .states
-            .take_oidc(&state)
+            .take_oidc(&state, &expected_browser_binding_hash)
             .await
             .map_err(ceremony_error)?
             .ok_or(FederationError::StateExpired)?;
@@ -226,6 +240,7 @@ where
     pub async fn start_social(
         &self,
         provider_id: String,
+        browser_binding_seed: &[u8; 32],
         now: DateTime<Utc>,
     ) -> Result<SocialFederationStart, FederationError> {
         let start = SocialFederationStart {
@@ -236,6 +251,10 @@ where
             .store_social(
                 &start.state,
                 &SocialFederationState {
+                    browser_binding_hash: Some(browser_binding_hash(
+                        self.config.tenant.tenant_id,
+                        browser_binding_seed,
+                    )),
                     provider_id,
                     pkce_verifier: start.pkce_verifier.clone(),
                     created_at: now.timestamp(),
@@ -251,12 +270,15 @@ where
         &self,
         state: &str,
         expected_provider_id: &str,
+        browser_binding_seed: &[u8; 32],
         now: DateTime<Utc>,
     ) -> Result<SocialFederationState, FederationError> {
         let state = normalize_federation_token(state).ok_or(FederationError::InvalidState)?;
+        let expected_browser_binding_hash =
+            browser_binding_hash(self.config.tenant.tenant_id, browser_binding_seed);
         let stored = self
             .states
-            .take_social(&state)
+            .take_social(&state, &expected_browser_binding_hash)
             .await
             .map_err(ceremony_error)?
             .ok_or(FederationError::StateExpired)?;
@@ -454,6 +476,16 @@ where
     }
 }
 
+// Fixed-size tenant and seed inputs keep this domain-separated digest unambiguous.
+// Only identity derives it; HTTP transports the borrowed seed, never a request digest.
+fn browser_binding_hash(tenant_id: crate::TenantId, seed: &[u8; 32]) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"NazoAuth/federation/browser-binding/v1\0");
+    hasher.update(tenant_id.as_uuid().as_bytes());
+    hasher.update(seed);
+    hasher.finalize().to_hex().to_string()
+}
+
 fn random_urlsafe_token() -> String {
     use base64::Engine as _;
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
@@ -465,3 +497,7 @@ fn ceremony_error(error: RepositoryError) -> FederationError {
         error => FederationError::State(error),
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/federation.rs"]
+mod tests;
