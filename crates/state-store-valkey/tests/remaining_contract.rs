@@ -190,7 +190,12 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
     let store = AuthenticationStore::new(&connection);
     let email = format!("cas-{}@example.com", uuid::Uuid::now_v7());
     let tenant_id = tenant(20);
-    assert!(store.reserve_email_send(tenant_id, &email, "test-owner", 30).await.unwrap());
+    assert!(
+        store
+            .reserve_email_send(tenant_id, &email, "test-owner", 30)
+            .await
+            .unwrap()
+    );
     EmailVerificationStorePort::store_code(
         &store,
         tenant_id,
@@ -769,55 +774,165 @@ async fn late_smtp_failure_preserves_newer_code_and_both_cooldowns() {
 }
 
 #[derive(Clone)]
-struct BlockedCodeHashes { entered: std::sync::Arc<tokio::sync::Notify>, release: std::sync::Arc<tokio::sync::Notify> }
+struct BlockedCodeHashes {
+    entered: std::sync::Arc<tokio::sync::Notify>,
+    release: std::sync::Arc<tokio::sync::Notify>,
+}
 impl nazo_identity::ports::SecretHashPort for BlockedCodeHashes {
-    fn hash_secret(&self, _: String) -> nazo_identity::ports::RepositoryFuture<'_, PasswordHashInput> {
-        Box::pin(async move { self.entered.notify_one(); self.release.notified().await; Ok(PasswordHashInput::new("same-test-hash").unwrap()) })
+    fn hash_secret(
+        &self,
+        _: String,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, PasswordHashInput> {
+        Box::pin(async move {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(PasswordHashInput::new("same-test-hash").unwrap())
+        })
     }
-    fn verify_secret(&self, _: String, _: nazo_identity::PasswordHash) -> nazo_identity::ports::RepositoryFuture<'_, bool> { Box::pin(async { Ok(true) }) }
+    fn verify_secret(
+        &self,
+        _: String,
+        _: nazo_identity::PasswordHash,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, bool> {
+        Box::pin(async { Ok(true) })
+    }
 }
 #[derive(Clone)]
 struct CountingEmailDelivery(std::sync::Arc<std::sync::atomic::AtomicUsize>);
 impl nazo_identity::ports::VerificationEmailDeliveryPort for CountingEmailDelivery {
-    fn deliver<'a>(&'a self, _: &'a str, _: &'a str, _: u64) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
-        Box::pin(async move { self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst); Ok(()) })
+    fn deliver<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        })
     }
 }
 
 #[tokio::test]
 async fn late_hash_cannot_store_after_owner_expiry_or_overwrite_a_new_sender() {
-    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
-    let Some((connection, inspector)) = setup().await else { return; };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
     for with_newer_sender in [false, true] {
         let store = AuthenticationStore::new(&connection);
         let email = format!("late-hash-{}@example.test", uuid::Uuid::now_v7());
         let peer = format!("late-hash-{}", uuid::Uuid::now_v7());
-        let context = nazo_identity::TenantContext { tenant_id: TenantId::new(uuid::Uuid::now_v7()).unwrap(), ..Default::default() };
-        let config = nazo_identity::RegistrationServiceConfig { delivery_enabled: true, send_peer_cooldown_seconds: 1, send_cooldown_seconds: 1, code_ttl_seconds: 30 };
-        let entered = Arc::new(tokio::sync::Notify::new()); let release = Arc::new(tokio::sync::Notify::new());
-        let old_delivery = Arc::new(AtomicUsize::new(0)); let new_delivery = Arc::new(AtomicUsize::new(0));
-        let older = nazo_identity::RegistrationService::new(EmptyRegistrationAccounts, store.clone(), BlockedCodeHashes { entered: entered.clone(), release: release.clone() }, CountingEmailDelivery(old_delivery.clone()), context, config);
-        let newer = nazo_identity::RegistrationService::new(EmptyRegistrationAccounts, store.clone(), EqualCodeHashes, CountingEmailDelivery(new_delivery.clone()), context, config);
-        let old_email = email.clone(); let old_peer = peer.clone();
-        let old_send = tokio::spawn(async move { older.send_verification_code(&old_email, &old_peer).await });
-        tokio::time::timeout(Duration::from_secs(2), entered.notified()).await.unwrap();
+        let context = nazo_identity::TenantContext {
+            tenant_id: TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+            ..Default::default()
+        };
+        let config = nazo_identity::RegistrationServiceConfig {
+            delivery_enabled: true,
+            send_peer_cooldown_seconds: 1,
+            send_cooldown_seconds: 1,
+            code_ttl_seconds: 30,
+        };
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let old_delivery = Arc::new(AtomicUsize::new(0));
+        let new_delivery = Arc::new(AtomicUsize::new(0));
+        let older = nazo_identity::RegistrationService::new(
+            EmptyRegistrationAccounts,
+            store.clone(),
+            BlockedCodeHashes {
+                entered: entered.clone(),
+                release: release.clone(),
+            },
+            CountingEmailDelivery(old_delivery.clone()),
+            context,
+            config,
+        );
+        let newer = nazo_identity::RegistrationService::new(
+            EmptyRegistrationAccounts,
+            store.clone(),
+            EqualCodeHashes,
+            CountingEmailDelivery(new_delivery.clone()),
+            context,
+            config,
+        );
+        let old_email = email.clone();
+        let old_peer = peer.clone();
+        let old_send =
+            tokio::spawn(async move { older.send_verification_code(&old_email, &old_peer).await });
+        tokio::time::timeout(Duration::from_secs(2), entered.notified())
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(1100)).await;
-        let code_key = nazo_valkey::test_support::state_storage_key(format!("oauth:email_verify:{}:code:{}", context.tenant_id.as_uuid(), blake3::hash(email.as_bytes()).to_hex()));
-        let email_key = nazo_valkey::test_support::state_storage_key(format!("oauth:email_verify:{}:send:{}", context.tenant_id.as_uuid(), blake3::hash(email.as_bytes()).to_hex()));
-        let peer_key = nazo_valkey::test_support::state_storage_key(format!("oauth:email_verify:{}:peer_send:{}", context.tenant_id.as_uuid(), blake3::hash(peer.as_bytes()).to_hex()));
+        let code_key = nazo_valkey::test_support::state_storage_key(format!(
+            "oauth:email_verify:{}:code:{}",
+            context.tenant_id.as_uuid(),
+            blake3::hash(email.as_bytes()).to_hex()
+        ));
+        let email_key = nazo_valkey::test_support::state_storage_key(format!(
+            "oauth:email_verify:{}:send:{}",
+            context.tenant_id.as_uuid(),
+            blake3::hash(email.as_bytes()).to_hex()
+        ));
+        let peer_key = nazo_valkey::test_support::state_storage_key(format!(
+            "oauth:email_verify:{}:peer_send:{}",
+            context.tenant_id.as_uuid(),
+            blake3::hash(peer.as_bytes()).to_hex()
+        ));
         let before = if with_newer_sender {
-            assert!(matches!(newer.send_verification_code(&email, &peer).await.unwrap(), nazo_identity::SendVerificationCodeOutcome::Sent { .. }));
-            Some((inspector.get::<String,_>(&code_key).await.unwrap(), inspector.expire_time::<i64,_>(&code_key).await.unwrap(), inspector.get::<String,_>(&email_key).await.unwrap(), inspector.get::<String,_>(&peer_key).await.unwrap()))
-        } else { None };
+            assert!(matches!(
+                newer.send_verification_code(&email, &peer).await.unwrap(),
+                nazo_identity::SendVerificationCodeOutcome::Sent { .. }
+            ));
+            Some((
+                inspector.get::<String, _>(&code_key).await.unwrap(),
+                inspector.expire_time::<i64, _>(&code_key).await.unwrap(),
+                inspector.get::<String, _>(&email_key).await.unwrap(),
+                inspector.get::<String, _>(&peer_key).await.unwrap(),
+            ))
+        } else {
+            None
+        };
         release.notify_one();
-        assert_eq!(tokio::time::timeout(Duration::from_secs(2), old_send).await.unwrap().unwrap(), Err(nazo_identity::SendVerificationCodeError::CodeStore(nazo_identity::ports::RepositoryError::Conflict)));
-        assert_eq!(old_delivery.load(Ordering::SeqCst), 0, "expired owner must fail before SMTP");
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), old_send)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(nazo_identity::SendVerificationCodeError::CodeStore(
+                nazo_identity::ports::RepositoryError::Conflict
+            ))
+        );
+        assert_eq!(
+            old_delivery.load(Ordering::SeqCst),
+            0,
+            "expired owner must fail before SMTP"
+        );
         if let Some((raw, deadline, email_owner, peer_owner)) = before {
-            assert_eq!(inspector.get::<String,_>(&code_key).await.unwrap(), raw);
-            assert_eq!(inspector.expire_time::<i64,_>(&code_key).await.unwrap(), deadline);
-            assert_eq!(inspector.get::<String,_>(&email_key).await.unwrap(), email_owner);
-            assert_eq!(inspector.get::<String,_>(&peer_key).await.unwrap(), peer_owner);
+            assert_eq!(inspector.get::<String, _>(&code_key).await.unwrap(), raw);
+            assert_eq!(
+                inspector.expire_time::<i64, _>(&code_key).await.unwrap(),
+                deadline
+            );
+            assert_eq!(
+                inspector.get::<String, _>(&email_key).await.unwrap(),
+                email_owner
+            );
+            assert_eq!(
+                inspector.get::<String, _>(&peer_key).await.unwrap(),
+                peer_owner
+            );
             assert_eq!(new_delivery.load(Ordering::SeqCst), 1);
-        } else { assert!(EmailVerificationStorePort::load_code(&store, context.tenant_id, &email).await.unwrap().is_none()); }
+        } else {
+            assert!(
+                EmailVerificationStorePort::load_code(&store, context.tenant_id, &email)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
     }
 }

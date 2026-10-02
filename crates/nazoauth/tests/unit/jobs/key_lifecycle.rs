@@ -216,11 +216,19 @@ async fn lifecycle_drop_finishes_in_flight_key_refresh_cooperatively() {
     repository.entered.notified().await;
     drop(task);
     tokio::task::yield_now().await;
-    assert!(!completion.is_finished(), "drop must not abort the in-flight key write");
+    assert!(
+        !completion.is_finished(),
+        "drop must not abort the in-flight key write"
+    );
     repository.block.store(false, Ordering::SeqCst);
     repository.release.notify_one();
-    while !completion.is_finished() { tokio::task::yield_now().await; }
-    assert_eq!(repository.completed_loads.load(Ordering::SeqCst), completed + 1);
+    while !completion.is_finished() {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        repository.completed_loads.load(Ordering::SeqCst),
+        completed + 1
+    );
     let loads = repository.loads.load(Ordering::SeqCst);
     tokio::time::advance(Duration::from_secs(20)).await;
     tokio::task::yield_now().await;
