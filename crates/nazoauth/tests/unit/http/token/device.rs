@@ -291,8 +291,14 @@ async fn call_device_token_with_request_for_test(
     let issuance_config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(state);
+    let client_epoch = authorization
+        .client_authentication_snapshot(&client.client_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .client_epoch;
     let issuance = TokenIssuanceContext {
-        client_epoch: 0,
+        client_epoch,
         config: &issuance_config,
         modules: &modules,
         authorization: &authorization,
@@ -302,21 +308,37 @@ async fn call_device_token_with_request_for_test(
     let device_service = ServerDeviceGrantService::new(std::sync::Arc::new(
         nazo_valkey::DeviceStore::new(&connection),
     ));
-    crate::http::token::issue::test_support::present_token_result(
-        token_device_code_with_service(
-            &token_service,
-            &issuance,
-            &device_service,
-            &crate::http::token::issue::test_support::token_request_facts(
-                &request,
-                state.settings.as_ref(),
-            ),
-            client,
-            &device_token_form(Some(device_code)),
-            None,
-        )
-        .await,
+    let result = token_device_code_with_service(
+        &token_service,
+        &issuance,
+        &device_service,
+        &crate::http::token::issue::test_support::token_request_facts(
+            &request,
+            state.settings.as_ref(),
+        ),
+        client,
+        &device_token_form(Some(device_code)),
+        None,
     )
+    .await;
+    if let Err(nazo_oauth_server::contracts::oauth_error::OAuthEndpointError::Token {
+        fields,
+        ..
+    }) = &result
+    {
+        eprintln!(
+            "Device error {} {}: {}",
+            fields.status, fields.error, fields.description
+        );
+    }
+    if let Err(nazo_oauth_server::contracts::oauth_error::OAuthEndpointError::Dpop {
+        error: nazo_auth::DpopError::NonceStoreUnavailable,
+        ..
+    }) = &result
+    {
+        eprintln!("Device DPoP dependency unavailable");
+    }
+    crate::http::token::issue::test_support::present_token_result(result)
 }
 
 #[test]
@@ -716,7 +738,7 @@ async fn approved_device_code_has_one_consumption_identity_across_valid_sender_k
     settings.protocol.dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Optional;
     state.settings = Arc::new(settings);
     state.keyset =
-        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
     let mut client = device_client();
     client.client_id = format!("device-sender-fence-{}", Uuid::now_v7());
     client.require_dpop_bound_tokens = true;

@@ -449,6 +449,8 @@ async fn ciba_approved_poll_reads_subject_claims_once_for_oidc_and_never_for_pla
                 None,
                 "private_key_jwt",
                 state.active_module_snapshot(),
+                crate::http::authorization::test_support::test_security_audit(),
+                0,
             )
         };
 
