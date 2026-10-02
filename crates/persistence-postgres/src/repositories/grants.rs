@@ -293,6 +293,7 @@ impl GrantRepository {
                         .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
                         .filter(oauth_refresh_families::user_id.eq(user_id))
                         .filter(oauth_refresh_families::client_id.eq(client_pk))
+                        .filter(oauth_refresh_families::revoked_at.is_null())
                         .select(oauth_refresh_families::token_family_id)
                         .order(oauth_refresh_families::token_family_id.asc())
                         .load::<Uuid>(connection)

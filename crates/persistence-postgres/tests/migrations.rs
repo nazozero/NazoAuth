@@ -93,6 +93,25 @@ fn embedded_migration_head_tracks_latest_directory() {
 }
 
 #[test]
+fn revoked_refresh_family_cleanup_index_is_partial_and_reversible() {
+    let up = include_str!(
+        "../../../migrations/20261002000100_refresh_family_revoked_cleanup_index/up.sql"
+    );
+    let down = include_str!(
+        "../../../migrations/20261002000100_refresh_family_revoked_cleanup_index/down.sql"
+    );
+    assert!(
+        up.contains("ON oauth_refresh_families (revoked_at, tenant_id, token_family_id)")
+            && up.contains("WHERE revoked_at IS NOT NULL"),
+        "terminal-family cleanup must have a partial revoked-time scan index"
+    );
+    assert!(
+        down.contains("DROP INDEX IF EXISTS ix_orf_revoked_cleanup"),
+        "the new cleanup index migration must be reversible"
+    );
+}
+
+#[test]
 fn security_state_cleanup_has_versioned_definitions_and_no_runtime_call() {
     let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let mut definitions = 0;

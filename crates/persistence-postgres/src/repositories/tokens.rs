@@ -995,9 +995,9 @@ async fn persist_refresh_token_inner(
 
 /// Enforce `MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE` inside the grant-scope
 /// advisory lock. Live families beyond the nine newest are retired oldest
-/// first (by `current_issued_at`, then family id), deleted outright with their
-/// spent proofs; each retirement emits a Required audit event so the ledger
-/// keeps the deliberate-termination evidence.
+/// first (by `current_issued_at`, then family id) by setting `revoked_at`;
+/// each retirement emits a Required audit event in the same transaction.
+/// Bounded maintenance later drains the family's spent proofs and row.
 async fn retire_families_over_cap(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
@@ -1033,7 +1033,7 @@ async fn retire_families_over_cap(
     .await?;
     for victim in victims {
         lock_refresh_family(connection, victim.token_family_id).await?;
-        let removed = diesel::delete(
+        let revoked = diesel::update(
             oauth_refresh_families::table
                 .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
                 .filter(oauth_refresh_families::token_family_id.eq(victim.token_family_id))
@@ -1041,9 +1041,10 @@ async fn retire_families_over_cap(
                 .filter(oauth_refresh_families::reuse_detected_at.is_null())
                 .filter(oauth_refresh_families::current_expires_at.gt(diesel::dsl::now)),
         )
+        .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
         .execute(connection)
         .await?;
-        if removed == 0 {
+        if revoked == 0 {
             continue;
         }
         // Unreferenced contracts are reclaimed by maintenance after its grace.
