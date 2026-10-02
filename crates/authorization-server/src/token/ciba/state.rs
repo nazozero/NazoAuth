@@ -16,17 +16,8 @@ pub const CIBA_REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
 pub const CIBA_REQUEST_OBJECT_CLOCK_SKEW_SECONDS: i64 = 30;
 pub const CIBA_BINDING_MESSAGE_MAX_CHARS: usize = 64;
 
-pub fn ciba_grant_key(
-    auth_req_id: &str,
-    dpop_jkt: Option<&str>,
-    mtls_x5t_s256: Option<&str>,
-) -> String {
-    let binding = json!({
-        "auth_req_id": auth_req_id,
-        "dpop_jkt": dpop_jkt,
-        "mtls_x5t_s256": mtls_x5t_s256,
-    });
-    format!("ciba:{}", blake3_hex(&binding.to_string()))
+pub fn ciba_grant_key(auth_req_id: &str) -> String {
+    format!("ciba:{}", blake3_hex(auth_req_id))
 }
 
 #[derive(Clone)]

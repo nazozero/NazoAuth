@@ -111,7 +111,7 @@ pub async fn token_ciba(
         Ok(binding) => binding,
         Err(response) => return Err(response),
     };
-    let ciba_grant_key = ciba_grant_key(auth_req_id, dpop_jkt.as_deref(), mtls_x5t_s256.as_deref());
+    let ciba_grant_key = ciba_grant_key(auth_req_id);
     let Some(initial) = initial else {
         return Err(OAuthEndpointError::token(
             ProtocolStatusCode::BAD_REQUEST,
@@ -224,9 +224,8 @@ async fn poll_and_issue_ciba(
             false,
         ));
     };
-    // Approved polling already consumed auth_req_id. Resolve the local subject
-    // before reading its binding; configuration errors therefore precede any
-    // subject-state error, without changing the one-shot consumption contract.
+    // Resolve the local subject before reading its binding. Approved state
+    // stays retryable until the PostgreSQL SingleUse issuance commits.
     let subject = match ciba_subject_for_client(issuance.config, ciba.user_id, client) {
         Ok(subject) => subject,
         Err(error) => {

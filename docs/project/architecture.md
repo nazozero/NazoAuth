@@ -262,12 +262,25 @@ principal locks, epoch checks and first-binding collision check remain mandatory
 Public subjects require no binding lookup; non-OIDC issuance retains its narrow
 principal snapshot without reading a profile.
 
-CIBA Approved polling still consumes `auth_req_id` before token preparation.
-It now resolves the local token subject before reading claims and ownership,
-so an invalid pairwise-secret or subject-type configuration takes precedence
-when the user read would also fail. Both cases fail closed, and downstream
-failure does not restore the consumed request; error precedence is not claimed
-to be identical to the earlier claims-first order.
+Device and CIBA SingleUse identities depend only on the immutable device code
+or `auth_req_id`; tenant and client fences remain PostgreSQL-owned. Sender
+proofs are still validated and constrain the issued tokens, but cannot create
+another consumption identity. CIBA Approved polling returns an owned snapshot
+and preserves the original TTL. Precommit failures remain retryable; only the
+successful issuance transaction consumes the grant. An explicit authorization
+deadline still uses the store-clock CAS before returning Approved. Healthy
+postcommit replay returns `invalid_grant` without recovering the original
+response or revoking another holder's tokens. A dependency outage can still
+return 503 before replay detection.
+
+This change alters the persisted Device/CIBA fence key format. Deployments
+must drain old token requests and expire or invalidate pending old Device/CIBA
+authorizations before switching to the new implementation. Old sender-derived
+receipts must not be mixed with the new code-only identities. No compatibility
+recovery layer or production state cleanup is performed by this change.
+
+CIBA's retry boundary follows [CIBA Core §10.1 and §10.1.1](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0-final.html):
+503 permits retry; an `auth_req_id` becomes invalid after successful redemption.
 
 The generic path accepts no `Idempotency-Key`, stores no request digest or
 response envelope, and implements no generic response recovery. Authorization

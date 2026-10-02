@@ -537,3 +537,13 @@ pub(crate) fn test_key_manager_with_auxiliary(
 ) -> nazo_key_management::KeyManager {
     nazo_key_management::KeyManager::for_test_with_auxiliary(algorithm)
 }
+
+/// Signed, fresh DPoP fixture. Validation and thumbprint derivation remain in
+/// the production sender-constraint implementation.
+pub(crate) fn dpop_token_request(settings: &crate::settings::Settings, key: &ClientSigningFixture) -> actix_web::HttpRequest {
+    let mut header=jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
+    header.typ=Some("dpop+jwt".to_owned());
+    header.jwk=Some(serde_json::from_value(key.public_jwk("dpop-test")).unwrap());
+    let claims=json!({"jti":uuid::Uuid::now_v7().to_string(),"htm":"POST","htu":format!("{}/token",settings.endpoint.issuer.trim_end_matches('/')),"iat":chrono::Utc::now().timestamp()});
+    actix_web::test::TestRequest::post().uri("/token").insert_header(("dpop",key.encode_jwt(&header,&claims))).to_http_request()
+}
