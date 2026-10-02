@@ -368,43 +368,77 @@ async fn committed_authorization_code_replays_revoke_with_retained_and_expired_c
     let mut settings = LiveAuthorizationCodeFixture::settings();
     settings.protocol.auth_code_ttl_seconds = 2;
     let Some(fixture) = LiveAuthorizationCodeFixture::new_with_settings_and_keyset(
-        settings, crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256),
-    ).await else { return; };
+        settings,
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256),
+    )
+    .await
+    else {
+        return;
+    };
     let user = fixture.insert_user().await;
     let client = live_client(&format!("client-ttl-replay-{}", Uuid::now_v7()));
     fixture.insert_client(&client).await;
-    let req = actix_web::test::TestRequest::post().uri("/token").to_http_request();
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
     for expire in [false, true] {
         let code = format!("code-{}", Uuid::now_v7());
         let mut payload = payload_for_client(&client);
         payload.user_id = user.id;
         payload.scopes = vec!["accounts".to_owned()];
         payload.expires_at = Utc::now() + Duration::minutes(5);
-        fixture.store_code_state(&code, &AuthorizationCodeState::Pending { payload }).await;
+        fixture
+            .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+            .await;
         let key = authorization_code_key(&code);
         let initial_ttl = fixture.state.valkey.pttl::<i64, _>(&key).await.unwrap();
-        let response = token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None).await;
+        let response =
+            token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None)
+                .await;
         let (status, body) = token_json_body(response).await;
         assert_eq!(status, StatusCode::OK);
-        let encoded = body["access_token"].as_str().unwrap().split('.').nth(1).unwrap();
-        let claims: Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
+        let encoded = body["access_token"]
+            .as_str()
+            .unwrap()
+            .split('.')
+            .nth(1)
+            .unwrap();
+        let claims: Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
         let jti = claims["jti"].as_str().unwrap();
-        assert!(matches!(fixture.code_state(&code).await, AuthorizationCodeState::Consuming { .. }));
+        assert!(matches!(
+            fixture.code_state(&code).await,
+            AuthorizationCodeState::Consuming { .. }
+        ));
         let remaining = fixture.state.valkey.pttl::<i64, _>(&key).await.unwrap();
-        assert!(remaining > 0 && remaining <= initial_ttl, "commit must not refresh the code TTL");
+        assert!(
+            remaining > 0 && remaining <= initial_ttl,
+            "commit must not refresh the code TTL"
+        );
         if expire {
             tokio::time::sleep(StdDuration::from_millis(2_100)).await;
-            assert!(valkey_get(&fixture.state.valkey, key).await.unwrap().is_none());
+            assert!(
+                valkey_get(&fixture.state.valkey, key)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
         }
         let mut divergent = form_for_code(&code);
         divergent.scope = Some("different-proof".to_owned());
-        let response = token_authorization_code(&fixture.state, &req, &client, &divergent, None).await;
+        let response =
+            token_authorization_code(&fixture.state, &req, &client, &divergent, None).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(fixture.access_token_revocation_count(&client, jti).await, 0);
-        let response = token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None).await;
+        let response =
+            token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None)
+                .await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(oauth_error_code(response).await, "invalid_grant");
-        assert_eq!(fixture.access_token_revocation_count(&client, jti).await, 1,
-            "an exact replay must synchronously revoke through the durable receipt");
+        assert_eq!(
+            fixture.access_token_revocation_count(&client, jti).await,
+            1,
+            "an exact replay must synchronously revoke through the durable receipt"
+        );
     }
 }

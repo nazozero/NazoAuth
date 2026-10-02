@@ -90,13 +90,26 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
         audiences: token.contract_audiences.clone(),
         authorization_details: token.authorization_details.clone(),
         authentication_context: token.authentication_context.clone(),
-    }.persisted();
+    }
+    .persisted();
     let authority = token.authority();
     assert_eq!(authority.contract, expected);
-    assert_eq!(authority.contract.canonical_bytes(), expected.canonical_bytes());
+    assert_eq!(
+        authority.contract.canonical_bytes(),
+        expected.canonical_bytes()
+    );
     assert_eq!(authority.contract_key, [2; 32]);
     assert_eq!(authority.current_audiences, vec!["narrowed-resource"]);
-    assert_eq!(authority.id_token_sid.as_deref(), Some("current-id-token-sid"));
-    assert_eq!(token.authentication_context.nonce.as_deref(), Some("first-response-nonce"));
-    assert_eq!(token.authentication_context.id_token_sid.as_deref(), Some("current-id-token-sid"));
+    assert_eq!(
+        authority.id_token_sid.as_deref(),
+        Some("current-id-token-sid")
+    );
+    assert_eq!(
+        token.authentication_context.nonce.as_deref(),
+        Some("first-response-nonce")
+    );
+    assert_eq!(
+        token.authentication_context.id_token_sid.as_deref(),
+        Some("current-id-token-sid")
+    );
 }

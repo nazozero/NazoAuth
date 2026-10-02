@@ -725,7 +725,9 @@ async fn prepared_oidc_snapshot_rejects_tenant_user_and_token_subject_mismatches
 
 #[actix_web::test]
 async fn non_oidc_user_issuance_preserves_authenticated_epoch_across_client_reactivation() {
-    let Some(state) = issue_state_with_live_database() else { return; };
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
     let mut client = client_with_grants(&["client_credentials"]);
     client.client_id = format!("non-oidc-authenticated-epoch-{}", Uuid::now_v7());
     insert_issue_client(&state, &client).await;
@@ -735,8 +737,11 @@ async fn non_oidc_user_issuance_preserves_authenticated_epoch_across_client_reac
         crate::test_support::token_issuance_repository(state.diesel_db.clone()),
     )));
     let authorization = test_support::test_authorization_service(&state);
-    let authenticated = authorization.client_authentication_snapshot(&client.client_id)
-        .await.unwrap().unwrap();
+    let authenticated = authorization
+        .client_authentication_snapshot(&client.client_id)
+        .await
+        .unwrap()
+        .unwrap();
     let make_issue = || {
         let mut issue = token_issue_without_openid();
         issue.user_id = Some(user_id);
@@ -752,14 +757,23 @@ async fn non_oidc_user_issuance_preserves_authenticated_epoch_across_client_reac
             .bind::<diesel::sql_types::Bool, _>(active)
             .bind::<SqlUuid, _>(client.tenant_id)
             .bind::<SqlUuid, _>(client.id)
-            .execute(&mut connection).await.unwrap();
+            .execute(&mut connection)
+            .await
+            .unwrap();
     }
     drop(connection);
     let response = issue_token_response_with_repository(
-        &state, &client, make_issue(), repository.clone(), authenticated.client_epoch,
-    ).await;
+        &state,
+        &client,
+        make_issue(),
+        repository.clone(),
+        authenticated.client_epoch,
+    )
+    .await;
     let status = response.status();
-    let body = actix_web::body::to_bytes(response.into_body()).await.unwrap();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "unauthorized_client");
@@ -771,12 +785,20 @@ async fn non_oidc_user_issuance_preserves_authenticated_epoch_across_client_reac
         .get_result::<TokenRowCount>(&mut connection).await.unwrap();
     assert_eq!(audit.count, 0);
     drop(connection);
-    let current = authorization.client_authentication_snapshot(&client.client_id)
-        .await.unwrap().unwrap();
+    let current = authorization
+        .client_authentication_snapshot(&client.client_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(current.client_epoch, authenticated.client_epoch + 1);
     let response = issue_token_response_with_repository(
-        &state, &client, make_issue(), repository.clone(), current.client_epoch,
-    ).await;
+        &state,
+        &client,
+        make_issue(),
+        repository.clone(),
+        current.client_epoch,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(repository.principal_snapshot_count(), 2);
     assert_eq!(repository.subject_data_reads(), 0);

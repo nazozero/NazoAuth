@@ -793,15 +793,13 @@ async fn principal_snapshot_reuses_authenticated_epoch_and_prepared_query() {
     drop(connection);
 
     let current = repository
-        .token_principal_state(
-            tenant_id,
-            3,
-            Some(fixture.user_id),
-            &subject,
-        )
+        .token_principal_state(tenant_id, 3, Some(fixture.user_id), &subject)
         .await
         .unwrap();
-    assert_eq!(current.client_epoch, 3, "do not replace the authenticated epoch with the database epoch");
+    assert_eq!(
+        current.client_epoch, 3,
+        "do not replace the authenticated epoch with the database epoch"
+    );
     assert_eq!(current.user_epoch, Some(11));
     assert!(current.subject_bound);
     let public = repository
@@ -829,12 +827,7 @@ async fn principal_snapshot_reuses_authenticated_epoch_and_prepared_query() {
         "a private subject must not bind to a different user"
     );
     let foreign = repository
-        .token_principal_state(
-            Uuid::now_v7(),
-            0,
-            Some(fixture.user_id),
-            &subject,
-        )
+        .token_principal_state(Uuid::now_v7(), 0, Some(fixture.user_id), &subject)
         .await
         .unwrap();
     assert_eq!(foreign.client_epoch, 0);
