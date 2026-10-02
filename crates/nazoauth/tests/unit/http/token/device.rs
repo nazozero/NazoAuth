@@ -321,23 +321,6 @@ async fn call_device_token_with_request_for_test(
         None,
     )
     .await;
-    if let Err(nazo_oauth_server::contracts::oauth_error::OAuthEndpointError::Token {
-        fields,
-        ..
-    }) = &result
-    {
-        eprintln!(
-            "Device error {} {}: {}",
-            fields.status, fields.error, fields.description
-        );
-    }
-    if let Err(nazo_oauth_server::contracts::oauth_error::OAuthEndpointError::Dpop {
-        error: nazo_auth::DpopError::NonceStoreUnavailable,
-        ..
-    }) = &result
-    {
-        eprintln!("Device DPoP dependency unavailable");
-    }
     crate::http::token::issue::test_support::present_token_result(result)
 }
 

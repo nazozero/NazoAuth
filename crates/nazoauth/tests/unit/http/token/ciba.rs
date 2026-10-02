@@ -420,16 +420,6 @@ async fn call_ciba_token_with_prepared_service(
         auth_method,
     )
     .await;
-    if let Err(nazo_oauth_server::contracts::oauth_error::OAuthEndpointError::Token {
-        fields,
-        ..
-    }) = &result
-    {
-        eprintln!(
-            "CIBA error {} {}: {}",
-            fields.status, fields.error, fields.description
-        );
-    }
     match result {
         Ok(success) => nazo_http_actix::token_endpoint_success_response(success),
         Err(error) => nazo_http_actix::oauth_endpoint_error_response(error),

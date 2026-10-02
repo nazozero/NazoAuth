@@ -23,16 +23,7 @@ async fn ciba_token_approved_state_issues_access_and_id_tokens_for_an_active_use
     store_ciba_state_with_user(&state, &client, &auth_req_id, user_id, CibaStatus::Approved).await;
 
     let response = call_ciba_token_with_mtls_for_test(&state, &client, auth_req_id.clone()).await;
-    if response.status() != StatusCode::OK {
-        let status = response.status();
-        let body = actix_web::body::to_bytes(response.into_body())
-            .await
-            .expect("CIBA error response should collect");
-        panic!(
-            "approved CIBA token request returned {status}: {}",
-            String::from_utf8_lossy(&body)
-        );
-    }
+    assert_eq!(response.status(), StatusCode::OK, "approved CIBA issuance must succeed");
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .expect("CIBA token response should collect");
@@ -95,7 +86,7 @@ async fn ciba_precommit_dependency_failure_is_retryable_and_sender_keys_share_on
     client.client_id = format!("ciba-sender-fence-{}", Uuid::now_v7());
     client.require_dpop_bound_tokens = true;
     persist_ciba_test_client(&state, &client).await;
-    client = crate::http::authorization::test_support::test_authorization_service(&state)
+    client = crate::http::token::issue::test_support::test_authorization_service(&state)
         .client_authentication_snapshot(&client.client_id)
         .await
         .expect("stored client authentication should be readable")

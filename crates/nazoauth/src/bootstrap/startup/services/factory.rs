@@ -33,7 +33,11 @@ struct WorkerTenantDataCache {
 }
 
 impl WorkerTenantDataCache {
-    fn resolve(&mut self, index: Arc<TenantHostIndex>, host: &str) -> Option<(Rc<Extensions>, Arc<Settings>)> {
+    fn resolve(
+        &mut self,
+        index: Arc<TenantHostIndex>,
+        host: &str,
+    ) -> Option<(Rc<Extensions>, Arc<Settings>)> {
         let changed = match &self.index {
             Some(current) => !Arc::ptr_eq(current, &index),
             None => true,
@@ -171,11 +175,7 @@ pub(super) async fn run(
         }
         let settings = Arc::clone(&route_settings);
         tenant_scope = tenant_scope.configure(move |cfg| {
-            crate::bootstrap::routes::configure_dynamic(
-                cfg,
-                &settings,
-                perf_metrics_enabled,
-            )
+            crate::bootstrap::routes::configure_dynamic(cfg, &settings, perf_metrics_enabled)
         });
         let tenant_scope = tenant_scope.wrap(from_fn(move |request, next| {
             bind_tenant_app_data(tenant_registry.clone(), Rc::clone(&cache), request, next)

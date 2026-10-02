@@ -191,10 +191,6 @@ impl TenantRuntimeRegistry {
         self.load().revision
     }
 
-    pub(in crate::bootstrap) fn resolve(&self, host: &str) -> Option<Arc<TenantRuntime>> {
-        self.load().by_host.get(host).cloned()
-    }
-
     pub(crate) fn contains_tenant(&self, tenant_id: nazo_identity::TenantId) -> bool {
         self.load()
             .by_host

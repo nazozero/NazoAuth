@@ -960,7 +960,6 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
     settings
 }
 
-
 #[actix_web::test]
 async fn dynamic_cors_policy_is_bound_to_one_immutable_request_snapshot() {
     let mut first = Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
@@ -969,21 +968,31 @@ async fn dynamic_cors_policy_is_bound_to_one_immutable_request_snapshot() {
     second.endpoint.cors_allowed_origins = vec!["https://second.example".to_owned()];
     let registry = arc_swap::ArcSwap::from_pointee(first);
     let selected = registry.load_full();
-    let request = test::TestRequest::get().uri("/token").insert_header(("host", "tenant.example")).to_http_request();
+    let request = test::TestRequest::get()
+        .uri("/token")
+        .insert_header(("host", "tenant.example"))
+        .to_http_request();
     let first_origin = HeaderValue::from_static("https://first.example");
     let second_origin = HeaderValue::from_static("https://second.example");
     let predicate = origin_predicate();
-    assert!(!predicate(&first_origin, request.head()), "missing selection fails closed");
-    REQUEST_CORS_SETTINGS.scope(selected, async {
-        // Swap after binding and before synchronous CORS admission.
-        registry.store(Arc::new(second));
-        assert!(predicate(&first_origin, request.head()));
-        assert!(!predicate(&second_origin, request.head()));
-    }).await;
-    REQUEST_CORS_SETTINGS.scope(registry.load_full(), async {
-        assert!(!predicate(&first_origin, request.head()));
-        assert!(predicate(&second_origin, request.head()));
-    }).await;
+    assert!(
+        !predicate(&first_origin, request.head()),
+        "missing selection fails closed"
+    );
+    REQUEST_CORS_SETTINGS
+        .scope(selected, async {
+            // Swap after binding and before synchronous CORS admission.
+            registry.store(Arc::new(second));
+            assert!(predicate(&first_origin, request.head()));
+            assert!(!predicate(&second_origin, request.head()));
+        })
+        .await;
+    REQUEST_CORS_SETTINGS
+        .scope(registry.load_full(), async {
+            assert!(!predicate(&first_origin, request.head()));
+            assert!(predicate(&second_origin, request.head()));
+        })
+        .await;
     assert!(!predicate(&second_origin, request.head()));
 }
 
@@ -991,7 +1000,8 @@ async fn dynamic_cors_policy_is_bound_to_one_immutable_request_snapshot() {
 async fn dynamic_cors_request_scopes_are_isolated_when_futures_interleave() {
     let mut one = Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
     one.endpoint.cors_allowed_origins = vec!["https://one.example".to_owned()];
-    let mut two = one.clone(); two.endpoint.cors_allowed_origins = vec!["https://two.example".to_owned()];
+    let mut two = one.clone();
+    two.endpoint.cors_allowed_origins = vec!["https://two.example".to_owned()];
     let request = test::TestRequest::get().to_http_request();
     let first = HeaderValue::from_static("https://one.example");
     let second = HeaderValue::from_static("https://two.example");
@@ -999,11 +1009,13 @@ async fn dynamic_cors_request_scopes_are_isolated_when_futures_interleave() {
     tokio::join!(
         REQUEST_CORS_SETTINGS.scope(Arc::new(one), async {
             tokio::task::yield_now().await;
-            assert!(predicate(&first, request.head())); assert!(!predicate(&second, request.head()));
+            assert!(predicate(&first, request.head()));
+            assert!(!predicate(&second, request.head()));
         }),
         REQUEST_CORS_SETTINGS.scope(Arc::new(two), async {
             tokio::task::yield_now().await;
-            assert!(predicate(&second, request.head())); assert!(!predicate(&first, request.head()));
+            assert!(predicate(&second, request.head()));
+            assert!(!predicate(&first, request.head()));
         })
     );
 }
@@ -1012,15 +1024,38 @@ async fn dynamic_cors_request_scopes_are_isolated_when_futures_interleave() {
 async fn dynamic_cors_preflight_uses_selected_policy_and_missing_context_rejects() {
     let mut settings = Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
     settings.endpoint.cors_allowed_origins = vec!["https://selected.example".to_owned()];
-    let app = test::init_service(App::new().wrap(CorsPolicy::dynamic().auth_api()).route("/auth/me", web::get().to(|| async { HttpResponse::Ok().finish() }))).await;
+    let app = test::init_service(App::new().wrap(CorsPolicy::dynamic().auth_api()).route(
+        "/auth/me",
+        web::get().to(|| async { HttpResponse::Ok().finish() }),
+    ))
+    .await;
     for scoped in [false, true] {
-        let request = test::TestRequest::default().method(actix_web::http::Method::OPTIONS).uri("/auth/me")
+        let request = test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/auth/me")
             .insert_header(("origin", "https://selected.example"))
-            .insert_header(("access-control-request-method", "GET")).to_request();
+            .insert_header(("access-control-request-method", "GET"))
+            .to_request();
         let response = if scoped {
-            REQUEST_CORS_SETTINGS.scope(Arc::new(settings.clone()), async { test::call_service(&app, request).await }).await
-        } else { test::call_service(&app, request).await };
-        if scoped { assert!(response.status().is_success()); assert_eq!(response.headers().get("access-control-allow-origin").unwrap(), "https://selected.example"); }
-        else { assert_eq!(response.status(), StatusCode::BAD_REQUEST); }
+            REQUEST_CORS_SETTINGS
+                .scope(Arc::new(settings.clone()), async {
+                    test::call_service(&app, request).await
+                })
+                .await
+        } else {
+            test::call_service(&app, request).await
+        };
+        if scoped {
+            assert!(response.status().is_success());
+            assert_eq!(
+                response
+                    .headers()
+                    .get("access-control-allow-origin")
+                    .unwrap(),
+                "https://selected.example"
+            );
+        } else {
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
     }
 }
