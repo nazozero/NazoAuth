@@ -345,7 +345,10 @@ impl AvatarDirectUploadPort for ScriptedDirectStorage {
         content_type: AvatarContentType,
     ) -> AvatarStorageFuture<'a, ()> {
         self.publish_calls.fetch_add(1, Ordering::Relaxed);
-        self.published_content_types.lock().unwrap().push(content_type);
+        self.published_content_types
+            .lock()
+            .unwrap()
+            .push(content_type);
         let result = self.publish.clone();
         Box::pin(async move { result })
     }
@@ -1350,13 +1353,25 @@ async fn direct_avatar_read_and_delete_preserve_repository_and_storage_boundarie
 #[test]
 fn pending_validates_and_hashes_once_and_drops_bytes_before_recording() {
     let source = include_str!("../../src/avatar.rs");
-    let pending = source.split("AvatarUploadClaim::Pending {").nth(1).unwrap()
-        .split("AvatarUploadClaim::Publishing {").next().unwrap();
+    let pending = source
+        .split("AvatarUploadClaim::Pending {")
+        .nth(1)
+        .unwrap()
+        .split("AvatarUploadClaim::Publishing {")
+        .next()
+        .unwrap();
     assert_eq!(pending.matches("AvatarContentType::detect(").count(), 1);
     assert_eq!(pending.matches("final_object_id(").count(), 1);
-    assert!(pending.find("drop(staged.bytes)").unwrap() < pending.find(".record_candidate(").unwrap());
-    let validated = source.split("match validated_content_type {").nth(1).unwrap()
-        .split("self.storage").next().unwrap();
+    assert!(
+        pending.find("drop(staged.bytes)").unwrap() < pending.find(".record_candidate(").unwrap()
+    );
+    let validated = source
+        .split("match validated_content_type {")
+        .nth(1)
+        .unwrap()
+        .split("self.storage")
+        .next()
+        .unwrap();
     let pending_mime = validated.split("None =>").next().unwrap();
     assert!(!pending_mime.contains("final_object_id("));
     assert!(!pending_mime.contains("AvatarContentType::detect("));
@@ -1374,10 +1389,17 @@ async fn pending_reads_once_and_keeps_validated_mime_while_candidate_failures_ne
         let publishes = Arc::clone(&storage.publish_calls);
         let mimes = Arc::clone(&storage.published_content_types);
         let mut state = ScriptedDirectState::pending(upload_authorization(
-            &account, chrono::Utc::now() + chrono::Duration::minutes(5)));
+            &account,
+            chrono::Utc::now() + chrono::Duration::minutes(5),
+        ));
         state.record_candidate = recorded.clone();
         let service = scripted_direct_service(
-            &account, storage, state, Ok(0), AvatarRepositoryResult::Update);
+            &account,
+            storage,
+            state,
+            Ok(0),
+            AvatarRepositoryResult::Update,
+        );
         let result = service.complete_upload(&account, "upload-scripted").await;
         assert_eq!(reads.load(Ordering::Relaxed), 1);
         match recorded {
@@ -1409,10 +1431,16 @@ async fn direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes
         let deleted = Arc::clone(&storage.delete_final_calls);
         let published = Arc::clone(&storage.publish_calls);
         let state = ScriptedDirectState::pending(upload_authorization(
-            &account, chrono::Utc::now() + chrono::Duration::minutes(5),
+            &account,
+            chrono::Utc::now() + chrono::Duration::minutes(5),
         ));
         let service = scripted_direct_service(&account, storage, state, Ok(0), outcome);
-        assert!(service.complete_upload(&account, "upload-scripted").await.is_err());
+        assert!(
+            service
+                .complete_upload(&account, "upload-scripted")
+                .await
+                .is_err()
+        );
         assert_eq!(published.load(Ordering::Relaxed), 1);
         assert_eq!(deleted.load(Ordering::Relaxed), 0);
     }

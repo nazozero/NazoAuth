@@ -5,7 +5,10 @@ use diesel_async::pooled_connection::{PoolError as BackendError, deadpool::PoolE
 pub(crate) fn query_is_unavailable(error: &Error) -> bool {
     matches!(
         error,
-        Error::DatabaseError(DatabaseErrorKind::ClosedConnection | DatabaseErrorKind::SerializationFailure, _)
+        Error::DatabaseError(
+            DatabaseErrorKind::ClosedConnection | DatabaseErrorKind::SerializationFailure,
+            _
+        )
     )
 }
 

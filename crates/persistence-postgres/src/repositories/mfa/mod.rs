@@ -46,7 +46,9 @@ impl MfaRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
-            .build_transaction().read_committed().run::<_, diesel::result::Error, _>(async move |connection| {
+            .build_transaction()
+            .read_committed()
+            .run::<_, diesel::result::Error, _>(async move |connection| {
                 diesel::delete(
                     user_totp_credentials::table
                         .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))

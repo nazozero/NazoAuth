@@ -46,7 +46,11 @@ impl LocalAvatarStorage {
     pub(crate) fn new(root: PathBuf) -> Self {
         Self {
             root: Arc::new(root),
-            locks: Arc::new((0..LOCK_STRIPES).map(|_| Arc::new(Mutex::new(()))).collect()),
+            locks: Arc::new(
+                (0..LOCK_STRIPES)
+                    .map(|_| Arc::new(Mutex::new(())))
+                    .collect(),
+            ),
         }
     }
 
@@ -96,7 +100,9 @@ impl LocalAvatarStorage {
         metadata_path: &Path,
         expected_version: &str,
     ) -> Result<AvatarObject, AvatarStorageError> {
-        let metadata = read_metadata(metadata_path).await?.ok_or(AvatarStorageError::Missing)?;
+        let metadata = read_metadata(metadata_path)
+            .await?
+            .ok_or(AvatarStorageError::Missing)?;
         if metadata.version != expected_version {
             return Err(AvatarStorageError::InvalidState);
         }
@@ -135,7 +141,10 @@ impl LocalAvatarStorage {
         };
         let mut matched = None;
         for (avatar_path, metadata_path) in legacy_backups(user_dir).await? {
-            match self.read_object(&avatar_path, &metadata_path, expected_version).await {
+            match self
+                .read_object(&avatar_path, &metadata_path, expected_version)
+                .await
+            {
                 Ok(avatar) if matched.is_none() => matched = Some(avatar),
                 Ok(_) => return Err(AvatarStorageError::InvalidState),
                 Err(AvatarStorageError::Missing | AvatarStorageError::InvalidState) => {}
@@ -161,7 +170,11 @@ impl LocalAvatarStorage {
             Err(AvatarStorageError::Missing) => return Ok(()),
             result => result?,
         }
-        remove_pair(&candidate.join(AVATAR_FILE_NAME), &candidate.join(METADATA_FILE_NAME)).await?;
+        remove_pair(
+            &candidate.join(AVATAR_FILE_NAME),
+            &candidate.join(METADATA_FILE_NAME),
+        )
+        .await?;
         fs::remove_dir(&candidate).await.map_err(unavailable)?;
         sync_directory(&versions).await
     }
@@ -200,7 +213,10 @@ impl LocalAvatarStorage {
                 return;
             }
         };
-        let mut pairs = vec![(user_dir.join(AVATAR_FILE_NAME), user_dir.join(METADATA_FILE_NAME))];
+        let mut pairs = vec![(
+            user_dir.join(AVATAR_FILE_NAME),
+            user_dir.join(METADATA_FILE_NAME),
+        )];
         match legacy_backups(&user_dir).await {
             Ok(backups) => pairs.extend(backups),
             Err(error) => tracing::warn!(%error, "failed to inspect legacy avatar backups"),
@@ -239,7 +255,9 @@ impl AvatarStoragePort for LocalAvatarStorage {
                 return Err(AvatarStorageError::InvalidState);
             }
             let versions = self.user_dir(user_id).join(VERSIONS_DIRECTORY);
-            ensure_directory_path(&versions).await.map_err(as_preparation_failure)?;
+            ensure_directory_path(&versions)
+                .await
+                .map_err(as_preparation_failure)?;
             let candidate = versions.join(&avatar.version);
             // Exclusive creation gives this request sole cleanup ownership.
             // Existing directories (including partial ones) are never reused.
@@ -357,15 +375,23 @@ async fn legacy_backups(user_dir: &Path) -> Result<Vec<(PathBuf, PathBuf)>, Avat
     let mut pairs = Vec::new();
     while let Some(entry) = entries.next_entry().await.map_err(unavailable)? {
         let name = entry.file_name();
-        let Some(revision) = name.to_str()
+        let Some(revision) = name
+            .to_str()
             .and_then(|name| name.strip_prefix("meta-"))
             .and_then(|name| name.strip_suffix(".bak"))
-            .filter(|revision| !revision.is_empty()
-                && revision.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'))
+            .filter(|revision| {
+                !revision.is_empty()
+                    && revision
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+            })
         else {
             continue;
         };
-        pairs.push((user_dir.join(format!("avatar-{revision}.bak")), entry.path()));
+        pairs.push((
+            user_dir.join(format!("avatar-{revision}.bak")),
+            entry.path(),
+        ));
     }
     Ok(pairs)
 }
@@ -375,7 +401,9 @@ async fn check_directory_path(path: &Path) -> Result<(), AvatarStorageError> {
         return Err(AvatarStorageError::InvalidState);
     }
     for component in path.ancestors() {
-        let metadata = fs::symlink_metadata(component).await.map_err(missing_or_unavailable)?;
+        let metadata = fs::symlink_metadata(component)
+            .await
+            .map_err(missing_or_unavailable)?;
         if !metadata.is_dir() || metadata.file_type().is_symlink() {
             return Err(AvatarStorageError::InvalidState);
         }
@@ -416,7 +444,9 @@ async fn restrict_directory(path: &Path) -> Result<(), AvatarStorageError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
-        fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).await.map_err(unavailable)?;
+        fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+            .await
+            .map_err(unavailable)?;
     }
     #[cfg(not(unix))]
     let _ = path;
@@ -431,7 +461,9 @@ async fn sync_directory(path: &Path) -> Result<(), AvatarStorageError> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt as _;
-            options.custom_flags((rustix::fs::OFlags::DIRECTORY | rustix::fs::OFlags::NOFOLLOW).bits() as i32);
+            options.custom_flags(
+                (rustix::fs::OFlags::DIRECTORY | rustix::fs::OFlags::NOFOLLOW).bits() as i32,
+            );
         }
         #[cfg(windows)]
         {
@@ -450,7 +482,8 @@ async fn read_regular_file(path: &Path) -> Result<Vec<u8>, AvatarStorageError> {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
-    options.custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32);
+    options
+        .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32);
     let mut file = options.open(path).await.map_err(missing_or_unavailable)?;
     if !file.metadata().await.map_err(unavailable)?.is_file() {
         return Err(AvatarStorageError::InvalidState);
@@ -461,7 +494,9 @@ async fn read_regular_file(path: &Path) -> Result<Vec<u8>, AvatarStorageError> {
 }
 
 async fn check_regular_file(path: &Path) -> Result<(), AvatarStorageError> {
-    let metadata = fs::symlink_metadata(path).await.map_err(missing_or_unavailable)?;
+    let metadata = fs::symlink_metadata(path)
+        .await
+        .map_err(missing_or_unavailable)?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err(AvatarStorageError::InvalidState);
     }
@@ -470,7 +505,9 @@ async fn check_regular_file(path: &Path) -> Result<(), AvatarStorageError> {
 
 async fn read_metadata(path: &Path) -> Result<Option<AvatarMetadata>, AvatarStorageError> {
     match read_regular_file(path).await {
-        Ok(bytes) => serde_json::from_slice(&bytes).map(Some).map_err(|_| AvatarStorageError::InvalidState),
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|_| AvatarStorageError::InvalidState),
         Err(AvatarStorageError::Missing) => Ok(None),
         Err(error) => Err(error),
     }
@@ -521,9 +558,9 @@ fn unavailable(error: io::Error) -> AvatarStorageError {
 fn as_preparation_failure(error: AvatarStorageError) -> AvatarStorageError {
     match error {
         AvatarStorageError::Unavailable(message) => AvatarStorageError::PreparationFailed(message),
-        AvatarStorageError::InvalidState => {
-            AvatarStorageError::PreparationFailed("avatar directory or file path is invalid".to_owned())
-        }
+        AvatarStorageError::InvalidState => AvatarStorageError::PreparationFailed(
+            "avatar directory or file path is invalid".to_owned(),
+        ),
         other => other,
     }
 }

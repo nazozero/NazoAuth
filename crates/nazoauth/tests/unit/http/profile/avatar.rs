@@ -33,9 +33,9 @@ use uuid::Uuid;
 use crate::config::ConfigSource;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use nazo_identity::ports::{
-    AvatarDirectUploadPort, AvatarStagedObject, AvatarStorageError, AvatarStorageFuture, AvatarStoragePort,
-    AvatarUploadAuthorization, AvatarUploadClaim, AvatarUploadStatePort, AvatarUploadTarget,
-    GrantSummaryRepositoryPort, RepositoryError, RepositoryFuture,
+    AvatarDirectUploadPort, AvatarStagedObject, AvatarStorageError, AvatarStorageFuture,
+    AvatarStoragePort, AvatarUploadAuthorization, AvatarUploadClaim, AvatarUploadStatePort,
+    AvatarUploadTarget, GrantSummaryRepositoryPort, RepositoryError, RepositoryFuture,
 };
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
@@ -1746,14 +1746,27 @@ async fn upload_avatar_persists_versioned_file_and_metadata() {
         Some(avatar_url)
     );
     assert_eq!(
-        tokio::fs::read(avatar_user_dir(&fixture.state, user.id).join("versions").join(version).join("avatar.bin"))
-            .await
-            .unwrap(),
+        tokio::fs::read(
+            avatar_user_dir(&fixture.state, user.id)
+                .join("versions")
+                .join(version)
+                .join("avatar.bin")
+        )
+        .await
+        .unwrap(),
         png
     );
-    let meta: Value = serde_json::from_slice(&tokio::fs::read(
-        avatar_user_dir(&fixture.state, user.id).join("versions").join(version).join("meta.json"),
-    ).await.unwrap()).unwrap();
+    let meta: Value = serde_json::from_slice(
+        &tokio::fs::read(
+            avatar_user_dir(&fixture.state, user.id)
+                .join("versions")
+                .join(version)
+                .join("meta.json"),
+        )
+        .await
+        .unwrap(),
+    )
+    .unwrap();
     assert_eq!(meta["content_type"], "image/png");
     assert_eq!(meta["version"], version);
 }
@@ -1992,32 +2005,51 @@ async fn get_avatar_serves_the_committed_version_while_an_immutable_candidate_is
         return;
     };
     let suffix = Uuid::now_v7().simple().to_string();
-    let user = fixture.create_user(&suffix, Some("/auth/me/avatar?v=v1")).await;
+    let user = fixture
+        .create_user(&suffix, Some("/auth/me/avatar?v=v1"))
+        .await;
     let sid = format!("avatar-in-flight-{suffix}");
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&user, &sid).await;
     let user_dir = avatar_user_dir(&fixture.state, user.id);
     tokio::fs::create_dir_all(&user_dir).await.unwrap();
     let old_avatar = valid_png();
-    tokio::fs::write(avatar_path(&fixture.state, user.id), &old_avatar).await.unwrap();
-    tokio::fs::write(avatar_meta_path(&fixture.state, user.id),
-        r#"{"content_type":"image/png","version":"v1"}"#).await.unwrap();
+    tokio::fs::write(avatar_path(&fixture.state, user.id), &old_avatar)
+        .await
+        .unwrap();
+    tokio::fs::write(
+        avatar_meta_path(&fixture.state, user.id),
+        r#"{"content_type":"image/png","version":"v1"}"#,
+    )
+    .await
+    .unwrap();
     let storage = LocalAvatarStorage::new(user_dir.parent().unwrap().to_owned());
     let version = Uuid::now_v7().to_string();
-    let candidate = storage.begin_replace(
-        nazo_identity::UserId::new(user.id).unwrap(),
-        Some("v1"),
-        nazo_identity::AvatarObject {
-            bytes: valid_png(),
-            content_type: nazo_identity::AvatarContentType::Png,
-            version,
-        },
-    ).await.unwrap();
+    let candidate = storage
+        .begin_replace(
+            nazo_identity::UserId::new(user.id).unwrap(),
+            Some("v1"),
+            nazo_identity::AvatarObject {
+                bytes: valid_png(),
+                content_type: nazo_identity::AvatarContentType::Png,
+                version,
+            },
+        )
+        .await
+        .unwrap();
 
     let response = get_avatar(fixture.state.clone(), fixture.request(&sid, &csrf)).await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(actix_web::body::to_bytes(response.into_body()).await.unwrap(), old_avatar.as_slice());
-    assert_eq!(fixture.fresh_user(user.id).await.avatar_url.as_deref(), Some("/auth/me/avatar?v=v1"));
+    assert_eq!(
+        actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap(),
+        old_avatar.as_slice()
+    );
+    assert_eq!(
+        fixture.fresh_user(user.id).await.avatar_url.as_deref(),
+        Some("/auth/me/avatar?v=v1")
+    );
     storage.rollback(&candidate).await.unwrap();
 }
 
@@ -2256,7 +2288,8 @@ async fn delete_avatar_clears_the_database_reference_and_retains_unremovable_leg
 }
 
 #[actix_web::test]
-async fn committed_postgres_avatar_cas_followed_by_repository_error_keeps_the_selected_version_readable() {
+async fn committed_postgres_avatar_cas_followed_by_repository_error_keeps_the_selected_version_readable()
+ {
     let Some(fixture) = LiveAvatarFixture::new().await else {
         return;
     };
@@ -2275,18 +2308,32 @@ async fn committed_postgres_avatar_cas_followed_by_repository_error_keeps_the_se
         storage.clone(),
         fixture.state.settings.storage.avatar_max_bytes,
     );
-    let (status, _, _) = response_json(super::upload_avatar(
-        crate::test_support::profile_sessions(&fixture.state),
-        Data::new(crate::bootstrap::AvatarProfileService::Local(service)),
-        fixture.request(&sid, &csrf),
-        multipart_payload("commit-error-boundary", "avatar", valid_png()),
-    ).await).await;
+    let (status, _, _) = response_json(
+        super::upload_avatar(
+            crate::test_support::profile_sessions(&fixture.state),
+            Data::new(crate::bootstrap::AvatarProfileService::Local(service)),
+            fixture.request(&sid, &csrf),
+            multipart_payload("commit-error-boundary", "avatar", valid_png()),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     let fresh = fixture.fresh_user(user.id).await;
-    let version = avatar_url_version(fresh.avatar_url.as_deref().expect("real CAS committed")).unwrap();
-    let object = storage.read(nazo_identity::UserId::new(user.id).unwrap(), version).await.unwrap();
+    let version =
+        avatar_url_version(fresh.avatar_url.as_deref().expect("real CAS committed")).unwrap();
+    let object = storage
+        .read(nazo_identity::UserId::new(user.id).unwrap(), version)
+        .await
+        .unwrap();
     assert_eq!(object.bytes, valid_png());
     let response = get_avatar(fixture.state.clone(), fixture.request(&sid, &csrf)).await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(actix_web::body::to_bytes(response.into_body()).await.unwrap().as_ref(), valid_png().as_slice());
+    assert_eq!(
+        actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap()
+            .as_ref(),
+        valid_png().as_slice()
+    );
 }
