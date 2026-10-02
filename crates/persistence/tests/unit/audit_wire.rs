@@ -67,17 +67,30 @@ fn shared_encoder_matches_frozen_legacy_anchor_v2_wire_bytes() {
     // Frozen from the legacy envelope's declared field order and wire types,
     // independently of both shared sizing and encoding helpers.
     let event = SecurityAuditPendingDelivery {
-        event_id: uuid::Uuid::from_u128(0xb1), sequence: 1,
-        event_type: "test_event".to_owned(), event_category: "security".to_owned(),
+        event_id: uuid::Uuid::from_u128(0xb1),
+        sequence: 1,
+        event_type: "test_event".to_owned(),
+        event_category: "security".to_owned(),
         payload_canonical: r#"{"text":"snow 雪"}"#.to_owned(),
         occurred_at: "2026-10-01T00:00:00Z".parse().unwrap(),
-        previous_hash: vec![1;32], event_hash: vec![2;32],
+        previous_hash: vec![1; 32],
+        event_hash: vec![2; 32],
     };
     let batch = SecurityAuditBatch {
-        generation: 1, first_sequence: 1, last_sequence: 1,
-        previous_hash: vec![1;32], last_hash: vec![2;32], digest: vec![3;32],
-        attempts: 0, deliveries: vec![event],
+        generation: 1,
+        first_sequence: 1,
+        last_sequence: 1,
+        previous_hash: vec![1; 32],
+        last_hash: vec![2; 32],
+        digest: vec![3; 32],
+        attempts: 0,
+        deliveries: vec![event],
     };
     let frozen = include_bytes!("../fixtures/audit-anchor-v2-legacy-wire.json");
-    assert_eq!(security_audit_batch_body("frozen-deployment", &batch).unwrap().as_slice(), frozen);
+    assert_eq!(
+        security_audit_batch_body("frozen-deployment", &batch)
+            .unwrap()
+            .as_slice(),
+        frozen
+    );
 }
