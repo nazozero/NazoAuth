@@ -608,3 +608,7 @@ fn json_string_array(value: &serde_json::Value) -> Vec<String> {
         .map(ToOwned::to_owned)
         .collect()
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/repositories/audit.rs"]
+mod tests;

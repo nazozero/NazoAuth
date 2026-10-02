@@ -203,21 +203,15 @@ closure, worker termination and append failure return errors. Failed Required
 batches report their first error without retrying or blocking subsequent
 batches; caller cancellation never turns an unconfirmed append into success.
 Other cross-store Required intents still precede their destructive mutations.
-System tenant administrator changes and Recovery Root approval/rotation use
-registered Required administration events. These handlers retain their existing
-awaited audit writes; registration prevents unknown-event rejection and does
-not make their separate state and audit transactions atomic.
-Browser authorization decisions instead use the domain-owned
-`AuthorizationRepositoryPort::commit_decision` capability: the effective
-grant change, independent tenant-scoped consent/PAR consumption fences, and
-immutable `authorization_decision_committed` fact commit together. This
-capability is backend-neutral; an adapter must implement genuine atomic
-conditional persistence rather than concatenate independent store writes.
-Token issuance keeps its own Required audit inside its business transaction.
-After an authorization-code commit, its Consuming cache entry expires under the
-original code TTL instead of delaying the successful response with a delete.
-Both Busy and Missing replays consult the durable receipt and synchronously
-revoke an exact replay; the extra cache residency is bounded by that original TTL.
+System tenant administrator changes register Required evidence and commit the
+canonical `system_tenant_admin_updated` ledger event in the same PostgreSQL
+transaction as the target role change. Its target tenant and explicit actor
+source come from locked account facts; the HTTP adapter supplies only the
+source IP hash. Tenant-local identity events omit a cross-tenant actor, while
+the atomic ledger retains the complete actor and target attribution. The HTTP
+handler preserves the audit preflight and does not append the outcome again.
+Recovery Root approval and rotation retain their registered Required evidence
+paths; their separate transactions are not made atomic by event registration.
 
 PAR and consent are immutable preparation material. Their cache deletion is
 post-commit cleanup, not authorization or cancellation authority. Explicit
