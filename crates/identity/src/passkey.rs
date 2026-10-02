@@ -295,8 +295,8 @@ where
             return self.dummy_login_begin(account.user_id()).await;
         }
         let credentials = rows
-            .iter()
-            .map(decode_credential)
+            .into_iter()
+            .map(|row| decode_credential(row.credential))
             .collect::<Result<Vec<_>, _>>()?;
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
         let (mut challenge, state) = self
@@ -365,7 +365,7 @@ where
             .await
             .map_err(PasskeyError::State)?
             .ok_or(PasskeyError::LoginFailed)?;
-        let mut credential = decode_credential(&row)?;
+        let mut credential = decode_credential(row.credential)?;
         if i64::from(credential.counter) != row.sign_count {
             return Err(PasskeyError::State(RepositoryError::Consistency(
                 "passkey counter columns disagree".to_owned(),
@@ -429,8 +429,8 @@ where
             .await
             .map_err(PasskeyError::State)?;
         let existing_ids = rows
-            .iter()
-            .map(decode_credential)
+            .into_iter()
+            .map(|row| decode_credential(row.credential))
             .map(|result| result.map(|credential| credential.id))
             .collect::<Result<Vec<_>, _>>()?;
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
@@ -672,8 +672,8 @@ where
     }
 }
 
-fn decode_credential(row: &PasskeyCredential) -> Result<WebauthnCredential, PasskeyError> {
-    serde_json::from_value(row.credential.clone()).map_err(|_| {
+fn decode_credential(value: serde_json::Value) -> Result<WebauthnCredential, PasskeyError> {
+    serde_json::from_value(value).map_err(|_| {
         PasskeyError::State(RepositoryError::Consistency(
             "stored passkey credential is malformed".to_owned(),
         ))
@@ -702,3 +702,7 @@ fn ceremony_read_error(error: RepositoryError) -> PasskeyError {
         error => PasskeyError::CeremonyState(error),
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/passkey.rs"]
+mod tests;
