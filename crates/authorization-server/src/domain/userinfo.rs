@@ -238,6 +238,9 @@ impl ServerUserinfoOperations {
             (AccessTokenAuthScheme::DPoP, _) => {
                 Err(UserinfoError::Dpop(UserinfoDpopError::TokenNotBound))
             }
+            (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.jkt.is_some() => {
+                Err(UserinfoError::Dpop(UserinfoDpopError::MissingProof))
+            }
             (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.x5t_s256.is_some() => {
                 let expected = cnf.x5t_s256.as_deref().unwrap_or_default();
                 let actual = facts

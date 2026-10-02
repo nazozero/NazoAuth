@@ -412,3 +412,13 @@ stray proofs remain invalid. The same rules apply to deferred preparation.
 Passkey login uses the configured pending MFA session TTL until MFA is satisfied; remembered MFA and users without MFA retain the full session TTL. The login cookie and response presentation remain consistent with password login.
 
 CIBA request validity starts after the mandatory audit intent and replay reservations complete. Creation and approval or denial enforce the original authorization expiry in the state-store atomic command, independently of the longer retention TTL. Expired-state cleanup retains its existing deletion semantics.
+
+### Runtime construction and independent transitions
+
+VCI and VP availability is immutable for each constructed tenant graph. Their desired history is retained, but an absent service has Disabled actual state, no request admission or advertisement, and cannot be enabled without constructing a new graph. Unavailable children do not block their dependencies. VP drain duration is the configured transaction TTL clamped to at least 30 seconds, independent of browser session TTL.
+
+The tenant reconciler owns at most one transition future per module. A retained planning future reads joined desired and instance facts once per tick while other transitions continue, so a long stored-transaction drain does not hold up unrelated modules. Dropping the tenant worker drops all its owned planning and transition futures. Closing admission drains leases from every retained generation of that module, and SCIM remains enabled while its security-event child is draining.
+
+### Resource token presentation
+
+The shared Actix extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.

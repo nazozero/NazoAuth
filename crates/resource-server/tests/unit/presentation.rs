@@ -386,3 +386,11 @@ fn validate_presented_sender_constraint_cnf_without_jkt_or_x5t_fails() {
         Err(ResourceServerRequestError::MissingSenderConstraint)
     );
 }
+
+#[test]
+fn dpop_scheme_cannot_reuse_a_matching_mtls_only_confirmation() {
+    let token = verified_token(Some(ConfirmationClaims { jkt: None, x5t_s256: Some("certificate".to_owned()) }));
+    let proof = VerifiedSenderConstraintProof { dpop_jkt: Some("holder".to_owned()), mtls_x5t_s256: Some("certificate".to_owned()) };
+    assert_eq!(validate_presented_sender_constraint(PresentedAccessTokenScheme::Dpop, &token, &proof), Err(ResourceServerRequestError::MissingSenderConstraint));
+    assert!(validate_presented_sender_constraint(PresentedAccessTokenScheme::Bearer, &token, &proof).is_ok());
+}
