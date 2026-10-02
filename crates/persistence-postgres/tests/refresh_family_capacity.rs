@@ -22,6 +22,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 const CAP: i64 = nazo_auth::MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE;
+// Global maintenance may reclaim another test's revoked-family fixtures.
+static TERMINAL_FAMILY_TEST_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -255,9 +257,18 @@ async fn cap_grows_to_ten_then_retires_the_deterministic_oldest() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = TERMINAL_FAMILY_TEST_GATE.acquire().await.unwrap();
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let fixture = fixture(&database_url, "cap-grow").await;
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(
+        "UPDATE oauth_clients SET client_type = 'public', \
+         token_endpoint_auth_method = 'none', client_secret_hash = NULL WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(fixture.client_id)
+    .execute(&mut connection)
+    .await
+    .expect("the capacity client should become public before families exist");
 
     let mut created = Vec::new();
     for ordinal in 0..CAP {
@@ -277,6 +288,27 @@ async fn cap_grows_to_ten_then_retires_the_deterministic_oldest() {
         );
     }
 
+    // A public family's unexpired proof history is unbounded. Capacity
+    // retirement must not cascade these rows or make issuance perform an
+    // unbounded delete.
+    let seeded_proofs = sql_query(
+        "INSERT INTO oauth_refresh_spent_tokens (\
+             tenant_id, refresh_token_blake3, token_family_id, member_id, \
+             successor_member_id, spent_at, expires_at) \
+         SELECT family.tenant_id, \
+                decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 'hex'), \
+                family.token_family_id, gen_random_uuid(), family.current_member_id, \
+                CURRENT_TIMESTAMP, family.current_expires_at \
+         FROM oauth_refresh_families AS family CROSS JOIN generate_series(1, 300) \
+         WHERE family.tenant_id = $1 AND family.token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(created[0])
+    .execute(&mut connection)
+    .await
+    .expect("large unexpired public proof history should insert");
+    assert_eq!(seeded_proofs, 300);
+
     // The eleventh authorization retires exactly the oldest family.
     let (eleventh, _) = issue_family(&database_url, &fixture, tenant_id, CAP).await;
     let live = live_family_ids(
@@ -295,6 +327,31 @@ async fn cap_grows_to_ten_then_retires_the_deterministic_oldest() {
         assert!(live.contains(survivor), "newer families must survive");
     }
     assert!(live.contains(&eleventh));
+    let retained_proofs = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_spent_tokens \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(created[0])
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("retired proof count should query")
+    .count;
+    assert_eq!(
+        retained_proofs, 300,
+        "capacity eviction must leave every unexpired public proof for bounded maintenance"
+    );
+    let retired = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2 AND revoked_at IS NOT NULL",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(created[0])
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("retired family tombstone should query")
+    .count;
+    assert_eq!(retired, 1, "the eviction victim should remain as a tombstone");
 
     // A burst of further authorizations never exceeds the cap.
     for ordinal in (CAP + 1)..(CAP + 31) {
@@ -326,6 +383,204 @@ async fn cap_grows_to_ten_then_retires_the_deterministic_oldest() {
     assert_eq!(
         retired_audits, 1,
         "capacity retirement must emit exactly one Required audit event"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn public_family_retains_more_than_sixty_four_unexpired_rotation_proofs() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let tenant_id = Uuid::from_u128(1);
+    let fixture = fixture(&database_url, "public-proof-history").await;
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(
+        "UPDATE oauth_clients SET client_type = 'public', \
+         token_endpoint_auth_method = 'none', client_secret_hash = NULL WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(fixture.client_id)
+    .execute(&mut connection)
+    .await
+    .expect("client should become public before issuance");
+
+    let family_id = Uuid::now_v7();
+    let root_raw = format!("public-proof-root-{}", Uuid::now_v7());
+    let root = new_refresh(
+        &fixture,
+        tenant_id,
+        family_id,
+        root_raw,
+        None,
+        chrono::Utc::now() - chrono::Duration::seconds(1),
+    );
+    let mut previous_member = root.member_id;
+    assert_eq!(
+        TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
+            .commit_token_issuance(issuance(root).await)
+            .await
+            .expect("public root should commit"),
+        CommitTokenIssuanceResult::Committed
+    );
+
+    for generation in 0..72 {
+        let token = new_refresh(
+            &fixture,
+            tenant_id,
+            family_id,
+            format!("public-proof-{generation}-{}", Uuid::now_v7()),
+            Some(previous_member),
+            chrono::Utc::now(),
+        );
+        previous_member = token.member_id;
+        assert_eq!(
+            TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
+                .commit_token_issuance(issuance(token).await)
+                .await
+                .expect("public rotation should commit"),
+            CommitTokenIssuanceResult::Committed
+        );
+    }
+
+    let proofs = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_spent_tokens \
+         WHERE tenant_id = $1 AND token_family_id = $2 \
+           AND expires_at > CURRENT_TIMESTAMP",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(family_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("public proof count should query")
+    .count;
+    assert_eq!(
+        proofs, 72,
+        "unbound public refresh proofs must remain until their own expiry"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn required_capacity_audit_failure_rolls_back_retirement_and_issuance() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let tenant_id = Uuid::from_u128(1);
+    let fixture = fixture(&database_url, "cap-audit-rollback").await;
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let mut families = Vec::new();
+    for ordinal in 0..CAP {
+        families.push(issue_family(&database_url, &fixture, tenant_id, ordinal).await);
+    }
+
+    let pending_family_id = Uuid::now_v7();
+    let pending = issuance(new_refresh(
+        &fixture,
+        tenant_id,
+        pending_family_id,
+        format!("cap-audit-failure-{}", Uuid::now_v7()),
+        None,
+        chrono::Utc::now(),
+    ))
+    .await;
+    let issuance_id = pending.issuance_id;
+    let suffix = Uuid::now_v7().simple().to_string();
+    let function = format!("test_cap_audit_fail_{suffix}");
+    let trigger = format!("test_cap_audit_fail_trigger_{suffix}");
+    sql_query(format!(
+        r#"
+        CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            IF NEW.event_type::text = 'refresh_family_capacity_retired'
+               AND NEW.payload->>'issuance_id' = '{issuance_id}' THEN
+                RAISE EXCEPTION 'deliberate capacity audit failure';
+            END IF;
+            RETURN NEW;
+        END
+        $$
+        "#
+    ))
+    .execute(&mut connection)
+    .await
+    .expect("required audit failure trigger function should install");
+    sql_query(format!(
+        "CREATE TRIGGER {trigger} BEFORE INSERT ON security_audit_events \
+         FOR EACH ROW EXECUTE FUNCTION {function}()"
+    ))
+    .execute(&mut connection)
+    .await
+    .expect("required audit failure trigger should install");
+
+    let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
+        .commit_token_issuance(pending)
+        .await;
+    sql_query(format!("DROP TRIGGER {trigger} ON security_audit_events"))
+        .execute(&mut connection)
+        .await
+        .expect("audit failure trigger should be removed");
+    sql_query(format!("DROP FUNCTION {function}()"))
+        .execute(&mut connection)
+        .await
+        .expect("audit failure function should be removed");
+    assert!(
+        result.is_err(),
+        "a Required capacity audit failure must fail the issuance transaction"
+    );
+
+    let victim_active = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2 \
+           AND revoked_at IS NULL AND reuse_detected_at IS NULL",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(families[0].0)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("victim state should query")
+    .count;
+    assert_eq!(victim_active, 1, "failed audit must roll back victim revocation");
+    let pending_family = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(pending_family_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("pending family state should query")
+    .count;
+    assert_eq!(pending_family, 0, "failed audit must roll back new family insertion");
+    let audit_rows = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM security_audit_events \
+         WHERE payload->>'issuance_id' = $1",
+    )
+    .bind::<Text, _>(issuance_id.to_string())
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("rolled-back audit count should query")
+    .count;
+    assert_eq!(audit_rows, 0, "failed Required audit must leave no event");
+    let issuance_rows = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances \
+         WHERE issuance_id = $1",
+    )
+    .bind::<SqlUuid, _>(issuance_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("rolled-back issuance count should query")
+    .count;
+    assert_eq!(
+        issuance_rows, 0,
+        "failed Required audit must roll back issuance state too"
+    );
+    assert_eq!(
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture.user_id,
+            fixture.client_id
+        )
+        .await,
+        CAP,
+        "failed audit must preserve the original active-family cap"
     );
 }
 
@@ -453,10 +708,11 @@ async fn rotation_never_consumes_a_family_slot() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn retired_family_tokens_resolve_as_unknown_grant() {
+async fn capacity_retired_family_tokens_remain_revoked_tombstones() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = TERMINAL_FAMILY_TEST_GATE.acquire().await.unwrap();
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let fixture = fixture(&database_url, "cap-retire").await;
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
@@ -507,7 +763,7 @@ async fn retired_family_tokens_resolve_as_unknown_grant() {
         created[newest].1.clone()
     };
 
-    // The next authorization retires the oldest family outright.
+    // The next authorization revokes the oldest family and leaves its tombstone.
     issue_family(&database_url, &fixture, tenant_id, CAP).await;
     assert_eq!(
         live_family_count(
@@ -527,17 +783,18 @@ async fn retired_family_tokens_resolve_as_unknown_grant() {
             .await
             .expect("refresh lookup should succeed");
         if ordinal == 0 {
+            let retired = resolved.expect("a retired family must remain resolvable as revoked");
             assert!(
-                resolved.is_none(),
-                "a capacity-retired family's current token must resolve as unknown"
+                retired.revoked_at.is_some(),
+                "the capacity-retired current token must resolve with revoked state"
             );
         } else {
             assert!(resolved.is_some(), "surviving families still resolve");
         }
     }
-    // Retirement removes the family and spent proofs; contract reclamation
-    // belongs to maintenance. The surviving family's spent proof still
-    // resolves for replay detection.
+    // This victim has no spent proofs; its tombstone remains until bounded
+    // maintenance removes the parent. The surviving family's spent proof
+    // still resolves for replay detection.
     let retired_family = created[0].0;
     let spent_left = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_spent_tokens \
@@ -549,7 +806,7 @@ async fn retired_family_tokens_resolve_as_unknown_grant() {
     .await
     .unwrap()
     .count;
-    assert_eq!(spent_left, 0, "spent proofs cascade with the family");
+    assert_eq!(spent_left, 0, "the victim had no spent proofs to drain");
     assert!(
         repository
             .by_raw_refresh_token(tenant_id, &spent_raw)
@@ -758,6 +1015,7 @@ async fn retired_contract_is_reclaimed_after_grace_without_touching_live_referen
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = TERMINAL_FAMILY_TEST_GATE.acquire().await.unwrap();
     let tenant_id = Uuid::from_u128(1);
     let fixture = fixture(&database_url, "cap-contract-gc").await;
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
@@ -797,7 +1055,8 @@ async fn retired_contract_is_reclaimed_after_grace_without_touching_live_referen
     }
     let live_digest = sql_query(
         "SELECT contract_blake3 FROM oauth_refresh_families \
-         WHERE tenant_id = $1 AND user_id = $2 AND client_id = $3 LIMIT 1",
+         WHERE tenant_id = $1 AND user_id = $2 AND client_id = $3 \
+           AND revoked_at IS NULL LIMIT 1",
     )
     .bind::<SqlUuid, _>(tenant_id)
     .bind::<SqlUuid, _>(fixture.user_id)
@@ -826,16 +1085,19 @@ async fn retired_contract_is_reclaimed_after_grace_without_touching_live_referen
             == 1
     }
 
-    assert!(
-        !live_family_ids(
-            &mut connection,
-            tenant_id,
-            fixture.user_id,
-            fixture.client_id
-        )
-        .await
-        .contains(&retired_family),
-        "capacity retirement must still remove the family immediately"
+    let tombstone = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2 AND revoked_at IS NOT NULL",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(retired_family)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap()
+    .count;
+    assert_eq!(
+        tombstone, 1,
+        "capacity retirement leaves the parent for bounded maintenance"
     );
     assert!(
         contract_exists(&mut connection, tenant_id, &orphan_digest).await,
@@ -847,6 +1109,20 @@ async fn retired_contract_is_reclaimed_after_grace_without_touching_live_referen
         .cleanup_batch()
         .await
         .expect("fresh-contract sweep should succeed");
+    let retired_parent = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(retired_family)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap()
+    .count;
+    assert_eq!(
+        retired_parent, 0,
+        "bounded maintenance should remove the proofless terminal parent"
+    );
     assert!(
         contract_exists(&mut connection, tenant_id, &orphan_digest).await,
         "the one-hour creation grace must protect a fresh orphan"

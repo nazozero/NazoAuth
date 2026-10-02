@@ -178,9 +178,13 @@ retention after ACK is the configured audit receiver's responsibility.
 ## Family Capacity and Contract Reclamation
 
 Fresh user-bound authorizations retain at most ten active refresh families per
-`(tenant_id, user_id, client_id)`. The issuing transaction retires the oldest
-family, cascades its spent proofs and records the Required retirement audit.
-Rotation does not consume another family slot.
+`(tenant_id, user_id, client_id)`. The issuing transaction marks the oldest
+family revoked and records the Required retirement audit atomically. Rotation
+does not consume another family slot. The maintenance worker drains terminal
+families' spent proofs in batches of at most 256 proofs globally per call
+(shared with the independent proof-expiry sweep), then deletes a family only
+when no proofs remain. Capacity eviction therefore cannot cascade an
+unbounded proof set inside an issuance transaction.
 
 Contract payloads are immutable and may be shared by surviving families.
 Capacity retirement leaves their reclamation to the maintenance worker:

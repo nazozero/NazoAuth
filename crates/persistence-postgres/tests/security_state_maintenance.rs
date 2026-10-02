@@ -2,9 +2,9 @@
 //!
 //! One `cleanup_batch` performs at most 256 row modifications per category.
 //! Refresh reclaim works on `(tenant_id, token_family_id)` authorities under
-//! the shared family advisory key: expired spent proofs delete on their own
-//! `expires_at`, a fully expired family row deletes under a try-lock (a writer
-//! holding the lock skips it for the batch), and orphan contracts leave after
+//! the exclusive family advisory try-lock: spent proofs delete at their own
+//! expiry or drain under one global budget for revoked/expired families, and a
+//! parent row leaves only after its proofs are gone. Orphan contracts leave after
 //! a grace period once the last family reference is gone — never touching a
 //! family that still has an unexpired current member or a same-named family
 //! in another tenant. OpenID4VP reads are pure selects; the global
@@ -253,18 +253,20 @@ async fn insert_refresh_leaf_in_tenant(
     id
 }
 
-/// Clears expired refresh state the same way the production sweeps do: spent
-/// proofs at their own expiry, expired families (proofs cascade), then orphan
-/// contracts.
+/// Clears stale refresh state left by other tests so each fixture starts
+/// clean. This setup helper intentionally does not mirror production batching.
 async fn clear_expired_tokens(connection: &mut AsyncPgConnection) {
     sql_query("DELETE FROM oauth_refresh_spent_tokens WHERE expires_at <= CURRENT_TIMESTAMP")
         .execute(connection)
         .await
         .expect("expired spent proofs should clear");
-    sql_query("DELETE FROM oauth_refresh_families WHERE current_expires_at <= CURRENT_TIMESTAMP")
-        .execute(connection)
-        .await
-        .expect("expired families should clear");
+    sql_query(
+        "DELETE FROM oauth_refresh_families \
+         WHERE current_expires_at <= CURRENT_TIMESTAMP OR revoked_at IS NOT NULL",
+    )
+    .execute(connection)
+    .await
+    .expect("terminal families should clear");
     sql_query(
         "DELETE FROM oauth_refresh_contracts AS c WHERE NOT EXISTS (\
              SELECT 1 FROM oauth_refresh_families AS f \
@@ -273,6 +275,19 @@ async fn clear_expired_tokens(connection: &mut AsyncPgConnection) {
     .execute(connection)
     .await
     .expect("orphan contracts should clear");
+}
+
+async fn spent_proof_count(connection: &mut AsyncPgConnection, family_id: Uuid) -> i64 {
+    sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_spent_tokens \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(family_id)
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("spent proof count should query")
+    .count
 }
 
 /// Family extent = its family row plus surviving spent proofs.
@@ -509,9 +524,223 @@ async fn three_generation_family_reclaims_whole_chain_in_one_batch() {
     assert_eq!(
         family_row_count(&mut connection, family_id).await,
         0,
-        "deleting the family cascades its spent proofs — the whole chain \
-         leaves in one batch"
+        "the expired proofs and parent must leave in the same bounded batch"
     );
+    assert_eq!(
+        result.spent_refresh_proofs, 2,
+        "both spent proofs must be explicitly counted before parent deletion"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_refresh_proofs_drain_with_one_global_budget_before_parent_delete() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+
+    let first_family = Uuid::now_v7();
+    let second_family = Uuid::now_v7();
+    for family_id in [first_family, second_family] {
+        let head = insert_refresh_leaf(
+            &mut connection,
+            &fixture,
+            family_id,
+            None,
+            Utc::now() + Duration::hours(1),
+        )
+        .await;
+        sql_query(
+            "INSERT INTO oauth_refresh_spent_tokens (\
+                 tenant_id, refresh_token_blake3, token_family_id, member_id, \
+                 successor_member_id, spent_at, expires_at) \
+             SELECT $1, \
+                    decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 'hex'), \
+                    $2, gen_random_uuid(), $3, \
+                    CASE WHEN ordinal <= 10 THEN CURRENT_TIMESTAMP - INTERVAL '2 minutes' \
+                         ELSE CURRENT_TIMESTAMP END, \
+                    CASE WHEN ordinal <= 10 THEN CURRENT_TIMESTAMP - INTERVAL '1 minute' \
+                         ELSE $4 END \
+             FROM generate_series(1, 310) AS ordinal",
+        )
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(family_id)
+        .bind::<SqlUuid, _>(head)
+        .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+        .execute(&mut connection)
+        .await
+        .expect("mixed expired and unexpired terminal proofs should insert");
+        sql_query(
+            "UPDATE oauth_refresh_families SET revoked_at = CURRENT_TIMESTAMP \
+             WHERE tenant_id = $1 AND token_family_id = $2",
+        )
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(family_id)
+        .execute(&mut connection)
+        .await
+        .expect("family should become terminal");
+    }
+
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let families = [first_family, second_family];
+    // Both sweeps must share one allowance: 20 expired and 600 live proofs.
+    for (round, expected_deleted) in [256_u64, 256, 108].into_iter().enumerate() {
+        let result = maintenance
+            .cleanup_batch()
+            .await
+            .expect("terminal-family cleanup should succeed");
+        assert_eq!(
+            result.spent_refresh_proofs, expected_deleted,
+            "round {round} must use one global proof budget across both families"
+        );
+        if round < 2 {
+            assert!(
+                result.saturated,
+                "saturation must report terminal proof backlog through round {round}"
+            );
+        }
+        for family_id in families {
+            let proofs = spent_proof_count(&mut connection, family_id).await;
+            assert_eq!(
+                family_row_count(&mut connection, family_id).await,
+                proofs + if proofs > 0 { 1 } else { 0 },
+                "a parent must remain while proofs exist and leave immediately after the last proof"
+            );
+        }
+    }
+    assert_eq!(spent_proof_count(&mut connection, first_family).await, 0);
+    assert_eq!(spent_proof_count(&mut connection, second_family).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_public_family_keeps_more_than_sixty_four_unexpired_proofs() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    sql_query(
+        "UPDATE oauth_clients SET client_type = 'public', \
+         token_endpoint_auth_method = 'none', client_secret_hash = NULL WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(fixture.client_id)
+    .execute(&mut connection)
+    .await
+    .expect("client should become public before family creation");
+
+    let family_id = Uuid::now_v7();
+    let head = insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        None,
+        Utc::now() + Duration::hours(1),
+    )
+    .await;
+    sql_query(
+        "INSERT INTO oauth_refresh_spent_tokens (\
+             tenant_id, refresh_token_blake3, token_family_id, member_id, \
+             successor_member_id, spent_at, expires_at) \
+         SELECT $1, \
+                decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 'hex'), \
+                $2, gen_random_uuid(), $3, CURRENT_TIMESTAMP, $4 \
+         FROM generate_series(1, 80)",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(family_id)
+    .bind::<SqlUuid, _>(head)
+    .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+    .execute(&mut connection)
+    .await
+    .expect("public proof history should insert");
+
+    SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap())
+        .cleanup_batch()
+        .await
+        .expect("maintenance should leave live public proofs alone");
+    assert_eq!(
+        spent_proof_count(&mut connection, family_id).await,
+        80,
+        "live unexpired public proof history has no generation-count cap"
+    );
+    assert_eq!(
+        family_row_count(&mut connection, family_id).await,
+        81,
+        "the live family and all 80 proofs should survive"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn preserve_shared_family_lock_skips_terminal_cleanup() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    let family_id = Uuid::now_v7();
+    let head = insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        None,
+        Utc::now() + Duration::hours(1),
+    )
+    .await;
+    sql_query(
+        "INSERT INTO oauth_refresh_spent_tokens (\
+             tenant_id, refresh_token_blake3, token_family_id, member_id, \
+             successor_member_id, spent_at, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6)",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<sql_types::Binary, _>(blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec())
+    .bind::<SqlUuid, _>(family_id)
+    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(head)
+    .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+    .execute(&mut connection)
+    .await
+    .expect("terminal proof should insert");
+    sql_query(
+        "UPDATE oauth_refresh_families SET revoked_at = CURRENT_TIMESTAMP \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(family_id)
+    .execute(&mut connection)
+    .await
+    .expect("family should become terminal");
+
+    let mut preserve_existing = AsyncPgConnection::establish(&database_url).await.unwrap();
+    preserve_existing.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT pg_advisory_xact_lock_shared($1)")
+        .bind::<BigInt, _>(family_lock_key(family_id))
+        .execute(&mut preserve_existing)
+        .await
+        .expect("PreserveExisting shared family lock should be held");
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        maintenance.cleanup_batch(),
+    )
+    .await
+    .expect("exclusive try-lock must not wait for PreserveExisting")
+    .expect("cleanup should succeed while the shared lock is held");
+    assert_eq!(family_row_count(&mut connection, family_id).await, 2);
+    assert_eq!(spent_proof_count(&mut connection, family_id).await, 1);
+    preserve_existing.batch_execute("COMMIT").await.unwrap();
+
+    maintenance
+        .cleanup_batch()
+        .await
+        .expect("terminal family should drain after shared lock releases");
+    assert_eq!(family_row_count(&mut connection, family_id).await, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1492,9 +1721,8 @@ async fn reclaim_scopes_family_authority_to_tenant() {
     );
 }
 
-/// The spent-proof sweep is bounded at 256 rows per batch; an expired family
-/// takes its remaining proofs down by cascade in the same batch. Both sweeps
-/// must converge without stalling.
+/// Expired proofs and terminal-family proofs share one 256-row budget; a
+/// parent waits until its proofs have drained in bounded batches.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn large_family_reclaim_stays_bounded_per_batch() {
     let Some(database_url) = database_url() else {
@@ -1540,8 +1768,8 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
     .await
     .expect("large spent fixture should insert");
 
-    // An expired family with 1,000 expired spent proofs: the family delete
-    // cascades them in one batch.
+    // An expired family with 1,000 expired spent proofs: they must be counted
+    // as explicit bounded proof deletes before the parent can be removed.
     let dead_head = insert_refresh_leaf_in_tenant(
         &mut connection,
         &fixture,
@@ -1593,9 +1821,9 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
         assert!(round < 63, "refresh-state reclaim must converge, not stall");
     }
     assert_eq!(
-        spent_total, 10_000,
-        "the dead family's proofs left by cascade are not double-counted; \
-         only the live family's sweep drains through the bounded cursor"
+        spent_total, 11_000,
+        "every expired proof must be counted by the bounded sweeps, including \
+         proofs belonging to a terminal family"
     );
     assert_eq!(
         family_row_count(&mut connection, dead_family).await,

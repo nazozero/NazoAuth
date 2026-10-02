@@ -1615,6 +1615,83 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grant_revoke_skips_already_revoked_family_lock() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::from_u128(1);
+    let family_id = Uuid::now_v7();
+    let root_raw = format!("grant-revoke-tombstone-{}", Uuid::now_v7());
+    assert_eq!(
+        TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
+            .commit_token_issuance(
+                refresh_issuance(refresh_token_fixture(
+                    &fixture,
+                    tenant_id,
+                    family_id,
+                    root_raw,
+                    None,
+                ))
+                .await
+            )
+            .await
+            .expect("refresh family should persist"),
+        CommitTokenIssuanceResult::Committed
+    );
+    let grants = GrantRepository::new(create_pool(&database_url, 4).unwrap());
+    grants
+        .upsert(
+            tenant_id,
+            fixture.user_id,
+            fixture.client_id,
+            &["openid".to_owned(), "offline_access".to_owned()],
+            &[],
+            &json!([]),
+        )
+        .await
+        .expect("grant should insert");
+    let mut coordinator = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(
+        "UPDATE oauth_refresh_families SET revoked_at = CURRENT_TIMESTAMP \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(family_id)
+    .execute(&mut coordinator)
+    .await
+    .expect("family should become a revoked tombstone");
+
+    coordinator.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT pg_advisory_xact_lock($1)")
+        .bind::<BigInt, _>(family_lock_key(family_id))
+        .execute(&mut coordinator)
+        .await
+        .expect("coordinator should hold tombstone family lock");
+    let user_id = fixture.user_id;
+    let client_public_id = fixture.client_public_id.clone();
+    let repository = GrantRepository::new(create_pool(&database_url, 1).unwrap());
+    let mut revoke = tokio::spawn(async move {
+        repository
+            .revoke_by_client_id(tenant_id, user_id, &client_public_id)
+            .await
+    });
+    let result = tokio::time::timeout(std::time::Duration::from_secs(3), &mut revoke).await;
+    if result.is_err() {
+        coordinator.batch_execute("ROLLBACK").await.unwrap();
+        let _ = revoke.await;
+        panic!("grant revocation must not lock an already-revoked family tombstone");
+    }
+    let revoked = result
+        .unwrap()
+        .expect("grant-revoke task should join")
+        .expect("grant revocation should commit while tombstone lock is held");
+    coordinator.batch_execute("ROLLBACK").await.unwrap();
+    assert_eq!(revoked.revoked_refresh_tokens, 0);
+    assert_eq!(revoked.removed_grants, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_family() {
     let Some(database_url) = database_url() else {
         return;
