@@ -9,7 +9,7 @@ use super::common::{AvatarStorageFuture, RepositoryFuture};
 /// Persistence boundary for compare-and-set avatar metadata updates.
 ///
 /// The expected URL is part of the write contract so a stale upload/delete
-/// cannot overwrite a newer request after its file mutation has completed.
+/// cannot overwrite a newer request after its storage preparation has completed.
 pub trait AvatarRepositoryPort: Send + Sync {
     fn compare_and_set_avatar<'a>(
         &'a self,
@@ -175,6 +175,11 @@ pub trait AvatarDirectUploadPort: Send + Sync {
 
 impl std::error::Error for AvatarStorageError {}
 
+/// Local preparation creates a uniquely owned immutable candidate without
+/// changing the version selected by the database. commit is called only after
+/// affirmative CAS success; rollback only after a confirmed CAS miss. Repository
+/// errors, cancellation and unknown outcomes retain the candidate. Implementations
+/// must not depend on asynchronous Drop compensation for reference safety.
 pub trait AvatarStoragePort: Send + Sync {
     type Mutation: Send + Sync;
 

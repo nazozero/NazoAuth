@@ -577,13 +577,12 @@ where
         let updated = match updated {
             Ok(Some(updated)) => updated,
             Ok(None) => {
-                rollback_after_failed_write(&self.storage, &mutation).await;
+                rollback_after_cas_miss(&self.storage, &mutation).await;
                 return Err(UploadAvatarError::ConcurrentChange);
             }
-            Err(error) => {
-                rollback_after_failed_write(&self.storage, &mutation).await;
-                return Err(UploadAvatarError::Repository(error));
-            }
+            // An error may follow a committed CAS. Retain the candidate;
+            // only a confirmed miss proves it is unreferenced.
+            Err(error) => return Err(UploadAvatarError::Repository(error)),
         };
         self.storage
             .commit(&mutation)
@@ -636,13 +635,10 @@ where
         let updated = match updated {
             Ok(Some(updated)) => updated,
             Ok(None) => {
-                rollback_after_failed_write(&self.storage, &mutation).await;
+                rollback_after_cas_miss(&self.storage, &mutation).await;
                 return Err(DeleteAvatarError::ConcurrentChange);
             }
-            Err(error) => {
-                rollback_after_failed_write(&self.storage, &mutation).await;
-                return Err(DeleteAvatarError::Repository(error));
-            }
+            Err(error) => return Err(DeleteAvatarError::Repository(error)),
         };
         self.storage
             .commit(&mutation)
@@ -689,9 +685,9 @@ fn map_delete_storage_error(error: AvatarStorageError) -> DeleteAvatarError {
     }
 }
 
-async fn rollback_after_failed_write<S: AvatarStoragePort>(storage: &S, mutation: &S::Mutation) {
-    // Persistence failure is already the primary operation error. Adapters retain
-    // backup material when rollback cannot complete, allowing operator recovery.
+async fn rollback_after_cas_miss<S: AvatarStoragePort>(storage: &S, mutation: &S::Mutation) {
+    // Only a confirmed CAS miss permits removal of this request's unique
+    // local candidate. Cleanup failure leaves an unreferenced orphan.
     let _rollback_result = storage.rollback(mutation).await;
 }
 
