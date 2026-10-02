@@ -42,3 +42,10 @@ Ceremony state is stored only in Valkey with a five-minute TTL and is consumed w
 
 Successful passkey login creates the normal HTTPOnly server-side session with
 `amr=["passkey"]`.
+
+## Credential Persistence
+
+Credential JSONB uses the existing WebAuthn Serde implementation. Identity
+consumes the credential Value from its owned repository row when decoding,
+avoiding a copy of the JSON tree. The persisted shape, malformed-record
+consistency error, tenant/user binding and sign-counter checks are unchanged.
