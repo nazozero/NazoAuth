@@ -43,19 +43,31 @@ pub struct TokenRepository {
 /// rather than revoking a newly issued token set a second time.
 pub use nazo_persistence::RecoveryInvalidation;
 
+enum RecoveryInvalidationFailure {
+    Query(diesel::result::Error),
+    Conflict,
+    UnsupportedCoverage,
+}
+
+impl From<diesel::result::Error> for RecoveryInvalidationFailure {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Query(error)
+    }
+}
+
 impl TokenRepository {
     #[must_use]
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 
-    /// Atomically revoke every active refresh token in the restored tenant
-    /// database and publish the one durable ingress-reopen boundary.
+    /// Atomically revoke every unrevoked refresh family in the restored database.
+    /// Ingress and old writers must remain stopped until the returned boundary;
+    /// this transaction does not fence later family insertion.
     pub async fn invalidate_after_restore(
         &self,
         operation_id: Uuid,
         request_hash: &str,
-        tenant_id: Uuid,
         state_epoch: Uuid,
         not_before: DateTime<Utc>,
         completed_at: DateTime<Utc>,
@@ -70,9 +82,11 @@ impl TokenRepository {
                 "recovery request hash must be lowercase sha256 hex".to_owned(),
             ));
         }
+        // Keep the existing system namespace and advisory key shared with old writers.
+        let tenant_id = nazo_identity::TenantContext::default_system().tenant_id.as_uuid();
         let mut connection = self.connection().await?;
         connection
-            .transaction::<RecoveryInvalidation, diesel::result::Error, _>(async |connection| {
+            .transaction::<RecoveryInvalidation, RecoveryInvalidationFailure, _>(async |connection| {
                 lock_recovery_invalidation_scope(connection, tenant_id).await?;
                 if let Some((
                     stored_hash,
@@ -80,6 +94,7 @@ impl TokenRepository {
                     stored_epoch,
                     stored_not_before,
                     stored_count,
+                    coverage_version,
                 )) = recovery_invalidations::table
                     .filter(recovery_invalidations::operation_id.eq(operation_id))
                     .select((
@@ -88,8 +103,9 @@ impl TokenRepository {
                         recovery_invalidations::state_epoch,
                         recovery_invalidations::not_before,
                         recovery_invalidations::revoked_refresh_tokens,
+                        recovery_invalidations::coverage_version,
                     ))
-                    .first::<(String, Uuid, Uuid, DateTime<Utc>, i64)>(connection)
+                    .first::<(String, Uuid, Uuid, DateTime<Utc>, i64, i16)>(connection)
                     .await
                     .optional()?
                 {
@@ -97,7 +113,10 @@ impl TokenRepository {
                         || stored_tenant != tenant_id
                         || stored_epoch != state_epoch
                     {
-                        return Err(diesel::result::Error::RollbackTransaction);
+                        return Err(RecoveryInvalidationFailure::Conflict);
+                    }
+                    if coverage_version != 1 {
+                        return Err(RecoveryInvalidationFailure::UnsupportedCoverage);
                     }
                     return Ok(RecoveryInvalidation {
                         state_epoch: stored_epoch,
@@ -114,12 +133,10 @@ impl TokenRepository {
                     .optional()?
                     .is_some()
                 {
-                    return Err(diesel::result::Error::RollbackTransaction);
+                    return Err(RecoveryInvalidationFailure::Conflict);
                 }
                 let revoked = diesel::update(
-                    oauth_refresh_families::table
-                        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-                        .filter(oauth_refresh_families::revoked_at.is_null()),
+                    oauth_refresh_families::table.filter(oauth_refresh_families::revoked_at.is_null()),
                 )
                 .set(oauth_refresh_families::revoked_at.eq(completed_at))
                 .execute(connection)
@@ -133,6 +150,7 @@ impl TokenRepository {
                         recovery_invalidations::not_before.eq(not_before),
                         recovery_invalidations::revoked_refresh_tokens.eq(revoked as i64),
                         recovery_invalidations::completed_at.eq(completed_at),
+                        recovery_invalidations::coverage_version.eq(1_i16),
                     ))
                     .execute(connection)
                     .await?;
@@ -143,12 +161,12 @@ impl TokenRepository {
                 })
             })
             .await
-            .map_err(|error| {
-                if matches!(error, diesel::result::Error::RollbackTransaction) {
-                    RepositoryError::Conflict
-                } else {
-                    map_error(error)
-                }
+            .map_err(|error| match error {
+                RecoveryInvalidationFailure::Conflict => RepositoryError::Conflict,
+                RecoveryInvalidationFailure::UnsupportedCoverage => RepositoryError::Consistency(
+                    "recovery receipt has unsupported coverage; a new signed operation and epoch are required".to_owned(),
+                ),
+                RecoveryInvalidationFailure::Query(error) => map_error(error),
             })
     }
 
@@ -383,7 +401,6 @@ impl nazo_persistence::RecoveryInvalidationStore for TokenRepository {
         &'a self,
         operation_id: Uuid,
         request_hash: &'a str,
-        tenant_id: Uuid,
         state_epoch: Uuid,
         not_before: DateTime<Utc>,
         completed_at: DateTime<Utc>,
@@ -393,7 +410,6 @@ impl nazo_persistence::RecoveryInvalidationStore for TokenRepository {
                 self,
                 operation_id,
                 request_hash,
-                tenant_id,
                 state_epoch,
                 not_before,
                 completed_at,

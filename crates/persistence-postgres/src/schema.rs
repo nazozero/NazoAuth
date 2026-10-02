@@ -455,6 +455,7 @@ diesel::table! {
         not_before -> Timestamptz,
         revoked_refresh_tokens -> Int8,
         completed_at -> Timestamptz,
+        coverage_version -> Int2,
     }
 }
 

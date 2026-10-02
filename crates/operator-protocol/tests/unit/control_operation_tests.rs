@@ -535,7 +535,7 @@ fn tenant_resource_payloads_are_bounded_typed_and_unique() {
 }
 
 #[test]
-fn recovery_invalidation_has_one_runtime_owned_tenant_and_strict_epoch_shape() {
+fn recovery_invalidation_has_deployment_authority_and_strict_epoch_shape() {
     let epoch = "019c8ca2-30a6-7000-8000-000000000099";
     let payload = ControlOperationPayload::RecoveryInvalidate {
         state_epoch: epoch.to_owned(),

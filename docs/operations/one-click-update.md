@@ -164,12 +164,20 @@ requests through a process-owned target-local transport. The transport accepts o
 Cookie or CSRF header, and never exposes the candidate through public ingress.
 
 The recovered controller signs `RecoveryInvalidate` with the new UUIDv7 Valkey
-state epoch. NazoAuth revokes refresh tokens and returns an absolute
+state epoch. NazoAuth revokes unrevoked refresh families across every restored
+tenant, including disabled tenants and client-subject families, and returns an absolute
 `not_before` deadline covering the maximum access/ID token TTL plus skew. Both
 the controller and target host enforce the deadline while the original runtime
 remains stopped. Only then does the target replace and start the original
 runtime from the restored artifact/config/data and remove the exact candidate.
 Any failure remains fail-closed and resumes from the persisted phase.
+Ingress must stay closed and all old writers must be drained: the global UPDATE
+cannot prevent later inserts. New receipts and successful local journal records
+carry recovery coverage version 1. Exact covered retries return the original
+count and deadline without revoking new families. Historical partial receipts
+or successful journals without that marker cannot report deployment-wide
+success. Repair requires a new signed operation and new state epoch; the same
+operation id never triggers an automatic global rescan.
 
 After an irreversible migration, `rollback` is rejected. Resume only through
 the persisted `recover` transaction and its verified snapshot; do not restart a
