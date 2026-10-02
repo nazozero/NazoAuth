@@ -138,8 +138,11 @@ async fn ciba_precommit_dependency_failure_is_retryable_and_sender_keys_share_on
             crate::http::authorization::test_support::test_security_audit(),
         )
         .await;
-        assert_eq!(failed.status(), StatusCode::INTERNAL_SERVER_ERROR,
-            "expected signing dependency failure");
+        assert_eq!(
+            failed.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "expected signing dependency failure"
+        );
         let service = ServerCibaService::new(Arc::new(CibaStore::new(&state.valkey_connection())));
         assert_eq!(
             ServerCibaService::load(&service, &id)
