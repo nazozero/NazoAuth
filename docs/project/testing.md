@@ -203,3 +203,23 @@ and reject fixable HIGH/CRITICAL vulnerabilities before reuse or publication.
 Runtime descendants are rebuilt as well so an imported cached final stage cannot
 retain the former package layer. CI logs the installed versions of the affected
 packages from the final image before scanning its exported archive.
+
+## Avatar focused regressions
+
+Local storage definitions in `crates/nazoauth/tests/unit/adapters/avatar_files.rs`
+exercise immutable preparation, unique CAS loser cleanup, repository errors
+before/after a committed reference, cancellation at each observed I/O suspension
+and either side of CAS, deletion ordering, restart/legacy fallback, tenant/user
+isolation, partial versions, unsafe paths and best-effort retirement. Their
+fixtures live in `tests/support/local_avatar.rs`. The profile HTTP suite also
+wraps the real PostgreSQL CAS with an error after commit and checks that the
+selected image remains readable. Run it with the existing isolated PG/Valkey
+fixture settings; an unconfigured fixture is not execution evidence.
+
+Identity Avatar regressions retain Publishing retry ETag/hash/decoder checks,
+count the initial Pending staged read, verify the single hash and byte-drop
+source contract, reject failed candidate recording before publication and
+preserve shared direct candidates after CAS miss/error. The object-store
+`s3_read_final` integration target records signed HTTP methods and tests one
+GET/no HEAD, MIME/body binding, missing MIME, error mappings and unsafe IDs
+without I/O. Existing staged-read and publication regressions remain applicable.

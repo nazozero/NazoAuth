@@ -284,6 +284,7 @@ struct ScriptedDirectStorage {
     read_staged_calls: Arc<AtomicUsize>,
     published_content_types: Arc<Mutex<Vec<AvatarContentType>>>,
     delete_staging_calls: Arc<AtomicUsize>,
+    delete_final_calls: Arc<AtomicUsize>,
 }
 
 impl Default for ScriptedDirectStorage {
@@ -310,6 +311,7 @@ impl Default for ScriptedDirectStorage {
             read_staged_calls: Arc::new(AtomicUsize::new(0)),
             published_content_types: Arc::new(Mutex::new(Vec::new())),
             delete_staging_calls: Arc::new(AtomicUsize::new(0)),
+            delete_final_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -363,6 +365,7 @@ impl AvatarDirectUploadPort for ScriptedDirectStorage {
     }
 
     fn delete_final<'a>(&'a self, _final_object_id: &'a str) -> AvatarStorageFuture<'a, ()> {
+        self.delete_final_calls.fetch_add(1, Ordering::Relaxed);
         let result = self.delete_final.clone();
         Box::pin(async move { result })
     }
@@ -1392,5 +1395,25 @@ async fn pending_reads_once_and_keeps_validated_mime_while_candidate_failures_ne
                 assert_eq!(publishes.load(Ordering::Relaxed), 0);
             }
         }
+    }
+}
+
+#[tokio::test]
+async fn direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes() {
+    let account = direct_account();
+    for outcome in [
+        AvatarRepositoryResult::Conflict,
+        AvatarRepositoryResult::Error(RepositoryError::Unavailable),
+    ] {
+        let storage = ScriptedDirectStorage::default();
+        let deleted = Arc::clone(&storage.delete_final_calls);
+        let published = Arc::clone(&storage.publish_calls);
+        let state = ScriptedDirectState::pending(upload_authorization(
+            &account, chrono::Utc::now() + chrono::Duration::minutes(5),
+        ));
+        let service = scripted_direct_service(&account, storage, state, Ok(0), outcome);
+        assert!(service.complete_upload(&account, "upload-scripted").await.is_err());
+        assert_eq!(published.load(Ordering::Relaxed), 1);
+        assert_eq!(deleted.load(Ordering::Relaxed), 0);
     }
 }
