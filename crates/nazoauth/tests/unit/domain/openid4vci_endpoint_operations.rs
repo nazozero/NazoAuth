@@ -236,7 +236,17 @@ async fn operations_with_overrides(
     store_override: Option<Arc<dyn nazo_persistence::Openid4vciStore>>,
     token_repository: Option<Arc<dyn nazo_auth::TokenRepositoryPort>>,
 ) -> IssuerFixture {
-    operations_with_proof_validator(pool, valkey_connection, enabled, configurations, deferred_configurations, store_override, token_repository, None).await
+    operations_with_proof_validator(
+        pool,
+        valkey_connection,
+        enabled,
+        configurations,
+        deferred_configurations,
+        store_override,
+        token_repository,
+        None,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -280,7 +290,10 @@ async fn operations_with_proof_validator(
     let runtime =
         runtime_module_registry_with_modules_for_test(pool.clone(), &settings, active_modules)
             .expect("runtime module fixture should build");
-    let proof_validator = proof_override.unwrap_or_else(|| Openid4vcProofValidator::new(json!({ "keys": [] })).expect("proof validator fixture should build"));
+    let proof_validator = proof_override.unwrap_or_else(|| {
+        Openid4vcProofValidator::new(json!({ "keys": [] }))
+            .expect("proof validator fixture should build")
+    });
     let crypto = fixture_crypto().await;
     let store: Arc<dyn nazo_persistence::Openid4vciStore> = store_override.unwrap_or_else(|| {
         Arc::new(nazo_postgres::Openid4vciRepository::new(
@@ -497,7 +510,15 @@ impl LiveEndpointFixture {
         store_override: Option<Arc<dyn nazo_persistence::Openid4vciStore>>,
         token_repository: Option<Arc<dyn TokenRepositoryPort>>,
     ) -> Option<Self> {
-        Self::new_with_configuration(configuration_id, deferred, store_override, token_repository, None, None).await
+        Self::new_with_configuration(
+            configuration_id,
+            deferred,
+            store_override,
+            token_repository,
+            None,
+            None,
+        )
+        .await
     }
 
     async fn new_with_configuration(

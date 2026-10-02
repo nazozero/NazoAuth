@@ -88,6 +88,7 @@ pub struct PasskeyServiceConfig {
     pub strict_base64: bool,
     pub ceremony_ttl_seconds: u64,
     pub session_ttl_seconds: u64,
+    pub pending_mfa_session_ttl_seconds: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -592,11 +593,17 @@ where
             amr.push("remembered_mfa".to_owned());
             amr.push("mfa".to_owned());
         }
+        let pending_mfa = account.account.mfa_enabled && !remembered;
+        let ttl_seconds = if pending_mfa {
+            self.config.pending_mfa_session_ttl_seconds
+        } else {
+            self.config.session_ttl_seconds
+        };
         let session = SessionRecord::new(
             account.user_id(),
             now.timestamp(),
             amr,
-            account.account.mfa_enabled && !remembered,
+            pending_mfa,
             Some(random_urlsafe_token()),
         );
         let session_id = random_urlsafe_token();
@@ -607,7 +614,7 @@ where
                 previous_session_id.as_deref(),
                 &session_id,
                 &session,
-                self.config.session_ttl_seconds,
+                ttl_seconds,
             )
             .await
             .map_err(PasskeyError::Session)?

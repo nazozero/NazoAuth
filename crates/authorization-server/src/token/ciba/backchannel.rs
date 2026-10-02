@@ -32,7 +32,7 @@ use crate::{
 use chrono::Utc;
 use http::StatusCode;
 use nazo_auth::{
-    CibaCreateFailure, CibaPingNotification, CibaPingNotificationStatus, CibaRequestState,
+    CibaPingNotification, CibaPingNotificationStatus, CibaRequestState,
     CibaStatus, ClientAuthenticationContext, PresentedClientCredentials, ciba_retention_deadline,
     unverified_client_assertion_client_id,
 };
@@ -43,13 +43,6 @@ pub struct PreparedCibaClient {
     credentials: PresentedClientCredentials,
     client: ClientRow,
     secret_salt: Option<String>,
-}
-enum GuardedCibaCreation {
-    Created(String),
-    ClientAuthentication(TokenManagementClientAuthError),
-    RequestObjectReplay,
-    RequestObjectStore,
-    State(CibaCreateFailure),
 }
 
 impl CibaApplication {
@@ -272,6 +265,49 @@ impl CibaApplication {
             }
             None => None,
         };
+        if let Err(error) = security_audit.ensure_transactional_ready().await {
+            tracing::error!(%error, "CIBA authorization-start audit preflight failed");
+            return Err(OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA audit storage unavailable.",
+            ));
+        }
+        if let Err(error) = security_audit
+            .record_required(
+                "ciba_authorization_intent",
+                audit_fields(&[
+                    ("client_id", json!(client.client_id)),
+                    ("user_id", json!(user.id())),
+                    ("scope", json!(scopes.join(" "))),
+                    ("audience", json!([config.default_audience.as_str()])),
+                    ("source_ip_hash", json!(blake3_hex(source_ip))),
+                ]),
+            )
+            .await
+        {
+            tracing::error!(%error, "CIBA authorization-start audit intent failed");
+            return Err(OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA authorization audit unavailable.",
+            ));
+        }
+        consume_token_management_client_assertion_with_authorization_service(
+            authorization_service, &client, assertion.as_ref(), security_audit,
+        ).await.map_err(token_management_auth_error)?;
+        if let Some(replay) = request_object_replay {
+            match authorization_service.consume_ciba_request_object(
+                &client.client_id, &replay.jti, replay.ttl_seconds,
+            ).await {
+                Ok(true) => {}
+                Ok(false) => return Err(ciba_invalid_request("CIBA request object has already been used.")),
+                Err(error) => {
+                    tracing::warn!(%error, "failed to persist CIBA request object replay state");
+                    return Err(OAuthEndpointError::json(StatusCode::SERVICE_UNAVAILABLE, "server_error", "CIBA failed."));
+                }
+            }
+        }
         let now = Utc::now().timestamp();
         let expires_at = now.saturating_add(expires_in.min(i64::MAX as u64) as i64);
         let state_payload = CibaRequestState {
@@ -304,105 +340,16 @@ impl CibaApplication {
                 None
             },
         };
-        if let Err(error) = security_audit.ensure_transactional_ready().await {
-            tracing::error!(%error, "CIBA authorization-start audit preflight failed");
-            return Err(OAuthEndpointError::json(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "CIBA audit storage unavailable.",
-            ));
-        }
-        if let Err(error) = security_audit
-            .record_required(
-                "ciba_authorization_intent",
-                audit_fields(&[
-                    ("client_id", json!(state_payload.client_id)),
-                    ("user_id", json!(state_payload.user_id)),
-                    ("scope", json!(state_payload.scopes.join(" "))),
-                    ("audience", json!(state_payload.audiences)),
-                    ("source_ip_hash", json!(blake3_hex(source_ip))),
-                ]),
-            )
-            .await
-        {
-            tracing::error!(%error, "CIBA authorization-start audit intent failed");
-            return Err(OAuthEndpointError::json(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "CIBA authorization audit unavailable.",
-            ));
-        }
-        let audit_state = state_payload.clone();
-        let client_id = client.client_id.clone();
-        let client_for_creation = client.clone();
-        let authorization_service_for_creation = authorization_service.clone();
-        let ciba_service_for_creation = ciba_service.clone();
-        let creation = if let Err(error) =
-            consume_token_management_client_assertion_with_authorization_service(
-                &authorization_service_for_creation,
-                &client_for_creation,
-                assertion.as_ref(),
-                security_audit,
-            )
-            .await
-        {
-            GuardedCibaCreation::ClientAuthentication(error)
-        } else if let Some(replay) = request_object_replay {
-            match authorization_service_for_creation
-                .consume_ciba_request_object(&client_id, &replay.jti, replay.ttl_seconds)
-                .await
-            {
-                Ok(true) => match ciba_service_for_creation
-                    .create_unique(&state_payload, random_urlsafe_token)
-                    .await
-                {
-                    Ok(auth_req_id) => GuardedCibaCreation::Created(auth_req_id),
-                    Err(error) => GuardedCibaCreation::State(error),
-                },
-                Ok(false) => GuardedCibaCreation::RequestObjectReplay,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to persist CIBA request object replay state");
-                    GuardedCibaCreation::RequestObjectStore
-                }
-            }
-        } else {
-            match ciba_service_for_creation
-                .create_unique(&state_payload, random_urlsafe_token)
-                .await
-            {
-                Ok(auth_req_id) => GuardedCibaCreation::Created(auth_req_id),
-                Err(error) => GuardedCibaCreation::State(error),
-            }
-        };
-        let auth_req_id = match creation {
-            GuardedCibaCreation::Created(auth_req_id) => auth_req_id,
-            GuardedCibaCreation::ClientAuthentication(error) => {
-                return Err(token_management_auth_error(error));
-            }
-            GuardedCibaCreation::RequestObjectReplay => {
-                return Err(ciba_invalid_request(
-                    "CIBA request object has already been used.",
-                ));
-            }
-            GuardedCibaCreation::RequestObjectStore => {
-                return Err(OAuthEndpointError::json(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "CIBA failed.",
-                ));
-            }
-            GuardedCibaCreation::State(error) => {
+        let auth_req_id = ciba_service
+            .create_unique_with_authorization_deadline(
+                &state_payload, Some(state_payload.expires_at), random_urlsafe_token,
+            ).await.map_err(|error| {
                 tracing::warn!(%error, "failed to create CIBA auth_req_id");
-                return Err(OAuthEndpointError::json(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "CIBA failed.",
-                ));
-            }
-        };
+                OAuthEndpointError::json(StatusCode::SERVICE_UNAVAILABLE, "server_error", "CIBA failed.")
+            })?;
         security_audit.record(
             "ciba_authorization_started",
-            ciba_start_audit_fields(&audit_state, &auth_req_id, Some(blake3_hex(source_ip))),
+            ciba_start_audit_fields(&state_payload, &auth_req_id, Some(blake3_hex(source_ip))),
         );
         Ok(CibaCreationResponse {
             auth_req_id,

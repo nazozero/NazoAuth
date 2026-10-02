@@ -590,13 +590,15 @@ where
                     }
                 }
                 CibaDecisionEvaluation::Commit(next) => {
+                    let decision_deadline = Some(authorization_deadline
+                        .map_or(stored.state.expires_at, |deadline| deadline.min(stored.state.expires_at)));
                     match self
                         .store
                         .replace_with_authorization_deadline(
                             &auth_req_id,
                             &stored.version,
                             &next,
-                            authorization_deadline,
+                            decision_deadline,
                         )
                         .await
                     {

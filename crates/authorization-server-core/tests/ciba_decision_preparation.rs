@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicI64, Ordering}};
 
 use futures_executor::block_on;
 use nazo_auth::{
@@ -11,6 +11,8 @@ struct Store {
     state: Mutex<Option<(CibaRequestState, u64)>>,
     calls: Mutex<Vec<&'static str>>,
     unknown_replace: bool,
+    store_clock: AtomicI64,
+    deadlines: Mutex<Vec<Option<i64>>>,
 }
 impl Store {
     fn new(unknown_replace: bool) -> Arc<Self> {
@@ -36,6 +38,8 @@ impl Store {
             ))),
             calls: Mutex::new(vec![]),
             unknown_replace,
+            store_clock: AtomicI64::new(1_001),
+            deadlines: Mutex::new(vec![]),
         })
     }
     fn change(&self, change: impl FnOnce(&mut CibaRequestState)) {
@@ -92,6 +96,18 @@ impl CibaStateStorePort for Store {
                 return Err(CibaStatePortError::Unavailable);
             }
             Ok(CibaAtomicResult::Applied)
+        })
+    }
+    fn replace_with_authorization_deadline<'a>(
+        &'a self, id: &'a str, version: &'a u64, replacement: &'a CibaRequestState,
+        deadline: Option<i64>,
+    ) -> CibaStateFuture<'a, CibaAtomicResult> {
+        Box::pin(async move {
+            self.deadlines.lock().unwrap().push(deadline);
+            if deadline.is_some_and(|deadline| self.store_clock.load(Ordering::SeqCst) >= deadline) {
+                return Ok(CibaAtomicResult::DeadlineElapsed);
+            }
+            self.replace(id, version, replacement).await
         })
     }
     fn delete<'a>(
@@ -242,5 +258,42 @@ fn prepared_ciba_unknown_write_outcome_stops_without_retrying_or_claiming_commit
             store.state.lock().unwrap().as_ref().unwrap().0.status,
             CibaStatus::Denied
         );
+    });
+}
+
+#[test]
+fn store_clock_rejects_late_approval_and_denial_before_retention_expires() {
+    block_on(async {
+        for decision in [CibaDecision::Deny, CibaDecision::Approve(nazo_auth::CibaAuthenticationContext {
+            auth_time: 1_001, amr: vec!["pwd".to_owned()], oidc_sid: None,
+        })] {
+            let store = Store::new(false);
+            let service = CibaService::new(store.clone());
+            let prepared = service.prepare_decision("prepared-request").await.unwrap().unwrap();
+            store.store_clock.store(1_060, Ordering::SeqCst);
+            assert_eq!(service.decide_prepared(prepared, decision, None, || 1_001).await.unwrap_err(), CibaDecisionFailure::Expired);
+            assert_eq!(*store.deadlines.lock().unwrap(), [Some(1_060)]);
+            assert_eq!(store.state.lock().unwrap().as_ref().unwrap().0.status, CibaStatus::Pending);
+            assert_eq!(store.calls(), ["load"]);
+        }
+    });
+}
+
+#[test]
+fn decision_uses_the_earlier_request_or_caller_deadline() {
+    block_on(async {
+        for (caller, expected) in [(None, 1_060), (Some(1_050), 1_050), (Some(1_090), 1_060)] {
+            let store = Store::new(false);
+            let service = CibaService::new(store.clone());
+            service.decide_with_authorization_deadline("prepared-request", CibaDecision::Deny, None, caller, || 1_001).await.unwrap();
+            assert_eq!(*store.deadlines.lock().unwrap(), [Some(expected)]);
+        }
+        let store = Store::new(false);
+        let service = CibaService::new(store.clone());
+        let prepared = service.prepare_decision("prepared-request").await.unwrap().unwrap();
+        store.store_clock.store(1_060, Ordering::SeqCst);
+        assert_eq!(service.decide_prepared(prepared, CibaDecision::Deny, None, || 1_060).await.unwrap_err(), CibaDecisionFailure::Expired);
+        assert!(store.state.lock().unwrap().is_none(), "expiry cleanup must still delete retained state");
+        assert!(store.deadlines.lock().unwrap().is_empty(), "expiry cleanup is not guarded by the expired request deadline");
     });
 }
