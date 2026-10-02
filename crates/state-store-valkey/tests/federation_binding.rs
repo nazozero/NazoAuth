@@ -183,7 +183,7 @@ fn each_federation_take_uses_the_single_eval_matching_path() {
         .split("async fn take_federation_value(")
         .nth(1)
         .unwrap()
-        .split("async fn take_value(")
+        .split("async fn take_value")
         .next()
         .unwrap();
     assert_eq!(helper.matches("command::eval_string(").count(), 1);
