@@ -150,10 +150,13 @@ pub(super) fn parse_x509<'a>(
     Ok((remainder, certificate))
 }
 
-pub(super) fn verify_openid4vc_chain(
-    certificates: &[Vec<u8>],
-    anchors: &[Vec<u8>],
-) -> anyhow::Result<()> {
+pub(super) fn verify_openid4vc_chain<'a>(certificates: &[Vec<u8>], anchors: &'a [Vec<u8>]) -> anyhow::Result<&'a [u8]> {
+    verify_openid4vc_chain_with_scoped(certificates, anchors, &[])
+}
+
+pub(super) fn verify_openid4vc_chain_with_scoped<'a>(
+    certificates: &[Vec<u8>], anchors: &'a [Vec<u8>], scoped: &'a [Vec<u8>],
+) -> anyhow::Result<&'a [u8]> {
     let (_, mut current) = parse_x509(&certificates[0], "OpenID4VC signing leaf")?;
     if current.is_ca() || !current.validity().is_valid() {
         anyhow::bail!("OpenID4VC signing leaf must be a currently valid end-entity certificate");
@@ -161,7 +164,7 @@ pub(super) fn verify_openid4vc_chain(
     for intermediate in certificates
         .iter()
         .skip(1)
-        .filter(|der| !anchors.contains(der))
+        .filter(|der| !anchors.contains(der) && !scoped.contains(der))
     {
         let (_, issuer) = parse_x509(intermediate, "OpenID4VC intermediate certificate")?;
         if !issuer.is_ca()
@@ -173,7 +176,7 @@ pub(super) fn verify_openid4vc_chain(
         }
         current = issuer;
     }
-    let anchored = anchors.iter().any(|anchor| {
+    let anchored = scoped.iter().chain(anchors.iter().filter(|anchor| !scoped.contains(anchor))).find(|anchor| {
         parse_x509(anchor, "OpenID4VC trust anchor").is_ok_and(|(_, anchor)| {
             anchor.is_ca()
                 && anchor.validity().is_valid()
@@ -181,10 +184,10 @@ pub(super) fn verify_openid4vc_chain(
                 && nazo_crypto::certificate::verify_signature(&current, anchor.public_key()).is_ok()
         })
     });
-    if !anchored {
+    let Some(anchored) = anchored else {
         anyhow::bail!(
             "OpenID4VC signing certificate is not anchored by the configured trust store"
         );
-    }
-    Ok(())
+    };
+    Ok(anchored.as_slice())
 }

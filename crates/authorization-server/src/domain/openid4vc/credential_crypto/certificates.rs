@@ -175,7 +175,7 @@ fn signing_material(lease: &Openid4vcSigningLease) -> anyhow::Result<Openid4vcSi
 fn validate_public_material(material: &Openid4vcPublicMaterial) -> anyhow::Result<()> {
     let certificates = parse_pem_certificates(material.certificate_chain_pem.as_bytes())?;
     let anchors = parse_trust_anchors(material)?;
-    verify_openid4vc_chain(&certificates, &anchors)
+    verify_openid4vc_chain(&certificates, &anchors).map(|_| ())
 }
 
 fn parse_trust_anchors(material: &Openid4vcPublicMaterial) -> anyhow::Result<Vec<Vec<u8>>> {

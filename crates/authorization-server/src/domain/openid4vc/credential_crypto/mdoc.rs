@@ -361,16 +361,15 @@ fn verify_mdoc_issuer_certificate_chains(
             .timestamp();
         let direct_scoped_trust_anchor =
             verify_direct_scoped_trust_anchor(&certificates, scoped_trust_anchors, signed_at)?;
-        if !direct_scoped_trust_anchor
-            && !verify_certificate_chain_at(&certificates, trust_anchors, signed_at)?
-        {
-            return Ok(false);
-        }
+        let scoped_anchor_authenticated = if direct_scoped_trust_anchor { true } else {
+            let Some(anchor) = verify_certificate_chain_with_scoped_at(&certificates, trust_anchors, scoped_trust_anchors, signed_at)? else { return Ok(false); };
+            scoped_trust_anchors.iter().any(|candidate| candidate.as_slice() == anchor)
+        };
         revocation_policy.check_chain_with_scoped_trust(
             None,
             &certificates,
             Utc::now(),
-            scoped_trust_anchors,
+            scoped_anchor_authenticated,
         )?;
     }
     Ok(true)
@@ -400,22 +399,25 @@ pub(super) fn verify_direct_scoped_trust_anchor(
         && nazo_crypto::certificate::verify_signature(&anchor, anchor.public_key()).is_ok())
 }
 
-pub(super) fn verify_certificate_chain_at(
-    certificates: &[Vec<u8>],
-    anchors: &[Vec<u8>],
-    unix_time: i64,
-) -> Result<bool, CredentialTrustError> {
+#[cfg(test)]
+pub(super) fn verify_certificate_chain_at<'a>(certificates: &[Vec<u8>], anchors: &'a [Vec<u8>], unix_time: i64) -> Result<Option<&'a [u8]>, CredentialTrustError> {
+    verify_certificate_chain_with_scoped_at(certificates, anchors, &[], unix_time)
+}
+
+pub(super) fn verify_certificate_chain_with_scoped_at<'a>(
+    certificates: &[Vec<u8>], anchors: &'a [Vec<u8>], scoped: &'a [Vec<u8>], unix_time: i64,
+) -> Result<Option<&'a [u8]>, CredentialTrustError> {
     let at = x509_parser::time::ASN1Time::from_timestamp(unix_time)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     let (_, mut current) = x509_parser::parse_x509_certificate(&certificates[0])
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     if current.is_ca() || !current.validity().is_valid_at(at) {
-        return Ok(false);
+        return Ok(None);
     }
     for intermediate in certificates
         .iter()
         .skip(1)
-        .filter(|der| !anchors.contains(der))
+        .filter(|der| !anchors.contains(der) && !scoped.contains(der))
     {
         let (_, issuer) = x509_parser::parse_x509_certificate(intermediate)
             .map_err(|_| CredentialTrustError::InvalidEncoding)?;
@@ -424,18 +426,18 @@ pub(super) fn verify_certificate_chain_at(
             || current.issuer() != issuer.subject()
             || nazo_crypto::certificate::verify_signature(&current, issuer.public_key()).is_err()
         {
-            return Ok(false);
+            return Ok(None);
         }
         current = issuer;
     }
-    Ok(anchors.iter().any(|anchor| {
+    Ok(scoped.iter().chain(anchors.iter().filter(|anchor| !scoped.contains(anchor))).find(|anchor| {
         x509_parser::parse_x509_certificate(anchor).is_ok_and(|(_, anchor)| {
             anchor.is_ca()
                 && anchor.validity().is_valid_at(at)
                 && current.issuer() == anchor.subject()
                 && nazo_crypto::certificate::verify_signature(&current, anchor.public_key()).is_ok()
         })
-    }))
+    }).map(Vec::as_slice))
 }
 
 pub(super) fn mdoc_assessments_accepted(

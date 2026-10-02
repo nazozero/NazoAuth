@@ -1159,7 +1159,7 @@ fn mdoc_verification_rejects_signing_before_certificate_validity() {
                 std::slice::from_ref(&certs.ca_der),
                 Utc::now().timestamp(),
             )
-            .expect("certificate is valid at presentation time")
+            .expect("certificate is valid at presentation time").is_some()
         );
         assert_eq!(
             crypto.verify_mdoc(&presentation),
@@ -1178,23 +1178,23 @@ fn certificate_chain_at_checks_leaf_intermediates_anchor_and_time() {
             std::slice::from_ref(&certs.ca_der),
             now,
         )
-        .expect("valid chain")
+        .expect("valid chain").is_some()
     );
     assert!(
-        !verify_certificate_chain_at(
+        verify_certificate_chain_at(
             std::slice::from_ref(&certs.ca_der),
             std::slice::from_ref(&certs.ca_der),
             now,
         )
-        .expect("CA as leaf is a normal false result")
+        .expect("CA as leaf is a normal false result").is_none()
     );
     assert!(matches!(
         verify_certificate_chain_at(&[vec![1, 2, 3]], std::slice::from_ref(&certs.ca_der), now),
         Err(CredentialTrustError::InvalidEncoding)
     ));
     assert!(
-        !verify_certificate_chain_at(std::slice::from_ref(&certs.leaf_der), &[], now,)
-            .expect("unanchored chain")
+        verify_certificate_chain_at(std::slice::from_ref(&certs.leaf_der), &[], now,)
+            .expect("unanchored chain").is_none()
     );
     assert!(matches!(
         verify_certificate_chain_at(
@@ -1294,4 +1294,70 @@ fn standard_device_authentication_bytes_is_deterministic_and_rejects_bad_inputs(
             .expect("DeviceAuthenticationBytes");
     assert_eq!(first, second);
     assert!(standard_device_authentication_bytes(&[0xff], "doc", &[0xa0]).is_err());
+}
+
+
+fn install_revocation_snapshot(crypto: &Openid4vcCredentialCrypto, certs: &CertificateFixture, snapshot: CertificateRevocationSnapshot) {
+    let signing_kid=crypto.keyset.openid4vc_public_material().unwrap().signing_kid.clone();
+    crypto.keyset.set_openid4vc_material_for_test(Openid4vcMaterial { public: Openid4vcPublicMaterial { signing_kid, certificate_chain_pem:format!("{}{}",certs.leaf_pem,certs.ca_pem), trust_anchors_pem:certs.ca_pem.clone(), revocation_snapshot:Some(snapshot) }, iaca_private_materials:Default::default() });
+}
+
+#[test]
+fn sd_jwt_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
+    let (crypto,mut presentation,_,certs)=sd_presentation_fixture();
+    let strict=Openid4vcCredentialCrypto { revocation_policy:crate::policy::Openid4vcRevocationPolicy::Required, ..crypto };
+    let fresh=CertificateRevocationSnapshot { version:CertificateRevocationSnapshot::VERSION,this_update:Utc::now()-Duration::minutes(1),next_update:Utc::now()+Duration::minutes(5),entries:vec![] };
+    install_revocation_snapshot(&strict,&certs,fresh.clone());
+    let unrelated=certificate_fixture("unrelated.example");
+    presentation.additional_trust_anchors=vec![unrelated.ca_der.clone()];
+    assert_eq!(strict.verify_sd_jwt(&presentation),Err(CredentialTrustError::RevocationStatusUnknown));
+    // Even attaching that unused scoped root to x5c does not change the path.
+    let token=presentation.encoded.split('~').next().unwrap();
+    let header=decode_header(token).unwrap();
+    let mut attached=header.x5c.unwrap(); attached.push(STANDARD.encode(&unrelated.ca_der));
+    let chain=super::sd_jwt::validate_sd_jwt_chain(&strict,&attached,&presentation.additional_trust_anchors).unwrap();
+    assert!(!chain.scoped_anchor_authenticated);
+    presentation.additional_trust_anchors=vec![certs.ca_der.clone()];
+    assert!(strict.verify_sd_jwt(&presentation).is_ok(),"same DER globally and scoped is an actual scoped path");
+    let mut revoked=fresh.clone(); revoked.entries.push(nazo_digital_credentials::CertificateRevocationEntry { issuer:"https://issuer.example".into(),certificate:nazo_digital_credentials::certificate_identity(&certs.leaf_der),status:nazo_digital_credentials::CertificateRevocationStatus::Revoked,revoked_at:Some(Utc::now()) });
+    install_revocation_snapshot(&strict,&certs,revoked);
+    assert_eq!(strict.verify_sd_jwt(&presentation),Err(CredentialTrustError::RevokedCertificate));
+    let mut stale=fresh; stale.next_update=Utc::now()-Duration::seconds(1);
+    install_revocation_snapshot(&strict,&certs,stale);
+    assert_eq!(strict.verify_sd_jwt(&presentation),Err(CredentialTrustError::RevocationSnapshotStale));
+}
+
+#[test]
+fn mdoc_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
+    futures_executor::block_on(async {
+        let (crypto,certs,_)=real_crypto_fixture().await;
+        let strict=Openid4vcCredentialCrypto { revocation_policy:crate::policy::Openid4vcRevocationPolicy::Required, ..crypto };
+        let fresh=CertificateRevocationSnapshot { version:CertificateRevocationSnapshot::VERSION,this_update:Utc::now()-Duration::minutes(1),next_update:Utc::now()+Duration::minutes(5),entries:vec![] };
+        install_revocation_snapshot(&strict,&certs,fresh.clone());
+        let (encoded,transcript)=valid_mdoc_presentation(&certs,Utc::now());
+        let unrelated=certificate_fixture("unrelated.example");
+        let mut presentation=PresentedCredential { format:CredentialFormat::MsoMdoc,encoded,expected_nonce:"verifier-nonce".into(),expected_audience:"https://verifier.example".into(),response_uri:"https://verifier.example/response".into(),mdoc_session_transcript:Some(transcript),additional_trust_anchors:vec![unrelated.ca_der] };
+        assert_eq!(strict.verify_mdoc(&presentation),Err(CredentialTrustError::RevocationStatusUnknown));
+        presentation.additional_trust_anchors=vec![certs.ca_der.clone()];
+        assert!(strict.verify_mdoc(&presentation).is_ok());
+        let mut revoked=fresh; revoked.entries.push(nazo_digital_credentials::CertificateRevocationEntry { issuer:"https://issuer.example".into(),certificate:nazo_digital_credentials::certificate_identity(&certs.leaf_der),status:nazo_digital_credentials::CertificateRevocationStatus::Revoked,revoked_at:Some(Utc::now()) });
+        install_revocation_snapshot(&strict,&certs,revoked);
+        assert_eq!(strict.verify_mdoc(&presentation),Err(CredentialTrustError::RevokedCertificate));
+    });
+}
+
+#[test]
+fn shared_signing_key_anchor_selection_prefers_actual_scoped_der_without_second_validation() {
+    let key=KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(); let pem=key.serialize_pem();
+    let mut params=CertificateParams::new(Vec::<String>::new()).unwrap();
+    params.is_ca=IsCa::Ca(BasicConstraints::Unconstrained); params.key_usages=vec![KeyUsagePurpose::KeyCertSign];
+    params.distinguished_name.push(DnType::CommonName,"shared-root"); params.serial_number=Some(1_u64.into());
+    let global=CertifiedIssuer::self_signed(params.clone(),key).unwrap();
+    params.serial_number=Some(2_u64.into()); let scoped=CertifiedIssuer::self_signed(params,KeyPair::from_pem(&pem).unwrap()).unwrap();
+    let leaf_key=KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let leaf=CertificateParams::new(vec!["issuer.example".into()]).unwrap().signed_by(&leaf_key,&global).unwrap();
+    let certificates=vec![leaf.der().as_ref().to_vec()]; let global_der=vec![global.der().as_ref().to_vec()];let scoped_der=vec![scoped.der().as_ref().to_vec()];
+    assert_ne!(global_der,scoped_der);
+    assert_eq!(super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(&certificates,&global_der,&scoped_der).unwrap(),scoped_der[0].as_slice());
+    assert_eq!(super::mdoc::verify_certificate_chain_with_scoped_at(&certificates,&global_der,&scoped_der,Utc::now().timestamp()).unwrap(),Some(scoped_der[0].as_slice()));
 }
