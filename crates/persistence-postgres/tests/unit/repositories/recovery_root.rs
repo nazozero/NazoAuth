@@ -40,7 +40,10 @@ async fn failed_attempt_counter_refuses_open_and_broken_transaction_states() {
     .await
     .expect_err("an open transaction is not a confirmed rollback");
     assert!(matches!(error, RecoveryRootError::Transport(_)));
-    assert_eq!(counter.since(before), query_counter::QuerySnapshot::default());
+    assert_eq!(
+        counter.since(before),
+        query_counter::QuerySnapshot::default()
+    );
     TransactionManager::rollback_transaction(&mut connection)
         .await
         .unwrap();
@@ -58,5 +61,8 @@ async fn failed_attempt_counter_refuses_open_and_broken_transaction_states() {
     .await
     .expect_err("an unknown rollback must not reuse the connection");
     assert!(matches!(error, RecoveryRootError::Transport(_)));
-    assert_eq!(counter.since(before), query_counter::QuerySnapshot::default());
+    assert_eq!(
+        counter.since(before),
+        query_counter::QuerySnapshot::default()
+    );
 }

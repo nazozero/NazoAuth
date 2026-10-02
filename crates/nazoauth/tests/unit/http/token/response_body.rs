@@ -24,7 +24,11 @@ where
     let category = match actix_web::body::to_bytes(response.into_body()).await {
         Ok(bytes) => {
             let body = serde_json::from_slice::<serde_json::Value>(&bytes).ok();
-            match body.as_ref().and_then(|json| json.get("error")).and_then(serde_json::Value::as_str) {
+            match body
+                .as_ref()
+                .and_then(|json| json.get("error"))
+                .and_then(serde_json::Value::as_str)
+            {
                 Some("invalid_client") => "invalid_client",
                 Some("invalid_grant") => "invalid_grant",
                 Some("invalid_request") => "invalid_request",

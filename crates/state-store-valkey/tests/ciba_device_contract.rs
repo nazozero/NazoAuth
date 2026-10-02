@@ -219,8 +219,11 @@ async fn concurrent_approved_ciba_polls_preserve_retryable_state_until_durable_c
         store.create(&auth_req_id, &state).await.unwrap(),
         AtomicResult::Applied
     );
-    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:ciba:{}", blake3::hash(auth_req_id.as_bytes()).to_hex()));
-    let deadline = inspector.expire_time::<i64,_>(&key).await.unwrap();
+    let key = nazo_valkey::test_support::state_storage_key(format!(
+        "oauth:ciba:{}",
+        blake3::hash(auth_req_id.as_bytes()).to_hex()
+    ));
+    let deadline = inspector.expire_time::<i64, _>(&key).await.unwrap();
     let first = CibaService::new(store.clone());
     let second = CibaService::new(store);
     let first_stored = first.load(&auth_req_id).await.unwrap().unwrap();
@@ -239,8 +242,11 @@ async fn concurrent_approved_ciba_polls_preserve_retryable_state_until_durable_c
     );
     let retained = first.load(&auth_req_id).await.unwrap().unwrap();
     assert_eq!(retained.state(), &state);
-    assert_eq!(inspector.expire_time::<i64,_>(&key).await.unwrap(), deadline);
-    inspector.del::<i64,_>(&key).await.unwrap();
+    assert_eq!(
+        inspector.expire_time::<i64, _>(&key).await.unwrap(),
+        deadline
+    );
+    inspector.del::<i64, _>(&key).await.unwrap();
 }
 
 #[tokio::test]

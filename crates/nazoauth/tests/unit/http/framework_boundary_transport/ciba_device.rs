@@ -359,7 +359,10 @@ mod ciba_device_contract {
         let actual = wire(response).await;
         assert_eq!(actual.status, 400, "OAuth error status must be 400");
         assert_eq!(actual.headers, json_headers(true, true));
-        assert!(actual.body == expected, "OAuth error wire body must match the contract");
+        assert!(
+            actual.body == expected,
+            "OAuth error wire body must match the contract"
+        );
     }
     fn verify_jwt(state: &TestInfrastructure, token: &str, audience: &str, subject: &str) -> Value {
         let header = jsonwebtoken::decode_header(token).expect("issued compact JWT header");
@@ -455,7 +458,8 @@ mod ciba_device_contract {
                 .await
                 .expect("post issuance state")
                 .expect("Approved state retains its original TTL")
-                .state().status,
+                .state()
+                .status,
             CibaStatus::Approved
         );
         token_error(

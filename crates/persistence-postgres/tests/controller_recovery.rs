@@ -5,7 +5,9 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use diesel::{
-    QueryableByName, connection::InstrumentationEvent, sql_query,
+    QueryableByName,
+    connection::InstrumentationEvent,
+    sql_query,
     sql_types::{Bool, SmallInt, Uuid as DieselUuid},
 };
 use diesel_async::{
@@ -1215,12 +1217,7 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
         .unwrap();
     let rotation = second.rotation(deployment);
     let approval = repository
-        .issue_rotation_approval(
-            deployment,
-            &rotation.action_sha256(),
-            Uuid::now_v7(),
-            at(2),
-        )
+        .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), at(2))
         .await
         .unwrap();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
@@ -1245,7 +1242,10 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
         error,
         RecoveryRotationError::Mutation(RecoveryRootError::Transport(_))
     ));
-    assert_eq!(repository.current_root(deployment).await.unwrap().unwrap(), before);
+    assert_eq!(
+        repository.current_root(deployment).await.unwrap().unwrap(),
+        before
+    );
     let pending_state = attempt_state(&url, pending.challenge_id).await;
     assert_eq!(pending_state.attempts, 0);
     assert!(!pending_state.consumed);
@@ -1269,7 +1269,10 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
     assert_eq!(replaced.created_at, before.created_at);
     assert_eq!(replaced.kdf, before.kdf);
     assert_eq!(replaced.updated_at, at(4));
-    assert_eq!(replaced, repository.current_root(deployment).await.unwrap().unwrap());
+    assert_eq!(
+        replaced,
+        repository.current_root(deployment).await.unwrap().unwrap()
+    );
     assert!(attempt_state(&url, pending.challenge_id).await.consumed);
 }
 
@@ -1292,12 +1295,7 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
     let before = repository.current_root(deployment).await.unwrap().unwrap();
     let rotation = second.rotation(deployment);
     let approval = repository
-        .issue_rotation_approval(
-            deployment,
-            &rotation.action_sha256(),
-            Uuid::now_v7(),
-            at(1),
-        )
+        .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), at(1))
         .await
         .unwrap();
     let error = repository
@@ -1314,7 +1312,10 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
         error,
         RecoveryRotationError::Mutation(RecoveryRootError::Transport(_))
     ));
-    assert_eq!(repository.current_root(deployment).await.unwrap().unwrap(), before);
+    assert_eq!(
+        repository.current_root(deployment).await.unwrap().unwrap(),
+        before
+    );
     sql_query("UPDATE controller_recovery_roots SET generation = $2 WHERE deployment_id = $1")
         .bind::<diesel::sql_types::Varchar, _>(deployment)
         .bind::<diesel::sql_types::Integer, _>(i32::MAX - 1)
@@ -1335,7 +1336,10 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
     assert_eq!(replaced.recovery_public_key, second.public_key);
     assert_eq!(replaced.created_at, before.created_at);
     assert_eq!(replaced.kdf, before.kdf);
-    assert_eq!(replaced, repository.current_root(deployment).await.unwrap().unwrap());
+    assert_eq!(
+        replaced,
+        repository.current_root(deployment).await.unwrap().unwrap()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1356,12 +1360,7 @@ async fn root_enrollment_and_replacement_return_rows_in_six_data_queries() {
         let rotation = material.rotation(deployment);
         let now = at(i64::from(generation));
         let approval = repository
-            .issue_rotation_approval(
-                deployment,
-                &rotation.action_sha256(),
-                Uuid::now_v7(),
-                now,
-            )
+            .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), now)
             .await
             .unwrap();
         let before = counter.snapshot();
@@ -1385,13 +1384,19 @@ async fn root_enrollment_and_replacement_return_rows_in_six_data_queries() {
         assert_eq!(root.kdf, RECOVERY_KDF_ID);
         assert_eq!(root.updated_at, now);
         assert_eq!(root.created_at, *first_created_at.get_or_insert(now));
-        assert_eq!(root, repository.current_root(deployment).await.unwrap().unwrap());
+        assert_eq!(
+            root,
+            repository.current_root(deployment).await.unwrap().unwrap()
+        );
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn failed_rollback_does_not_reuse_a_connection_for_the_counter() {
-    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
 
     #[derive(QueryableByName)]
     struct BackendPid {
@@ -1464,10 +1469,13 @@ async fn failed_rollback_does_not_reuse_a_connection_for_the_counter() {
     .expect("a failed rollback must return without another pool checkout")
     .expect_err("rollback transport failure must fail closed");
     assert!(matches!(error, RecoveryRootError::Transport(_)));
-    assert!(rollback_interrupted.load(Ordering::SeqCst));
-    assert!(!attempted_counter.load(Ordering::SeqCst));
+    assert!(rollback_interrupted.as_ref().load(Ordering::SeqCst));
+    assert!(!attempted_counter.as_ref().load(Ordering::SeqCst));
     let state = attempt_state(&url, issued.challenge_id).await;
     assert_eq!(state.attempts, 0);
     assert!(!state.consumed);
-    assert_eq!(repository.current_root(deployment).await.unwrap().unwrap(), before);
+    assert_eq!(
+        repository.current_root(deployment).await.unwrap().unwrap(),
+        before
+    );
 }

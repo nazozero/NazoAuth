@@ -23,7 +23,11 @@ async fn ciba_token_approved_state_issues_access_and_id_tokens_for_an_active_use
     store_ciba_state_with_user(&state, &client, &auth_req_id, user_id, CibaStatus::Approved).await;
 
     let response = call_ciba_token_with_mtls_for_test(&state, &client, auth_req_id.clone()).await;
-    assert_eq!(response.status(), StatusCode::OK, "approved CIBA issuance must succeed");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "approved CIBA issuance must succeed"
+    );
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .expect("CIBA token response should collect");
