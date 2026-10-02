@@ -1627,11 +1627,7 @@ async fn grant_revoke_skips_already_revoked_family_lock() {
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
             .commit_token_issuance(
                 refresh_issuance(refresh_token_fixture(
-                    &fixture,
-                    tenant_id,
-                    family_id,
-                    root_raw,
-                    None,
+                    &fixture, tenant_id, family_id, root_raw, None,
                 ))
                 .await
             )
