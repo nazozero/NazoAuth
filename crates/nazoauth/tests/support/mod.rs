@@ -348,6 +348,11 @@ pub(crate) fn passkey_service(
 pub(crate) fn federation_service(
     state: &TestInfrastructure,
 ) -> actix_web::web::Data<nazo_oauth_server::services::LocalFederationService> {
+    // Required federation evidence must use the same process-lifetime audit
+    // fixture as other identity consumers, including when this suite runs alone.
+    if std::env::var_os("DATABASE_URL").is_some() {
+        initialize_audit_dependencies(&state.diesel_db);
+    }
     actix_web::web::Data::new(nazo_oauth_server::services::LocalFederationService::new(
         nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
         std::sync::Arc::new(nazo_valkey::AuthenticationStore::new(
