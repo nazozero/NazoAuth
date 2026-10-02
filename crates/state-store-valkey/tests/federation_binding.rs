@@ -42,7 +42,8 @@ async fn nonowner_legacy_and_corrupt_state_keep_exact_raw_value_and_expiry() {
         "null".to_owned(),
         "[]".to_owned(),
         "7".to_owned(),
-        json!({"nonce":"nonce","pkce_verifier":"verifier","provider_id":"provider","created_at":1}).to_string(),
+        json!({"nonce":"nonce","pkce_verifier":"verifier","provider_id":"provider","created_at":1})
+            .to_string(),
         json!({"browser_binding_hash":null}).to_string(),
         json!({"browser_binding_hash":7}).to_string(),
         json!({"browser_binding_hash":"another-browser"}).to_string(),
@@ -56,16 +57,30 @@ async fn nonowner_legacy_and_corrupt_state_keep_exact_raw_value_and_expiry() {
                 nazo_valkey::test_support::oidc_federation_storage_key(&state)
             };
             inspector
-                .set::<(), _, _>(&key, raw.as_str(), Some(Expiration::PX(300_000)), None, false)
+                .set::<(), _, _>(
+                    &key,
+                    raw.as_str(),
+                    Some(Expiration::PX(300_000)),
+                    None,
+                    false,
+                )
                 .await
                 .unwrap();
             let before = snapshot(&inspector, &key).await;
             if social {
-                assert!(FederationStatePort::take_social(&store, &state, "owner-browser")
-                    .await.unwrap().is_none());
+                assert!(
+                    FederationStatePort::take_social(&store, &state, "owner-browser")
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
             } else {
-                assert!(FederationStatePort::take_oidc(&store, &state, "owner-browser")
-                    .await.unwrap().is_none());
+                assert!(
+                    FederationStatePort::take_oidc(&store, &state, "owner-browser")
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
             }
             assert_eq!(snapshot(&inspector, &key).await, before);
             inspector.del::<i64, _>(&key).await.unwrap();
@@ -93,13 +108,21 @@ async fn matching_owner_typed_corruption_is_consumed_then_rejected() {
             .unwrap();
         let error = if social {
             FederationStatePort::take_social(&store, &state, "owner-browser")
-                .await.unwrap_err()
+                .await
+                .unwrap_err()
         } else {
             FederationStatePort::take_oidc(&store, &state, "owner-browser")
-                .await.unwrap_err()
+                .await
+                .unwrap_err()
         };
         assert!(matches!(error, RepositoryError::Consistency(_)));
-        assert!(inspector.get::<Option<String>, _>(&key).await.unwrap().is_none());
+        assert!(
+            inspector
+                .get::<Option<String>, _>(&key)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }
 
@@ -116,7 +139,9 @@ async fn correct_and_wrong_browser_concurrency_has_exactly_one_owner_winner() {
         pkce_verifier: "original-verifier".to_owned(),
         created_at: 1_700_000_000,
     };
-    FederationStatePort::store_oidc(&store, &oidc_state, &oidc, 300).await.unwrap();
+    FederationStatePort::store_oidc(&store, &oidc_state, &oidc, 300)
+        .await
+        .unwrap();
     let (a, b, wrong) = tokio::join!(
         FederationStatePort::take_oidc(&store, &oidc_state, "owner-browser"),
         FederationStatePort::take_oidc(&store, &oidc_state, "owner-browser"),
@@ -136,7 +161,9 @@ async fn correct_and_wrong_browser_concurrency_has_exactly_one_owner_winner() {
         pkce_verifier: "social-verifier".to_owned(),
         created_at: 1_700_000_000,
     };
-    FederationStatePort::store_social(&store, &social_state, &social, 300).await.unwrap();
+    FederationStatePort::store_social(&store, &social_state, &social, 300)
+        .await
+        .unwrap();
     let (a, wrong, b) = tokio::join!(
         FederationStatePort::take_social(&store, &social_state, "owner-browser"),
         FederationStatePort::take_social(&store, &social_state, "wrong-browser"),
@@ -152,15 +179,26 @@ async fn correct_and_wrong_browser_concurrency_has_exactly_one_owner_winner() {
 #[test]
 fn each_federation_take_uses_the_single_eval_matching_path() {
     let source = include_str!("../src/authentication.rs");
-    let helper = source.split("async fn take_federation_value(").nth(1).unwrap()
-        .split("async fn take_value(").next().unwrap();
+    let helper = source
+        .split("async fn take_federation_value(")
+        .nth(1)
+        .unwrap()
+        .split("async fn take_value(")
+        .next()
+        .unwrap();
     assert_eq!(helper.matches("command::eval_string(").count(), 1);
     for forbidden in ["command::get(", "command::take(", "command::delete("] {
         assert!(!helper.contains(forbidden));
     }
     for name in ["oidc", "social"] {
         let signature = format!("pub async fn take_{name}_federation(");
-        let body = source.split(signature.as_str()).nth(1).unwrap().split("\n    pub ").next().unwrap();
+        let body = source
+            .split(signature.as_str())
+            .nth(1)
+            .unwrap()
+            .split("\n    pub ")
+            .next()
+            .unwrap();
         assert_eq!(body.matches("self.take_federation_value(").count(), 1);
         assert!(!body.contains("self.take_value("));
     }

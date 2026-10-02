@@ -272,24 +272,48 @@ fn pki_certificate_requires_the_selected_trust_anchor_and_valid_chain() {
 fn thumbprint_projection_keeps_one_owned_forwarded_chain_and_caches_failed_parse() {
     let certificate = test_certificate("cached-projection", -60, 3600);
     let proxies = [IpCidr::parse("192.0.2.0/24").unwrap()];
-    let source = Data::new(MtlsCertificateSource::new(MtlsCertificateSourceMode::Rfc9440));
-    let request = TestRequest::default().app_data(source.clone())
+    let source = Data::new(MtlsCertificateSource::new(
+        MtlsCertificateSourceMode::Rfc9440,
+    ));
+    let request = TestRequest::default()
+        .app_data(source.clone())
         .peer_addr("192.0.2.10:443".parse().unwrap())
         .insert_header(("client-cert", format!(":{}:", certificate.x5c)))
         .to_http_request();
-    assert_eq!(request_mtls_thumbprint(&request, &proxies).as_deref(), Some(certificate.thumbprint.as_str()));
-    let original = with_request_mtls_client_certificate(&request, &proxies,
-        |facts| facts.unwrap().certificate_chain_der[0].as_ptr());
+    assert_eq!(
+        request_mtls_thumbprint(&request, &proxies).as_deref(),
+        Some(certificate.thumbprint.as_str())
+    );
+    let original = with_request_mtls_client_certificate(&request, &proxies, |facts| {
+        facts.unwrap().certificate_chain_der[0].as_ptr()
+    });
     for _ in 0..3 {
-        assert_eq!(request_mtls_thumbprint(&request, &proxies).as_deref(), Some(certificate.thumbprint.as_str()));
-        assert_eq!(with_request_mtls_client_certificate(&request, &proxies,
-            |facts| facts.unwrap().certificate_chain_der[0].as_ptr()), original);
+        assert_eq!(
+            request_mtls_thumbprint(&request, &proxies).as_deref(),
+            Some(certificate.thumbprint.as_str())
+        );
+        assert_eq!(
+            with_request_mtls_client_certificate(&request, &proxies, |facts| facts
+                .unwrap()
+                .certificate_chain_der[0]
+                .as_ptr()),
+            original
+        );
     }
     assert!(request_mtls_thumbprint(&request, &[]).is_none());
-    let malformed = TestRequest::default().app_data(source)
+    let malformed = TestRequest::default()
+        .app_data(source)
         .peer_addr("192.0.2.10:443".parse().unwrap())
-        .insert_header(("client-cert", "::")).to_http_request();
+        .insert_header(("client-cert", "::"))
+        .to_http_request();
     assert!(request_mtls_thumbprint(&malformed, &proxies).is_none());
-    assert!(malformed.extensions().get::<ForwardedClientCertificate>().unwrap().0.is_none());
+    assert!(
+        malformed
+            .extensions()
+            .get::<ForwardedClientCertificate>()
+            .unwrap()
+            .0
+            .is_none()
+    );
     assert!(request_mtls_client_certificate(&malformed, &proxies).is_none());
 }

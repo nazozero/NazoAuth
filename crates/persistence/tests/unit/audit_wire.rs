@@ -1,4 +1,3 @@
-
 use super::*;
 #[test]
 fn escaped_payload_counts_match_final_json_and_maximum_singleton_bound() {

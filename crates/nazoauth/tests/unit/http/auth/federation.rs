@@ -549,8 +549,14 @@ fn bound_federation_test_request() -> actix_web::test::TestRequest {
     // These existing policy tests span both dev and secure fixture settings.
     // Dedicated binding tests below construct each configured name explicitly.
     actix_web::test::TestRequest::get()
-        .cookie(actix_web::cookie::Cookie::new("nazo_federation_binding", value.clone()))
-        .cookie(actix_web::cookie::Cookie::new("__Host-nazo_federation_binding", value))
+        .cookie(actix_web::cookie::Cookie::new(
+            "nazo_federation_binding",
+            value.clone(),
+        ))
+        .cookie(actix_web::cookie::Cookie::new(
+            "__Host-nazo_federation_binding",
+            value,
+        ))
 }
 
 async fn bound_oidc_state(state: &TestInfrastructure) -> OidcFederationState {
@@ -558,7 +564,11 @@ async fn bound_oidc_state(state: &TestInfrastructure) -> OidcFederationState {
     // domain separation or digest derivation.
     let service = crate::test_support::federation_service(state);
     let start = service
-        .start_oidc(TEST_OIDC_PROVIDER_ID.to_owned(), &TEST_BROWSER_BINDING_SEED, Utc::now())
+        .start_oidc(
+            TEST_OIDC_PROVIDER_ID.to_owned(),
+            &TEST_BROWSER_BINDING_SEED,
+            Utc::now(),
+        )
         .await
         .expect("bound fixture start should persist");
     service
@@ -587,8 +597,7 @@ async fn store_oidc_state_with_nonce(
     stored.nonce = nonce.to_owned();
     stored.pkce_verifier = "verifier-1".to_owned();
     stored.created_at = created_at;
-    let body =
-        serde_json::to_string(&stored).expect("test federation state should serialize");
+    let body = serde_json::to_string(&stored).expect("test federation state should serialize");
     valkey_set_ex(
         &state.valkey,
         oidc_state_key(state_token),
@@ -993,7 +1002,10 @@ async fn oidc_callback_rejects_state_bound_to_another_provider_before_token_exch
     .await;
 
     assert!(
-        valkey_get(&state.valkey, oidc_state_key(&state_token)).await.unwrap().is_none(),
+        valkey_get(&state.valkey, oidc_state_key(&state_token))
+            .await
+            .unwrap()
+            .is_none(),
         "a matching browser retains the prior burn-on-provider-mismatch behavior",
     );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);

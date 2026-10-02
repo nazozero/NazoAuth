@@ -151,12 +151,16 @@ pub(crate) async fn federation_provider_start(
     let Some(provider) = config.providers.enabled_provider(&provider_id) else {
         return unknown_provider_response();
     };
-    let browser_binding_seed = read_federation_binding_seed(&req, &config)
-        .unwrap_or_else(rand::random::<[u8; 32]>);
+    let browser_binding_seed =
+        read_federation_binding_seed(&req, &config).unwrap_or_else(rand::random::<[u8; 32]>);
     match &provider.adapter {
         ExternalLoginProviderAdapter::Oidc(provider) => {
             match service
-                .start_oidc(provider.provider_id.clone(), &browser_binding_seed, Utc::now())
+                .start_oidc(
+                    provider.provider_id.clone(),
+                    &browser_binding_seed,
+                    Utc::now(),
+                )
                 .await
             {
                 Ok(start) => federation_start_response(

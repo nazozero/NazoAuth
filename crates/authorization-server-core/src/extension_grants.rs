@@ -285,10 +285,7 @@ pub fn validate_token_exchange_grant_prerequisites(
         Some(_) => return Err(TokenExchangeError::UnsupportedTokenType),
         None => return Err(TokenExchangeError::MissingParameter),
     }
-    match (
-        request.actor_token.as_ref(),
-        request.actor_token_type,
-    ) {
+    match (request.actor_token.as_ref(), request.actor_token_type) {
         (None, None) => {}
         (None, Some(_)) | (Some(_), None) => return Err(TokenExchangeError::MissingParameter),
         (Some(_), Some(ACCESS_TOKEN_TYPE)) => {}
