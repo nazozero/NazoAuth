@@ -4,8 +4,11 @@ use super::*;
 fn only_typed_query_and_pool_failures_are_unavailable() {
     use diesel::ConnectionError;
     assert!(
-        signing_query(Error::DatabaseError(DatabaseErrorKind::ClosedConnection, Box::new("fixture".to_owned())))
-            .is::<nazo_key_management::SigningKeyRepositoryUnavailable>()
+        signing_query(Error::DatabaseError(
+            DatabaseErrorKind::ClosedConnection,
+            Box::new("fixture".to_owned())
+        ))
+        .is::<nazo_key_management::SigningKeyRepositoryUnavailable>()
     );
     assert!(
         migration_query(Error::DatabaseError(
@@ -74,11 +77,22 @@ async fn actual_migration_harness_preserves_wrapped_query_type() {
             .await
             .unwrap();
         let mut harness = AsyncMigrationHarness::new(connection);
-        let error = harness.run_pending_migrations(FileBasedMigrations::from_path(&directory).unwrap()).unwrap_err();
-        assert!(error.downcast_ref::<Error>().is_none(), "pinned harness boxes a private wrapper");
+        let error = harness
+            .run_pending_migrations(FileBasedMigrations::from_path(&directory).unwrap())
+            .unwrap_err();
+        assert!(
+            error.downcast_ref::<Error>().is_none(),
+            "pinned harness boxes a private wrapper"
+        );
         let classified = migration_harness(error).context("outer migration context");
-        assert!(!classified.is::<nazo_persistence::MigrationUnavailable>(), "opaque migration wrappers are not guessed from their text");
-        assert!(classified.chain().count() >= 2, "boxed harness source remains attached to outer context");
+        assert!(
+            !classified.is::<nazo_persistence::MigrationUnavailable>(),
+            "opaque migration wrappers are not guessed from their text"
+        );
+        assert!(
+            classified.chain().count() >= 2,
+            "boxed harness source remains attached to outer context"
+        );
         let mut connection = harness.into_inner();
         connection
             .batch_execute(&format!("DROP SCHEMA {schema} CASCADE"))
@@ -94,11 +108,17 @@ fn unlock_failure_preserves_primary_error_category() {
         DatabaseErrorKind::UniqueViolation,
         Box::new("fixture".to_owned()),
     ));
-    let cleanup = migration_query(Error::DatabaseError(DatabaseErrorKind::ClosedConnection, Box::new("fixture".to_owned())));
+    let cleanup = migration_query(Error::DatabaseError(
+        DatabaseErrorKind::ClosedConnection,
+        Box::new("fixture".to_owned()),
+    ));
     let combined = migration_outcome(Err(primary), Err(cleanup)).unwrap_err();
     assert!(!combined.is::<nazo_persistence::MigrationUnavailable>());
     assert!(combined.is::<Error>());
-    let primary = migration_query(Error::DatabaseError(DatabaseErrorKind::ClosedConnection, Box::new("fixture".to_owned())));
+    let primary = migration_query(Error::DatabaseError(
+        DatabaseErrorKind::ClosedConnection,
+        Box::new("fixture".to_owned()),
+    ));
     let cleanup = anyhow::anyhow!("unlock permanent fixture");
     assert!(
         migration_outcome(Err(primary), Err(cleanup))
@@ -106,18 +126,39 @@ fn unlock_failure_preserves_primary_error_category() {
             .is::<nazo_persistence::MigrationUnavailable>()
     );
     assert!(
-        migration_outcome(Ok(true), Err(migration_query(Error::DatabaseError(DatabaseErrorKind::ClosedConnection, Box::new("fixture".to_owned())))))
-            .unwrap_err()
-            .is::<nazo_persistence::MigrationUnavailable>()
+        migration_outcome(
+            Ok(true),
+            Err(migration_query(Error::DatabaseError(
+                DatabaseErrorKind::ClosedConnection,
+                Box::new("fixture".to_owned())
+            )))
+        )
+        .unwrap_err()
+        .is::<nazo_persistence::MigrationUnavailable>()
     );
 }
 
-
 #[test]
 fn direct_boxed_public_migration_errors_keep_typed_retry_and_original_cause() {
-    for (kind,retryable) in [(DatabaseErrorKind::ClosedConnection,true),(DatabaseErrorKind::SerializationFailure,true),(DatabaseErrorKind::UniqueViolation,false),(DatabaseErrorKind::Unknown,false)] {
-        let error=migration_harness(Box::new(Error::DatabaseError(kind,Box::new("fixture".to_owned())))).context("outer context");
-        assert_eq!(error.is::<nazo_persistence::MigrationUnavailable>(),retryable);
-        assert!(error.chain().any(|cause| cause.downcast_ref::<Error>().is_some()));
+    for (kind, retryable) in [
+        (DatabaseErrorKind::ClosedConnection, true),
+        (DatabaseErrorKind::SerializationFailure, true),
+        (DatabaseErrorKind::UniqueViolation, false),
+        (DatabaseErrorKind::Unknown, false),
+    ] {
+        let error = migration_harness(Box::new(Error::DatabaseError(
+            kind,
+            Box::new("fixture".to_owned()),
+        )))
+        .context("outer context");
+        assert_eq!(
+            error.is::<nazo_persistence::MigrationUnavailable>(),
+            retryable
+        );
+        assert!(
+            error
+                .chain()
+                .any(|cause| cause.downcast_ref::<Error>().is_some())
+        );
     }
 }

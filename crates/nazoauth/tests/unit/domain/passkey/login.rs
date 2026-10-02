@@ -49,21 +49,44 @@ async fn remember_mfa_device(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(nazo_oauth_server::crypto::blake3_hex);
-    let key = nazo_identity::ports::MfaTotpKey::new("passkey-remember-fixture", rand::random()).unwrap();
-    let repository = Arc::new(nazo_postgres::MfaRepository::with_totp_key_ring(state.diesel_db.clone(), Some(nazo_identity::ports::MfaTotpKeyRing::new(key, None).unwrap())));
+    let key =
+        nazo_identity::ports::MfaTotpKey::new("passkey-remember-fixture", rand::random()).unwrap();
+    let repository = Arc::new(nazo_postgres::MfaRepository::with_totp_key_ring(
+        state.diesel_db.clone(),
+        Some(nazo_identity::ports::MfaTotpKeyRing::new(key, None).unwrap()),
+    ));
     let service = nazo_identity::MfaService::new(repository, Arc::new(ServerMfaSecretHasher));
-    let enrollment = service.begin_totp(user, "Passkey fixture").await.map_err(|error| anyhow::anyhow!("MFA fixture enrollment: {error:?}"))?;
+    let enrollment = service
+        .begin_totp(user, "Passkey fixture")
+        .await
+        .map_err(|error| anyhow::anyhow!("MFA fixture enrollment: {error:?}"))?;
     let mut connection = get_conn(&state.diesel_db).await?;
     sql_query("UPDATE user_totp_credentials SET confirmed_at=CURRENT_TIMESTAMP WHERE tenant_id=$1 AND user_id=$2")
         .bind::<SqlUuid,_>(user.tenant().tenant_id.as_uuid()).bind::<SqlUuid,_>(user.user_id().as_uuid()).execute(&mut connection).await?;
     drop(connection);
     let now = Utc::now().timestamp();
     let secret = nazo_identity::mfa::base32_decode(&enrollment.secret_base32).unwrap();
-    let code = nazo_identity::mfa::totp_for_step(&secret, now / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS).unwrap();
-    let proof = service.verify_factor(user, &code, now).await.map_err(|error| anyhow::anyhow!("MFA fixture verification: {error:?}"))?.expect("actual confirmed TOTP proof");
-    service.remember_device(user, &proof, user_agent_hash, Utc::now() + chrono::Duration::seconds(i64::try_from(MFA_REMEMBERED_TTL_SECONDS).unwrap()))
-        .await.map_err(|error| anyhow::anyhow!("failed to remember MFA device: {error:?}"))?.ok_or_else(|| anyhow::anyhow!("fixture credential generation disappeared"))
-
+    let code = nazo_identity::mfa::totp_for_step(
+        &secret,
+        now / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS,
+    )
+    .unwrap();
+    let proof = service
+        .verify_factor(user, &code, now)
+        .await
+        .map_err(|error| anyhow::anyhow!("MFA fixture verification: {error:?}"))?
+        .expect("actual confirmed TOTP proof");
+    service
+        .remember_device(
+            user,
+            &proof,
+            user_agent_hash,
+            Utc::now()
+                + chrono::Duration::seconds(i64::try_from(MFA_REMEMBERED_TTL_SECONDS).unwrap()),
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to remember MFA device: {error:?}"))?
+        .ok_or_else(|| anyhow::anyhow!("fixture credential generation disappeared"))
 }
 
 #[test]

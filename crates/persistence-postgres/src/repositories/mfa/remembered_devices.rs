@@ -47,9 +47,14 @@ impl MfaRepository {
                     .filter(crate::schema::user_totp_credentials::user_id.eq(user_id.as_uuid()))
                     .filter(crate::schema::user_totp_credentials::id.eq(credential_id))
                     .filter(crate::schema::user_totp_credentials::confirmed_at.is_not_null())
-                    .for_key_share().select(crate::schema::user_totp_credentials::id)
-                    .first::<uuid::Uuid>(connection).await.optional()?;
-                if generation.is_none() { return Ok(false); }
+                    .for_key_share()
+                    .select(crate::schema::user_totp_credentials::id)
+                    .first::<uuid::Uuid>(connection)
+                    .await
+                    .optional()?;
+                if generation.is_none() {
+                    return Ok(false);
+                }
                 diesel::delete(
                     user_mfa_remembered_devices::table
                         .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))

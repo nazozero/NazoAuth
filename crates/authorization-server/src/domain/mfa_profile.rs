@@ -337,18 +337,18 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 let now = DateTime::<Utc>::from_timestamp(command.context.now, 0)
                     .unwrap_or_else(Utc::now);
                 let ttl = i64::try_from(self.remembered_mfa_ttl_seconds).unwrap_or(i64::MAX);
-                    self.mfa
-                        .remember_device(
-                            &account,
-                            &method,
-                            command.context.user_agent_hash.clone(),
-                            now + Duration::seconds(ttl),
-                        )
-                        .await
-                        .map_err(|error| {
-                            tracing::warn!(?error, "failed to remember MFA device");
-                            MfaProfileError::new(MfaProfileErrorKind::RememberDeviceFailed)
-                        })?
+                self.mfa
+                    .remember_device(
+                        &account,
+                        &method,
+                        command.context.user_agent_hash.clone(),
+                        now + Duration::seconds(ttl),
+                    )
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(?error, "failed to remember MFA device");
+                        MfaProfileError::new(MfaProfileErrorKind::RememberDeviceFailed)
+                    })?
             } else {
                 None
             };
@@ -387,7 +387,9 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                     return Err(error);
                 }
             };
-            let rotation = self.rotate(&command.context, method.method(), false).await?;
+            let rotation = self
+                .rotate(&command.context, method.method(), false)
+                .await?;
             self.audit.record(
                 "mfa_step_up_success",
                 self.mfa_fields(&account, &command.context),
@@ -414,7 +416,9 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             let method = self
                 .verify_reserved_factor(&command.context, &account, &command.code)
                 .await?;
-            let rotation = self.rotate(&command.context, method.method(), false).await?;
+            let rotation = self
+                .rotate(&command.context, method.method(), false)
+                .await?;
             match self.mfa.regenerate_backup_codes(&account, &method).await {
                 Ok(backup_codes) => {
                     self.record_required(

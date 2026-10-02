@@ -18,12 +18,19 @@ use crate::{
 /// A successfully consumed factor bound to the confirmed credential generation.
 /// Only verification creates this proof; later writes recheck its row identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MfaVerificationProof { method: MfaVerificationMethod, credential_id: uuid::Uuid }
+pub struct MfaVerificationProof {
+    method: MfaVerificationMethod,
+    credential_id: uuid::Uuid,
+}
 impl MfaVerificationProof {
     #[must_use]
-    pub const fn method(self) -> MfaVerificationMethod { self.method }
+    pub const fn method(self) -> MfaVerificationMethod {
+        self.method
+    }
     #[must_use]
-    pub const fn amr(self) -> &'static str { self.method.amr() }
+    pub const fn amr(self) -> &'static str {
+        self.method.amr()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -213,7 +220,13 @@ impl MfaService {
             .verify_and_consume_totp(account.tenant().tenant_id, account.user_id(), code, now)
             .await
             .map_err(MfaServiceError::repository)?;
-        Ok(match outcome { TotpVerificationOutcome::Accepted(credential_id) => Some(MfaVerificationProof { method: MfaVerificationMethod::Totp, credential_id }), TotpVerificationOutcome::Invalid | TotpVerificationOutcome::Replay => None })
+        Ok(match outcome {
+            TotpVerificationOutcome::Accepted(credential_id) => Some(MfaVerificationProof {
+                method: MfaVerificationMethod::Totp,
+                credential_id,
+            }),
+            TotpVerificationOutcome::Invalid | TotpVerificationOutcome::Replay => None,
+        })
     }
 
     pub async fn regenerate_backup_codes(
@@ -227,11 +240,19 @@ impl MfaService {
             .hash_secrets(normalized)
             .await
             .map_err(mfa_hash_error)?;
-        let replaced = self.repository
-            .replace_backup_code_hashes(account.tenant().tenant_id, account.user_id(), proof.credential_id, hashes)
+        let replaced = self
+            .repository
+            .replace_backup_code_hashes(
+                account.tenant().tenant_id,
+                account.user_id(),
+                proof.credential_id,
+                hashes,
+            )
             .await
             .map_err(MfaServiceError::repository)?;
-        if !replaced { return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode)); }
+        if !replaced {
+            return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
+        }
         Ok(codes)
     }
 
@@ -250,7 +271,8 @@ impl MfaService {
         expires_at: DateTime<Utc>,
     ) -> Result<Option<String>, MfaServiceError> {
         let token = random_urlsafe_token();
-        let remembered = self.repository
+        let remembered = self
+            .repository
             .remember_device(
                 account.tenant().tenant_id,
                 account.user_id(),
@@ -304,7 +326,10 @@ impl MfaService {
             )
             .await
             .map_err(MfaServiceError::repository)?;
-        Ok(consumed.map(|credential_id| MfaVerificationProof { method: MfaVerificationMethod::BackupCode, credential_id }))
+        Ok(consumed.map(|credential_id| MfaVerificationProof {
+            method: MfaVerificationMethod::BackupCode,
+            credential_id,
+        }))
     }
 }
 
