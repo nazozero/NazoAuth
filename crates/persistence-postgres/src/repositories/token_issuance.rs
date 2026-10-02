@@ -307,10 +307,67 @@ enum CommitTransactionError {
     /// Aborts the transaction so the already inserted single-use row rolls
     /// back; the outer boundary maps this to `CommitTokenIssuanceResult::GrantExpired`.
     GrantExpired,
+    NativeSsoSourceUnavailable,
+    NativeSsoDependencyUnavailable,
 }
 impl From<diesel::result::Error> for CommitTransactionError {
     fn from(error: diesel::result::Error) -> Self {
         Self::Diesel(error)
+    }
+}
+
+/// This is the last authority check before required audit and COMMIT. NOWAIT
+/// avoids cross-client capacity wait cycles; a busy source is a retryable
+/// dependency failure, while an invalid source aborts all destination writes.
+async fn fence_native_sso_source(
+    connection: &mut diesel_async::AsyncPgConnection,
+    source: &nazo_auth::NativeSsoSourceFence,
+    retired: Option<&super::tokens::RetiredNativeSsoSource>,
+) -> Result<(), CommitTransactionError> {
+    if let Some(retired) = retired {
+        let now = Utc::now();
+        if retired.tenant_id == source.tenant_id
+            && retired.user_id == Some(source.user_id)
+            && retired.token_family_id == source.family_id
+            && retired.source_client_id == source.source_client_id
+            && retired.expires_at > now
+            && source.device_secret_expires_at > now
+        {
+            return Ok(());
+        }
+        return Err(CommitTransactionError::NativeSsoSourceUnavailable);
+    }
+    #[derive(QueryableByName)]
+    struct SourceState {
+        #[diesel(sql_type = sql_types::Timestamptz)]
+        expires_at: DateTime<Utc>,
+        #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+        revoked_at: Option<DateTime<Utc>>,
+        #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+        reuse_detected_at: Option<DateTime<Utc>>,
+    }
+    let state = sql_query(
+        "SELECT family.current_expires_at AS expires_at, family.revoked_at, family.reuse_detected_at \
+         FROM oauth_refresh_families AS family \
+         JOIN oauth_clients AS client ON client.tenant_id=family.tenant_id AND client.id=family.client_id \
+         WHERE family.tenant_id=$1 AND family.user_id=$2 AND client.client_id=$3 AND family.token_family_id=$4 \
+         FOR SHARE OF family NOWAIT",
+    ).bind::<sql_types::Uuid,_>(source.tenant_id)
+        .bind::<sql_types::Uuid,_>(source.user_id)
+        .bind::<sql_types::Text,_>(&source.source_client_id)
+        .bind::<sql_types::Uuid,_>(source.family_id)
+        .get_result::<SourceState>(connection).await.optional()
+        .map_err(|error| { tracing::warn!(%error, "Native SSO source row could not be fenced"); CommitTransactionError::NativeSsoDependencyUnavailable })?;
+    let now = Utc::now();
+    if state.is_some_and(|state| {
+        state.revoked_at.is_none()
+            && state.reuse_detected_at.is_none()
+            && state.expires_at > now
+            && source.device_secret_expires_at > now
+    }) {
+        Ok(())
+    } else {
+        Err(CommitTransactionError::NativeSsoSourceUnavailable)
     }
 }
 
@@ -362,6 +419,21 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
                 "refresh token owner or subject does not match token issuance".to_owned(),
             ));
         }
+    }
+    if let Some(source) = input.native_sso_source.as_ref()
+        && (source.tenant_id != input.tenant_id
+            || Some(source.user_id) != input.user_id
+            || source.family_id.is_nil()
+            || source.source_client_id.is_empty()
+            || !matches!(input.mode, TokenIssuanceMode::Fresh)
+            || !matches!(
+                input.refresh_token,
+                Some(RefreshTokenCommit::IssueNew { .. })
+            ))
+    {
+        return Err(RepositoryError::Consistency(
+            "Native SSO source fence does not match destination issuance".to_owned(),
+        ));
     }
     DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0).ok_or_else(|| {
         RepositoryError::Consistency("token issuance access-token expiry is invalid".to_owned())
@@ -553,6 +625,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                         Some(_) => {}
                                     }
                                 }
+                                let mut retired_native_source = None;
                                 if let Some(refresh) = input.refresh_token.as_ref() {
                                     match TokenRepository::persist_refresh_token_on_connection(
                                         connection,
@@ -560,15 +633,16 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                         &client_type,
                                         input.issuance_id,
                                         prepared_contract.as_ref(),
+                                        input.native_sso_source.as_ref(),
                                     )
                                     .await
                                     .map_err(CommitTransactionError::Repository)?
                                     {
-                                        RefreshTokenPersistResult::Inserted => {}
-                                        RefreshTokenPersistResult::InvalidSource => {
+                                        (RefreshTokenPersistResult::Inserted, retired) => { retired_native_source = retired; }
+                                        (RefreshTokenPersistResult::InvalidSource, _) => {
                                             return Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable);
                                         }
-                                        RefreshTokenPersistResult::RotationConflict => {
+                                        (RefreshTokenPersistResult::RotationConflict, _) => {
                                             // Keep the family compromise written by the
                                             // rotation attempt, drop only this request's
                                             // issuance row, and commit the reuse audit.
@@ -601,6 +675,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                 }
                                 super::token_principals::ensure_subject_binding(connection, &input)
                                     .await?;
+                                if let Some(source) = input.native_sso_source.as_ref() {
+                                    fence_native_sso_source(connection, source, retired_native_source.as_ref()).await?;
+                                }
                                 append_fresh_security_audit_on_connection(
                                     connection,
                                     &token_issued_audit_event(&input, input.refresh_token.as_ref()),
@@ -619,6 +696,14 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                             // Rollback completed cleanly; the connection is healthy.
                             guard.return_to_pool();
                             Ok(CommitTokenIssuanceResult::GrantExpired)
+                        }
+                        Err(CommitTransactionError::NativeSsoSourceUnavailable) => {
+                            guard.return_to_pool();
+                            Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable)
+                        }
+                        Err(CommitTransactionError::NativeSsoDependencyUnavailable) => {
+                            guard.return_to_pool();
+                            Err(TokenPortError::Unavailable)
                         }
                         Err(CommitTransactionError::Repository(error)) => {
                             Err(map_repository_error(error))

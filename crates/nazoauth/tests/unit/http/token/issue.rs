@@ -285,6 +285,7 @@ pub(crate) async fn persist_consumed_single_use_grant_for_test(
     let issuance_id = Uuid::now_v7();
     let result = service
         .commit_token_issuance(CommitTokenIssuance {
+            native_sso_source: None,
             principal_state: nazo_auth::TokenPrincipalState {
                 client_epoch: 0,
                 user_epoch: None,
@@ -557,6 +558,7 @@ async fn delete_token_issuance_for_grant(
 
 fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
     TokenIssue {
+        native_sso_source: None,
         user_id: None,
         prepared_subject: None,
         subject: "subject-1".to_owned(),
@@ -591,6 +593,7 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
 
 fn token_issue_without_openid() -> TokenIssue {
     TokenIssue {
+        native_sso_source: None,
         user_id: None,
         prepared_subject: None,
         subject: "subject-1".to_owned(),
@@ -710,6 +713,7 @@ async fn persist_refresh_authority_for_issue(
     };
     let result = crate::test_support::token_issuance_repository(state.diesel_db.clone())
         .commit_token_issuance(CommitTokenIssuance {
+            native_sso_source: None,
             principal_state: nazo_auth::TokenPrincipalState {
                 client_epoch: 0,
                 user_epoch: issue.user_id.map(|_| 0),

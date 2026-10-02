@@ -139,6 +139,7 @@ pub async fn token_device_code_with_service(
                     grant_expires_at: payload.expires_at,
                 },
                 TokenIssue {
+                    native_sso_source: None,
                     user_id: Some(approval.user_id),
                     prepared_subject: None,
                     subject: approval.subject,

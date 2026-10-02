@@ -314,6 +314,7 @@ pub async fn token_jwt_bearer_with_service(
             grant_expires_at: assertion.expires_at,
         },
         TokenIssue {
+            native_sso_source: None,
             user_id: None,
             prepared_subject: None,
             subject: assertion.subject,

@@ -677,6 +677,7 @@ mod ciba_device_contract {
         let grant = format!("golden-idempotent-{}", Uuid::now_v7());
         let auth_time = Utc::now().timestamp();
         let issue = || nazo_oauth_server::domain::oauth::TokenIssue {
+            native_sso_source: None,
             user_id: Some(user),
             prepared_subject: None,
             subject: user.to_string(),

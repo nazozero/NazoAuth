@@ -361,6 +361,7 @@ async fn refresh_issuance(fixture: RefreshFixture) -> CommitTokenIssuance {
         .unwrap()
         .insert(token.member_id, (token.tenant_id, token.raw_token.clone()));
     CommitTokenIssuance {
+        native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
             user_epoch: token.user_id.map(|_| 0),

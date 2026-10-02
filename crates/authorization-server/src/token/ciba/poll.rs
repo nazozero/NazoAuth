@@ -343,6 +343,7 @@ fn ciba_token_issue(
     prepared_subject: Option<crate::domain::oauth::PreparedTokenSubject>,
 ) -> TokenIssue {
     TokenIssue {
+        native_sso_source: None,
         user_id: Some(user_id),
         prepared_subject,
         subject,

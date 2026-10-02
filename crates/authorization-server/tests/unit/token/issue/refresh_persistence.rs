@@ -3,6 +3,7 @@ use super::*;
 
 fn openid_issue() -> TokenIssue {
     TokenIssue {
+        native_sso_source: None,
         user_id: Some(Uuid::now_v7()),
         prepared_subject: None,
         subject: "subject-1".to_owned(),

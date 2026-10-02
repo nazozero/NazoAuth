@@ -344,6 +344,7 @@ pub async fn token_refresh_with_service(
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: None,
             user_id: token.user_id,
             prepared_subject: None,
             subject: token.subject,

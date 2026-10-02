@@ -182,19 +182,21 @@ impl TokenRepository {
     /// a nested transaction. The caller's transaction therefore owns the
     /// refresh-family locks, rotation, capacity eviction and any resulting
     /// compromise decision.
-    pub(crate) async fn persist_refresh_token_on_connection(
+    pub(super) async fn persist_refresh_token_on_connection(
         connection: &mut AsyncPgConnection,
         refresh: &RefreshTokenCommit,
         client_type: &str,
         issuance_id: Uuid,
         prepared_contract: Option<&PreparedRefreshContract>,
-    ) -> Result<RefreshTokenPersistResult, RepositoryError> {
+        native_sso_source: Option<&nazo_auth::NativeSsoSourceFence>,
+    ) -> Result<(RefreshTokenPersistResult, Option<RetiredNativeSsoSource>), RepositoryError> {
         persist_refresh_token_inner(
             connection,
             refresh,
             client_type,
             issuance_id,
             prepared_contract,
+            native_sso_source,
         )
         .await
         .map_err(map_error)
@@ -739,7 +741,8 @@ async fn persist_refresh_token_inner(
     client_type: &str,
     issuance_id: Uuid,
     prepared_contract: Option<&PreparedRefreshContract>,
-) -> diesel::QueryResult<RefreshTokenPersistResult> {
+    native_sso_source: Option<&nazo_auth::NativeSsoSourceFence>,
+) -> diesel::QueryResult<(RefreshTokenPersistResult, Option<RetiredNativeSsoSource>)> {
     let (tenant_id, user_id, client_id, family_id) = match refresh {
         RefreshTokenCommit::IssueNew { token, .. } => (
             token.tenant_id,
@@ -780,7 +783,7 @@ async fn persist_refresh_token_inner(
     } = refresh
     {
         let Some(locked) = load_family(connection, tenant_id, family_id, preserve).await? else {
-            return Ok(RefreshTokenPersistResult::InvalidSource);
+            return Ok((RefreshTokenPersistResult::InvalidSource, None));
         };
         let family = locked.family;
         // Read the clock only after all source locks have been acquired.
@@ -788,7 +791,7 @@ async fn persist_refresh_token_inner(
             || family.reuse_detected_at.is_some()
             || family.current_expires_at <= Utc::now()
         {
-            return Ok(RefreshTokenPersistResult::InvalidSource);
+            return Ok((RefreshTokenPersistResult::InvalidSource, None));
         }
         let contract = locked.contract.ok_or_else(|| {
             deserialization_error(RepositoryError::Consistency(
@@ -810,12 +813,12 @@ async fn persist_refresh_token_inner(
         if !source_matches {
             if rotation.is_some() {
                 compromise_family(connection, tenant_id, family_id).await?;
-                return Ok(RefreshTokenPersistResult::RotationConflict);
+                return Ok((RefreshTokenPersistResult::RotationConflict, None));
             }
-            return Ok(RefreshTokenPersistResult::InvalidSource);
+            return Ok((RefreshTokenPersistResult::InvalidSource, None));
         }
         let Some(token) = rotation.as_ref() else {
-            return Ok(RefreshTokenPersistResult::Inserted);
+            return Ok((RefreshTokenPersistResult::Inserted, None));
         };
         let rotated_from_id = authority.member_id;
         let token_blake3 = blake3::hash(token.raw_token.as_bytes());
@@ -849,7 +852,7 @@ async fn persist_refresh_token_inner(
             );
             if !edge_valid {
                 compromise_family(connection, token.tenant_id, token.family_id).await?;
-                return Ok(RefreshTokenPersistResult::RotationConflict);
+                return Ok((RefreshTokenPersistResult::RotationConflict, None));
             }
         }
         // The presented generation becomes a compact spent proof; the family
@@ -908,7 +911,7 @@ async fn persist_refresh_token_inner(
         ))
         .execute(connection)
         .await?;
-        return Ok(RefreshTokenPersistResult::Inserted);
+        return Ok((RefreshTokenPersistResult::Inserted, None));
     }
 
     let RefreshTokenCommit::IssueNew { token, .. } = refresh else {
@@ -948,18 +951,21 @@ async fn persist_refresh_token_inner(
     .present
     {
         compromise_family(connection, token.tenant_id, token.family_id).await?;
-        return Ok(RefreshTokenPersistResult::RotationConflict);
+        return Ok((RefreshTokenPersistResult::RotationConflict, None));
     }
-    if let Some(user_id) = token.user_id {
+    let retired_native_source = if let Some(user_id) = token.user_id {
         retire_families_over_cap(
             connection,
             token.tenant_id,
             user_id,
             token.client_id,
             issuance_id,
+            native_sso_source,
         )
-        .await?;
-    }
+        .await?
+    } else {
+        None
+    };
     // One narrow call references the contract: an existing key is locked
     // FOR KEY SHARE inside this transaction (the family foreign key can
     // never dangle against a concurrent reclaim); a missing key takes the
@@ -990,7 +996,22 @@ async fn persist_refresh_token_inner(
         ))
         .execute(connection)
         .await?;
-    Ok(RefreshTokenPersistResult::Inserted)
+    Ok((RefreshTokenPersistResult::Inserted, retired_native_source))
+}
+
+/// Locked facts from this transaction's successful source-family retirement.
+#[derive(diesel::QueryableByName)]
+pub(super) struct RetiredNativeSsoSource {
+    #[diesel(sql_type = sql_types::Uuid)]
+    pub tenant_id: Uuid,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
+    pub user_id: Option<Uuid>,
+    #[diesel(sql_type = sql_types::Uuid)]
+    pub token_family_id: Uuid,
+    #[diesel(sql_type = sql_types::Text)]
+    pub source_client_id: String,
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    pub expires_at: DateTime<Utc>,
 }
 
 /// Enforce `MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE` inside the grant-scope
@@ -1004,7 +1025,8 @@ async fn retire_families_over_cap(
     user_id: Uuid,
     client_id: Uuid,
     issuance_id: Uuid,
-) -> diesel::QueryResult<()> {
+    native_sso_source: Option<&nazo_auth::NativeSsoSourceFence>,
+) -> diesel::QueryResult<Option<RetiredNativeSsoSource>> {
     #[derive(diesel::QueryableByName)]
     struct LiveFamilyId {
         #[diesel(sql_type = sql_types::Uuid)]
@@ -1031,21 +1053,29 @@ async fn retire_families_over_cap(
     .bind::<sql_types::BigInt, _>(MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE - 1)
     .load::<LiveFamilyId>(connection)
     .await?;
+    let mut retired_native_source = None;
     for victim in victims {
         lock_refresh_family(connection, victim.token_family_id).await?;
-        let revoked = diesel::update(
-            oauth_refresh_families::table
-                .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-                .filter(oauth_refresh_families::token_family_id.eq(victim.token_family_id))
-                .filter(oauth_refresh_families::revoked_at.is_null())
-                .filter(oauth_refresh_families::reuse_detected_at.is_null())
-                .filter(oauth_refresh_families::current_expires_at.gt(diesel::dsl::now)),
+        let revoked = sql_query(
+            "UPDATE oauth_refresh_families AS family SET revoked_at=CURRENT_TIMESTAMP \
+             WHERE family.tenant_id=$1 AND family.token_family_id=$2 \
+               AND family.revoked_at IS NULL AND family.reuse_detected_at IS NULL \
+               AND family.current_expires_at>CURRENT_TIMESTAMP \
+             RETURNING family.tenant_id, family.user_id, family.token_family_id, \
+                       family.current_expires_at AS expires_at, \
+                       (SELECT client.client_id FROM oauth_clients AS client \
+                        WHERE client.tenant_id=family.tenant_id AND client.id=family.client_id) AS source_client_id",
         )
-        .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
-        .execute(connection)
-        .await?;
-        if revoked == 0 {
+        .bind::<sql_types::Uuid,_>(tenant_id)
+        .bind::<sql_types::Uuid,_>(victim.token_family_id)
+        .get_result::<RetiredNativeSsoSource>(connection).await.optional()?;
+        let Some(revoked) = revoked else {
             continue;
+        };
+        if native_sso_source.is_some_and(|source| source.family_id == revoked.token_family_id) {
+            // The proof comes only from this successful UPDATE RETURNING; its
+            // row lock is held until the destination transaction commits.
+            retired_native_source = Some(revoked);
         }
         // Unreferenced contracts are reclaimed by maintenance after its grace.
         append_fresh_security_audit_on_connection(
@@ -1070,7 +1100,7 @@ async fn retire_families_over_cap(
         )
         .await?;
     }
-    Ok(())
+    Ok(retired_native_source)
 }
 
 /// Resolve a presented digest to its family: current member first, then the
