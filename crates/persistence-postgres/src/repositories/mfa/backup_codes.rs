@@ -2,7 +2,7 @@ use super::{MfaAuditError, MfaRepository, mfa_event};
 use crate::{
     get_conn, repositories::audit::insert_identity_security_event, schema::user_mfa_backup_codes,
 };
-use diesel::{ExpressionMethods, QueryDsl, OptionalExtension};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
     IdentitySecurityEventType, IdentitySecurityOutcome, IdentitySecurityReason, TenantId, UserId,
@@ -127,9 +127,14 @@ impl MfaRepository {
                     .filter(crate::schema::user_totp_credentials::user_id.eq(user_id.as_uuid()))
                     .filter(crate::schema::user_totp_credentials::id.eq(credential_id))
                     .filter(crate::schema::user_totp_credentials::confirmed_at.is_not_null())
-                    .for_update().select(crate::schema::user_totp_credentials::id)
-                    .first::<uuid::Uuid>(connection).await.optional()?;
-                if generation.is_none() { return Ok(false); }
+                    .for_update()
+                    .select(crate::schema::user_totp_credentials::id)
+                    .first::<uuid::Uuid>(connection)
+                    .await
+                    .optional()?;
+                if generation.is_none() {
+                    return Ok(false);
+                }
                 diesel::delete(
                     user_mfa_backup_codes::table
                         .filter(user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()))

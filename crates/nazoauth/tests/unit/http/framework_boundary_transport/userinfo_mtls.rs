@@ -432,16 +432,36 @@ mod real_userinfo_contract {
         .await
         .expect("real access token must sign")
         .token;
-        let Some(jkt) = jkt else { return token; };
+        let Some(jkt) = jkt else {
+            return token;
+        };
         use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
         let mut parts = token.split('.');
         let header = parts.next().unwrap();
-        let mut payload: serde_json::Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts.next().unwrap()).unwrap()).unwrap();
+        let mut payload: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts.next().unwrap()).unwrap())
+                .unwrap();
         payload["cnf"]["jkt"] = json!(jkt);
-        let signing_input = format!("{header}.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap()));
-        let header_value: serde_json::Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(header).unwrap()).unwrap();
-        let signature = nazo_auth::Signer::sign(&state.keyset, nazo_auth::SignRequest { purpose: nazo_auth::SigningPurpose::AccessToken, algorithm: header_value["alg"].as_str().unwrap(), signing_input: signing_input.as_bytes() }).await.unwrap();
-        format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature.as_bytes()))
+        let signing_input = format!(
+            "{header}.{}",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
+        );
+        let header_value: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(header).unwrap()).unwrap();
+        let signature = nazo_auth::Signer::sign(
+            &state.keyset,
+            nazo_auth::SignRequest {
+                purpose: nazo_auth::SigningPurpose::AccessToken,
+                algorithm: header_value["alg"].as_str().unwrap(),
+                signing_input: signing_input.as_bytes(),
+            },
+        )
+        .await
+        .unwrap();
+        format!(
+            "{signing_input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.as_bytes())
+        )
     }
 
     async fn assert_error(response: HttpResponse, description: &str) {

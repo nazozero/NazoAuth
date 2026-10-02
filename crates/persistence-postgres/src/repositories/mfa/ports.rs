@@ -160,8 +160,15 @@ impl MfaRepositoryPort for MfaRepository {
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> RepositoryFuture<'_, bool> {
         Box::pin(async move {
-            self.remember_device(tenant_id, user_id, credential_id, token_hash, user_agent_hash, expires_at)
-                .await
+            self.remember_device(
+                tenant_id,
+                user_id,
+                credential_id,
+                token_hash,
+                user_agent_hash,
+                expires_at,
+            )
+            .await
         })
     }
 }
