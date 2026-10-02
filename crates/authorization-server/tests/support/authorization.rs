@@ -34,7 +34,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 use uuid::Uuid;
@@ -57,6 +57,8 @@ pub struct DecisionState {
 pub struct Ports {
     pub decisions: Mutex<DecisionState>,
     pub assertion_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
+    pub ciba_request_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
+    pub ciba_replay_delay_ms: AtomicU64,
     pub client_secret: Mutex<Option<(String, String)>>,
     pub par_rate: Mutex<Option<Result<u64, AuthorizationPortError>>>,
     pub par_write: Mutex<Option<Result<(), AuthorizationPortError>>>,
@@ -372,7 +374,11 @@ impl AuthorizationStateStorePort for Ports {
         _jti: &'a str,
         _ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::consume_ciba_request_object call")
+        self.record("ciba_request_object_replay");
+        Box::pin(async {
+            std::thread::sleep(std::time::Duration::from_millis(self.ciba_replay_delay_ms.load(Ordering::Relaxed)));
+            *self.ciba_request_replay.lock().unwrap().as_ref().expect("CIBA replay must be configured")
+        })
     }
     fn consume_dpop<'a>(
         &'a self,
@@ -633,6 +639,8 @@ impl Fixture {
         let ports = Arc::new(Ports {
             decisions: Mutex::new(DecisionState::default()),
             assertion_replay: Mutex::new(None),
+            ciba_request_replay: Mutex::new(None),
+            ciba_replay_delay_ms: AtomicU64::new(0),
             client_secret: Mutex::new(None),
             par_rate: Mutex::new(None),
             par_write: Mutex::new(None),

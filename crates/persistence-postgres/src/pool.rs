@@ -254,7 +254,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
 
     let quoted_role = format!("\"{runtime_role}\"");
     connection
-        .transaction::<(), anyhow::Error, _>(async move |connection| {
+        .transaction::<(), diesel::result::Error, _>(async move |connection| {
             connection
                 .batch_execute(&format!(
                     "REVOKE ALL ON SCHEMA public FROM {quoted_role};\
