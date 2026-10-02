@@ -46,7 +46,14 @@ impl MfaRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
-            .transaction::<_, diesel::result::Error, _>(async move |connection| {
+            .build_transaction().read_committed().run::<_, diesel::result::Error, _>(async move |connection| {
+                diesel::delete(
+                    user_totp_credentials::table
+                        .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(user_totp_credentials::user_id.eq(user_id.as_uuid())),
+                )
+                .execute(connection)
+                .await?;
                 diesel::delete(
                     user_mfa_backup_codes::table
                         .filter(user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()))
@@ -58,13 +65,6 @@ impl MfaRepository {
                     user_mfa_remembered_devices::table
                         .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
                         .filter(user_mfa_remembered_devices::user_id.eq(user_id.as_uuid())),
-                )
-                .execute(connection)
-                .await?;
-                diesel::delete(
-                    user_totp_credentials::table
-                        .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
-                        .filter(user_totp_credentials::user_id.eq(user_id.as_uuid())),
                 )
                 .execute(connection)
                 .await?;

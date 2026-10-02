@@ -1,6 +1,6 @@
 use argon2::{Argon2, PasswordHasher};
 use diesel::{
-    QueryableByName, sql_query,
+    QueryableByName, OptionalExtension, sql_query,
     sql_types::{Jsonb, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
@@ -255,6 +255,22 @@ async fn cleanup_oauth_client(pool: &nazo_postgres::DbPool, id: Uuid) {
             .execute(&mut connection)
             .await;
     }
+}
+
+async fn fixture_mfa_generation(pool: &nazo_postgres::DbPool, tenant_id: nazo_identity::TenantId, user_id: nazo_identity::UserId) -> Uuid {
+    #[derive(diesel::QueryableByName)]
+    struct Generation { #[diesel(sql_type = SqlUuid)] id: Uuid }
+    let mut connection = get_conn(pool).await.unwrap();
+    let existing = sql_query("SELECT id FROM user_totp_credentials WHERE tenant_id=$1 AND user_id=$2")
+        .bind::<SqlUuid,_>(tenant_id.as_uuid()).bind::<SqlUuid,_>(user_id.as_uuid())
+        .get_result::<Generation>(&mut connection).await.optional().unwrap();
+    drop(connection);
+    if let Some(row) = existing { return row.id; }
+    mfa_repository(pool.clone()).begin_totp_enrollment(tenant_id,user_id,"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),"confirmed fixture".to_owned()).await.unwrap();
+    let mut connection=get_conn(pool).await.unwrap();
+    sql_query("UPDATE user_totp_credentials SET confirmed_at=CURRENT_TIMESTAMP WHERE tenant_id=$1 AND user_id=$2 RETURNING id")
+        .bind::<SqlUuid,_>(tenant_id.as_uuid()).bind::<SqlUuid,_>(user_id.as_uuid())
+        .get_result::<Generation>(&mut connection).await.unwrap().id
 }
 
 #[tokio::test]
@@ -662,7 +678,7 @@ async fn totp_verification_classification_and_audit_are_atomic_and_replay_safe()
             .verify_and_consume_totp(tenant.tenant_id, user_id, &code, timestamp)
             .await
             .unwrap(),
-        nazo_identity::ports::TotpVerificationOutcome::Accepted
+        nazo_identity::ports::TotpVerificationOutcome::Accepted(fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await)
     );
     assert_eq!(
         repository
@@ -779,14 +795,14 @@ async fn concurrent_totp_enrollment_confirmation_has_one_audited_winner() {
     );
     let mut outcomes = [left.unwrap(), right.unwrap()];
     outcomes.sort_by_key(|outcome| match outcome {
-        nazo_identity::ports::TotpVerificationOutcome::Accepted => 0,
+        nazo_identity::ports::TotpVerificationOutcome::Accepted(_) => 0,
         nazo_identity::ports::TotpVerificationOutcome::Replay => 1,
         nazo_identity::ports::TotpVerificationOutcome::Invalid => 2,
     });
     assert_eq!(
         outcomes,
         [
-            nazo_identity::ports::TotpVerificationOutcome::Accepted,
+            nazo_identity::ports::TotpVerificationOutcome::Accepted(fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await),
             nazo_identity::ports::TotpVerificationOutcome::Replay,
         ]
     );
@@ -817,7 +833,7 @@ async fn backup_code_is_consumed_once_atomically() {
         .to_string();
     let repository = mfa_repository(pool.clone());
     repository
-        .replace_backup_code_hashes(tenant.tenant_id, user_id, vec![hash])
+        .replace_backup_code_hashes(tenant.tenant_id, user_id, fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await, vec![hash])
         .await
         .unwrap();
     let candidate_id = repository
@@ -860,7 +876,7 @@ async fn backup_code_batch_replacement_clears_empty_and_rolls_back_invalid_batch
     repository
         .replace_backup_code_hashes(
             tenant.tenant_id,
-            user_id,
+            user_id, fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             vec!["first-hash".into(), "second-hash".into()],
         )
         .await
@@ -882,7 +898,7 @@ async fn backup_code_batch_replacement_clears_empty_and_rolls_back_invalid_batch
         repository
             .replace_backup_code_hashes(
                 tenant.tenant_id,
-                user_id,
+                user_id, fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
                 vec!["valid-hash".into(), "x".repeat(256)],
             )
             .await
@@ -900,7 +916,7 @@ async fn backup_code_batch_replacement_clears_empty_and_rolls_back_invalid_batch
         "failed batch must roll back deletion of the previous codes"
     );
     repository
-        .replace_backup_code_hashes(tenant.tenant_id, user_id, Vec::new())
+        .replace_backup_code_hashes(tenant.tenant_id, user_id, fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await, Vec::new())
         .await
         .unwrap();
     assert!(
@@ -996,7 +1012,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             .verify_and_confirm_totp(tenant.tenant_id, user_id, &code, timestamp, hashes)
             .await
             .unwrap(),
-        nazo_identity::ports::TotpVerificationOutcome::Accepted
+        nazo_identity::ports::TotpVerificationOutcome::Accepted(fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await)
     );
     let credential = trait_repository
         .totp_credential(tenant.tenant_id, user_id)
@@ -1034,7 +1050,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             .verify_and_consume_totp(tenant.tenant_id, user_id, &next_code, next_timestamp)
             .await
             .unwrap(),
-        nazo_identity::ports::TotpVerificationOutcome::Accepted
+        nazo_identity::ports::TotpVerificationOutcome::Accepted(fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await)
     );
     assert_eq!(
         trait_repository
@@ -1066,13 +1082,13 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         trait_repository
             .consume_backup_code_candidate(tenant.tenant_id, user_id, candidate_id)
             .await
-            .unwrap()
+            .unwrap().is_some()
     );
     assert!(
         !trait_repository
             .consume_backup_code_candidate(tenant.tenant_id, user_id, candidate_id)
             .await
-            .unwrap()
+            .unwrap().is_some()
     );
     trait_repository
         .record_invalid_backup_code_attempt(tenant.tenant_id, user_id)
@@ -1085,7 +1101,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     trait_repository
         .remember_device(
             tenant.tenant_id,
-            user_id,
+            user_id, fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             token_hash.clone(),
             Some(user_agent_hash.clone()),
             now + chrono::Duration::minutes(10),
@@ -1095,7 +1111,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     trait_repository
         .remember_device(
             tenant.tenant_id,
-            user_id,
+            user_id, fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             "c".repeat(64),
             None,
             now - chrono::Duration::minutes(1),
@@ -1136,7 +1152,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     trait_repository
         .remember_device(
             tenant.tenant_id,
-            user_id,
+            user_id, fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             unbound_token_hash.clone(),
             None,
             now + chrono::Duration::minutes(10),
@@ -1493,7 +1509,7 @@ async fn mfa_backup_code_bounds_and_enrollment_conflict_are_explicit() {
         repository
             .replace_backup_code_hashes(
                 tenant.tenant_id,
-                user_id,
+                user_id, fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
                 (0..=nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
                     .map(|index| format!("hash-{index}"))
                     .collect(),
@@ -3264,4 +3280,83 @@ async fn profile_update_cannot_restore_stale_phone_verification() {
             .phone_number_verified
     );
     cleanup(&pool, user).await;
+}
+
+
+#[tokio::test]
+async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_reenrollment() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else { return; };
+    let repository = mfa_repository(pool.clone());
+    let old = fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await;
+    let expires = chrono::Utc::now() + chrono::Duration::hours(1);
+    assert!(repository.remember_device(tenant.tenant_id, user_id, old, "old-device".into(), None, expires).await.unwrap());
+    repository.clear_mfa_state(tenant.tenant_id, user_id).await.unwrap();
+    assert!(!repository.remember_device(tenant.tenant_id, user_id, old, "late-after-clear".into(), None, expires).await.unwrap());
+    let new = fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await;
+    assert_ne!(old, new);
+    assert!(repository.replace_backup_code_hashes(tenant.tenant_id, user_id, new, vec!["new-generation-hash".into()]).await.unwrap());
+    let before = repository.backup_code_candidates(tenant.tenant_id, user_id).await.unwrap();
+    assert!(!repository.remember_device(tenant.tenant_id, user_id, old, "late-after-reenroll".into(), None, expires).await.unwrap());
+    assert!(!repository.replace_backup_code_hashes(tenant.tenant_id, user_id, old, vec!["stale-replacement".into()]).await.unwrap());
+    assert_eq!(repository.backup_code_candidates(tenant.tenant_id, user_id).await.unwrap(), before);
+    assert!(!repository.remembered_device_valid(tenant.tenant_id, user_id, "old-device", None, chrono::Utc::now()).await.unwrap());
+    assert!(!repository.remembered_device_valid(tenant.tenant_id, user_id, "late-after-reenroll", None, chrono::Utc::now()).await.unwrap());
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn mfa_two_consumed_backup_proofs_regenerate_serially_without_generation_lock_cycle() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else { return; };
+    let repository = mfa_repository(pool.clone());
+    let generation = fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await;
+    assert!(repository.replace_backup_code_hashes(tenant.tenant_id,user_id,generation,vec!["first".into(),"second".into()]).await.unwrap());
+    let candidates = repository.backup_code_candidates(tenant.tenant_id,user_id).await.unwrap();
+    let (left,right)=tokio::join!(repository.consume_backup_code_candidate(tenant.tenant_id,user_id,candidates[0].id),repository.consume_backup_code_candidate(tenant.tenant_id,user_id,candidates[1].id));
+    assert_eq!(left.unwrap(),Some(generation)); assert_eq!(right.unwrap(),Some(generation));
+    let (left,right)=tokio::time::timeout(std::time::Duration::from_secs(5),async {
+        tokio::join!(repository.replace_backup_code_hashes(tenant.tenant_id,user_id,generation,vec!["left".into()]),repository.replace_backup_code_hashes(tenant.tenant_id,user_id,generation,vec!["right".into()]))
+    }).await.expect("same generation regenerations must not deadlock");
+    assert!(left.unwrap()); assert!(right.unwrap());
+    let final_codes=repository.backup_code_candidates(tenant.tenant_id,user_id).await.unwrap();
+    assert_eq!(final_codes.len(),1); assert!(matches!(final_codes[0].hash.as_str(),"left"|"right"));
+    cleanup(&pool,user_id).await;
+}
+
+#[tokio::test]
+async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_device() {
+    use diesel_async::SimpleAsyncConnection;
+    let Some((pool,tenant,user_id))=database_fixture().await else { return; };
+    let repository=mfa_repository(pool.clone());
+    let generation=fixture_mfa_generation(&pool,tenant.tenant_id,user_id).await;
+    let tag=Uuid::now_v7().simple().to_string(); let function=format!("mfa_remember_barrier_{tag}");
+    let lock_key=i64::from(rand::random::<u32>() & 0x7fff_ffff);
+    let mut blocker=get_conn(&pool).await.unwrap();
+    blocker.batch_execute(&format!("CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({lock_key}); RETURN NEW; END $$; CREATE TRIGGER {function} BEFORE INSERT ON user_mfa_remembered_devices FOR EACH ROW WHEN (NEW.user_id='{}'::uuid) EXECUTE FUNCTION {function}(); BEGIN; SELECT pg_advisory_xact_lock({lock_key});",user_id.as_uuid())).await.unwrap();
+    let remember_repository=repository.clone();
+    let remember=tokio::spawn(async move { remember_repository.remember_device(tenant.tenant_id,user_id,generation,"racing-device".into(),None,chrono::Utc::now()+chrono::Duration::hours(1)).await });
+    #[derive(QueryableByName)] struct Waiting { #[diesel(sql_type=diesel::sql_types::Bool)] waiting:bool }
+    tokio::time::timeout(std::time::Duration::from_secs(5),async {
+        loop {
+            let mut observation=get_conn(&pool).await.unwrap();
+            let waiting=sql_query("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=0 AND objid=$1::oid AND NOT granted) AS waiting").bind::<diesel::sql_types::BigInt,_>(lock_key).get_result::<Waiting>(&mut observation).await.unwrap();
+            if waiting.waiting { break; } tokio::task::yield_now().await;
+        }
+    }).await.expect("production remember reached insert while holding generation key share");
+    let clear_repository=repository.clone();
+    let clear=tokio::spawn(async move { clear_repository.clear_mfa_state(tenant.tenant_id,user_id).await });
+    tokio::time::timeout(std::time::Duration::from_secs(5),async {
+        loop {
+            let mut observation=get_conn(&pool).await.unwrap();
+            let waiting=sql_query("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND query LIKE '%user_totp_credentials%' AND wait_event_type='Lock') AS waiting").get_result::<Waiting>(&mut observation).await.unwrap();
+            if waiting.waiting { break; } tokio::task::yield_now().await;
+        }
+    }).await.expect("production clear waits behind remember generation lock");
+    assert!(!clear.is_finished());
+    blocker.batch_execute("COMMIT").await.unwrap();
+    assert!(tokio::time::timeout(std::time::Duration::from_secs(5),remember).await.unwrap().unwrap().unwrap());
+    tokio::time::timeout(std::time::Duration::from_secs(5),clear).await.unwrap().unwrap().unwrap();
+    assert!(!repository.remembered_device_valid(tenant.tenant_id,user_id,"racing-device",None,chrono::Utc::now()).await.unwrap());
+    assert!(repository.totp_enrollment(tenant.tenant_id,user_id).await.unwrap().is_none());
+    blocker.batch_execute(&format!("DROP TRIGGER {function} ON user_mfa_remembered_devices; DROP FUNCTION {function}();")).await.unwrap();
+    drop(blocker); cleanup(&pool,user_id).await;
 }

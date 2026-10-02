@@ -103,7 +103,7 @@ pub struct TotpEnrollment {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TotpVerificationOutcome {
-    Accepted,
+    Accepted(Uuid),
     Invalid,
     Replay,
 }
@@ -192,7 +192,7 @@ pub trait MfaRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
         candidate_id: Uuid,
-    ) -> RepositoryFuture<'_, bool>;
+    ) -> RepositoryFuture<'_, Option<Uuid>>;
 
     fn record_invalid_backup_code_attempt(
         &self,
@@ -204,8 +204,9 @@ pub trait MfaRepositoryPort: Send + Sync {
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: Uuid,
         hashes: Vec<EncodedSecretHash>,
-    ) -> RepositoryFuture<'a, ()>;
+    ) -> RepositoryFuture<'a, bool>;
 
     fn clear_mfa_state<'a>(
         &'a self,
@@ -217,8 +218,9 @@ pub trait MfaRepositoryPort: Send + Sync {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
         expires_at: DateTime<Utc>,
-    ) -> RepositoryFuture<'_, ()>;
+    ) -> RepositoryFuture<'_, bool>;
 }
