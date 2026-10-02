@@ -43,7 +43,7 @@ async fn actual_migration_harness_preserves_wrapped_query_type() {
     use diesel_async::{
         AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, SimpleAsyncConnection,
     };
-    use diesel_migrations::{FileBasedMigrations, MigrationHarness, RunMigrationsError};
+    use diesel_migrations::FileBasedMigrations;
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .ok();
@@ -74,14 +74,7 @@ async fn actual_migration_harness_preserves_wrapped_query_type() {
             .await
             .unwrap();
         let mut harness = AsyncMigrationHarness::new(connection);
-        let error = harness
-            .run_pending_migrations(FileBasedMigrations::from_path(&directory).unwrap())
-            .unwrap_err();
-        assert!(matches!(
-            error.downcast_ref::<RunMigrationsError>(),
-            Some(RunMigrationsError::QueryError(_, _))
-        ));
-        let classified = migration_harness(error).context("outer migration context");
+        let classified = run_pending_migrations(&mut harness, FileBasedMigrations::from_path(&directory).unwrap()).unwrap_err().context("outer migration context");
         assert_eq!(
             classified.is::<nazo_persistence::MigrationUnavailable>(),
             retryable
@@ -89,8 +82,8 @@ async fn actual_migration_harness_preserves_wrapped_query_type() {
         assert!(
             classified
                 .chain()
-                .any(|source| source.downcast_ref::<RunMigrationsError>().is_some()),
-            "boxed harness source must remain inspectable"
+                .any(|source| source.downcast_ref::<Error>().is_some()),
+            "original migration query source must remain inspectable"
         );
         let mut connection = harness.into_inner();
         connection
