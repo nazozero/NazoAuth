@@ -4,7 +4,7 @@ use super::*;
 fn only_typed_query_and_pool_failures_are_unavailable() {
     use diesel::ConnectionError;
     assert!(
-        signing_query(Error::ClosedConnection)
+        signing_query(Error::DatabaseError(DatabaseErrorKind::ClosedConnection, Box::new("fixture".to_owned())))
             .is::<nazo_key_management::SigningKeyRepositoryUnavailable>()
     );
     assert!(
@@ -107,11 +107,11 @@ fn unlock_failure_preserves_primary_error_category() {
         DatabaseErrorKind::UniqueViolation,
         Box::new("fixture".to_owned()),
     ));
-    let cleanup = migration_query(Error::ClosedConnection);
+    let cleanup = migration_query(Error::DatabaseError(DatabaseErrorKind::ClosedConnection, Box::new("fixture".to_owned())));
     let combined = migration_outcome(Err(primary), Err(cleanup)).unwrap_err();
     assert!(!combined.is::<nazo_persistence::MigrationUnavailable>());
     assert!(combined.is::<Error>());
-    let primary = migration_query(Error::ClosedConnection);
+    let primary = migration_query(Error::DatabaseError(DatabaseErrorKind::ClosedConnection, Box::new("fixture".to_owned())));
     let cleanup = anyhow::anyhow!("unlock permanent fixture");
     assert!(
         migration_outcome(Err(primary), Err(cleanup))
@@ -119,7 +119,7 @@ fn unlock_failure_preserves_primary_error_category() {
             .is::<nazo_persistence::MigrationUnavailable>()
     );
     assert!(
-        migration_outcome(Ok(true), Err(migration_query(Error::ClosedConnection)))
+        migration_outcome(Ok(true), Err(migration_query(Error::DatabaseError(DatabaseErrorKind::ClosedConnection, Box::new("fixture".to_owned())))))
             .unwrap_err()
             .is::<nazo_persistence::MigrationUnavailable>()
     );
