@@ -428,3 +428,9 @@ MFA verification retains the confirmed TOTP credential row UUID as the generatio
 Credential revocation’s scoped unknown-status exemption follows the successfully authenticated path anchor DER. Scoped anchors are considered before global anchors during the same path validation; an unrelated loaded or attached scoped certificate supplies no exemption. Known revocation and missing/stale required snapshots remain failures.
 
 Local avatar upload synchronizes the candidate and its directory lineage through the configured storage root only. Deployment must precreate and durably provision that root and its parent entry before serving uploads; per-upload code does not claim durability or read permissions for unrelated OS ancestors.
+
+MFA profile operations classify active or pending MFA state from one validated
+session snapshot and check the account once. An active session with no pending
+challenge returns the existing challenge-missing response without clearing
+cookies; inactive or corrupt sessions are invalidated, while dependency failures
+retain the browser session and return its unavailable response.
