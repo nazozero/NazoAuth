@@ -9,7 +9,7 @@
 
 use std::{
     io::{Read as _, Write as _},
-    net::SocketAddr,
+    net::{SocketAddr, ToSocketAddrs},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
@@ -288,8 +288,10 @@ fn valkey_socket_address(valkey_url: &str) -> SocketAddr {
         .expect("valkey URL must include a port");
     let address = format!("{host}:{port}");
     address
-        .parse()
-        .expect("valkey URL must resolve to a socket address")
+        .to_socket_addrs()
+        .expect("valkey URL must resolve to socket addresses")
+        .next()
+        .expect("valkey URL must resolve to at least one socket address")
 }
 
 fn snapshot_key() -> String {
