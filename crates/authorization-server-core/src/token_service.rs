@@ -305,10 +305,12 @@ pub struct UserinfoSnapshot {
 }
 
 pub trait TokenRepositoryPort: Send + Sync {
+    /// Read user authority without replacing the client epoch from authentication.
+    /// The commit still rechecks both versions under its principal locks.
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
-        client_id: Uuid,
+        client_epoch: i64,
         user_id: Option<Uuid>,
         subject: &'a str,
     ) -> TokenFuture<'a, TokenPrincipalState>;
@@ -622,12 +624,12 @@ where
     pub async fn token_principal_state(
         &self,
         tenant_id: Uuid,
-        client_id: Uuid,
+        client_epoch: i64,
         user_id: Option<Uuid>,
         subject: &str,
     ) -> Result<TokenPrincipalState, TokenPortError> {
         self.repository
-            .token_principal_state(tenant_id, client_id, user_id, subject)
+            .token_principal_state(tenant_id, client_epoch, user_id, subject)
             .await
     }
 

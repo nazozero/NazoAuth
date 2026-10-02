@@ -115,7 +115,9 @@ pub async fn issue_token_response(
             refresh_authorization_scopes,
             openid4vci_credential_authorization,
         );
-    let refresh_authentication_context = if will_issue_refresh {
+    let refresh_authentication_context = if will_issue_refresh
+        && matches!(issue.refresh_token_policy, RefreshTokenPolicy::IssueNew)
+    {
         let Some(context) = refresh_authentication_context(
             &issue,
             context.config.issuer(),
@@ -243,7 +245,12 @@ pub async fn issue_token_response(
         }
     } else {
         match token_service
-            .token_principal_state(client.tenant_id, client.id, issue.user_id, &issue.subject)
+            .token_principal_state(
+                client.tenant_id,
+                context.client_epoch,
+                issue.user_id,
+                &issue.subject,
+            )
             .await
         {
             Ok(state) => state,
@@ -560,15 +567,17 @@ pub async fn issue_token_response(
         })
     } else {
         refresh_token_to_commit.map(|token| {
+            let mut authentication_context = refresh_authentication_context
+                .expect("new refresh family validated authentication context");
+            authentication_context.nonce = None;
+            authentication_context.id_token_sid = None;
             let contract = nazo_auth::RefreshContract {
                 subject: issue.subject.clone(),
                 scopes: issue.scopes.clone(),
                 audiences: token.audiences.clone(),
                 authorization_details: issue.authorization_details.clone(),
-                authentication_context: refresh_authentication_context
-                    .expect("new refresh family validated authentication context"),
-            }
-            .persisted();
+                authentication_context,
+            };
             nazo_auth::RefreshTokenCommit::IssueNew { token, contract }
         })
     };
@@ -647,14 +656,9 @@ pub async fn issue_token_response(
         .await
     {
         Ok(CommitTokenIssuanceResult::Committed) => {
-            // The committed issuance row is the authoritative consumed
-            // state; the state-store entry is dropped without retaining a
-            // long-lived consumed marker.
-            if let Some(code_hash) = issue.authorization_code_hash.as_deref()
-                && let Err(error) = token_service.finalize_authorization_code(code_hash).await
-            {
-                tracing::warn!(%error, issuance_id = %issuance_id, "failed to drop consumed authorization code state");
-            }
+            // The durable receipt is the consumption authority. Busy and
+            // Missing replays both consult it before returning, so the cache
+            // entry can expire under its original TTL without delaying success.
             return Ok(TokenEndpointSuccess::Issued {
                 body,
                 dpop_nonce: next_dpop_nonce,

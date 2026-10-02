@@ -24,7 +24,7 @@ impl TokenRepositoryPort for Ports {
     fn token_principal_state<'a>(
         &'a self,
         _tenant_id: Uuid,
-        _client_id: Uuid,
+        _client_epoch: i64,
         _user_id: Option<Uuid>,
         _subject: &'a str,
     ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {

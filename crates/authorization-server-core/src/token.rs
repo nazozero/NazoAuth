@@ -186,6 +186,9 @@ pub struct RefreshTokenAuthority {
 impl RefreshToken {
     #[must_use]
     pub fn authority(&self) -> RefreshTokenAuthority {
+        let mut authentication_context = self.authentication_context.clone();
+        authentication_context.nonce = None;
+        authentication_context.id_token_sid = None;
         RefreshTokenAuthority {
             tenant_id: self.tenant_id,
             client_id: self.client_id,
@@ -199,9 +202,8 @@ impl RefreshToken {
                 scopes: crate::string_array_values(&self.scopes),
                 audiences: self.contract_audiences.clone(),
                 authorization_details: self.authorization_details.clone(),
-                authentication_context: self.authentication_context.clone(),
-            }
-            .persisted(),
+                authentication_context,
+            },
             current_audiences: crate::string_array_values(&self.audience),
             id_token_sid: self.authentication_context.id_token_sid.clone(),
             dpop_jkt: self.dpop_jkt.clone(),
