@@ -718,41 +718,92 @@ async fn admin_patch_user_reports_not_found_for_each_requested_field_update() {
 
 #[actix_web::test]
 async fn system_tenant_admin_update_commits_state_and_registered_required_audit() {
-    use diesel::{sql_query, sql_types::{Text, Uuid as SqlUuid}};
+    use diesel::{
+        sql_query,
+        sql_types::{Text, Uuid as SqlUuid},
+    };
     use diesel_async::RunQueryDsl;
-    use nazo_identity::{TenantContext, TenantDirectoryBinding, TenantId, RealmId, OrganizationId};
-    let Some(fixture) = LiveAdminUsersFixture::new().await else { return; };
+    use nazo_identity::{OrganizationId, RealmId, TenantContext, TenantDirectoryBinding, TenantId};
+    let Some(fixture) = LiveAdminUsersFixture::new().await else {
+        return;
+    };
     let suffix = Uuid::now_v7().simple().to_string();
-    let admin = fixture.create_user(&format!("{suffix}-system-admin"), "admin", 10).await;
-    let target = fixture.create_user(&format!("{suffix}-tenant-admin"), "user", 0).await;
-    let tenant = Uuid::now_v7(); let realm = Uuid::now_v7(); let organization = Uuid::now_v7();
-    let mut conn = nazo_postgres::get_conn(&fixture.state.diesel_db).await.unwrap();
+    let admin = fixture
+        .create_user(&format!("{suffix}-system-admin"), "admin", 10)
+        .await;
+    let target = fixture
+        .create_user(&format!("{suffix}-tenant-admin"), "user", 0)
+        .await;
+    let tenant = Uuid::now_v7();
+    let realm = Uuid::now_v7();
+    let organization = Uuid::now_v7();
+    let mut conn = nazo_postgres::get_conn(&fixture.state.diesel_db)
+        .await
+        .unwrap();
     sql_query("INSERT INTO tenants (id, slug, display_name) VALUES ($1, $2, 'Audit regression')")
-        .bind::<SqlUuid,_>(tenant).bind::<Text,_>(format!("audit-{suffix}")).execute(&mut conn).await.unwrap();
+        .bind::<SqlUuid, _>(tenant)
+        .bind::<Text, _>(format!("audit-{suffix}"))
+        .execute(&mut conn)
+        .await
+        .unwrap();
     sql_query("INSERT INTO realms (id, tenant_id, slug, display_name) VALUES ($1, $2, 'default', 'Default')")
         .bind::<SqlUuid,_>(realm).bind::<SqlUuid,_>(tenant).execute(&mut conn).await.unwrap();
     sql_query("INSERT INTO organizations (id, tenant_id, slug, display_name) VALUES ($1, $2, 'default', 'Default')")
         .bind::<SqlUuid,_>(organization).bind::<SqlUuid,_>(tenant).execute(&mut conn).await.unwrap();
     sql_query("UPDATE users SET tenant_id=$1, realm_id=$2, organization_id=$3 WHERE id=$4")
-        .bind::<SqlUuid,_>(tenant).bind::<SqlUuid,_>(realm).bind::<SqlUuid,_>(organization).bind::<SqlUuid,_>(target.id).execute(&mut conn).await.unwrap();
+        .bind::<SqlUuid, _>(tenant)
+        .bind::<SqlUuid, _>(realm)
+        .bind::<SqlUuid, _>(organization)
+        .bind::<SqlUuid, _>(target.id)
+        .execute(&mut conn)
+        .await
+        .unwrap();
     drop(conn);
     let tenant = TenantId::new(tenant).unwrap();
     let registry = crate::bootstrap::test_support::registry(TenantDirectoryBinding {
-        tenant: TenantContext {tenant_id:tenant, realm_id:RealmId::new(realm).unwrap(), organization_id:OrganizationId::new(organization).unwrap()},
-        runtime_revision:1, issuer:"https://tenant-audit.example".to_owned(), external_host:"tenant-audit.example".to_owned(),
+        tenant: TenantContext {
+            tenant_id: tenant,
+            realm_id: RealmId::new(realm).unwrap(),
+            organization_id: OrganizationId::new(organization).unwrap(),
+        },
+        runtime_revision: 1,
+        issuer: "https://tenant-audit.example".to_owned(),
+        external_host: "tenant-audit.example".to_owned(),
     });
-    let sid = format!("sid-{suffix}"); let csrf=format!("csrf-{suffix}");
+    let sid = format!("sid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
     fixture.store_session(&admin, &sid).await;
     let (sessions, users, ip) = admin_user_dependencies(&fixture.state);
     let control = fixture.state.settings.tenant.context.tenant_id;
-    let response = crate::adapters::audit::REQUEST_TENANT.scope(control, system_set_tenant_admin(
-        sessions, users, Data::new(registry), Data::new(crate::bootstrap::routes::ControlTenantId::new(control)), ip,
-        fixture.admin_post_request(&sid,&csrf,"/system/tenants/admin"), actix_web::web::Path::from((tenant.as_uuid(),target.id)), Json(SetTenantAdminRequest {admin_level:3}),
-    )).await;
-    assert_eq!(response.status(),StatusCode::OK);
-    let persisted=fixture.load_user(target.id).await;
-    assert_eq!(persisted.role,"admin"); assert_eq!(persisted.admin_level,3);
-    assert_eq!(fixture.audit_count("system_tenant_admin_updated","target_user_id",&target.id.to_string()).await,1);
+    let response = crate::adapters::audit::REQUEST_TENANT
+        .scope(
+            control,
+            system_set_tenant_admin(
+                sessions,
+                users,
+                Data::new(registry),
+                Data::new(crate::bootstrap::routes::ControlTenantId::new(control)),
+                ip,
+                fixture.admin_post_request(&sid, &csrf, "/system/tenants/admin"),
+                actix_web::web::Path::from((tenant.as_uuid(), target.id)),
+                Json(SetTenantAdminRequest { admin_level: 3 }),
+            ),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let persisted = fixture.load_user(target.id).await;
+    assert_eq!(persisted.role, "admin");
+    assert_eq!(persisted.admin_level, 3);
+    assert_eq!(
+        fixture
+            .audit_count(
+                "system_tenant_admin_updated",
+                "target_user_id",
+                &target.id.to_string()
+            )
+            .await,
+        1
+    );
     // The registration fixes deterministic unknown-event failure. The handler's
     // existing cross-transaction persistence contract is otherwise unchanged.
 }
