@@ -33,7 +33,7 @@ struct WorkerTenantDataCache {
 }
 
 impl WorkerTenantDataCache {
-    fn resolve(&mut self, index: Arc<TenantHostIndex>, host: &str) -> Option<Rc<Extensions>> {
+    fn resolve(&mut self, index: Arc<TenantHostIndex>, host: &str) -> Option<(Rc<Extensions>, Arc<Settings>)> {
         let changed = match &self.index {
             Some(current) => !Arc::ptr_eq(current, &index),
             None => true,
@@ -44,12 +44,13 @@ impl WorkerTenantDataCache {
         }
 
         let runtime = index.by_host.get(host)?;
-        Some(
+        Some((
             self.by_host
                 .entry(host.to_owned())
                 .or_insert_with(|| runtime.assembly().app_data_container())
                 .clone(),
-        )
+            Arc::clone(&runtime.assembly().startup.settings),
+        ))
     }
 }
 
@@ -83,7 +84,7 @@ where
             .map_into_right_body());
     }
     let container = cache.borrow_mut().resolve(registry.load(), &host);
-    let Some(container) = container else {
+    let Some((container, cors_settings)) = container else {
         return Ok(request
             .into_response(HttpResponse::NotFound().finish())
             .map_into_right_body());
@@ -94,8 +95,12 @@ where
         .ok_or_else(|| actix_web::error::ErrorInternalServerError("tenant context is unavailable"))?
         .tenant_id;
     request.add_data_container(container);
-    Ok(crate::adapters::audit::REQUEST_TENANT
-        .scope(tenant_id, next.call(request))
+    Ok(crate::bootstrap::cors::REQUEST_CORS_SETTINGS
+        .scope(cors_settings, async {
+            crate::adapters::audit::REQUEST_TENANT
+                .scope(tenant_id, async { next.call(request).await })
+                .await
+        })
         .await?
         .map_into_left_body())
 }
@@ -165,13 +170,11 @@ pub(super) async fn run(
             tenant_scope = tenant_scope.service(crate::bootstrap::ui_static_files(path));
         }
         let settings = Arc::clone(&route_settings);
-        let cors_registry = registry.clone();
         tenant_scope = tenant_scope.configure(move |cfg| {
             crate::bootstrap::routes::configure_dynamic(
                 cfg,
                 &settings,
                 perf_metrics_enabled,
-                cors_registry.clone(),
             )
         });
         let tenant_scope = tenant_scope.wrap(from_fn(move |request, next| {
