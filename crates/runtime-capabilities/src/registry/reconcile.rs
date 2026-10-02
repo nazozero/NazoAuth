@@ -41,10 +41,18 @@ where
     }
 
     pub async fn plan_reconciliation(&self) -> Result<Vec<ModuleId>, RegistryError<R::Error>> {
-        let states = self.repository.read_reconcile_state(&self.instance_id).await
-            .map_err(RegistryError::Repository)?.into_iter()
-            .map(|state| (state.desired.module_id, state)).collect::<BTreeMap<_, _>>();
-        Ok(ModuleId::ALL.into_iter().filter(|id| !self.is_settled(*id, &states)).collect())
+        let states = self
+            .repository
+            .read_reconcile_state(&self.instance_id)
+            .await
+            .map_err(RegistryError::Repository)?
+            .into_iter()
+            .map(|state| (state.desired.module_id, state))
+            .collect::<BTreeMap<_, _>>();
+        Ok(ModuleId::ALL
+            .into_iter()
+            .filter(|id| !self.is_settled(*id, &states))
+            .collect())
     }
 
     fn is_settled(
@@ -55,7 +63,9 @@ where
         let Some(state) = states.get(&module_id) else {
             return false;
         };
-        let enabled = self.catalog.effective_enabled(module_id, state.desired.mode.is_enabled());
+        let enabled = self
+            .catalog
+            .effective_enabled(module_id, state.desired.mode.is_enabled());
         if !state.instance.as_ref().is_some_and(|instance| {
             instance.applied_revision == Some(state.desired.revision)
                 && ((enabled && instance.state == ModuleState::Enabled)
@@ -72,10 +82,10 @@ where
         if enabled {
             self.catalog.spec(module_id).is_some_and(|spec| {
                 spec.dependencies.iter().all(|dependency| {
-                    states
-                        .get(dependency)
-                        .is_some_and(|state| self.catalog.effective_enabled(*dependency, state.desired.mode.is_enabled()))
-                        && snapshot.admits(*dependency)
+                    states.get(dependency).is_some_and(|state| {
+                        self.catalog
+                            .effective_enabled(*dependency, state.desired.mode.is_enabled())
+                    }) && snapshot.admits(*dependency)
                 })
             })
         } else {
@@ -84,10 +94,11 @@ where
                 .values()
                 .filter(|candidate| candidate.dependencies.contains(&module_id))
                 .all(|dependent| {
-                    states
-                        .get(&dependent.id)
-                        .is_some_and(|state| !self.catalog.effective_enabled(dependent.id, state.desired.mode.is_enabled()))
-                        && !snapshot.admits(dependent.id)
+                    states.get(&dependent.id).is_some_and(|state| {
+                        !self
+                            .catalog
+                            .effective_enabled(dependent.id, state.desired.mode.is_enabled())
+                    }) && !snapshot.admits(dependent.id)
                         && !snapshot.draining.contains(&dependent.id)
                 })
         }
@@ -115,7 +126,9 @@ where
             .await
             .map_err(RegistryError::Repository)?
             .ok_or(RegistryError::MissingDesiredState(module_id))?;
-        let enabled = self.catalog.effective_enabled(module_id, desired.mode.is_enabled());
+        let enabled = self
+            .catalog
+            .effective_enabled(module_id, desired.mode.is_enabled());
         let current = self
             .repository
             .read_instance(&self.instance_id, module_id)
@@ -146,10 +159,11 @@ where
         if snapshot.admits(module_id) == enabled
             && !snapshot.draining.contains(&module_id)
             && current.as_ref().is_some_and(|instance| {
-            instance.applied_revision == Some(desired.revision)
-                && ((enabled && instance.state == ModuleState::Enabled)
-                    || (!enabled && instance.state == ModuleState::Disabled))
-        }) {
+                instance.applied_revision == Some(desired.revision)
+                    && ((enabled && instance.state == ModuleState::Enabled)
+                        || (!enabled && instance.state == ModuleState::Disabled))
+            })
+        {
             return Ok(ReconcileOutcome::NoChange);
         }
 

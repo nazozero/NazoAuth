@@ -157,8 +157,16 @@ pub fn authorization_server_metadata(
         input.mtls_enabled,
         capabilities.openid4vci_issuer,
     );
-    let revocation_auth_methods: Vec<_> = token_auth_methods.iter().copied().filter(|method| *method != "attest_jwt_client_auth").collect();
-    let introspection_auth_methods: Vec<_> = revocation_auth_methods.iter().copied().filter(|method| *method != "none").collect();
+    let revocation_auth_methods: Vec<_> = token_auth_methods
+        .iter()
+        .copied()
+        .filter(|method| *method != "attest_jwt_client_auth")
+        .collect();
+    let introspection_auth_methods: Vec<_> = revocation_auth_methods
+        .iter()
+        .copied()
+        .filter(|method| *method != "none")
+        .collect();
     let token_auth_signing_algs =
         token_endpoint_auth_signing_alg_values_supported(input.ciba_profile);
     let request_object_signing_algs =

@@ -83,9 +83,14 @@ where
     pub async fn list(
         &self,
     ) -> Result<Vec<RuntimeModuleView>, RuntimeModuleManagementError<R::Error>> {
-        let states = self.repository.read_reconcile_state(&self.instance_id).await
-            .map_err(RuntimeModuleManagementError::Repository)?.into_iter()
-            .map(|state| (state.desired.module_id, state)).collect::<BTreeMap<_, _>>();
+        let states = self
+            .repository
+            .read_reconcile_state(&self.instance_id)
+            .await
+            .map_err(RuntimeModuleManagementError::Repository)?
+            .into_iter()
+            .map(|state| (state.desired.module_id, state))
+            .collect::<BTreeMap<_, _>>();
         let snapshot = self.registry.snapshot();
         ModuleId::ALL
             .into_iter()
@@ -93,7 +98,9 @@ where
                 self.module_view(
                     module_id,
                     states.get(&module_id).map(|state| &state.desired),
-                    states.get(&module_id).and_then(|state| state.instance.as_ref()),
+                    states
+                        .get(&module_id)
+                        .and_then(|state| state.instance.as_ref()),
                     &snapshot,
                 )
             })
@@ -140,7 +147,13 @@ where
             .read_instance(&self.instance_id, update.module_id)
             .await
             .map_err(RuntimeModuleManagementError::Repository)?
-            .map_or(ModuleState::Disabled, |record| if self.catalog.is_available(update.module_id) { record.state } else { ModuleState::Disabled });
+            .map_or(ModuleState::Disabled, |record| {
+                if self.catalog.is_available(update.module_id) {
+                    record.state
+                } else {
+                    ModuleState::Disabled
+                }
+            });
         Ok(DesiredStateUpdateOutcome::Accepted {
             desired,
             actual_state,
@@ -161,16 +174,20 @@ where
         let desired =
             desired.ok_or(RuntimeModuleManagementError::MissingDesiredState(module_id))?;
         let desired_state = desired.mode;
-        let actual_state = if !self.catalog.is_available(module_id) { ModuleState::Disabled } else { instance.map_or_else(
-            || {
-                if snapshot.admits(module_id) {
-                    ModuleState::Enabled
-                } else {
-                    ModuleState::Disabled
-                }
-            },
-            |record| record.state,
-        ) };
+        let actual_state = if !self.catalog.is_available(module_id) {
+            ModuleState::Disabled
+        } else {
+            instance.map_or_else(
+                || {
+                    if snapshot.admits(module_id) {
+                        ModuleState::Enabled
+                    } else {
+                        ModuleState::Disabled
+                    }
+                },
+                |record| record.state,
+            )
+        };
         let dependents = self
             .catalog
             .specs()
@@ -184,7 +201,9 @@ where
         Ok(RuntimeModuleView {
             module_id,
             desired_state,
-            resolved_enabled: self.catalog.effective_enabled(module_id, desired_state.is_enabled()),
+            resolved_enabled: self
+                .catalog
+                .effective_enabled(module_id, desired_state.is_enabled()),
             actual_state,
             revision: Some(desired.revision),
             transition_revision: instance.map(|record| record.transition_revision),
@@ -197,7 +216,11 @@ where
                 .effective_disable_policy(module_id)
                 .ok_or(RuntimeModuleManagementError::MissingCatalogSpec(module_id))?,
             drain_deadline: instance.and_then(|record| record.drain_deadline),
-            failure_code: if !self.catalog.is_available(module_id) { Some("service_not_constructed".to_owned()) } else { instance.and_then(|record| record.error_code.clone()) },
+            failure_code: if !self.catalog.is_available(module_id) {
+                Some("service_not_constructed".to_owned())
+            } else {
+                instance.and_then(|record| record.error_code.clone())
+            },
             updated_at,
         })
     }
@@ -209,7 +232,8 @@ where
         snapshot: &crate::ActiveModuleSnapshot,
     ) -> Vec<DesiredMode> {
         let mut actions = Vec::with_capacity(2);
-        if self.catalog.is_available(module_id) && mode != DesiredMode::Enabled
+        if self.catalog.is_available(module_id)
+            && mode != DesiredMode::Enabled
             && self.catalog.spec(module_id).is_some_and(|spec| {
                 spec.dependencies
                     .iter()
@@ -223,7 +247,11 @@ where
                 self.catalog.effective_disable_policy(module_id),
                 Some(DisablePolicy::NotRuntimeDisableable) | None
             )
-            && !self.catalog.specs().values().any(|candidate| candidate.dependencies.contains(&module_id) && self.catalog.is_available(candidate.id) && (snapshot.admits(candidate.id) || snapshot.draining.contains(&candidate.id)))
+            && !self.catalog.specs().values().any(|candidate| {
+                candidate.dependencies.contains(&module_id)
+                    && self.catalog.is_available(candidate.id)
+                    && (snapshot.admits(candidate.id) || snapshot.draining.contains(&candidate.id))
+            })
         {
             actions.push(DesiredMode::Disabled);
         }

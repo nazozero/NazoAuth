@@ -57,8 +57,22 @@ fn vp_drain_horizon_uses_the_constructed_transaction_ttl_instead_of_session_ttl(
     settings.openid4vc.transaction_ttl_seconds = 300;
     settings.modules.enable_openid4vp_verifier = true;
     let catalog = module_catalog(&settings).unwrap();
-    assert_eq!(catalog.effective_disable_policy(ModuleId::Openid4vpVerifier), Some(nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { max_duration: Duration::from_secs(300) }));
+    assert_eq!(
+        catalog.effective_disable_policy(ModuleId::Openid4vpVerifier),
+        Some(
+            nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
+                max_duration: Duration::from_secs(300)
+            }
+        )
+    );
     settings.openid4vc.transaction_ttl_seconds = 1;
     let catalog = module_catalog(&settings).unwrap();
-    assert_eq!(catalog.effective_disable_policy(ModuleId::Openid4vpVerifier), Some(nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { max_duration: Duration::from_secs(30) }));
+    assert_eq!(
+        catalog.effective_disable_policy(ModuleId::Openid4vpVerifier),
+        Some(
+            nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
+                max_duration: Duration::from_secs(30)
+            }
+        )
+    );
 }

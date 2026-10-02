@@ -361,8 +361,14 @@ where
                 .await
                 .map_err(RegistryError::Repository)?
                 .ok_or(RegistryError::MissingDesiredState(module_id))?;
-            let accepting = self.catalog.effective_enabled(module_id, desired.mode.is_enabled());
-            self.publish(module_id, accepting, !accepting && self.catalog.is_available(module_id))?;
+            let accepting = self
+                .catalog
+                .effective_enabled(module_id, desired.mode.is_enabled());
+            self.publish(
+                module_id,
+                accepting,
+                !accepting && self.catalog.is_available(module_id),
+            )?;
             if self
                 .revision_is_current(module_id, desired.revision)
                 .await?

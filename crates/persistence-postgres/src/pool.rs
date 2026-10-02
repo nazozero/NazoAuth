@@ -244,7 +244,8 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
     )
     .bind::<diesel::sql_types::Text, _>(runtime_role)
     .get_result::<RuntimeRoleStatus>(&mut connection)
-    .await.map_err(crate::unavailable::migration_query)?;
+    .await
+    .map_err(crate::unavailable::migration_query)?;
     if !status.acceptable {
         anyhow::bail!(
             "runtime PostgreSQL role must exist, differ from the lifecycle role, and have no superuser membership"
@@ -327,12 +328,16 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
             "SELECT pg_try_advisory_lock({MIGRATION_ADVISORY_LOCK}) AS acquired"
         ))
         .get_result::<AdvisoryLockStatus>(&mut connection)
-        .await.map_err(crate::unavailable::migration_query)?;
+        .await
+        .map_err(crate::unavailable::migration_query)?;
         if status.acquired {
             break;
         }
         if tokio::time::Instant::now() >= deadline {
-            return Err(nazo_persistence::MigrationUnavailable(anyhow::anyhow!("migration advisory lock acquisition timed out")).into());
+            return Err(nazo_persistence::MigrationUnavailable(anyhow::anyhow!(
+                "migration advisory lock acquisition timed out"
+            ))
+            .into());
         }
         tokio::time::sleep(MIGRATION_LOCK_RETRY_INTERVAL).await;
     }
@@ -353,7 +358,9 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
     .await
     {
         Ok(status) if status.acquired => Ok(()),
-        Ok(_) => Err(anyhow::anyhow!("migration advisory lock release returned false")),
+        Ok(_) => Err(anyhow::anyhow!(
+            "migration advisory lock release returned false"
+        )),
         Err(error) => Err(crate::unavailable::migration_query(error)),
     };
 

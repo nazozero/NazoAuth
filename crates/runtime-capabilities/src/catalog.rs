@@ -53,7 +53,10 @@ impl ModuleCatalog {
             // already exist. Their Valkey TTL is the bounded drain deadline.
             (ModuleId::SessionManagement, drain(durations.session)),
             (ModuleId::Openid4vciIssuer, drain(durations.refresh_token)),
-            (ModuleId::Openid4vpVerifier, drain(durations.presentation_transaction)),
+            (
+                ModuleId::Openid4vpVerifier,
+                drain(durations.presentation_transaction),
+            ),
         ];
         let specs: Vec<_> = policies
             .into_iter()
@@ -72,9 +75,14 @@ impl ModuleCatalog {
     }
 
     #[must_use]
-    pub fn with_constructed_availability(mut self, availability: impl IntoIterator<Item = (ModuleId, bool)>) -> Self {
+    pub fn with_constructed_availability(
+        mut self,
+        availability: impl IntoIterator<Item = (ModuleId, bool)>,
+    ) -> Self {
         for (module_id, constructed) in availability {
-            if !constructed { self.unavailable.insert(module_id); }
+            if !constructed {
+                self.unavailable.insert(module_id);
+            }
         }
         self
     }

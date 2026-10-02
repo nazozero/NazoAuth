@@ -601,7 +601,11 @@ impl PresentationOperations for ServerPresentationOperations {
     ) -> PresentationFuture<'a, Result<PresentationResponseBody, PresentationHttpError>> {
         Box::pin(async move {
             if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
-                return Err(vp_error(503, "temporarily_unavailable", "Presentation verifier is unavailable."));
+                return Err(vp_error(
+                    503,
+                    "temporarily_unavailable",
+                    "Presentation verifier is unavailable.",
+                ));
             }
             let mut transaction = self
                 .store
@@ -692,7 +696,11 @@ impl PresentationOperations for ServerPresentationOperations {
     ) -> PresentationFuture<'a, Result<Option<String>, PresentationHttpError>> {
         Box::pin(async move {
             if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
-                return Err(vp_error(503, "temporarily_unavailable", "Presentation verifier is unavailable."));
+                return Err(vp_error(
+                    503,
+                    "temporarily_unavailable",
+                    "Presentation verifier is unavailable.",
+                ));
             }
             let transaction = self
                 .store
@@ -788,7 +796,11 @@ impl PresentationOperations for ServerPresentationOperations {
     {
         Box::pin(async move {
             if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
-                return Err(vp_error(503, "temporarily_unavailable", "Presentation verifier is unavailable."));
+                return Err(vp_error(
+                    503,
+                    "temporarily_unavailable",
+                    "Presentation verifier is unavailable.",
+                ));
             }
             self.store
                 .result(transaction_id, Utc::now())

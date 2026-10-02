@@ -97,7 +97,9 @@ pub fn resource_access_token(
 fn query_has_access_token(query: &str) -> bool {
     query.split('&').any(|pair| {
         let key = pair.split_once('=').map_or(pair, |(key, _)| key);
-        url::form_urlencoded::parse(key.as_bytes()).next().is_some_and(|(key, _)| key == "access_token")
+        url::form_urlencoded::parse(key.as_bytes())
+            .next()
+            .is_some_and(|(key, _)| key == "access_token")
     })
 }
 
@@ -118,10 +120,11 @@ fn resource_form_body_access_token(request: &HttpRequest, body: &[u8]) -> FormBo
         return FormBodyAccessToken::InvalidRequest;
     }
     match first {
-        Some((_, value)) if !value.trim().is_empty() => FormBodyAccessToken::Present(value.into_owned()),
+        Some((_, value)) if !value.trim().is_empty() => {
+            FormBodyAccessToken::Present(value.into_owned())
+        }
         _ => FormBodyAccessToken::Missing,
     }
-
 }
 
 pub fn request_uses_form_urlencoded(request: &HttpRequest) -> bool {

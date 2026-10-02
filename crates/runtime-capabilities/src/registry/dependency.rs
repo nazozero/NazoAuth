@@ -26,7 +26,11 @@ where
                 .await
                 .map_err(RegistryError::Repository)?
                 .ok_or(RegistryError::MissingDesiredState(*dependency))?;
-            if !self.catalog.effective_enabled(*dependency, desired.mode.is_enabled()) || !snapshot.admits(*dependency) {
+            if !self
+                .catalog
+                .effective_enabled(*dependency, desired.mode.is_enabled())
+                || !snapshot.admits(*dependency)
+            {
                 return Ok(Some(*dependency));
             }
         }
@@ -50,7 +54,12 @@ where
                 .await
                 .map_err(RegistryError::Repository)?
                 .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
-            if self.catalog.effective_enabled(dependent.id, desired.mode.is_enabled()) || snapshot.admits(dependent.id) || snapshot.draining.contains(&dependent.id) {
+            if self
+                .catalog
+                .effective_enabled(dependent.id, desired.mode.is_enabled())
+                || snapshot.admits(dependent.id)
+                || snapshot.draining.contains(&dependent.id)
+            {
                 return Ok(Some(dependent.id));
             }
         }

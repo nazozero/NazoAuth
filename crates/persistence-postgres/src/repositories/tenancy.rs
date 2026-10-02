@@ -173,15 +173,13 @@ impl TenantDirectoryRepository {
         &self,
         binding: TenantDirectoryBinding,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
-            .await
-            .map_err(|error| {
-                if crate::unavailable::checkout_is_unavailable(&error) {
-                    RepositoryError::Unavailable
-                } else {
-                    RepositoryError::Unexpected(error.to_string())
-                }
-            })?;
+        let mut connection = get_conn(&self.pool).await.map_err(|error| {
+            if crate::unavailable::checkout_is_unavailable(&error) {
+                RepositoryError::Unavailable
+            } else {
+                RepositoryError::Unexpected(error.to_string())
+            }
+        })?;
         let result = connection
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
                 let tenant_id = binding.tenant.tenant_id.as_uuid();
