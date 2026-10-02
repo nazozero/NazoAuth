@@ -399,11 +399,6 @@ pub(super) fn verify_direct_scoped_trust_anchor(
         && nazo_crypto::certificate::verify_signature(&anchor, anchor.public_key()).is_ok())
 }
 
-#[cfg(test)]
-pub(super) fn verify_certificate_chain_at<'a>(certificates: &[Vec<u8>], anchors: &'a [Vec<u8>], unix_time: i64) -> Result<Option<&'a [u8]>, CredentialTrustError> {
-    verify_certificate_chain_with_scoped_at(certificates, anchors, &[], unix_time)
-}
-
 pub(super) fn verify_certificate_chain_with_scoped_at<'a>(
     certificates: &[Vec<u8>], anchors: &'a [Vec<u8>], scoped: &'a [Vec<u8>], unix_time: i64,
 ) -> Result<Option<&'a [u8]>, CredentialTrustError> {

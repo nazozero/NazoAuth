@@ -1,5 +1,5 @@
 use super::*;
-use std::{future::{Future as _, poll_fn}, task::Poll, time::Duration};
+use std::{future::poll_fn, task::Poll, time::Duration};
 
 use nazo_identity::{AvatarService, DeleteAvatarError, UploadAvatarError, ports::RepositoryError};
 use crate::test_support::local_avatar::{
