@@ -936,3 +936,54 @@ async fn late_hash_cannot_store_after_owner_expiry_or_overwrite_a_new_sender() {
         }
     }
 }
+
+#[tokio::test]
+async fn typed_passkey_codec_preserves_legacy_json_unknown_fields_expiry_and_corrupt_consumption() {
+    let Some((connection, inspector)) = setup().await else { return; };
+    let store = AuthenticationStore::new(&connection);
+    let id = format!("typed-legacy-{}", uuid::Uuid::now_v7());
+    let wire = json!({
+        "tenant_id": TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+        "user_id": nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        "label": "Legacy key", "ignored_future_field": "ignored",
+        "state": { "challenge": vec![7_u8;32], "user_id": vec![9_u8;32], "created_at": 1 },
+    });
+    store.store_passkey_registration(&id, &wire, 30).await.unwrap();
+    let value = PasskeyCeremonyPort::take_registration(&store, &id).await.unwrap().unwrap();
+    assert_eq!(value.label, "Legacy key");
+    PasskeyCeremonyPort::store_registration(&store, &id, &value, 30).await.unwrap();
+    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:passkey:registration:{id}"));
+    let raw: String = inspector.get(&key).await.unwrap();
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&raw).unwrap(), serde_json::to_value(&value).unwrap());
+    let ttl: i64 = inspector.ttl(&key).await.unwrap();
+    assert!((28..=30).contains(&ttl));
+    assert!(PasskeyCeremonyPort::take_registration(&store, &id).await.unwrap().is_some());
+    store.store_passkey_registration(&id, &json!({"invalid":"shape"}), 30).await.unwrap();
+    assert!(matches!(PasskeyCeremonyPort::take_registration(&store, &id).await,
+        Err(nazo_identity::ports::RepositoryError::Consistency(_))));
+    assert!(PasskeyCeremonyPort::take_registration(&store, &id).await.unwrap().is_none());
+    PasskeyCeremonyPort::store_registration(&store, &id, &value, 1).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert!(PasskeyCeremonyPort::take_registration(&store, &id).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn typed_passkey_authentication_keeps_legacy_default_fields() {
+    let Some((connection, _inspector)) = setup().await else { return; };
+    let store = AuthenticationStore::new(&connection);
+    let id = format!("typed-auth-legacy-{}", uuid::Uuid::now_v7());
+    let wire = json!({
+        "tenant_id": TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+        "user_id": nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        "ignored_future_field": "ignored",
+        "state": { "challenge": vec![7_u8;32], "allow_credentials": [] },
+    });
+    store.store_passkey_authentication(&id, &wire, 30).await.unwrap();
+    let value = PasskeyCeremonyPort::take_authentication(&store, &id).await.unwrap().unwrap();
+    assert!(!value.dummy);
+    assert_eq!(value.state.created_at, 0);
+    assert!(value.state.user_handle.is_none());
+    PasskeyCeremonyPort::store_authentication(&store, &id, &value, 30).await.unwrap();
+    assert!(PasskeyCeremonyPort::take_authentication(&store, &id).await.unwrap().is_some());
+    assert!(PasskeyCeremonyPort::take_authentication(&store, &id).await.unwrap().is_none());
+}

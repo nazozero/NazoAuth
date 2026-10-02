@@ -91,15 +91,15 @@ pub fn token_exchange_error_response(error: TokenExchangeError) -> OAuthEndpoint
     }
 }
 
-pub fn token_exchange_request(form: &TokenForm) -> TokenExchangeRequestInput {
+pub fn token_exchange_request(form: &TokenForm) -> TokenExchangeRequestInput<'_> {
     TokenExchangeRequestInput {
-        subject_token: form.subject_token.clone(),
-        subject_token_type: form.subject_token_type.clone(),
-        actor_token: form.actor_token.clone(),
-        actor_token_type: form.actor_token_type.clone(),
-        requested_token_type: form.requested_token_type.clone(),
-        scope: form.scope.clone(),
-        audiences: form.audiences.clone(),
+        subject_token: form.subject_token.as_deref(),
+        subject_token_type: form.subject_token_type.as_deref(),
+        actor_token: form.actor_token.as_deref(),
+        actor_token_type: form.actor_token_type.as_deref(),
+        requested_token_type: form.requested_token_type.as_deref(),
+        scope: form.scope.as_deref(),
+        audiences: &form.audiences,
     }
 }
 

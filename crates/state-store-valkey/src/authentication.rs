@@ -216,13 +216,13 @@ impl AuthenticationStore {
         )
         .await
     }
-    async fn store_value(&self, key: String, value: &Value, ttl: u64) -> Result<(), Error> {
+    async fn store_value<T: serde::Serialize + ?Sized>(&self, key: String, value: &T, ttl: u64) -> Result<(), Error> {
         let raw = serde_json::to_string(value).map_err(|e| {
             Error::protocol(format!("failed to serialize authentication state: {e}"))
         })?;
         command::set_ex_string(&self.connection, key, raw, ttl).await
     }
-    async fn take_value(&self, key: String) -> Result<Option<Value>, Error> {
+    async fn take_value<T: serde::de::DeserializeOwned>(&self, key: String) -> Result<Option<T>, Error> {
         command::take(&self.connection, key)
             .await?
             .map(|raw| {
@@ -400,10 +400,7 @@ impl nazo_identity::ports::PasskeyCeremonyPort for AuthenticationStore {
         ttl_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            let value = serde_json::to_value(ceremony).map_err(|error| {
-                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
-            })?;
-            self.store_passkey_registration(ceremony_id, &value, ttl_seconds)
+            self.store_value(keys::passkey_registration(ceremony_id), ceremony, ttl_seconds)
                 .await
                 .map_err(crate::identity_repository_error)
         })
@@ -415,14 +412,9 @@ impl nazo_identity::ports::PasskeyCeremonyPort for AuthenticationStore {
     ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::StoredPasskeyRegistration>>
     {
         Box::pin(async move {
-            self.take_passkey_registration(ceremony_id)
+            self.take_value(keys::passkey_registration(ceremony_id))
                 .await
-                .map_err(crate::identity_repository_error)?
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|error| {
-                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
-                })
+                .map_err(crate::identity_repository_error)
         })
     }
 
@@ -433,10 +425,7 @@ impl nazo_identity::ports::PasskeyCeremonyPort for AuthenticationStore {
         ttl_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            let value = serde_json::to_value(ceremony).map_err(|error| {
-                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
-            })?;
-            self.store_passkey_authentication(ceremony_id, &value, ttl_seconds)
+            self.store_value(keys::passkey_authentication(ceremony_id), ceremony, ttl_seconds)
                 .await
                 .map_err(crate::identity_repository_error)
         })
@@ -450,14 +439,9 @@ impl nazo_identity::ports::PasskeyCeremonyPort for AuthenticationStore {
         Option<nazo_identity::StoredPasskeyAuthentication>,
     > {
         Box::pin(async move {
-            self.take_passkey_authentication(ceremony_id)
+            self.take_value(keys::passkey_authentication(ceremony_id))
                 .await
-                .map_err(crate::identity_repository_error)?
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|error| {
-                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
-                })
+                .map_err(crate::identity_repository_error)
         })
     }
 }

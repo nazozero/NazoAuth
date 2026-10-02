@@ -66,34 +66,19 @@ impl ServerMfaProfileOperations {
         pending_mfa: bool,
     ) -> Result<PublicAccount, MfaProfileError> {
         let session_id = SessionId::new(context.session_id.as_str());
-        let resolution = if pending_mfa {
-            self.sessions.pending_mfa(&session_id, context.now).await
-        } else {
-            self.sessions.current(&session_id, context.now).await
-        }
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to resolve current MFA session");
-            MfaProfileError::new(MfaProfileErrorKind::SessionUnavailable)
-        })?;
+        let resolution = self.sessions.resolve_for_mfa(&session_id, context.now).await
+            .map_err(|error| {
+                tracing::warn!(%error, "failed to resolve current MFA session");
+                MfaProfileError::new(MfaProfileErrorKind::SessionUnavailable)
+            })?;
         match resolution {
-            SessionResolution::Present(session) => Ok(session.into_user()),
-            SessionResolution::Missing if pending_mfa => {
-                match self.sessions.current(&session_id, context.now).await {
-                    Ok(SessionResolution::Present(_)) => {
-                        Err(MfaProfileError::new(MfaProfileErrorKind::ChallengeMissing))
-                    }
-                    Ok(SessionResolution::Missing | SessionResolution::Invalidated) => {
-                        Err(MfaProfileError::new(MfaProfileErrorKind::SessionMissing))
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, "failed to distinguish missing MFA challenge");
-                        Err(MfaProfileError::new(
-                            MfaProfileErrorKind::SessionUnavailable,
-                        ))
-                    }
-                }
+            SessionResolution::Present(session) if session.pending_mfa() == pending_mfa => {
+                Ok(session.into_user())
             }
-            SessionResolution::Missing | SessionResolution::Invalidated => {
+            SessionResolution::Present(_) if pending_mfa => {
+                Err(MfaProfileError::new(MfaProfileErrorKind::ChallengeMissing))
+            }
+            SessionResolution::Present(_) | SessionResolution::Missing | SessionResolution::Invalidated => {
                 Err(MfaProfileError::new(MfaProfileErrorKind::SessionMissing))
             }
         }
