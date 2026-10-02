@@ -59,15 +59,10 @@ fn device_code_grant_requires_device_code_before_state_lookup() {
 use super::device_grant_key;
 
 #[test]
-fn device_grant_key_binds_code_and_sender_constraints_without_raw_material() {
-    let bearer = device_grant_key("device-code", None, None);
-    let dpop = device_grant_key("device-code", Some("dpop-jkt"), None);
-    let mtls = device_grant_key("device-code", None, Some("mtls-thumbprint"));
-
-    assert!(bearer.starts_with("device_code:"));
-    assert!(!bearer.contains("device-code"));
-    assert_ne!(bearer, dpop);
-    assert_ne!(bearer, mtls);
-    assert_ne!(dpop, mtls);
-    assert_ne!(bearer, device_grant_key("other-device-code", None, None));
+fn device_grant_identity_only_depends_on_the_immutable_code() {
+    let identity = device_grant_key("device-code");
+    assert!(identity.starts_with("device_code:"));
+    assert!(!identity.contains("device-code"));
+    assert_eq!(identity, device_grant_key("device-code"));
+    assert_ne!(identity, device_grant_key("other-device-code"));
 }

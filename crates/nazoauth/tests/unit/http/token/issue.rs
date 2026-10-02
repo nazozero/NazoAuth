@@ -241,7 +241,7 @@ async fn refresh_token_row_count(state: &TestInfrastructure, client: &ClientRow)
     .count
 }
 
-async fn token_issuance_row_count(state: &TestInfrastructure, client: &ClientRow) -> i64 {
+pub(crate) async fn token_issuance_row_count(state: &TestInfrastructure, client: &ClientRow) -> i64 {
     let mut connection = get_conn(&state.diesel_db)
         .await
         .expect("issue test database connection should be available");

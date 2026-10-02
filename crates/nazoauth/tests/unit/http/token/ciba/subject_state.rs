@@ -563,7 +563,7 @@ async fn ciba_approved_poll_reads_subject_claims_once_for_oidc_and_never_for_pla
 }
 
 #[actix_web::test]
-async fn ciba_subject_configuration_error_precedes_user_check_after_consumption() {
+async fn ciba_subject_configuration_error_preserves_retryable_approved_state() {
     let Some(mut state) = live_ciba_replay_state().await else {
         return;
     };
@@ -600,9 +600,8 @@ async fn ciba_subject_configuration_error_precedes_user_check_after_consumption(
         ServerCibaService::load(&service, &auth_req_id)
             .await
             .unwrap()
-            .is_none()
+            .is_some()
     );
-    // Before subject-keyed preparation, the inactive user could win this
-    // double-failure case with invalid_grant. Local configuration now wins,
-    // but the already consumed authorization request is never restored.
+    // Local configuration still wins this double-failure case. The original
+    // approved request remains available for retry before its deadline.
 }

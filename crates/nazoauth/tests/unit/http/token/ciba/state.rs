@@ -587,7 +587,7 @@ async fn approved_ciba_poll_authorization_expiry_does_not_redeem_terminal_state(
         .await;
 
     assert_eq!(result, Ok(CibaPollCommit::Expired));
-    assert_eq!(store.calls(), vec![CibaStoreCall::Delete(Some(900))]);
+    assert_eq!(store.calls(), vec![CibaStoreCall::Replace(Some(900))]);
     assert_eq!(
         service.load(auth_req_id).await.unwrap().unwrap().state(),
         &state
@@ -997,7 +997,7 @@ async fn three_concurrent_premature_polls_each_add_exactly_five_seconds() {
 }
 
 #[actix_web::test]
-async fn concurrent_approved_polls_consume_state_once() {
+async fn concurrent_approved_polls_return_retryable_snapshots() {
     let Some(valkey) = live_valkey().await else {
         return;
     };
@@ -1024,8 +1024,8 @@ async fn concurrent_approved_polls_consume_state_once() {
         .into_iter()
         .filter(|result| matches!(result, Ok(CibaPollCommit::Approved(_))))
         .count();
-    assert_eq!(approved_count, 1);
-    assert!(service.load(&auth_req_id).await.unwrap().is_none());
+    assert_eq!(approved_count, 2);
+    assert_eq!(service.load(&auth_req_id).await.unwrap().unwrap().state(), &state);
 }
 
 #[actix_web::test]
@@ -1069,7 +1069,7 @@ async fn ciba_poll_conflict_retry_consumes_assertion_once() {
 }
 
 #[actix_web::test]
-async fn approved_state_is_consumed_before_downstream_issuance() {
+async fn approved_state_remains_available_after_downstream_failure() {
     let Some(valkey) = live_valkey().await else {
         return;
     };
@@ -1093,5 +1093,28 @@ async fn approved_state_is_consumed_before_downstream_issuance() {
     assert!(matches!(committed, CibaPollCommit::Approved(_)));
     let downstream_result: Result<(), &str> = Err("deliberate issuance failure");
     assert!(downstream_result.is_err());
-    assert!(service.load(&auth_req_id).await.unwrap().is_none());
+    assert_eq!(service.load(&auth_req_id).await.unwrap().unwrap().state(), &state);
+}
+
+#[actix_web::test]
+async fn approved_ciba_snapshot_preserves_original_ttl_without_cas() {
+    use fred::interfaces::KeysInterface as _;
+    let Some(valkey)=live_valkey().await else {return;};
+    let connection=nazo_valkey::test_support::scoped_connection(valkey.clone());let now=valkey_server_time(&valkey).await;
+    let mut state=pending_state(now);state.status=CibaStatus::Approved;state.authentication_context=Some(approval_context(now));
+    let id=format!("approved-ttl-{}",Uuid::now_v7());CibaStore::new(&connection).create(&id,&state).await.unwrap();
+    let key=nazo_valkey::test_support::ciba_request_storage_key(&id);
+    let initial_ttl=valkey.pttl::<i64,_>(&key).await.unwrap();let service=CibaService::new(CibaStore::new(&connection));
+    let initial=service.load(&id).await.unwrap().unwrap();assert!(matches!(service.poll(&id,&state.client_id,initial,||now).await,Ok(CibaPollCommit::Approved(_))));
+    let after=valkey.pttl::<i64,_>(&key).await.unwrap();assert!(after>0 && after<=initial_ttl);
+    assert_eq!(service.load(&id).await.unwrap().unwrap().state(),&state);
+}
+
+#[actix_web::test]
+async fn approved_ciba_external_deadline_conflict_retries_same_value_cas() {
+    let store=RecordingCibaStore::new(false);let mut state=pending_state(1000);state.status=CibaStatus::Approved;state.authentication_context=Some(approval_context(1000));
+    let id="approved-external-conflict";store.seed(id,state.clone());let service=CibaService::new(store.clone());let initial=service.load(id).await.unwrap().unwrap();
+    store.push_outcome(CibaAtomicResult::Conflict);store.push_outcome(CibaAtomicResult::Applied);
+    assert!(matches!(service.poll_with_authorization_deadline(id,&state.client_id,initial,Some(2000),||1001).await,Ok(CibaPollCommit::Approved(_))));
+    assert_eq!(store.calls(),vec![CibaStoreCall::Replace(Some(2000)),CibaStoreCall::Replace(Some(2000))]);assert_eq!(service.load(id).await.unwrap().unwrap().state(),&state);
 }

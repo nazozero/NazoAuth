@@ -690,11 +690,17 @@ where
                     }
                 }
                 CibaPollTransition::Approved => {
+                    if authorization_deadline.is_none() {
+                        return Ok(CibaPollCommit::Approved(Box::new(stored.state)));
+                    }
+                    // Explicit authorization deadlines retain store-clock CAS
+                    // validation while preserving the approved state and its TTL.
                     match self
                         .store
-                        .delete_with_authorization_deadline(
+                        .replace_with_authorization_deadline(
                             auth_req_id,
                             &stored.version,
+                            &stored.state,
                             authorization_deadline,
                         )
                         .await
