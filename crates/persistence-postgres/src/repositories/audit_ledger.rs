@@ -542,7 +542,7 @@ async fn claim_fresh(
             .map_err(|_| invariant_error("audit event wire serialization failed"))?;
         let header_bytes = nazo_persistence::audit_wire::security_audit_empty_envelope_wire_length(
             deployment_id,
-            deliveries.first().unwrap_or(&delivery),
+            deliveries.as_slice().first().unwrap_or(&delivery),
             &delivery,
             (deliveries.len() + 1) as i64,
         )

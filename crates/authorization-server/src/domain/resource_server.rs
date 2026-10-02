@@ -297,7 +297,7 @@ mod production {
                 self.0
                     .sign(signature_base)
                     .await
-                    .map(|signature| signature.as_bytes().to_vec())
+                    .map(|signature| signature.into_bytes())
                     .map_err(|_| FapiSignatureOperationError::Unavailable)
             })
         }

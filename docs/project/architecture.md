@@ -427,4 +427,4 @@ MFA verification retains the confirmed TOTP credential row UUID as the generatio
 
 Credential revocation’s scoped unknown-status exemption follows the successfully authenticated path anchor DER. Scoped anchors are considered before global anchors during the same path validation; an unrelated loaded or attached scoped certificate supplies no exemption. Known revocation and missing/stale required snapshots remain failures.
 
-Local avatar upload synchronizes the candidate and its directory lineage through the configured storage root only. Deployment/startup must provision that root and its parent entry durably before serving uploads; per-upload code does not claim durability or read permissions for unrelated OS ancestors.
+Local avatar upload synchronizes the candidate and its directory lineage through the configured storage root only. Deployment must precreate and durably provision that root and its parent entry before serving uploads; per-upload code does not claim durability or read permissions for unrelated OS ancestors.
