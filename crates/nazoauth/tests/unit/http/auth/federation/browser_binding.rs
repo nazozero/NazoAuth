@@ -198,7 +198,10 @@ async fn missing_or_bad_cookie_calls_no_state_store_and_valid_cookie_preserves_o
                 oauth_error_code(response).await.as_deref(),
                 Some("invalid_request")
             );
-            assert_eq!(std::sync::atomic::AtomicUsize::load(&states.calls, Ordering::SeqCst), 0);
+            assert_eq!(
+                std::sync::atomic::AtomicUsize::load(&states.calls, Ordering::SeqCst),
+                0
+            );
         }
     }
     for social in [false, true] {
@@ -227,7 +230,10 @@ async fn missing_or_bad_cookie_calls_no_state_store_and_valid_cookie_preserves_o
             .await
         };
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(std::sync::atomic::AtomicUsize::load(&states.calls, Ordering::SeqCst), before + 1);
+        assert_eq!(
+            std::sync::atomic::AtomicUsize::load(&states.calls, Ordering::SeqCst),
+            before + 1
+        );
         assert_no_binding_cookie(&response);
     }
 }
@@ -249,7 +255,10 @@ async fn failed_start_never_publishes_binding_cookie_or_redirect() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(std::sync::atomic::AtomicUsize::load(&states.calls, Ordering::SeqCst), 1);
+    assert_eq!(
+        std::sync::atomic::AtomicUsize::load(&states.calls, Ordering::SeqCst),
+        1
+    );
     assert!(response.headers().get(header::LOCATION).is_none());
     assert_no_binding_cookie(&response);
 }
