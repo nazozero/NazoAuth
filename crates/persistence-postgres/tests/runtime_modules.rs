@@ -300,6 +300,7 @@ async fn registry_generated_transition_events_are_postgresql_compatible() {
         authorization_code: short,
         refresh_token: short,
         session: short,
+        presentation_transaction: short,
         scim_security_events: short,
     })
     .expect("fixed module catalog should be valid");

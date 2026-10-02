@@ -225,6 +225,7 @@ mod scheduler {
         settle().await;
         tokio::time::advance(Duration::from_secs(1)).await;
         settle().await;
+        {
         let starts = counts.starts.lock().unwrap();
         assert_eq!(starts[&released], 2);
         assert!(
@@ -232,7 +233,8 @@ mod scheduler {
                 .filter(|id| **id != released)
                 .all(|id| starts[id] == 1)
         );
-        drop(starts);
+        }
+
         assert!(counts.max_live.load(Ordering::SeqCst) <= ids.len());
         stop(owner).await;
         assert_eq!(counts.live.load(Ordering::SeqCst), 0);

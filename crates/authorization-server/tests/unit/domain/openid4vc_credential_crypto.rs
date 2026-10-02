@@ -37,10 +37,14 @@ use sha2::Digest as _;
 
 use super::mdoc::{
     mdoc_assessments_accepted, mdoc_failed_assessments_accepted, mdoc_holder_key,
-    standard_device_authentication_bytes, verify_certificate_chain_at,
+    standard_device_authentication_bytes,
     verify_direct_scoped_trust_anchor,
 };
 use super::*;
+fn verify_certificate_chain_at<'a>(certificates:&[Vec<u8>],anchors:&'a[Vec<u8>],time:i64)->Result<Option<&'a[u8]>,CredentialTrustError> {
+    super::mdoc::verify_certificate_chain_with_scoped_at(certificates,anchors,&[],time)
+}
+
 
 trait CredentialCryptoTestExt {
     fn verify_sd_jwt(
@@ -1360,4 +1364,19 @@ fn shared_signing_key_anchor_selection_prefers_actual_scoped_der_without_second_
     assert_ne!(global_der,scoped_der);
     assert_eq!(super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(&certificates,&global_der,&scoped_der).unwrap(),scoped_der[0].as_slice());
     assert_eq!(super::mdoc::verify_certificate_chain_with_scoped_at(&certificates,&global_der,&scoped_der,Utc::now().timestamp()).unwrap(),Some(scoped_der[0].as_slice()));
+}
+
+
+#[test]
+fn expired_scoped_anchor_with_valid_global_path_cannot_exempt_required_unknown_status() {
+    let (crypto,mut presentation,_,certs)=sd_presentation_fixture();
+    let strict=Openid4vcCredentialCrypto {revocation_policy:crate::policy::Openid4vcRevocationPolicy::Required,..crypto};
+    install_revocation_snapshot(&strict,&certs,CertificateRevocationSnapshot {version:CertificateRevocationSnapshot::VERSION,this_update:Utc::now()-Duration::minutes(1),next_update:Utc::now()+Duration::minutes(5),entries:vec![]});
+    let mut params=CertificateParams::new(Vec::<String>::new()).unwrap();params.is_ca=IsCa::Ca(BasicConstraints::Unconstrained);params.key_usages=vec![KeyUsagePurpose::KeyCertSign];
+    params.not_before=time::OffsetDateTime::now_utc()-time::Duration::days(2);params.not_after=time::OffsetDateTime::now_utc()-time::Duration::days(1);
+    let expired=CertifiedIssuer::self_signed(params,KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap()).unwrap();
+    presentation.additional_trust_anchors=vec![expired.der().as_ref().to_vec()];
+    assert_eq!(strict.verify_sd_jwt(&presentation),Err(CredentialTrustError::RevocationStatusUnknown));
+    presentation.additional_trust_anchors=vec![vec![1,2,3]];
+    assert!(strict.verify_sd_jwt(&presentation).is_err());
 }

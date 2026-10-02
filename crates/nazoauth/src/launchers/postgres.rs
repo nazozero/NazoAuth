@@ -86,7 +86,7 @@ impl OperatorPersistence for PostgresOperatorPersistence {
         binding: nazo_identity::TenantDirectoryBinding,
     ) -> OperatorBackendFuture<'_, bool> {
         Box::pin(async move {
-            Ok(TenantDirectoryRepository::new(self.pool.clone())
+            TenantDirectoryRepository::new(self.pool.clone())
                 .initialize(binding)
                 .await
                 .map_err(|error| {
@@ -95,7 +95,7 @@ impl OperatorPersistence for PostgresOperatorPersistence {
                     } else {
                         error.into()
                     }
-                })?)
+                })
         })
     }
 }
