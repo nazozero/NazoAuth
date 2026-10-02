@@ -25,6 +25,7 @@ pub(super) struct ValidatedSdJwtChain {
     pub(super) decoding_key: JwtVerificationKey,
     pub(super) certificates: Vec<Vec<u8>>,
     pub(super) leaf_der: Vec<u8>,
+    pub(super) scoped_anchor_authenticated: bool,
 }
 
 pub(super) async fn sign(
@@ -99,6 +100,7 @@ pub(super) fn verify(
         decoding_key: key,
         certificates,
         leaf_der,
+        scoped_anchor_authenticated,
     } = validate_sd_jwt_chain(
         crypto,
         header
@@ -127,7 +129,7 @@ pub(super) fn verify(
             Some(issuer),
             &certificates,
             Utc::now(),
-            &presentation.additional_trust_anchors,
+            scoped_anchor_authenticated,
         )?;
     if credential
         .get("_sd_alg")
@@ -234,8 +236,9 @@ pub(super) fn validate_sd_jwt_chain(
         .ok_or(CredentialTrustError::UntrustedIssuer)?
         .clone();
     let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
-    super::super::crypto_helpers::verify_openid4vc_chain(&certificates, &anchors)
+    let authenticated_anchor = super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(&certificates, &anchors, additional_trust_anchors)
         .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    let scoped_anchor_authenticated = additional_trust_anchors.iter().any(|anchor| anchor.as_slice() == authenticated_anchor);
     let (_, leaf) = x509_parser::parse_x509_certificate(&leaf_der)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     Ok(ValidatedSdJwtChain {
@@ -244,6 +247,7 @@ pub(super) fn validate_sd_jwt_chain(
         ),
         certificates,
         leaf_der,
+        scoped_anchor_authenticated,
     })
 }
 
