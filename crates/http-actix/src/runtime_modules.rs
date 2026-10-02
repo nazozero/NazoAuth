@@ -262,6 +262,9 @@ fn management_error(error: RuntimeModuleAdminError) -> HttpResponse {
             "server_error",
             "Runtime module state is unavailable.",
         )),
+        RuntimeModuleAdminError::ServiceNotConstructed => no_store(oauth_error(
+            StatusCode::CONFLICT, "service_not_constructed", "Runtime module service was not constructed at startup.",
+        )),
         RuntimeModuleAdminError::PolicyConflict => no_store(oauth_error(
             StatusCode::CONFLICT,
             "invalid_request",

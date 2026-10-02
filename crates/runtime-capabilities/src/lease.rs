@@ -10,7 +10,7 @@ type GenerationKey = (ModuleId, ModuleRevision);
 #[derive(Default)]
 struct LeaseState {
     active: BTreeMap<GenerationKey, usize>,
-    waiters: BTreeMap<GenerationKey, Vec<Waker>>,
+    waiters: BTreeMap<ModuleId, Vec<Waker>>,
     closed_through: BTreeMap<ModuleId, ModuleRevision>,
 }
 
@@ -67,14 +67,13 @@ impl RequestLeaseTracker {
             .unwrap_or_default()
     }
 
-    pub async fn wait_until_zero(&self, module_id: ModuleId, generation: ModuleRevision) {
-        let key = (module_id, generation);
+    pub async fn wait_until_zero(&self, module_id: ModuleId, _generation: ModuleRevision) {
         poll_fn(|context| {
             let mut state = self.state.lock().expect("request lease lock poisoned");
-            if state.active.get(&key).copied().unwrap_or_default() == 0 {
+            if !state.active.keys().any(|(id, _)| *id == module_id) {
                 return Poll::Ready(());
             }
-            let waiters = state.waiters.entry(key).or_default();
+            let waiters = state.waiters.entry(module_id).or_default();
             if !waiters.iter().any(|waker| waker.will_wake(context.waker())) {
                 waiters.push(context.waker().clone());
             }
@@ -106,7 +105,7 @@ impl Drop for RequestLease {
         *active -= 1;
         if *active == 0 {
             state.active.remove(&self.key);
-            for waker in state.waiters.remove(&self.key).unwrap_or_default() {
+            for waker in state.waiters.remove(&self.key.0).unwrap_or_default() {
                 waker.wake();
             }
         }

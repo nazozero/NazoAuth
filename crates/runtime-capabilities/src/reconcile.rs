@@ -65,6 +65,7 @@ pub enum RegistryError<E> {
     MissingDesiredState(ModuleId),
     MissingCatalogSpec(ModuleId),
     RuntimeDisableBlocked(ModuleId),
+    ServiceNotConstructed(ModuleId),
     ActiveDependent {
         module_id: ModuleId,
         dependent: ModuleId,

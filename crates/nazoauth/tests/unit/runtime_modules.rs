@@ -49,3 +49,16 @@ async fn reconciler_is_one_abortable_tenant_owned_task() {
     let error = worker.await.expect_err("aborted reconciler should stop");
     assert!(error.is_cancelled());
 }
+
+#[test]
+fn vp_drain_horizon_uses_the_constructed_transaction_ttl_instead_of_session_ttl() {
+    let mut settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    settings.session.session_ttl_seconds = 60;
+    settings.openid4vc.transaction_ttl_seconds = 300;
+    settings.modules.enable_openid4vp_verifier = true;
+    let catalog = module_catalog(&settings).unwrap();
+    assert_eq!(catalog.effective_disable_policy(ModuleId::Openid4vpVerifier), Some(nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { max_duration: Duration::from_secs(300) }));
+    settings.openid4vc.transaction_ttl_seconds = 1;
+    let catalog = module_catalog(&settings).unwrap();
+    assert_eq!(catalog.effective_disable_policy(ModuleId::Openid4vpVerifier), Some(nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { max_duration: Duration::from_secs(30) }));
+}

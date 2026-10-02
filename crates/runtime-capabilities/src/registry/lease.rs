@@ -31,6 +31,8 @@ where
         accepting: bool,
         draining: bool,
     ) -> Result<(), RegistryError<R::Error>> {
+        let accepting = self.catalog.effective_enabled(module_id, accepting);
+        let draining = draining && self.catalog.is_available(module_id);
         loop {
             let current = self.snapshots.load_full();
             let mut accepting_set = current.accepting.clone();
