@@ -59,8 +59,12 @@ struct TenantRuntimeLifecycle {
 
 impl Drop for TenantRuntimeLifecycle {
     fn drop(&mut self) {
-        if let Some(worker) = self.runtime_module_reconciler.take() { worker.abort(); }
-        if let Some(worker) = self.ciba_ping_worker.take() { worker.abort(); }
+        if let Some(worker) = self.runtime_module_reconciler.take() {
+            worker.abort();
+        }
+        if let Some(worker) = self.ciba_ping_worker.take() {
+            worker.abort();
+        }
         // KeyLifecycleTask's watch sender closes on drop. Its current refresh
         // completes cooperatively; key material writes must never be aborted.
     }
@@ -138,27 +142,29 @@ impl TenantRuntime {
         };
         // Abort both owned loops before the first await. Cancellation while
         // joining either one must not detach the other extracted handle.
-        if let Some(worker) = runtime_module_reconciler.as_ref() { worker.abort(); }
-        if let Some(worker) = ciba_ping_worker.as_ref() { worker.abort(); }
+        if let Some(worker) = runtime_module_reconciler.as_ref() {
+            worker.abort();
+        }
+        if let Some(worker) = ciba_ping_worker.as_ref() {
+            worker.abort();
+        }
         let stop_key = async {
             if let Some(worker) = key_lifecycle {
                 worker.stop().await;
             }
         };
         let stop_workers = async {
-            if let Some(worker) = runtime_module_reconciler {
-                if let Err(error) = worker.await
-                    && !error.is_cancelled()
-                {
-                    tracing::warn!(%error, "tenant runtime-module reconciler stopped unexpectedly");
-                }
+            if let Some(worker) = runtime_module_reconciler
+                && let Err(error) = worker.await
+                && !error.is_cancelled()
+            {
+                tracing::warn!(%error, "tenant runtime-module reconciler stopped unexpectedly");
             }
-            if let Some(worker) = ciba_ping_worker {
-                if let Err(error) = worker.await
-                    && !error.is_cancelled()
-                {
-                    tracing::warn!(%error, "tenant CIBA ping worker stopped unexpectedly");
-                }
+            if let Some(worker) = ciba_ping_worker
+                && let Err(error) = worker.await
+                && !error.is_cancelled()
+            {
+                tracing::warn!(%error, "tenant CIBA ping worker stopped unexpectedly");
             }
         };
         tokio::join!(biased; stop_key, stop_workers);
