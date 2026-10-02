@@ -1,4 +1,5 @@
 use super::*;
+use base64::Engine as _;
 use crate::settings::SocialProviderKind;
 use crate::test_support::federation_binding::unavailable_federation_service;
 use std::sync::atomic::Ordering;
