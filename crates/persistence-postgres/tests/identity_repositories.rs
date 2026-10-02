@@ -3289,18 +3289,18 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
     let repository = mfa_repository(pool.clone());
     let old = fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await;
     let expires = chrono::Utc::now() + chrono::Duration::hours(1);
-    assert!(repository.remember_device(tenant.tenant_id, user_id, old, "old-device".into(), None, expires).await.unwrap());
+    assert!(repository.remember_device(tenant.tenant_id, user_id, old, "e".repeat(64), None, expires).await.unwrap());
     repository.clear_mfa_state(tenant.tenant_id, user_id).await.unwrap();
-    assert!(!repository.remember_device(tenant.tenant_id, user_id, old, "late-after-clear".into(), None, expires).await.unwrap());
+    assert!(!repository.remember_device(tenant.tenant_id, user_id, old, "f".repeat(64), None, expires).await.unwrap());
     let new = fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await;
     assert_ne!(old, new);
     assert!(repository.replace_backup_code_hashes(tenant.tenant_id, user_id, new, vec!["new-generation-hash".into()]).await.unwrap());
     let before = repository.backup_code_candidates(tenant.tenant_id, user_id).await.unwrap();
-    assert!(!repository.remember_device(tenant.tenant_id, user_id, old, "late-after-reenroll".into(), None, expires).await.unwrap());
+    assert!(!repository.remember_device(tenant.tenant_id, user_id, old, "d".repeat(64), None, expires).await.unwrap());
     assert!(!repository.replace_backup_code_hashes(tenant.tenant_id, user_id, old, vec!["stale-replacement".into()]).await.unwrap());
     assert_eq!(repository.backup_code_candidates(tenant.tenant_id, user_id).await.unwrap(), before);
-    assert!(!repository.remembered_device_valid(tenant.tenant_id, user_id, "old-device", None, chrono::Utc::now()).await.unwrap());
-    assert!(!repository.remembered_device_valid(tenant.tenant_id, user_id, "late-after-reenroll", None, chrono::Utc::now()).await.unwrap());
+    assert!(!repository.remembered_device_valid(tenant.tenant_id, user_id, &"e".repeat(64), None, chrono::Utc::now()).await.unwrap());
+    assert!(!repository.remembered_device_valid(tenant.tenant_id, user_id, &"d".repeat(64), None, chrono::Utc::now()).await.unwrap());
     cleanup(&pool, user_id).await;
 }
 
@@ -3331,9 +3331,10 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
     let tag=Uuid::now_v7().simple().to_string(); let function=format!("mfa_remember_barrier_{tag}");
     let lock_key=i64::from(rand::random::<u32>() & 0x7fff_ffff);
     let mut blocker=get_conn(&pool).await.unwrap();
-    blocker.batch_execute(&format!("CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({lock_key}); RETURN NEW; END $$; CREATE TRIGGER {function} BEFORE INSERT ON user_mfa_remembered_devices FOR EACH ROW WHEN (NEW.user_id='{}'::uuid) EXECUTE FUNCTION {function}(); BEGIN; SELECT pg_advisory_xact_lock({lock_key});",user_id.as_uuid())).await.unwrap();
+    blocker.batch_execute(&format!("CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({lock_key}); RETURN NEW; END $$; CREATE TRIGGER {function} BEFORE INSERT ON user_mfa_remembered_devices FOR EACH ROW WHEN (NEW.user_id='{}'::uuid) EXECUTE FUNCTION {function}();",user_id.as_uuid())).await.unwrap();
+    blocker.batch_execute(&format!("BEGIN; SELECT pg_advisory_xact_lock({lock_key});")).await.unwrap();
     let remember_repository=repository.clone();
-    let remember=tokio::spawn(async move { remember_repository.remember_device(tenant.tenant_id,user_id,generation,"racing-device".into(),None,chrono::Utc::now()+chrono::Duration::hours(1)).await });
+    let remember=tokio::spawn(async move { remember_repository.remember_device(tenant.tenant_id,user_id,generation,"a".repeat(64),None,chrono::Utc::now()+chrono::Duration::hours(1)).await });
     #[derive(QueryableByName)] struct Waiting { #[diesel(sql_type=diesel::sql_types::Bool)] waiting:bool }
     tokio::time::timeout(std::time::Duration::from_secs(5),async {
         loop {
@@ -3355,7 +3356,7 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
     blocker.batch_execute("COMMIT").await.unwrap();
     assert!(tokio::time::timeout(std::time::Duration::from_secs(5),remember).await.unwrap().unwrap().unwrap());
     tokio::time::timeout(std::time::Duration::from_secs(5),clear).await.unwrap().unwrap().unwrap();
-    assert!(!repository.remembered_device_valid(tenant.tenant_id,user_id,"racing-device",None,chrono::Utc::now()).await.unwrap());
+    assert!(!repository.remembered_device_valid(tenant.tenant_id,user_id,&"a".repeat(64),None,chrono::Utc::now()).await.unwrap());
     assert!(repository.totp_enrollment(tenant.tenant_id,user_id).await.unwrap().is_none());
     blocker.batch_execute(&format!("DROP TRIGGER {function} ON user_mfa_remembered_devices; DROP FUNCTION {function}();")).await.unwrap();
     drop(blocker); cleanup(&pool,user_id).await;
