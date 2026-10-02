@@ -26,34 +26,119 @@ pub struct AuthenticationStore {
 }
 impl AuthenticationStore {
     pub fn new(connection: &ValkeyConnection) -> Self {
-        Self { connection: connection.clone() }
-    }
-    pub async fn reserve_email_send(&self, tenant_id: TenantId, email: &str, owner: &str, ttl: u64) -> Result<bool, Error> {
-        command::set_ex_nx_string(&self.connection, keys::email_send(tenant_id, email), owner.to_owned(), ttl).await
-    }
-    pub async fn reserve_email_peer_send(&self, tenant_id: TenantId, subject: &str, owner: &str, ttl: u64) -> Result<bool, Error> {
-        command::set_ex_nx_string(&self.connection, keys::email_peer_send(tenant_id, subject), owner.to_owned(), ttl).await
-    }
-    pub async fn store_email_code(&self, tenant_id: TenantId, email: &str, owner: &str, code: &str, ttl: u64) -> Result<(), Error> {
-        let raw = serde_json::to_string(&StoredEmailVerificationCode { owner: owner.to_owned(), password_hash: code.to_owned() })
-            .map_err(|_| Error::protocol("failed to serialize owned email verification code"))?;
-        command::set_ex_string(&self.connection, keys::email_code(tenant_id, email), raw, ttl).await
-    }
-    pub async fn load_email_code(&self, tenant_id: TenantId, email: &str) -> Result<Option<String>, Error> {
-        command::get(&self.connection, keys::email_code(tenant_id, email)).await?
-            .map(|raw| serde_json::from_str::<StoredEmailVerificationCode>(&raw).map(|stored| stored.password_hash).map_err(|_| Error::corrupt_data("malformed owned email verification code"))).transpose()
-    }
-    async fn delete_email_code(&self, tenant_id: TenantId, email: &str, owner: &str) -> Result<(), Error> {
-        match command::eval_string(&self.connection, DELETE_OWNED_EMAIL_CODE, vec![keys::email_code(tenant_id, email)], vec![owner.to_owned()]).await?.as_str() {
-            "deleted" | "missing" | "changed" => Ok(()),
-            _ => Err(Error::unexpected("unexpected owned email-code cleanup reply")),
+        Self {
+            connection: connection.clone(),
         }
     }
-    async fn delete_email_send(&self, tenant_id: TenantId, email: &str, owner: &str) -> Result<(), Error> {
-        command::compare_delete(&self.connection, keys::email_send(tenant_id, email), owner).await.map(|_| ())
+    pub async fn reserve_email_send(
+        &self,
+        tenant_id: TenantId,
+        email: &str,
+        owner: &str,
+        ttl: u64,
+    ) -> Result<bool, Error> {
+        command::set_ex_nx_string(
+            &self.connection,
+            keys::email_send(tenant_id, email),
+            owner.to_owned(),
+            ttl,
+        )
+        .await
     }
-    async fn delete_email_peer_send(&self, tenant_id: TenantId, subject: &str, owner: &str) -> Result<(), Error> {
-        command::compare_delete(&self.connection, keys::email_peer_send(tenant_id, subject), owner).await.map(|_| ())
+    pub async fn reserve_email_peer_send(
+        &self,
+        tenant_id: TenantId,
+        subject: &str,
+        owner: &str,
+        ttl: u64,
+    ) -> Result<bool, Error> {
+        command::set_ex_nx_string(
+            &self.connection,
+            keys::email_peer_send(tenant_id, subject),
+            owner.to_owned(),
+            ttl,
+        )
+        .await
+    }
+    pub async fn store_email_code(
+        &self,
+        tenant_id: TenantId,
+        email: &str,
+        owner: &str,
+        code: &str,
+        ttl: u64,
+    ) -> Result<(), Error> {
+        let raw = serde_json::to_string(&StoredEmailVerificationCode {
+            owner: owner.to_owned(),
+            password_hash: code.to_owned(),
+        })
+        .map_err(|_| Error::protocol("failed to serialize owned email verification code"))?;
+        command::set_ex_string(
+            &self.connection,
+            keys::email_code(tenant_id, email),
+            raw,
+            ttl,
+        )
+        .await
+    }
+    pub async fn load_email_code(
+        &self,
+        tenant_id: TenantId,
+        email: &str,
+    ) -> Result<Option<String>, Error> {
+        command::get(&self.connection, keys::email_code(tenant_id, email))
+            .await?
+            .map(|raw| {
+                serde_json::from_str::<StoredEmailVerificationCode>(&raw)
+                    .map(|stored| stored.password_hash)
+                    .map_err(|_| Error::corrupt_data("malformed owned email verification code"))
+            })
+            .transpose()
+    }
+    async fn delete_email_code(
+        &self,
+        tenant_id: TenantId,
+        email: &str,
+        owner: &str,
+    ) -> Result<(), Error> {
+        match command::eval_string(
+            &self.connection,
+            DELETE_OWNED_EMAIL_CODE,
+            vec![keys::email_code(tenant_id, email)],
+            vec![owner.to_owned()],
+        )
+        .await?
+        .as_str()
+        {
+            "deleted" | "missing" | "changed" => Ok(()),
+            _ => Err(Error::unexpected(
+                "unexpected owned email-code cleanup reply",
+            )),
+        }
+    }
+    async fn delete_email_send(
+        &self,
+        tenant_id: TenantId,
+        email: &str,
+        owner: &str,
+    ) -> Result<(), Error> {
+        command::compare_delete(&self.connection, keys::email_send(tenant_id, email), owner)
+            .await
+            .map(|_| ())
+    }
+    async fn delete_email_peer_send(
+        &self,
+        tenant_id: TenantId,
+        subject: &str,
+        owner: &str,
+    ) -> Result<(), Error> {
+        command::compare_delete(
+            &self.connection,
+            keys::email_peer_send(tenant_id, subject),
+            owner,
+        )
+        .await
+        .map(|_| ())
     }
     pub async fn store_passkey_registration(
         &self,
@@ -197,9 +282,14 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
                 .await
                 .map_err(crate::identity_repository_error)?;
             raw.map(|raw| {
-                let stored: StoredEmailVerificationCode = serde_json::from_str(&raw).map_err(|_| nazo_identity::ports::RepositoryError::Consistency("malformed owned email verification code".to_owned()))?;
-                let password_hash =
-                    nazo_identity::PasswordHash::new(stored.password_hash).map_err(|error| {
+                let stored: StoredEmailVerificationCode =
+                    serde_json::from_str(&raw).map_err(|_| {
+                        nazo_identity::ports::RepositoryError::Consistency(
+                            "malformed owned email verification code".to_owned(),
+                        )
+                    })?;
+                let password_hash = nazo_identity::PasswordHash::new(stored.password_hash)
+                    .map_err(|error| {
                         nazo_identity::ports::RepositoryError::Consistency(error.to_string())
                     })?;
                 Ok(nazo_identity::ports::EmailVerificationRecord {

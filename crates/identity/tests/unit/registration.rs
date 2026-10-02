@@ -100,7 +100,11 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
             calls.code_stores.fetch_add(1, Ordering::Relaxed);
             calls.tenant_ids.lock().unwrap().push(tenant_id);
             calls.owners.lock().unwrap().push(owner.to_owned());
-            if calls.fail_code_store.load(Ordering::Relaxed) { Err(RepositoryError::Unavailable) } else { Ok(()) }
+            if calls.fail_code_store.load(Ordering::Relaxed) {
+                Err(RepositoryError::Unavailable)
+            } else {
+                Ok(())
+            }
         })
     }
 
@@ -211,7 +215,11 @@ impl SecretHashPort for RecordingSecretHashes {
         let fail_hash = self.fail_hash;
         Box::pin(async move {
             calls.fetch_add(1, Ordering::Relaxed);
-            if fail_hash { Err(RepositoryError::Unavailable) } else { Ok(PasswordHashInput::new("test-code-hash").unwrap()) }
+            if fail_hash {
+                Err(RepositoryError::Unavailable)
+            } else {
+                Ok(PasswordHashInput::new("test-code-hash").unwrap())
+            }
         })
     }
 
@@ -512,20 +520,49 @@ async fn failed_hash_and_uncertain_code_store_release_only_this_attempt() {
         let delivery_calls = Arc::new(AtomicUsize::new(0));
         let service = RegistrationService::new(
             NoExistingAccount,
-            RecordingVerificationStore { email_reservation: Ok(true), calls: calls.clone() },
-            RecordingSecretHashes { hash_calls: Arc::new(AtomicUsize::new(0)), verify_calls: Arc::new(AtomicUsize::new(0)), verify_result: false, fail_hash },
-            RecordingDelivery { calls: delivery_calls.clone(), result: Ok(()) },
+            RecordingVerificationStore {
+                email_reservation: Ok(true),
+                calls: calls.clone(),
+            },
+            RecordingSecretHashes {
+                hash_calls: Arc::new(AtomicUsize::new(0)),
+                verify_calls: Arc::new(AtomicUsize::new(0)),
+                verify_result: false,
+                fail_hash,
+            },
+            RecordingDelivery {
+                calls: delivery_calls.clone(),
+                result: Ok(()),
+            },
             TenantContext::default(),
-            RegistrationServiceConfig { delivery_enabled: true, send_peer_cooldown_seconds: 60, send_cooldown_seconds: 60, code_ttl_seconds: 300 },
+            RegistrationServiceConfig {
+                delivery_enabled: true,
+                send_peer_cooldown_seconds: 60,
+                send_cooldown_seconds: 60,
+                code_ttl_seconds: 300,
+            },
         );
-        let result = service.send_verification_code("store-failure@example.test", "peer").await;
-        let expected = if fail_hash { SendVerificationCodeError::CodeHash(RepositoryError::Unavailable) } else { SendVerificationCodeError::CodeStore(RepositoryError::Unavailable) };
+        let result = service
+            .send_verification_code("store-failure@example.test", "peer")
+            .await;
+        let expected = if fail_hash {
+            SendVerificationCodeError::CodeHash(RepositoryError::Unavailable)
+        } else {
+            SendVerificationCodeError::CodeStore(RepositoryError::Unavailable)
+        };
         assert_eq!(result, Err(expected));
         assert_eq!(calls.peer_releases.load(Ordering::Relaxed), 1);
         assert_eq!(calls.email_releases.load(Ordering::Relaxed), 1);
-        assert_eq!(calls.code_deletes.load(Ordering::Relaxed), usize::from(!fail_hash));
+        assert_eq!(
+            calls.code_deletes.load(Ordering::Relaxed),
+            usize::from(!fail_hash)
+        );
         assert_eq!(delivery_calls.load(Ordering::Relaxed), 0);
         let owners = calls.owners.lock().unwrap();
-        assert!(owners.iter().all(|owner| !owner.is_empty() && owner == &owners[0]));
+        assert!(
+            owners
+                .iter()
+                .all(|owner| !owner.is_empty() && owner == &owners[0])
+        );
     }
 }
