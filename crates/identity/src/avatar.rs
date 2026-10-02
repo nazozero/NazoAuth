@@ -242,7 +242,7 @@ impl AvatarDirectUploadService {
             .claim(account.user_id(), upload_id, lease_until)
             .await
             .map_err(DirectAvatarUploadError::State)?;
-        let (authorization, ownership_token, staged_version, candidate_id, staged_snapshot) =
+        let (authorization, ownership_token, staged_version, candidate_id, validated_content_type) =
             match claim {
                 AvatarUploadClaim::Pending {
                     authorization,
@@ -289,13 +289,17 @@ impl AvatarDirectUploadService {
                         }
                     };
                     let final_object_id = final_object_id(&authorization.upload_id, &staged.bytes);
+                    let staged_version = staged.version;
+                    // The immutable candidate and MIME already bind these bytes.
+                    // Keep no upload body across the state-store await.
+                    drop(staged.bytes);
                     let recorded = self
                         .state
                         .record_candidate(
                             account.user_id(),
                             upload_id,
                             &ownership_token,
-                            &staged.version,
+                            &staged_version,
                             &final_object_id,
                         )
                         .await
@@ -306,9 +310,9 @@ impl AvatarDirectUploadService {
                     (
                         authorization,
                         ownership_token,
-                        staged.version,
+                        staged_version,
                         final_object_id,
-                        Some((staged.bytes, content_type)),
+                        Some(content_type),
                     )
                 }
                 AvatarUploadClaim::Publishing {
@@ -368,13 +372,8 @@ impl AvatarDirectUploadService {
                 .map_err(DirectAvatarUploadError::Overview);
         }
 
-        let content_type = match staged_snapshot {
-            Some((bytes, content_type)) => {
-                if final_object_id(&authorization.upload_id, &bytes) != candidate_id {
-                    return Err(DirectAvatarUploadError::ConcurrentChange);
-                }
-                content_type
-            }
+        let content_type = match validated_content_type {
+            Some(content_type) => content_type,
             None => {
                 let staged = self
                     .storage

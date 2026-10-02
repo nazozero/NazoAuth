@@ -430,7 +430,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
             let object_key = self.final_key(final_object_id)?;
             let response = self
                 .signed_request(
-                    http::Method::HEAD,
+                    http::Method::GET,
                     &object_key,
                     http::HeaderMap::new(),
                     Vec::new(),
@@ -443,15 +443,6 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
                 .and_then(|v| v.to_str().ok())
                 .and_then(AvatarContentType::parse)
                 .ok_or(AvatarStorageError::InvalidState)?;
-            let response = self
-                .signed_request(
-                    http::Method::GET,
-                    &object_key,
-                    http::HeaderMap::new(),
-                    Vec::new(),
-                )
-                .await?;
-            ensure_status(response.status().as_u16())?;
             Ok(AvatarObject {
                 bytes: response.bytes().await.map_err(unavailable)?.to_vec(),
                 content_type,
