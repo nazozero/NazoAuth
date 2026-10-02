@@ -115,12 +115,26 @@ pub(super) async fn send_genesis_checkpoint(
     decode_outcome(&response_body, config, &expectation)
 }
 
-async fn bounded_receipt_body(mut response:reqwest::Response,max_bytes:i64)->Result<Vec<u8>,AnchorPushError> {
-    let limit=usize::try_from(max_bytes).map_err(|_|AnchorPushError::InvalidReceipt)?;
-    if response.content_length().is_some_and(|length|length>limit as u64) { return Err(AnchorPushError::InvalidReceipt); }
-    let mut body=Vec::new();
-    while let Some(chunk)=response.chunk().await.map_err(|_|AnchorPushError::Transport)? {
-        if chunk.len()>limit.saturating_sub(body.len()) { return Err(AnchorPushError::InvalidReceipt); }
+async fn bounded_receipt_body(
+    mut response: reqwest::Response,
+    max_bytes: i64,
+) -> Result<Vec<u8>, AnchorPushError> {
+    let limit = usize::try_from(max_bytes).map_err(|_| AnchorPushError::InvalidReceipt)?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Err(AnchorPushError::InvalidReceipt);
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| AnchorPushError::Transport)?
+    {
+        if chunk.len() > limit.saturating_sub(body.len()) {
+            return Err(AnchorPushError::InvalidReceipt);
+        }
         body.extend_from_slice(&chunk);
     }
     Ok(body)
