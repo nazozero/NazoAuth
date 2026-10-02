@@ -346,7 +346,10 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
     // migration driver.  Recover the session afterward so the advisory lock
     // is explicitly released on both success and migration failure.
     let mut harness = AsyncMigrationHarness::new(connection);
-    let migration_result = crate::unavailable::run_pending_migrations(&mut harness, MIGRATIONS);
+    let migration_result = harness
+        .run_pending_migrations(MIGRATIONS)
+        .map(|applied| !applied.is_empty())
+        .map_err(crate::unavailable::migration_harness);
     let mut connection = harness.into_inner();
     let unlock_result: anyhow::Result<()> = match diesel::sql_query(format!(
         "SELECT pg_advisory_unlock({MIGRATION_ADVISORY_LOCK}) AS acquired"
