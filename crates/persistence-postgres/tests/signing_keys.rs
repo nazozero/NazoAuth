@@ -538,3 +538,12 @@ async fn signing_key_repository_converges_and_isolates_tenants() -> anyhow::Resu
     assert!(SigningKeyRepository::load(&first).await?.is_none());
     Ok(())
 }
+
+#[tokio::test]
+async fn closed_key_pool_preserves_typed_unavailable_through_context() {
+    let pool = create_pool("postgres://unused.invalid/unused", 1).unwrap();
+    pool.close();
+    let repository = SigningKeysetRepository::for_tenant(pool, Uuid::now_v7());
+    let error = repository.load().await.unwrap_err().context("operator key load");
+    assert!(error.is::<nazo_key_management::SigningKeyRepositoryUnavailable>());
+}

@@ -88,7 +88,13 @@ impl OperatorPersistence for PostgresOperatorPersistence {
         Box::pin(async move {
             Ok(TenantDirectoryRepository::new(self.pool.clone())
                 .initialize(binding)
-                .await?)
+                .await.map_err(|error| {
+                    if matches!(error, nazo_identity::ports::RepositoryError::Unavailable) {
+                        anyhow::Error::from(nazo_persistence::MigrationUnavailable(error.into()))
+                    } else {
+                        error.into()
+                    }
+                })?)
         })
     }
 }
