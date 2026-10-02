@@ -203,6 +203,10 @@ closure, worker termination and append failure return errors. Failed Required
 batches report their first error without retrying or blocking subsequent
 batches; caller cancellation never turns an unconfirmed append into success.
 Other cross-store Required intents still precede their destructive mutations.
+System tenant administrator changes and Recovery Root approval/rotation use
+registered Required administration events. These handlers retain their existing
+awaited audit writes; registration prevents unknown-event rejection and does
+not make their separate state and audit transactions atomic.
 Browser authorization decisions instead use the domain-owned
 `AuthorizationRepositoryPort::commit_decision` capability: the effective
 grant change, independent tenant-scoped consent/PAR consumption fences, and

@@ -1276,3 +1276,18 @@ fn refresh_family_security_revocation_is_registered_required_evidence() {
     assert!(audit_event_is_required("refresh_family_security_revoked"));
     assert!(prepare_event("refresh_family_security_revoked", serde_json::Map::new()).is_ok());
 }
+
+#[test]
+fn administrative_mutation_events_are_registered_required_evidence() {
+    for name in [
+        "system_tenant_admin_updated",
+        "controller_recovery_root_rotation_approved",
+        "controller_recovery_root_rotated",
+    ] {
+        assert_eq!(audit_event_category(name), Some("administration"));
+        assert!(audit_event_is_required(name));
+        let prepared = prepare_event(name, audit_fields(&[("actor_user_id", json!("actor"))]))
+            .expect("real administrative handlers must have a registered event");
+        assert_eq!(prepared.event_type, name);
+    }
+}

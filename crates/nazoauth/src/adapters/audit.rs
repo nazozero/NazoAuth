@@ -117,6 +117,21 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
         AuditEventClass::Required,
     ),
     (
+        "system_tenant_admin_updated",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "controller_recovery_root_rotation_approved",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "controller_recovery_root_rotated",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
         "admin_user_created",
         "administration",
         AuditEventClass::Required,
