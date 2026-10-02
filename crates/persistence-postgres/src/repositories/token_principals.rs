@@ -67,11 +67,10 @@ pub(super) async fn snapshot(
         )
         .select(oauth_subject_bindings::user_id)
         .single_value();
-    let (user_epoch, bound_user) =
-        diesel::select((user_epoch, bound_user))
-            .get_result::<(Option<i64>, Option<Uuid>)>(connection)
-            .await
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+    let (user_epoch, bound_user) = diesel::select((user_epoch, bound_user))
+        .get_result::<(Option<i64>, Option<Uuid>)>(connection)
+        .await
+        .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
     if bound_user.is_some() && bound_user != user_id {
         return Err(RepositoryError::Consistency(
             "subject ownership collision".to_owned(),

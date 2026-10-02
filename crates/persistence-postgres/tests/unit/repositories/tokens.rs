@@ -125,7 +125,10 @@ fn refresh_contract_preparation_preserves_the_original_canonical_digest() {
     let contract = refresh.contract();
     let expected = contract.persisted();
     let prepared = prepare_refresh_contract(&refresh).unwrap().unwrap();
-    assert_eq!(prepared.contract_value, serde_json::to_value(&expected).unwrap());
+    assert_eq!(
+        prepared.contract_value,
+        serde_json::to_value(&expected).unwrap()
+    );
     assert_eq!(prepared.contract_blake3, expected.blake3_digest().to_vec());
     assert_eq!(contract.canonical_bytes(), expected.canonical_bytes());
 }
