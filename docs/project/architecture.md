@@ -406,3 +406,9 @@ Credential issuance enforces the batch limit on validated holder bindings after
 proof expansion and before nonce claiming. A configuration without proof types
 and holder-binding methods issues its unbound credential without a proof nonce;
 stray proofs remain invalid. The same rules apply to deferred preparation.
+
+### Short authentication validity boundaries
+
+Passkey login uses the configured pending MFA session TTL until MFA is satisfied; remembered MFA and users without MFA retain the full session TTL. The login cookie and response presentation remain consistent with password login.
+
+CIBA request validity starts after the mandatory audit intent and replay reservations complete. Creation and approval or denial enforce the original authorization expiry in the state-store atomic command, independently of the longer retention TTL. Expired-state cleanup retains its existing deletion semantics.

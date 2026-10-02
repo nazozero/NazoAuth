@@ -56,8 +56,9 @@ impl ServerCredentialIssuerOperations {
             let nonce = if configuration.proof_types_supported.is_empty() {
                 None
             } else {
-                Some(extract_proof_nonce(request.proofs.as_ref())
-                    .ok_or_else(|| vci_error(400, "invalid_proof", "Credential proof is missing."))?)
+                Some(extract_proof_nonce(request.proofs.as_ref()).ok_or_else(|| {
+                    vci_error(400, "invalid_proof", "Credential proof is missing.")
+                })?)
             };
             let now = Utc::now();
             let disposition = if self.deferred_configurations.contains(&configuration_id) {

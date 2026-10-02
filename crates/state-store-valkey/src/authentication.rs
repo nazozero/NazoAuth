@@ -66,12 +66,31 @@ impl AuthenticationStore {
         )
         .await
     }
-    pub async fn store_email_code(&self, tenant_id: TenantId, email: &str, owner: &str, code: &str, ttl: u64) -> Result<bool, Error> {
-        let raw = serde_json::to_string(&StoredEmailVerificationCode { owner: owner.to_owned(), password_hash: code.to_owned() })
-            .map_err(|_| Error::protocol("failed to serialize owned email verification code"))?;
-        match command::eval_string(&self.connection, STORE_OWNED_EMAIL_CODE,
-            vec![keys::email_send(tenant_id, email), keys::email_code(tenant_id, email)],
-            vec![owner.to_owned(), raw, ttl.min(i64::MAX as u64).to_string()]).await?.as_str() {
+    pub async fn store_email_code(
+        &self,
+        tenant_id: TenantId,
+        email: &str,
+        owner: &str,
+        code: &str,
+        ttl: u64,
+    ) -> Result<bool, Error> {
+        let raw = serde_json::to_string(&StoredEmailVerificationCode {
+            owner: owner.to_owned(),
+            password_hash: code.to_owned(),
+        })
+        .map_err(|_| Error::protocol("failed to serialize owned email verification code"))?;
+        match command::eval_string(
+            &self.connection,
+            STORE_OWNED_EMAIL_CODE,
+            vec![
+                keys::email_send(tenant_id, email),
+                keys::email_code(tenant_id, email),
+            ],
+            vec![owner.to_owned(), raw, ttl.min(i64::MAX as u64).to_string()],
+        )
+        .await?
+        .as_str()
+        {
             "stored" => Ok(true),
             "missing_or_changed" => Ok(false),
             _ => Err(Error::unexpected("unexpected owned email-code store reply")),
@@ -262,7 +281,13 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
             )
             .await
             .map_err(crate::identity_repository_error)
-            .and_then(|stored| if stored { Ok(()) } else { Err(nazo_identity::ports::RepositoryError::Conflict) })
+            .and_then(|stored| {
+                if stored {
+                    Ok(())
+                } else {
+                    Err(nazo_identity::ports::RepositoryError::Conflict)
+                }
+            })
         })
     }
 
