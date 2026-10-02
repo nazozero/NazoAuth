@@ -447,6 +447,11 @@ where
                     proof_metadata,
                 )
                 .await?;
+            // Attestation proofs can expand one encoded item into many holders.
+            // Enforce the advertised issuance bound before claiming the nonce.
+            if validated.len() > self.max_batch_size {
+                return Err(CredentialIssuanceError::Credential(CredentialError::InvalidProof));
+            }
             if validated.is_empty() {
                 return Err(CredentialIssuanceError::Credential(
                     CredentialError::InvalidNonce,
