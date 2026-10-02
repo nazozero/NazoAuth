@@ -114,7 +114,7 @@ async fn ciba_precommit_dependency_failure_is_retryable_and_sender_keys_share_on
             panic!(
                 "expected signing dependency failure, got {}: {}",
                 failed.status(),
-                oauth_error_code(failed).await
+                crate::test_support::token_response_body::oauth_error_summary(failed).await
             );
         }
         let service = ServerCibaService::new(Arc::new(CibaStore::new(&state.valkey_connection())));
