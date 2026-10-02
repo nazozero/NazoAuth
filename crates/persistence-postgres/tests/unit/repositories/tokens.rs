@@ -115,3 +115,31 @@ fn contract_mut(refresh: &mut nazo_auth::RefreshTokenCommit) -> &mut nazo_auth::
     };
     contract
 }
+
+#[test]
+fn refresh_contract_preparation_preserves_the_original_canonical_digest() {
+    let mut refresh = valid_refresh_token();
+    contract_mut(&mut refresh).authorization_details = serde_json::json!([
+        {"type": "account_information", "locations": ["https://resource.example"], "actions": ["read"]}
+    ]);
+    let contract = refresh.contract();
+    let expected = contract.persisted();
+    let prepared = prepare_refresh_contract(&refresh).unwrap().unwrap();
+    assert_eq!(prepared.contract_value, serde_json::to_value(&expected).unwrap());
+    assert_eq!(prepared.contract_blake3, expected.blake3_digest().to_vec());
+    assert_eq!(contract.canonical_bytes(), expected.canonical_bytes());
+}
+
+#[test]
+fn refresh_contract_preparation_rejects_each_nonpersistent_context_field() {
+    for nonce in [true, false] {
+        let mut refresh = valid_refresh_token();
+        let context = &mut contract_mut(&mut refresh).authentication_context;
+        if nonce {
+            context.nonce = Some("first-response-nonce".to_owned());
+        } else {
+            context.id_token_sid = Some("current-generation-sid".to_owned());
+        }
+        assert!(prepare_refresh_contract(&refresh).is_err());
+    }
+}

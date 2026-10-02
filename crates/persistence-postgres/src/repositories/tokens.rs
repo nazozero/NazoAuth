@@ -431,7 +431,8 @@ fn validate_refresh_commit(refresh: &RefreshTokenCommit) -> Result<(), Repositor
     if !contract.authentication_context.is_well_formed()
         || contract.subject.trim().is_empty()
         || !valid_audiences(&contract.audiences)
-        || *contract != contract.persisted()
+        || contract.authentication_context.nonce.is_some()
+        || contract.authentication_context.id_token_sid.is_some()
     {
         return Err(RepositoryError::Consistency(
             "refresh token requires a complete immutable authentication contract".to_owned(),
@@ -494,11 +495,10 @@ fn validate_refresh_commit(refresh: &RefreshTokenCommit) -> Result<(), Repositor
 }
 
 fn persisted_contract(contract: &RefreshContract) -> Result<(Vec<u8>, Value), RepositoryError> {
-    let persisted = contract.persisted();
-    let value = serde_json::to_value(&persisted).map_err(|error| {
+    let value = serde_json::to_value(contract).map_err(|error| {
         RepositoryError::Consistency(format!("refresh contract could not be serialized: {error}"))
     })?;
-    Ok((persisted.blake3_digest().to_vec(), value))
+    Ok((contract.blake3_digest().to_vec(), value))
 }
 
 /// Only new families serialize/hash their original contract before borrowing

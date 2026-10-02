@@ -747,7 +747,7 @@ fn issued_audit_fields(input: &CommitTokenIssuance) -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn principal_snapshot_reuses_prepared_query_without_caching_security_state() {
+async fn principal_snapshot_reuses_authenticated_epoch_and_prepared_query() {
     let database_url = database_url().expect("principal snapshot regression requires PostgreSQL");
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
@@ -755,7 +755,7 @@ async fn principal_snapshot_reuses_prepared_query_without_caching_security_state
     let repository = TokenIssuanceRepository::new(pool.clone());
     let subject = format!("private-subject-{}", Uuid::now_v7());
     let initial = repository
-        .token_principal_state(tenant_id, fixture.client_id, None, &subject)
+        .token_principal_state(tenant_id, 0, None, &subject)
         .await
         .unwrap();
     assert_eq!(initial.client_epoch, 0);
@@ -763,11 +763,11 @@ async fn principal_snapshot_reuses_prepared_query_without_caching_security_state
     assert!(!initial.subject_bound);
 
     let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
-    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%pg_prepared_statements%'")
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%oauth_clients%' AND statement NOT LIKE '%pg_prepared_statements%'")
         .get_result::<CountRow>(&mut connection).await.unwrap();
     assert_eq!(
         prepared.count, 1,
-        "the snapshot must be a reusable prepared query"
+        "the user/binding snapshot must reuse its prepared query without reading oauth_clients"
     );
     sql_query("UPDATE oauth_clients SET access_token_epoch = 7 WHERE tenant_id = $1 AND id = $2")
         .bind::<SqlUuid, _>(tenant_id)
@@ -795,35 +795,35 @@ async fn principal_snapshot_reuses_prepared_query_without_caching_security_state
     let current = repository
         .token_principal_state(
             tenant_id,
-            fixture.client_id,
+            3,
             Some(fixture.user_id),
             &subject,
         )
         .await
         .unwrap();
-    assert_eq!(current.client_epoch, 7);
+    assert_eq!(current.client_epoch, 3, "do not replace the authenticated epoch with the database epoch");
     assert_eq!(current.user_epoch, Some(11));
     assert!(current.subject_bound);
     let public = repository
         .token_principal_state(
             tenant_id,
-            fixture.client_id,
+            0,
             Some(fixture.user_id),
             &fixture.user_id.to_string(),
         )
         .await
         .unwrap();
     assert!(!public.subject_bound);
-    let missing_client = repository
-        .token_principal_state(tenant_id, Uuid::now_v7(), Some(fixture.user_id), &subject)
+    let authenticated = repository
+        .token_principal_state(tenant_id, 0, Some(fixture.user_id), &subject)
         .await
         .unwrap();
-    assert_eq!(missing_client.client_epoch, 0);
-    assert_eq!(missing_client.user_epoch, Some(11));
-    assert!(missing_client.subject_bound);
+    assert_eq!(authenticated.client_epoch, 0);
+    assert_eq!(authenticated.user_epoch, Some(11));
+    assert!(authenticated.subject_bound);
     assert!(
         repository
-            .token_principal_state(tenant_id, fixture.client_id, Some(Uuid::now_v7()), &subject)
+            .token_principal_state(tenant_id, 0, Some(Uuid::now_v7()), &subject)
             .await
             .is_err(),
         "a private subject must not bind to a different user"
@@ -831,7 +831,7 @@ async fn principal_snapshot_reuses_prepared_query_without_caching_security_state
     let foreign = repository
         .token_principal_state(
             Uuid::now_v7(),
-            fixture.client_id,
+            0,
             Some(fixture.user_id),
             &subject,
         )
@@ -841,7 +841,7 @@ async fn principal_snapshot_reuses_prepared_query_without_caching_security_state
     assert_eq!(foreign.user_epoch, Some(0));
     assert!(!foreign.subject_bound);
     let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
-    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%pg_prepared_statements%'")
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%oauth_clients%' AND statement NOT LIKE '%pg_prepared_statements%'")
         .get_result::<CountRow>(&mut connection).await.unwrap();
     assert_eq!(
         prepared.count, 1,
@@ -894,7 +894,7 @@ async fn oidc_subject_snapshot_reuses_statement_but_refreshes_epoch_and_binding(
     assert_eq!(current.user_epoch, 9);
     assert!(current.subject_bound);
     let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
-    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%pg_prepared_statements%'")
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%access_token_epoch%' AND statement LIKE '%oauth_subject_bindings%' AND statement NOT LIKE '%oauth_clients%' AND statement NOT LIKE '%pg_prepared_statements%'")
         .get_result::<CountRow>(&mut connection).await.unwrap();
     assert_eq!(
         prepared.count, 1,
@@ -938,7 +938,7 @@ async fn assert_complete_issuance_audit_payloads() {
             .map(|id| id.to_string())
             .unwrap_or_else(|| fixture.client_public_id.clone());
         input.principal_state = repository
-            .token_principal_state(tenant_id, fixture.client_id, user_id, &input.subject)
+            .token_principal_state(tenant_id, 0, user_id, &input.subject)
             .await
             .unwrap();
         input.refresh_token = None;

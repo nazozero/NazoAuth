@@ -425,7 +425,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
-        client_id: Uuid,
+        client_epoch: i64,
         user_id: Option<Uuid>,
         subject: &'a str,
     ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
@@ -434,7 +434,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             super::token_principals::snapshot(
                 &mut connection,
                 tenant_id,
-                client_id,
+                client_epoch,
                 user_id,
                 subject,
             )

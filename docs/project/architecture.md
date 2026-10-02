@@ -172,14 +172,14 @@ only state required by their semantics:
   is rechecked in the transaction; expiry rolls it back and returns the healthy
   connection to the pool.
 
-Client-only issuance reuses the access-token epoch read in the request's client
-authentication snapshot. Its fixed salt/epoch projection preserves prepared-query
+Every issuance reuses the access-token epoch read in the request's client
+authentication snapshot; a later subject read never replaces that version. Its fixed salt/epoch projection preserves prepared-query
 reuse while reading current values on every request. OIDC issuance with a public
 subject also reuses the user epoch returned with the active subject claims in
 `PreparedTokenSubject`. This
 request-local snapshot belongs to the authorization core; its security version
-is not serialized into the public subject claims. Non-OIDC or non-public user
-issuance keeps the narrow principal/binding read before signing. The commit
+is not serialized into the public subject claims. Non-OIDC user issuance reads only its user epoch and exact subject binding
+in one narrow snapshot before signing. The commit
 locks client then user and rechecks activity and these exact epochs. A
 concurrent deactivate/reactivate cycle cannot admit an older signed snapshot.
 Principal deactivation increments its epoch in the same database row update;
@@ -210,6 +210,10 @@ immutable `authorization_decision_committed` fact commit together. This
 capability is backend-neutral; an adapter must implement genuine atomic
 conditional persistence rather than concatenate independent store writes.
 Token issuance keeps its own Required audit inside its business transaction.
+After an authorization-code commit, its Consuming cache entry expires under the
+original code TTL instead of delaying the successful response with a delete.
+Both Busy and Missing replays consult the durable receipt and synchronously
+revoke an exact replay; the extra cache residency is bounded by that original TTL.
 
 PAR and consent are immutable preparation material. Their cache deletion is
 post-commit cleanup, not authorization or cancellation authority. Explicit

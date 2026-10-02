@@ -42,19 +42,16 @@ diesel::allow_tables_to_appear_in_same_query!(
 pub(super) async fn snapshot(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
-    client_id: Uuid,
+    client_epoch: i64,
     user_id: Option<Uuid>,
     subject: &str,
 ) -> Result<TokenPrincipalState, RepositoryError> {
+    // Keep the authenticated client version; a later read must not endorse
+    // old authentication with a newer epoch. User and binding share one snapshot.
     // Only security columns are read: no profile preload for non-OIDC issuance.
     // Missing/inactive principals are still classified by the locked commit check.
     // Keep this one MVCC snapshot and a typed query so every connection can
     // reuse its prepared statement across tenants, clients and subject types.
-    let client_epoch = client_principals::table
-        .filter(client_principals::tenant_id.eq(tenant_id))
-        .filter(client_principals::id.eq(client_id))
-        .select(client_principals::access_token_epoch)
-        .single_value();
     let user_epoch = user_principals::table
         .filter(user_principals::tenant_id.eq(tenant_id))
         .filter(user_principals::id.nullable().eq(user_id))
@@ -70,9 +67,9 @@ pub(super) async fn snapshot(
         )
         .select(oauth_subject_bindings::user_id)
         .single_value();
-    let (client_epoch, user_epoch, bound_user) =
-        diesel::select((client_epoch, user_epoch, bound_user))
-            .get_result::<(Option<i64>, Option<i64>, Option<Uuid>)>(connection)
+    let (user_epoch, bound_user) =
+        diesel::select((user_epoch, bound_user))
+            .get_result::<(Option<i64>, Option<Uuid>)>(connection)
             .await
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
     if bound_user.is_some() && bound_user != user_id {
@@ -81,7 +78,7 @@ pub(super) async fn snapshot(
         ));
     }
     Ok(TokenPrincipalState {
-        client_epoch: client_epoch.unwrap_or(0),
+        client_epoch,
         user_epoch: user_id.map(|_| user_epoch.unwrap_or(0)),
         subject_bound: bound_user.is_some(),
     })

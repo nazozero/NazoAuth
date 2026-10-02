@@ -325,12 +325,12 @@ impl TokenRepositoryPort for SubjectStateOutage {
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
-        client_id: Uuid,
+        client_epoch: i64,
         user_id: Option<Uuid>,
         subject: &'a str,
     ) -> nazo_auth::TokenFuture<'a, nazo_auth::TokenPrincipalState> {
         self.inner
-            .token_principal_state(tenant_id, client_id, user_id, subject)
+            .token_principal_state(tenant_id, client_epoch, user_id, subject)
     }
 
     fn commit_token_issuance<'a>(

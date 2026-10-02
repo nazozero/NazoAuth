@@ -1230,3 +1230,22 @@ async fn invalid_preparation_ttl_remains_an_unexpected_dependency_error() {
     );
     assert!(store.load_par(&request_uri).await.unwrap().is_none());
 }
+
+#[tokio::test]
+async fn authorization_code_begin_and_busy_retry_preserve_the_original_ttl() {
+    let Some((store, inspector)) = setup().await else { return; };
+    let code = uuid::Uuid::now_v7().to_string();
+    let code_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
+    let key = nazo_valkey::test_support::authorization_code_storage_key(&code);
+    let pending = AuthorizationCodeState::Pending { payload: code_payload(&code_hash) };
+    store.store_authorization_code_hash(&code_hash, &pending, 2).await.unwrap();
+    let original_ttl = inspector.pttl::<i64, _>(&key).await.unwrap();
+    assert!((1..=2_000).contains(&original_ttl));
+    assert!(matches!(store.begin_authorization_code(&code_hash, Utc::now()).await.unwrap(), AuthorizationCodeBegin::Consuming(_)));
+    assert!(matches!(store.begin_authorization_code(&code_hash, Utc::now()).await.unwrap(), AuthorizationCodeBegin::Busy));
+    let remaining = inspector.pttl::<i64, _>(&key).await.unwrap();
+    assert!(remaining > 0 && remaining <= original_ttl);
+    tokio::time::sleep(Duration::from_millis(2_100)).await;
+    assert!(store.load_authorization_code_hash(&code_hash).await.unwrap().is_none());
+    assert!(matches!(store.begin_authorization_code(&code_hash, Utc::now()).await.unwrap(), AuthorizationCodeBegin::Missing));
+}
