@@ -1901,7 +1901,7 @@ async fn signed_receipt_valid_json_whitespace_at_cap_succeeds_and_cap_plus_one_n
         receipt.resize(limit + extra, b' ');
         let (endpoint, server) = chunked_signed_receipt_endpoint(receipt).await;
         let mut config = iteration_config(endpoint);
-        config.max_envelope_bytes = limit;
+        config.max_envelope_bytes = limit as i64;
         let repository = ScriptedRepository::with_health(
             Ok(health_snapshot()),
             Ok(SecurityAuditBatchClaim::Claimed(committed.clone())),
