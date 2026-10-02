@@ -9,6 +9,12 @@ struct StoredEmailVerificationCode {
     password_hash: String,
 }
 
+const STORE_OWNED_EMAIL_CODE: &str = r#"
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 'missing_or_changed' end
+redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+return 'stored'
+"#;
+
 const DELETE_OWNED_EMAIL_CODE: &str = r#"
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 'missing' end
@@ -60,26 +66,16 @@ impl AuthenticationStore {
         )
         .await
     }
-    pub async fn store_email_code(
-        &self,
-        tenant_id: TenantId,
-        email: &str,
-        owner: &str,
-        code: &str,
-        ttl: u64,
-    ) -> Result<(), Error> {
-        let raw = serde_json::to_string(&StoredEmailVerificationCode {
-            owner: owner.to_owned(),
-            password_hash: code.to_owned(),
-        })
-        .map_err(|_| Error::protocol("failed to serialize owned email verification code"))?;
-        command::set_ex_string(
-            &self.connection,
-            keys::email_code(tenant_id, email),
-            raw,
-            ttl,
-        )
-        .await
+    pub async fn store_email_code(&self, tenant_id: TenantId, email: &str, owner: &str, code: &str, ttl: u64) -> Result<bool, Error> {
+        let raw = serde_json::to_string(&StoredEmailVerificationCode { owner: owner.to_owned(), password_hash: code.to_owned() })
+            .map_err(|_| Error::protocol("failed to serialize owned email verification code"))?;
+        match command::eval_string(&self.connection, STORE_OWNED_EMAIL_CODE,
+            vec![keys::email_send(tenant_id, email), keys::email_code(tenant_id, email)],
+            vec![owner.to_owned(), raw, ttl.min(i64::MAX as u64).to_string()]).await?.as_str() {
+            "stored" => Ok(true),
+            "missing_or_changed" => Ok(false),
+            _ => Err(Error::unexpected("unexpected owned email-code store reply")),
+        }
     }
     pub async fn load_email_code(
         &self,
@@ -266,6 +262,7 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
             )
             .await
             .map_err(crate::identity_repository_error)
+            .and_then(|stored| if stored { Ok(()) } else { Err(nazo_identity::ports::RepositoryError::Conflict) })
         })
     }
 
