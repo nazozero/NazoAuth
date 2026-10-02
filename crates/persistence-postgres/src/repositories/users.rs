@@ -2,7 +2,10 @@ use crate::{
     DbPool,
     convert::identity,
     get_conn,
-    repositories::{audit::insert_identity_security_event, audit_ledger::append_fresh_security_audit_on_connection},
+    repositories::{
+        audit::insert_identity_security_event,
+        audit_ledger::append_fresh_security_audit_on_connection,
+    },
     rows::identity::{AuthenticationIdentityRow, PrincipalRow, PublicAccountRow, SubjectClaimsRow},
     schema::{oauth_refresh_families, oauth_subject_bindings, user_client_grants, users},
 };

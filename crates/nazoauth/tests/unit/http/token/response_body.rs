@@ -16,8 +16,19 @@ where
 
 /// Diagnostic projection excludes tokens and other success-response fields.
 pub(crate) async fn oauth_error_summary<B>(response: actix_web::HttpResponse<B>) -> String
-where B: actix_web::body::MessageBody, B::Error: std::fmt::Debug {
-    let bytes = actix_web::body::to_bytes(response.into_body()).await.unwrap();
+where
+    B: actix_web::body::MessageBody,
+    B::Error: std::fmt::Debug,
+{
+    let bytes = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    format!("{}: {}", body["error"].as_str().unwrap_or("missing error"), body["error_description"].as_str().unwrap_or("missing description"))
+    format!(
+        "{}: {}",
+        body["error"].as_str().unwrap_or("missing error"),
+        body["error_description"]
+            .as_str()
+            .unwrap_or("missing description")
+    )
 }
