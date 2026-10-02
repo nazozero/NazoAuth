@@ -7,7 +7,11 @@ fn browser_binding_digest_is_tenant_scoped_and_canonical_hex() {
     let seed = [7_u8; 32];
     let digest = browser_binding_hash(tenant_a, &seed);
     assert_eq!(digest.len(), 64);
-    assert!(digest.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+    assert!(
+        digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    );
     assert_eq!(digest, browser_binding_hash(tenant_a, &seed));
     assert_ne!(digest, browser_binding_hash(tenant_b, &seed));
     assert_ne!(digest, browser_binding_hash(tenant_a, &[8_u8; 32]));
@@ -29,6 +33,16 @@ fn legacy_state_deserializes_without_inventing_a_browser_binding() {
     .unwrap();
     assert!(oidc.browser_binding_hash.is_none());
     assert!(social.browser_binding_hash.is_none());
-    assert!(serde_json::to_value(oidc).unwrap().get("browser_binding_hash").is_none());
-    assert!(serde_json::to_value(social).unwrap().get("browser_binding_hash").is_none());
+    assert!(
+        serde_json::to_value(oidc)
+            .unwrap()
+            .get("browser_binding_hash")
+            .is_none()
+    );
+    assert!(
+        serde_json::to_value(social)
+            .unwrap()
+            .get("browser_binding_hash")
+            .is_none()
+    );
 }

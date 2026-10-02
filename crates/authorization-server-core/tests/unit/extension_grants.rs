@@ -333,20 +333,34 @@ fn admitted_raw_assertions_and_exchange_tokens_borrow_the_original_buffers() {
     let scopes = vec!["read".to_owned()];
     let audiences = vec!["https://api.example".to_owned()];
     let raw = "raw-jwt".repeat(4096);
-    let jwt = admit_jwt_bearer_grant(Some(&raw), Some("read"), &audiences,
-        jwt_policy(&scopes, &audiences)).unwrap();
+    let jwt = admit_jwt_bearer_grant(
+        Some(&raw),
+        Some("read"),
+        &audiences,
+        jwt_policy(&scopes, &audiences),
+    )
+    .unwrap();
     assert_eq!(jwt.assertion.as_ptr(), raw.as_ptr());
     let actor = "actor-jwt".repeat(4096);
     let request = TokenExchangeRequestInput {
-        subject_token: Some(&raw), subject_token_type: Some(ACCESS_TOKEN_TYPE),
-        actor_token: Some(&actor), actor_token_type: Some(ACCESS_TOKEN_TYPE),
-        scope: Some("read"), audiences: &audiences,
+        subject_token: Some(&raw),
+        subject_token_type: Some(ACCESS_TOKEN_TYPE),
+        actor_token: Some(&actor),
+        actor_token_type: Some(ACCESS_TOKEN_TYPE),
+        scope: Some("read"),
+        audiences: &audiences,
         ..TokenExchangeRequestInput::default()
     };
-    let admitted = admit_token_exchange(&request,
-        exchange_policy(&scopes, &audiences, Uuid::now_v7())).unwrap();
+    let admitted = admit_token_exchange(
+        &request,
+        exchange_policy(&scopes, &audiences, Uuid::now_v7()),
+    )
+    .unwrap();
     assert_eq!(admitted.subject_token.as_ptr(), raw.as_ptr());
     assert_eq!(admitted.actor_token.unwrap().as_ptr(), actor.as_ptr());
     fn send<T: Send>(_: T) {}
-    send(async move { std::future::ready(()).await; admitted.subject_token.len() });
+    send(async move {
+        std::future::ready(()).await;
+        admitted.subject_token.len()
+    });
 }

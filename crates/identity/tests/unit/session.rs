@@ -49,7 +49,8 @@ impl SessionStorePort for FakeStore {
         _session_id: &'a SessionId,
     ) -> RepositoryFuture<'a, Option<SessionSnapshot>> {
         Box::pin(async move {
-            self.loads.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.loads
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if let Some(error) = self.load_error.lock().unwrap().clone() {
                 return Err(error);
             }
@@ -355,16 +356,37 @@ struct CountingSessionAccounts {
     unavailable: bool,
 }
 impl SessionAccountPort for CountingSessionAccounts {
-    fn public_account_by_id(&self, tenant_id: TenantId, user_id: UserId)
-        -> RepositoryFuture<'_, Option<PublicAccount>> {
+    fn public_account_by_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Option<PublicAccount>> {
         Box::pin(async move {
-            self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if self.unavailable { return Err(RepositoryError::Unavailable); }
+            self.calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if self.unavailable {
+                return Err(RepositoryError::Unavailable);
+            }
             let now = chrono::Utc::now();
             Ok(Some(PublicAccount {
-                principal: Principal { user_id, tenant: TenantContext { tenant_id, ..TenantContext::default_system() }, role: UserRole::User, active: self.active },
-                account: AccountIdentity { username: "user".to_owned(), email: "user@example.com".to_owned(), email_verified: true, mfa_enabled: true },
-                profile: UserProfile::default(), created_at: now, updated_at: now,
+                principal: Principal {
+                    user_id,
+                    tenant: TenantContext {
+                        tenant_id,
+                        ..TenantContext::default_system()
+                    },
+                    role: UserRole::User,
+                    active: self.active,
+                },
+                account: AccountIdentity {
+                    username: "user".to_owned(),
+                    email: "user@example.com".to_owned(),
+                    email_verified: true,
+                    mfa_enabled: true,
+                },
+                profile: UserProfile::default(),
+                created_at: now,
+                updated_at: now,
             }))
         })
     }
@@ -373,9 +395,23 @@ impl SessionAccountPort for CountingSessionAccounts {
 async fn mfa_resolution_reads_one_snapshot_and_one_account_for_either_session_state() {
     for pending in [false, true] {
         let store = Arc::new(FakeStore::with_record(record(pending)));
-        let accounts = Arc::new(CountingSessionAccounts { calls: 0.into(), active: true, unavailable: false });
-        let service = SessionService::new(store.clone(), accounts.clone(), TenantId::new(uuid::Uuid::from_u128(1)).unwrap());
-        let SessionResolution::Present(session) = service.resolve_for_mfa(&SessionId::new("session-1"), 1000).await.unwrap() else { panic!("active account must resolve") };
+        let accounts = Arc::new(CountingSessionAccounts {
+            calls: 0.into(),
+            active: true,
+            unavailable: false,
+        });
+        let service = SessionService::new(
+            store.clone(),
+            accounts.clone(),
+            TenantId::new(uuid::Uuid::from_u128(1)).unwrap(),
+        );
+        let SessionResolution::Present(session) = service
+            .resolve_for_mfa(&SessionId::new("session-1"), 1000)
+            .await
+            .unwrap()
+        else {
+            panic!("active account must resolve")
+        };
         assert_eq!(session.pending_mfa(), pending);
         assert_eq!(store.loads.load(std::sync::atomic::Ordering::Relaxed), 1);
         assert_eq!(accounts.calls.load(std::sync::atomic::Ordering::Relaxed), 1);
@@ -384,20 +420,46 @@ async fn mfa_resolution_reads_one_snapshot_and_one_account_for_either_session_st
 }
 #[tokio::test]
 async fn mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_dependency_failures() {
-    for case in ["inactive", "corrupt", "store_unavailable", "account_unavailable"] {
+    for case in [
+        "inactive",
+        "corrupt",
+        "store_unavailable",
+        "account_unavailable",
+    ] {
         let store = Arc::new(FakeStore::with_record(record(false)));
-        if case == "corrupt" { *store.load_error.lock().unwrap() = Some(RepositoryError::Consistency("bad json".into())); }
-        if case == "store_unavailable" { *store.load_error.lock().unwrap() = Some(RepositoryError::Unavailable); }
-        let accounts = Arc::new(CountingSessionAccounts { calls: 0.into(), active: case != "inactive", unavailable: case == "account_unavailable" });
-        let service = SessionService::new(store.clone(), accounts.clone(), TenantId::new(uuid::Uuid::from_u128(1)).unwrap());
-        let resolution = service.resolve_for_mfa(&SessionId::new("session-1"), 1000).await;
+        if case == "corrupt" {
+            *store.load_error.lock().unwrap() =
+                Some(RepositoryError::Consistency("bad json".into()));
+        }
+        if case == "store_unavailable" {
+            *store.load_error.lock().unwrap() = Some(RepositoryError::Unavailable);
+        }
+        let accounts = Arc::new(CountingSessionAccounts {
+            calls: 0.into(),
+            active: case != "inactive",
+            unavailable: case == "account_unavailable",
+        });
+        let service = SessionService::new(
+            store.clone(),
+            accounts.clone(),
+            TenantId::new(uuid::Uuid::from_u128(1)).unwrap(),
+        );
+        let resolution = service
+            .resolve_for_mfa(&SessionId::new("session-1"), 1000)
+            .await;
         match case {
             "inactive" => assert_eq!(resolution.unwrap(), SessionResolution::Invalidated),
             "corrupt" => assert_eq!(resolution.unwrap(), SessionResolution::Missing),
             _ => assert_eq!(resolution, Err(RepositoryError::Unavailable)),
         }
         assert_eq!(store.loads.load(std::sync::atomic::Ordering::Relaxed), 1);
-        assert_eq!(accounts.calls.load(std::sync::atomic::Ordering::Relaxed), usize::from(matches!(case, "inactive" | "account_unavailable")));
-        assert_eq!(store.deleted.lock().unwrap().len(), usize::from(matches!(case, "inactive" | "corrupt")));
+        assert_eq!(
+            accounts.calls.load(std::sync::atomic::Ordering::Relaxed),
+            usize::from(matches!(case, "inactive" | "account_unavailable"))
+        );
+        assert_eq!(
+            store.deleted.lock().unwrap().len(),
+            usize::from(matches!(case, "inactive" | "corrupt"))
+        );
     }
 }

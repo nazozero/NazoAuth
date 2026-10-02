@@ -206,11 +206,8 @@ impl AuthenticationStore {
         state: &str,
         expected_browser_binding_hash: &str,
     ) -> Result<Option<Value>, Error> {
-        self.take_federation_value(
-            keys::oidc_federation(state),
-            expected_browser_binding_hash,
-        )
-        .await
+        self.take_federation_value(keys::oidc_federation(state), expected_browser_binding_hash)
+            .await
     }
     pub async fn store_social_federation(
         &self,
@@ -245,7 +242,12 @@ impl AuthenticationStore {
         )
         .await
     }
-    async fn store_value<T: serde::Serialize + ?Sized>(&self, key: String, value: &T, ttl: u64) -> Result<(), Error> {
+    async fn store_value<T: serde::Serialize + ?Sized>(
+        &self,
+        key: String,
+        value: &T,
+        ttl: u64,
+    ) -> Result<(), Error> {
         let raw = serde_json::to_string(value).map_err(|e| {
             Error::protocol(format!("failed to serialize authentication state: {e}"))
         })?;
@@ -268,12 +270,15 @@ impl AuthenticationStore {
         if raw.is_empty() {
             return Ok(None);
         }
-        serde_json::from_str(&raw)
-            .map(Some)
-            .map_err(|error| Error::corrupt_data(format!("malformed authentication state: {error}")))
+        serde_json::from_str(&raw).map(Some).map_err(|error| {
+            Error::corrupt_data(format!("malformed authentication state: {error}"))
+        })
     }
 
-    async fn take_value<T: serde::de::DeserializeOwned>(&self, key: String) -> Result<Option<T>, Error> {
+    async fn take_value<T: serde::de::DeserializeOwned>(
+        &self,
+        key: String,
+    ) -> Result<Option<T>, Error> {
         command::take(&self.connection, key)
             .await?
             .map(|raw| {
@@ -451,9 +456,13 @@ impl nazo_identity::ports::PasskeyCeremonyPort for AuthenticationStore {
         ttl_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            self.store_value(keys::passkey_registration(ceremony_id), ceremony, ttl_seconds)
-                .await
-                .map_err(crate::identity_repository_error)
+            self.store_value(
+                keys::passkey_registration(ceremony_id),
+                ceremony,
+                ttl_seconds,
+            )
+            .await
+            .map_err(crate::identity_repository_error)
         })
     }
 
@@ -476,9 +485,13 @@ impl nazo_identity::ports::PasskeyCeremonyPort for AuthenticationStore {
         ttl_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            self.store_value(keys::passkey_authentication(ceremony_id), ceremony, ttl_seconds)
-                .await
-                .map_err(crate::identity_repository_error)
+            self.store_value(
+                keys::passkey_authentication(ceremony_id),
+                ceremony,
+                ttl_seconds,
+            )
+            .await
+            .map_err(crate::identity_repository_error)
         })
     }
 

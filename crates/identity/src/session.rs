@@ -145,7 +145,9 @@ pub struct CurrentSession {
 impl CurrentSession {
     /// MFA flows may resolve either state from one validated storage snapshot.
     #[must_use]
-    pub const fn pending_mfa(&self) -> bool { self.pending_mfa }
+    pub const fn pending_mfa(&self) -> bool {
+        self.pending_mfa
+    }
 
     #[must_use]
     pub fn user(&self) -> &PublicAccount {
@@ -291,7 +293,9 @@ impl SessionService {
     /// Resolve active or pending MFA state with one session read and one active
     /// account check. State classification comes from that same validated snapshot.
     pub async fn resolve_for_mfa(
-        &self, session_id: &SessionId, now: i64,
+        &self,
+        session_id: &SessionId,
+        now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
         self.resolve(session_id, now, None).await
     }

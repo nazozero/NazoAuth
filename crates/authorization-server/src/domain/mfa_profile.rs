@@ -66,7 +66,10 @@ impl ServerMfaProfileOperations {
         pending_mfa: bool,
     ) -> Result<PublicAccount, MfaProfileError> {
         let session_id = SessionId::new(context.session_id.as_str());
-        let resolution = self.sessions.resolve_for_mfa(&session_id, context.now).await
+        let resolution = self
+            .sessions
+            .resolve_for_mfa(&session_id, context.now)
+            .await
             .map_err(|error| {
                 tracing::warn!(%error, "failed to resolve current MFA session");
                 MfaProfileError::new(MfaProfileErrorKind::SessionUnavailable)
@@ -78,7 +81,9 @@ impl ServerMfaProfileOperations {
             SessionResolution::Present(_) if pending_mfa => {
                 Err(MfaProfileError::new(MfaProfileErrorKind::ChallengeMissing))
             }
-            SessionResolution::Present(_) | SessionResolution::Missing | SessionResolution::Invalidated => {
+            SessionResolution::Present(_)
+            | SessionResolution::Missing
+            | SessionResolution::Invalidated => {
                 Err(MfaProfileError::new(MfaProfileErrorKind::SessionMissing))
             }
         }

@@ -63,18 +63,21 @@ impl FederationStatePort for UnavailableFederationStates {
 
 pub(crate) fn unavailable_federation_service(
     state: &super::TestInfrastructure,
-) -> (Data<LocalFederationService>, Arc<UnavailableFederationStates>) {
+) -> (
+    Data<LocalFederationService>,
+    Arc<UnavailableFederationStates>,
+) {
     let states = Arc::new(UnavailableFederationStates::default());
     let service = LocalFederationService::new(
         nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
         states.clone() as Arc<dyn FederationStatePort>,
         Arc::new(crate::bootstrap::FederationBootstrapPasswordHasher),
         Arc::new(nazo_valkey::SessionStore::new(&state.valkey_connection())),
-        Arc::new(crate::bootstrap::TracingFederationAudit::new(
-            Arc::new(crate::adapters::audit::TenantSecurityAudit::new(
+        Arc::new(crate::bootstrap::TracingFederationAudit::new(Arc::new(
+            crate::adapters::audit::TenantSecurityAudit::new(
                 state.settings.tenant.context.tenant_id,
-            )),
-        )),
+            ),
+        ))),
         nazo_identity::FederationServiceConfig {
             tenant: state.settings.tenant.context,
             state_ttl_seconds: crate::http::auth::federation::FEDERATION_STATE_TTL_SECONDS,
