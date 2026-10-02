@@ -351,7 +351,10 @@ async fn cap_grows_to_ten_then_retires_the_deterministic_oldest() {
     .await
     .expect("retired family tombstone should query")
     .count;
-    assert_eq!(retired, 1, "the eviction victim should remain as a tombstone");
+    assert_eq!(
+        retired, 1,
+        "the eviction victim should remain as a tombstone"
+    );
 
     // A burst of further authorizations never exceeds the cap.
     for ordinal in (CAP + 1)..(CAP + 31) {
@@ -536,7 +539,10 @@ async fn required_capacity_audit_failure_rolls_back_retirement_and_issuance() {
     .await
     .expect("victim state should query")
     .count;
-    assert_eq!(victim_active, 1, "failed audit must roll back victim revocation");
+    assert_eq!(
+        victim_active, 1,
+        "failed audit must roll back victim revocation"
+    );
     let pending_family = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
          WHERE tenant_id = $1 AND token_family_id = $2",
@@ -547,7 +553,10 @@ async fn required_capacity_audit_failure_rolls_back_retirement_and_issuance() {
     .await
     .expect("pending family state should query")
     .count;
-    assert_eq!(pending_family, 0, "failed audit must roll back new family insertion");
+    assert_eq!(
+        pending_family, 0,
+        "failed audit must roll back new family insertion"
+    );
     let audit_rows = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM security_audit_events \
          WHERE payload->>'issuance_id' = $1",

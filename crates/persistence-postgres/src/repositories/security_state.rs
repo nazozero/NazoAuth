@@ -265,7 +265,10 @@ impl SecurityStateMaintenanceRepository {
                     return Ok((0, 0, false));
                 }
 
-                let tenant_ids = candidates.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
+                let tenant_ids = candidates
+                    .iter()
+                    .map(|row| row.tenant_id)
+                    .collect::<Vec<_>>();
                 let family_ids = candidates
                     .iter()
                     .map(|row| row.token_family_id)
@@ -319,8 +322,7 @@ impl SecurityStateMaintenanceRepository {
                     return Ok((0, 0, candidate_saturated));
                 }
 
-                let terminal_tenants =
-                    terminal.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
+                let terminal_tenants = terminal.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
                 let terminal_families = terminal
                     .iter()
                     .map(|row| row.token_family_id)
@@ -632,8 +634,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
         Box::pin(async move {
             let generic = self.generic_cleanup().await?;
             let authorization_decisions = self.decision_cleanup().await?;
-            let (expired_proofs, expired_saturated) =
-                self.delete_expired_spent_proofs().await?;
+            let (expired_proofs, expired_saturated) = self.delete_expired_spent_proofs().await?;
             let proof_budget = CLEANUP_BATCH_LIMIT - expired_proofs as i64;
             let (refresh_tokens, terminal_proofs, families_saturated) =
                 self.delete_expired_refresh_families(proof_budget).await?;
