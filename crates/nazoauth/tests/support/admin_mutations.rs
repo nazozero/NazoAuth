@@ -7,7 +7,7 @@ use crate::{
 };
 use actix_web::{HttpRequest, cookie::Cookie, web::Data};
 use chrono::Utc;
-use diesel::prelude::*;
+use diesel::{prelude::*, sql_query};
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::{

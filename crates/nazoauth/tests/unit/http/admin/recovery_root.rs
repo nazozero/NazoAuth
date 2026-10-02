@@ -99,9 +99,9 @@ async fn recovery_root_handlers_commit_approval_rotation_and_registered_audit() 
             .await;
         assert_eq!(response.status(), StatusCode::OK);
         let root = repository.current_root(&deployment).await.unwrap().unwrap();
-        assert_eq!(root.generation, generation);
+        assert_eq!(i64::from(root.generation), generation);
         assert_eq!(root.recovery_kid, change.kid);
-        assert_eq!(root.public_key, public_key);
+        assert_eq!(root.recovery_public_key, public_key.to_vec());
         assert_eq!(
             fixture
                 .audit_count(

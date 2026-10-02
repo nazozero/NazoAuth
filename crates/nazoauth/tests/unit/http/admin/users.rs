@@ -782,7 +782,7 @@ async fn system_tenant_admin_update_commits_state_and_registered_required_audit(
                 sessions,
                 users,
                 Data::new(registry),
-                Data::new(crate::bootstrap::routes::ControlTenantId::new(control)),
+                Data::new(crate::bootstrap::routes::ControlTenantId(control)),
                 ip,
                 fixture.admin_post_request(&sid, &csrf, "/system/tenants/admin"),
                 actix_web::web::Path::from((tenant.as_uuid(), target.id)),
