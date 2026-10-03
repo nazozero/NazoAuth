@@ -57,6 +57,19 @@ struct TenantRuntimeLifecycle {
     ciba_ping_worker: Option<JoinHandle<()>>,
 }
 
+impl Drop for TenantRuntimeLifecycle {
+    fn drop(&mut self) {
+        if let Some(worker) = self.runtime_module_reconciler.take() {
+            worker.abort();
+        }
+        if let Some(worker) = self.ciba_ping_worker.take() {
+            worker.abort();
+        }
+        // KeyLifecycleTask's watch sender closes on drop. Its current refresh
+        // completes cooperatively; key material writes must never be aborted.
+    }
+}
+
 impl TenantRuntime {
     fn new(
         binding: TenantDirectoryBinding,
@@ -74,17 +87,6 @@ impl TenantRuntime {
         self.assembly
             .as_ref()
             .expect("test tenant runtime has no HTTP service assembly")
-    }
-
-    /// Used only by the HTTP CORS predicate after a host lookup in this same
-    /// in-process registry. It never reads an external source.
-    pub(in crate::bootstrap) fn cors_allowed_origins(&self) -> &[String] {
-        &self
-            .assembly()
-            .startup
-            .settings
-            .endpoint
-            .cors_allowed_origins
     }
 
     async fn start_lifecycle(&self) -> anyhow::Result<()> {
@@ -138,27 +140,31 @@ impl TenantRuntime {
                 lifecycle.ciba_ping_worker.take(),
             )
         };
+        // Abort both owned loops before the first await. Cancellation while
+        // joining either one must not detach the other extracted handle.
+        if let Some(worker) = runtime_module_reconciler.as_ref() {
+            worker.abort();
+        }
+        if let Some(worker) = ciba_ping_worker.as_ref() {
+            worker.abort();
+        }
         let stop_key = async {
             if let Some(worker) = key_lifecycle {
                 worker.stop().await;
             }
         };
         let stop_workers = async {
-            if let Some(worker) = runtime_module_reconciler {
-                worker.abort();
-                if let Err(error) = worker.await
-                    && !error.is_cancelled()
-                {
-                    tracing::warn!(%error, "tenant runtime-module reconciler stopped unexpectedly");
-                }
+            if let Some(worker) = runtime_module_reconciler
+                && let Err(error) = worker.await
+                && !error.is_cancelled()
+            {
+                tracing::warn!(%error, "tenant runtime-module reconciler stopped unexpectedly");
             }
-            if let Some(worker) = ciba_ping_worker {
-                worker.abort();
-                if let Err(error) = worker.await
-                    && !error.is_cancelled()
-                {
-                    tracing::warn!(%error, "tenant CIBA ping worker stopped unexpectedly");
-                }
+            if let Some(worker) = ciba_ping_worker
+                && let Err(error) = worker.await
+                && !error.is_cancelled()
+            {
+                tracing::warn!(%error, "tenant CIBA ping worker stopped unexpectedly");
             }
         };
         tokio::join!(biased; stop_key, stop_workers);
@@ -200,10 +206,6 @@ impl TenantRuntimeRegistry {
 
     pub(in crate::bootstrap) fn revision(&self) -> u64 {
         self.load().revision
-    }
-
-    pub(in crate::bootstrap) fn resolve(&self, host: &str) -> Option<Arc<TenantRuntime>> {
-        self.load().by_host.get(host).cloned()
     }
 
     pub(crate) fn contains_tenant(&self, tenant_id: nazo_identity::TenantId) -> bool {
@@ -534,13 +536,16 @@ impl TenantRuntimeRefresher {
             .load_active()
             .await
             .map_err(|error| anyhow::anyhow!("tenant directory read failed: {error}"))?;
-        if snapshot.revision != revision {
+        if snapshot.revision < revision {
             anyhow::bail!(
-                "tenant directory revision changed during read (expected {revision}, got {})",
+                "tenant directory snapshot precedes revision check (expected at least {revision}, got {})",
                 snapshot.revision
             );
         }
-        let cache_was_ahead = local_revision > revision;
+        // The authoritative read owns one complete coherent snapshot. A commit
+        // between the compact precheck and that read may advance its revision.
+        let authoritative_revision = snapshot.revision;
+        let cache_was_ahead = local_revision > authoritative_revision;
         let snapshot = Arc::new(snapshot);
         let outcome = self
             .apply_snapshot(&snapshot, SnapshotSource::Database)
@@ -555,7 +560,7 @@ impl TenantRuntimeRefresher {
                 state.rejected_cache_revision = Some(local_revision);
             } else if state
                 .rejected_cache_revision
-                .is_some_and(|rejected| revision >= rejected)
+                .is_some_and(|rejected| authoritative_revision >= rejected)
             {
                 state.rejected_cache_revision = None;
             }
@@ -721,3 +726,7 @@ fn validate_snapshot(snapshot: &TenantDirectorySnapshot) -> anyhow::Result<()> {
 #[cfg(test)]
 #[path = "../../../tests/unit/bootstrap/startup/tenant_runtime.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/support/tenant_runtime.rs"]
+pub(crate) mod test_support;

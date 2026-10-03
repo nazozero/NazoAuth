@@ -46,8 +46,8 @@ pub struct JwtBearerGrantPolicy<'a> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct JwtBearerGrantAdmission {
-    pub assertion: String,
+pub struct JwtBearerGrantAdmission<'a> {
+    pub assertion: &'a str,
     pub scopes: Vec<String>,
     pub audiences: Vec<String>,
 }
@@ -79,12 +79,12 @@ impl JwtBearerGrantError {
     }
 }
 
-pub fn admit_jwt_bearer_grant(
-    assertion: Option<&str>,
+pub fn admit_jwt_bearer_grant<'a>(
+    assertion: Option<&'a str>,
     requested_scope: Option<&str>,
     requested_audiences: &[String],
     policy: JwtBearerGrantPolicy<'_>,
-) -> Result<JwtBearerGrantAdmission, JwtBearerGrantError> {
+) -> Result<JwtBearerGrantAdmission<'a>, JwtBearerGrantError> {
     validate_jwt_bearer_grant_prerequisites(assertion, policy)?;
     let assertion = assertion.expect("validated JWT bearer assertion must be present");
     let requested_scopes = parse_scope(requested_scope.unwrap_or(""));
@@ -108,7 +108,7 @@ pub fn admit_jwt_bearer_grant(
         return Err(JwtBearerGrantError::InvalidTarget);
     }
     Ok(JwtBearerGrantAdmission {
-        assertion: assertion.to_owned(),
+        assertion,
         scopes,
         audiences,
     })
@@ -186,14 +186,14 @@ pub(crate) fn classify_jwt_bearer_replay(
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct TokenExchangeRequestInput {
-    pub subject_token: Option<String>,
-    pub subject_token_type: Option<String>,
-    pub actor_token: Option<String>,
-    pub actor_token_type: Option<String>,
-    pub requested_token_type: Option<String>,
-    pub scope: Option<String>,
-    pub audiences: Vec<String>,
+pub struct TokenExchangeRequestInput<'a> {
+    pub subject_token: Option<&'a str>,
+    pub subject_token_type: Option<&'a str>,
+    pub actor_token: Option<&'a str>,
+    pub actor_token_type: Option<&'a str>,
+    pub requested_token_type: Option<&'a str>,
+    pub scope: Option<&'a str>,
+    pub audiences: &'a [String],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -210,10 +210,10 @@ pub struct TokenExchangePolicy<'a> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TokenExchangeAdmission {
-    pub subject_token: String,
-    pub actor_token: Option<String>,
-    pub requested_scope: Option<String>,
+pub struct TokenExchangeAdmission<'a> {
+    pub subject_token: &'a str,
+    pub actor_token: Option<&'a str>,
+    pub requested_scope: Option<&'a str>,
     pub audiences: Vec<String>,
     pub issued_token_type: String,
 }
@@ -243,24 +243,23 @@ impl TokenExchangeError {
     }
 }
 
-pub fn admit_token_exchange(
-    request: &TokenExchangeRequestInput,
+pub fn admit_token_exchange<'a>(
+    request: &TokenExchangeRequestInput<'a>,
     policy: TokenExchangePolicy<'_>,
-) -> Result<TokenExchangeAdmission, TokenExchangeError> {
+) -> Result<TokenExchangeAdmission<'a>, TokenExchangeError> {
     validate_token_exchange_grant_prerequisites(request, policy)?;
     let subject_token = request
         .subject_token
-        .as_ref()
         .expect("validated token exchange request must contain subject_token");
-    validate_token_exchange_requested_scope(policy.allowed_scopes, request.scope.as_deref())?;
-    if request.audiences.is_empty() || !is_subset(&request.audiences, policy.allowed_audiences) {
+    validate_token_exchange_requested_scope(policy.allowed_scopes, request.scope)?;
+    if request.audiences.is_empty() || !is_subset(request.audiences, policy.allowed_audiences) {
         return Err(TokenExchangeError::InvalidTarget);
     }
     Ok(TokenExchangeAdmission {
-        subject_token: subject_token.clone(),
-        actor_token: request.actor_token.clone(),
-        requested_scope: request.scope.clone(),
-        audiences: request.audiences.clone(),
+        subject_token,
+        actor_token: request.actor_token,
+        requested_scope: request.scope,
+        audiences: request.audiences.to_vec(),
         issued_token_type: ACCESS_TOKEN_TYPE.to_owned(),
     })
 }
@@ -268,7 +267,7 @@ pub fn admit_token_exchange(
 /// Checks module, client, and token-type prerequisites before a transport
 /// adapter consumes a client assertion or reads token state.
 pub fn validate_token_exchange_grant_prerequisites(
-    request: &TokenExchangeRequestInput,
+    request: &TokenExchangeRequestInput<'_>,
     policy: TokenExchangePolicy<'_>,
 ) -> Result<(), TokenExchangeError> {
     if !policy.enabled {
@@ -281,15 +280,12 @@ pub fn validate_token_exchange_grant_prerequisites(
         .subject_token
         .as_ref()
         .ok_or(TokenExchangeError::MissingParameter)?;
-    match request.subject_token_type.as_deref() {
+    match request.subject_token_type {
         Some(ACCESS_TOKEN_TYPE) => {}
         Some(_) => return Err(TokenExchangeError::UnsupportedTokenType),
         None => return Err(TokenExchangeError::MissingParameter),
     }
-    match (
-        request.actor_token.as_ref(),
-        request.actor_token_type.as_deref(),
-    ) {
+    match (request.actor_token.as_ref(), request.actor_token_type) {
         (None, None) => {}
         (None, Some(_)) | (Some(_), None) => return Err(TokenExchangeError::MissingParameter),
         (Some(_), Some(ACCESS_TOKEN_TYPE)) => {}
@@ -297,7 +293,6 @@ pub fn validate_token_exchange_grant_prerequisites(
     }
     if request
         .requested_token_type
-        .as_deref()
         .is_some_and(|token_type| token_type != ACCESS_TOKEN_TYPE)
     {
         return Err(TokenExchangeError::UnsupportedTokenType);

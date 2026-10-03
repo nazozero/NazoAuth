@@ -37,10 +37,16 @@ use sha2::Digest as _;
 
 use super::mdoc::{
     mdoc_assessments_accepted, mdoc_failed_assessments_accepted, mdoc_holder_key,
-    standard_device_authentication_bytes, verify_certificate_chain_at,
-    verify_direct_scoped_trust_anchor,
+    standard_device_authentication_bytes, verify_direct_scoped_trust_anchor,
 };
 use super::*;
+fn verify_certificate_chain_at<'a>(
+    certificates: &[Vec<u8>],
+    anchors: &'a [Vec<u8>],
+    time: i64,
+) -> Result<Option<&'a [u8]>, CredentialTrustError> {
+    super::mdoc::verify_certificate_chain_with_scoped_at(certificates, anchors, &[], time)
+}
 
 trait CredentialCryptoTestExt {
     fn verify_sd_jwt(
@@ -111,6 +117,14 @@ fn certificate_fixture(host: &str) -> CertificateFixture {
 }
 
 fn certificate_fixture_with_key(host: &str, leaf_key: KeyPair) -> CertificateFixture {
+    certificate_fixture_with_key_and_aki(host, leaf_key, true)
+}
+
+fn certificate_fixture_with_key_and_aki(
+    host: &str,
+    leaf_key: KeyPair,
+    include_aki: bool,
+) -> CertificateFixture {
     let now = time::OffsetDateTime::now_utc();
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("CA key");
     let mut ca_params = CertificateParams::default();
@@ -133,6 +147,7 @@ fn certificate_fixture_with_key(host: &str, leaf_key: KeyPair) -> CertificateFix
         .distinguished_name
         .push(DnType::CountryName, "US");
     leaf_params.is_ca = IsCa::NoCa;
+    leaf_params.use_authority_key_identifier_extension = include_aki;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     leaf_params.not_before = now - time::Duration::minutes(1);
     leaf_params.not_after = now + time::Duration::days(365);
@@ -383,7 +398,22 @@ fn sd_presentation_fixture() -> (
     Value,
     CertificateFixture,
 ) {
-    let certs = certificate_fixture("issuer.example");
+    sd_presentation_fixture_with_aki(true)
+}
+
+fn sd_presentation_fixture_with_aki(
+    include_aki: bool,
+) -> (
+    Openid4vcCredentialCrypto,
+    PresentedCredential,
+    Value,
+    CertificateFixture,
+) {
+    let certs = certificate_fixture_with_key_and_aki(
+        "issuer.example",
+        KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("leaf key"),
+        include_aki,
+    );
     let (holder_jwk, holder_key) = es256_jwk(71);
     let issuer_key = EncodingKey::from_ec_der(&certs.leaf_key.serialize_der());
     let disclosure = URL_SAFE_NO_PAD
@@ -890,19 +920,44 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
             Err(CredentialTrustError::InvalidEncoding)
         );
 
+        // Re-sign only the holder's exact presentation binding. This never
+        // changes the issuer-signed disclosure digests or credential JWT.
+        let rebind = |sd_input: String| {
+            let (_, holder_key) = es256_jwk(71);
+            let mut header = Header::new(Algorithm::ES256);
+            header.typ = Some("kb+jwt".to_owned());
+            let kb_jwt = encode(
+                &header,
+                &json!({
+                    "nonce": &presentation.expected_nonce,
+                    "aud": &presentation.expected_audience,
+                    "iat": Utc::now().timestamp(),
+                    "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(sd_input.as_bytes())),
+                }),
+                &holder_key,
+            )
+            .expect("fixture holder binding must be signed with its original holder key");
+            format!("{sd_input}{kb_jwt}")
+        };
         let mut unknown_disclosure = presentation.clone();
-        let parts = unknown_disclosure.encoded.split('~').collect::<Vec<_>>();
+        let parts = presentation.encoded.split('~').collect::<Vec<_>>();
         let disclosure =
             URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!(["salt2", "x", 1])).unwrap());
         unknown_disclosure.encoded = format!("{}~{}~{}", parts[0], disclosure, parts[2]);
         assert_eq!(
             crypto.verify_sd_jwt(&unknown_disclosure),
-            Err(CredentialTrustError::InvalidSignature)
+            Err(CredentialTrustError::InvalidHolderBinding),
+            "changing the disclosure while retaining the original KB JWT breaks sd_hash",
+        );
+        unknown_disclosure.encoded = rebind(format!("{}~{disclosure}~", parts[0]));
+        assert_eq!(
+            crypto.verify_sd_jwt(&unknown_disclosure),
+            Err(CredentialTrustError::InvalidSignature),
+            "a valid holder binding cannot authorize an issuer-unsigned disclosure",
         );
 
         let mut duplicate = presentation.clone();
-        let parts = duplicate.encoded.split('~').collect::<Vec<_>>();
-        duplicate.encoded = format!("{}~{}~{}~{}", parts[0], parts[1], parts[1], parts[2]);
+        duplicate.encoded = rebind(format!("{}~{}~{}~", parts[0], parts[1], parts[1]));
         assert_eq!(
             crypto.verify_sd_jwt(&duplicate),
             Err(CredentialTrustError::InvalidEncoding)
@@ -1041,7 +1096,7 @@ fn sd_jwt_verification_rejects_holder_and_issuer_policy_failures() {
     wrong_nonce.expected_nonce = "other-nonce".to_owned();
     assert_eq!(
         crypto.verify_sd_jwt(&wrong_nonce),
-        Err(CredentialTrustError::InvalidHolderBinding)
+        Err(CredentialTrustError::InvalidNonce)
     );
 
     let strict = Openid4vcCredentialCrypto {
@@ -1124,6 +1179,10 @@ fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
         assert!(verified.holder_key.is_some());
         assert_eq!(verified.status, None);
         assert_eq!(
+            verified.issuer_chain_authority_key_identifiers,
+            vec![certificate_subject_key_identifier(&certs.ca_der)]
+        );
+        assert_eq!(
             verified.issuer,
             URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&certs.leaf_der))
         );
@@ -1160,6 +1219,7 @@ fn mdoc_verification_rejects_signing_before_certificate_validity() {
                 Utc::now().timestamp(),
             )
             .expect("certificate is valid at presentation time")
+            .is_some()
         );
         assert_eq!(
             crypto.verify_mdoc(&presentation),
@@ -1179,22 +1239,25 @@ fn certificate_chain_at_checks_leaf_intermediates_anchor_and_time() {
             now,
         )
         .expect("valid chain")
+        .is_some()
     );
     assert!(
-        !verify_certificate_chain_at(
+        verify_certificate_chain_at(
             std::slice::from_ref(&certs.ca_der),
             std::slice::from_ref(&certs.ca_der),
             now,
         )
         .expect("CA as leaf is a normal false result")
+        .is_none()
     );
     assert!(matches!(
         verify_certificate_chain_at(&[vec![1, 2, 3]], std::slice::from_ref(&certs.ca_der), now),
         Err(CredentialTrustError::InvalidEncoding)
     ));
     assert!(
-        !verify_certificate_chain_at(std::slice::from_ref(&certs.leaf_der), &[], now,)
+        verify_certificate_chain_at(std::slice::from_ref(&certs.leaf_der), &[], now,)
             .expect("unanchored chain")
+            .is_none()
     );
     assert!(matches!(
         verify_certificate_chain_at(
@@ -1294,4 +1357,798 @@ fn standard_device_authentication_bytes_is_deterministic_and_rejects_bad_inputs(
             .expect("DeviceAuthenticationBytes");
     assert_eq!(first, second);
     assert!(standard_device_authentication_bytes(&[0xff], "doc", &[0xa0]).is_err());
+}
+
+fn install_revocation_snapshot(
+    crypto: &Openid4vcCredentialCrypto,
+    certs: &CertificateFixture,
+    snapshot: CertificateRevocationSnapshot,
+) {
+    let signing_kid = crypto
+        .keyset
+        .openid4vc_public_material()
+        .unwrap()
+        .signing_kid
+        .clone();
+    crypto
+        .keyset
+        .set_openid4vc_material_for_test(Openid4vcMaterial {
+            public: Openid4vcPublicMaterial {
+                signing_kid,
+                certificate_chain_pem: format!("{}{}", certs.leaf_pem, certs.ca_pem),
+                trust_anchors_pem: certs.ca_pem.clone(),
+                revocation_snapshot: Some(snapshot),
+            },
+            iaca_private_materials: Default::default(),
+        });
+}
+
+#[test]
+fn sd_jwt_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
+    let (crypto, mut presentation, _, certs) = sd_presentation_fixture();
+    let strict = Openid4vcCredentialCrypto {
+        revocation_policy: crate::policy::Openid4vcRevocationPolicy::Required,
+        ..crypto
+    };
+    let fresh = CertificateRevocationSnapshot {
+        version: CertificateRevocationSnapshot::VERSION,
+        this_update: Utc::now() - Duration::minutes(1),
+        next_update: Utc::now() + Duration::minutes(5),
+        entries: vec![],
+    };
+    install_revocation_snapshot(&strict, &certs, fresh.clone());
+    let unrelated = certificate_fixture("unrelated.example");
+    presentation.additional_trust_anchors = vec![unrelated.ca_der.clone()];
+    assert_eq!(
+        strict.verify_sd_jwt(&presentation),
+        Err(CredentialTrustError::RevocationStatusUnknown)
+    );
+    // An unused configured anchor is rejected rather than becoming a chain fact.
+    let token = presentation.encoded.split('~').next().unwrap();
+    let header = decode_header(token).unwrap();
+    let mut attached = header.x5c.unwrap();
+    attached.push(STANDARD.encode(&unrelated.ca_der));
+    assert!(
+        super::sd_jwt::validate_sd_jwt_chain(
+            &strict,
+            &attached,
+            &presentation.additional_trust_anchors,
+        )
+        .is_err()
+    );
+    presentation.additional_trust_anchors = vec![certs.ca_der.clone()];
+    assert!(
+        strict.verify_sd_jwt(&presentation).is_ok(),
+        "same DER globally and scoped is an actual scoped path"
+    );
+    let mut revoked = fresh.clone();
+    revoked
+        .entries
+        .push(nazo_digital_credentials::CertificateRevocationEntry {
+            issuer: "https://issuer.example".into(),
+            certificate: nazo_digital_credentials::certificate_identity(&certs.leaf_der),
+            status: nazo_digital_credentials::CertificateRevocationStatus::Revoked,
+            revoked_at: Some(Utc::now()),
+        });
+    install_revocation_snapshot(&strict, &certs, revoked);
+    assert_eq!(
+        strict.verify_sd_jwt(&presentation),
+        Err(CredentialTrustError::RevokedCertificate)
+    );
+    let mut stale = fresh;
+    stale.next_update = Utc::now() - Duration::seconds(1);
+    install_revocation_snapshot(&strict, &certs, stale);
+    assert_eq!(
+        strict.verify_sd_jwt(&presentation),
+        Err(CredentialTrustError::RevocationSnapshotStale)
+    );
+}
+
+#[test]
+fn mdoc_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let strict = Openid4vcCredentialCrypto {
+            revocation_policy: crate::policy::Openid4vcRevocationPolicy::Required,
+            ..crypto
+        };
+        let fresh = CertificateRevocationSnapshot {
+            version: CertificateRevocationSnapshot::VERSION,
+            this_update: Utc::now() - Duration::minutes(1),
+            next_update: Utc::now() + Duration::minutes(5),
+            entries: vec![],
+        };
+        install_revocation_snapshot(&strict, &certs, fresh.clone());
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now());
+        let unrelated = certificate_fixture("unrelated.example");
+        let mut presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded,
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            response_uri: "https://verifier.example/response".into(),
+            mdoc_session_transcript: Some(transcript),
+            additional_trust_anchors: vec![unrelated.ca_der],
+        };
+        assert_eq!(
+            strict.verify_mdoc(&presentation),
+            Err(CredentialTrustError::RevocationStatusUnknown)
+        );
+        presentation.additional_trust_anchors = vec![certs.ca_der.clone()];
+        assert!(strict.verify_mdoc(&presentation).is_ok());
+        let mut revoked = fresh;
+        revoked
+            .entries
+            .push(nazo_digital_credentials::CertificateRevocationEntry {
+                issuer: "https://issuer.example".into(),
+                certificate: nazo_digital_credentials::certificate_identity(&certs.leaf_der),
+                status: nazo_digital_credentials::CertificateRevocationStatus::Revoked,
+                revoked_at: Some(Utc::now()),
+            });
+        install_revocation_snapshot(&strict, &certs, revoked);
+        assert_eq!(
+            strict.verify_mdoc(&presentation),
+            Err(CredentialTrustError::RevokedCertificate)
+        );
+    });
+}
+
+#[test]
+fn shared_signing_key_anchor_selection_prefers_actual_scoped_der_without_second_validation() {
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let pem = key.serialize_pem();
+    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "shared-root");
+    params.serial_number = Some(1_u64.into());
+    let global = CertifiedIssuer::self_signed(params.clone(), key).unwrap();
+    params.serial_number = Some(2_u64.into());
+    let scoped = CertifiedIssuer::self_signed(params, KeyPair::from_pem(&pem).unwrap()).unwrap();
+    let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let leaf = CertificateParams::new(vec!["issuer.example".into()])
+        .unwrap()
+        .signed_by(&leaf_key, &global)
+        .unwrap();
+    let certificates = vec![leaf.der().as_ref().to_vec()];
+    let global_der = vec![global.der().as_ref().to_vec()];
+    let scoped_der = vec![scoped.der().as_ref().to_vec()];
+    assert_ne!(global_der, scoped_der);
+    assert_eq!(
+        super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(
+            &certificates,
+            &global_der,
+            &scoped_der
+        )
+        .unwrap(),
+        scoped_der[0].as_slice()
+    );
+    assert_eq!(
+        super::mdoc::verify_certificate_chain_with_scoped_at(
+            &certificates,
+            &global_der,
+            &scoped_der,
+            Utc::now().timestamp()
+        )
+        .unwrap(),
+        Some(scoped_der[0].as_slice())
+    );
+}
+
+#[test]
+fn expired_scoped_anchor_with_valid_global_path_cannot_exempt_required_unknown_status() {
+    let (crypto, mut presentation, _, certs) = sd_presentation_fixture();
+    let strict = Openid4vcCredentialCrypto {
+        revocation_policy: crate::policy::Openid4vcRevocationPolicy::Required,
+        ..crypto
+    };
+    install_revocation_snapshot(
+        &strict,
+        &certs,
+        CertificateRevocationSnapshot {
+            version: CertificateRevocationSnapshot::VERSION,
+            this_update: Utc::now() - Duration::minutes(1),
+            next_update: Utc::now() + Duration::minutes(5),
+            entries: vec![],
+        },
+    );
+    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
+    params.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(2);
+    params.not_after = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+    let expired = CertifiedIssuer::self_signed(
+        params,
+        KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+    )
+    .unwrap();
+    presentation.additional_trust_anchors = vec![expired.der().as_ref().to_vec()];
+    assert_eq!(
+        strict.verify_sd_jwt(&presentation),
+        Err(CredentialTrustError::RevocationStatusUnknown)
+    );
+    presentation.additional_trust_anchors = vec![vec![1, 2, 3]];
+    assert!(strict.verify_sd_jwt(&presentation).is_err());
+}
+
+fn certificate_subject_key_identifier(der: &[u8]) -> Vec<u8> {
+    let (_, certificate) = x509_parser::parse_x509_certificate(der).expect("fixture certificate");
+    certificate
+        .extensions()
+        .iter()
+        .find_map(|extension| match extension.parsed_extension() {
+            x509_parser::extensions::ParsedExtension::SubjectKeyIdentifier(identifier) => {
+                Some(identifier.0.to_vec())
+            }
+            _ => None,
+        })
+        .expect("fixture CA subject key identifier")
+}
+
+#[test]
+fn sd_jwt_projects_aki_only_from_its_authenticated_issuer_chain() {
+    let (crypto, mut presentation, _, certs) = sd_presentation_fixture();
+    let unrelated = certificate_fixture("unrelated.example");
+    presentation.additional_trust_anchors = vec![unrelated.ca_der.clone()];
+    let verified = crypto
+        .verify_sd_jwt(&presentation)
+        .expect("real signed SD-JWT and holder binding");
+    let issuer_key_identifier = certificate_subject_key_identifier(&certs.ca_der);
+    assert_eq!(
+        verified.issuer_chain_authority_key_identifiers,
+        vec![issuer_key_identifier.clone()]
+    );
+    assert!(
+        verified
+            .has_issuer_authority_key_identifier(&URL_SAFE_NO_PAD.encode(issuer_key_identifier))
+    );
+    assert!(!verified.has_issuer_authority_key_identifier(
+        &URL_SAFE_NO_PAD.encode(certificate_subject_key_identifier(&unrelated.ca_der))
+    ));
+    assert!(!verified.has_issuer_authority_key_identifier(&verified.issuer));
+
+    let (crypto, presentation, _, _) = sd_presentation_fixture_with_aki(false);
+    let without_aki = crypto
+        .verify_sd_jwt(&presentation)
+        .expect("valid issuer chain without optional AKI");
+    assert!(
+        without_aki
+            .issuer_chain_authority_key_identifiers
+            .is_empty()
+    );
+    let legacy: nazo_digital_credentials::VerifiedCredential = serde_json::from_value(serde_json::json!({
+        "format": "dc+sd-jwt", "issuer": "https://issuer.example", "credential_type": "ExampleCredential",
+        "claims": {}, "holder_key": null, "issued_at": null, "expires_at": null, "status": null,
+    })).expect("retained results without AKI metadata remain readable");
+    assert!(legacy.issuer_chain_authority_key_identifiers.is_empty());
+}
+
+#[test]
+fn signed_holder_nonce_failure_is_distinct_from_other_holder_failures() {
+    let (crypto, presentation, _, _) = sd_presentation_fixture();
+    let parts = presentation.encoded.split('~').collect::<Vec<_>>();
+    let (_, holder_key) = es256_jwk(71);
+    let mut header = Header::new(Algorithm::ES256);
+    header.typ = Some("kb+jwt".to_owned());
+    for nonce in [None, Some("other-transaction")] {
+        let mut claims =
+            json!({"aud": "https://other-verifier.example", "iat": 0, "sd_hash": "bad"});
+        if let Some(nonce) = nonce {
+            claims["nonce"] = json!(nonce);
+        }
+        let kb = encode(&header, &claims, &holder_key).expect("signed holder proof");
+        let response = PresentedCredential {
+            encoded: format!("{}~{}~{kb}", parts[0], parts[1]),
+            ..presentation.clone()
+        };
+        assert_eq!(
+            crypto.verify_sd_jwt(&response),
+            Err(CredentialTrustError::InvalidNonce)
+        );
+    }
+    let (_, attacker_key) = es256_jwk(72);
+    let kb = encode(&header, &json!({"nonce": "other-transaction", "aud": presentation.expected_audience, "iat": Utc::now().timestamp(), "sd_hash": "bad"}), &attacker_key).unwrap();
+    let untrusted = PresentedCredential {
+        encoded: format!("{}~{}~{kb}", parts[0], parts[1]),
+        ..presentation
+    };
+    assert_eq!(
+        crypto.verify_sd_jwt(&untrusted),
+        Err(CredentialTrustError::InvalidHolderBinding)
+    );
+}
+
+#[derive(Clone, Default)]
+struct PresentationCompletionSink(Arc<std::sync::atomic::AtomicUsize>);
+
+impl nazo_openid4vp::PresentationStorePort for PresentationCompletionSink {
+    fn create<'a>(
+        &'a self,
+        _transaction: &'a nazo_openid4vp::PresentationTransaction,
+        _idempotency: nazo_openid4vp::PresentationCreateIdempotency<'a>,
+    ) -> nazo_openid4vp::PresentationStoreFuture<
+        'a,
+        Result<nazo_openid4vp::PresentationCreateOutcome, nazo_openid4vp::PresentationStoreError>,
+    > {
+        Box::pin(async { Err(nazo_openid4vp::PresentationStoreError::Unavailable) })
+    }
+    fn find_by_create_request<'a>(
+        &'a self,
+        _idempotency: nazo_openid4vp::PresentationCreateIdempotency<'a>,
+    ) -> nazo_openid4vp::PresentationStoreFuture<
+        'a,
+        Result<
+            Option<nazo_openid4vp::PresentationTransaction>,
+            nazo_openid4vp::PresentationStoreError,
+        >,
+    > {
+        Box::pin(async { Err(nazo_openid4vp::PresentationStoreError::Unavailable) })
+    }
+    fn request<'a>(
+        &'a self,
+        _transaction_id: uuid::Uuid,
+        _now: chrono::DateTime<Utc>,
+    ) -> nazo_openid4vp::PresentationStoreFuture<
+        'a,
+        Result<
+            Option<nazo_openid4vp::PresentationTransaction>,
+            nazo_openid4vp::PresentationStoreError,
+        >,
+    > {
+        Box::pin(async { Err(nazo_openid4vp::PresentationStoreError::Unavailable) })
+    }
+    fn bind_wallet_nonce<'a>(
+        &'a self,
+        _transaction_id: uuid::Uuid,
+        _wallet_nonce: &'a str,
+        _now: chrono::DateTime<Utc>,
+    ) -> nazo_openid4vp::PresentationStoreFuture<
+        'a,
+        Result<
+            Option<nazo_openid4vp::PresentationTransaction>,
+            nazo_openid4vp::PresentationStoreError,
+        >,
+    > {
+        Box::pin(async { Err(nazo_openid4vp::PresentationStoreError::Unavailable) })
+    }
+    fn complete<'a>(
+        &'a self,
+        _transaction_id: uuid::Uuid,
+        _state_hash: &'a str,
+        _result: &'a nazo_openid4vp::PresentationResult,
+        _now: chrono::DateTime<Utc>,
+    ) -> nazo_openid4vp::PresentationStoreFuture<
+        'a,
+        Result<bool, nazo_openid4vp::PresentationStoreError>,
+    > {
+        Box::pin(async move {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(true)
+        })
+    }
+    fn result<'a>(
+        &'a self,
+        _transaction_id: uuid::Uuid,
+        _now: chrono::DateTime<Utc>,
+    ) -> nazo_openid4vp::PresentationStoreFuture<
+        'a,
+        Result<Option<nazo_openid4vp::StoredPresentation>, nazo_openid4vp::PresentationStoreError>,
+    > {
+        Box::pin(async { Err(nazo_openid4vp::PresentationStoreError::Unavailable) })
+    }
+}
+
+#[test]
+fn signed_sd_jwt_aki_and_nonce_flow_through_real_presentation_service() {
+    futures_executor::block_on(async {
+        let (crypto, presentation, _, certs) = sd_presentation_fixture();
+        let mut transaction = signed_sd_transaction(&presentation);
+        let actual_aki = URL_SAFE_NO_PAD.encode(certificate_subject_key_identifier(&certs.ca_der));
+        for (value, accepted) in [
+            (actual_aki.as_str(), true),
+            ("https://issuer.example", false),
+            ("AQID", false),
+        ] {
+            transaction.request.dcql_query.credentials[0].trusted_authorities =
+                Some(vec![nazo_digital_credentials::TrustedAuthority {
+                    authority_type: "aki".to_owned(),
+                    values: vec![value.to_owned()],
+                }]);
+            let sink = PresentationCompletionSink::default();
+            let result = nazo_openid4vp::PresentationService::new(sink.clone(), crypto.clone())
+                .verify_response(
+                    &transaction,
+                    &nazo_openid4vp::AuthorizationResponse {
+                        vp_token: Some(
+                            json!({"first": [presentation.encoded], "optional": ["broken"]}),
+                        ),
+                        state: Some("state".to_owned()),
+                        error: None,
+                        error_description: None,
+                    },
+                    &[],
+                    Utc::now(),
+                )
+                .await;
+            assert_eq!(result.is_ok(), accepted);
+            assert_eq!(
+                sink.0.load(std::sync::atomic::Ordering::SeqCst),
+                usize::from(accepted)
+            );
+            if accepted {
+                assert_eq!(result.unwrap().credentials.len(), 1);
+            }
+        }
+        transaction.request.dcql_query.credentials[0].trusted_authorities = None;
+        let parts = presentation.encoded.split('~').collect::<Vec<_>>();
+        let (_, holder_key) = es256_jwk(71);
+        let mut header = Header::new(Algorithm::ES256);
+        header.typ = Some("kb+jwt".to_owned());
+        let kb = encode(&header, &json!({
+            "nonce": "another-transaction", "aud": presentation.expected_audience,
+            "iat": Utc::now().timestamp(),
+            "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(format!("{}~{}~", parts[0], parts[1]).as_bytes()))
+        }), &holder_key).unwrap();
+        let replay = format!("{}~{}~{kb}", parts[0], parts[1]);
+        let sink = PresentationCompletionSink::default();
+        let result = nazo_openid4vp::PresentationService::new(sink.clone(), crypto)
+            .verify_response(
+                &transaction,
+                &nazo_openid4vp::AuthorizationResponse {
+                    vp_token: Some(json!({"first": [presentation.encoded], "optional": [replay]})),
+                    state: Some("state".to_owned()),
+                    error: None,
+                    error_description: None,
+                },
+                &[],
+                Utc::now(),
+            )
+            .await;
+        assert_eq!(
+            result.unwrap_err(),
+            nazo_openid4vp::PresentationServiceError::Presentation(
+                nazo_openid4vp::PresentationError::UntrustedPresentation
+            )
+        );
+        assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    })
+}
+
+#[test]
+fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (encoded, _) = valid_mdoc_presentation(&certs, Utc::now());
+        let different_transcript = SessionTranscript::Oid4vp {
+            mdoc_nonce: "mdoc-nonce".to_owned(),
+            client_id: "https://verifier.example".to_owned(),
+            response_uri: "https://verifier.example/response".to_owned(),
+            verifier_nonce: "another-transaction".to_owned(),
+        }
+        .to_cbor_bytes()
+        .unwrap();
+        let presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded,
+            expected_nonce: "another-transaction".to_owned(),
+            expected_audience: "https://verifier.example".to_owned(),
+            response_uri: "https://verifier.example/response".to_owned(),
+            mdoc_session_transcript: Some(different_transcript),
+            additional_trust_anchors: vec![],
+        };
+        assert_eq!(
+            crypto.verify_mdoc(&presentation),
+            Err(CredentialTrustError::InvalidSessionBinding)
+        );
+    })
+}
+
+fn signed_sd_transaction(
+    presentation: &PresentedCredential,
+) -> nazo_openid4vp::PresentationTransaction {
+    nazo_openid4vp::PresentationTransaction {
+        id: uuid::Uuid::now_v7(),
+        client_id_prefix: nazo_openid4vp::ClientIdPrefix::RedirectUri,
+        request_method: nazo_openid4vp::RequestMethod::RequestUriSignedPost,
+        response_mode: nazo_openid4vp::ResponseMode::DirectPost,
+        wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
+        request: serde_json::from_value(json!({
+            "client_id": presentation.expected_audience,
+            "response_type": "vp_token", "response_mode": "direct_post",
+            "response_uri": presentation.response_uri,
+            "nonce": presentation.expected_nonce, "state": "state",
+            "dcql_query": {
+                "credentials": [
+                    {"id": "first", "format": "dc+sd-jwt", "meta": {}},
+                    {"id": "optional", "format": "dc+sd-jwt", "meta": {}}
+                ],
+                "credential_sets": [{"options": [["first"]]}]
+            }
+        }))
+        .unwrap(),
+        request_object: None,
+        request_uri: None,
+        openid4vc_trust_policy_binding_id: None,
+        openid4vc_trust_policy_resource_id: None,
+        openid4vc_trust_policy_digest: None,
+        response_encryption_private_key: None,
+        created_at: Utc::now(),
+        expires_at: Utc::now() + Duration::minutes(5),
+    }
+}
+
+fn resign_sd_fixture(
+    presentation: &PresentedCredential,
+    certs: &CertificateFixture,
+    x5c: Vec<String>,
+    nonce: &str,
+) -> PresentedCredential {
+    let parts = presentation.encoded.split('~').collect::<Vec<_>>();
+    let claims: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(parts[0].split('.').nth(1).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    let mut issuer_header = Header::new(Algorithm::ES256);
+    issuer_header.typ = Some("dc+sd-jwt".to_owned());
+    issuer_header.x5c = Some(x5c);
+    let jwt = encode(
+        &issuer_header,
+        &claims,
+        &EncodingKey::from_ec_der(&certs.leaf_key.serialize_der()),
+    )
+    .unwrap();
+    let sd_input = format!("{jwt}~{}~", parts[1]);
+    let (_, holder_key) = es256_jwk(71);
+    let mut kb_header = Header::new(Algorithm::ES256);
+    kb_header.typ = Some("kb+jwt".to_owned());
+    let kb = encode(
+        &kb_header,
+        &json!({
+            "nonce": nonce, "aud": presentation.expected_audience,
+            "iat": Utc::now().timestamp(),
+            "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(sd_input.as_bytes()))
+        }),
+        &holder_key,
+    )
+    .unwrap();
+    PresentedCredential {
+        encoded: format!("{sd_input}{kb}"),
+        ..presentation.clone()
+    }
+}
+
+fn install_service_trust_fixture(
+    crypto: &Openid4vcCredentialCrypto,
+    certs: &CertificateFixture,
+    anchors_pem: String,
+    snapshot: Option<CertificateRevocationSnapshot>,
+) {
+    let signing_kid = crypto
+        .keyset
+        .openid4vc_public_material()
+        .unwrap()
+        .signing_kid
+        .clone();
+    crypto
+        .keyset
+        .set_openid4vc_material_for_test(Openid4vcMaterial {
+            public: Openid4vcPublicMaterial {
+                signing_kid,
+                certificate_chain_pem: format!("{}{}", certs.leaf_pem, certs.ca_pem),
+                trust_anchors_pem: anchors_pem,
+                revocation_snapshot: snapshot,
+            },
+            iaca_private_materials: Default::default(),
+        });
+}
+
+#[test]
+fn signed_unused_configured_anchor_cannot_supply_a_dcql_aki() {
+    futures_executor::block_on(async {
+        let (crypto, presentation, _, certs) = sd_presentation_fixture();
+        let mut params = CertificateParams::default();
+        params.distinguished_name = DistinguishedName::new();
+        params
+            .distinguished_name
+            .push(DnType::CommonName, "unused configured anchor");
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+        params.use_authority_key_identifier_extension = true;
+        let now = time::OffsetDateTime::now_utc();
+        params.not_before = now - time::Duration::minutes(1);
+        params.not_after = now + time::Duration::days(365);
+        let unused = params
+            .self_signed(&KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap())
+            .unwrap();
+        let unused_der = unused.der().as_ref().to_vec();
+        let identifiers = super::certificates::issuer_authority_key_identifiers(
+            std::slice::from_ref(&unused_der),
+        )
+        .unwrap();
+        assert_eq!(
+            identifiers.len(),
+            1,
+            "counterexample anchor must actually carry AKI"
+        );
+        let unused_aki = URL_SAFE_NO_PAD.encode(&identifiers[0]);
+        assert_ne!(
+            identifiers[0],
+            certificate_subject_key_identifier(&certs.ca_der)
+        );
+        install_service_trust_fixture(
+            &crypto,
+            &certs,
+            format!("{}{}", certs.ca_pem, unused.pem()),
+            None,
+        );
+        let poisoned = resign_sd_fixture(
+            &presentation,
+            &certs,
+            vec![
+                STANDARD.encode(&certs.leaf_der),
+                STANDARD.encode(&unused_der),
+            ],
+            &presentation.expected_nonce,
+        );
+        // Fresh issuer and holder signatures cover the changed header/sd_hash.
+        // This is not an edited, signature-invalid protected header.
+        assert_eq!(
+            crypto.verify_sd_jwt(&poisoned),
+            Err(CredentialTrustError::UntrustedIssuer)
+        );
+        let mut transaction = signed_sd_transaction(&presentation);
+        transaction.request.dcql_query.credentials[0].trusted_authorities =
+            Some(vec![nazo_digital_credentials::TrustedAuthority {
+                authority_type: "aki".to_owned(),
+                values: vec![unused_aki],
+            }]);
+        let sink = PresentationCompletionSink::default();
+        let error = nazo_openid4vp::PresentationService::new(sink.clone(), crypto)
+            .verify_response(
+                &transaction,
+                &nazo_openid4vp::AuthorizationResponse {
+                    vp_token: Some(json!({"first": [poisoned.encoded]})),
+                    state: Some("state".to_owned()),
+                    error: None,
+                    error_description: None,
+                },
+                &[],
+                Utc::now(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error,
+            nazo_openid4vp::PresentationServiceError::Presentation(
+                nazo_openid4vp::PresentationError::DcqlUnsatisfied
+            )
+        );
+        assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(
+            super::mdoc::verify_certificate_chain_with_scoped_at(
+                &[certs.leaf_der.clone(), unused_der.clone()],
+                &[certs.ca_der, unused_der],
+                &[],
+                Utc::now().timestamp(),
+            )
+            .unwrap()
+            .is_none()
+        );
+    })
+}
+
+#[test]
+fn signed_revoked_optional_nonce_is_fatal_and_stale_snapshot_is_unavailable() {
+    futures_executor::block_on(async {
+        let (crypto, accepted, _, certs) = sd_presentation_fixture();
+        let (_, revoked, _, revoked_certs) = sd_presentation_fixture();
+        let strict = Openid4vcCredentialCrypto {
+            revocation_policy: crate::policy::Openid4vcRevocationPolicy::Required,
+            ..crypto
+        };
+        let now = Utc::now();
+        let snapshot = CertificateRevocationSnapshot {
+            version: CertificateRevocationSnapshot::VERSION,
+            this_update: now - Duration::minutes(1),
+            next_update: now + Duration::minutes(5),
+            entries: vec![
+                nazo_digital_credentials::CertificateRevocationEntry {
+                    issuer: "https://issuer.example".to_owned(),
+                    certificate: nazo_digital_credentials::certificate_identity(&certs.leaf_der),
+                    status: nazo_digital_credentials::CertificateRevocationStatus::Good,
+                    revoked_at: None,
+                },
+                nazo_digital_credentials::CertificateRevocationEntry {
+                    issuer: "https://issuer.example".to_owned(),
+                    certificate: nazo_digital_credentials::certificate_identity(
+                        &revoked_certs.leaf_der,
+                    ),
+                    status: nazo_digital_credentials::CertificateRevocationStatus::Revoked,
+                    revoked_at: Some(now - Duration::seconds(1)),
+                },
+            ],
+        };
+        let anchors = format!("{}{}", certs.ca_pem, revoked_certs.ca_pem);
+        install_service_trust_fixture(&strict, &certs, anchors.clone(), Some(snapshot.clone()));
+        let wrong_nonce = resign_sd_fixture(
+            &revoked,
+            &revoked_certs,
+            vec![STANDARD.encode(&revoked_certs.leaf_der)],
+            "another-transaction",
+        );
+        let transaction = signed_sd_transaction(&accepted);
+        for (optional, expected_error) in [
+            (&revoked, None),
+            (
+                &wrong_nonce,
+                Some(nazo_openid4vp::PresentationServiceError::Presentation(
+                    nazo_openid4vp::PresentationError::UntrustedPresentation,
+                )),
+            ),
+        ] {
+            let sink = PresentationCompletionSink::default();
+            let result = nazo_openid4vp::PresentationService::new(sink.clone(), strict.clone())
+                .verify_response(
+                    &transaction,
+                    &nazo_openid4vp::AuthorizationResponse {
+                        vp_token: Some(
+                            json!({"first": [accepted.encoded], "optional": [optional.encoded]}),
+                        ),
+                        state: Some("state".to_owned()),
+                        error: None,
+                        error_description: None,
+                    },
+                    &[],
+                    Utc::now(),
+                )
+                .await;
+            if let Some(error) = expected_error {
+                assert_eq!(result.unwrap_err(), error);
+                assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+            } else {
+                assert_eq!(
+                    result.unwrap().credentials.len(),
+                    1,
+                    "revoked optional credential must remain excluded"
+                );
+                assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+            }
+        }
+        for (snapshot, expected) in [
+            (
+                Some(CertificateRevocationSnapshot {
+                    next_update: now - Duration::seconds(1),
+                    ..snapshot
+                }),
+                CredentialTrustError::RevocationSnapshotStale,
+            ),
+            (None, CredentialTrustError::RevocationSnapshotUnavailable),
+        ] {
+            install_service_trust_fixture(&strict, &certs, anchors.clone(), snapshot);
+            let sink = PresentationCompletionSink::default();
+            let error = nazo_openid4vp::PresentationService::new(sink.clone(), strict.clone())
+                .verify_response(
+                    &transaction,
+                    &nazo_openid4vp::AuthorizationResponse {
+                        vp_token: Some(json!({"first": [accepted.encoded]})),
+                        state: Some("state".to_owned()),
+                        error: None,
+                        error_description: None,
+                    },
+                    &[],
+                    Utc::now(),
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error,
+                nazo_openid4vp::PresentationServiceError::Verifier(expected)
+            );
+            assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+        }
+    })
 }

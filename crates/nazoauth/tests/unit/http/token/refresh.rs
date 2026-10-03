@@ -103,6 +103,8 @@ struct RefreshFamilyTokenRow {
     revoked_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = Nullable<Timestamptz>)]
     reuse_detected_at: Option<DateTime<Utc>>,
+    #[diesel(sql_type = Nullable<Text>)]
+    mtls_x5t_s256: Option<String>,
 }
 
 fn test_state() -> TestInfrastructure {
@@ -498,7 +500,8 @@ async fn load_family_rows(
                encode(f.current_token_blake3, 'hex') AS refresh_token_blake3,
                p.member_id AS rotated_from_id,
                f.revoked_at,
-               f.reuse_detected_at
+               f.reuse_detected_at,
+               f.mtls_x5t_s256
         FROM oauth_refresh_families AS f
         LEFT JOIN oauth_refresh_spent_tokens AS p
           ON p.tenant_id = f.tenant_id
@@ -510,7 +513,8 @@ async fn load_family_rows(
                encode(s.refresh_token_blake3, 'hex'),
                NULL::uuid,
                s.spent_at,
-               f.reuse_detected_at
+               f.reuse_detected_at,
+               f.mtls_x5t_s256
         FROM oauth_refresh_spent_tokens AS s
         JOIN oauth_refresh_families AS f
           ON f.tenant_id = s.tenant_id
@@ -674,6 +678,8 @@ fn token_row_with_refresh_context(
         token_family_id: Uuid::now_v7(),
         client_id,
         user_id: Some(Uuid::now_v7()),
+        contract_key: [0; 32],
+        contract_audiences: vec!["resource://default".to_owned()],
         scopes: json!(["openid", "offline_access"]),
         audience: json!(["resource://default"]),
         authorization_details: json!([]),
@@ -860,6 +866,13 @@ async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_const
     for (status, body) in [first, second] {
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body["access_token"].is_string());
+        let claims = decode_access_claims_with(
+            &state.keyset,
+            &state.settings.endpoint.issuer,
+            body["access_token"].as_str().unwrap(),
+        )
+        .expect("PreserveExisting must return a verifiable access token");
+        assert_eq!(claims.authorization_id, Some(family_id));
         assert!(
             body.get("refresh_token").is_none(),
             "FAPI must not rotate the refresh token during routine refresh: {body}"
@@ -2564,9 +2577,127 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
         .cnf
         .expect("mTLS-bound refresh grants must issue sender-constrained access tokens");
     assert_eq!(cnf.x5t_s256.as_deref(), Some(thumbprint));
+    let family = load_family_rows(&state, token.token_family_id).await;
+    assert_eq!(family.len(), 1);
+    assert_eq!(family[0].id, token.id);
+    assert!(family[0].mtls_x5t_s256.is_none());
+    assert!(family[0].revoked_at.is_none());
     assert_eq!(body["token_type"], "Bearer");
     assert!(
         body.get("refresh_token").is_none(),
         "sender-constrained confidential clients preserve their existing refresh token"
     );
+}
+
+#[actix_web::test]
+async fn signed_credential_authorization_survives_real_refresh_and_separates_equal_grants() {
+    let Some(mut state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    std::sync::Arc::get_mut(&mut state.settings)
+        .unwrap()
+        .modules
+        .enable_openid4vci_issuer = true;
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    client.scopes = vec![
+        "org.iso.18013.5.1.mDL".to_owned(),
+        "offline_access".to_owned(),
+    ];
+    insert_refresh_client(&state, &client).await;
+    let user_id = Uuid::now_v7();
+    insert_refresh_user(&state, user_id, true).await;
+
+    #[derive(diesel::QueryableByName)]
+    struct FamilyRow {
+        #[diesel(sql_type = diesel::sql_types::Uuid)]
+        family_id: Uuid,
+    }
+    let mut roots = Vec::new();
+    let mut first_body = None;
+    let mut first_jti = None;
+    for _ in 0..2 {
+        let mut issue = super::issue::tests::token_issue_without_openid();
+        issue.user_id = Some(user_id);
+        issue.subject = user_id.to_string();
+        issue.scopes = vec![
+            "org.iso.18013.5.1.mDL".to_owned(),
+            "offline_access".to_owned(),
+        ];
+        issue.authorization_details = json!([{
+            "type": "openid_credential",
+            "credential_configuration_id": "org.iso.18013.5.1.mDL"
+        }]);
+        let (status, body) =
+            response_json(super::issue::tests::issue_token_response(&state, &client, issue).await)
+                .await;
+        assert_eq!(status, StatusCode::OK);
+        let claims = decode_access_claims_with(
+            &state.keyset,
+            &state.settings.endpoint.issuer,
+            body["access_token"].as_str().unwrap(),
+        )
+        .expect("the production mint must return a verifiable token");
+        let raw = body["refresh_token"].as_str().unwrap();
+        let mut connection = get_conn(&state.diesel_db).await.unwrap();
+        let family = sql_query(
+            "SELECT token_family_id AS family_id FROM oauth_refresh_families \
+             WHERE tenant_id = $1 AND client_id = $2 AND current_token_blake3 = $3",
+        )
+        .bind::<diesel::sql_types::Uuid, _>(client.tenant_id)
+        .bind::<diesel::sql_types::Uuid, _>(client.id)
+        .bind::<diesel::sql_types::Binary, _>(blake3::hash(raw.as_bytes()).as_bytes().to_vec())
+        .get_result::<FamilyRow>(&mut connection)
+        .await
+        .unwrap();
+        assert_eq!(claims.authorization_id, Some(family.family_id));
+        assert!(!family.family_id.is_nil());
+        roots.push(family.family_id);
+        if first_body.is_none() {
+            first_jti = Some(claims.jti);
+            first_body = Some(body);
+        }
+    }
+    assert_ne!(
+        roots[0], roots[1],
+        "equal grant contents must not identify one authorization"
+    );
+    let first = first_body.unwrap();
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(first["refresh_token"].as_str().unwrap().to_owned());
+    let request = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let (status, body) =
+        response_json(token_refresh(&state, &request, &client, &form, None).await).await;
+    assert_eq!(status, StatusCode::OK);
+    let refreshed = decode_access_claims_with(
+        &state.keyset,
+        &state.settings.endpoint.issuer,
+        body["access_token"].as_str().unwrap(),
+    )
+    .expect("the checked refresh source must produce a verifiable token");
+    assert_eq!(refreshed.authorization_id, Some(roots[0]));
+    assert_ne!(refreshed.jti, first_jti.unwrap());
+    assert!(body["refresh_token"].is_string());
+
+    let mut fresh = super::issue::tests::token_issue_without_openid();
+    fresh.user_id = Some(user_id);
+    fresh.subject = user_id.to_string();
+    fresh.scopes = vec!["org.iso.18013.5.1.mDL".to_owned()];
+    fresh.include_refresh = false;
+    fresh.refresh_token_policy = RefreshTokenPolicy::NoRefresh;
+    let (status, body) =
+        response_json(super::issue::tests::issue_token_response(&state, &client, fresh).await)
+            .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("refresh_token").is_none());
+    let independent = decode_access_claims_with(
+        &state.keyset,
+        &state.settings.endpoint.issuer,
+        body["access_token"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert!(independent.authorization_id.is_some());
+    assert_ne!(independent.authorization_id, refreshed.authorization_id);
 }

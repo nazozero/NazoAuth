@@ -1,12 +1,13 @@
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationStateSnapshot, AuthorizationStateStorePort,
-    ConsentPayload, PushedAuthorizationRequest,
+    ConsentPayload, DecisionMaterialDiscardError, DecisionMaterialDiscardFuture,
+    PushedAuthorizationRequest,
 };
 
 use crate::{
-    AuthorizationStore, Error, ErrorKind, RateDimension, RateLimitStore, ReplayStore,
-    ValkeyConnection,
+    AuthorizationPreparationWrite, AuthorizationStore, Error, ErrorKind, RateDimension,
+    RateLimitStore, ReplayStore, ValkeyConnection,
 };
 
 /// Valkey mechanisms required by an authorization flow, grouped at the
@@ -67,6 +68,7 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
                 .store_par(request_uri, payload, ttl_seconds)
                 .await
                 .map_err(map_error)
+                .and_then(map_preparation_write)
         })
     }
 
@@ -107,6 +109,20 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         })
     }
 
+    fn discard_decision_material<'a>(
+        &'a self,
+        request_id: &'a str,
+        expected_consent: &'a str,
+        pushed_request: Option<(&'a str, &'a str)>,
+    ) -> DecisionMaterialDiscardFuture<'a> {
+        Box::pin(async move {
+            self.authorization
+                .discard_decision_material(request_id, expected_consent, pushed_request)
+                .await
+                .map_err(map_discard_error)
+        })
+    }
+
     fn store_consent<'a>(
         &'a self,
         request_id: &'a str,
@@ -118,6 +134,7 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
                 .store_consent(request_id, payload, ttl_seconds)
                 .await
                 .map_err(map_error)
+                .and_then(map_preparation_write)
         })
     }
 
@@ -177,6 +194,20 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         Box::pin(async move {
             self.replay
                 .consume_jar(client_id, jti, ttl_seconds)
+                .await
+                .map_err(map_error)
+        })
+    }
+
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        window: nazo_auth::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        Box::pin(async move {
+            self.replay
+                .consume_client_attestation_proof(client_id, jti, window)
                 .await
                 .map_err(map_error)
         })
@@ -279,6 +310,26 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
     }
 }
 
+fn map_preparation_write(
+    outcome: AuthorizationPreparationWrite,
+) -> Result<(), AuthorizationPortError> {
+    match outcome {
+        AuthorizationPreparationWrite::Stored => Ok(()),
+        AuthorizationPreparationWrite::Conflict => Err(AuthorizationPortError::Conflict),
+    }
+}
+
+fn map_discard_error(error: DecisionMaterialDiscardError<Error>) -> DecisionMaterialDiscardError {
+    match error {
+        DecisionMaterialDiscardError::ConsentOrUnknown(source) => {
+            DecisionMaterialDiscardError::ConsentOrUnknown(map_error(source))
+        }
+        DecisionMaterialDiscardError::PushedRequest(source) => {
+            DecisionMaterialDiscardError::PushedRequest(map_error(source))
+        }
+    }
+}
+
 fn map_error(error: Error) -> AuthorizationPortError {
     match error.kind() {
         ErrorKind::Timeout | ErrorKind::Unavailable => AuthorizationPortError::Unavailable,
@@ -286,3 +337,7 @@ fn map_error(error: Error) -> AuthorizationPortError {
         ErrorKind::Protocol | ErrorKind::UnexpectedResult => AuthorizationPortError::Unexpected,
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/authorization_state.rs"]
+mod tests;

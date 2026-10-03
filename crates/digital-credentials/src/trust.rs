@@ -381,17 +381,16 @@ impl CertificateRevocationPolicy {
     }
 
     /// Check a chain already authenticated against an explicit scoped trust
-    /// anchor. The normal required policy remains fail-closed for every
-    /// certificate; a caller must verify the chain against the supplied scope
-    /// before invoking this method.
+    /// anchor. The caller passes the result of successful path anchor selection;
+    /// merely loading a nonempty scoped store never authorizes the exemption.
     pub fn check_chain_with_scoped_trust(
         &self,
         issuer: Option<&str>,
         certificates: &[Vec<u8>],
         now: DateTime<Utc>,
-        scoped_trust_anchors: &[Vec<u8>],
+        scoped_anchor_authenticated: bool,
     ) -> Result<(), CredentialTrustError> {
-        self.check_chain_inner(issuer, certificates, now, !scoped_trust_anchors.is_empty())
+        self.check_chain_inner(issuer, certificates, now, scoped_anchor_authenticated)
     }
 
     fn check_chain_inner(
@@ -399,7 +398,7 @@ impl CertificateRevocationPolicy {
         issuer: Option<&str>,
         certificates: &[Vec<u8>],
         now: DateTime<Utc>,
-        scoped_trust_loaded: bool,
+        scoped_anchor_authenticated: bool,
     ) -> Result<(), CredentialTrustError> {
         if matches!(self.state.mode, CertificateRevocationMode::Disabled) {
             return Ok(());
@@ -433,7 +432,7 @@ impl CertificateRevocationPolicy {
                     return Err(CredentialTrustError::RevokedCertificate);
                 }
                 Some(CertificateRevocationStatus::Good) => {}
-                None if self.is_required() && !scoped_trust_loaded => {
+                None if self.is_required() && !scoped_anchor_authenticated => {
                     return Err(CredentialTrustError::RevocationStatusUnknown);
                 }
                 None => {}
@@ -539,12 +538,25 @@ impl VcIssuerTrustPolicy {
 pub struct VerifiedCredential {
     pub format: CredentialFormat,
     pub issuer: String,
+    /// Raw AKI KeyIdentifiers from the authenticated credential issuer chain.
+    /// Holder certificates and separately loaded trust anchors are not evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub issuer_chain_authority_key_identifiers: Vec<Vec<u8>>,
     pub credential_type: String,
     pub claims: Value,
     pub holder_key: Option<Value>,
     pub issued_at: Option<DateTime<Utc>>,
     pub expires_at: Option<DateTime<Utc>>,
     pub status: Option<Value>,
+}
+
+impl VerifiedCredential {
+    pub fn has_issuer_authority_key_identifier(&self, encoded: &str) -> bool {
+        URL_SAFE_NO_PAD.decode(encoded).is_ok_and(|identifier| {
+            self.issuer_chain_authority_key_identifiers
+                .contains(&identifier)
+        })
+    }
 }
 
 pub trait CredentialVerifierPort: Send + Sync {
@@ -566,6 +578,10 @@ pub enum CredentialTrustError {
     InvalidStatus,
     #[error("credential holder binding is invalid")]
     InvalidHolderBinding,
+    #[error("authenticated presentation nonce does not match the transaction")]
+    InvalidNonce,
+    #[error("presentation proof does not authenticate the current session")]
+    InvalidSessionBinding,
     #[error("credential encoding is invalid")]
     InvalidEncoding,
     #[error("credential cryptographic operation is unavailable")]

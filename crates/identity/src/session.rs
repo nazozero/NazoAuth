@@ -17,6 +17,19 @@ pub fn valid_authentication_metadata(
         && oidc_sid.is_some_and(|sid| !sid.trim().is_empty())
 }
 
+/// High-impact administration requires an interactive MFA completed within five minutes.
+/// Future authentication times may be valid session metadata but are not completed step-ups.
+pub const ADMIN_MFA_MAX_AGE_SECONDS: i64 = 5 * 60;
+
+#[must_use]
+pub fn recent_interactive_mfa(auth_time: i64, amr: &[String], now: i64) -> bool {
+    (0..=ADMIN_MFA_MAX_AGE_SECONDS).contains(&now.saturating_sub(auth_time))
+        && amr.iter().any(|method| method == "mfa")
+        && amr
+            .iter()
+            .any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
+}
+
 pub fn add_amr(amr: &mut Vec<String>, value: &str) {
     if !amr.iter().any(|method| method == value) {
         amr.push(value.to_owned());
@@ -122,6 +135,7 @@ pub enum SessionUpdateOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CurrentSession {
     user: PublicAccount,
+    pending_mfa: bool,
     auth_time: i64,
     amr: Vec<String>,
     oidc_sid: String,
@@ -129,6 +143,12 @@ pub struct CurrentSession {
 }
 
 impl CurrentSession {
+    /// MFA flows may resolve either state from one validated storage snapshot.
+    #[must_use]
+    pub const fn pending_mfa(&self) -> bool {
+        self.pending_mfa
+    }
+
     #[must_use]
     pub fn user(&self) -> &PublicAccount {
         &self.user
@@ -259,7 +279,7 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, false).await
+        self.resolve(session_id, now, Some(false)).await
     }
 
     pub async fn pending_mfa(
@@ -267,7 +287,17 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, true).await
+        self.resolve(session_id, now, Some(true)).await
+    }
+
+    /// Resolve active or pending MFA state with one session read and one active
+    /// account check. State classification comes from that same validated snapshot.
+    pub async fn resolve_for_mfa(
+        &self,
+        session_id: &SessionId,
+        now: i64,
+    ) -> Result<SessionResolution, RepositoryError> {
+        self.resolve(session_id, now, None).await
     }
 
     pub async fn step_up(
@@ -323,7 +353,7 @@ impl SessionService {
         &self,
         session_id: &SessionId,
         now: i64,
-        pending_mfa: bool,
+        expected_pending_mfa: Option<bool>,
     ) -> Result<SessionResolution, RepositoryError> {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(SessionResolution::Missing);
@@ -334,7 +364,7 @@ impl SessionService {
             let _ = self.sessions.delete(session_id).await;
             return Ok(SessionResolution::Invalidated);
         }
-        if record.pending_mfa() != pending_mfa {
+        if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
             return Ok(SessionResolution::Missing);
         }
         let Some(user) = self
@@ -348,6 +378,7 @@ impl SessionService {
         };
         Ok(SessionResolution::Present(Box::new(CurrentSession {
             user,
+            pending_mfa: record.pending_mfa(),
             auth_time: record.auth_time(),
             amr: record.amr().to_vec(),
             oidc_sid: record

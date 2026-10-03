@@ -186,6 +186,16 @@ impl TenantDirectoryStore for RecordingDirectory {
             });
         Box::pin(async move { result })
     }
+
+    fn find_active_binding(
+        &self,
+        _: nazo_identity::TenantId,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<Option<TenantDirectoryBinding>, nazo_identity::ports::RepositoryError>,
+    > {
+        panic!("runtime refresh must use the coherent complete directory")
+    }
 }
 
 struct RecordingBuilder {
@@ -301,14 +311,28 @@ async fn request_snapshot_hits_never_touch_cache_or_database() {
 
     let first = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("tenant A is locally routable");
     let second = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("tenant A remains locally routable");
     assert!(Arc::ptr_eq(&first, &second));
-    assert!(fixture.registry.resolve("unknown.example").is_none());
+    assert!(
+        fixture
+            .registry
+            .load()
+            .by_host
+            .get("unknown.example")
+            .cloned()
+            .is_none()
+    );
 
     assert_eq!(fixture.cache.load_count(), 0);
     assert_eq!(fixture.cache.stored().len(), cache_stores_before);
@@ -333,7 +357,10 @@ async fn old_and_equal_cached_revisions_are_rejected_without_database_or_builds(
     .await;
     let original = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("tenant A was installed");
 
     assert_eq!(
@@ -358,10 +385,21 @@ async fn old_and_equal_cached_revisions_are_rejected_without_database_or_builds(
         &original,
         &fixture
             .registry
-            .resolve("tenant-a.example")
+            .load()
+            .by_host
+            .get("tenant-a.example")
+            .cloned()
             .expect("last-good tenant A remains")
     ));
-    assert!(fixture.registry.resolve("tenant-b.example").is_none());
+    assert!(
+        fixture
+            .registry
+            .load()
+            .by_host
+            .get("tenant-b.example")
+            .cloned()
+            .is_none()
+    );
     assert_eq!(fixture.builder.build_count(), 1);
     assert_eq!(fixture.cache.load_count(), 2);
     assert_eq!(fixture.directory.revision_read_count(), 0);
@@ -397,12 +435,23 @@ async fn newer_cached_snapshot_is_published_without_database_read() {
     assert_eq!(
         fixture
             .registry
-            .resolve("tenant-a.example")
+            .load()
+            .by_host
+            .get("tenant-a.example")
+            .cloned()
             .expect("updated tenant A is routable")
             .binding,
         changed_a
     );
-    assert!(fixture.registry.resolve("tenant-b.example").is_some());
+    assert!(
+        fixture
+            .registry
+            .load()
+            .by_host
+            .get("tenant-b.example")
+            .cloned()
+            .is_some()
+    );
     assert_eq!(fixture.cache.load_count(), 1);
     assert_eq!(fixture.directory.revision_read_count(), 0);
     assert_eq!(fixture.directory.snapshot_read_count(), 0);
@@ -427,16 +476,40 @@ async fn tenant_runtime_revision_rebuilds_only_the_changed_tenant() {
         [],
     )
     .await;
-    let previous_a = fixture.registry.resolve("tenant-a.example").unwrap();
-    let previous_b = fixture.registry.resolve("tenant-b.example").unwrap();
+    let previous_a = fixture
+        .registry
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
+        .unwrap();
+    let previous_b = fixture
+        .registry
+        .load()
+        .by_host
+        .get("tenant-b.example")
+        .cloned()
+        .unwrap();
 
     assert_eq!(
         fixture.refresher.refresh_cache_once().await.unwrap(),
         TenantDirectoryRefreshOutcome::Applied { revision: 2 }
     );
 
-    let current_a = fixture.registry.resolve("tenant-a.example").unwrap();
-    let current_b = fixture.registry.resolve("tenant-b.example").unwrap();
+    let current_a = fixture
+        .registry
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
+        .unwrap();
+    let current_b = fixture
+        .registry
+        .load()
+        .by_host
+        .get("tenant-b.example")
+        .cloned()
+        .unwrap();
     assert!(!Arc::ptr_eq(&previous_a, &current_a));
     assert!(Arc::ptr_eq(&previous_b, &current_b));
     assert_eq!(current_a.binding, reloaded_a);
@@ -468,7 +541,10 @@ async fn database_payload_replaces_same_revision_previously_applied_from_cache()
     );
     let cache_runtime = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("cached tenant A is routable");
     assert_eq!(cache_runtime.binding, cached_a);
 
@@ -482,7 +558,10 @@ async fn database_payload_replaces_same_revision_previously_applied_from_cache()
     );
     let authoritative_runtime = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("authoritative tenant A is routable");
     assert_eq!(authoritative_runtime.binding, authoritative_a);
     assert!(!Arc::ptr_eq(&cache_runtime, &authoritative_runtime));
@@ -521,7 +600,10 @@ async fn cache_ahead_of_database_rolls_back_and_rejects_repeated_revision() {
     assert_eq!(
         fixture
             .registry
-            .resolve("tenant-a.example")
+            .load()
+            .by_host
+            .get("tenant-a.example")
+            .cloned()
             .expect("cached tenant A is routable")
             .binding,
         cached_a
@@ -539,7 +621,10 @@ async fn cache_ahead_of_database_rolls_back_and_rejects_repeated_revision() {
     assert_eq!(
         fixture
             .registry
-            .resolve("tenant-a.example")
+            .load()
+            .by_host
+            .get("tenant-a.example")
+            .cloned()
             .expect("authoritative tenant A is restored")
             .binding,
         authoritative_a
@@ -583,7 +668,15 @@ async fn assert_cache_failure_falls_back_to_database(cache_reply: CacheReply) {
         TenantDirectoryRefreshOutcome::Applied { revision: 2 }
     );
     assert_eq!(fixture.registry.revision(), 2);
-    assert!(fixture.registry.resolve("tenant-b.example").is_some());
+    assert!(
+        fixture
+            .registry
+            .load()
+            .by_host
+            .get("tenant-b.example")
+            .cloned()
+            .is_some()
+    );
     assert_eq!(fixture.cache.load_count(), 1);
     assert_eq!(fixture.directory.revision_read_count(), 1);
     assert_eq!(fixture.directory.snapshot_read_count(), 1);
@@ -632,7 +725,10 @@ async fn invalid_cache_snapshot_repairs_from_database_and_quarantines_revision()
     assert_eq!(
         fixture
             .registry
-            .resolve("tenant-a.example")
+            .load()
+            .by_host
+            .get("tenant-a.example")
+            .cloned()
             .expect("authoritative tenant A remains routable")
             .binding,
         authoritative_a
@@ -689,7 +785,15 @@ async fn database_reconciliation_reads_snapshot_only_for_newer_revision() {
     assert_eq!(fixture.directory.revision_read_count(), 2);
     assert_eq!(fixture.directory.snapshot_read_count(), 1);
     assert_eq!(fixture.registry.revision(), 2);
-    assert!(fixture.registry.resolve("tenant-b.example").is_some());
+    assert!(
+        fixture
+            .registry
+            .load()
+            .by_host
+            .get("tenant-b.example")
+            .cloned()
+            .is_some()
+    );
     assert_eq!(
         fixture
             .cache
@@ -714,7 +818,10 @@ async fn candidate_build_failure_retains_last_good_snapshot() {
     .await;
     let original = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("tenant A was installed");
     fixture.builder.fail_for("tenant-b.example");
 
@@ -730,10 +837,21 @@ async fn candidate_build_failure_retains_last_good_snapshot() {
         &original,
         &fixture
             .registry
-            .resolve("tenant-a.example")
+            .load()
+            .by_host
+            .get("tenant-a.example")
+            .cloned()
             .expect("last-good tenant A remains")
     ));
-    assert!(fixture.registry.resolve("tenant-b.example").is_none());
+    assert!(
+        fixture
+            .registry
+            .load()
+            .by_host
+            .get("tenant-b.example")
+            .cloned()
+            .is_none()
+    );
     assert_eq!(fixture.builder.build_count(), 2);
     assert_eq!(fixture.directory.revision_read_count(), 0);
     assert_eq!(fixture.directory.snapshot_read_count(), 0);
@@ -752,7 +870,10 @@ async fn in_flight_request_arc_keeps_old_runtime_after_atomic_update() {
     .await;
     let in_flight = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("tenant A was installed");
 
     assert_eq!(
@@ -765,7 +886,10 @@ async fn in_flight_request_arc_keeps_old_runtime_after_atomic_update() {
     );
     let next_request = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("updated tenant A is routable");
 
     assert!(!Arc::ptr_eq(&in_flight, &next_request));
@@ -788,11 +912,17 @@ async fn disable_removes_tenant_only_from_new_requests() {
     .await;
     let in_flight_a = fixture
         .registry
-        .resolve("tenant-a.example")
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
         .expect("tenant A was installed");
     let original_b = fixture
         .registry
-        .resolve("tenant-b.example")
+        .load()
+        .by_host
+        .get("tenant-b.example")
+        .cloned()
         .expect("tenant B was installed");
 
     assert_eq!(
@@ -804,13 +934,24 @@ async fn disable_removes_tenant_only_from_new_requests() {
         TenantDirectoryRefreshOutcome::Applied { revision: 2 }
     );
 
-    assert!(fixture.registry.resolve("tenant-a.example").is_none());
+    assert!(
+        fixture
+            .registry
+            .load()
+            .by_host
+            .get("tenant-a.example")
+            .cloned()
+            .is_none()
+    );
     assert_eq!(in_flight_a.binding, tenant_a);
     assert!(Arc::ptr_eq(
         &original_b,
         &fixture
             .registry
-            .resolve("tenant-b.example")
+            .load()
+            .by_host
+            .get("tenant-b.example")
+            .cloned()
             .expect("unchanged tenant B keeps its runtime")
     ));
 }
@@ -870,8 +1011,22 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
     );
     assert_eq!(registry_one.revision(), 2);
     assert_eq!(registry_two.revision(), 2);
-    assert!(registry_one.resolve("tenant-b.example").is_some());
-    assert!(registry_two.resolve("tenant-b.example").is_some());
+    assert!(
+        registry_one
+            .load()
+            .by_host
+            .get("tenant-b.example")
+            .cloned()
+            .is_some()
+    );
+    assert!(
+        registry_two
+            .load()
+            .by_host
+            .get("tenant-b.example")
+            .cloned()
+            .is_some()
+    );
 
     assert_eq!(
         refresher_one
@@ -997,7 +1152,10 @@ async fn cache_failure_does_not_republish_unconfirmed_cache_payload() {
     assert_eq!(
         fixture
             .registry
-            .resolve("tenant-a.example")
+            .load()
+            .by_host
+            .get("tenant-a.example")
+            .cloned()
             .unwrap()
             .binding,
         authoritative.tenants[0]
@@ -1021,9 +1179,27 @@ async fn publication_stops_only_displaced_lifecycles() {
         runtime.lifecycle.lock().unwrap().runtime_module_reconciler =
             Some(tokio::spawn(std::future::pending()));
     }
-    let retained = fixture.registry.resolve("tenant-a.example").unwrap();
-    let replaced = fixture.registry.resolve("tenant-b.example").unwrap();
-    let removed = fixture.registry.resolve("tenant-c.example").unwrap();
+    let retained = fixture
+        .registry
+        .load()
+        .by_host
+        .get("tenant-a.example")
+        .cloned()
+        .unwrap();
+    let replaced = fixture
+        .registry
+        .load()
+        .by_host
+        .get("tenant-b.example")
+        .cloned()
+        .unwrap();
+    let removed = fixture
+        .registry
+        .load()
+        .by_host
+        .get("tenant-c.example")
+        .cloned()
+        .unwrap();
     let mut changed_second = second;
     changed_second.runtime_revision = 2;
     fixture
@@ -1074,5 +1250,186 @@ async fn publication_stops_only_displaced_lifecycles() {
             .unwrap()
             .runtime_module_reconciler
             .is_none()
+    );
+}
+
+struct RetiredLoopGuard(Arc<AtomicUsize>);
+impl Drop for RetiredLoopGuard {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+async fn install_retirement_loops(runtime: &Arc<TenantRuntime>) -> Arc<AtomicUsize> {
+    let started = Arc::new(AtomicUsize::new(0));
+    let stopped = Arc::new(AtomicUsize::new(0));
+    let spawn = || {
+        let started = started.clone();
+        let stopped = stopped.clone();
+        tokio::spawn(async move {
+            let _guard = RetiredLoopGuard(stopped);
+            started.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<()>().await;
+        })
+    };
+    {
+        let mut lifecycle = runtime.lifecycle.lock().unwrap();
+        lifecycle.runtime_module_reconciler = Some(spawn());
+        lifecycle.ciba_ping_worker = Some(spawn());
+    }
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while started.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    stopped
+}
+async fn assert_retirement_loops_stopped(stopped: &AtomicUsize) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while stopped.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("both retired loops must stop");
+}
+#[tokio::test]
+async fn cancelled_tenant_retirement_aborts_both_extracted_worker_handles() {
+    let runtime = TenantRuntime::for_test(binding(501, "retire.example", "https://retire.example"));
+    let stopped = install_retirement_loops(&runtime).await;
+    let mut stopping = Box::pin(runtime.stop_lifecycle());
+    assert!(futures_util::poll!(&mut stopping).is_pending());
+    drop(stopping);
+    assert_retirement_loops_stopped(stopped.as_ref()).await;
+}
+#[tokio::test]
+async fn last_retained_runtime_snapshot_drop_aborts_both_owned_loops() {
+    let runtime =
+        TenantRuntime::for_test(binding(601, "retained.example", "https://retained.example"));
+    let stopped = install_retirement_loops(&runtime).await;
+    let snapshot = Arc::new(TenantHostIndex {
+        revision: 1,
+        by_host: HashMap::from([("retained.example".to_owned(), runtime.clone())]),
+    });
+    let retained = snapshot.clone();
+    drop(runtime);
+    drop(snapshot);
+    tokio::task::yield_now().await;
+    assert_eq!(
+        stopped.load(Ordering::SeqCst),
+        0,
+        "a retained old graph still owns its lifecycle"
+    );
+    drop(retained);
+    assert_retirement_loops_stopped(stopped.as_ref()).await;
+}
+
+#[tokio::test]
+async fn database_snapshot_may_advance_past_precheck_without_a_second_full_read() {
+    let tenant_a = binding(1, "tenant-a.example", "https://tenant-a.example");
+    let tenant_b = binding(2, "tenant-b.example", "https://tenant-b.example");
+    let newer = snapshot(3, vec![tenant_a.clone(), tenant_b]);
+    let fixture = Fixture::new(snapshot(1, vec![tenant_a]), [], 2, [newer.clone()]).await;
+    assert_eq!(
+        fixture.refresher.reconcile_database_once().await.unwrap(),
+        TenantDirectoryRefreshOutcome::Applied { revision: 3 }
+    );
+    assert_eq!(fixture.registry.revision(), 3);
+    assert_eq!(fixture.registry.load().by_host.len(), 2);
+    assert_eq!(fixture.directory.revision_read_count(), 1);
+    assert_eq!(fixture.directory.snapshot_read_count(), 1);
+    assert_eq!(fixture.cache.stored().last(), Some(&newer));
+    fixture.directory.set_revision(3);
+    assert_eq!(
+        fixture.refresher.reconcile_database_once().await.unwrap(),
+        TenantDirectoryRefreshOutcome::Unchanged
+    );
+    assert_eq!(fixture.directory.snapshot_read_count(), 1);
+}
+
+#[tokio::test]
+async fn database_snapshot_older_than_precheck_keeps_last_good_and_cache() {
+    let tenant_a = binding(1, "tenant-a.example", "https://tenant-a.example");
+    let fixture = Fixture::new(
+        snapshot(1, vec![tenant_a.clone()]),
+        [],
+        3,
+        [snapshot(2, vec![tenant_a])],
+    )
+    .await;
+    let stores = fixture.cache.stored().len();
+    assert!(fixture.refresher.reconcile_database_once().await.is_err());
+    assert_eq!(fixture.registry.revision(), 1);
+    assert_eq!(fixture.builder.build_count(), 1);
+    assert_eq!(fixture.cache.stored().len(), stores);
+    assert_eq!(
+        fixture
+            .refresher
+            .state
+            .lock()
+            .unwrap()
+            .last_database_snapshot
+            .as_ref()
+            .unwrap()
+            .revision,
+        1
+    );
+}
+
+#[tokio::test]
+async fn newer_database_snapshot_uses_its_own_revision_to_reject_cache_ahead() {
+    let initial = binding(1, "tenant-a.example", "https://tenant-a.example");
+    let cached = binding(1, "tenant-a.example", "https://tenant-a.example/cache");
+    let confirmed = snapshot(3, vec![initial.clone()]);
+    let ahead = snapshot(4, vec![cached]);
+    let fixture = Fixture::new(
+        snapshot(1, vec![initial]),
+        [
+            CacheReply::Snapshot(ahead.clone()),
+            CacheReply::Snapshot(ahead),
+        ],
+        2,
+        [confirmed.clone()],
+    )
+    .await;
+    assert_eq!(
+        fixture.refresher.refresh_cache_once().await.unwrap(),
+        TenantDirectoryRefreshOutcome::Applied { revision: 4 }
+    );
+    assert_eq!(
+        fixture.refresher.reconcile_database_once().await.unwrap(),
+        TenantDirectoryRefreshOutcome::Applied { revision: 3 }
+    );
+    assert_eq!(fixture.registry.revision(), 3);
+    assert_eq!(
+        fixture
+            .refresher
+            .state
+            .lock()
+            .unwrap()
+            .rejected_cache_revision,
+        Some(4)
+    );
+    assert_eq!(fixture.cache.stored().last(), Some(&confirmed));
+    assert_eq!(
+        fixture.refresher.refresh_cache_once().await.unwrap(),
+        TenantDirectoryRefreshOutcome::Unchanged
+    );
+    assert_eq!(fixture.directory.snapshot_read_count(), 1);
+    fixture.directory.set_revision(4);
+    fixture
+        .directory
+        .push_snapshot(snapshot(4, confirmed.tenants));
+    fixture.refresher.reconcile_database_once().await.unwrap();
+    assert_eq!(
+        fixture
+            .refresher
+            .state
+            .lock()
+            .unwrap()
+            .rejected_cache_revision,
+        None
     );
 }

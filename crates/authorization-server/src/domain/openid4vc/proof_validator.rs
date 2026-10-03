@@ -6,7 +6,9 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use chrono::{Duration, Utc};
 use nazo_crypto::jwt::{Algorithm, Validation, decode, decode_header};
 use nazo_digital_credentials::decode_compact_jwt;
-use nazo_openid4vci::{ProofError, ProofValidatorPort, Proofs, ValidatedProof};
+use nazo_openid4vci::{
+    CredentialProofOrigin, ProofError, ProofValidatorPort, Proofs, ValidatedProof,
+};
 use nazo_operator_protocol::Openid4vcTrustPolicy;
 use nazo_persistence::{ClientTrustPolicy, Openid4vcTrustPolicyStore};
 use serde::Deserialize;
@@ -77,41 +79,46 @@ impl ProofValidatorPort for Openid4vcProofValidator {
         &'a self,
         proofs: &'a Proofs,
         client_id: &'a str,
+        origin: CredentialProofOrigin,
         expected_audience: &'a str,
         expected_nonce: &'a str,
         metadata: &'a nazo_openid4vci::ProofTypeMetadata,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ValidatedProof>, ProofError>> + Send + 'a>> {
         Box::pin(async move {
-            let trust_jwks = self.effective_key_attestation_jwks(client_id).await?;
+            let trust_jwks = match origin {
+                CredentialProofOrigin::AnonymousPreAuthorized => self.key_attestation_jwks.clone(),
+                CredentialProofOrigin::RegisteredClient
+                | CredentialProofOrigin::LegacyUnspecified => {
+                    self.effective_key_attestation_jwks(client_id).await?
+                }
+            };
             if proofs.0.len() != 1 {
                 return Err(ProofError::UnsupportedType);
             }
             let now = Utc::now();
             if let Some(attestations) = proofs.0.get("attestation") {
-                let mut validated = Vec::new();
-                for encoded in attestations {
-                    let encoded = encoded.as_str().ok_or(ProofError::InvalidKeyAttestation)?;
-                    let claims = self.validate_key_attestation_with(
-                        &trust_jwks,
-                        encoded,
-                        expected_nonce,
-                        metadata,
-                        now,
-                        KeyAttestationContext::AttestationProof,
-                    )?;
-                    let keys = claims
-                        .get("attested_keys")
-                        .and_then(Value::as_array)
-                        .ok_or(ProofError::InvalidKeyAttestation)?;
-                    for key in keys {
-                        validated.push(ValidatedProof {
-                            holder_binding: json!({"jwk": key}),
-                        });
-                    }
-                }
-                return (!validated.is_empty())
-                    .then_some(validated)
-                    .ok_or(ProofError::InvalidKeyAttestation);
+                let [encoded] = attestations.as_slice() else {
+                    return Err(ProofError::InvalidKeyAttestation);
+                };
+                let encoded = encoded.as_str().ok_or(ProofError::InvalidKeyAttestation)?;
+                let claims = self.validate_key_attestation_with(
+                    &trust_jwks,
+                    encoded,
+                    expected_nonce,
+                    metadata,
+                    now,
+                    KeyAttestationContext::AttestationProof,
+                )?;
+                let keys = claims
+                    .get("attested_keys")
+                    .and_then(Value::as_array)
+                    .ok_or(ProofError::InvalidKeyAttestation)?;
+                return Ok(keys
+                    .iter()
+                    .map(|key| ValidatedProof {
+                        holder_binding: json!({"jwk": key}),
+                    })
+                    .collect());
             }
             let jwt_proofs = proofs.0.get("jwt").ok_or(ProofError::UnsupportedType)?;
             if jwt_proofs.is_empty() {
@@ -139,6 +146,9 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                 validation.set_audience(&[expected_audience]);
                 let decoded = decode::<ProofClaims>(encoded, &key, &validation)
                     .map_err(|_| ProofError::InvalidSignature)?;
+                if decoded.claims.aud != expected_audience {
+                    return Err(ProofError::InvalidSignature);
+                }
                 if decoded.claims.nonce != expected_nonce
                     || decoded.claims.iat < (now - Duration::minutes(5)).timestamp()
                     || decoded.claims.iat > (now + Duration::seconds(60)).timestamp()
@@ -147,12 +157,18 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                 }
                 let compact =
                     decode_compact_jwt(encoded).map_err(|_| ProofError::InvalidSignature)?;
+                if compact.claims.get("iss").is_some_and(|issuer| {
+                    origin != CredentialProofOrigin::RegisteredClient
+                        || issuer.as_str() != Some(client_id)
+                }) {
+                    return Err(ProofError::InvalidSignature);
+                }
                 let key_attestation = compact
                     .header
                     .extensions
                     .get("key_attestation")
-                    .and_then(Value::as_str)
-                    .map(|encoded| {
+                    .map(|value| {
+                        let encoded = value.as_str().ok_or(ProofError::InvalidKeyAttestation)?;
                         self.validate_key_attestation_with(
                             &trust_jwks,
                             encoded,
@@ -163,10 +179,10 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                         )
                     })
                     .transpose()?;
-                if metadata.key_attestations_required.is_some() {
-                    let claims = key_attestation
-                        .as_ref()
-                        .ok_or(ProofError::InvalidKeyAttestation)?;
+                if metadata.key_attestations_required.is_some() && key_attestation.is_none() {
+                    return Err(ProofError::InvalidKeyAttestation);
+                }
+                if let Some(claims) = key_attestation.as_ref() {
                     let matches = claims
                         .get("attested_keys")
                         .and_then(Value::as_array)
@@ -195,7 +211,12 @@ impl Openid4vcProofValidator {
         context: KeyAttestationContext,
     ) -> Result<Value, ProofError> {
         let compact = decode_compact_jwt(encoded).map_err(|_| ProofError::InvalidKeyAttestation)?;
-        if compact.header.typ.as_deref() != Some("key-attestation+jwt") {
+        if compact.header.typ.as_deref() != Some("key-attestation+jwt")
+            || !metadata
+                .proof_signing_alg_values_supported
+                .iter()
+                .any(|algorithm| algorithm == &compact.header.alg)
+        {
             return Err(ProofError::InvalidKeyAttestation);
         }
         let kid = compact
@@ -243,17 +264,12 @@ impl Openid4vcProofValidator {
             .get("nonce")
             .map(|value| value.as_str().ok_or(ProofError::InvalidKeyAttestation))
             .transpose()?;
-        match context {
-            KeyAttestationContext::AttestationProof => {
-                if nonce != Some(expected_nonce) {
-                    return Err(ProofError::InvalidKeyAttestation);
-                }
-            }
-            KeyAttestationContext::JwtProof => {
-                if expires_at.is_none() || nonce.is_some_and(|nonce| nonce != expected_nonce) {
-                    return Err(ProofError::InvalidKeyAttestation);
-                }
-            }
+        // This issuer always advertises a Nonce Endpoint. The attestation
+        // carries that nonce even when an outer JWT also proves possession.
+        if nonce != Some(expected_nonce)
+            || (matches!(context, KeyAttestationContext::JwtProof) && expires_at.is_none())
+        {
+            return Err(ProofError::InvalidKeyAttestation);
         }
         if claims
             .get("attested_keys")
@@ -290,6 +306,7 @@ fn jwk_public_eq(left: &Value, right: &Value) -> bool {
 
 #[derive(Deserialize)]
 struct ProofClaims {
+    aud: String,
     nonce: String,
     iat: i64,
 }

@@ -139,6 +139,7 @@ pub use authorization_code_state::{
 pub use refresh_persistence::should_issue_refresh_token;
 use refresh_persistence::{
     PendingRefreshToken, prepare_refresh_token, refresh_authentication_context,
+    refresh_issue_matches_source,
 };
 
 fn client_session_sid_enabled(frontchannel_logout: bool, client: &ClientRow) -> bool {

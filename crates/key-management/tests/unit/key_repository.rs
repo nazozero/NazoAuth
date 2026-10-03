@@ -102,6 +102,175 @@ fn wrapping_key_ring_rejects_invalid_ids_and_malformed_material() {
     );
 }
 
+struct DiagnosticRepository {
+    inner: Arc<MemorySigningKeyRepository>,
+    writes: AtomicUsize,
+}
+
+impl SigningKeyRepository for DiagnosticRepository {
+    fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
+        self.inner.load()
+    }
+
+    fn create_if_absent(
+        &self,
+        _candidate: PersistedSigningKeyset,
+    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
+        self.writes.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { anyhow::bail!("diagnostics cannot initialize keys") })
+    }
+
+    fn compare_and_swap(
+        &self,
+        _expected: i64,
+        _candidate: PersistedSigningKeyset,
+    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
+        self.writes.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { anyhow::bail!("diagnostics cannot maintain keys") })
+    }
+}
+
+#[tokio::test]
+async fn database_diagnostics_reject_missing_keys_without_initializing_them() {
+    let repository = Arc::new(DiagnosticRepository {
+        inner: Arc::new(MemorySigningKeyRepository::default()),
+        writes: AtomicUsize::new(0),
+    });
+    assert!(
+        KeyManager::inspect_database(
+            None,
+            Uuid::now_v7(),
+            repository.clone(),
+            SigningKeyWrappingKeyRing::new("current", [0x62; 32], None).unwrap(),
+        )
+        .await
+        .is_err()
+    );
+    assert!(repository.inner.snapshot().is_none());
+    assert_eq!(repository.writes.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn database_diagnostics_reject_invalid_creation_times_without_writing() {
+    let inner = Arc::new(MemorySigningKeyRepository::default());
+    let tenant = Uuid::now_v7();
+    let ring = SigningKeyWrappingKeyRing::new("current", [0x62; 32], None).unwrap();
+    KeyManager::load_or_create_database(
+        KeySettings {
+            rotation_interval: chrono::Duration::days(90),
+            prepublish_window: chrono::Duration::days(1),
+            verification_grace: chrono::Duration::minutes(10),
+        },
+        None,
+        tenant,
+        inner.clone(),
+        ring.clone(),
+    )
+    .await
+    .unwrap();
+    let valid = decrypted_payload(&inner, tenant, &ring);
+    let active = valid["active_kid"].as_str().unwrap().to_owned();
+    let repository = Arc::new(DiagnosticRepository {
+        inner: inner.clone(),
+        writes: AtomicUsize::new(0),
+    });
+
+    for created_at in [
+        None,
+        Some(serde_json::json!("bad")),
+        Some(serde_json::json!(7)),
+    ] {
+        let mut payload = valid.clone();
+        let entry = payload["keys"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["kid"].as_str() == Some(active.as_str()))
+            .unwrap();
+        match created_at {
+            Some(value) => entry["created_at"] = value,
+            None => {
+                entry.as_object_mut().unwrap().remove("created_at");
+            }
+        }
+        // Authenticate the malformed payload; this is not an AEAD failure.
+        replace_payload(&inner, tenant, &ring, payload);
+        let before = inner.snapshot().unwrap();
+        let error = KeyManager::inspect_database(None, tenant, repository.clone(), ring.clone())
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("created_at"));
+        let after = inner.snapshot().unwrap();
+        assert_eq!(after.revision, before.revision);
+        assert!(after.public_metadata == before.public_metadata);
+        assert!(after.encrypted_private_material == before.encrypted_private_material);
+        assert_eq!(after.wrapping_key_id, before.wrapping_key_id);
+        assert_eq!(repository.writes.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn database_diagnostics_leave_due_old_wrapping_generation_unchanged_and_reject_tampering() {
+    let settings = KeySettings {
+        rotation_interval: chrono::Duration::days(90),
+        prepublish_window: chrono::Duration::days(1),
+        verification_grace: chrono::Duration::minutes(10),
+    };
+    let inner = Arc::new(MemorySigningKeyRepository::default());
+    let tenant = Uuid::now_v7();
+    let old = SigningKeyWrappingKeyRing::new("old", [0x63; 32], None).unwrap();
+    KeyManager::load_or_create_database(settings, None, tenant, inner.clone(), old.clone())
+        .await
+        .unwrap();
+    let mut payload = decrypted_payload(&inner, tenant, &old);
+    let active = payload["active_kid"].as_str().unwrap().to_owned();
+    let entry = payload["keys"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["kid"].as_str() == Some(active.as_str()))
+        .unwrap();
+    entry["created_at"] =
+        serde_json::json!((chrono::Utc::now() - chrono::Duration::days(180)).to_rfc3339());
+    replace_payload(&inner, tenant, &old, payload);
+    let before = inner.snapshot().unwrap();
+    let rollover =
+        SigningKeyWrappingKeyRing::new("new", [0x64; 32], Some(("old".to_owned(), [0x63; 32])))
+            .unwrap();
+    let repository = Arc::new(DiagnosticRepository {
+        inner: inner.clone(),
+        writes: AtomicUsize::new(0),
+    });
+    let (first, second) = tokio::join!(
+        KeyManager::inspect_database(None, tenant, repository.clone(), rollover.clone()),
+        KeyManager::inspect_database(None, tenant, repository.clone(), rollover.clone()),
+    );
+    for result in [first, second] {
+        let (records, revision) = result.unwrap();
+        assert_eq!(revision, before.revision.to_string());
+        assert!(records.iter().any(|record| record.kid == active));
+    }
+    let after = inner.snapshot().unwrap();
+    assert_eq!(after.revision, before.revision);
+    assert_eq!(after.public_metadata, before.public_metadata);
+    assert_eq!(
+        after.encrypted_private_material,
+        before.encrypted_private_material
+    );
+    assert_eq!(after.wrapping_key_id, "old");
+    assert_eq!(repository.writes.load(Ordering::SeqCst), 0);
+
+    let mut tampered = before;
+    tampered.public_metadata["active_kid"] = serde_json::json!("tampered");
+    inner.replace(Some(tampered));
+    assert!(
+        KeyManager::inspect_database(None, tenant, repository.clone(), rollover)
+            .await
+            .is_err()
+    );
+    assert_eq!(repository.writes.load(Ordering::SeqCst), 0);
+}
+
 struct ConflictRepository {
     inner: MemorySigningKeyRepository,
     conflicts_remaining: AtomicUsize,
@@ -498,7 +667,7 @@ async fn database_update_stops_after_the_cas_conflict_budget() {
         settings,
         None,
         Uuid::now_v7(),
-        repository,
+        repository.clone(),
         SigningKeyWrappingKeyRing::new("current", [13_u8; 32], None).unwrap(),
     )
     .await
@@ -513,5 +682,13 @@ async fn database_update_stops_after_the_cas_conflict_budget() {
         })
         .await
         .expect_err("an unbounded conflict stream must fail closed");
-    assert!(error.to_string().contains("did not converge"));
+    let unavailable = error
+        .downcast_ref::<crate::SigningKeyRepositoryUnavailable>()
+        .expect("exhausted CAS conflicts must remain a typed persistence failure");
+    assert!(unavailable.0.to_string().contains("did not converge"));
+    assert_eq!(
+        AtomicUsize::load(&repository.conflicts_remaining, Ordering::Acquire),
+        0
+    );
+    assert_eq!(repository.load().await.unwrap().unwrap().revision, 1);
 }

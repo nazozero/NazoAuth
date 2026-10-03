@@ -398,6 +398,7 @@ pub(super) async fn build(
                 strict_base64: passkey.strict_base64,
                 ceremony_ttl_seconds: PASSKEY_CEREMONY_TTL_SECONDS,
                 session_ttl_seconds: session.session_ttl_seconds,
+                pending_mfa_session_ttl_seconds: session.pending_mfa_session_ttl_seconds,
             },
         ),
         identity_session_service,

@@ -75,8 +75,13 @@ pub struct PushedAuthorizationRequest {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Payloads before this contract cannot be mapped to a stable durable fence.
+pub const AUTHORIZATION_CODE_REDEMPTION_VERSION: u8 = 2;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CodePayload {
+    #[serde(default)]
+    pub redemption_contract_version: u8,
     pub code_id: String,
     pub user_id: Uuid,
     pub client_id: String,
@@ -139,10 +144,8 @@ pub enum AuthorizationCodeState {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ConsumedAuthorizationCode {
     pub client_id: Uuid,
-    /// Hash-derived binding of the code redemption request that produced the
-    /// issued tokens. Older markers do not carry it and therefore fail closed
-    /// without allowing an unauthenticated replay to revoke another client's
-    /// tokens.
+    /// Historical cache metadata retained for wire compatibility. It is not
+    /// replay-revocation authority; the durable receipt owns that decision.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub redemption_binding: Option<String>,
     pub access_token_jti: String,

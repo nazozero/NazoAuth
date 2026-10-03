@@ -11,17 +11,19 @@ use actix_web::{
     },
 };
 
-use crate::{
-    bootstrap::startup::tenant_runtime::TenantRuntimeRegistry,
-    settings::{Settings, canonical_tenant_host},
-};
+use crate::settings::{Settings, canonical_tenant_host};
+use std::sync::Arc;
+
+tokio::task_local! {
+    pub(super) static REQUEST_CORS_SETTINGS: Arc<Settings>;
+}
 
 pub(super) enum CorsPolicy<'a> {
     // Component tests use a fixed tenant graph without exercising Host
     // resolution. Production always constructs Dynamic.
     #[allow(dead_code)]
     Static(&'a [String]),
-    Dynamic(TenantRuntimeRegistry),
+    Dynamic,
 }
 
 impl<'a> CorsPolicy<'a> {
@@ -30,37 +32,33 @@ impl<'a> CorsPolicy<'a> {
         Self::Static(&settings.endpoint.cors_allowed_origins)
     }
 
-    pub(super) fn dynamic(registry: TenantRuntimeRegistry) -> Self {
-        Self::Dynamic(registry)
+    pub(super) fn dynamic() -> Self {
+        Self::Dynamic
     }
 
     pub(super) fn well_known(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_well_known(origins),
-            Self::Dynamic(registry) => nazo_http_actix::cors_well_known_with_origin_predicate(
-                origin_predicate(registry.clone()),
-            ),
+            Self::Dynamic => {
+                nazo_http_actix::cors_well_known_with_origin_predicate(origin_predicate())
+            }
         }
     }
 
     pub(super) fn browser_token_management(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_browser_token_management(origins),
-            Self::Dynamic(registry) => {
-                nazo_http_actix::cors_browser_token_management_with_origin_predicate(
-                    origin_predicate(registry.clone()),
-                )
-            }
+            Self::Dynamic => nazo_http_actix::cors_browser_token_management_with_origin_predicate(
+                origin_predicate(),
+            ),
         }
     }
 
     pub(super) fn browser_userinfo(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_browser_userinfo(origins),
-            Self::Dynamic(registry) => {
-                nazo_http_actix::cors_browser_userinfo_with_origin_predicate(origin_predicate(
-                    registry.clone(),
-                ))
+            Self::Dynamic => {
+                nazo_http_actix::cors_browser_userinfo_with_origin_predicate(origin_predicate())
             }
         }
     }
@@ -68,27 +66,23 @@ impl<'a> CorsPolicy<'a> {
     pub(super) fn auth_api(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_auth_api(origins),
-            Self::Dynamic(registry) => nazo_http_actix::cors_auth_api_with_origin_predicate(
-                origin_predicate(registry.clone()),
-            ),
+            Self::Dynamic => {
+                nazo_http_actix::cors_auth_api_with_origin_predicate(origin_predicate())
+            }
         }
     }
 
     pub(super) fn admin(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_admin(origins),
-            Self::Dynamic(registry) => nazo_http_actix::cors_admin_with_origin_predicate(
-                origin_predicate(registry.clone()),
-            ),
+            Self::Dynamic => nazo_http_actix::cors_admin_with_origin_predicate(origin_predicate()),
         }
     }
 
     pub(super) fn scim(&self) -> Cors {
         match self {
             Self::Static(origins) => nazo_http_actix::cors_scim(origins),
-            Self::Dynamic(registry) => {
-                nazo_http_actix::cors_scim_with_origin_predicate(origin_predicate(registry.clone()))
-            }
+            Self::Dynamic => nazo_http_actix::cors_scim_with_origin_predicate(origin_predicate()),
         }
     }
 }
@@ -108,20 +102,17 @@ pub(crate) fn canonical_request_host(request: &RequestHead) -> Option<String> {
     canonical_tenant_host(authority.host()).ok()
 }
 
-fn origin_predicate(
-    registry: TenantRuntimeRegistry,
-) -> impl Fn(&HeaderValue, &RequestHead) -> bool + 'static {
-    move |origin, request| {
-        let Some(host) = canonical_request_host(request) else {
-            return false;
-        };
-        let Some(runtime) = registry.resolve(&host) else {
-            return false;
-        };
-        runtime
-            .cors_allowed_origins()
-            .iter()
-            .any(|allowed| origin.as_bytes() == allowed.as_bytes())
+fn origin_predicate() -> impl Fn(&HeaderValue, &RequestHead) -> bool + 'static {
+    move |origin, _| {
+        REQUEST_CORS_SETTINGS
+            .try_with(|settings| {
+                settings
+                    .endpoint
+                    .cors_allowed_origins
+                    .iter()
+                    .any(|allowed| origin.as_bytes() == allowed.as_bytes())
+            })
+            .unwrap_or(false)
     }
 }
 

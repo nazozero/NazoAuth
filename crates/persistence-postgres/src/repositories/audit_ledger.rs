@@ -20,12 +20,6 @@ pub use nazo_persistence::{
     SecurityAuditPendingDelivery,
 };
 
-/// Headroom below the configured envelope bound so framing fields and the
-/// batch header can never push a committed batch past the wire limit.
-const ENVELOPE_HEADROOM_BYTES: i64 = 4 * 1024;
-/// Conservative per-event envelope cost on top of the canonical payload:
-/// event identity, base64 hashes, names and timestamps stay below this.
-const PER_EVENT_ENVELOPE_BYTES: i64 = 512;
 pub const MIN_ENVELOPE_BYTES: i64 = 128 * 1024;
 pub const MAX_ENVELOPE_BYTES: i64 = 1024 * 1024;
 
@@ -42,7 +36,7 @@ impl AuditLedgerRepository {
 
     /// Verify that the durable writer API is available before a
     /// caller starts a high-impact management operation. Strict mode rejects
-    /// superusers, table owners, and any direct ledger table privilege.
+    /// superuser/owner membership and reachable ledger table or column privileges.
     pub async fn check_available(&self) -> Result<(), RepositoryError> {
         self.check_available_with_policy(true).await
     }
@@ -276,8 +270,9 @@ impl AuditLedgerRepository {
     }
 
     /// Durable whole-batch acknowledgement. The database verifies the fencing
-    /// generation and the receiver-bound range/content before deleting the
-    /// member rows and advancing the anchor in one transaction.
+    /// generation and receiver-bound range/content before reclaiming chain
+    /// proofs, deleting ordinary events, marking retained decisions exported,
+    /// and advancing the anchor in one transaction.
     pub async fn ack_batch(&self, ack: SecurityAuditBatchAck) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
         let result = sql_query(
@@ -503,27 +498,24 @@ async fn claim_fresh(
     }
     let mut next_sequence = head.last_sequence;
     let mut next_hash = head.last_hash.clone();
-    let budget = max_envelope_bytes - ENVELOPE_HEADROOM_BYTES;
-    let mut used_bytes = 0_i64;
-    let mut deliveries = Vec::with_capacity(rows.len());
+    let budget = usize::try_from(max_envelope_bytes)
+        .map_err(|_| invariant_error("invalid audit envelope budget"))?;
+    let mut used_event_bytes = 0_usize;
+    let mut deliveries: Vec<SecurityAuditPendingDelivery> = Vec::with_capacity(rows.len());
     let mut new_event_ids = Vec::new();
     let mut new_event_hashes = Vec::new();
     for row in rows {
-        let cost = row.payload_canonical.len() as i64 + PER_EVENT_ENVELOPE_BYTES;
-        if !deliveries.is_empty() && used_bytes + cost > budget {
-            break;
-        }
-        let (sequence, previous_hash, event_hash) =
+        let (sequence, previous_hash, event_hash, newly_chained) =
             match (row.sequence, row.previous_hash, row.event_hash) {
                 (Some(sequence), Some(previous_hash), Some(event_hash)) => {
-                    (sequence, previous_hash, event_hash)
+                    (sequence, previous_hash, event_hash, false)
                 }
                 (None, None, None) => {
-                    next_sequence = next_sequence
+                    let sequence = next_sequence
                         .checked_add(1)
                         .ok_or_else(|| invariant_error("security audit sequence overflow"))?;
                     let event_hash = security_audit_event_hash(
-                        next_sequence,
+                        sequence,
                         &next_hash,
                         row.event_id,
                         &row.event_type,
@@ -532,15 +524,11 @@ async fn claim_fresh(
                         row.payload_canonical.as_bytes(),
                     )
                     .to_vec();
-                    let previous_hash = std::mem::replace(&mut next_hash, event_hash.clone());
-                    new_event_ids.push(row.event_id);
-                    new_event_hashes.push(event_hash.clone());
-                    (next_sequence, previous_hash, event_hash)
+                    (sequence, next_hash.clone(), event_hash, true)
                 }
                 _ => return Err(invariant_error("security audit chain entry is incomplete")),
             };
-        used_bytes += cost;
-        deliveries.push(SecurityAuditPendingDelivery {
+        let delivery = SecurityAuditPendingDelivery {
             event_id: row.event_id,
             sequence,
             event_type: row.event_type,
@@ -549,7 +537,39 @@ async fn claim_fresh(
             occurred_at: row.occurred_at,
             previous_hash,
             event_hash,
-        });
+        };
+        let event_bytes = nazo_persistence::audit_wire::security_audit_event_wire_length(&delivery)
+            .map_err(|_| invariant_error("audit event wire serialization failed"))?;
+        let header_bytes = nazo_persistence::audit_wire::security_audit_empty_envelope_wire_length(
+            deployment_id,
+            deliveries.as_slice().first().unwrap_or(&delivery),
+            &delivery,
+            (deliveries.len() + 1) as i64,
+        )
+        .map_err(|_| invariant_error("audit envelope wire serialization failed"))?;
+        let bytes = header_bytes
+            .checked_add(used_event_bytes)
+            .and_then(|count| count.checked_add(event_bytes))
+            .and_then(|count| count.checked_add(deliveries.len()))
+            .ok_or_else(|| invariant_error("audit envelope byte count overflow"))?;
+        if !deliveries.is_empty() && bytes > budget {
+            break;
+        }
+        if deliveries.is_empty()
+            && bytes > nazo_persistence::audit_wire::MAX_SECURITY_AUDIT_SINGLETON_ENVELOPE_BYTES
+        {
+            return Err(invariant_error(
+                "audit singleton exceeds the legal-event wire bound",
+            ));
+        }
+        if newly_chained {
+            next_sequence = sequence;
+            next_hash = delivery.event_hash.clone();
+            new_event_ids.push(delivery.event_id);
+            new_event_hashes.push(delivery.event_hash.clone());
+        }
+        used_event_bytes += event_bytes;
+        deliveries.push(delivery);
     }
     if deliveries.is_empty() {
         return Err(invariant_error(
@@ -753,6 +773,7 @@ struct SecurityAuditBatchMemberRow {
 
 fn validate_event(event: &SecurityAuditEvent) -> Result<(), RepositoryError> {
     if event.event_id.is_nil()
+        || event.event_type == "authorization_decision_committed"
         || !valid_identifier(&event.event_type)
         || !valid_identifier(&event.event_category)
         || !event.payload.is_object()

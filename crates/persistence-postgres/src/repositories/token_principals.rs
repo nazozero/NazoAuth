@@ -19,6 +19,7 @@ diesel::table! {
         tenant_id -> Uuid,
         is_active -> Bool,
         access_token_epoch -> BigInt,
+        client_type -> Text,
     }
 }
 
@@ -41,19 +42,16 @@ diesel::allow_tables_to_appear_in_same_query!(
 pub(super) async fn snapshot(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
-    client_id: Uuid,
+    client_epoch: i64,
     user_id: Option<Uuid>,
     subject: &str,
 ) -> Result<TokenPrincipalState, RepositoryError> {
+    // Keep the authenticated client version; a later read must not endorse
+    // old authentication with a newer epoch. User and binding share one snapshot.
     // Only security columns are read: no profile preload for non-OIDC issuance.
     // Missing/inactive principals are still classified by the locked commit check.
     // Keep this one MVCC snapshot and a typed query so every connection can
     // reuse its prepared statement across tenants, clients and subject types.
-    let client_epoch = client_principals::table
-        .filter(client_principals::tenant_id.eq(tenant_id))
-        .filter(client_principals::id.eq(client_id))
-        .select(client_principals::access_token_epoch)
-        .single_value();
     let user_epoch = user_principals::table
         .filter(user_principals::tenant_id.eq(tenant_id))
         .filter(user_principals::id.nullable().eq(user_id))
@@ -69,18 +67,17 @@ pub(super) async fn snapshot(
         )
         .select(oauth_subject_bindings::user_id)
         .single_value();
-    let (client_epoch, user_epoch, bound_user) =
-        diesel::select((client_epoch, user_epoch, bound_user))
-            .get_result::<(Option<i64>, Option<i64>, Option<Uuid>)>(connection)
-            .await
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+    let (user_epoch, bound_user) = diesel::select((user_epoch, bound_user))
+        .get_result::<(Option<i64>, Option<Uuid>)>(connection)
+        .await
+        .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
     if bound_user.is_some() && bound_user != user_id {
         return Err(RepositoryError::Consistency(
             "subject ownership collision".to_owned(),
         ));
     }
     Ok(TokenPrincipalState {
-        client_epoch: client_epoch.unwrap_or(0),
+        client_epoch,
         user_epoch: user_id.map(|_| user_epoch.unwrap_or(0)),
         subject_bound: bound_user.is_some(),
     })
@@ -89,21 +86,24 @@ pub(super) async fn snapshot(
 pub(super) async fn lock_and_recheck(
     connection: &mut AsyncPgConnection,
     input: &CommitTokenIssuance,
-) -> diesel::QueryResult<Option<CommitTokenIssuanceResult>> {
+) -> diesel::QueryResult<Result<String, CommitTokenIssuanceResult>> {
     let client = client_principals::table
         .filter(client_principals::tenant_id.eq(input.tenant_id))
         .filter(client_principals::id.eq(input.client_id))
         .select((
             client_principals::is_active,
             client_principals::access_token_epoch,
+            client_principals::client_type,
         ))
         .for_share()
-        .first::<(bool, i64)>(connection)
+        .first::<(bool, i64, String)>(connection)
         .await
         .optional()?;
-    if !client.is_some_and(|(active, epoch)| active && epoch == input.principal_state.client_epoch)
-    {
-        return Ok(Some(CommitTokenIssuanceResult::ClientInactive));
+    let Some((active, epoch, client_type)) = client else {
+        return Ok(Err(CommitTokenIssuanceResult::ClientInactive));
+    };
+    if !active || epoch != input.principal_state.client_epoch {
+        return Ok(Err(CommitTokenIssuanceResult::ClientInactive));
     }
     if let Some(user_id) = input.user_id {
         let user = user_principals::table
@@ -120,10 +120,12 @@ pub(super) async fn lock_and_recheck(
         if !user.is_some_and(|(active, epoch)| {
             active && Some(epoch) == input.principal_state.user_epoch
         }) {
-            return Ok(Some(CommitTokenIssuanceResult::SubjectInactive));
+            return Ok(Err(CommitTokenIssuanceResult::SubjectInactive));
         }
     }
-    Ok(None)
+    // The same client lock protects the returned classification until commit.
+    // Authentication-class changes invalidate old refresh authority atomically.
+    Ok(Ok(client_type))
 }
 
 #[derive(QueryableByName)]

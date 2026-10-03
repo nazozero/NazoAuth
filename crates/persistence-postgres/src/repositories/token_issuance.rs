@@ -6,8 +6,8 @@ use diesel::{
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
     CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken,
-    RefreshTokenPersistResult, SingleUseRedemption, TokenFuture, TokenIssuanceMode, TokenPortError,
-    TokenRepositoryPort, TokenRevocation, UserinfoSnapshot,
+    RefreshTokenCommit, RefreshTokenPersistResult, SingleUseRedemption, TokenFuture,
+    TokenIssuanceMode, TokenPortError, TokenRepositoryPort, TokenRevocation, UserinfoSnapshot,
 };
 use nazo_identity::{TenantId, UserId, ports::RepositoryError};
 use nazo_persistence::SecurityAuditEvent;
@@ -307,10 +307,67 @@ enum CommitTransactionError {
     /// Aborts the transaction so the already inserted single-use row rolls
     /// back; the outer boundary maps this to `CommitTokenIssuanceResult::GrantExpired`.
     GrantExpired,
+    NativeSsoSourceUnavailable,
+    NativeSsoDependencyUnavailable,
 }
 impl From<diesel::result::Error> for CommitTransactionError {
     fn from(error: diesel::result::Error) -> Self {
         Self::Diesel(error)
+    }
+}
+
+/// This is the last authority check before required audit and COMMIT. NOWAIT
+/// avoids cross-client capacity wait cycles; a busy source is a retryable
+/// dependency failure, while an invalid source aborts all destination writes.
+async fn fence_native_sso_source(
+    connection: &mut diesel_async::AsyncPgConnection,
+    source: &nazo_auth::NativeSsoSourceFence,
+    retired: Option<&super::tokens::RetiredNativeSsoSource>,
+) -> Result<(), CommitTransactionError> {
+    if let Some(retired) = retired {
+        let now = Utc::now();
+        if retired.tenant_id == source.tenant_id
+            && retired.user_id == Some(source.user_id)
+            && retired.token_family_id == source.family_id
+            && retired.source_client_id == source.source_client_id
+            && retired.expires_at > now
+            && source.device_secret_expires_at > now
+        {
+            return Ok(());
+        }
+        return Err(CommitTransactionError::NativeSsoSourceUnavailable);
+    }
+    #[derive(QueryableByName)]
+    struct SourceState {
+        #[diesel(sql_type = sql_types::Timestamptz)]
+        expires_at: DateTime<Utc>,
+        #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+        revoked_at: Option<DateTime<Utc>>,
+        #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+        reuse_detected_at: Option<DateTime<Utc>>,
+    }
+    let state = sql_query(
+        "SELECT family.current_expires_at AS expires_at, family.revoked_at, family.reuse_detected_at \
+         FROM oauth_refresh_families AS family \
+         JOIN oauth_clients AS client ON client.tenant_id=family.tenant_id AND client.id=family.client_id \
+         WHERE family.tenant_id=$1 AND family.user_id=$2 AND client.client_id=$3 AND family.token_family_id=$4 \
+         FOR SHARE OF family NOWAIT",
+    ).bind::<sql_types::Uuid,_>(source.tenant_id)
+        .bind::<sql_types::Uuid,_>(source.user_id)
+        .bind::<sql_types::Text,_>(&source.source_client_id)
+        .bind::<sql_types::Uuid,_>(source.family_id)
+        .get_result::<SourceState>(connection).await.optional()
+        .map_err(|error| { tracing::warn!(%error, "Native SSO source row could not be fenced"); CommitTransactionError::NativeSsoDependencyUnavailable })?;
+    let now = Utc::now();
+    if state.is_some_and(|state| {
+        state.revoked_at.is_none()
+            && state.reuse_detected_at.is_none()
+            && state.expires_at > now
+            && source.device_secret_expires_at > now
+    }) {
+        Ok(())
+    } else {
+        Err(CommitTransactionError::NativeSsoSourceUnavailable)
     }
 }
 
@@ -332,20 +389,85 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
             "token issuance commit input is malformed".to_owned(),
         ));
     }
-    if let TokenIssuanceMode::SingleUse { grant_key, .. } = &input.mode
+    if let TokenIssuanceMode::SingleUse { grant_key, .. }
+    | TokenIssuanceMode::AuthorizationCode {
+        code_identity: grant_key,
+        ..
+    } = &input.mode
         && grant_key.trim().is_empty()
     {
         return Err(RepositoryError::Consistency(
             "single-use token issuance grant key is empty".to_owned(),
         ));
     }
-    if let Some(refresh) = input.refresh_token.as_ref()
-        && (refresh.tenant_id != input.tenant_id
-            || refresh.client_id != input.client_id
-            || refresh.user_id != input.user_id)
+    if let TokenIssuanceMode::SingleUse { grant_key, .. } = &input.mode
+        && grant_key.starts_with("authorization_code:")
     {
         return Err(RepositoryError::Consistency(
-            "refresh token owner does not match token issuance owner".to_owned(),
+            "authorization codes require the code identity and holder contract".to_owned(),
+        ));
+    }
+    if let TokenIssuanceMode::AuthorizationCode {
+        code_identity,
+        holder,
+        ..
+    } = &input.mode
+        && (!code_identity.starts_with("authorization_code:v2:") || !holder.is_well_formed())
+    {
+        return Err(RepositoryError::Consistency(
+            "authorization code holder contract is malformed".to_owned(),
+        ));
+    }
+    let expected_authorization_id = input
+        .refresh_token
+        .as_ref()
+        .map(RefreshTokenCommit::family_id)
+        .unwrap_or(input.issuance_id);
+    if input
+        .authorization_id
+        .is_some_and(|id| id != expected_authorization_id)
+    {
+        return Err(RepositoryError::Consistency(
+            "authorization reference does not match issuance source".to_owned(),
+        ));
+    }
+    if let Some(refresh) = input.refresh_token.as_ref() {
+        let (tenant_id, client_id, user_id) = match refresh {
+            RefreshTokenCommit::IssueNew { token, .. } => {
+                (token.tenant_id, token.client_id, token.user_id)
+            }
+            RefreshTokenCommit::UseExisting { authority, .. } => {
+                if !matches!(input.mode, TokenIssuanceMode::Fresh) {
+                    return Err(RepositoryError::Consistency(
+                        "refresh source cannot also redeem a single-use grant".to_owned(),
+                    ));
+                }
+                (authority.tenant_id, authority.client_id, authority.user_id)
+            }
+        };
+        if tenant_id != input.tenant_id
+            || client_id != input.client_id
+            || user_id != input.user_id
+            || refresh.contract().subject != input.subject
+        {
+            return Err(RepositoryError::Consistency(
+                "refresh token owner or subject does not match token issuance".to_owned(),
+            ));
+        }
+    }
+    if let Some(source) = input.native_sso_source.as_ref()
+        && (source.tenant_id != input.tenant_id
+            || Some(source.user_id) != input.user_id
+            || source.family_id.is_nil()
+            || source.source_client_id.is_empty()
+            || !matches!(input.mode, TokenIssuanceMode::Fresh)
+            || !matches!(
+                input.refresh_token,
+                Some(RefreshTokenCommit::IssueNew { .. })
+            ))
+    {
+        return Err(RepositoryError::Consistency(
+            "Native SSO source fence does not match destination issuance".to_owned(),
         ));
     }
     DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0).ok_or_else(|| {
@@ -360,7 +482,7 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
 /// issuance identity and transaction either way.
 fn token_issued_audit_event(
     input: &CommitTokenIssuance,
-    refresh: Option<&NewRefreshToken>,
+    refresh: Option<&RefreshTokenCommit>,
 ) -> SecurityAuditEvent {
     SecurityAuditEvent {
         // One identity for the operation and its required event; the pending
@@ -374,8 +496,8 @@ fn token_issued_audit_event(
             "event_category": "token_lifecycle", "user_id": input.user_id,
             "client_id": input.audit_fields.client_id, "subject_hash": input.audit_fields.subject_hash, "scope": input.audit_fields.scope,
             "audience": input.audit_fields.audience, "access_token_jti": input.access_token_jti,
-            "refresh_token_family_id": refresh.map(|refresh| refresh.family_id),
-            "rotated_from_id": refresh.and_then(|refresh| refresh.rotated_from_id),
+            "refresh_token_family_id": refresh.map(RefreshTokenCommit::family_id),
+            "rotated_from_id": refresh.and_then(RefreshTokenCommit::token).and_then(|token| token.rotated_from_id),
         }),
         occurred_at: Utc::now(),
     }
@@ -410,7 +532,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
-        client_id: Uuid,
+        client_epoch: i64,
         user_id: Option<Uuid>,
         subject: &'a str,
     ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
@@ -419,7 +541,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             super::token_principals::snapshot(
                 &mut connection,
                 tenant_id,
-                client_id,
+                client_epoch,
                 user_id,
                 subject,
             )
@@ -450,6 +572,11 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 TokenIssuanceMode::SingleUse {
                     grant_key,
                     grant_expires_at,
+                }
+                | TokenIssuanceMode::AuthorizationCode {
+                    code_identity: grant_key,
+                    grant_expires_at,
+                    ..
                 } => (
                     Some((
                         <[u8; 32]>::from(blake3::hash(grant_key.as_bytes())),
@@ -457,6 +584,12 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     )),
                     std::cmp::max(ownership_horizon, *grant_expires_at),
                 ),
+            };
+            let authorization_code_holder = match &input.mode {
+                TokenIssuanceMode::AuthorizationCode { holder, .. } => {
+                    Some(serde_json::to_value(holder).map_err(|_| TokenPortError::CorruptData)?)
+                }
+                _ => None,
             };
             // Pure preparation before the connection checkout: contract
             // serialization and its digest carry no database state, so they
@@ -467,7 +600,8 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .as_ref()
                 .map(prepare_refresh_contract)
                 .transpose()
-                .map_err(map_repository_error)?;
+                .map_err(map_repository_error)?
+                .flatten();
             // Keep the transaction's sequential SQL and its connection driver
             // on the same runtime. A request crosses that boundary once instead
             // of waking another runtime for each statement. Dropping JoinSet
@@ -489,20 +623,22 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                 diesel::sql_query("SET LOCAL lock_timeout = '2s'")
                                     .execute(connection)
                                     .await?;
-                                if let Some(result) =
+                                let client_type = match
                                     super::token_principals::lock_and_recheck(connection, &input)
                                         .await?
                                 {
-                                    return Ok(result);
-                                }
+                                    Ok(client_type) => client_type,
+                                    Err(result) => return Ok(result),
+                                };
                                 if let Some((digest, grant_expires_at)) = single_use {
                                     let inserted = sql_query(
                                         "INSERT INTO oauth_token_issuances (\
                                          issuance_id, tenant_id, client_id, user_id, \
                                          single_use_key_blake3, access_token_jti, \
                                          access_token_expires_at, retain_until, \
-                                         refresh_token_family_id, principal_epoch_bound) \
-                                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE) \
+                                         refresh_token_family_id, principal_epoch_bound, \
+                                         receipt_contract_version, authorization_code_holder) \
+                                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 2, $11) \
                                      ON CONFLICT (tenant_id, client_id, single_use_key_blake3) \
                                        WHERE single_use_key_blake3 IS NOT NULL \
                                      DO NOTHING \
@@ -520,9 +656,12 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                         input
                                             .refresh_token
                                             .as_ref()
-                                            .map(|refresh| refresh.family_id),
+                                            .map(RefreshTokenCommit::family_id),
                                     )
                                     .bind::<sql_types::Timestamptz, _>(grant_expires_at)
+                                    .bind::<sql_types::Nullable<sql_types::Jsonb>, _>(
+                                        authorization_code_holder.as_ref(),
+                                    )
                                     .get_result::<SingleUseInsertRow>(connection)
                                     .await
                                     .optional()?;
@@ -536,26 +675,24 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                         Some(_) => {}
                                     }
                                 }
+                                let mut retired_native_source = None;
                                 if let Some(refresh) = input.refresh_token.as_ref() {
-                                    let prepared = prepared_contract.as_ref().ok_or_else(|| {
-                                        CommitTransactionError::Repository(
-                                            RepositoryError::Consistency(
-                                                "refresh token is missing its prepared contract"
-                                                    .to_owned(),
-                                            ),
-                                        )
-                                    })?;
                                     match TokenRepository::persist_refresh_token_on_connection(
                                         connection,
-                                        refresh.clone(),
+                                        refresh,
+                                        &client_type,
                                         input.issuance_id,
-                                        prepared,
+                                        prepared_contract.as_ref(),
+                                        input.native_sso_source.as_ref(),
                                     )
                                     .await
                                     .map_err(CommitTransactionError::Repository)?
                                     {
-                                        RefreshTokenPersistResult::Inserted => {}
-                                        RefreshTokenPersistResult::RotationConflict => {
+                                        (RefreshTokenPersistResult::Inserted, retired) => { retired_native_source = retired; }
+                                        (RefreshTokenPersistResult::InvalidSource, _) => {
+                                            return Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable);
+                                        }
+                                        (RefreshTokenPersistResult::RotationConflict, _) => {
                                             // Keep the family compromise written by the
                                             // rotation attempt, drop only this request's
                                             // issuance row, and commit the reuse audit.
@@ -576,7 +713,10 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                             }
                                             append_fresh_security_audit_on_connection(
                                                 connection,
-                                                &refresh_reuse_audit_event(&input, refresh),
+                                                &refresh_reuse_audit_event(
+                                                    &input,
+                                                    refresh.token().expect("only a rotation or new-family collision compromises"),
+                                                ),
                                             )
                                             .await?;
                                             return Ok(CommitTokenIssuanceResult::RotationConflict);
@@ -585,6 +725,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                 }
                                 super::token_principals::ensure_subject_binding(connection, &input)
                                     .await?;
+                                if let Some(source) = input.native_sso_source.as_ref() {
+                                    fence_native_sso_source(connection, source, retired_native_source.as_ref()).await?;
+                                }
                                 append_fresh_security_audit_on_connection(
                                     connection,
                                     &token_issued_audit_event(&input, input.refresh_token.as_ref()),
@@ -603,6 +746,14 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                             // Rollback completed cleanly; the connection is healthy.
                             guard.return_to_pool();
                             Ok(CommitTokenIssuanceResult::GrantExpired)
+                        }
+                        Err(CommitTransactionError::NativeSsoSourceUnavailable) => {
+                            guard.return_to_pool();
+                            Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable)
+                        }
+                        Err(CommitTransactionError::NativeSsoDependencyUnavailable) => {
+                            guard.return_to_pool();
+                            Err(TokenPortError::Unavailable)
                         }
                         Err(CommitTransactionError::Repository(error)) => {
                             Err(map_repository_error(error))
@@ -638,22 +789,41 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     oauth_token_issuances::access_token_jti,
                     oauth_token_issuances::access_token_expires_at,
                     oauth_token_issuances::refresh_token_family_id,
+                    oauth_token_issuances::authorization_code_holder,
                 ))
-                .first::<(String, DateTime<Utc>, Option<Uuid>)>(
-                    &mut self.connection().await.map_err(map_repository_error)?,
-                )
+                .first::<(
+                    String,
+                    DateTime<Utc>,
+                    Option<Uuid>,
+                    Option<serde_json::Value>,
+                )>(&mut self.connection().await.map_err(map_repository_error)?)
                 .await
                 .optional()
                 .map_err(map_diesel_error)?;
-            Ok(row.map(
-                |(access_token_jti, access_token_expires_at, refresh_token_family_id)| {
-                    SingleUseRedemption {
+            row.map(
+                |(access_token_jti, access_token_expires_at, refresh_token_family_id, holder)| {
+                    let authorization_code_holder = holder
+                        .map(|value| {
+                            nazo_auth::AuthorizationCodeHolderEvidence::from_persisted(value)
+                                .ok_or(TokenPortError::CorruptData)
+                        })
+                        .transpose()
+                        .map_err(|_| TokenPortError::CorruptData)?;
+                    if authorization_code_holder
+                        .as_ref()
+                        .is_some_and(|holder| !holder.is_well_formed())
+                    {
+                        return Err(TokenPortError::CorruptData);
+                    }
+                    Ok(SingleUseRedemption {
+                        authorization_code_holder,
                         access_token_jti,
                         access_token_expires_at,
                         refresh_token_family_id,
-                    }
+                    })
                 },
-            ))
+            )
+            .transpose()
         })
     }
 
@@ -694,22 +864,27 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-    fn active_subject_claims(
-        &self,
+    fn active_subject_claims<'a>(
+        &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<nazo_auth::PreparedTokenSubject>> {
+        token_subject: &'a str,
+    ) -> TokenFuture<'a, Option<nazo_auth::PreparedTokenSubject>> {
         Box::pin(async move {
             let tenant_id = TenantId::new(tenant_id).map_err(|_| TokenPortError::CorruptData)?;
             let user_id = UserId::new(user_id).map_err(|_| TokenPortError::CorruptData)?;
             self.users
-                .active_subject_claims_by_tenant_id(tenant_id, user_id)
+                .active_subject_claims_by_tenant_id(tenant_id, user_id, token_subject)
                 .await
                 .map(|snapshot| {
-                    snapshot.map(|(claims, user_epoch)| nazo_auth::PreparedTokenSubject {
-                        tenant_id: tenant_id.as_uuid(),
-                        claims,
-                        user_epoch,
+                    snapshot.map(|(claims, user_epoch, subject_bound)| {
+                        nazo_auth::PreparedTokenSubject {
+                            tenant_id: tenant_id.as_uuid(),
+                            claims,
+                            user_epoch,
+                            token_subject: token_subject.to_owned(),
+                            subject_bound,
+                        }
                     })
                 })
                 .map_err(map_repository_error)
@@ -802,6 +977,25 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     input.client_id,
                     input.raw_token,
                     input.access_token.as_ref(),
+                )
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize> {
+        Box::pin(async move {
+            self.tokens
+                .revoke_for_client_with_audit(
+                    input.tenant_id,
+                    input.client_id,
+                    input.raw_token,
+                    input.access_token.as_ref(),
+                    Some((client_public_id, source_ip_hash)),
                 )
                 .await
                 .map_err(map_repository_error)

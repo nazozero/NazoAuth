@@ -19,11 +19,10 @@ pub struct ValidatedClientAttestation {
     pub client_id: String,
     pub client_instance_key_thumbprint: String,
     pub replay_id: String,
-    pub replay_ttl_seconds: u64,
+    pub replay_window: nazo_auth::ClientAttestationProofWindow,
 }
 
 const CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS: i64 = 60;
-const CLIENT_ATTESTATION_POP_MAX_AGE_SECONDS: i64 = 300;
 const CLIENT_ATTESTATION_POP_MAX_JTI_BYTES: usize = 128;
 
 pub fn client_instance_key_thumbprint(instance_key: &Value) -> anyhow::Result<String> {
@@ -167,19 +166,16 @@ impl Openid4vcClientAttestationValidator {
             .get("iat")
             .and_then(Value::as_i64)
             .ok_or_else(|| anyhow::anyhow!("client attestation proof iat is missing"))?;
-        let age = now.saturating_sub(iat);
-        if iat > now.saturating_add(CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS)
-            || age > CLIENT_ATTESTATION_POP_MAX_AGE_SECONDS
-        {
-            anyhow::bail!("client attestation proof iat is outside the replay window");
-        }
+        let replay_window = nazo_auth::ClientAttestationProofWindow::from_verified_issued_at(iat)
+            .filter(|window| window.accepts(now))
+            .ok_or_else(|| {
+                anyhow::anyhow!("client attestation proof iat is outside the replay window")
+            })?;
         Ok(ValidatedClientAttestation {
             client_id: client_id.to_owned(),
             client_instance_key_thumbprint,
             replay_id: replay_id.to_owned(),
-            replay_ttl_seconds: CLIENT_ATTESTATION_POP_MAX_AGE_SECONDS
-                .saturating_sub(age.max(0))
-                .max(1) as u64,
+            replay_window,
         })
     }
 

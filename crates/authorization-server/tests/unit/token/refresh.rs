@@ -8,10 +8,16 @@ fn refresh_token_scope_request_defaults_to_original_authorization() {
         "offline_access".to_owned(),
     ];
 
-    assert_eq!(refresh_token_scopes(&original, None).unwrap(), original);
-    assert_eq!(refresh_token_scopes(&original, Some("")).unwrap(), original);
     assert_eq!(
-        refresh_token_scopes(&original, Some("   ")).unwrap(),
+        refresh_token_scopes(original.clone(), None).unwrap(),
+        original
+    );
+    assert_eq!(
+        refresh_token_scopes(original.clone(), Some("")).unwrap(),
+        original
+    );
+    assert_eq!(
+        refresh_token_scopes(original.clone(), Some("   ")).unwrap(),
         original
     );
 }
@@ -25,11 +31,11 @@ fn refresh_token_scope_request_may_narrow_original_authorization() {
     ];
 
     assert_eq!(
-        refresh_token_scopes(&original, Some("openid offline_access")).unwrap(),
+        refresh_token_scopes(original.clone(), Some("openid offline_access")).unwrap(),
         vec!["openid".to_owned(), "offline_access".to_owned()]
     );
     assert_eq!(
-        refresh_token_scopes(&original, Some("openid")).unwrap(),
+        refresh_token_scopes(original.clone(), Some("openid")).unwrap(),
         vec!["openid".to_owned()],
         "RFC 6749 allows the access-token scope to be narrower than the refresh-token authorization"
     );
@@ -40,11 +46,15 @@ fn openid4vci_refresh_token_scope_may_narrow_to_credential_authorization() {
     let original = vec!["eu.europa.ec.eudi.pid.1".to_owned()];
 
     assert_eq!(
-        refresh_token_scopes(&original, Some("eu.europa.ec.eudi.pid.1")).unwrap(),
+        refresh_token_scopes(original.clone(), Some("eu.europa.ec.eudi.pid.1")).unwrap(),
         original
     );
     assert!(
-        refresh_token_scopes(&original, Some("eu.europa.ec.eudi.pid.1 administrator")).is_err(),
+        refresh_token_scopes(
+            original.clone(),
+            Some("eu.europa.ec.eudi.pid.1 administrator")
+        )
+        .is_err(),
         "OpenID4VCI refresh must not expand the original scope grant"
     );
 }
@@ -84,7 +94,7 @@ fn refresh_token_scope_request_rejects_privilege_expansion() {
 
     for requested in ["email", "openid email", "offline_access admin"] {
         assert!(
-            refresh_token_scopes(&original, Some(requested)).is_err(),
+            refresh_token_scopes(original.clone(), Some(requested)).is_err(),
             "refresh_token grant must reject scope expansion: {requested}"
         );
     }

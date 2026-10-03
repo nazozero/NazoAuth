@@ -6,9 +6,8 @@ use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
     CredentialAccess, CredentialAuthorization, CredentialResponseEncoding, CredentialStoreError,
-    CredentialStoreFuture, CredentialStorePort, DeferredCredential, DeferredCredentialClaim,
-    IssuanceNotification, NonceRecord, NotificationHandle, StoredCredentialOffer,
-    StoredCredentialResponse,
+    CredentialStoreFuture, CredentialStorePort, DeferredCredential, IssuanceNotification,
+    NonceRecord, NotificationHandle, StoredCredentialOffer, StoredCredentialResponse,
 };
 use uuid::Uuid;
 
@@ -195,8 +194,10 @@ impl CredentialStorePort for Openid4vciRepository {
         token_id: Uuid,
         claim_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
-    {
+    ) -> CredentialStoreFuture<
+        'a,
+        Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
+    > {
         self.deferred_claim_ready(transaction_hash, token_id, claim_id, now)
     }
 
@@ -267,6 +268,10 @@ impl CredentialStorePort for Openid4vciRepository {
 
 #[derive(QueryableByName)]
 pub(super) struct AccessRow {
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
+    pub(super) authorization_id: Option<Uuid>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
+    pub(super) mtls_x5t_s256: Option<String>,
     #[diesel(sql_type = sql_types::Uuid)]
     pub(super) token_id: Uuid,
     #[diesel(sql_type = sql_types::Uuid)]
@@ -275,6 +280,8 @@ pub(super) struct AccessRow {
     pub(super) subject_id: Uuid,
     #[diesel(sql_type = sql_types::Text)]
     pub(super) client_id: String,
+    #[diesel(sql_type = sql_types::Text)]
+    pub(super) proof_origin: String,
     #[diesel(sql_type = sql_types::Jsonb)]
     pub(super) credential_configuration_ids: serde_json::Value,
     #[diesel(sql_type = sql_types::Jsonb)]
@@ -287,6 +294,10 @@ pub(super) struct AccessRow {
 
 #[derive(QueryableByName)]
 pub(super) struct DeferredRow {
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
+    pub(super) authorization_id: Option<Uuid>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    pub(super) credential_selection: Option<serde_json::Value>,
     #[diesel(sql_type = sql_types::Uuid)]
     pub(super) id: Uuid,
     #[diesel(sql_type = sql_types::Text)]
@@ -314,6 +325,18 @@ pub(super) struct DeferredRow {
 /// and the access columns stay non-optional.
 #[derive(QueryableByName)]
 pub(super) struct DeferredClaimRow {
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
+    deferred_authorization_id: Option<Uuid>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    deferred_credential_selection: Option<serde_json::Value>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
+    access_authorization_id: Option<Uuid>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
+    access_mtls_x5t_s256: Option<String>,
+    #[diesel(sql_type = sql_types::Text)]
+    claim_outcome: String,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+    retry_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = sql_types::Uuid)]
     deferred_id: Uuid,
     #[diesel(sql_type = sql_types::Text)]
@@ -340,6 +363,8 @@ pub(super) struct DeferredClaimRow {
     access_subject_id: Uuid,
     #[diesel(sql_type = sql_types::Text)]
     access_client_id: String,
+    #[diesel(sql_type = sql_types::Text)]
+    access_proof_origin: String,
     #[diesel(sql_type = sql_types::Jsonb)]
     access_configuration_ids: serde_json::Value,
     #[diesel(sql_type = sql_types::Jsonb)]
@@ -354,6 +379,8 @@ impl DeferredClaimRow {
     pub(super) fn into_parts(self) -> (DeferredRow, AccessRow) {
         (
             DeferredRow {
+                authorization_id: self.deferred_authorization_id,
+                credential_selection: self.deferred_credential_selection,
                 id: self.deferred_id,
                 transaction_hash: self.deferred_transaction_hash,
                 token_id: self.deferred_token_id,
@@ -365,10 +392,13 @@ impl DeferredClaimRow {
                 expires_at: self.deferred_expires_at,
             },
             AccessRow {
+                authorization_id: self.access_authorization_id,
+                mtls_x5t_s256: self.access_mtls_x5t_s256,
                 token_id: self.access_token_id,
                 tenant_id: self.access_tenant_id,
                 subject_id: self.access_subject_id,
                 client_id: self.access_client_id,
+                proof_origin: self.access_proof_origin,
                 credential_configuration_ids: self.access_configuration_ids,
                 credential_identifiers: self.access_credential_identifiers,
                 dpop_jkt: self.access_dpop_jkt,
@@ -380,6 +410,8 @@ impl DeferredClaimRow {
 
 #[derive(QueryableByName)]
 pub(super) struct IssuanceResponseRow {
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    pub(super) credential_selection: Option<serde_json::Value>,
     #[diesel(sql_type = sql_types::Uuid)]
     pub(super) issuance_id: Uuid,
     #[diesel(sql_type = sql_types::Uuid)]
@@ -399,6 +431,7 @@ pub(super) struct IssuanceResponseRow {
 }
 
 pub(super) struct NewIssuanceResponse<'a> {
+    pub(super) selection: serde_json::Value,
     pub(super) issuance_id: Uuid,
     pub(super) token_id: Uuid,
     pub(super) request_digest: &'a str,
@@ -415,8 +448,8 @@ pub(super) async fn insert_issuance_response(
 ) -> Result<usize, diesel::result::Error> {
     sql_query(
         "INSERT INTO openid4vci_issuance_responses \
-         (issuance_id, token_id, request_digest, body_ciphertext, encoding, status, dpop_nonce, expires_at) \
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+         (issuance_id, token_id, request_digest, body_ciphertext, encoding, status, dpop_nonce, expires_at, credential_selection) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     )
     .bind::<sql_types::Uuid, _>(response.issuance_id)
     .bind::<sql_types::Uuid, _>(response.token_id)
@@ -426,6 +459,7 @@ pub(super) async fn insert_issuance_response(
     .bind::<sql_types::SmallInt, _>(response.status)
     .bind::<sql_types::Nullable<sql_types::Text>, _>(response.dpop_nonce)
     .bind::<sql_types::Timestamptz, _>(response.expires_at)
+    .bind::<sql_types::Jsonb, _>(response.selection)
     .execute(connection)
     .await
 }
@@ -442,10 +476,14 @@ impl TryFrom<AccessRow> for CredentialAccess {
 
     fn try_from(row: AccessRow) -> Result<Self, Self::Error> {
         Ok(Self {
+            authorization_id: row.authorization_id,
+            mtls_x5t_s256: row.mtls_x5t_s256,
             token_id: row.token_id,
             tenant_id: row.tenant_id,
             subject_id: row.subject_id,
             client_id: row.client_id,
+            proof_origin: serde_json::from_value(serde_json::Value::String(row.proof_origin))
+                .map_err(decode_error)?,
             configuration_ids: serde_json::from_value(row.credential_configuration_ids)
                 .map_err(decode_error)?,
             credential_identifiers: serde_json::from_value(row.credential_identifiers)
@@ -461,10 +499,11 @@ impl DeferredRow {
         self,
         access: CredentialAccess,
     ) -> Result<DeferredCredential, diesel::result::Error> {
-        if self.token_id != access.token_id {
+        if self.token_id != access.token_id || self.authorization_id != access.authorization_id {
             return Err(diesel::result::Error::NotFound);
         }
         Ok(DeferredCredential {
+            selection: decode_selection(self.credential_selection)?,
             id: self.id,
             transaction_hash: self.transaction_hash,
             access,
@@ -490,4 +529,20 @@ pub(super) fn notification_event(event: &nazo_openid4vci::NotificationEvent) -> 
 
 pub(super) fn decode_error(error: serde_json::Error) -> diesel::result::Error {
     diesel::result::Error::DeserializationError(Box::new(error))
+}
+
+pub(super) fn decode_selection(
+    value: Option<serde_json::Value>,
+) -> Result<Option<nazo_openid4vci::CredentialSelection>, diesel::result::Error> {
+    serde_json::from_value(value.unwrap_or(serde_json::Value::Null)).map_err(decode_error)
+}
+
+#[derive(QueryableByName)]
+pub(super) struct DeferredIdentityRow {
+    #[diesel(sql_type = sql_types::Uuid)]
+    pub(super) token_id: Uuid,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    pub(super) credential_selection: Option<serde_json::Value>,
+    #[diesel(sql_type = sql_types::Text)]
+    pub(super) credential_configuration_id: String,
 }

@@ -1002,3 +1002,146 @@ fn client_requires_status_created_tag_and_exact_req_component_parameters() {
         assert!(result.is_err(), "mutation unexpectedly accepted: {name}");
     }
 }
+
+#[test]
+fn borrowed_digest_response_has_identical_wire_base_and_denies_stale_evidence() {
+    use nazo_http_signatures::{BodyDigest, prepare_response_with_digests};
+
+    let request_digest = BodyDigest::for_body(REQUEST_BODY);
+    let response_digest = BodyDigest::for_body(RESPONSE_BODY);
+    let request_headers = [
+        ("authorization", "DPoP opaque"),
+        ("content-digest", request_digest.field_value()),
+    ];
+    let response_headers = [("content-digest", response_digest.field_value())];
+    let fields = request_fields();
+    let prepare = |request_body,
+                   response_body,
+                   request_headers: &[(&str, &str)],
+                   response_headers: &[(&str, &str)],
+                   reuse| {
+        let response = ResponseInput {
+            status: 200,
+            headers: response_headers,
+            body: response_body,
+        };
+        let original = OriginalRequest {
+            input: RequestInput {
+                method: "POST",
+                target_uri: "https://api.example/fapi/resource",
+                headers: request_headers,
+                body: request_body,
+            },
+            signature_fields: Some(&fields),
+        };
+        let policy = ResponsePolicy {
+            created: CREATED,
+            keyid: "server-ed25519",
+            algorithm: "ed25519",
+            covered_headers: &[],
+            covered_request_headers: &[],
+        };
+        if reuse {
+            prepare_response_with_digests(
+                response,
+                original,
+                policy,
+                Some(&response_digest),
+                Some(&request_digest),
+            )
+        } else {
+            prepare_response(response, original, policy)
+        }
+    };
+    let ordinary = prepare(
+        REQUEST_BODY,
+        RESPONSE_BODY,
+        &request_headers,
+        &response_headers,
+        false,
+    )
+    .unwrap();
+    let reused = prepare(
+        REQUEST_BODY,
+        RESPONSE_BODY,
+        &request_headers,
+        &response_headers,
+        true,
+    )
+    .unwrap();
+    assert_eq!(ordinary.signature_base(), reused.signature_base());
+    let ordinary = ordinary.finish(&[1, 2, 3]);
+    let reused = reused.finish(&[1, 2, 3]);
+    assert_eq!(ordinary.signature_input, reused.signature_input);
+    assert_eq!(ordinary.signature, reused.signature);
+
+    assert!(
+        prepare(
+            br#"{"amount":11}"#,
+            RESPONSE_BODY,
+            &request_headers,
+            &response_headers,
+            true
+        )
+        .is_err()
+    );
+    assert!(
+        prepare(
+            REQUEST_BODY,
+            br#"{"approved":null}"#,
+            &request_headers,
+            &response_headers,
+            true
+        )
+        .is_err()
+    );
+    let changed_field = [(
+        "content-digest",
+        "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:",
+    )];
+    assert!(
+        prepare(
+            REQUEST_BODY,
+            RESPONSE_BODY,
+            &request_headers,
+            &changed_field,
+            true
+        )
+        .is_err()
+    );
+    let duplicate = [response_headers[0], response_headers[0]];
+    assert!(
+        prepare(
+            REQUEST_BODY,
+            RESPONSE_BODY,
+            &request_headers,
+            &duplicate,
+            true
+        )
+        .is_err()
+    );
+    assert!(prepare(REQUEST_BODY, b"", &request_headers, &response_headers, true).is_err());
+
+    // Incoming response verification still hashes the supplied bytes itself.
+    assert!(
+        parse_response_for_verification(
+            ResponseInput {
+                status: 200,
+                headers: &response_headers,
+                body: br#"{"approved":null}"#
+            },
+            OriginalRequest {
+                input: RequestInput {
+                    method: "POST",
+                    target_uri: "https://api.example/fapi/resource",
+                    headers: &request_headers,
+                    body: REQUEST_BODY,
+                },
+                signature_fields: Some(&fields),
+            },
+            reused,
+            verification_policy(),
+        )
+        .is_err()
+    );
+}

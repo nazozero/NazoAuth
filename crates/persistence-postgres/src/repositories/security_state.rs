@@ -7,9 +7,9 @@
 //! 2. Refresh spent proofs — deleted at their own `expires_at`; the proof
 //!    only has readers inside the token's acceptance window, so expiry makes
 //!    "present" and "absent" indistinguishable (`invalid_grant` either way).
-//! 3. Refresh families — deleted once the current generation expired; spent
-//!    proofs cascade because a spent proof's expiry never outlives the
-//!    family's last `current_expires_at` (rotation only extends it).
+//! 3. Refresh families — terminal families are revoked or expired. Their
+//!    spent proofs are drained under the family lock with one global 256-row
+//!    budget per call; a parent is deleted only after its proofs are gone.
 //! 4. Orphaned refresh contracts — deleted once no family references them,
 //!    behind a grace so an in-flight issuance can never lose a contract row
 //!    it just inserted.
@@ -18,16 +18,14 @@
 //!    access-grant ownership is retained through verifier clock skew and until
 //!    its children have been reclaimed in their own bounded batches.
 //!
-//! Every category is a bounded batch (≤256 rows) on a single row per
-//! authority; there is no member-history traversal. Family reclaim keeps the
-//! shared advisory key: a writer holding `refresh_family_lock_key` causes the
-//! candidate to be skipped this round, and expiry is rechecked under the lock
-//! so a just-rotated family is never reclaimed mid-commit. Audit-ledger rows
-//! are not a maintenance category: the
-//! exporter's ACK removes the delivered event and chain-entry rows in
-//! the same transaction that advances the durable anchor checkpoint, so
-//! nothing accumulates for a sweeper to reclaim and no local archive copy
-//! exists — the receiver is the sole authoritative audit history.
+//! Every category is bounded (≤256 rows); there is no member-history
+//! traversal. Family reclaim takes the writer's exclusive advisory key with a
+//! try-lock; a PreserveExisting shared lock skips that candidate. Terminal
+//! state is rechecked under the lock so a just-rotated family survives.
+//! Ordinary audit
+//! events and chain entries leave at exporter ACK. Authorization decisions
+//! also own business consumption fences, so a bounded maintenance category
+//! reclaims them only after export AND business retention have completed.
 
 use std::sync::Arc;
 
@@ -112,6 +110,12 @@ struct GenericCleanupCounts {
 }
 
 #[derive(QueryableByName)]
+struct DecisionCleanupCount {
+    #[diesel(sql_type = sql_types::BigInt)]
+    deleted: i64,
+}
+
+#[derive(QueryableByName)]
 struct PresentationCleanupCount {
     #[diesel(sql_type = sql_types::Integer)]
     deleted_transactions: i32,
@@ -162,6 +166,16 @@ impl SecurityStateMaintenanceRepository {
             .map_err(map_error)
     }
 
+    async fn decision_cleanup(&self) -> Result<u64, RepositoryError> {
+        let mut connection = self.connection().await?;
+        let row = sql_query("SELECT public.nazo_cleanup_authorization_decisions() AS deleted")
+            .get_result::<DecisionCleanupCount>(&mut connection)
+            .await
+            .map_err(map_error)?;
+        debug_assert!((0..=CLEANUP_BATCH_LIMIT).contains(&row.deleted));
+        Ok(row.deleted.max(0) as u64)
+    }
+
     async fn presentation_cleanup(&self) -> Result<u64, RepositoryError> {
         let mut connection = self.connection().await?;
         let count = sql_query(
@@ -184,7 +198,7 @@ impl SecurityStateMaintenanceRepository {
                  SELECT tenant_id, refresh_token_blake3 \
                  FROM oauth_refresh_spent_tokens \
                  WHERE expires_at <= CURRENT_TIMESTAMP \
-                 ORDER BY expires_at, refresh_token_blake3 \
+                 ORDER BY expires_at \
                  LIMIT $1 FOR UPDATE SKIP LOCKED \
              ) \
              DELETE FROM oauth_refresh_spent_tokens AS target \
@@ -199,15 +213,17 @@ impl SecurityStateMaintenanceRepository {
         Ok((deleted as u64, deleted as i64 >= CLEANUP_BATCH_LIMIT))
     }
 
-    /// Delete families whose current generation expired. The cascade removes
-    /// remaining spent proofs; the family's contract is reclaimed by the
-    /// orphan sweep once unreferenced. Each candidate is reclaimed under the
-    /// shared writer advisory key (try-lock — a held key skips the family this
-    /// round) and expiry is rechecked under the lock, so a family whose writer
-    /// just committed a new generation is never reclaimed mid-commit.
-    async fn delete_expired_refresh_families(&self) -> Result<(u64, bool), RepositoryError> {
+    /// Reclaim terminal families under their writer advisory key. Each call
+    /// deletes at most proof_budget spent proofs across all families, and a
+    /// parent is removed only after no spent proofs remain. The fresh
+    /// READ COMMITTED row-lock statement rechecks expiry after the advisory
+    /// try-lock, so a just-rotated family is never reclaimed mid-commit.
+    async fn delete_expired_refresh_families(
+        &self,
+        proof_budget: i64,
+    ) -> Result<(u64, u64, bool), RepositoryError> {
         #[derive(QueryableByName)]
-        struct ExpiredFamily {
+        struct FamilyId {
             #[diesel(sql_type = sql_types::Uuid)]
             tenant_id: uuid::Uuid,
             #[diesel(sql_type = sql_types::Uuid)]
@@ -217,23 +233,43 @@ impl SecurityStateMaintenanceRepository {
         connection
             .build_transaction()
             .read_committed()
-            .run::<(u64, bool), diesel::result::Error, _>(async |connection| {
-                let due = sql_query(
-                    "SELECT tenant_id, token_family_id \
-                     FROM oauth_refresh_families \
-                     WHERE current_expires_at <= CURRENT_TIMESTAMP \
-                     ORDER BY current_expires_at, token_family_id \
-                     LIMIT $1",
+            .run::<(u64, u64, bool), diesel::result::Error, _>(async |connection| {
+                // Each terminal class is an index-backed bounded scan. The
+                // union has at most twice the family batch before its final cap.
+                let candidates = sql_query(
+                    "WITH expired AS MATERIALIZED ( \
+                         SELECT tenant_id, token_family_id \
+                         FROM oauth_refresh_families \
+                         WHERE current_expires_at <= CURRENT_TIMESTAMP \
+                         ORDER BY current_expires_at \
+                         LIMIT $1 \
+                     ), revoked AS MATERIALIZED ( \
+                         SELECT tenant_id, token_family_id \
+                         FROM oauth_refresh_families \
+                         WHERE revoked_at IS NOT NULL \
+                         ORDER BY revoked_at, tenant_id, token_family_id \
+                         LIMIT $1 \
+                     ), due AS MATERIALIZED ( \
+                         SELECT tenant_id, token_family_id FROM expired \
+                         UNION \
+                         SELECT tenant_id, token_family_id FROM revoked \
+                     ) \
+                     SELECT tenant_id, token_family_id FROM due \
+                     ORDER BY tenant_id, token_family_id LIMIT $1",
                 )
                 .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
-                .load::<ExpiredFamily>(connection)
+                .load::<FamilyId>(connection)
                 .await?;
-                let saturated = due.len() as i64 >= CLEANUP_BATCH_LIMIT;
-                if due.is_empty() {
-                    return Ok((0, false));
+                let candidate_saturated = candidates.len() as i64 >= CLEANUP_BATCH_LIMIT;
+                if candidates.is_empty() {
+                    return Ok((0, 0, false));
                 }
-                let tenant_ids = due.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
-                let family_ids = due
+
+                let tenant_ids = candidates
+                    .iter()
+                    .map(|row| row.tenant_id)
+                    .collect::<Vec<_>>();
+                let family_ids = candidates
                     .iter()
                     .map(|row| row.token_family_id)
                     .collect::<Vec<_>>();
@@ -241,9 +277,8 @@ impl SecurityStateMaintenanceRepository {
                     .iter()
                     .map(|id| super::tokens::refresh_family_lock_key(*id))
                     .collect::<Vec<_>>();
-                // Candidates are already bounded before this volatile function
-                // runs. Keep exactly the writer's lock key; try-lock failures
-                // skip that family without holding up unrelated candidates.
+                // Match issuance/revocation locking. PreserveExisting's shared
+                // lock makes this exclusive try-lock fail without waiting.
                 let locked = sql_query(
                     "SELECT tenant_id, token_family_id \
                      FROM UNNEST($1::uuid[], $2::uuid[], $3::bigint[]) \
@@ -253,31 +288,100 @@ impl SecurityStateMaintenanceRepository {
                 .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
                 .bind::<sql_types::Array<sql_types::Uuid>, _>(&family_ids)
                 .bind::<sql_types::Array<sql_types::BigInt>, _>(&lock_keys)
-                .load::<ExpiredFamily>(connection)
+                .load::<FamilyId>(connection)
                 .await?;
                 if locked.is_empty() {
-                    return Ok((0, saturated));
+                    return Ok((0, 0, candidate_saturated));
                 }
+
                 let tenant_ids = locked.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
                 let family_ids = locked
                     .iter()
                     .map(|row| row.token_family_id)
                     .collect::<Vec<_>>();
-                // This must remain a separate READ COMMITTED statement. A
-                // rotation can commit between the candidate snapshot and lock
-                // acquisition; only a new snapshot sees its extended expiry.
-                let deleted = sql_query(
+                // This separate statement gets a fresh READ COMMITTED snapshot
+                // after advisory locks, rechecks terminal state, and skips
+                // parent rows held by another cleanup transaction.
+                let terminal = sql_query(
+                    "SELECT family.tenant_id, family.token_family_id \
+                     FROM oauth_refresh_families AS family \
+                     JOIN UNNEST($1::uuid[], $2::uuid[]) \
+                          AS due(tenant_id, token_family_id) \
+                       ON family.tenant_id = due.tenant_id \
+                      AND family.token_family_id = due.token_family_id \
+                     WHERE family.current_expires_at <= CURRENT_TIMESTAMP \
+                        OR family.revoked_at IS NOT NULL \
+                     ORDER BY family.tenant_id, family.token_family_id \
+                     FOR UPDATE OF family SKIP LOCKED",
+                )
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&family_ids)
+                .load::<FamilyId>(connection)
+                .await?;
+                if terminal.is_empty() {
+                    return Ok((0, 0, candidate_saturated));
+                }
+
+                let terminal_tenants = terminal.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
+                let terminal_families = terminal
+                    .iter()
+                    .map(|row| row.token_family_id)
+                    .collect::<Vec<_>>();
+                // LATERAL probes ix_orst_family for each locked parent. The
+                // outer LIMIT is global, so this never becomes 256 proofs per
+                // family. Child locks and deletes share this transaction.
+                let deleted_proofs = sql_query(
+                    "WITH limited_proofs AS MATERIALIZED ( \
+                         SELECT proof.tenant_id, proof.refresh_token_blake3 \
+                         FROM UNNEST($1::uuid[], $2::uuid[]) \
+                              AS family(tenant_id, token_family_id) \
+                         CROSS JOIN LATERAL ( \
+                             SELECT spent.tenant_id, spent.refresh_token_blake3 \
+                             FROM oauth_refresh_spent_tokens AS spent \
+                             WHERE spent.tenant_id = family.tenant_id \
+                               AND spent.token_family_id = family.token_family_id \
+                             LIMIT $3 FOR UPDATE OF spent SKIP LOCKED \
+                         ) AS proof \
+                         LIMIT $3 \
+                     ) \
+                     DELETE FROM oauth_refresh_spent_tokens AS target \
+                     USING limited_proofs AS due \
+                     WHERE target.tenant_id = due.tenant_id \
+                       AND target.refresh_token_blake3 = due.refresh_token_blake3",
+                )
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&terminal_tenants)
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&terminal_families)
+                .bind::<sql_types::BigInt, _>(proof_budget)
+                .execute(connection)
+                .await? as u64;
+
+                // Child existence, not the prior candidate snapshot, decides
+                // whether each parent may now be deleted without a cascade.
+                let deleted_families = sql_query(
                     "DELETE FROM oauth_refresh_families AS target \
                      USING UNNEST($1::uuid[], $2::uuid[]) AS due(tenant_id, token_family_id) \
                      WHERE target.tenant_id = due.tenant_id \
                        AND target.token_family_id = due.token_family_id \
-                       AND target.current_expires_at <= CURRENT_TIMESTAMP",
+                       AND NOT EXISTS ( \
+                           SELECT 1 FROM oauth_refresh_spent_tokens AS spent \
+                           WHERE spent.tenant_id = target.tenant_id \
+                             AND spent.token_family_id = target.token_family_id \
+                       )",
                 )
-                .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
-                .bind::<sql_types::Array<sql_types::Uuid>, _>(&family_ids)
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&terminal_tenants)
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&terminal_families)
                 .execute(connection)
                 .await? as u64;
-                Ok((deleted, saturated))
+
+                // Any locked parent not deleted still had proofs at the
+                // DELETE snapshot. A concurrent expiry sweep may make this
+                // conservatively request one extra pass.
+                let families_remain = deleted_families < terminal.len() as u64;
+                Ok((
+                    deleted_families,
+                    deleted_proofs,
+                    candidate_saturated || families_remain,
+                ))
             })
             .await
             .map_err(map_error)
@@ -529,16 +633,19 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
     fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
         Box::pin(async move {
             let generic = self.generic_cleanup().await?;
-            let (refresh_tokens, families_saturated) =
-                self.delete_expired_refresh_families().await?;
-            let (spent_refresh_proofs, spent_saturated) =
-                self.delete_expired_spent_proofs().await?;
+            let authorization_decisions = self.decision_cleanup().await?;
+            let (expired_proofs, expired_saturated) = self.delete_expired_spent_proofs().await?;
+            let proof_budget = CLEANUP_BATCH_LIMIT - expired_proofs as i64;
+            let (refresh_tokens, terminal_proofs, families_saturated) =
+                self.delete_expired_refresh_families(proof_budget).await?;
+            let spent_refresh_proofs = expired_proofs + terminal_proofs;
             let (refresh_contracts, contracts_saturated) =
                 self.delete_orphan_refresh_contracts().await?;
             let presentations = self.presentation_cleanup().await?;
             let credentials = self.credential_cleanup().await?;
-            let saturated = families_saturated
-                || spent_saturated
+            let saturated = authorization_decisions >= CLEANUP_BATCH_LIMIT as u64
+                || families_saturated
+                || expired_saturated
                 || contracts_saturated
                 || i64::from(generic.deleted_issuances) >= CLEANUP_BATCH_LIMIT
                 || i64::from(generic.deleted_access_token_revocations) >= CLEANUP_BATCH_LIMIT
@@ -548,6 +655,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 || presentations >= CLEANUP_BATCH_LIMIT as u64
                 || credentials.saturated;
             Ok(CleanupBatchResult {
+                authorization_decisions,
                 issuances: generic.deleted_issuances.max(0) as u64,
                 refresh_tokens,
                 spent_refresh_proofs,

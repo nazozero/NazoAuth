@@ -262,6 +262,18 @@ pub async fn token_jwt_bearer_with_service(
         sender.dpop_jkt.as_deref(),
         sender.mtls_x5t_s256.as_deref(),
     );
+    // Known invalid scope/target input does not burn either replay role.
+    // The cryptographic validator and sender proof above still run first;
+    // distinct client-assertion and grant replay consumers remain below.
+    let admission = match admit_jwt_bearer_grant(
+        form.assertion.as_deref(),
+        form.scope.as_deref(),
+        &form.audiences,
+        policy,
+    ) {
+        Ok(admission) => admission,
+        Err(error) => return Err(jwt_bearer_grant_error_response(error, client, form)),
+    };
     if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
@@ -296,15 +308,6 @@ pub async fn token_jwt_bearer_with_service(
             }
         };
     }
-    let admission = match admit_jwt_bearer_grant(
-        form.assertion.as_deref(),
-        form.scope.as_deref(),
-        &form.audiences,
-        policy,
-    ) {
-        Ok(admission) => admission,
-        Err(error) => return Err(jwt_bearer_grant_error_response(error, client, form)),
-    };
     issue_token_response(
         issuance,
         token_service,
@@ -314,6 +317,7 @@ pub async fn token_jwt_bearer_with_service(
             grant_expires_at: assertion.expires_at,
         },
         TokenIssue {
+            native_sso_source: None,
             user_id: None,
             prepared_subject: None,
             subject: assertion.subject,
@@ -331,13 +335,14 @@ pub async fn token_jwt_bearer_with_service(
             id_token_claim_requests: Vec::new(),
             refresh_id_token_sid: None,
             include_refresh: false,
-            refresh_token_policy: RefreshTokenPolicy::PreserveExisting,
+            refresh_token_policy: RefreshTokenPolicy::NoRefresh,
             dpop_jkt: sender.dpop_jkt,
             refresh_token_dpop_jkt: None,
             mtls_x5t_s256: sender.mtls_x5t_s256,
             refresh_token_mtls_x5t_s256: None,
             refresh_token_client_attestation_jkt: None,
-            refresh_token_scopes: None,
+            refresh_authority: None,
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,

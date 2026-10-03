@@ -150,6 +150,8 @@ async fn owner_revocation_streams_large_sets_and_rolls_back_all_batches() {
 fn valid_commit_input(mode: TokenIssuanceMode) -> CommitTokenIssuance {
     let user_id = Uuid::now_v7();
     CommitTokenIssuance {
+        authorization_id: None,
+        native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
             user_epoch: Some(0),
@@ -173,40 +175,47 @@ fn valid_commit_input(mode: TokenIssuanceMode) -> CommitTokenIssuance {
     }
 }
 
-fn refresh_token_for(input: &CommitTokenIssuance) -> NewRefreshToken {
-    NewRefreshToken {
-        raw_token: "refresh".to_owned(),
-        member_id: Uuid::now_v7(),
-        tenant_id: input.tenant_id,
-        family_id: Uuid::now_v7(),
-        rotated_from_id: None,
-        lost_response_retry: None,
-        client_id: input.client_id,
-        user_id: input.user_id,
-        scopes: vec!["openid".to_owned()],
-        audiences: vec!["resource".to_owned()],
-        authorization_details: serde_json::json!([]),
-        issued_at: Utc::now(),
-        expires_at: Utc::now() + chrono::Duration::hours(1),
-        subject: "subject".to_owned(),
-        dpop_jkt: None,
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-        authentication_context: nazo_auth::RefreshTokenAuthenticationContext {
-            version: 1,
-            issuer: "https://issuer.example".to_owned(),
-            audience: "resource".to_owned(),
-            auth_time: 1,
-            amr: vec!["pwd".to_owned()],
-            oidc_sid: None,
+fn refresh_token_for(input: &CommitTokenIssuance) -> nazo_auth::RefreshTokenCommit {
+    nazo_auth::RefreshTokenCommit::IssueNew {
+        token: NewRefreshToken {
+            raw_token: "refresh".to_owned(),
+            member_id: Uuid::now_v7(),
+            tenant_id: input.tenant_id,
+            family_id: Uuid::now_v7(),
+            rotated_from_id: None,
+            lost_response_retry: None,
+            client_id: input.client_id,
+            user_id: input.user_id,
+            audiences: vec!["resource".to_owned()],
+            issued_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::hours(1),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            client_attestation_jkt: None,
             id_token_sid: None,
-            acr: None,
-            nonce: None,
-            userinfo_claims: vec![],
-            userinfo_claim_requests: vec![],
-            id_token_claims: vec![],
-            id_token_claim_requests: vec![],
         },
+        contract: nazo_auth::RefreshContract {
+            scopes: vec!["openid".to_owned()],
+            audiences: vec!["resource".to_owned()],
+            authorization_details: serde_json::json!([]),
+            subject: input.subject.clone(),
+            authentication_context: nazo_auth::RefreshTokenAuthenticationContext {
+                version: 1,
+                issuer: "https://issuer.example".to_owned(),
+                audience: "resource".to_owned(),
+                auth_time: 1,
+                amr: vec!["pwd".to_owned()],
+                oidc_sid: None,
+                id_token_sid: None,
+                acr: None,
+                nonce: None,
+                userinfo_claims: vec![],
+                userinfo_claim_requests: vec![],
+                id_token_claims: vec![],
+                id_token_claim_requests: vec![],
+            },
+        }
+        .persisted(),
     }
 }
 
@@ -265,7 +274,12 @@ fn commit_input_validation_enforces_mode_ownership_and_expiry_contracts() {
 
     let mut wrong_owner = fresh.clone();
     wrong_owner.refresh_token = Some(refresh_token_for(&wrong_owner));
-    wrong_owner.refresh_token.as_mut().unwrap().tenant_id = Uuid::now_v7();
+    let Some(nazo_auth::RefreshTokenCommit::IssueNew { token, .. }) =
+        wrong_owner.refresh_token.as_mut()
+    else {
+        unreachable!()
+    };
+    token.tenant_id = Uuid::now_v7();
     assert!(matches!(
         validate_commit_input(&wrong_owner),
         Err(RepositoryError::Consistency(message)) if message.contains("owner")
@@ -306,7 +320,10 @@ fn audit_events_cover_issuance_rotation_and_reuse_shapes() {
         serde_json::Value::Null
     );
 
-    let mut refresh = refresh_token_for(&input);
+    let mut refresh_commit = refresh_token_for(&input);
+    let nazo_auth::RefreshTokenCommit::IssueNew { token: refresh, .. } = &mut refresh_commit else {
+        unreachable!()
+    };
     refresh.rotated_from_id = Some(Uuid::now_v7());
     refresh.lost_response_retry = Some(nazo_auth::LostResponseRetry {
         original_id: Uuid::now_v7(),
@@ -315,7 +332,9 @@ fn audit_events_cover_issuance_rotation_and_reuse_shapes() {
     });
     // A rotation is the same logical issuance: the rotated_from_id fact rides
     // on the single token_issued event instead of a second ledger row.
-    let rotated = token_issued_audit_event(&input, Some(&refresh));
+    let refresh = refresh.clone();
+    let rotated = token_issued_audit_event(&input, Some(&refresh_commit));
+    let mut refresh = refresh;
     assert_eq!(rotated.event_type, "token_issued");
     assert_eq!(
         rotated.payload["refresh_token_family_id"],

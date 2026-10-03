@@ -82,9 +82,14 @@ impl ServerCredentialIssuerOperations {
                         "Pre-authorized code or transaction code is invalid.",
                     )
                 })?;
+            let token_subject = authorization.subject_id.to_string();
             if self
                 .token_service
-                .active_subject_claims(authorization.tenant_id, authorization.subject_id)
+                .active_subject_claims(
+                    authorization.tenant_id,
+                    authorization.subject_id,
+                    &token_subject,
+                )
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -106,14 +111,16 @@ impl ServerCredentialIssuerOperations {
                 .iter()
                 .map(|id| openid4vci_authorization_detail(&self.issuer, id))
                 .collect::<Vec<_>>();
+            let authorization_id = Uuid::now_v7();
             let issued = self
                 .token_service
                 .sign_access_token(nazo_auth::AccessTokenSignInput {
+                    authorization_id: Some(authorization_id),
                     client_epoch: None,
                     user_epoch: None,
                     issuer: &self.issuer,
                     tenant_id: authorization.tenant_id,
-                    subject: &authorization.subject_id.to_string(),
+                    subject: &token_subject,
                     user_id: Some(authorization.subject_id),
                     subject_type: "user",
                     client_id,
@@ -159,6 +166,13 @@ impl ServerCredentialIssuerOperations {
                 .persist_pre_authorized_access(
                     &blake3_hex(&issued.token),
                     &CredentialAccess {
+                        authorization_id: Some(authorization_id),
+                        mtls_x5t_s256: request.mtls_x5t_s256.clone(),
+                        proof_origin: if request.client_id.is_some() {
+                            nazo_openid4vci::CredentialProofOrigin::RegisteredClient
+                        } else {
+                            nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized
+                        },
                         token_id,
                         tenant_id: authorization.tenant_id,
                         subject_id: authorization.subject_id,

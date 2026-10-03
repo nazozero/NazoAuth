@@ -48,9 +48,13 @@ impl AdminClientRepositoryPort for OAuthClientRepository {
         })
     }
 
-    fn update<'a>(&'a self, client: &'a OAuthClient) -> AdminClientFuture<'a, OAuthClient> {
+    fn update<'a>(
+        &'a self,
+        expected: &'a OAuthClient,
+        client: &'a OAuthClient,
+    ) -> AdminClientFuture<'a, OAuthClient> {
         Box::pin(async move {
-            OAuthClientRepository::update_metadata(self, client)
+            OAuthClientRepository::update_metadata_if_current(self, expected, client)
                 .await
                 .map_err(|error: RepositoryError| map_admin_client_error(error))
         })

@@ -157,6 +157,16 @@ pub fn authorization_server_metadata(
         input.mtls_enabled,
         capabilities.openid4vci_issuer,
     );
+    let revocation_auth_methods: Vec<_> = token_auth_methods
+        .iter()
+        .copied()
+        .filter(|method| *method != "attest_jwt_client_auth")
+        .collect();
+    let introspection_auth_methods: Vec<_> = revocation_auth_methods
+        .iter()
+        .copied()
+        .filter(|method| *method != "none")
+        .collect();
     let token_auth_signing_algs =
         token_endpoint_auth_signing_alg_values_supported(input.ciba_profile);
     let request_object_signing_algs =
@@ -191,9 +201,9 @@ pub fn authorization_server_metadata(
         "authorization_encryption_enc_values_supported": SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
         "token_endpoint_auth_methods_supported": token_auth_methods,
         "token_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
-        "revocation_endpoint_auth_methods_supported": token_auth_methods,
+        "revocation_endpoint_auth_methods_supported": revocation_auth_methods,
         "revocation_endpoint_auth_signing_alg_values_supported": SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
-        "introspection_endpoint_auth_methods_supported": token_auth_methods,
+        "introspection_endpoint_auth_methods_supported": introspection_auth_methods,
         "introspection_endpoint_auth_signing_alg_values_supported": SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
         "scopes_supported": scopes_supported,
         "claims_supported": CLAIMS_SUPPORTED,

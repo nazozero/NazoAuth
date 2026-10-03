@@ -8,7 +8,6 @@ diesel::table! {
         slot_index -> Int2,
         issued_at -> Timestamptz,
         expires_at -> Timestamptz,
-        last_used_at -> Nullable<Timestamptz>,
         status -> Varchar,
         revoked_at -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
@@ -190,7 +189,7 @@ diesel::table! {
     user_mfa_remembered_devices (id) {
         id -> Uuid, tenant_id -> Uuid, user_id -> Uuid, token_hash -> Varchar,
         user_agent_hash -> Nullable<Varchar>, created_at -> Timestamptz,
-        last_used_at -> Nullable<Timestamptz>, expires_at -> Timestamptz,
+        expires_at -> Timestamptz,
     }
 }
 
@@ -272,6 +271,8 @@ diesel::table! {
 
 diesel::table! {
     oauth_token_issuances (issuance_id) {
+        receipt_contract_version -> Int2,
+        authorization_code_holder -> Nullable<Jsonb>,
         principal_epoch_bound -> Bool,
         issuance_id -> Uuid,
         tenant_id -> Uuid,
@@ -438,7 +439,6 @@ diesel::table! {
         backchannel_token_delivery_mode -> Varchar,
         backchannel_client_notification_endpoint -> Nullable<Text>,
         backchannel_authentication_request_signing_alg -> Nullable<Varchar>,
-        backchannel_user_code_parameter -> Bool,
         frontchannel_logout_uri -> Nullable<Varchar>,
         frontchannel_logout_session_required -> Bool,
         subject_type -> Text,
@@ -457,6 +457,7 @@ diesel::table! {
         not_before -> Timestamptz,
         revoked_refresh_tokens -> Int8,
         completed_at -> Timestamptz,
+        coverage_version -> Int2,
     }
 }
 
@@ -518,6 +519,13 @@ diesel::table! {
         event_category -> Varchar,
         payload -> Jsonb,
         occurred_at -> Timestamptz,
+        authorization_tenant_id -> Nullable<Uuid>,
+        authorization_request_id -> Nullable<Text>,
+        authorization_par_uri -> Nullable<Text>,
+        authorization_decision -> Nullable<Text>,
+        authorization_valid_until -> Nullable<Timestamptz>,
+        business_retain_until -> Nullable<Timestamptz>,
+        exported_at -> Nullable<Timestamptz>,
     }
 }
 

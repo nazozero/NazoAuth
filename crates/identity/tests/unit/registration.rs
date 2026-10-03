@@ -43,6 +43,8 @@ struct VerificationCalls {
     code_consumes: AtomicUsize,
     code_deletes: AtomicUsize,
     tenant_ids: Mutex<Vec<crate::TenantId>>,
+    owners: Mutex<Vec<String>>,
+    fail_code_store: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Clone)]
@@ -56,12 +58,14 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         &'a self,
         tenant_id: crate::TenantId,
         _subject: &'a str,
+        owner: &'a str,
         _ttl_seconds: u64,
     ) -> RepositoryFuture<'a, bool> {
         let calls = Arc::clone(&self.calls);
         Box::pin(async move {
             calls.peer_reservations.fetch_add(1, Ordering::Relaxed);
             calls.tenant_ids.lock().unwrap().push(tenant_id);
+            calls.owners.lock().unwrap().push(owner.to_owned());
             Ok(true)
         })
     }
@@ -70,6 +74,7 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         &'a self,
         tenant_id: crate::TenantId,
         _email: &'a str,
+        owner: &'a str,
         _ttl_seconds: u64,
     ) -> RepositoryFuture<'a, bool> {
         let calls = Arc::clone(&self.calls);
@@ -77,6 +82,7 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         Box::pin(async move {
             calls.email_reservations.fetch_add(1, Ordering::Relaxed);
             calls.tenant_ids.lock().unwrap().push(tenant_id);
+            calls.owners.lock().unwrap().push(owner.to_owned());
             result
         })
     }
@@ -85,6 +91,7 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         &'a self,
         tenant_id: crate::TenantId,
         _email: &'a str,
+        owner: &'a str,
         _password_hash: PasswordHashInput,
         _ttl_seconds: u64,
     ) -> RepositoryFuture<'a, ()> {
@@ -92,7 +99,12 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         Box::pin(async move {
             calls.code_stores.fetch_add(1, Ordering::Relaxed);
             calls.tenant_ids.lock().unwrap().push(tenant_id);
-            Ok(())
+            calls.owners.lock().unwrap().push(owner.to_owned());
+            if calls.fail_code_store.load(Ordering::Relaxed) {
+                Err(RepositoryError::Unavailable)
+            } else {
+                Ok(())
+            }
         })
     }
 
@@ -130,11 +142,13 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         &'a self,
         tenant_id: crate::TenantId,
         _email: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()> {
         let calls = Arc::clone(&self.calls);
         Box::pin(async move {
             calls.code_deletes.fetch_add(1, Ordering::Relaxed);
             calls.tenant_ids.lock().unwrap().push(tenant_id);
+            calls.owners.lock().unwrap().push(owner.to_owned());
             Ok(())
         })
     }
@@ -143,11 +157,13 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         &'a self,
         tenant_id: crate::TenantId,
         _email: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()> {
         let calls = Arc::clone(&self.calls);
         Box::pin(async move {
             calls.email_releases.fetch_add(1, Ordering::Relaxed);
             calls.tenant_ids.lock().unwrap().push(tenant_id);
+            calls.owners.lock().unwrap().push(owner.to_owned());
             Ok(())
         })
     }
@@ -156,11 +172,13 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         &'a self,
         tenant_id: crate::TenantId,
         _subject: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()> {
         let calls = Arc::clone(&self.calls);
         Box::pin(async move {
             calls.peer_releases.fetch_add(1, Ordering::Relaxed);
             calls.tenant_ids.lock().unwrap().push(tenant_id);
+            calls.owners.lock().unwrap().push(owner.to_owned());
             Ok(())
         })
     }
@@ -188,14 +206,20 @@ struct RecordingSecretHashes {
     hash_calls: Arc<AtomicUsize>,
     verify_calls: Arc<AtomicUsize>,
     verify_result: bool,
+    fail_hash: bool,
 }
 
 impl SecretHashPort for RecordingSecretHashes {
     fn hash_secret(&self, _secret: String) -> RepositoryFuture<'_, PasswordHashInput> {
         let calls = Arc::clone(&self.hash_calls);
+        let fail_hash = self.fail_hash;
         Box::pin(async move {
             calls.fetch_add(1, Ordering::Relaxed);
-            Ok(PasswordHashInput::new("test-code-hash").unwrap())
+            if fail_hash {
+                Err(RepositoryError::Unavailable)
+            } else {
+                Ok(PasswordHashInput::new("test-code-hash").unwrap())
+            }
         })
     }
 
@@ -253,6 +277,7 @@ async fn assert_email_reservation_short_circuit(
             hash_calls: Arc::clone(&hash_calls),
             verify_calls,
             verify_result: false,
+            fail_hash: false,
         },
         RecordingDelivery {
             calls: Arc::clone(&delivery_calls),
@@ -343,6 +368,7 @@ async fn successful_send_scopes_code_and_cooldowns_to_service_tenant() {
             hash_calls: Arc::clone(&hash_calls),
             verify_calls: Arc::new(AtomicUsize::new(0)),
             verify_result: false,
+            fail_hash: false,
         },
         RecordingDelivery {
             calls: Arc::clone(&delivery_calls),
@@ -374,6 +400,9 @@ async fn successful_send_scopes_code_and_cooldowns_to_service_tenant() {
             .load(Ordering::Relaxed),
         1
     );
+    let owners = verification_calls.owners.lock().unwrap();
+    assert!(!owners[0].is_empty());
+    assert!(owners.iter().all(|owner| owner == &owners[0]));
     assert_eq!(verification_calls.code_stores.load(Ordering::Relaxed), 1);
     assert_eq!(hash_calls.load(Ordering::Relaxed), 1);
     assert_eq!(delivery_calls.load(Ordering::Relaxed), 1);
@@ -401,6 +430,7 @@ async fn failed_delivery_deletes_code_and_releases_tenant_scoped_reservations() 
             hash_calls: Arc::new(AtomicUsize::new(0)),
             verify_calls: Arc::new(AtomicUsize::new(0)),
             verify_result: false,
+            fail_hash: false,
         },
         RecordingDelivery {
             calls: Arc::new(AtomicUsize::new(0)),
@@ -450,6 +480,7 @@ async fn registration_scopes_code_load_and_consumption_to_service_tenant() {
             hash_calls: Arc::new(AtomicUsize::new(0)),
             verify_calls: Arc::new(AtomicUsize::new(0)),
             verify_result: true,
+            fail_hash: false,
         },
         RecordingDelivery {
             calls: Arc::new(AtomicUsize::new(0)),
@@ -479,4 +510,59 @@ async fn registration_scopes_code_load_and_consumption_to_service_tenant() {
         *verification_calls.tenant_ids.lock().unwrap(),
         vec![tenant.tenant_id; 2]
     );
+}
+
+#[tokio::test]
+async fn failed_hash_and_uncertain_code_store_release_only_this_attempt() {
+    for fail_hash in [false, true] {
+        let calls = Arc::new(VerificationCalls::default());
+        calls.fail_code_store.store(!fail_hash, Ordering::Relaxed);
+        let delivery_calls = Arc::new(AtomicUsize::new(0));
+        let service = RegistrationService::new(
+            NoExistingAccount,
+            RecordingVerificationStore {
+                email_reservation: Ok(true),
+                calls: calls.clone(),
+            },
+            RecordingSecretHashes {
+                hash_calls: Arc::new(AtomicUsize::new(0)),
+                verify_calls: Arc::new(AtomicUsize::new(0)),
+                verify_result: false,
+                fail_hash,
+            },
+            RecordingDelivery {
+                calls: delivery_calls.clone(),
+                result: Ok(()),
+            },
+            TenantContext::default(),
+            RegistrationServiceConfig {
+                delivery_enabled: true,
+                send_peer_cooldown_seconds: 60,
+                send_cooldown_seconds: 60,
+                code_ttl_seconds: 300,
+            },
+        );
+        let result = service
+            .send_verification_code("store-failure@example.test", "peer")
+            .await;
+        let expected = if fail_hash {
+            SendVerificationCodeError::CodeHash(RepositoryError::Unavailable)
+        } else {
+            SendVerificationCodeError::CodeStore(RepositoryError::Unavailable)
+        };
+        assert_eq!(result, Err(expected));
+        assert_eq!(calls.peer_releases.load(Ordering::Relaxed), 1);
+        assert_eq!(calls.email_releases.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            calls.code_deletes.load(Ordering::Relaxed),
+            usize::from(!fail_hash)
+        );
+        assert_eq!(delivery_calls.load(Ordering::Relaxed), 0);
+        let owners = calls.owners.lock().unwrap();
+        assert!(
+            owners
+                .iter()
+                .all(|owner| !owner.is_empty() && owner == &owners[0])
+        );
+    }
 }

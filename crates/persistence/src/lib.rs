@@ -7,6 +7,7 @@
 //! generic CRUD interface. Database adapters implement these focused ports.
 
 pub mod audit_chain;
+pub mod audit_wire;
 pub mod control_plane;
 pub mod directory_control;
 pub mod maintenance;
@@ -335,6 +336,13 @@ pub trait RuntimeModuleStore: Send + Sync {
         >,
     >;
 
+    /// Append a state-preserving stale-work observation; this never mutates
+    /// desired or instance state and rejects transition events.
+    fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> BoxFuture<'_, Result<(), RepositoryError>>;
+
     fn validate_revision(
         &self,
         module_id: nazo_runtime_modules::ModuleId,
@@ -395,9 +403,20 @@ pub trait ActiveTenantBoundaryStore: Send + Sync {
 pub trait TenantDirectoryStore: Send + Sync {
     fn current_revision(&self) -> BoxFuture<'_, Result<u64, RepositoryError>>;
 
+    /// Return the revision and all active bindings from one coherent storage
+    /// snapshot. Its revision may be newer than a preceding current_revision
+    /// read, but rows from different revisions must never be combined.
     fn load_active(
         &self,
     ) -> BoxFuture<'_, Result<nazo_identity::TenantDirectorySnapshot, RepositoryError>>;
+
+    /// Read one authoritative active binding. Missing bindings and inactive or
+    /// cross-tenant tenant/realm/organization placements must not be returned.
+    /// This is a fresh storage read, independent of the process directory cache.
+    fn find_active_binding(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+    ) -> BoxFuture<'_, Result<Option<nazo_identity::TenantDirectoryBinding>, RepositoryError>>;
 }
 
 #[derive(Clone)]
@@ -493,7 +512,28 @@ pub trait CibaAccountStore: Send + Sync {
 /// Administrative access-request workflow. Approval is intentionally one
 /// capability because creating the OAuth client and resolving the request must
 /// remain atomic inside the selected adapter.
+#[derive(Clone, Debug)]
+pub struct AdminAccessRequestApproval {
+    pub client: nazo_auth::ApprovedClient,
+    pub request: nazo_identity::AccessRequest,
+}
+
+/// Decision commands return the actual committed display view after the full
+/// result stream and transaction acknowledgement; authority/recovery reads are
+/// separate capabilities and cannot be replaced by this response snapshot.
 pub trait AdminAccessRequestStore: Send + Sync {
+    /// Verify the current Approved request, active client and exact secret
+    /// generation before recovering an unpublished credential delivery.
+    fn approved_delivery_matches<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+        request_id: uuid::Uuid,
+        approved_client_id: uuid::Uuid,
+        client_id: &'a str,
+        secret_binding: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<bool, RepositoryError>>;
+
     fn page<'a>(
         &'a self,
         tenant_id: nazo_identity::TenantId,
@@ -515,7 +555,7 @@ pub trait AdminAccessRequestStore: Send + Sync {
         request_id: uuid::Uuid,
         actor_user_id: nazo_identity::UserId,
         client: &'a nazo_auth::PreparedClientRegistration,
-    ) -> BoxFuture<'a, Result<nazo_auth::ApprovedClient, RepositoryError>>;
+    ) -> BoxFuture<'a, Result<AdminAccessRequestApproval, RepositoryError>>;
 
     fn reject(
         &self,
@@ -523,7 +563,7 @@ pub trait AdminAccessRequestStore: Send + Sync {
         request_id: uuid::Uuid,
         actor_user_id: nazo_identity::UserId,
         admin_note: String,
-    ) -> BoxFuture<'_, Result<(), RepositoryError>>;
+    ) -> BoxFuture<'_, Result<nazo_identity::AccessRequest, RepositoryError>>;
 }
 
 /// Durable delivery queue used by the back-channel logout worker. Claiming a

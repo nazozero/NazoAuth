@@ -385,6 +385,23 @@ impl From<Openid4vcPublicMaterial> for Openid4vcMaterial {
     }
 }
 
+/// One issuer's private certificate bundle and fresh revocation facts for CRL issuance.
+/// Unrelated JWT and request-object private keys are not prepared by this read.
+pub struct MdocCrlMaterial {
+    pub issuer_private_material: String,
+    pub revocation_snapshot: nazo_digital_credentials::CertificateRevocationSnapshot,
+}
+
+impl fmt::Debug for MdocCrlMaterial {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MdocCrlMaterial")
+            .field("issuer_private_material", &"<redacted>")
+            .field("revocation_snapshot", &self.revocation_snapshot)
+            .finish()
+    }
+}
+
 /// The latest persisted OpenID4VC material and the enclosing keyset revision.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Openid4vcState {
@@ -721,7 +738,18 @@ impl KeyManager {
         &self,
         registration: LocalKeyRegistration,
     ) -> anyhow::Result<String> {
-        let (kid, loaded) = crate::database::register_local(
+        self.database_register_local_with_revision(registration)
+            .await
+            .map(|(kid, _)| kid)
+    }
+
+    /// Return the selected kid and revision from the same authoritative local
+    /// registration outcome, including an existing key or a CAS winner.
+    pub async fn database_register_local_with_revision(
+        &self,
+        registration: LocalKeyRegistration,
+    ) -> anyhow::Result<(String, String)> {
+        let (kid, loaded, revision) = crate::database::register_local(
             &self.inner.settings,
             &self.inner.database,
             registration,
@@ -730,7 +758,7 @@ impl KeyManager {
         self.inner
             .generation
             .store(Arc::new(KeyGeneration::database(loaded)?));
-        Ok(kid)
+        Ok((kid, revision.to_string()))
     }
 
     /// Return an in-memory local key only for material that must be handed to
@@ -746,16 +774,27 @@ impl KeyManager {
         crate::database::openid4vc_state(&self.inner.database, &self.inner.settings).await
     }
 
+    /// Read one fresh authoritative generation for the selected CRL issuer.
+    /// Sealing, tenant/revision/public binding and revocation structure remain
+    /// validated; the caller owns selected certificate/profile validation.
+    pub async fn database_mdoc_crl_material(
+        &self,
+        issuer_id: &str,
+    ) -> anyhow::Result<Option<MdocCrlMaterial>> {
+        crate::database::mdoc_crl_material(&self.inner.database, issuer_id).await
+    }
+
     /// Atomically commit OpenID4VC public and private material as one keyset
     /// generation. A stale expected revision is a conflict and is never
-    /// retried with the caller's material.
+    /// retried with the caller's material. The result is the exact applied
+    /// generation, without rereading a potentially newer repository state.
     pub async fn database_commit_openid4vc(
         &self,
         expected_revision: i64,
         material: Openid4vcMaterial,
         new_private_key_pem: Option<String>,
-    ) -> anyhow::Result<()> {
-        let loaded = crate::database::commit_openid4vc(
+    ) -> anyhow::Result<Openid4vcState> {
+        let (loaded, state) = crate::database::commit_openid4vc(
             &self.inner.settings,
             &self.inner.database,
             expected_revision,
@@ -766,7 +805,7 @@ impl KeyManager {
         self.inner
             .generation
             .store(Arc::new(KeyGeneration::database(loaded)?));
-        Ok(())
+        Ok(state)
     }
 
     /// Return the public OpenID4VC view from the currently published
@@ -998,6 +1037,26 @@ impl KeyManager {
     /// Opaque repository generation revision for an operator result.
     pub async fn database_revision(&self) -> anyhow::Result<String> {
         crate::database::revision(&self.inner.database).await
+    }
+
+    /// Diagnose one existing authoritative generation without initialization,
+    /// lifecycle maintenance, rotation, or wrapping-key resealing. Missing or
+    /// invalid material is an error; metadata and revision come from one read.
+    pub async fn inspect_database(
+        external_signer: Option<Arc<dyn ExternalKeySigner>>,
+        tenant_id: uuid::Uuid,
+        repository: Arc<dyn crate::SigningKeyRepository>,
+        wrapping_keys: crate::SigningKeyWrappingKeyRing,
+    ) -> anyhow::Result<(Vec<KeyRecord>, String)> {
+        let binding = crate::database::DatabaseKeysetBinding {
+            tenant_id,
+            repository,
+            wrapping_keys,
+            external_signer,
+        };
+        let (loaded, records, revision) = crate::database::inspect(&binding).await?;
+        KeyGeneration::database(loaded)?;
+        Ok((records, revision.to_string()))
     }
 
     pub async fn load_or_create_database(

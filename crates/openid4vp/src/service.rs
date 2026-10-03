@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use nazo_digital_credentials::{
-    CredentialFormat, CredentialVerifierPort, PresentedCredential, VerifiedCredential,
+    CredentialFormat, CredentialTrustError, CredentialVerifierPort, PresentedCredential,
+    VerifiedCredential,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -116,6 +117,14 @@ where
         {
             return Err(PresentationError::InvalidState.into());
         }
+        // Reuse the DCQL admission owner for retained requests as well.
+        // A historical malformed query must not complete with zero evidence
+        // or silently lose a known metadata constraint.
+        transaction
+            .request
+            .dcql_query
+            .validate()
+            .map_err(|_| PresentationError::InvalidDcql)?;
         let vp_token = response
             .vp_token
             .as_ref()
@@ -146,7 +155,7 @@ where
             };
             for value in values {
                 let encoded = value.as_str().ok_or(PresentationError::InvalidResponse)?;
-                let credential = self
+                let credential = match self
                     .verifier
                     .verify(&PresentedCredential {
                         format: query.format,
@@ -160,16 +169,40 @@ where
                         additional_trust_anchors: additional_trust_anchors.to_vec(),
                     })
                     .await
-                    .map_err(|_| PresentationError::UntrustedPresentation)?;
-                if credential.format != query.format {
-                    return Err(PresentationError::DcqlUnsatisfied.into());
-                }
-                if !credential_matches_query(&credential, query) {
-                    return Err(PresentationError::DcqlUnsatisfied.into());
+                {
+                    Ok(credential) => credential,
+                    Err(
+                        CredentialTrustError::InvalidNonce
+                        | CredentialTrustError::InvalidSessionBinding,
+                    ) => {
+                        return Err(PresentationError::UntrustedPresentation.into());
+                    }
+                    Err(
+                        error @ (CredentialTrustError::Unavailable
+                        | CredentialTrustError::RevocationSnapshotUnavailable
+                        | CredentialTrustError::RevocationSnapshotStale),
+                    ) => {
+                        return Err(PresentationServiceError::Verifier(error));
+                    }
+                    Err(
+                        CredentialTrustError::InvalidSignature
+                        | CredentialTrustError::UntrustedIssuer
+                        | CredentialTrustError::InvalidValidity
+                        | CredentialTrustError::InvalidStatus
+                        | CredentialTrustError::InvalidHolderBinding
+                        | CredentialTrustError::InvalidEncoding
+                        | CredentialTrustError::RevokedCertificate
+                        | CredentialTrustError::RevocationStatusUnknown,
+                    ) => continue,
+                };
+                if credential.format != query.format
+                    || !credential_matches_query(&credential, query)
+                {
+                    continue;
                 }
                 verified.push(credential);
+                satisfied.insert(query.id.as_str());
             }
-            satisfied.insert(query.id.as_str());
         }
         if let Some(sets) = &transaction.request.dcql_query.credential_sets {
             for set in sets.iter().filter(|set| set.required) {
@@ -307,13 +340,19 @@ fn credential_matches_query(
         .trusted_authorities
         .as_ref()
         .is_some_and(|authorities| {
-            !authorities.iter().any(|authority| {
-                matches!(authority.authority_type.as_str(), "issuer" | "aki")
-                    && authority
+            !authorities
+                .iter()
+                .any(|authority| match authority.authority_type.as_str() {
+                    "issuer" => authority
                         .values
                         .iter()
-                        .any(|value| value == &credential.issuer)
-            })
+                        .any(|value| value == &credential.issuer),
+                    "aki" => authority
+                        .values
+                        .iter()
+                        .any(|value| credential.has_issuer_authority_key_identifier(value)),
+                    _ => false,
+                })
         })
     {
         return false;
@@ -381,4 +420,6 @@ pub enum PresentationServiceError {
     Presentation(#[from] PresentationError),
     #[error(transparent)]
     Store(#[from] PresentationStoreError),
+    #[error(transparent)]
+    Verifier(CredentialTrustError),
 }

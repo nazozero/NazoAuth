@@ -5,7 +5,7 @@ use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
 
-const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 11] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 17] = [
     "20260805000100",
     "20260905000100",
     "20260909000100",
@@ -17,8 +17,15 @@ const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 11] = [
     "20260925000100",
     "20260927000100",
     "20260927000200",
+    "20260929000400",
+    "20261001000100",
+    "20261001000200",
+    "20261001000400",
+    // Public refresh-family cutover and trigger run once per database.
+    "20261001000500",
+    "20261002000300",
 ];
-const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 11] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 17] = [
     include_str!("../../../../migrations/20260805000100_security_audit_ledger/up.sql"),
     include_str!("../../../../migrations/20260905000100_shared_audit_anchor_state/up.sql"),
     include_str!("../../../../migrations/20260909000100_exporter_owned_audit_chain/up.sql"),
@@ -30,6 +37,16 @@ const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 11] = [
     include_str!("../../../../migrations/20260925000100_audit_claim_bounded_scan/up.sql"),
     include_str!("../../../../migrations/20260927000100_audit_pending_event_set/up.sql"),
     include_str!("../../../../migrations/20260927000200_refresh_contract_ensure/up.sql"),
+    include_str!("../../../../migrations/20260929000400_audit_claim_direct_reads/up.sql"),
+    include_str!("../../../../migrations/20261001000100_authorization_decision_facts/up.sql"),
+    include_str!(
+        "../../../../migrations/20261001000200_authorization_decision_statement_timeout/up.sql"
+    ),
+    include_str!(
+        "../../../../migrations/20261001000400_refresh_contract_reference_integrity/up.sql"
+    ),
+    include_str!("../../../../migrations/20261001000500_refresh_replay_retention/up.sql"),
+    include_str!("../../../../migrations/20261002000300_audit_reachable_role_privileges/up.sql"),
 ];
 
 pub fn schema_database_url(base: &str, schema: &str) -> String {

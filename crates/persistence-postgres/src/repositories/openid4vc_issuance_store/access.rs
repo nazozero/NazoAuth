@@ -4,7 +4,10 @@ use crate::get_conn;
 use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, sql_query, sql_types};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
-use nazo_openid4vci::{CredentialAccess, CredentialStoreError, CredentialStoreFuture};
+use nazo_openid4vci::{
+    CredentialAccess, CredentialSelection, CredentialStoreError, CredentialStoreFuture,
+};
+use uuid::Uuid;
 
 pub(super) async fn access_upsert_on_connection(
     connection: &mut AsyncPgConnection,
@@ -13,27 +16,38 @@ pub(super) async fn access_upsert_on_connection(
 ) -> Result<(), diesel::result::Error> {
     sql_query(
         // The IS DISTINCT FROM guard keeps an identical projection sync from
-        // writing a new row version; a real change still updates the same four
-        // columns, and the four identity conditions keep their original role.
+        // writing a new row version. Lineage/provenance and known sender binding
+        // remain immutable. A legacy row may acquire its own verified JWT's
+        // missing mTLS projection while retaining NULL, token-bound lineage.
         "INSERT INTO openid4vci_access_grants \
-         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at) \
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) \
+         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at,proof_origin,authorization_id,mtls_x5t_s256) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) \
          ON CONFLICT (token_hash) DO UPDATE SET \
            credential_configuration_ids = EXCLUDED.credential_configuration_ids, \
            credential_identifiers = EXCLUDED.credential_identifiers, \
-           dpop_jkt = EXCLUDED.dpop_jkt, expires_at = EXCLUDED.expires_at \
+           dpop_jkt = EXCLUDED.dpop_jkt, expires_at = EXCLUDED.expires_at, \
+            mtls_x5t_s256 = COALESCE(openid4vci_access_grants.mtls_x5t_s256, EXCLUDED.mtls_x5t_s256) \
          WHERE openid4vci_access_grants.token_id = EXCLUDED.token_id \
            AND openid4vci_access_grants.tenant_id = EXCLUDED.tenant_id \
            AND openid4vci_access_grants.subject_id = EXCLUDED.subject_id \
            AND openid4vci_access_grants.client_id = EXCLUDED.client_id \
+            AND openid4vci_access_grants.authorization_id IS NOT DISTINCT FROM EXCLUDED.authorization_id \
+            AND openid4vci_access_grants.proof_origin = EXCLUDED.proof_origin \
+            AND (openid4vci_access_grants.authorization_id IS NULL \
+                 OR openid4vci_access_grants.dpop_jkt IS NOT DISTINCT FROM EXCLUDED.dpop_jkt) \
+            AND (openid4vci_access_grants.mtls_x5t_s256 IS NOT DISTINCT FROM EXCLUDED.mtls_x5t_s256 \
+                 OR (openid4vci_access_grants.authorization_id IS NULL \
+                     AND openid4vci_access_grants.mtls_x5t_s256 IS NULL)) \
            AND (openid4vci_access_grants.credential_configuration_ids, \
                 openid4vci_access_grants.credential_identifiers, \
                 openid4vci_access_grants.dpop_jkt, \
+                openid4vci_access_grants.mtls_x5t_s256, \
                 openid4vci_access_grants.expires_at) \
            IS DISTINCT FROM \
                (EXCLUDED.credential_configuration_ids, \
                 EXCLUDED.credential_identifiers, \
                 EXCLUDED.dpop_jkt, \
+                EXCLUDED.mtls_x5t_s256, \
                 EXCLUDED.expires_at)",
     )
     .bind::<sql_types::Uuid, _>(access.token_id)
@@ -45,6 +59,9 @@ pub(super) async fn access_upsert_on_connection(
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.dpop_jkt.as_deref())
     .bind::<sql_types::Timestamptz, _>(access.expires_at)
+    .bind::<sql_types::Text, _>(access.proof_origin.as_str())
+    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(access.authorization_id)
+    .bind::<sql_types::Nullable<sql_types::Text>, _>(access.mtls_x5t_s256.as_deref())
     .execute(connection)
     .await?;
     Ok(())
@@ -94,24 +111,34 @@ async fn access_persist_registered_on_connection(
          ), \
          upserted AS ( \
             INSERT INTO openid4vci_access_grants \
-            (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at) \
-            SELECT $3,$4,$5,$6,$7,$8,$9,$10,$11 FROM active_client \
+            (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at,proof_origin,authorization_id,mtls_x5t_s256) \
+            SELECT $3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14 FROM active_client \
             ON CONFLICT (token_hash) DO UPDATE SET \
               credential_configuration_ids = EXCLUDED.credential_configuration_ids, \
               credential_identifiers = EXCLUDED.credential_identifiers, \
-              dpop_jkt = EXCLUDED.dpop_jkt, expires_at = EXCLUDED.expires_at \
+              dpop_jkt = EXCLUDED.dpop_jkt, expires_at = EXCLUDED.expires_at, \
+            mtls_x5t_s256 = COALESCE(openid4vci_access_grants.mtls_x5t_s256, EXCLUDED.mtls_x5t_s256) \
             WHERE openid4vci_access_grants.token_id = EXCLUDED.token_id \
               AND openid4vci_access_grants.tenant_id = EXCLUDED.tenant_id \
               AND openid4vci_access_grants.subject_id = EXCLUDED.subject_id \
               AND openid4vci_access_grants.client_id = EXCLUDED.client_id \
+            AND openid4vci_access_grants.authorization_id IS NOT DISTINCT FROM EXCLUDED.authorization_id \
+            AND openid4vci_access_grants.proof_origin = EXCLUDED.proof_origin \
+            AND (openid4vci_access_grants.authorization_id IS NULL \
+                 OR openid4vci_access_grants.dpop_jkt IS NOT DISTINCT FROM EXCLUDED.dpop_jkt) \
+            AND (openid4vci_access_grants.mtls_x5t_s256 IS NOT DISTINCT FROM EXCLUDED.mtls_x5t_s256 \
+                 OR (openid4vci_access_grants.authorization_id IS NULL \
+                     AND openid4vci_access_grants.mtls_x5t_s256 IS NULL)) \
               AND (openid4vci_access_grants.credential_configuration_ids, \
                    openid4vci_access_grants.credential_identifiers, \
                    openid4vci_access_grants.dpop_jkt, \
+                   openid4vci_access_grants.mtls_x5t_s256, \
                    openid4vci_access_grants.expires_at) \
               IS DISTINCT FROM \
                   (EXCLUDED.credential_configuration_ids, \
                    EXCLUDED.credential_identifiers, \
                    EXCLUDED.dpop_jkt, \
+                   EXCLUDED.mtls_x5t_s256, \
                    EXCLUDED.expires_at) \
          ) \
          SELECT EXISTS (SELECT 1 FROM active_client) AS client_active",
@@ -127,6 +154,9 @@ async fn access_persist_registered_on_connection(
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.dpop_jkt.as_deref())
     .bind::<sql_types::Timestamptz, _>(access.expires_at)
+    .bind::<sql_types::Text, _>(access.proof_origin.as_str())
+    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(access.authorization_id)
+    .bind::<sql_types::Nullable<sql_types::Text>, _>(access.mtls_x5t_s256.as_deref())
     .get_result::<PersistOutcomeRow>(connection)
     .await
 }
@@ -157,6 +187,14 @@ impl Openid4vciRepository {
             if let Some(client_id) = registered_client_id
                 && client_id != access.client_id
             {
+                return Err(CredentialStoreError::InvalidTransition);
+            }
+            let expected_origin = if registered_client_id.is_some() {
+                nazo_openid4vci::CredentialProofOrigin::RegisteredClient
+            } else {
+                nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized
+            };
+            if access.proof_origin != expected_origin {
                 return Err(CredentialStoreError::InvalidTransition);
             }
             let mut connection = get_conn(&self.pool)
@@ -205,7 +243,7 @@ impl Openid4vciRepository {
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let row = sql_query(
                 "SELECT token_id, tenant_id, subject_id, client_id, credential_configuration_ids, \
-                 credential_identifiers, dpop_jkt, expires_at FROM openid4vci_access_grants \
+                 credential_identifiers, dpop_jkt, expires_at, proof_origin, authorization_id, mtls_x5t_s256 FROM openid4vci_access_grants \
                  WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2",
             )
             .bind::<sql_types::Text, _>(token_hash)
@@ -225,4 +263,46 @@ impl Openid4vciRepository {
 struct PersistOutcomeRow {
     #[diesel(sql_type = sql_types::Bool)]
     client_active: bool,
+}
+
+/// Lock the retained source and the live current grant before consulting the
+/// domain's continuation decision. The expired source row is only identity evidence.
+pub(super) async fn access_authorizes_continuation(
+    connection: &mut AsyncPgConnection,
+    original_token_id: Uuid,
+    current_token_id: Uuid,
+    selection: Option<&CredentialSelection>,
+    now: DateTime<Utc>,
+) -> Result<bool, diesel::result::Error> {
+    let rows = sql_query(
+        "SELECT token_id, tenant_id, subject_id, client_id, proof_origin, \
+                credential_configuration_ids, credential_identifiers, dpop_jkt, \
+                expires_at, authorization_id, mtls_x5t_s256 \
+         FROM openid4vci_access_grants \
+         WHERE token_id IN ($1,$2) \
+           AND (token_id <> $2 OR (revoked_at IS NULL AND expires_at > $3)) \
+         ORDER BY token_id FOR SHARE",
+    )
+    .bind::<sql_types::Uuid, _>(original_token_id)
+    .bind::<sql_types::Uuid, _>(current_token_id)
+    .bind::<sql_types::Timestamptz, _>(now)
+    .get_results::<AccessRow>(connection)
+    .await?;
+    let accesses: Vec<CredentialAccess> = rows
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<_, _>>()?;
+    let Some(original) = accesses
+        .iter()
+        .find(|access| access.token_id == original_token_id)
+    else {
+        return Ok(false);
+    };
+    let Some(current) = accesses
+        .iter()
+        .find(|access| access.token_id == current_token_id)
+    else {
+        return Ok(false);
+    };
+    Ok(current.continues_access(original, selection, now))
 }

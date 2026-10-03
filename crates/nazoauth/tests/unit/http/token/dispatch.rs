@@ -49,6 +49,8 @@ use nazo_http_actix::{IpCidr, UserinfoEndpoint};
 use nazo_oauth_server::policy::AuthorizationServerProfile;
 use nazo_oauth_server::services::ServerAuthorizationService;
 
+#[path = "dispatch/attestation.rs"]
+mod attestation;
 #[path = "dispatch/client_auth.rs"]
 mod client_auth;
 #[path = "dispatch/failure_boundaries.rs"]
@@ -122,6 +124,33 @@ async fn token_with_port_repositories(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
+    let authorization_state = Arc::new(nazo_valkey::AuthorizationStateAdapter::new(
+        &state.valkey_connection(),
+    ));
+    token_with_port_repositories_and_state(
+        state,
+        token_repository,
+        authorization_repository,
+        authorization_state,
+        resolver,
+        openid4vc,
+        req,
+        body,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn token_with_port_repositories_and_state(
+    state: Data<TestInfrastructure>,
+    token_repository: Arc<dyn nazo_auth::TokenRepositoryPort>,
+    authorization_repository: Arc<dyn nazo_auth::AuthorizationRepositoryPort>,
+    authorization_state: Arc<dyn nazo_auth::AuthorizationStateStorePort>,
+    resolver: Arc<crate::adapters::remote_client_documents::RemoteClientDocumentResolver>,
+    openid4vc: Openid4vcTokenHandles,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     let service = Data::new(ServerTokenService::from_port(
         token_repository,
         Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
@@ -132,7 +161,7 @@ async fn token_with_port_repositories(
     let connection = state.valkey_connection();
     let authorization_service = Data::new(ServerAuthorizationService::from_port(
         authorization_repository,
-        Arc::new(nazo_valkey::AuthorizationStateAdapter::new(&connection)),
+        authorization_state,
         state.keyset.clone(),
     ));
     let ciba_service = Data::new(nazo_oauth_server::services::ServerCibaService::new(

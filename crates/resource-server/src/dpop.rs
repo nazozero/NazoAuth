@@ -181,7 +181,7 @@ impl DpopProofVerifier {
         access_token: &str,
         now: i64,
     ) -> Result<(), DpopProofVerifierError> {
-        if !claims.htm.eq_ignore_ascii_case(method) {
+        if claims.htm != method {
             return Err(DpopProofVerifierError::MethodMismatch);
         }
         let actual_htu =

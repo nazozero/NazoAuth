@@ -15,9 +15,10 @@ use super::app::{
 };
 use chrono::Utc;
 use nazo_auth::{
-    AuthorizationCodeState, AuthorizationFuture, AuthorizationPortError,
+    AuthorizationCodeState, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
+    AuthorizationDecisionKind, AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationStateSnapshot,
-    AuthorizationStateStorePort, ConsentPayload, DpopNoncePolicy, GrantWrite, OAuthClient,
+    AuthorizationStateStorePort, ConsentPayload, DpopNoncePolicy, OAuthClient,
     PushedAuthorizationRequest, StoredAuthorizationGrant, ValidatedClientRegistration,
 };
 use nazo_identity::{
@@ -33,7 +34,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 use uuid::Uuid;
@@ -44,8 +45,20 @@ pub struct RecordedAuthorizationCode {
     pub ttl_seconds: u64,
 }
 
+/// A bounded, atomic repository double. Tests configure the adapter's admission
+/// result; they do not duplicate client, principal or grant-coverage policy.
+#[derive(Default)]
+pub struct DecisionState {
+    pub outcome: Option<Result<AuthorizationDecisionCommitResult, AuthorizationPortError>>,
+    pub facts: Vec<AuthorizationDecisionCommit>,
+    pub explicit_grant_writes: usize,
+}
+
 pub struct Ports {
+    pub decisions: Mutex<DecisionState>,
     pub assertion_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
+    pub ciba_request_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
+    pub ciba_replay_delay_ms: AtomicU64,
     pub client_secret: Mutex<Option<(String, String)>>,
     pub par_rate: Mutex<Option<Result<u64, AuthorizationPortError>>>,
     pub par_write: Mutex<Option<Result<(), AuthorizationPortError>>>,
@@ -54,7 +67,10 @@ pub struct Ports {
     pub stored_codes: Mutex<Vec<RecordedAuthorizationCode>>,
     pub consent: Mutex<Option<ConsentPayload>>,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
-    session: Result<Option<SessionSnapshot>, RepositoryError>,
+    pub session: Mutex<Result<Option<SessionSnapshot>, RepositoryError>>,
+    pub session_update_unavailable: AtomicBool,
+    pub session_cas_conflict: Mutex<Option<SessionSnapshot>>,
+    pub audit_transactional_unavailable: AtomicBool,
     calls: Mutex<Vec<&'static str>>,
     pub reauth_nonces: Mutex<HashMap<String, i64>>,
     pub reauth_unavailable: AtomicBool,
@@ -87,8 +103,38 @@ impl AuthorizationRepositoryPort for Ports {
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>> {
         panic!("unexpected AuthorizationRepositoryPort::grant call")
     }
-    fn upsert_grant<'a>(&'a self, _write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        panic!("unexpected AuthorizationRepositoryPort::upsert_grant call")
+    fn commit_decision(
+        &self,
+        input: AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, AuthorizationDecisionCommitResult> {
+        self.record("commit_decision");
+        Box::pin(async move {
+            let mut state = self.decisions.lock().unwrap();
+            let outcome = state
+                .outcome
+                .expect("decision admission must be configured");
+            if outcome != Ok(AuthorizationDecisionCommitResult::Committed) {
+                return outcome;
+            }
+            if state.facts.iter().any(|fact| {
+                fact.tenant_id == input.tenant_id
+                    && (fact.request_id == input.request_id
+                        || input
+                            .pushed_request_uri
+                            .as_ref()
+                            .is_some_and(|uri| fact.pushed_request_uri.as_ref() == Some(uri)))
+            }) {
+                return Ok(AuthorizationDecisionCommitResult::Conflict);
+            }
+            if input.valid_until <= Utc::now() {
+                return Ok(AuthorizationDecisionCommitResult::Expired);
+            }
+            assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
+            state.explicit_grant_writes +=
+                usize::from(input.decision == AuthorizationDecisionKind::Approve);
+            state.facts.push(input);
+            Ok(AuthorizationDecisionCommitResult::Committed)
+        })
     }
     fn client_authentication_snapshot<'a>(
         &'a self,
@@ -197,11 +243,11 @@ impl AuthorizationStateStorePort for Ports {
                 .lock()
                 .unwrap()
                 .expect("unexpected PAR write")?;
-            self.stored_par.lock().unwrap().push((
-                request_uri.into(),
-                payload.clone(),
-                ttl_seconds,
-            ));
+            let mut stored = self.stored_par.lock().unwrap();
+            if stored.iter().any(|(uri, _, _)| uri == request_uri) {
+                return Err(AuthorizationPortError::Conflict);
+            }
+            stored.push((request_uri.into(), payload.clone(), ttl_seconds));
             Ok(())
         })
     }
@@ -298,6 +344,23 @@ impl AuthorizationStateStorePort for Ports {
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::consume_jar call")
     }
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        _client_id: &'a str,
+        _jti: &'a str,
+        _window: nazo_auth::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        self.record("assertion_replay");
+        Box::pin(async {
+            *self
+                .assertion_replay
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("replay must be configured")
+        })
+    }
+
     fn consume_private_key_jwt<'a>(
         &'a self,
         _client_id: &'a str,
@@ -328,7 +391,18 @@ impl AuthorizationStateStorePort for Ports {
         _jti: &'a str,
         _ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::consume_ciba_request_object call")
+        self.record("ciba_request_object_replay");
+        Box::pin(async {
+            std::thread::sleep(std::time::Duration::from_millis(
+                self.ciba_replay_delay_ms.load(Ordering::Relaxed),
+            ));
+            *self
+                .ciba_request_replay
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("CIBA replay must be configured")
+        })
     }
     fn consume_dpop<'a>(
         &'a self,
@@ -369,13 +443,18 @@ impl SessionStorePort for Ports {
         _session_id: &'a SessionId,
     ) -> RepositoryFuture<'a, Option<SessionSnapshot>> {
         self.record("session");
-        Box::pin(async { self.session.clone() })
+        Box::pin(async { self.session.lock().unwrap().clone() })
     }
     fn delete<'a>(
         &'a self,
         _session_id: &'a nazo_identity::session::SessionId,
     ) -> RepositoryFuture<'a, bool> {
-        panic!("unexpected SessionStorePort::delete call")
+        self.record("delete_session");
+        Box::pin(async {
+            let mut loaded = self.session.lock().unwrap();
+            let session = loaded.as_mut().map_err(|error| error.clone())?;
+            Ok(session.take().is_some())
+        })
     }
     fn rotate<'a>(
         &'a self,
@@ -390,10 +469,33 @@ impl SessionStorePort for Ports {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a nazo_identity::session::SessionId,
-        _expected: &'a nazo_identity::session::SessionSnapshot,
-        _replacement: &'a nazo_identity::session::SessionRecord,
+        expected: &'a nazo_identity::session::SessionSnapshot,
+        replacement: &'a nazo_identity::session::SessionRecord,
     ) -> RepositoryFuture<'a, nazo_identity::session::SessionUpdateOutcome> {
-        panic!("unexpected SessionStorePort::compare_and_set call")
+        self.record("session_compare_and_set");
+        Box::pin(async move {
+            use nazo_identity::session::SessionUpdateOutcome;
+            if self.session_update_unavailable.load(Ordering::SeqCst) {
+                return Err(RepositoryError::Unavailable);
+            }
+            let mut loaded = self.session.lock().unwrap();
+            let stored = loaded.as_mut().map_err(|error| error.clone())?;
+            if let Some(concurrent) = self.session_cas_conflict.lock().unwrap().take() {
+                *stored = Some(concurrent);
+                return Ok(SessionUpdateOutcome::Conflict);
+            }
+            let Some(current) = stored.as_ref() else {
+                return Ok(SessionUpdateOutcome::Missing);
+            };
+            if current.version() != expected.version() {
+                return Ok(SessionUpdateOutcome::Conflict);
+            }
+            *stored = Some(SessionSnapshot::new(
+                replacement.clone(),
+                SessionVersion::from_storage(Uuid::now_v7().as_bytes().to_vec().into_boxed_slice()),
+            ));
+            Ok(SessionUpdateOutcome::Applied)
+        })
     }
 }
 impl SessionAccountPort for Ports {
@@ -409,6 +511,15 @@ impl SessionAccountPort for Ports {
 impl SecurityAudit for Ports {
     fn ensure_storage(&self) -> AuditFuture<'_> {
         Box::pin(async { Ok(()) })
+    }
+    fn ensure_transactional_ready(&self) -> AuditFuture<'_> {
+        self.record("audit_transactional_ready");
+        Box::pin(async {
+            if self.audit_transactional_unavailable.load(Ordering::SeqCst) {
+                anyhow::bail!("required audit anchor is unavailable");
+            }
+            Ok(())
+        })
     }
     fn record(&self, _event: &str, _fields: Map<String, Value>) {}
     fn record_required<'a>(
@@ -550,7 +661,10 @@ impl Fixture {
         session: Result<Option<SessionSnapshot>, RepositoryError>,
     ) -> Self {
         let ports = Arc::new(Ports {
+            decisions: Mutex::new(DecisionState::default()),
             assertion_replay: Mutex::new(None),
+            ciba_request_replay: Mutex::new(None),
+            ciba_replay_delay_ms: AtomicU64::new(0),
             client_secret: Mutex::new(None),
             par_rate: Mutex::new(None),
             par_write: Mutex::new(None),
@@ -559,7 +673,10 @@ impl Fixture {
             stored_codes: Mutex::new(Vec::new()),
             consent: Mutex::new(None),
             client,
-            session,
+            session: Mutex::new(session),
+            session_update_unavailable: AtomicBool::new(false),
+            session_cas_conflict: Mutex::new(None),
+            audit_transactional_unavailable: AtomicBool::new(false),
             calls: Mutex::new(Vec::new()),
             reauth_nonces: Mutex::new(HashMap::new()),
             reauth_unavailable: AtomicBool::new(false),

@@ -93,6 +93,25 @@ fn embedded_migration_head_tracks_latest_directory() {
 }
 
 #[test]
+fn revoked_refresh_family_cleanup_index_is_partial_and_reversible() {
+    let up = include_str!(
+        "../../../migrations/20261002000100_refresh_family_revoked_cleanup_index/up.sql"
+    );
+    let down = include_str!(
+        "../../../migrations/20261002000100_refresh_family_revoked_cleanup_index/down.sql"
+    );
+    assert!(
+        up.contains("ON oauth_refresh_families (revoked_at, tenant_id, token_family_id)")
+            && up.contains("WHERE revoked_at IS NOT NULL"),
+        "terminal-family cleanup must have a partial revoked-time scan index"
+    );
+    assert!(
+        down.contains("DROP INDEX IF EXISTS ix_orf_revoked_cleanup"),
+        "the new cleanup index migration must be reversible"
+    );
+}
+
+#[test]
 fn security_state_cleanup_has_versioned_definitions_and_no_runtime_call() {
     let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let mut definitions = 0;
@@ -902,19 +921,6 @@ async fn pending_migrations_create_all_runtime_module_state_tables() {
     // The runtime-module migration establishes its clean-install baseline once
     // per schema. Other integration tests deliberately mutate the shared
     // default schema, so this assertion needs its own fresh migration ledger.
-    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 11] = [
-        "20260805000100",
-        "20260905000100",
-        "20260909000100",
-        "20260919000100",
-        "20260919000200",
-        "20260920000100",
-        "20260923000100",
-        "20260924000100",
-        "20260925000100",
-        "20260927000100",
-        "20260927000200",
-    ];
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("public migrations needed by the isolated schema should apply");
@@ -927,32 +933,10 @@ async fn pending_migrations_create_all_runtime_module_state_tables() {
         .await
         .expect("isolated schema should create");
     drop(coordinator);
-    let separator = if database_url.contains('?') { '&' } else { '?' };
-    let isolated_url =
-        format!("{database_url}{separator}options=-csearch_path%3D{schema}%2Cpublic");
-    {
-        let mut connection = AsyncPgConnection::establish(&isolated_url)
-            .await
-            .expect("isolated migration database should connect");
-        connection
-            .batch_execute(diesel::migration::CREATE_MIGRATIONS_TABLE)
-            .await
-            .expect("isolated migration ledger should create");
-        for version in PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS {
-            sql_query(
-                "INSERT INTO __diesel_schema_migrations (version)
-                 VALUES ($1)
-                 ON CONFLICT (version) DO NOTHING",
-            )
-            .bind::<Text, _>(version)
-            .execute(&mut connection)
-            .await
-            .expect("public-only migration should be excluded from the isolated ledger");
-        }
-    }
-    nazo_postgres::run_pending_migrations(&isolated_url)
-        .await
-        .expect("pending migrations should apply to the isolated schema");
+    let isolated_url = support::schema_database_url(&database_url, &schema);
+    // Reuse the shared public-only migration exclusions. A second local list
+    // can replay already-applied public DDL through this fresh schema ledger.
+    support::run_isolated_application_migrations(&isolated_url).await;
     let mut connection = AsyncPgConnection::establish(&isolated_url)
         .await
         .expect("isolated test database should connect");
@@ -1809,6 +1793,12 @@ async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writ
     let Some(database_url) = database_url() else {
         return;
     };
+    // The isolated schema proves application migration from empty. Runtime role
+    // grants separately target the production public schema, which needs its
+    // actual complete migration baseline before configure_runtime_role.
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("runtime role fixture public baseline must be fully migrated");
     let schema = format!("access_revocation_baseline_{}", Uuid::now_v7().simple());
     let mut bootstrap = AsyncPgConnection::establish(&database_url)
         .await
@@ -2256,4 +2246,60 @@ async fn refresh_state_minimal_migration_converges_family_cap_and_contracts() {
         .batch_execute("ROLLBACK")
         .await
         .expect("migration fixture should roll back");
+}
+
+#[tokio::test]
+async fn recovery_coverage_migration_preserves_old_receipts_and_writer_default() {
+    let Some(url) = database_url() else { return };
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("recovery_coverage_migration_{}", Uuid::now_v7().simple());
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema};
+        CREATE TABLE tenants (id UUID PRIMARY KEY);
+        INSERT INTO tenants VALUES ('00000000-0000-0000-0000-000000000001')"
+        ))
+        .await
+        .unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20260828000200_recovery_invalidation/up.sql"
+        ))
+        .await
+        .unwrap();
+    let insert =
+        "INSERT INTO recovery_invalidations (operation_id, request_hash, tenant_id, state_epoch,
+        not_before, revoked_refresh_tokens, completed_at) VALUES (uuidv7(), repeat('a',64),
+        '00000000-0000-0000-0000-000000000001',uuidv7(),NOW()+INTERVAL '1 hour',4,NOW())";
+    connection.batch_execute(insert).await.unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261002000200_recovery_invalidation_coverage/up.sql"
+        ))
+        .await
+        .unwrap();
+    connection.batch_execute(insert).await.unwrap();
+    let preserved = sql_query("SELECT COUNT(*)::bigint AS count FROM recovery_invalidations WHERE coverage_version=0 AND revoked_refresh_tokens=4")
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        preserved.count, 2,
+        "history and omitted old-writer fields stay version zero"
+    );
+    connection
+        .batch_execute("SAVEPOINT invalid_coverage")
+        .await
+        .unwrap();
+    assert!(connection.batch_execute("INSERT INTO recovery_invalidations (operation_id,request_hash,tenant_id,state_epoch,not_before,revoked_refresh_tokens,completed_at,coverage_version)
+        VALUES(uuidv7(),repeat('a',64),'00000000-0000-0000-0000-000000000001',uuidv7(),NOW()+INTERVAL '1 hour',0,NOW(),2)").await.is_err());
+    connection
+        .batch_execute("ROLLBACK TO invalid_coverage")
+        .await
+        .unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261002000200_recovery_invalidation_coverage/down.sql"
+        ))
+        .await
+        .unwrap();
+    connection.batch_execute("ROLLBACK").await.unwrap();
 }

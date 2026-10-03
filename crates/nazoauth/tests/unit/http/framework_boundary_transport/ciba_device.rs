@@ -357,9 +357,12 @@ mod ciba_device_contract {
     }
     async fn token_error(response: HttpResponse, expected: &[u8]) {
         let actual = wire(response).await;
-        assert_eq!(actual.status, 400, "{actual:?}");
+        assert_eq!(actual.status, 400, "OAuth error status must be 400");
         assert_eq!(actual.headers, json_headers(true, true));
-        assert_eq!(actual.body, expected);
+        assert!(
+            actual.body == expected,
+            "OAuth error wire body must match the contract"
+        );
     }
     fn verify_jwt(state: &TestInfrastructure, token: &str, audience: &str, subject: &str) -> Value {
         let header = jsonwebtoken::decode_header(token).expect("issued compact JWT header");
@@ -423,7 +426,7 @@ mod ciba_device_contract {
         store_ciba_state_with_user(&state, &client, &approved, user, CibaStatus::Approved).await;
         let first =
             wire(call_ciba_token_with_mtls_for_test(&state, &client, approved.clone()).await).await;
-        assert_eq!(first.status, 200, "{first:?}");
+        assert_eq!(first.status, 200, "approved CIBA issuance must succeed");
         assert_eq!(first.headers, json_headers(true, true));
         let body: Value = serde_json::from_slice(&first.body).expect("token JSON");
         let access = verify_jwt(
@@ -450,15 +453,18 @@ mod ciba_device_contract {
         assert_eq!(id["amr"], json!(["pwd"]));
         assert!(id["auth_time"].as_i64().is_some());
         assert!(body.get("refresh_token").is_none());
-        assert!(
+        assert_eq!(
             CibaStore::load(&CibaStore::new(&state.valkey_connection()), &approved)
                 .await
                 .expect("post issuance state")
-                .is_none()
+                .expect("Approved state retains its original TTL")
+                .state()
+                .status,
+            CibaStatus::Approved
         );
         token_error(
             call_ciba_token_with_mtls_for_test(&state, &client, approved).await,
-            br#"{"error":"invalid_grant","error_description":"CIBA auth_req_id is expired."}"#,
+            br#"{"error":"invalid_grant","error_description":"Request failed."}"#,
         )
         .await;
     }
@@ -677,6 +683,7 @@ mod ciba_device_contract {
         let grant = format!("golden-idempotent-{}", Uuid::now_v7());
         let auth_time = Utc::now().timestamp();
         let issue = || nazo_oauth_server::domain::oauth::TokenIssue {
+            native_sso_source: None,
             user_id: Some(user),
             prepared_subject: None,
             subject: user.to_string(),
@@ -694,14 +701,14 @@ mod ciba_device_contract {
             id_token_claim_requests: Vec::new(),
             refresh_id_token_sid: None,
             include_refresh: false,
-            refresh_token_policy:
-                nazo_oauth_server::domain::oauth::RefreshTokenPolicy::PreserveExisting,
+            refresh_token_policy: nazo_oauth_server::domain::oauth::RefreshTokenPolicy::NoRefresh,
             dpop_jkt: None,
             refresh_token_dpop_jkt: None,
             mtls_x5t_s256: Some(ciba_test_mtls_certificate().thumbprint.clone()),
             refresh_token_mtls_x5t_s256: None,
             refresh_token_client_attestation_jkt: None,
-            refresh_token_scopes: None,
+            refresh_authority: None,
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,
@@ -721,7 +728,7 @@ mod ciba_device_contract {
             .await,
         ))
         .await;
-        assert_eq!(first.status, 200, "{first:?}");
+        assert_eq!(first.status, 200, "approved CIBA issuance must succeed");
         assert_eq!(first.headers, json_headers(true, true));
         let replay = wire(present_token_result(
             issue_token_response(

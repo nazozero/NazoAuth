@@ -353,6 +353,119 @@ async fn audit_ledger_append_is_chained_and_pending() {
     );
 }
 
+#[derive(Debug, Eq, PartialEq, QueryableByName)]
+struct AnchorHeartbeatRow {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    row_version: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
+    observed_at: Option<chrono::DateTime<Utc>>,
+}
+
+async fn anchor_heartbeat(connection: &mut AsyncPgConnection) -> AnchorHeartbeatRow {
+    sql_query(
+        "SELECT xmin::text AS row_version, anchor_observed_at AS observed_at \
+         FROM public.security_audit_chain_state WHERE singleton IS TRUE",
+    )
+    .get_result(connection)
+    .await
+    .expect("the physical audit heartbeat row should be readable")
+}
+
+#[tokio::test]
+async fn recent_durable_ack_throttles_heartbeat_writes_without_acknowledging_backlog() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("audit ledger migration should apply");
+    let repository = AuditLedgerRepository::new(
+        create_pool(database_url.clone(), 4).expect("audit pool should create"),
+    );
+    let initial = repository.anchor_health().await.unwrap();
+    if initial.head_sequence == 0 {
+        repository
+            .record_genesis("test-deployment", &initial.head_hash)
+            .await
+            .expect("an empty ledger should accept its genesis checkpoint");
+    }
+    drain_pending(&repository).await;
+    for subject in ["heartbeat-first", "heartbeat-backlog"] {
+        repository
+            .append(SecurityAuditEvent {
+                event_id: Uuid::now_v7(),
+                event_type: "token_issued".to_owned(),
+                event_category: "token_lifecycle".to_owned(),
+                payload: json!({"subject_hash": subject}),
+                occurred_at: Utc::now(),
+            })
+            .await
+            .expect("heartbeat fixture event should append");
+    }
+    let batch = match repository
+        .claim_batch("test-deployment", 1, 1024 * 1024, 60)
+        .await
+        .unwrap()
+    {
+        SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected one heartbeat fixture batch, got {other:?}"),
+    };
+    assert_eq!(batch.event_count(), 1);
+    repository.ack_batch(batch_ack(&batch)).await.unwrap();
+    let acknowledged = repository.anchor_health().await.unwrap();
+    assert!(acknowledged.pending_exists);
+    assert_eq!(
+        acknowledged.last_exported_sequence,
+        Some(batch.last_sequence)
+    );
+    assert!(acknowledged.last_exported_at.is_some());
+    assert_eq!(acknowledged.observed_at, acknowledged.last_exported_at);
+
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let after_ack = anchor_heartbeat(&mut connection).await;
+    for _ in 0..3 {
+        repository.observe_anchor("test-deployment").await.unwrap();
+        assert_eq!(anchor_heartbeat(&mut connection).await, after_ack);
+    }
+    assert!(matches!(
+        repository.observe_anchor("other-deployment").await,
+        Err(RepositoryError::Consistency(_))
+    ));
+    assert_eq!(anchor_heartbeat(&mut connection).await, after_ack);
+
+    // Advance only the fixture's observation age using the database clock;
+    // waiting thirty real seconds is unnecessary and would hide row rewrites.
+    sql_query(
+        "UPDATE public.security_audit_chain_state \
+         SET anchor_observed_at = CURRENT_TIMESTAMP - INTERVAL '31 seconds' \
+         WHERE singleton IS TRUE",
+    )
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let aged = anchor_heartbeat(&mut connection).await;
+    repository.observe_anchor("test-deployment").await.unwrap();
+    let refreshed = anchor_heartbeat(&mut connection).await;
+    assert_ne!(refreshed.row_version, aged.row_version);
+    assert!(refreshed.observed_at > aged.observed_at);
+    let health = repository.anchor_health().await.unwrap();
+    assert!(health.pending_exists);
+    assert_eq!(
+        health.last_exported_sequence,
+        acknowledged.last_exported_sequence
+    );
+    assert_eq!(health.last_exported_hash, acknowledged.last_exported_hash);
+    assert_eq!(health.last_exported_at, acknowledged.last_exported_at);
+    assert_eq!(
+        health.last_exported_occurred_at,
+        acknowledged.last_exported_occurred_at
+    );
+    assert_eq!(health.deployment_id, acknowledged.deployment_id);
+    assert!(health.batch.is_none());
+    drain_pending(&repository).await;
+}
+
 #[tokio::test]
 async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
     let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
@@ -892,7 +1005,7 @@ const CHAINED_CLAIM_QUERY: &str = "\
         SELECT candidate.event_id, candidate.event_type, candidate.event_category,
                candidate.payload, candidate.occurred_at
         FROM public.security_audit_events AS candidate
-        WHERE candidate.event_id = chained.event_id
+        WHERE candidate.event_id = chained.event_id AND candidate.exported_at IS NULL
         LIMIT 1
     ) AS event
     ORDER BY chained.sequence";
@@ -902,6 +1015,7 @@ const PENDING_CLAIM_QUERY: &str = "\
            event.event_category::TEXT, event.payload::TEXT, event.occurred_at,
            NULL::BYTEA, NULL::BYTEA
     FROM public.security_audit_events AS event
+    WHERE event.exported_at IS NULL
     ORDER BY event.occurred_at, event.event_id
     LIMIT 256";
 
@@ -1471,4 +1585,228 @@ async fn pending_set_cutover_guard_rejects_divergence_and_accepts_mirror() {
         .batch_execute("ROLLBACK")
         .await
         .expect("guard transaction should roll back");
+}
+
+#[tokio::test]
+async fn new_claim_budget_counts_escaped_json_wire_bytes_and_keeps_legal_singletons() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&url).await.unwrap();
+    let pool = create_pool(url, 4).unwrap();
+    let repository = AuditLedgerRepository::new(pool);
+    drain_pending(&repository).await;
+    for length in [27_000, 27_000, 32_740] {
+        repository
+            .append(SecurityAuditEvent {
+                event_id: Uuid::now_v7(),
+                event_type: "wire_budget_fixture".into(),
+                event_category: "security".into(),
+                payload: json!({"text":"\\".repeat(length)}),
+                occurred_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+    }
+    let mut claimed = 0;
+    loop {
+        let batch = match repository
+            .claim_batch("test-deployment", 256, 128 * 1024, 60)
+            .await
+            .unwrap()
+        {
+            SecurityAuditBatchClaim::Claimed(batch) => batch,
+            SecurityAuditBatchClaim::Empty => break,
+            other => panic!("unexpected {other:?}"),
+        };
+        let wire =
+            nazo_persistence::audit_wire::security_audit_batch_body("test-deployment", &batch)
+                .unwrap();
+        assert_eq!(
+            batch.event_count(),
+            1,
+            "escaping must stop the two-event prefix before commitment"
+        );
+        assert!(
+            wire.len() <= nazo_persistence::audit_wire::MAX_SECURITY_AUDIT_SINGLETON_ENVELOPE_BYTES
+        );
+        if wire.len() > 128 * 1024 {
+            assert_eq!(batch.event_count(), 1);
+        }
+        repository.ack_batch(batch_ack(&batch)).await.unwrap();
+        claimed += 1;
+    }
+    assert_eq!(claimed, 3);
+}
+
+#[derive(QueryableByName)]
+struct BudgetEventRow {
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    event_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    event_type: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    event_category: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    payload_canonical: String,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    occurred_at: chrono::DateTime<Utc>,
+}
+#[derive(QueryableByName)]
+struct BudgetChainCount {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    count: i64,
+}
+fn expected_budget_batch(
+    deliveries: &[nazo_persistence::SecurityAuditPendingDelivery],
+) -> SecurityAuditBatch {
+    let first = &deliveries[0];
+    let last = &deliveries[deliveries.len() - 1];
+    let hashes = deliveries
+        .iter()
+        .map(|event| event.event_hash.as_slice().try_into().unwrap())
+        .collect::<Vec<[u8; 32]>>();
+    SecurityAuditBatch {
+        generation: 1,
+        first_sequence: first.sequence,
+        last_sequence: last.sequence,
+        previous_hash: first.previous_hash.clone(),
+        last_hash: last.event_hash.clone(),
+        digest: nazo_persistence::audit_chain::security_audit_batch_digest(
+            "test-deployment",
+            first.sequence,
+            last.sequence,
+            deliveries.len() as i64,
+            &first.previous_hash,
+            &last.event_hash,
+            &hashes,
+        )
+        .to_vec(),
+        attempts: 0,
+        deliveries: deliveries.to_vec(),
+    }
+}
+#[tokio::test]
+async fn new_claim_budget_exact_multi_event_fit_and_one_byte_overflow_have_no_chain_gap() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&url).await.unwrap();
+    let pool = create_pool(url.clone(), 4).unwrap();
+    let repository = AuditLedgerRepository::new(pool);
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    for exact_fit in [true, false] {
+        drain_pending(&repository).await;
+        let before = repository.anchor_health().await.unwrap();
+        let ids = [Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()];
+        for (index, id) in ids.into_iter().enumerate() {
+            repository
+                .append(SecurityAuditEvent {
+                    event_id: id,
+                    event_type: "wire_budget_fixture".into(),
+                    event_category: "security".into(),
+                    payload: json!({"text": "\\".repeat(if index < 2 {27000} else {1000})}),
+                    occurred_at: chrono::DateTime::from_timestamp(1700000000 + index as i64, 0)
+                        .unwrap(),
+                })
+                .await
+                .unwrap();
+        }
+        let rows = sql_query("SELECT event_id, event_type, event_category, payload::TEXT AS payload_canonical, occurred_at FROM public.security_audit_events WHERE event_id = ANY($1) ORDER BY occurred_at,event_id")
+            .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>,_>(ids.to_vec())
+            .load::<BudgetEventRow>(&mut connection).await.unwrap();
+        let mut previous = before.head_hash.clone();
+        let mut deliveries = Vec::new();
+        for (index, row) in rows.into_iter().enumerate() {
+            let sequence = before.head_sequence + index as i64 + 1;
+            let hash = nazo_persistence::audit_chain::security_audit_event_hash(
+                sequence,
+                &previous,
+                row.event_id,
+                &row.event_type,
+                &row.event_category,
+                row.occurred_at,
+                row.payload_canonical.as_bytes(),
+            )
+            .to_vec();
+            deliveries.push(nazo_persistence::SecurityAuditPendingDelivery {
+                event_id: row.event_id,
+                sequence,
+                event_type: row.event_type,
+                event_category: row.event_category,
+                payload_canonical: row.payload_canonical,
+                occurred_at: row.occurred_at,
+                previous_hash: previous,
+                event_hash: hash.clone(),
+            });
+            previous = hash;
+        }
+        let expected = expected_budget_batch(&deliveries[..2]);
+        let exact_bytes =
+            nazo_persistence::audit_wire::security_audit_batch_body("test-deployment", &expected)
+                .unwrap()
+                .len();
+        let full = expected_budget_batch(&deliveries);
+        let full_bytes =
+            nazo_persistence::audit_wire::security_audit_batch_body("test-deployment", &full)
+                .unwrap()
+                .len();
+        let budget = if exact_fit {
+            exact_bytes
+        } else {
+            full_bytes - 1
+        };
+        assert!(budget >= 128 * 1024);
+        let SecurityAuditBatchClaim::Claimed(batch) = repository
+            .claim_batch("test-deployment", 256, budget as i64, 60)
+            .await
+            .unwrap()
+        else {
+            panic!("must claim prefix")
+        };
+        assert_eq!(batch.event_count(), 2);
+        assert_eq!(batch.first_sequence, before.head_sequence + 1);
+        assert_eq!(batch.last_sequence, before.head_sequence + 2);
+        assert_eq!(batch.digest, expected.digest);
+        assert_eq!(batch.last_hash, expected.last_hash);
+        assert_eq!(
+            batch
+                .deliveries
+                .iter()
+                .map(|event| event.event_id)
+                .collect::<Vec<_>>(),
+            ids[..2]
+        );
+        let actual_bytes =
+            nazo_persistence::audit_wire::security_audit_batch_body("test-deployment", &batch)
+                .unwrap()
+                .len();
+        if exact_fit {
+            assert_eq!(actual_bytes, budget);
+        } else {
+            assert_eq!(full_bytes, budget + 1);
+        }
+        let chained = sql_query("SELECT count(*) AS count FROM public.security_audit_chain_entries WHERE event_id = ANY($1)")
+            .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>,_>(ids.to_vec()).get_result::<BudgetChainCount>(&mut connection).await.unwrap();
+        assert_eq!(chained.count, 2);
+        let after = repository.anchor_health().await.unwrap();
+        assert_eq!(after.head_sequence, before.head_sequence + 2);
+        assert_eq!(after.head_hash, expected.last_hash);
+        repository.ack_batch(batch_ack(&batch)).await.unwrap();
+        let SecurityAuditBatchClaim::Claimed(next) = repository
+            .claim_batch("test-deployment", 256, 128 * 1024, 60)
+            .await
+            .unwrap()
+        else {
+            panic!("leftover must remain claimable")
+        };
+        assert_eq!(next.event_count(), 1);
+        assert_eq!(next.deliveries[0].event_id, ids[2]);
+        assert_eq!(next.first_sequence, before.head_sequence + 3);
+        assert_eq!(next.previous_hash, expected.last_hash);
+        assert_eq!(next.digest, expected_budget_batch(&deliveries[2..]).digest);
+        repository.ack_batch(batch_ack(&next)).await.unwrap();
+    }
 }

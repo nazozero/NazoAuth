@@ -71,6 +71,8 @@ async fn fixture(database_url: &str) -> FixtureIds {
 fn fresh_issuance(fixture: &FixtureIds, tenant_id: Uuid) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        authorization_id: None,
+        native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
             user_epoch: None,
@@ -136,7 +138,7 @@ async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
     assert_no_writes(&url, stale.issuance_id).await;
     let mut current = fresh_issuance(&fixture, tenant);
     current.principal_state = repository
-        .token_principal_state(tenant, fixture.client_id, None, &current.subject)
+        .token_principal_state(tenant, 1, None, &current.subject)
         .await
         .unwrap();
     assert_eq!(current.principal_state.client_epoch, 1);
@@ -225,7 +227,7 @@ async fn repeated_pairwise_issuance_reuses_one_binding_and_honors_user_epoch() {
         input.user_id = Some(user_id);
         input.subject = subject.clone();
         input.principal_state = repository
-            .token_principal_state(tenant, fixture.client_id, Some(user_id), &subject)
+            .token_principal_state(tenant, 0, Some(user_id), &subject)
             .await
             .unwrap();
         assert_eq!(input.principal_state.subject_bound, index > 0);

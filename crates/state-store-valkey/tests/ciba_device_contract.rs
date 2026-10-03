@@ -189,10 +189,56 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
         store.load(&auth_req_id).await.unwrap().unwrap().state(),
         &state
     );
+    let expired_id = format!("ciba-create-auth-expired-{}", uuid::Uuid::now_v7());
+    let mut expired_state = state.clone();
+    expired_state.expires_at = now;
+    assert!(expired_state.retention_expires_at > server_time(&inspector).await);
+    assert_eq!(
+        store
+            .create_with_authorization_deadline(&expired_id, &expired_state, Some(now))
+            .await
+            .unwrap(),
+        AtomicResult::DeadlineElapsed
+    );
+    assert!(
+        store.load(&expired_id).await.unwrap().is_none(),
+        "Lua create must not write expired authority despite live retention"
+    );
+    assert_eq!(
+        store.create(&expired_id, &expired_state).await.unwrap(),
+        AtomicResult::Applied
+    );
+    let expired = store.load(&expired_id).await.unwrap().unwrap();
+    assert_eq!(
+        store
+            .replace_with_authorization_deadline(
+                &expired_id,
+                expired.version(),
+                &replacement,
+                Some(now)
+            )
+            .await
+            .unwrap(),
+        AtomicResult::DeadlineElapsed
+    );
+    assert_eq!(
+        store.load(&expired_id).await.unwrap().unwrap().state(),
+        &expired_state
+    );
+    assert_eq!(
+        store
+            .delete_with_authorization_deadline(&expired_id, expired.version(), None)
+            .await
+            .unwrap(),
+        AtomicResult::Applied,
+        "ordinary expired cleanup must remain available"
+    );
+    assert!(store.load(&expired_id).await.unwrap().is_none());
+    store.delete(&auth_req_id, stored.version()).await.unwrap();
 }
 
 #[tokio::test]
-async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
+async fn concurrent_approved_ciba_polls_preserve_retryable_state_until_durable_commit() {
     let Some((connection, inspector)) = setup().await else {
         return;
     };
@@ -219,6 +265,11 @@ async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
         store.create(&auth_req_id, &state).await.unwrap(),
         AtomicResult::Applied
     );
+    let key = nazo_valkey::test_support::state_storage_key(format!(
+        "oauth:ciba:{}",
+        blake3::hash(auth_req_id.as_bytes()).to_hex()
+    ));
+    let deadline = inspector.expire_time::<i64, _>(&key).await.unwrap();
     let first = CibaService::new(store.clone());
     let second = CibaService::new(store);
     let first_stored = first.load(&auth_req_id).await.unwrap().unwrap();
@@ -232,10 +283,16 @@ async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
             .into_iter()
             .filter(|result| matches!(result, Ok(CibaPollCommit::Approved(_))))
             .count(),
-        1,
-        "approved auth_req_id must have exactly one successful redemption"
+        2,
+        "poll prepares issuance; PostgreSQL owns the final single-use fence"
     );
-    assert!(first.load(&auth_req_id).await.unwrap().is_none());
+    let retained = first.load(&auth_req_id).await.unwrap().unwrap();
+    assert_eq!(retained.state(), &state);
+    assert_eq!(
+        inspector.expire_time::<i64, _>(&key).await.unwrap(),
+        deadline
+    );
+    inspector.del::<i64, _>(&key).await.unwrap();
 }
 
 #[tokio::test]
@@ -746,9 +803,19 @@ async fn concurrent_device_denials_commit_one_terminal_result() {
         .await
         .unwrap();
     let service = DeviceGrantService::new(store);
+    let first_prepared = service
+        .prepare_decision(&user_code, || now)
+        .await
+        .unwrap()
+        .unwrap();
+    let second_prepared = service
+        .prepare_decision(&user_code, || now)
+        .await
+        .unwrap()
+        .unwrap();
     let (first, second) = tokio::join!(
-        service.deny(&user_code, || now),
-        service.deny(&user_code, || now)
+        service.deny(first_prepared, || now),
+        service.deny(second_prepared, || now)
     );
 
     assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
@@ -763,4 +830,188 @@ async fn concurrent_device_denials_commit_one_terminal_result() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_deadline() {
+    use nazo_auth::{DeviceAtomicResult, DeviceStateReplacement, DeviceStateStorePort};
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let device_code = format!("prepared-{}", uuid::Uuid::now_v7());
+    let user_code = format!("PREPARED-{}", uuid::Uuid::now_v7());
+    let device_key = nazo_valkey::test_support::device_code_storage_key(&device_code);
+    let user_key = nazo_valkey::test_support::device_user_code_storage_key(&user_code);
+    let store = DeviceStore::new(&connection);
+    let pending = pending_device(now);
+    store
+        .create(&device_code, &user_code, &pending, 60)
+        .await
+        .unwrap();
+    let device_hash = store.resolve_user_code(&user_code).await.unwrap().unwrap();
+    let raw_pending = serde_json::to_string_pretty(&pending).unwrap();
+    inspector
+        .set::<(), _, _>(
+            &device_key,
+            &raw_pending,
+            Some(Expiration::KEEPTTL),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    let deadline = inspector.pexpire_time::<i64, _>(&device_key).await.unwrap();
+    let initial = DeviceStateStorePort::load_by_device_code(&store, &device_code)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(initial.version().comparison_token(), raw_pending);
+    let DeviceAuthorizationState::Pending { payload, .. } = pending else {
+        unreachable!()
+    };
+    let approval = DeviceAuthorizationApproval {
+        user_id: uuid::Uuid::from_u128(42),
+        subject: "subject".into(),
+        auth_time: now.timestamp(),
+        amr: vec!["pwd".into()],
+        oidc_sid: Some("sid".into()),
+    };
+    let claim_id = uuid::Uuid::now_v7();
+    let claim = DeviceAuthorizationState::Approving {
+        payload: payload.clone(),
+        approval: approval.clone(),
+        claim_id,
+        grant_recorded: false,
+        started_at: now,
+    };
+    inspector
+        .set::<(), _, _>(
+            &user_key,
+            "replacement-hash",
+            Some(Expiration::KEEPTTL),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        DeviceStateStorePort::claim_decision(
+            &store,
+            &device_hash,
+            &user_code,
+            initial.version(),
+            &claim
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Conflict
+    );
+    inspector.del::<i64, _>(&user_key).await.unwrap();
+    assert_eq!(
+        DeviceStateStorePort::claim_decision(
+            &store,
+            &device_hash,
+            &user_code,
+            initial.version(),
+            &claim
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Conflict
+    );
+    assert_eq!(
+        inspector.get::<String, _>(&device_key).await.unwrap(),
+        raw_pending
+    );
+    inspector
+        .set::<(), _, _>(
+            &user_key,
+            &device_hash,
+            Some(Expiration::EX(60)),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        DeviceStateStorePort::claim_decision(
+            &store,
+            &device_hash,
+            &user_code,
+            initial.version(),
+            &claim
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Applied
+    );
+    assert_eq!(
+        inspector.pexpire_time::<i64, _>(&device_key).await.unwrap(),
+        deadline
+    );
+    // The caller must reload after claiming, before its durable grant side effect.
+    let claimed = DeviceStateStorePort::load_by_device_code(&store, &device_code)
+        .await
+        .unwrap()
+        .unwrap();
+    let recorded = DeviceAuthorizationState::Approving {
+        payload: payload.clone(),
+        approval: approval.clone(),
+        claim_id,
+        grant_recorded: true,
+        started_at: now,
+    };
+    let DeviceStateReplacement::Applied(written) = DeviceStateStorePort::replace_by_device_hash(
+        &store,
+        &device_hash,
+        claimed.version(),
+        &recorded,
+    )
+    .await
+    .unwrap() else {
+        panic!("recorded CAS must succeed")
+    };
+    assert_eq!(written.state(), &recorded);
+    assert_eq!(
+        written.version().comparison_token(),
+        inspector.get::<String, _>(&device_key).await.unwrap()
+    );
+    assert_eq!(
+        inspector.pexpire_time::<i64, _>(&device_key).await.unwrap(),
+        deadline
+    );
+    assert!(matches!(
+        DeviceStateStorePort::replace_by_device_hash(
+            &store,
+            &device_hash,
+            claimed.version(),
+            &recorded
+        )
+        .await
+        .unwrap(),
+        DeviceStateReplacement::Conflict
+    ));
+    let approved = DeviceAuthorizationState::Approved {
+        payload,
+        approval,
+        approved_at: now,
+    };
+    assert_eq!(
+        DeviceStateStorePort::complete_decision(
+            &store,
+            &device_hash,
+            &user_code,
+            written.version(),
+            &approved
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Applied
+    );
+    assert_eq!(
+        inspector.pexpire_time::<i64, _>(&device_key).await.unwrap(),
+        deadline
+    );
+    assert!(store.resolve_user_code(&user_code).await.unwrap().is_none());
 }

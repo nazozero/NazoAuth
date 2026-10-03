@@ -6,8 +6,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, NewRefreshToken, OAuthClient,
-    OidcClaimRequest, RefreshToken,
+    AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, OAuthClient, OidcClaimRequest,
+    RefreshToken,
 };
 
 /// Request-local subject claims snapshot for grants that already loaded the
@@ -18,6 +18,11 @@ pub struct PreparedTokenSubject {
     pub tenant_id: Uuid,
     pub claims: SubjectClaims,
     pub user_epoch: i64,
+    /// Exact token subject whose binding was checked in the claims snapshot.
+    pub token_subject: String,
+    /// The repository verified this subject's existing owner matches `claims`.
+    /// This is snapshot evidence, not an unchecked caller-supplied hint.
+    pub subject_bound: bool,
 }
 
 pub type TokenFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, TokenPortError>> + Send + 'a>>;
@@ -84,6 +89,13 @@ pub enum TokenIssuanceMode {
         grant_key: String,
         grant_expires_at: DateTime<Utc>,
     },
+    /// The fence identifies the code, never a request representation. Holder
+    /// evidence is independent and only authorizes replay revocation.
+    AuthorizationCode {
+        code_identity: String,
+        grant_expires_at: DateTime<Utc>,
+        holder: AuthorizationCodeHolderEvidence,
+    },
 }
 
 /// Public, non-sensitive fields projected into a `token_issued` audit event.
@@ -103,9 +115,23 @@ pub struct TokenPrincipalState {
     pub subject_bound: bool,
 }
 
+/// Family-level source authority for a Native SSO exchange. Normal member
+/// rotation remains valid; the final transaction fences revocation and expiry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeSsoSourceFence {
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub source_client_id: String,
+    pub family_id: Uuid,
+    pub device_secret_expires_at: DateTime<Utc>,
+}
+
 /// Owned input for the one durable token-issuance commit boundary.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommitTokenIssuance {
+    /// When present, must be this issuance root or its checked refresh family.
+    /// None is the explicit legacy token-bound contract.
+    pub authorization_id: Option<Uuid>,
     pub principal_state: TokenPrincipalState,
     pub subject: String,
     pub issuance_id: Uuid,
@@ -115,7 +141,8 @@ pub struct CommitTokenIssuance {
     pub mode: TokenIssuanceMode,
     pub access_token_jti: String,
     pub access_token_expires_at: i64,
-    pub refresh_token: Option<NewRefreshToken>,
+    pub refresh_token: Option<crate::RefreshTokenCommit>,
+    pub native_sso_source: Option<NativeSsoSourceFence>,
     pub audit_fields: TokenIssuedAuditFields,
 }
 
@@ -132,22 +159,141 @@ pub enum CommitTokenIssuanceResult {
     ClientInactive,
     /// The subject was disabled before durable token issuance could commit.
     SubjectInactive,
+    /// The refresh source became expired, revoked, or otherwise unavailable.
+    RefreshGrantUnavailable,
     /// Refresh-token reuse was detected and intentionally committed as a compromise.
     RotationConflict,
 }
 
-/// Durable replay evidence read back through the single-use grant fence.
-/// Present only for committed single-use redemptions; the lookup key itself
-/// is the redemption binding, so a returned row already proves the replay
-/// carries the exact same proofs as the original redemption.
+/// Client-authentication requirement selected after the owning application has
+/// authenticated the request. This is a retained requirement, not a credential
+/// parser or a fresh HTTP-authentication capability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthorizationCodeClientAuthentication {
+    Public,
+    Authenticated,
+}
+
+/// Checked, immutable original holder requirements stored with a code fence.
+/// Fresh replay facts are owned separately by the validating application.
+/// This type cannot be mutated or deserialized directly into issuance input.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct AuthorizationCodeHolderEvidence {
+    version: u8,
+    authenticated_client: bool,
+    pkce_s256: Option<String>,
+    dpop_jkt: Option<String>,
+    mtls_x5t_s256: Option<String>,
+    client_attestation_jkt: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredAuthorizationCodeHolderEvidence {
+    version: u8,
+    authenticated_client: bool,
+    pkce_s256: Option<String>,
+    dpop_jkt: Option<String>,
+    mtls_x5t_s256: Option<String>,
+    client_attestation_jkt: Option<String>,
+}
+
+impl AuthorizationCodeHolderEvidence {
+    /// The caller supplies already verified requirements. This constructor
+    /// closes the structural contract; it does not perform client/sender auth.
+    #[must_use]
+    pub fn from_verified_requirements(
+        client_authentication: AuthorizationCodeClientAuthentication,
+        pkce_s256: Option<String>,
+        dpop_jkt: Option<String>,
+        mtls_x5t_s256: Option<String>,
+        client_attestation_jkt: Option<String>,
+    ) -> Option<Self> {
+        let value = Self {
+            version: 1,
+            authenticated_client: client_authentication
+                == AuthorizationCodeClientAuthentication::Authenticated,
+            pkce_s256,
+            dpop_jkt,
+            mtls_x5t_s256,
+            client_attestation_jkt,
+        };
+        value.is_well_formed().then_some(value)
+    }
+
+    /// Restore persisted requirements through the same checked boundary.
+    /// Reading a receipt never creates fresh request authentication evidence.
+    #[must_use]
+    pub fn from_persisted(value: serde_json::Value) -> Option<Self> {
+        let stored: StoredAuthorizationCodeHolderEvidence = serde_json::from_value(value).ok()?;
+        if stored.version != 1 {
+            return None;
+        }
+        Self::from_verified_requirements(
+            if stored.authenticated_client {
+                AuthorizationCodeClientAuthentication::Authenticated
+            } else {
+                AuthorizationCodeClientAuthentication::Public
+            },
+            stored.pkce_s256,
+            stored.dpop_jkt,
+            stored.mtls_x5t_s256,
+            stored.client_attestation_jkt,
+        )
+    }
+
+    #[must_use]
+    pub fn authenticated_client(&self) -> bool {
+        self.authenticated_client
+    }
+    #[must_use]
+    pub fn pkce_s256(&self) -> Option<&str> {
+        self.pkce_s256.as_deref()
+    }
+    #[must_use]
+    pub fn dpop_jkt(&self) -> Option<&str> {
+        self.dpop_jkt.as_deref()
+    }
+    #[must_use]
+    pub fn mtls_x5t_s256(&self) -> Option<&str> {
+        self.mtls_x5t_s256.as_deref()
+    }
+    #[must_use]
+    pub fn client_attestation_jkt(&self) -> Option<&str> {
+        self.client_attestation_jkt.as_deref()
+    }
+
+    #[must_use]
+    pub fn is_well_formed(&self) -> bool {
+        let proofs = [
+            &self.pkce_s256,
+            &self.dpop_jkt,
+            &self.mtls_x5t_s256,
+            &self.client_attestation_jkt,
+        ];
+        self.version == 1
+            && proofs
+                .iter()
+                .all(|proof| proof.as_ref().is_none_or(|value| !value.is_empty()))
+            && (self.authenticated_client || proofs.iter().any(|proof| proof.is_some()))
+            && !(self.dpop_jkt.is_some() && self.mtls_x5t_s256.is_some())
+    }
+}
+
+/// Durable consumption and replay evidence. Code-identity lookup alone never
+/// proves possession: the caller must compare the independent holder evidence.
+/// Legacy receipts have no code holder evidence and retain their original
+/// exact-request lookup policy; they are never backfilled with a guessed code.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SingleUseRedemption {
+    pub authorization_code_holder: Option<AuthorizationCodeHolderEvidence>,
     pub access_token_jti: String,
     pub access_token_expires_at: DateTime<Utc>,
     pub refresh_token_family_id: Option<Uuid>,
 }
 
 pub struct AccessTokenSignInput<'a> {
+    pub authorization_id: Option<Uuid>,
     pub client_epoch: Option<i64>,
     pub user_epoch: Option<i64>,
     pub issuer: &'a str,
@@ -298,10 +444,12 @@ pub struct UserinfoSnapshot {
 }
 
 pub trait TokenRepositoryPort: Send + Sync {
+    /// Read user authority without replacing the client epoch from authentication.
+    /// The commit still rechecks both versions under its principal locks.
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
-        client_id: Uuid,
+        client_epoch: i64,
         user_id: Option<Uuid>,
         subject: &'a str,
     ) -> TokenFuture<'a, TokenPrincipalState>;
@@ -311,10 +459,11 @@ pub trait TokenRepositoryPort: Send + Sync {
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult>;
 
-    /// Reads the committed issuance row behind a single-use grant fence.
-    /// `grant_key` is the verified redemption binding; a returned row proves
-    /// the original redemption used the same proofs, so callers may revoke
-    /// the recorded tokens without a second binding comparison.
+    /// Reads committed evidence under its tenant/client consumption fence.
+    /// For an authorization code, lookup proves consumption only; callers must
+    /// match the independent original holder requirements against freshly
+    /// validated proofs before revoking. Legacy exact-request keys remain a
+    /// lookup-only compatibility contract, never a new consumption identity.
     fn single_use_redemption<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -342,11 +491,12 @@ pub trait TokenRepositoryPort: Send + Sync {
         retry_started_at: DateTime<Utc>,
     ) -> TokenFuture<'a, Option<RefreshToken>>;
 
-    fn active_subject_claims(
-        &self,
+    fn active_subject_claims<'a>(
+        &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<PreparedTokenSubject>>;
+        token_subject: &'a str,
+    ) -> TokenFuture<'a, Option<PreparedTokenSubject>>;
 
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>>;
 
@@ -380,6 +530,18 @@ pub trait TokenRepositoryPort: Send + Sync {
     ) -> TokenFuture<'_, bool>;
 
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize>;
+
+    /// Own the required revocation event in the same atomic commit as access
+    /// denial or refresh-family invalidation. Unsupported adapters fail before
+    /// effects; never emulate this by calling the ordinary mutation then audit.
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        _input: TokenRevocation<'a>,
+        _client_public_id: &'a str,
+        _source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize> {
+        Box::pin(async { Err(TokenPortError::Unavailable) })
+    }
 }
 
 pub trait TokenStateStorePort: Send + Sync {
@@ -596,9 +758,10 @@ where
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
+        token_subject: &str,
     ) -> Result<Option<PreparedTokenSubject>, TokenPortError> {
         self.repository
-            .active_subject_claims(tenant_id, user_id)
+            .active_subject_claims(tenant_id, user_id, token_subject)
             .await
     }
 
@@ -613,12 +776,12 @@ where
     pub async fn token_principal_state(
         &self,
         tenant_id: Uuid,
-        client_id: Uuid,
+        client_epoch: i64,
         user_id: Option<Uuid>,
         subject: &str,
     ) -> Result<TokenPrincipalState, TokenPortError> {
         self.repository
-            .token_principal_state(tenant_id, client_id, user_id, subject)
+            .token_principal_state(tenant_id, client_epoch, user_id, subject)
             .await
     }
 
@@ -842,19 +1005,8 @@ where
         client: &OAuthClient,
     ) -> Result<usize, TokenPortError> {
         let access_token = self
-            .signer
-            .decode_access_token(issuer, raw_token)
-            .await?
-            .filter(|claims| {
-                claims.client_id == client.client_id
-                    && claims.tenant_id.parse::<Uuid>().ok() == Some(client.tenant_id)
-            })
-            .and_then(|claims| {
-                Some(AccessTokenRevocation {
-                    jti: claims.jti,
-                    expires_at: DateTime::<Utc>::from_timestamp(claims.exp, 0)?,
-                })
-            });
+            .verified_revocation_target(issuer, raw_token, client)
+            .await?;
         if let Some(access_token) = access_token {
             self.repository
                 .revoke_issued_tokens(
@@ -877,6 +1029,55 @@ where
                 access_token: None,
             })
             .await
+    }
+
+    /// The authenticated endpoint uses this command so Required evidence cannot
+    /// lag a separately committed security effect. Token text is never logged.
+    pub async fn revoke_token_with_audit(
+        &self,
+        issuer: &str,
+        raw_token: &str,
+        client: &OAuthClient,
+        source_ip_hash: &str,
+    ) -> Result<usize, TokenPortError> {
+        let access_token = self
+            .verified_revocation_target(issuer, raw_token, client)
+            .await?;
+        self.repository
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id: client.tenant_id,
+                    client_id: client.id,
+                    raw_token,
+                    access_token,
+                },
+                &client.client_id,
+                source_ip_hash,
+            )
+            .await
+    }
+
+    async fn verified_revocation_target(
+        &self,
+        issuer: &str,
+        raw_token: &str,
+        client: &OAuthClient,
+    ) -> Result<Option<AccessTokenRevocation>, TokenPortError> {
+        let access_token = self
+            .signer
+            .decode_access_token(issuer, raw_token)
+            .await?
+            .filter(|claims| {
+                claims.client_id == client.client_id
+                    && claims.tenant_id.parse::<Uuid>().ok() == Some(client.tenant_id)
+            })
+            .and_then(|claims| {
+                Some(AccessTokenRevocation {
+                    jti: claims.jti,
+                    expires_at: DateTime::<Utc>::from_timestamp(claims.exp, 0)?,
+                })
+            });
+        Ok(access_token)
     }
 
     pub async fn sign_introspection_response(

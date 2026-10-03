@@ -90,7 +90,7 @@ impl MfaRepositoryPort for ConfirmRepository {
         _tenant_id: crate::TenantId,
         _user_id: UserId,
         _candidate_id: Uuid,
-    ) -> RepositoryFuture<'_, bool> {
+    ) -> RepositoryFuture<'_, Option<Uuid>> {
         unreachable!()
     }
 
@@ -106,27 +106,42 @@ impl MfaRepositoryPort for ConfirmRepository {
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
+        _credential_id: Uuid,
         _hashes: Vec<EncodedSecretHash>,
-    ) -> RepositoryFuture<'a, ()> {
+    ) -> RepositoryFuture<'a, bool> {
         unreachable!()
     }
 
-    fn clear_mfa_state<'a>(
+    fn clear_mfa_state_if_current<'a>(
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-    ) -> RepositoryFuture<'a, ()> {
-        unreachable!()
+        credential_id: Uuid,
+    ) -> RepositoryFuture<'a, bool> {
+        let current = *self.0.lock().unwrap();
+        Box::pin(async move { Ok(current == TotpVerificationOutcome::Accepted(credential_id)) })
+    }
+
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        tenant_id: crate::TenantId,
+        user_id: UserId,
+        credential_id: Uuid,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        assert_eq!(source_ip_hash, "fixture-source-hash");
+        self.clear_mfa_state_if_current(tenant_id, user_id, credential_id)
     }
 
     fn remember_device(
         &self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
+        _credential_id: Uuid,
         _token_hash: String,
         _user_agent_hash: Option<String>,
         _expires_at: DateTime<Utc>,
-    ) -> RepositoryFuture<'_, ()> {
+    ) -> RepositoryFuture<'_, bool> {
         unreachable!()
     }
 }
@@ -196,5 +211,44 @@ fn account() -> PublicAccount {
         profile: UserProfile::default(),
         created_at: now,
         updated_at: now,
+    }
+}
+
+#[tokio::test]
+async fn disable_reuses_verified_generation_without_consuming_another_factor() {
+    let current = Uuid::now_v7();
+    let service = MfaService::new(
+        Arc::new(ConfirmRepository(Mutex::new(
+            TotpVerificationOutcome::Accepted(current),
+        ))),
+        Arc::new(UnusedHasher),
+    );
+    for method in [
+        MfaVerificationMethod::Totp,
+        MfaVerificationMethod::BackupCode,
+    ] {
+        let stale = MfaVerificationProof {
+            method,
+            credential_id: Uuid::now_v7(),
+        };
+        assert_eq!(
+            service
+                .disable(&account(), &stale, "fixture-source-hash".to_owned())
+                .await
+                .unwrap_err()
+                .kind(),
+            MfaServiceErrorKind::InvalidCode,
+        );
+        service
+            .disable(
+                &account(),
+                &MfaVerificationProof {
+                    method,
+                    credential_id: current,
+                },
+                "fixture-source-hash".to_owned(),
+            )
+            .await
+            .expect("the current generation can be cleared with either consumed factor");
     }
 }

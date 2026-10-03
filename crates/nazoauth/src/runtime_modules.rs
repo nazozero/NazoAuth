@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::web;
+use futures_util::{StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use nazo_oauth_server::contracts::runtime_modules::{
     RuntimeModuleAdminError, RuntimeModuleAdminFuture, RuntimeModuleAdministration,
 };
@@ -96,6 +97,13 @@ impl ModuleStateRepository for PersistenceRuntimeModuleRepository {
         self.store
             .compare_and_set_instance(required_desired_revision, mutation)
             .await
+    }
+
+    async fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> Result<(), Self::Error> {
+        self.store.record_instance_observation(observation).await
     }
 
     async fn validate_revision(
@@ -217,30 +225,68 @@ impl RuntimeModules {
 
     pub(crate) fn spawn_reconciler(modules: web::Data<Self>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                interval.tick().await;
-                let outcomes = match modules.registry.reconcile_all().await {
-                    Ok(outcomes) => outcomes,
-                    Err(error) => {
-                        tracing::error!(?error, "runtime module snapshot read failed");
-                        continue;
-                    }
-                };
-                for (module_id, outcome) in outcomes {
-                    match outcome {
-                        Ok(ReconcileOutcome::NoChange) => {}
-                        Ok(outcome) => {
-                            tracing::info!(?module_id, ?outcome, "runtime module reconciled");
-                        }
-                        Err(error) => {
-                            tracing::error!(?module_id, ?error, "runtime module reconcile failed");
-                        }
-                    }
+            let planning_registry = modules.registry.clone();
+            let transition_registry = modules.registry.clone();
+            run_reconciler(
+                move || {
+                    let registry = planning_registry.clone();
+                    Box::pin(async move { registry.plan_reconciliation().await })
+                },
+                move |module_id| {
+                    let registry = transition_registry.clone();
+                    Box::pin(async move { registry.reconcile_once(module_id).await })
+                },
+            )
+            .await;
+        })
+    }
+}
+
+type ReconcileError = RegistryError<nazo_identity::ports::RepositoryError>;
+
+// The tenant owns this loop and every in-flight future. The narrow closures
+// expose the existing registry operations to deterministic scheduling tests.
+async fn run_reconciler(
+    mut plan: impl FnMut() -> BoxFuture<'static, Result<Vec<ModuleId>, ReconcileError>> + Send,
+    mut reconcile: impl FnMut(ModuleId) -> BoxFuture<'static, Result<ReconcileOutcome, ReconcileError>>
+    + Send,
+) {
+    type Error = ReconcileError;
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut planning: Option<BoxFuture<'static, Result<Vec<ModuleId>, Error>>> = None;
+    let mut transitions: FuturesUnordered<
+        BoxFuture<'static, (ModuleId, Result<ReconcileOutcome, Error>)>,
+    > = FuturesUnordered::new();
+    let mut busy = BTreeSet::new();
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                if planning.is_none() {
+                    planning = Some(plan());
                 }
             }
-        })
+            plan = async { planning.as_mut().expect("guarded planning future").await }, if planning.is_some() => {
+                planning = None;
+                match plan {
+                    Ok(ids) => for module_id in ids {
+                        if busy.insert(module_id) {
+                            let transition = reconcile(module_id);
+                            transitions.push(Box::pin(async move { (module_id, transition.await) }));
+                        }
+                    },
+                    Err(error) => tracing::error!(?error, "runtime module snapshot read failed"),
+                }
+            }
+            Some((module_id, outcome)) = transitions.next(), if !transitions.is_empty() => {
+                busy.remove(&module_id);
+                match outcome {
+                    Ok(ReconcileOutcome::NoChange) => {}
+                    Ok(outcome) => tracing::info!(?module_id, ?outcome, "runtime module reconciled"),
+                    Err(error) => tracing::error!(?module_id, ?error, "runtime module reconcile failed"),
+                }
+            }
+        }
     }
 }
 
@@ -284,6 +330,20 @@ fn map_management_error(
             tracing::warn!(%error, "runtime module administration repository failed");
             RuntimeModuleAdminError::Unavailable
         }
+        RuntimeModuleManagementError::Registry(RegistryError::Compensation {
+            operation,
+            compensation,
+        }) => {
+            tracing::warn!(
+                ?operation,
+                ?compensation,
+                "runtime module operation and admission compensation failed"
+            );
+            RuntimeModuleAdminError::Unavailable
+        }
+        RuntimeModuleManagementError::Registry(RegistryError::ServiceNotConstructed(_)) => {
+            RuntimeModuleAdminError::ServiceNotConstructed
+        }
         RuntimeModuleManagementError::Registry(
             RegistryError::RuntimeDisableBlocked(_)
             | RegistryError::ActiveDependent { .. }
@@ -315,8 +375,21 @@ fn module_catalog(settings: &Settings) -> anyhow::Result<ModuleCatalog> {
                 .map_err(|_| anyhow::anyhow!("REFRESH_TOKEN_TTL_SECONDS cannot be negative"))?,
         ),
         session: Duration::from_secs(session.session_ttl_seconds),
+        presentation_transaction: Duration::from_secs(
+            settings.openid4vc.transaction_ttl_seconds.max(30),
+        ),
         scim_security_events: Duration::from_secs(settings.storage.scim_event_retention_seconds),
     })?;
+    catalog = catalog.with_constructed_availability([
+        (
+            ModuleId::Openid4vciIssuer,
+            settings.modules.enable_openid4vci_issuer,
+        ),
+        (
+            ModuleId::Openid4vpVerifier,
+            settings.modules.enable_openid4vp_verifier,
+        ),
+    ]);
     let mut runtime_disable_blocked = BTreeSet::new();
     if protocol
         .authorization_server_profile
@@ -349,12 +422,17 @@ async fn load_explicit_desired_states(
 ) -> anyhow::Result<(BTreeSet<ModuleId>, BTreeSet<ModuleId>)> {
     let mut accepting = BTreeSet::new();
     let mut draining = BTreeSet::new();
+    let states = repository
+        .read_reconcile_state(instance_id)
+        .await?
+        .into_iter()
+        .map(|state| (state.desired.module_id, state))
+        .collect::<std::collections::BTreeMap<_, _>>();
     for module_id in ModuleId::ALL {
-        let desired = repository
-            .read_desired(module_id)
-            .await?
+        let state = states
+            .get(&module_id)
             .ok_or_else(|| anyhow::anyhow!("runtime desired state is missing"))?;
-        let enabled = desired.mode.is_enabled();
+        let enabled = catalog.effective_enabled(module_id, state.desired.mode.is_enabled());
         if catalog.runtime_disable_blocked(module_id) && !enabled {
             anyhow::bail!(
                 "runtime module {module_id:?} is required by the active security profile"
@@ -362,10 +440,8 @@ async fn load_explicit_desired_states(
         }
         if enabled {
             accepting.insert(module_id);
-        } else if repository
-            .read_instance(instance_id, module_id)
-            .await?
-            .is_some_and(|instance| {
+        } else if catalog.is_available(module_id)
+            && state.instance.as_ref().is_some_and(|instance| {
                 matches!(instance.state, ModuleState::Enabled | ModuleState::Draining)
                     && matches!(
                         catalog.spec(module_id).map(|spec| spec.disable_policy),

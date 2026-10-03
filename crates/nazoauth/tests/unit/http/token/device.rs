@@ -267,6 +267,21 @@ async fn call_device_token_for_test(
     client: &ClientRow,
     device_code: &str,
 ) -> HttpResponse {
+    call_device_token_with_request_for_test(
+        state,
+        client,
+        device_code,
+        TestRequest::post().uri("/token").to_http_request(),
+    )
+    .await
+}
+
+async fn call_device_token_with_request_for_test(
+    state: &TestInfrastructure,
+    client: &ClientRow,
+    device_code: &str,
+    request: HttpRequest,
+) -> HttpResponse {
     let connection = state.valkey_connection();
     let token_service = ServerTokenService::new(
         crate::test_support::token_issuance_repository(state.diesel_db.clone()),
@@ -276,8 +291,14 @@ async fn call_device_token_for_test(
     let issuance_config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(state);
+    let client_epoch = authorization
+        .client_authentication_snapshot(&client.client_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .client_epoch;
     let issuance = TokenIssuanceContext {
-        client_epoch: 0,
+        client_epoch,
         config: &issuance_config,
         modules: &modules,
         authorization: &authorization,
@@ -287,22 +308,20 @@ async fn call_device_token_for_test(
     let device_service = ServerDeviceGrantService::new(std::sync::Arc::new(
         nazo_valkey::DeviceStore::new(&connection),
     ));
-    let request = TestRequest::post().uri("/token").to_http_request();
-    crate::http::token::issue::test_support::present_token_result(
-        token_device_code_with_service(
-            &token_service,
-            &issuance,
-            &device_service,
-            &crate::http::token::issue::test_support::token_request_facts(
-                &request,
-                state.settings.as_ref(),
-            ),
-            client,
-            &device_token_form(Some(device_code)),
-            None,
-        )
-        .await,
+    let result = token_device_code_with_service(
+        &token_service,
+        &issuance,
+        &device_service,
+        &crate::http::token::issue::test_support::token_request_facts(
+            &request,
+            state.settings.as_ref(),
+        ),
+        client,
+        &device_token_form(Some(device_code)),
+        None,
     )
+    .await;
+    crate::http::token::issue::test_support::present_token_result(result)
 }
 
 #[test]
@@ -545,7 +564,7 @@ async fn device_code_replay_rejects_a_consumed_code_after_a_committed_issuance()
     client.client_id = format!("device-persisted-replay-{}", client.id);
     let device_code = format!("device-replay-{}", Uuid::now_v7());
     let grant_key = format!(
-        "device_code:{}::",
+        "device_code:{}",
         nazo_oauth_server::crypto::blake3_hex(&device_code)
     );
 
@@ -688,6 +707,133 @@ async fn device_http_boundaries_preserve_validation_csrf_and_verification_repres
             } else {
                 "login_required"
             }
+        );
+    }
+}
+
+#[actix_web::test]
+async fn approved_device_code_has_one_consumption_identity_across_valid_sender_keys() {
+    use nazo_auth::{DeviceAuthorizationApproval, DeviceAuthorizationState};
+    let Some(mut state) = live_device_replay_state().await else {
+        return;
+    };
+    let mut settings = (*state.settings).clone();
+    settings.protocol.dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Optional;
+    state.settings = Arc::new(settings);
+    state.keyset =
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+    let mut client = device_client();
+    client.client_id = format!("device-sender-fence-{}", Uuid::now_v7());
+    client.require_dpop_bound_tokens = true;
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(&client, None, None)
+        .await
+        .unwrap();
+    let user_id = Uuid::now_v7();
+    insert_device_user(&state, user_id).await;
+    let one = crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let two = crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let store = nazo_valkey::DeviceStore::new(&state.valkey_connection());
+    for concurrent in [false, true] {
+        let code = format!("device-sender-{}", Uuid::now_v7());
+        let now = Utc::now();
+        let approved = DeviceAuthorizationState::Approved {
+            payload: DeviceAuthorizationPayload {
+                client_id: client.client_id.clone(),
+                client_name: client.client_name.clone(),
+                scopes: vec!["openid".to_owned()],
+                resource_indicators: vec!["resource://default".to_owned()],
+                authorization_details: json!([]),
+                interval_seconds: 5,
+                issued_at: now,
+                expires_at: now + Duration::minutes(10),
+            },
+            approval: DeviceAuthorizationApproval {
+                user_id,
+                subject: user_id.to_string(),
+                auth_time: now.timestamp(),
+                amr: vec!["pwd".to_owned()],
+                oidc_sid: None,
+            },
+            approved_at: now,
+        };
+        store
+            .create(
+                &code,
+                &format!("DEVICE-{}", Uuid::now_v7().simple()),
+                &approved,
+                600,
+            )
+            .await
+            .unwrap();
+        let before =
+            crate::http::token::issue::tests::token_issuance_row_count(&state, &client).await;
+        let invalid = TestRequest::post()
+            .uri("/token")
+            .insert_header(("dpop", "invalid-proof"))
+            .to_http_request();
+        assert_eq!(
+            call_device_token_with_request_for_test(&state, &client, &code, invalid)
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            crate::http::token::issue::tests::token_issuance_row_count(&state, &client).await,
+            before
+        );
+        let request_a = crate::test_support::dpop_token_request(state.settings.as_ref(), &one);
+        let request_b = crate::test_support::dpop_token_request(state.settings.as_ref(), &two);
+        let (a, b) = if concurrent {
+            tokio::join!(
+                call_device_token_with_request_for_test(&state, &client, &code, request_a),
+                call_device_token_with_request_for_test(&state, &client, &code, request_b)
+            )
+        } else {
+            let a =
+                call_device_token_with_request_for_test(&state, &client, &code, request_a).await;
+            let b =
+                call_device_token_with_request_for_test(&state, &client, &code, request_b).await;
+            (a, b)
+        };
+        if a.status() != StatusCode::OK && b.status() != StatusCode::OK {
+            panic!(
+                "neither valid sender succeeded: {} / {}",
+                a.status(),
+                b.status()
+            );
+        }
+        assert_eq!(
+            [a.status(), b.status()]
+                .into_iter()
+                .filter(|status| *status == StatusCode::OK)
+                .count(),
+            1
+        );
+        let rejected = if a.status() == StatusCode::OK { b } else { a };
+        assert_eq!(oauth_error_code(rejected).await, "invalid_grant");
+        let replay = call_device_token_with_request_for_test(
+            &state,
+            &client,
+            &code,
+            crate::test_support::dpop_token_request(state.settings.as_ref(), &one),
+        )
+        .await;
+        assert_eq!(oauth_error_code(replay).await, "invalid_grant");
+        assert_eq!(
+            crate::http::token::issue::tests::token_issuance_row_count(&state, &client).await,
+            before + 1
+        );
+        #[derive(diesel::QueryableByName)]
+        struct Count {
+            #[diesel(sql_type=diesel::sql_types::BigInt)]
+            count: i64,
+        }
+        let mut conn = get_conn(&state.diesel_db).await.unwrap();
+        let revoked=sql_query("SELECT COUNT(*)::bigint AS count FROM access_token_revocations WHERE tenant_id=$1 AND client_id=$2").bind::<SqlUuid,_>(client.tenant_id).bind::<SqlUuid,_>(client.id).get_result::<Count>(&mut conn).await.unwrap();
+        assert_eq!(
+            revoked.count, 0,
+            "device replay must not revoke the first holder's tokens"
         );
     }
 }

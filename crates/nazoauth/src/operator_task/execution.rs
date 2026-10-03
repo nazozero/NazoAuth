@@ -101,7 +101,8 @@ pub(super) async fn execute_inner(
             let persistence = require_persistence(persistence)?;
             Ok(super::migrate_and_initialize_tenant_directory(persistence)
                 .await
-                .map(|_| None)?)
+                .map(|_| None)
+                .map_err(map_owned_persistence_error)?)
         }
         ControlOperationPayload::KeysList => {
             let persistence = require_persistence(persistence)?;
@@ -110,7 +111,8 @@ pub(super) async fn execute_inner(
             Ok(
                 crate::keyctl::operator_list_database_for_tenant(&config, &binding, persistence)
                     .await
-                    .map(|_| None)?,
+                    .map(|_| None)
+                    .map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::KeysValidate => {
@@ -124,7 +126,8 @@ pub(super) async fn execute_inner(
                     persistence,
                 )
                 .await
-                .map(|_| None)?,
+                .map(|_| None)
+                .map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::KeysGenerateLocal { alg, purposes } => {
@@ -139,7 +142,8 @@ pub(super) async fn execute_inner(
                 purposes,
             )
             .await
-            .map(|_| None)?)
+            .map(|_| None)
+            .map_err(map_owned_persistence_error)?)
         }
         ControlOperationPayload::TenantKeysGenerateLocal {
             tenant_id,
@@ -157,7 +161,8 @@ pub(super) async fn execute_inner(
                     alg,
                     purposes,
                 )
-                .await?;
+                .await
+                .map_err(map_owned_persistence_error)?;
             Ok(Some(ControlResultData::TenantKeyGenerated {
                 tenant_id: tenant_id.clone(),
                 kid,
@@ -193,7 +198,8 @@ pub(super) async fn execute_inner(
                     &public_jwk,
                 )
                 .await
-                .map(|_| None)?,
+                .map(|_| None)
+                .map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::TenantResourceEnumerate {
@@ -204,7 +210,7 @@ pub(super) async fn execute_inner(
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Enumerate,
                 tenant_id,
-                Vec::new(),
+                &[],
                 selectors,
                 context,
                 persistence,
@@ -218,12 +224,11 @@ pub(super) async fn execute_inner(
             tenant_id,
             resources,
         } => {
-            let prepared = prepare_apply_change_set(resources)?;
             let persistence = require_persistence(persistence)?;
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Apply,
                 tenant_id,
-                prepared,
+                resources,
                 &[],
                 context,
                 persistence,
@@ -237,19 +242,11 @@ pub(super) async fn execute_inner(
             tenant_id,
             resources,
         } => {
-            let prepared = resources
-                .iter()
-                .cloned()
-                .map(|identity| PreparedTenantResource {
-                    identity,
-                    payload: None,
-                })
-                .collect();
             let persistence = require_persistence(persistence)?;
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Revoke,
                 tenant_id,
-                prepared,
+                resources,
                 &[],
                 context,
                 persistence,
@@ -525,9 +522,6 @@ async fn run_recovery_invalidation(
         )
         .into());
     }
-    let active_tenant = nazo_identity::TenantContext::default_system()
-        .tenant_id
-        .as_uuid();
     let access_token_ttl = crate::settings::bounded_access_token_ttl_seconds(&config)?;
     let id_token_ttl = crate::settings::bounded_id_token_ttl_seconds(&config)?;
     let completed_at = Utc::now();
@@ -543,7 +537,6 @@ async fn run_recovery_invalidation(
         .invalidate_after_restore(
             Uuid::parse_str(context.operation_id).context("operation id is invalid")?,
             context.request_hash,
-            active_tenant,
             configured_epoch,
             not_before,
             completed_at,
@@ -578,33 +571,85 @@ pub(super) fn map_recovery_persistence_error(
     }
 }
 
+/// Only established resumable persistence owners opt into this mapping.
+/// Every unmarked anyhow error keeps the journal's default Terminal behavior.
+pub(super) fn map_owned_persistence_error(error: anyhow::Error) -> SideEffectError {
+    if error.is::<nazo_key_management::SigningKeyRepositoryUnavailable>()
+        || error.is::<nazo_persistence::MigrationUnavailable>()
+    {
+        SideEffectError::Retryable(error)
+    } else {
+        SideEffectError::Terminal(error)
+    }
+}
+
 /// Run one tenant-resource frame through the selected adapter's CAS engine,
 /// which owns all server-side tenant-resource validation and mutation.
 async fn run_tenant_resource_operation(
     operation: TenantResourceAction,
     tenant_id: &str,
-    resources: Vec<PreparedTenantResource>,
+    resources: &[TenantResourceIdentity],
     selectors: &[TenantResourceSelector],
     context: &ExecutionContext<'_>,
     persistence: &dyn OperatorPersistence,
 ) -> Result<ControlTenantResourceOutcome, SideEffectError> {
-    let binding = active_tenant_binding(persistence, tenant_id).await?;
-    let composed = crate::tenant_resource_preparation::control_plane_resources(
-        persistence.admin_clients(),
-        &binding,
-        persistence.signing_key_repository(binding.tenant.tenant_id.as_uuid()),
-    )
-    .await
-    .map_err(|error| {
-        SideEffectError::Retryable(
-            error.context("tenant-resource registration policy bridge is unavailable"),
+    // The command entry has already admitted this request, or recovered its
+    // exact accepted-journal authorization snapshot. Receipt recovery is not
+    // an alternate caller-authentication path and returns only public outcome data.
+    let parsed_tenant = parse_control_tenant_id(tenant_id)?;
+    let operation_id = Uuid::parse_str(context.operation_id)
+        .map_err(|error| SideEffectError::Terminal(error.into()))?;
+    if let Some(outcome) = persistence
+        .tenant_resource_control_outcome(
+            parsed_tenant,
+            context.deployment_id,
+            operation_id,
+            context.request_hash,
+            operation,
         )
-    })?;
-    let executor = persistence.tenant_resource_executor(
-        composed.tenant,
-        composed.data_encryption_key,
-        composed.preparation,
-    );
+        .await
+        .map_err(map_engine_error)?
+    {
+        return Ok(outcome);
+    }
+    // A missing receipt still requires fresh active-tenant admission.
+    let binding = active_tenant_binding(persistence, tenant_id).await?;
+    let (resources, executor) = match operation {
+        TenantResourceAction::Apply => {
+            let resources = prepare_apply_change_set(resources)?;
+            let composed = crate::tenant_resource_preparation::control_plane_resources(
+                persistence.admin_clients(),
+                &binding,
+                persistence.signing_key_repository(binding.tenant.tenant_id.as_uuid()),
+            )
+            .await
+            .map_err(|error| {
+                SideEffectError::Retryable(
+                    error.context("tenant-resource registration policy bridge is unavailable"),
+                )
+            })?;
+            let executor = persistence.tenant_resource_executor(
+                composed.tenant,
+                composed.data_encryption_key,
+                Some(composed.preparation),
+            );
+            (resources, executor)
+        }
+        TenantResourceAction::Enumerate | TenantResourceAction::Revoke => {
+            let resources = resources
+                .iter()
+                .cloned()
+                .map(|identity| PreparedTenantResource {
+                    identity,
+                    payload: None,
+                })
+                .collect();
+            (
+                resources,
+                persistence.tenant_resource_executor(binding.tenant, None, None),
+            )
+        }
+    };
     let actor = serde_json::json!({
         "kind": "controller",
         "controller_id": context.controller_id,
@@ -630,15 +675,11 @@ async fn active_tenant_binding(
     tenant_id: &str,
 ) -> Result<nazo_identity::TenantDirectoryBinding, SideEffectError> {
     let tenant_id = parse_control_tenant_id(tenant_id)?;
-    let snapshot = persistence
+    persistence
         .tenant_directory()
-        .load_active()
+        .find_active_binding(tenant_id)
         .await
-        .map_err(map_tenant_directory_read_error)?;
-    snapshot
-        .tenants
-        .into_iter()
-        .find(|binding| binding.tenant.tenant_id == tenant_id)
+        .map_err(map_tenant_directory_read_error)?
         .ok_or_else(|| {
             SideEffectError::Terminal(anyhow::anyhow!(
                 "operation requires an active tenant binding"

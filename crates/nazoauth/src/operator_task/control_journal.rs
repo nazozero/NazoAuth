@@ -71,10 +71,13 @@
 //! ```
 
 use std::fs::{self, OpenOptions};
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use anyhow::bail;
 use chrono::Utc;
+use fs2::FileExt as _;
 use nazo_operator_protocol::{
     CONTROL_RESULT_SCHEMA, ControlErrorCode, ControlOperation, ControlOutcome, ControlResult,
     ControlResultData, encode_control_result, validate_control_result,
@@ -146,9 +149,9 @@ pub(crate) enum JournalFlowError {
     /// proven-idempotent owner, so re-entry could duplicate a mutation.
     /// Fail-closed; requires operator resolution.
     UnknownOutcome,
-    /// A resumable side effect proved it did not reach its durable owner
-    /// because that owner was temporarily unavailable. The executing record
-    /// remains authoritative and may be resumed with the same operation.
+    /// A resumable state owner reported a typed temporary failure. Its
+    /// mutation may already be committed; the executing record stays durable
+    /// and the owner's idempotent re-entry resolves the same operation.
     RetryableExecution(anyhow::Error),
     /// Durable-state or I/O failure.  Nothing about the operation outcome
     /// can be inferred from it.
@@ -174,9 +177,10 @@ impl std::fmt::Display for JournalFlowError {
 }
 
 /// Execution-layer classification deliberately has only the two facts the
-/// journal can safely act on. It is not a general retry mechanism: an engine
-/// may mark an error retryable only after proving no side effect reached its
-/// own durable owner.
+/// journal can safely act on. It is not a general retry mechanism: only
+/// explicit owner boundaries classify typed temporary failures, and re-entry
+/// requires that operation's durable owner to provide idempotent convergence.
+/// Retryability alone does not prove that the owner has not committed.
 #[derive(Debug)]
 pub(crate) enum SideEffectError {
     Terminal(anyhow::Error),
@@ -215,6 +219,9 @@ struct OperationJournalRecord {
     phase: String,
     /// Present if and only if `phase` is `completed`.
     result: Option<ControlResult>,
+    /// Only a completed deployment-wide recovery receipt carries version 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    recovery_coverage_version: Option<u8>,
 }
 
 const PHASE_ACCEPTED: &str = "accepted";
@@ -327,17 +334,31 @@ fn validate_record(record: &OperationJournalRecord) -> anyhow::Result<()> {
         }
         other => bail!("control operation journal record has unknown phase '{other}'"),
     }
+    let covered_recovery = record.result.as_ref().is_some_and(|result| {
+        result.outcome == ControlOutcome::Succeeded
+            && matches!(
+                result.result,
+                Some(ControlResultData::RecoveryInvalidation { .. })
+            )
+    });
+    match (covered_recovery, record.recovery_coverage_version) {
+        (true, Some(1)) | (false, None) => {}
+        _ => bail!("control journal has unsupported or unrelated recovery coverage"),
+    }
     Ok(())
 }
 
 fn read_record(path: &Path) -> anyhow::Result<OperationJournalRecord> {
-    let record: OperationJournalRecord =
-        serde_json::from_slice(&fs::read(path)?).with_context(|| {
-            format!(
-                "control operation journal record {} is invalid",
-                path.display()
-            )
-        })?;
+    decode_record(&fs::read(path)?, path)
+}
+
+fn decode_record(bytes: &[u8], path: &Path) -> anyhow::Result<OperationJournalRecord> {
+    let record: OperationJournalRecord = serde_json::from_slice(bytes).with_context(|| {
+        format!(
+            "control operation journal record {} is invalid",
+            path.display()
+        )
+    })?;
     validate_record(&record)?;
     Ok(record)
 }
@@ -521,6 +542,7 @@ pub(crate) fn accept(
 
     let record = OperationJournalRecord {
         schema: CONTROL_JOURNAL_SCHEMA,
+        recovery_coverage_version: None,
         operation_id: operation.operation_id.clone(),
         request_hash: request_hash.to_owned(),
         controller_id: snapshot.controller_id.clone(),
@@ -620,14 +642,14 @@ pub(crate) fn begin_execution(
 /// durable and response-loss recovery can serve it verbatim.
 pub(crate) fn complete(
     state_directory: &Path,
-    result: &ControlResult,
-) -> Result<(), JournalFlowError> {
-    validate_control_result(result).map_err(transport)?;
+    result: ControlResult,
+) -> Result<JournaledOutcome, JournalFlowError> {
+    validate_control_result(&result).map_err(transport)?;
     // A completed journal record must always be representable on the only
     // ControlResult wire channel. Check its byte ceiling before publishing
     // terminal state so response-loss recovery can never strand an
     // unreportable completion.
-    encode_control_result(result).map_err(transport)?;
+    let stdout = encode_control_result(&result).map_err(transport)?;
     ensure_file_safe_identifier(&result.operation_id)?;
     ensure_request_hash_shape(&result.request_hash)?;
     let path = record_path(
@@ -640,15 +662,167 @@ pub(crate) fn complete(
         return Err(JournalFlowError::OperationIdConflict);
     }
     record.phase = PHASE_COMPLETED.to_owned();
-    record.result = Some(result.clone());
-    replace_record(&path, &record)
+    record.recovery_coverage_version = if result.outcome == ControlOutcome::Succeeded
+        && matches!(
+            result.result,
+            Some(ControlResultData::RecoveryInvalidation { .. })
+        ) {
+        Some(1)
+    } else {
+        None
+    };
+    record.result = Some(result);
+    validate_record(&record).map_err(transport)?;
+    replace_record(&path, &record)?;
+    // Publication, including the directory sync, succeeded. The complete
+    // result remains owned by this record; no deep copy or second encoding
+    // is needed to hand its already-validated wire bytes to the caller.
+    Ok(JournaledOutcome {
+        result: record
+            .result
+            .expect("completed record retains its assigned result"),
+        recovered: false,
+        stdout: Some(stdout),
+    })
 }
 
-/// Delete only terminal records whose completion time precedes `cutoff`
-/// (Unix seconds).  Non-terminal records and unreadable files are never
-/// touched: deletion must never fabricate "never happened" or destroy a
-/// resumable authorization.  Returns the number of deleted records.
-pub(crate) fn cleanup_completed_before(
+// Count every enumerated entry, including recent, non-terminal, temporary
+// and unreadable files. A deletion cap alone would leave scan work unbounded.
+#[derive(Clone, Copy)]
+struct CleanupBudget {
+    max_entries: usize,
+    max_elapsed: Duration,
+}
+
+const CLEANUP_BATCH_BUDGET: CleanupBudget = CleanupBudget {
+    max_entries: 64,
+    max_elapsed: Duration::from_millis(25),
+};
+
+// The public result wire limit plus bounded journal metadata. Cleanup retains
+// oversized or unknown records rather than reading arbitrary bytes under a
+// task lock. Normal journal admission/recovery validation is unchanged.
+const MAX_CLEANUP_RECORD_BYTES: usize = nazo_operator_protocol::MAX_CONTROL_RESULT_BYTES + 4096;
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct CleanupBatch {
+    checked: usize,
+    deleted: usize,
+    finished: bool,
+}
+
+fn expired_cleanup_candidate(path: &Path, cutoff: i64) -> bool {
+    if !path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".journal.json"))
+        || !regular_state_file_present(path, "control operation journal record").unwrap_or(false)
+        || state_path_present(&record_temporary_path(path)).unwrap_or(true)
+    {
+        return false;
+    }
+    let read = || -> anyhow::Result<OperationJournalRecord> {
+        let file = fs::File::open(path)?;
+        if file.metadata()?.len() > MAX_CLEANUP_RECORD_BYTES as u64 {
+            bail!("control journal cleanup record exceeds its read budget");
+        }
+        let mut bytes = Vec::new();
+        file.take((MAX_CLEANUP_RECORD_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > MAX_CLEANUP_RECORD_BYTES {
+            bail!("control journal cleanup record exceeds its read budget");
+        }
+        decode_record(&bytes, path)
+    };
+    read().ok().is_some_and(|record| {
+        path.parent()
+            .is_some_and(|directory| record_path(directory, &record.operation_id) == path)
+            && record.phase == PHASE_COMPLETED
+            && record
+                .result
+                .as_ref()
+                .is_some_and(|result| result.completed_at.is_some_and(|at| at <= cutoff))
+    })
+}
+
+fn delete_expired_cleanup_candidate(
+    state_directory: &Path,
+    path: &Path,
+    cutoff: i64,
+) -> Result<bool, JournalFlowError> {
+    let lock_path = state_directory.join("task.lock");
+    regular_state_file_present(&lock_path, "operator task lock").map_err(transport)?;
+    // A separate open owns this single candidate's OS lock. Dropping it on
+    // every return (including errors) releases the lock before enumeration.
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(transport)?;
+    regular_state_file_present(&lock_path, "operator task lock").map_err(transport)?;
+    match lock.try_lock_exclusive() {
+        Ok(()) => {}
+        Err(error) if task_lock_is_contended(&error) => return Ok(false),
+        Err(error) => return Err(transport(error)),
+    }
+    // The unlocked scan is only a hint. A concurrent business command may
+    // have replaced the record or begun temporary publication since that read.
+    if !expired_cleanup_candidate(path, cutoff) {
+        return Ok(false);
+    }
+    fs::remove_file(path).map_err(transport)?;
+    Ok(true)
+}
+
+fn cleanup_batch<I>(
+    state_directory: &Path,
+    cutoff: i64,
+    entries: &mut I,
+    budget: CleanupBudget,
+) -> Result<CleanupBatch, JournalFlowError>
+where
+    I: Iterator<Item = std::io::Result<fs::DirEntry>>,
+{
+    let started = Instant::now();
+    let mut batch = CleanupBatch::default();
+    let scan = (|| -> Result<(), JournalFlowError> {
+        while batch.checked < budget.max_entries && started.elapsed() < budget.max_elapsed {
+            let Some(entry) = entries.next() else {
+                batch.finished = true;
+                break;
+            };
+            batch.checked += 1;
+            let path = entry.map_err(transport)?.path();
+            if expired_cleanup_candidate(&path, cutoff)
+                && delete_expired_cleanup_candidate(state_directory, &path, cutoff)?
+            {
+                batch.deleted += 1;
+            }
+        }
+        Ok(())
+    })();
+    // No task lock is held during this batch's directory sync. Persist any
+    // deletions even if a later entry produced an enumeration/removal error.
+    if batch.deleted > 0 {
+        sync_directory(&control_journal_directory(state_directory)).map_err(transport)?;
+    }
+    scan?;
+    Ok(batch)
+}
+
+/// Visit one directory round using the same ReadDir across bounded batches.
+/// Every batch checks at most 64 entries and checks a 25ms elapsed budget
+/// between entries; one filesystem call is not interruptible. Enumeration and
+/// candidate screening do not hold task.lock. Deletion rechecks one candidate
+/// under a non-blocking lock; unknown, non-terminal and unresolved temporary
+/// records remain. The thirty-day cutoff is unchanged.
+///
+/// A completed round covers a static finite directory regardless of its recent
+/// prefix. Concurrent additions may need the next round; directory iteration
+/// is not a snapshot. This one-shot process retains its cursor across yields,
+/// not across process restarts. Total round duration still depends on directory
+/// size and filesystem latency; no whole-command deadline is claimed.
+pub(crate) async fn cleanup_completed_before(
     state_directory: &Path,
     cutoff: i64,
 ) -> Result<usize, JournalFlowError> {
@@ -656,45 +830,40 @@ pub(crate) fn cleanup_completed_before(
     if !state_path_present(&directory).map_err(transport)? {
         return Ok(0);
     }
+    ensure_real_state_directory(&directory).map_err(transport)?;
+    let mut entries = fs::read_dir(&directory).map_err(transport)?;
     let mut deleted = 0usize;
-    let entries = fs::read_dir(&directory).map_err(transport)?;
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(error) => return Err(transport(error)),
-        };
-        let path = entry.path();
-        if path.extension().is_some_and(|extension| extension == "tmp")
-            || !regular_state_file_present(&path, "control operation journal record")
-                .unwrap_or(false)
-        {
-            continue;
+    loop {
+        let batch = cleanup_batch(state_directory, cutoff, &mut entries, CLEANUP_BATCH_BUDGET)?;
+        deleted += batch.deleted;
+        if batch.finished {
+            return Ok(deleted);
         }
-        let eligible = read_record(&path).ok().is_some_and(|record| {
-            record.phase == PHASE_COMPLETED
-                && record
-                    .result
-                    .as_ref()
-                    .is_some_and(|result| result.completed_at.is_some_and(|at| at <= cutoff))
-        });
-        if eligible {
-            fs::remove_file(&path).map_err(transport)?;
-            deleted += 1;
-        }
+        tokio::task::yield_now().await;
     }
-    if deleted > 0 {
-        sync_directory(&directory).map_err(transport)?;
-    }
-    Ok(deleted)
 }
 
 /// Outcome of the journaled flow: the (possibly recovered) terminal result.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct JournaledOutcome {
-    pub result: ControlResult,
+    result: ControlResult,
     /// True when the result came from the journal instead of a fresh
     /// execution (response-loss recovery).
     pub recovered: bool,
+    // Present only after a fresh result's durable publication. Keep the
+    // result private so callers cannot invalidate its prepared wire bytes.
+    stdout: Option<Vec<u8>>,
+}
+
+impl JournaledOutcome {
+    pub(crate) fn into_stdout(self) -> Result<Vec<u8>, nazo_operator_protocol::ProtocolError> {
+        match self.stdout {
+            Some(bytes) => Ok(bytes),
+            // Recovered records still pass the public wire validation. Their
+            // storage schema and recovery coverage are checked by read_record.
+            None => encode_control_result(&self.result),
+        }
+    }
 }
 
 /// Run one control operation under journal discipline (E03 flow E04 calls
@@ -732,6 +901,7 @@ where
             return Ok(JournaledOutcome {
                 result: *result,
                 recovered: true,
+                stdout: None,
             });
         }
         AcceptOutcome::Resumed(JournalCheckpoint::Executing) => {}
@@ -781,12 +951,9 @@ where
     validate_control_result(&result).map_err(transport)?;
     pause("control-journal-before-result");
 
-    complete(state_directory, &result)?;
+    let outcome = complete(state_directory, result)?;
     pause("control-journal-after-result");
-    Ok(JournaledOutcome {
-        result,
-        recovered: false,
-    })
+    Ok(outcome)
 }
 
 #[cfg(test)]

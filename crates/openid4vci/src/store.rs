@@ -2,6 +2,7 @@ use std::{future::Future, pin::Pin};
 
 use chrono::{DateTime, Utc};
 use nazo_digital_credentials::CredentialFormat;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -46,8 +47,40 @@ pub struct StoredCredentialOffer {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Provenance retained by the credential authorization owner, never inferred
+/// from a placeholder client identifier. Legacy data has no such evidence.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialProofOrigin {
+    RegisteredClient,
+    AnonymousPreAuthorized,
+    #[default]
+    LegacyUnspecified,
+}
+
+impl CredentialProofOrigin {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RegisteredClient => "registered_client",
+            Self::AnonymousPreAuthorized => "anonymous_pre_authorized",
+            Self::LegacyUnspecified => "legacy_unspecified",
+        }
+    }
+}
+
+/// The exact selector authorized when an issuance intent was created.
+/// None on retained records means legacy token-bound ownership, not a guessed selector.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CredentialSelection {
+    pub configuration_id: String,
+    pub credential_identifier: Option<CredentialIdentifier>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CredentialAccess {
+    pub authorization_id: Option<Uuid>,
+    pub mtls_x5t_s256: Option<String>,
+    pub proof_origin: CredentialProofOrigin,
     pub token_id: Uuid,
     pub tenant_id: Uuid,
     pub subject_id: Uuid,
@@ -58,8 +91,52 @@ pub struct CredentialAccess {
     pub expires_at: DateTime<Utc>,
 }
 
+impl CredentialAccess {
+    /// A current token may continue only its original authorization and exact intent.
+    /// Missing retained selector or lineage evidence preserves token-bound ownership.
+    pub fn continues_access(
+        &self,
+        original: &Self,
+        selection: Option<&CredentialSelection>,
+        now: DateTime<Utc>,
+    ) -> bool {
+        let same_token = self.token_id == original.token_id;
+        let same_authorization =
+            self.authorization_id.is_some() && self.authorization_id == original.authorization_id;
+        self.expires_at > now
+            && self.tenant_id == original.tenant_id
+            && self.subject_id == original.subject_id
+            && self.client_id == original.client_id
+            && self.proof_origin == original.proof_origin
+            && self.dpop_jkt == original.dpop_jkt
+            && self.mtls_x5t_s256 == original.mtls_x5t_s256
+            && (same_token || same_authorization)
+            && match selection {
+                Some(selection) => self.authorizes_selection(selection),
+                None => same_token,
+            }
+    }
+
+    pub fn authorizes_selection(&self, selection: &CredentialSelection) -> bool {
+        self.configuration_ids.contains(&selection.configuration_id)
+            && match selection.credential_identifier.as_ref() {
+                Some(identifier) => self.credential_identifiers.contains(identifier),
+                None => self.credential_identifiers.is_empty(),
+            }
+    }
+
+    pub fn continuation_expires_at(&self, intent_expires_at: DateTime<Utc>) -> DateTime<Utc> {
+        if self.authorization_id.is_some() {
+            intent_expires_at
+        } else {
+            self.expires_at.min(intent_expires_at)
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DeferredCredential {
+    pub selection: Option<CredentialSelection>,
     pub id: Uuid,
     pub transaction_hash: String,
     pub access: CredentialAccess,
@@ -83,6 +160,16 @@ pub struct DeferredCredentialClaim {
     pub claim_id: String,
 }
 
+/// A single owner-classified deferred claim attempt. Pending and Busy retain
+/// the same live transaction and never confer signing authority.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeferredClaimOutcome {
+    Claimed(Box<DeferredCredentialClaim>),
+    Pending { retry_at: DateTime<Utc> },
+    Busy { retry_at: DateTime<Utc> },
+    Invalid,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IssuanceNotification {
     pub notification_id: String,
@@ -94,6 +181,7 @@ pub struct IssuanceNotification {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NotificationHandle {
+    pub selection: Option<CredentialSelection>,
     pub notification_id: String,
     pub token_id: Uuid,
     pub expires_at: DateTime<Utc>,
@@ -110,6 +198,7 @@ pub enum CredentialResponseEncoding {
 /// different request from retrieving a previously committed response.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoredCredentialResponse {
+    pub selection: Option<CredentialSelection>,
     pub issuance_id: Uuid,
     pub token_id: Uuid,
     pub request_digest: String,
@@ -265,7 +354,7 @@ pub trait CredentialStorePort: Send + Sync {
         token_id: Uuid,
         claim_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>;
+    ) -> CredentialStoreFuture<'a, Result<DeferredClaimOutcome, CredentialStoreError>>;
 
     fn finalize_deferred<'a>(
         &'a self,
@@ -305,6 +394,9 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
+    /// Accept one retained terminal event. An identical event/description retry
+    /// succeeds without replacing the first occurrence time; conflicting, expired
+    /// or wrong-owner notifications are rejected atomically by the store owner.
     fn record_notification<'a>(
         &'a self,
         notification: &'a IssuanceNotification,

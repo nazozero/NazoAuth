@@ -71,6 +71,7 @@ pub(super) fn client_with_grants(grant_types: &[&str]) -> ClientRow {
 }
 fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
     TokenIssue {
+        native_sso_source: None,
         user_id: None,
         prepared_subject: None,
         subject: "subject-1".to_owned(),
@@ -94,7 +95,8 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
         mtls_x5t_s256: None,
         refresh_token_mtls_x5t_s256: None,
         refresh_token_client_attestation_jkt: None,
-        refresh_token_scopes: None,
+        refresh_authority: None,
+        refresh_grant_audiences: None,
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,

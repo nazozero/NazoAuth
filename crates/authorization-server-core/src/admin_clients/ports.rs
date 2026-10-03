@@ -53,7 +53,20 @@ pub trait AdminClientRepositoryPort: Send + Sync {
         registration_access_token_blake3: Option<&'a str>,
     ) -> AdminClientFuture<'a, OAuthClient>;
 
-    fn update<'a>(&'a self, client: &'a OAuthClient) -> AdminClientFuture<'a, OAuthClient>;
+    /// A confidential-to-public authentication-class change must atomically
+    /// invalidate every existing refresh family of this client. Issuance and
+    /// mutation serialize on the same client authority before family state;
+    /// discarded confidential replay proofs cannot become public authority.
+    /// Retain revoked rows and durable revocation evidence; failure rolls back
+    /// both the class change and the invalidation.
+    /// Atomically compare all current semantic metadata with the snapshot used
+    /// to prepare this patch before applying it; return Conflict on mismatch.
+    /// This port carries no current admin principal or hierarchy proof.
+    fn update<'a>(
+        &'a self,
+        expected: &'a OAuthClient,
+        client: &'a OAuthClient,
+    ) -> AdminClientFuture<'a, OAuthClient>;
 }
 
 impl<T> AdminClientRepositoryPort for Arc<T>
@@ -87,8 +100,12 @@ where
             .insert(client, client_secret_hash, registration_access_token_blake3)
     }
 
-    fn update<'a>(&'a self, client: &'a OAuthClient) -> AdminClientFuture<'a, OAuthClient> {
-        self.as_ref().update(client)
+    fn update<'a>(
+        &'a self,
+        expected: &'a OAuthClient,
+        client: &'a OAuthClient,
+    ) -> AdminClientFuture<'a, OAuthClient> {
+        self.as_ref().update(expected, client)
     }
 }
 

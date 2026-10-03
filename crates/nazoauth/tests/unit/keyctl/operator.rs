@@ -50,6 +50,27 @@ fn rejects_unsupported_algorithms() {
 }
 
 #[tokio::test]
+async fn database_operator_diagnostics_do_not_create_a_missing_keyset() {
+    let config = database_config(&temporary_directory("diagnostics-missing"));
+    let binding = tenant_binding("http://127.0.0.1:43123");
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let persistence = MemoryOperatorPersistence {
+        repository: repository.clone(),
+    };
+    assert!(
+        operator_list_database_for_tenant(&config, &binding, &persistence)
+            .await
+            .is_err()
+    );
+    assert!(
+        operator_validate_database_for_tenant(&config, &binding, &persistence)
+            .await
+            .is_err()
+    );
+    assert!(repository.load().await.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn database_operator_keyctl_roundtrip_keeps_keys_in_the_repository() {
     let data_dir = temporary_directory("database-roundtrip");
     let config = database_config(&data_dir);

@@ -16,7 +16,7 @@ impl TokenRepositoryPort for HolderFixture {
     fn token_principal_state<'a>(
         &'a self,
         _tenant_id: Uuid,
-        _client_id: Uuid,
+        _client_epoch: i64,
         _user_id: Option<Uuid>,
         _subject: &'a str,
     ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
@@ -60,11 +60,12 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'a, Option<RefreshToken>> {
         panic!("unexpected TokenRepositoryPort::inspect_lost_response_successor call")
     }
-    fn active_subject_claims(
-        &self,
+    fn active_subject_claims<'a>(
+        &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<PreparedTokenSubject>> {
+        token_subject: &'a str,
+    ) -> TokenFuture<'a, Option<PreparedTokenSubject>> {
         panic!("unexpected TokenRepositoryPort::active_subject_claims call")
     }
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>> {
@@ -172,9 +173,13 @@ impl AuthorizationRepositoryPort for HolderFixture {
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>> {
         panic!("unexpected AuthorizationRepositoryPort::grant call")
     }
-    fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        panic!("unexpected AuthorizationRepositoryPort::upsert_grant call")
+    fn commit_decision(
+        &self,
+        input: nazo_auth::AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
+        panic!("unexpected AuthorizationRepositoryPort::commit_decision call")
     }
+
     fn client_authentication_snapshot<'a>(
         &'a self,
         client_id: &'a str,
@@ -280,6 +285,15 @@ impl AuthorizationStateStorePort for HolderFixture {
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::consume_jar call")
     }
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        _client_id: &'a str,
+        _jti: &'a str,
+        _window: nazo_auth::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        panic!("unexpected AuthorizationStateStorePort::consume_client_attestation_proof call")
+    }
+
     fn consume_private_key_jwt<'a>(
         &'a self,
         client_id: &'a str,

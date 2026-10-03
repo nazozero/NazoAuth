@@ -406,3 +406,150 @@ async fn concurrent_resource_server_nonce_validations_share_the_validity_window(
         "RFC 9449 permits concurrent proofs with distinct jti values to share a valid nonce"
     );
 }
+
+async fn replay_owner_time(inspector: &fred::prelude::Client) -> i64 {
+    use fred::prelude::LuaInterface as _;
+    let now: String = inspector
+        .eval(
+            "return redis.call('TIME')[1]",
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+        )
+        .await
+        .unwrap();
+    now.parse().unwrap()
+}
+
+#[tokio::test]
+async fn client_attestation_token_and_par_share_atomic_window_and_replay_marker() {
+    let Some(url) = explicit_valkey_url() else {
+        return;
+    };
+    let connection = nazo_valkey::test_support::scoped_connect(&url, Duration::from_secs(1))
+        .await
+        .unwrap();
+    let token = AuthorizationStateAdapter::new(&connection);
+    let par = AuthorizationStateAdapter::new(&connection);
+    let inspector = inspection_client(&url).await;
+    let now = replay_owner_time(&inspector).await;
+    let window =
+        nazo_auth::ClientAttestationProofWindow::from_verified_issued_at(now + 60).unwrap();
+    let client = uuid::Uuid::now_v7().to_string();
+    let jti = uuid::Uuid::now_v7().to_string();
+    let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(33));
+    let mut tasks = Vec::new();
+    for index in 0..32 {
+        let adapter = if index % 2 == 0 {
+            token.clone()
+        } else {
+            par.clone()
+        };
+        let barrier = barrier.clone();
+        let client = client.clone();
+        let jti = jti.clone();
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            adapter
+                .consume_client_attestation_proof(&client, &jti, window)
+                .await
+        }));
+    }
+    barrier.wait().await;
+    let mut winners = 0;
+    for task in tasks {
+        winners += usize::from(task.await.unwrap().unwrap());
+    }
+    assert_eq!(winners, 1);
+    let key = nazo_valkey::test_support::client_attestation_replay_storage_key(&client, &jti);
+    let ttl = inspector.pttl::<i64, _>(&key).await.unwrap();
+    assert!(ttl > 0 && ttl <= 361_000);
+    let remaining = window.expires_at() - replay_owner_time(&inspector).await;
+    assert!(
+        ttl >= (remaining - 1) * 1_000,
+        "marker covers the whole owner acceptance window"
+    );
+    assert!(
+        !par.consume_client_attestation_proof(&client, &jti, window)
+            .await
+            .unwrap()
+    );
+    let _: i64 = inspector.del(&key).await.unwrap();
+}
+
+#[tokio::test]
+async fn client_attestation_expired_marker_cannot_be_reinserted_by_slow_node() {
+    let Some(url) = explicit_valkey_url() else {
+        return;
+    };
+    let connection = nazo_valkey::test_support::scoped_connect(&url, Duration::from_secs(1))
+        .await
+        .unwrap();
+    let adapter = AuthorizationStateAdapter::new(&connection);
+    let inspector = inspection_client(&url).await;
+    let now = replay_owner_time(&inspector).await;
+    let window =
+        nazo_auth::ClientAttestationProofWindow::from_verified_issued_at(now - 298).unwrap();
+    let client = uuid::Uuid::now_v7().to_string();
+    let jti = uuid::Uuid::now_v7().to_string();
+    assert!(
+        adapter
+            .consume_client_attestation_proof(&client, &jti, window)
+            .await
+            .unwrap()
+    );
+    let key = nazo_valkey::test_support::client_attestation_replay_storage_key(&client, &jti);
+    let mut last_sample = None;
+    let expiry = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let owner_seconds = replay_owner_time(&inspector).await;
+            let pttl_ms = inspector.pttl::<i64, _>(&key).await.unwrap();
+            last_sample = Some((owner_seconds, pttl_ms));
+            // TIME can reach the deadline while EXAT still has PTTL=0 at
+            // the physical millisecond boundary. Observe owner expiry too.
+            if owner_seconds >= window.expires_at() && pttl_ms == -2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert!(
+        expiry.is_ok(),
+        "owner marker expiry timed out: deadline={}, last_sample={last_sample:?}",
+        window.expires_at()
+    );
+    assert!(
+        inspector
+            .get::<Option<String>, _>(&key)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        window.accepts(window.expires_at() - 1),
+        "a one-second-slow node may still locally accept"
+    );
+    assert!(
+        !adapter
+            .consume_client_attestation_proof(&client, &jti, window)
+            .await
+            .unwrap()
+    );
+    assert!(
+        inspector
+            .get::<Option<String>, _>(&key)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let future = nazo_auth::ClientAttestationProofWindow::from_verified_issued_at(
+        replay_owner_time(&inspector).await + 120,
+    )
+    .unwrap();
+    assert!(
+        !adapter
+            .consume_client_attestation_proof(&client, &uuid::Uuid::now_v7().to_string(), future)
+            .await
+            .unwrap()
+    );
+}

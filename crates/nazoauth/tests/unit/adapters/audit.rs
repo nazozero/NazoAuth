@@ -279,11 +279,10 @@ fn source_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
 }
 
 #[test]
-fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
-    // This is a source-level architecture guard for the fail-closed ordering
-    // around mutations. Runtime audit serialization is exercised above; this
-    // guard prevents a future refactor from moving the required intent behind
-    // a state change without pretending to be a protocol E2E test.
+fn high_impact_state_changes_have_durable_audit_boundaries() {
+    // Source-level guards keep authorization publication behind its atomic
+    // repository commit, and retain the distinct intent boundaries for device
+    // and CIBA flows. These assertions are not protocol or persistence E2E tests.
     let authorization =
         include_str!("../../../../authorization-server/src/domain/authorization_decision.rs");
     assert_source_order(
@@ -291,8 +290,32 @@ fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
         ".ensure_transactional_ready()",
         "preview_user_decision(",
     );
-    assert_source_order(authorization, "preview_user_decision(", "record_required(");
-    assert_source_order(authorization, "record_required(", "consume_user_decision(");
+    assert_source_order(authorization, "preview_user_decision(", "commit_decision(");
+    assert!(!authorization.contains(".discard_decision_material("));
+    assert!(!authorization.contains(".record_required("));
+    assert!(!authorization.contains("authorization_approved"));
+    assert!(!authorization.contains("authorization_denied"));
+    let service =
+        include_str!("../../../../authorization-server-core/src/authorization_service.rs");
+    let commit = source_body(
+        service,
+        "    pub async fn commit_decision(",
+        "    /// Loads and validates a consent",
+    )
+    .split_whitespace()
+    .collect::<String>();
+    assert_source_order(
+        &commit,
+        "self.repository.commit_decision(input).await?",
+        "self.state.store_authorization_code(",
+    );
+    assert!(commit.contains("result==AuthorizationDecisionCommitResult::Committed"));
+    let prompt_none =
+        include_str!("../../../../authorization-server/src/authorization/request/prompt_none.rs")
+            .split_whitespace()
+            .collect::<String>();
+    assert!(!prompt_none.contains(".discard_pushed_authorization_request("));
+    assert!(!prompt_none.contains(".record_required("));
     assert!(authorization.contains("AuthorizationDecisionError::AuditUnavailable"));
 
     let device = include_str!("../../../../authorization-server/src/token/device.rs");
@@ -1233,5 +1256,30 @@ mod transactional_readiness {
             .await
             .expect("default delegates to ensure_storage");
         assert_eq!(audit.calls.load(AtomicOrdering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn refresh_family_security_revocation_is_registered_required_evidence() {
+    assert_eq!(
+        audit_event_category("refresh_family_security_revoked"),
+        Some("token_lifecycle")
+    );
+    assert!(audit_event_is_required("refresh_family_security_revoked"));
+    assert!(prepare_event("refresh_family_security_revoked", serde_json::Map::new()).is_ok());
+}
+
+#[test]
+fn administrative_mutation_events_are_registered_required_evidence() {
+    for name in [
+        "system_tenant_admin_updated",
+        "controller_recovery_root_rotation_approved",
+        "controller_recovery_root_rotated",
+    ] {
+        assert_eq!(audit_event_category(name), Some("administration"));
+        assert!(audit_event_is_required(name));
+        let prepared = prepare_event(name, audit_fields(&[("actor_user_id", json!("actor"))]))
+            .expect("real administrative handlers must have a registered event");
+        assert_eq!(prepared.event_type, name);
     }
 }

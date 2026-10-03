@@ -4,14 +4,13 @@
 //! request — a separate evidence category from the SQL-level counters in
 //! `persistence-postgres`'s `query_counter` support.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRepositoryPort, ClientAuthenticationSnapshot,
-    CommitTokenIssuance, CommitTokenIssuanceResult, GrantWrite, OAuthClient, RefreshToken,
-    SingleUseRedemption, StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort,
-    TokenRevocation,
+    CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken, SingleUseRedemption,
+    StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort, TokenRevocation,
 };
 use uuid::Uuid;
 
@@ -26,6 +25,8 @@ pub(crate) struct CountingTokenRepository {
     pub(crate) userinfo_snapshot_calls: Arc<AtomicUsize>,
     pub(crate) principal_snapshot_calls: Arc<AtomicUsize>,
     fail_owner_lookups: bool,
+    lose_next_commit_ack: Arc<AtomicBool>,
+    code_commit_keys: Arc<Mutex<Vec<String>>>,
 }
 
 impl CountingTokenRepository {
@@ -37,6 +38,8 @@ impl CountingTokenRepository {
             userinfo_snapshot_calls: Arc::new(AtomicUsize::new(0)),
             principal_snapshot_calls: Arc::new(AtomicUsize::new(0)),
             fail_owner_lookups: false,
+            lose_next_commit_ack: Arc::new(AtomicBool::new(false)),
+            code_commit_keys: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -48,6 +51,18 @@ impl CountingTokenRepository {
             fail_owner_lookups: true,
             ..Self::new(inner)
         }
+    }
+
+    /// Let the real adapter commit its effect, then hide exactly one ACK.
+    pub(crate) fn with_lost_commit_ack(inner: Arc<dyn TokenRepositoryPort>) -> Self {
+        Self {
+            lose_next_commit_ack: Arc::new(AtomicBool::new(true)),
+            ..Self::new(inner)
+        }
+    }
+
+    pub(crate) fn code_commit_keys(&self) -> Vec<String> {
+        self.code_commit_keys.lock().unwrap().clone()
     }
 
     pub(crate) fn active_subject_claims_count(&self) -> usize {
@@ -78,20 +93,35 @@ impl TokenRepositoryPort for CountingTokenRepository {
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
-        client_id: Uuid,
+        client_epoch: i64,
         user_id: Option<Uuid>,
         subject: &'a str,
     ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
         self.principal_snapshot_calls.fetch_add(1, Ordering::SeqCst);
         self.inner
-            .token_principal_state(tenant_id, client_id, user_id, subject)
+            .token_principal_state(tenant_id, client_epoch, user_id, subject)
     }
 
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
-        self.inner.commit_token_issuance(input)
+        if let nazo_auth::TokenIssuanceMode::AuthorizationCode { code_identity, .. } = &input.mode {
+            self.code_commit_keys
+                .lock()
+                .unwrap()
+                .push(code_identity.clone());
+        }
+        Box::pin(async move {
+            let result = self.inner.commit_token_issuance(input).await?;
+            if result == CommitTokenIssuanceResult::Committed
+                && self.lose_next_commit_ack.swap(false, Ordering::SeqCst)
+            {
+                Err(nazo_auth::TokenPortError::Unavailable)
+            } else {
+                Ok(result)
+            }
+        })
     }
 
     fn single_use_redemption<'a>(
@@ -135,10 +165,12 @@ impl TokenRepositoryPort for CountingTokenRepository {
         &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
+        token_subject: &'a str,
     ) -> TokenFuture<'a, Option<nazo_auth::PreparedTokenSubject>> {
         self.active_subject_claims_calls
             .fetch_add(1, Ordering::SeqCst);
-        self.inner.active_subject_claims(tenant_id, user_id)
+        self.inner
+            .active_subject_claims(tenant_id, user_id, token_subject)
     }
 
     fn active_subject_id<'a>(
@@ -200,6 +232,16 @@ impl TokenRepositoryPort for CountingTokenRepository {
 
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
         self.inner.revoke_token(input)
+    }
+
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: nazo_auth::TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, usize> {
+        self.inner
+            .revoke_token_with_audit(input, client_public_id, source_ip_hash)
     }
 }
 
@@ -267,8 +309,11 @@ impl AuthorizationRepositoryPort for CountingAuthorizationRepository {
         self.inner.grant(user_id, client_id)
     }
 
-    fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        self.inner.upsert_grant(write)
+    fn commit_decision(
+        &self,
+        input: nazo_auth::AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
+        self.inner.commit_decision(input)
     }
 
     fn client_secret_digest_matches<'a>(

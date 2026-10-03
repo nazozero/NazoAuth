@@ -572,7 +572,7 @@ fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
     assert!(!adapter.contains(".for_update()"));
     assert!(adapter.contains("lock_refresh_grant_scope(connection"));
     assert!(tokens.contains("lock_refresh_grant_scope("));
-    assert!(tokens.contains("lock_refresh_family(connection, token.family_id)"));
+    assert!(tokens.contains("lock_refresh_family(connection, family_id)"));
     assert!(adapter.contains(".filter(user_client_grants::tenant_id.eq(tenant_id))"));
 }
 

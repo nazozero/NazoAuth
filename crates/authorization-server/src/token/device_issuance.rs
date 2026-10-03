@@ -28,17 +28,8 @@ use crate::token::issue::issue_token_response;
 use crate::token::sender_constraint_multiple_error;
 use crate::token::validate_token_sender_constraints;
 
-pub(super) fn device_grant_key(
-    device_code: &str,
-    dpop_jkt: Option<&str>,
-    mtls_x5t_s256: Option<&str>,
-) -> String {
-    format!(
-        "device_code:{}:{}:{}",
-        blake3_hex(device_code),
-        dpop_jkt.map(blake3_hex).unwrap_or_default(),
-        mtls_x5t_s256.map(blake3_hex).unwrap_or_default(),
-    )
+pub(super) fn device_grant_key(device_code: &str) -> String {
+    format!("device_code:{}", blake3_hex(device_code))
 }
 
 pub async fn token_device_code_with_service(
@@ -91,11 +82,7 @@ pub async fn token_device_code_with_service(
                 return Err(sender_constraint_multiple_error());
             }
         };
-    let device_grant_key = device_grant_key(
-        device_code,
-        sender.dpop_jkt.as_deref(),
-        sender.mtls_x5t_s256.as_deref(),
-    );
+    let device_grant_key = device_grant_key(device_code);
     if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
@@ -152,6 +139,7 @@ pub async fn token_device_code_with_service(
                     grant_expires_at: payload.expires_at,
                 },
                 TokenIssue {
+                    native_sso_source: None,
                     user_id: Some(approval.user_id),
                     prepared_subject: None,
                     subject: approval.subject,
@@ -175,7 +163,8 @@ pub async fn token_device_code_with_service(
                     mtls_x5t_s256: sender.mtls_x5t_s256.clone(),
                     refresh_token_mtls_x5t_s256: sender.mtls_x5t_s256,
                     refresh_token_client_attestation_jkt: None,
-                    refresh_token_scopes: None,
+                    refresh_authority: None,
+                    refresh_grant_audiences: None,
                     authorization_code_hash: None,
                     actor: None,
                     issued_token_type: None,

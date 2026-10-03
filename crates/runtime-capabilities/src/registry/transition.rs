@@ -19,6 +19,62 @@ where
         revision: ModuleRevision,
         current: Option<InstanceStateRecord>,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
+        let mut initialized = false;
+        let result = self
+            .enable_transition(module_id, revision, current, &mut initialized)
+            .await;
+        self.finish_admission(module_id, initialized, result).await
+    }
+
+    pub(super) async fn disable(
+        &self,
+        module_id: ModuleId,
+        revision: ModuleRevision,
+        current: Option<InstanceStateRecord>,
+    ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
+        let mut initialized = current.as_ref().is_some_and(|state| {
+            matches!(state.state, ModuleState::Enabled | ModuleState::Draining)
+        });
+        let result = self
+            .disable_transition(module_id, revision, current, &mut initialized)
+            .await;
+        self.finish_admission(module_id, initialized, result).await
+    }
+
+    async fn finish_admission(
+        &self,
+        module_id: ModuleId,
+        initialized: bool,
+        result: Result<ReconcileOutcome, RegistryError<R::Error>>,
+    ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
+        let completed_enable = matches!(&result, Ok(ReconcileOutcome::Enabled));
+        let compensation = self
+            .align_admission_with_current_intent(module_id, initialized, completed_enable)
+            .await;
+        match (result, compensation) {
+            (Ok(outcome), Ok(())) => Ok(outcome),
+            (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+            (Err(operation), Err(compensation)) => {
+                if matches!(&operation, RegistryError::SnapshotRevisionExhausted)
+                    && matches!(&compensation, RegistryError::SnapshotRevisionExhausted)
+                {
+                    return Err(operation);
+                }
+                Err(RegistryError::Compensation {
+                    operation: Box::new(operation),
+                    compensation: Box::new(compensation),
+                })
+            }
+        }
+    }
+
+    async fn enable_transition(
+        &self,
+        module_id: ModuleId,
+        revision: ModuleRevision,
+        current: Option<InstanceStateRecord>,
+        initialized: &mut bool,
+    ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
         let starting = self
             .persist_state(
                 module_id,
@@ -49,15 +105,18 @@ where
                 ReconcileOutcome::StaleDiscarded
             });
         }
+        *initialized = true;
         if self
             .first_unavailable_dependency(module_id)
             .await?
             .is_some()
         {
+            *initialized = false;
             return self.fail_dependency_loss(&starting, true).await;
         }
         if !self.revision_is_current(module_id, revision).await? {
-            self.discard_stale(starting).await?;
+            self.discard_stale(module_id, revision, Some(&starting))
+                .await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
         self.publish(module_id, true, false)?;
@@ -67,11 +126,13 @@ where
             .is_some()
         {
             self.publish(module_id, false, false)?;
+            *initialized = false;
             return self.fail_dependency_loss(&starting, true).await;
         }
         if !self.revision_is_current(module_id, revision).await? {
             self.publish(module_id, false, false)?;
-            self.discard_stale(starting).await?;
+            self.discard_stale(module_id, revision, Some(&starting))
+                .await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
         let completed = self
@@ -100,11 +161,12 @@ where
         })
     }
 
-    pub(super) async fn disable(
+    async fn disable_transition(
         &self,
         module_id: ModuleId,
         revision: ModuleRevision,
         current: Option<InstanceStateRecord>,
+        initialized: &mut bool,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
         let disable_policy = self
             .catalog
@@ -115,6 +177,8 @@ where
             .is_none_or(|instance| instance.state == ModuleState::Disabled)
         {
             if !self.revision_is_current(module_id, revision).await? {
+                self.discard_stale(module_id, revision, current.as_ref())
+                    .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
             let completed = self
@@ -186,13 +250,13 @@ where
             });
         }
         if !self.revision_is_current(module_id, revision).await? {
-            self.discard_stale(draining).await?;
+            self.discard_stale(module_id, revision, Some(&draining))
+                .await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
         self.publish(module_id, false, true)?;
         if !self.revision_is_current(module_id, revision).await? {
-            self.discard_stale(draining).await?;
-            self.restore_admission_after_stale_disable(module_id)
+            self.discard_stale(module_id, revision, Some(&draining))
                 .await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
@@ -212,8 +276,6 @@ where
                 .await?,
                 CasOutcome::Applied(_)
             ) {
-                self.restore_admission_after_stale_disable(module_id)
-                    .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
             self.leases
@@ -241,10 +303,6 @@ where
                                 },
                             )
                             .await?;
-                        if !failed {
-                            self.restore_admission_after_stale_disable(module_id)
-                                .await?;
-                        }
                         return Ok(if failed {
                             ReconcileOutcome::Failed
                         } else {
@@ -252,11 +310,8 @@ where
                         });
                     }
                     Err(failure) => {
+                        *initialized = false;
                         let failed = self.persist_failure(&draining, failure).await?;
-                        if !failed {
-                            self.restore_admission_after_stale_disable(module_id)
-                                .await?;
-                        }
                         return Ok(if failed {
                             ReconcileOutcome::Failed
                         } else {
@@ -266,8 +321,7 @@ where
                 }
             }
             if !self.revision_is_current(module_id, revision).await? {
-                self.discard_stale(draining).await?;
-                self.restore_admission_after_stale_disable(module_id)
+                self.discard_stale(module_id, revision, Some(&draining))
                     .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
@@ -286,23 +340,17 @@ where
                 .await?,
                 CasOutcome::Applied(_)
             ) {
-                self.restore_admission_after_stale_disable(module_id)
-                    .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
             if !self.revision_is_current(module_id, revision).await? {
-                self.discard_stale(draining).await?;
-                self.restore_admission_after_stale_disable(module_id)
+                self.discard_stale(module_id, revision, Some(&draining))
                     .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
         }
+        *initialized = false;
         if let Err(failure) = self.lifecycle.stop(module_id).await {
             let failed = self.persist_failure(&draining, failure).await?;
-            if !failed {
-                self.restore_admission_after_stale_disable(module_id)
-                    .await?;
-            }
             return Ok(if failed {
                 ReconcileOutcome::Failed
             } else {
@@ -310,7 +358,8 @@ where
             });
         }
         if !self.revision_is_current(module_id, revision).await? {
-            self.discard_stale(draining).await?;
+            self.discard_stale(module_id, revision, Some(&draining))
+                .await?;
             // `stop` already ran, so admission cannot be restored safely.
             // Remove the obsolete draining marker; the newer revision will
             // initialize and republish the module if it resolves to enabled.
@@ -346,28 +395,70 @@ where
         }
     }
 
-    /// A superseded disable has not stopped the module yet, so align request
-    /// admission with the latest durable intent instead of leaving the stale
-    /// draining publication in force. Revalidation after each publication
-    /// closes the read/publish race with a concurrent administrator update.
-    pub(super) async fn restore_admission_after_stale_disable(
+    /// Reconcile admission after every terminal path, including failed or
+    /// unknown writes. A stopped/uncertain lifecycle cannot be reopened merely
+    /// because the newest durable intent is enabled.
+    async fn align_admission_with_current_intent(
         &self,
         module_id: ModuleId,
+        initialized: bool,
+        completed_enable: bool,
     ) -> Result<(), RegistryError<R::Error>> {
         loop {
-            let desired = self
-                .repository
-                .read_desired(module_id)
-                .await
-                .map_err(RegistryError::Repository)?
-                .ok_or(RegistryError::MissingDesiredState(module_id))?;
-            let accepting = desired.mode.is_enabled();
-            self.publish(module_id, accepting, !accepting)?;
-            if self
-                .revision_is_current(module_id, desired.revision)
-                .await?
-            {
-                return Ok(());
+            let desired = match self.repository.read_desired(module_id).await {
+                Ok(Some(desired)) => desired,
+                Ok(None) => {
+                    self.publish(module_id, false, false)?;
+                    return Err(RegistryError::MissingDesiredState(module_id));
+                }
+                Err(error) => {
+                    self.publish(module_id, false, false)?;
+                    return Err(RegistryError::Repository(error));
+                }
+            };
+            let enabled = self
+                .catalog
+                .effective_enabled(module_id, desired.mode.is_enabled());
+            let runtime_ready = if initialized && !completed_enable {
+                match self
+                    .repository
+                    .read_instance(&self.instance_id, module_id)
+                    .await
+                {
+                    Ok(state) => state.is_some_and(|state| {
+                        matches!(state.state, ModuleState::Enabled | ModuleState::Draining)
+                    }),
+                    Err(error) => {
+                        self.publish(module_id, false, false)?;
+                        return Err(RegistryError::Repository(error));
+                    }
+                }
+            } else {
+                initialized
+            };
+            let dependencies_ready = if runtime_ready && enabled {
+                match self.first_unavailable_dependency(module_id).await {
+                    Ok(dependency) => dependency.is_none(),
+                    Err(error) => {
+                        self.publish(module_id, false, false)?;
+                        return Err(error);
+                    }
+                }
+            } else {
+                false
+            };
+            self.publish(
+                module_id,
+                runtime_ready && enabled && dependencies_ready,
+                runtime_ready && !enabled && self.catalog.is_available(module_id),
+            )?;
+            match self.revision_is_current(module_id, desired.revision).await {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(error) => {
+                    self.publish(module_id, false, false)?;
+                    return Err(error);
+                }
             }
         }
     }

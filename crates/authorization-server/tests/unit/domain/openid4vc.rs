@@ -50,7 +50,18 @@ fn key_attestation_fixture(
     String,
     nazo_openid4vci::ProofTypeMetadata,
 ) {
-    let (mut attester_jwk, attester_key) = es256_test_key(13);
+    key_attestation_fixture_with_seed(claims, 13)
+}
+
+fn key_attestation_fixture_with_seed(
+    claims: Value,
+    seed: u8,
+) -> (
+    Openid4vcProofValidator,
+    String,
+    nazo_openid4vci::ProofTypeMetadata,
+) {
+    let (mut attester_jwk, attester_key) = es256_test_key(seed);
     attester_jwk["kid"] = json!("attester-key");
     attester_jwk["alg"] = json!("ES256");
     let mut header = Header::new(Algorithm::ES256);
@@ -126,6 +137,7 @@ async fn validate_jwt_proof(
                 vec![Value::String(proof)],
             )])),
             "wallet-client",
+            nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             "https://issuer.example",
             "expected-nonce",
             metadata,
@@ -246,6 +258,7 @@ fn proof_port_accepts_one_attestation_set_and_returns_each_attested_public_key()
             .validate(
                 &proofs,
                 "wallet-client",
+                nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                 "https://issuer.example",
                 "expected-nonce",
                 &metadata,
@@ -279,6 +292,7 @@ fn one_attestation_can_expand_beyond_the_proof_array_batch_limit() {
             .validate(
                 &proofs,
                 "wallet-client",
+                nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                 "https://issuer.example",
                 "expected-nonce",
                 &metadata,
@@ -317,13 +331,39 @@ fn key_attestation_rejects_expired_optional_expiration() {
 
 #[test]
 fn jwt_proof_key_attestation_requires_expiration() {
+    futures_executor::block_on(async {
+        let now = Utc::now();
+        let (jwk, key) = es256_test_key(23);
+        let (validator, attestation, metadata) = key_attestation_fixture(json!({
+            "iat":now.timestamp(), "nonce":"expected-nonce", "attested_keys":[jwk.clone()],
+        }));
+        let proof = signed_jwt_proof(
+            Some(&jwk),
+            &key,
+            &json!({
+                "aud":"https://issuer.example", "iat":now.timestamp(), "nonce":"expected-nonce",
+            }),
+            Some("openid4vci-proof+jwt"),
+            Algorithm::ES256,
+            Some(&attestation),
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, proof, &metadata).await,
+            Err(ProofError::InvalidKeyAttestation)
+        );
+    })
+}
+
+#[test]
+fn jwt_proof_key_attestation_rejects_missing_nonce() {
     let now = Utc::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
         "iat": now.timestamp(),
-        "attested_keys": [es256_test_key(23).0],
+        "exp": now.timestamp() + 300,
+        "attested_keys": [es256_test_key(25).0],
     }));
 
-    assert!(matches!(
+    assert_eq!(
         validate_key_attestation(
             &validator,
             &encoded,
@@ -333,27 +373,7 @@ fn jwt_proof_key_attestation_requires_expiration() {
             KeyAttestationContext::JwtProof,
         ),
         Err(ProofError::InvalidKeyAttestation)
-    ));
-}
-
-#[test]
-fn jwt_proof_key_attestation_accepts_missing_nonce() {
-    let now = Utc::now();
-    let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
-        "exp": now.timestamp() + 300,
-        "attested_keys": [es256_test_key(25).0],
-    }));
-
-    validate_key_attestation(
-        &validator,
-        &encoded,
-        "expected-nonce",
-        &metadata,
-        now,
-        KeyAttestationContext::JwtProof,
-    )
-    .expect("the outer JWT proof already carries the required nonce");
+    );
 }
 
 #[test]
@@ -692,6 +712,7 @@ fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
                 .validate(
                     &two_types,
                     "wallet-client",
+                    nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                     "https://issuer.example",
                     "expected-nonce",
                     &metadata,
@@ -722,6 +743,7 @@ fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
                     .validate(
                         &proofs,
                         "wallet-client",
+                        nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                         "https://issuer.example",
                         "expected-nonce",
                         &metadata,
@@ -747,6 +769,7 @@ fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
                     .validate(
                         &proofs,
                         "wallet-client",
+                        nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                         "https://issuer.example",
                         "expected-nonce",
                         &metadata,
@@ -899,6 +922,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
             "iat": now.timestamp(),
             "exp": now.timestamp() + 300,
             "attested_keys": [wallet_jwk.clone()],
+            "nonce": "expected-nonce",
             "key_storage": ["iso_18045_moderate"],
         }));
         let mut required = std::collections::BTreeMap::new();
@@ -928,6 +952,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
             .validate(
                 &proofs,
                 "wallet-client",
+                nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                 "https://issuer.example",
                 "expected-nonce",
                 &metadata,
@@ -955,6 +980,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
                 .validate(
                     &mismatched,
                     "wallet-client",
+                    nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                     "https://issuer.example",
                     "expected-nonce",
                     &metadata,
@@ -980,6 +1006,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
                 .validate(
                     &malformed,
                     "wallet-client",
+                    nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                     "https://issuer.example",
                     "expected-nonce",
                     &metadata,
@@ -1085,3 +1112,6 @@ fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
         ));
     }
 }
+
+#[path = "openid4vc/credential_proofs.rs"]
+mod credential_proofs;

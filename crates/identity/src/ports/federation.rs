@@ -21,6 +21,38 @@ pub struct FederationLink {
     pub last_login_at: Option<DateTime<Utc>>,
 }
 
+/// Display metadata scoped to one tenant and user; contains no provider claims.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FederationLinkSummary {
+    pub id: Uuid,
+    pub tenant_id: TenantId,
+    pub user_id: UserId,
+    pub provider_type: String,
+    pub provider_id: String,
+    pub subject: String,
+    pub email: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_login_at: Option<DateTime<Utc>>,
+}
+
+impl From<FederationLink> for FederationLinkSummary {
+    fn from(row: FederationLink) -> Self {
+        Self {
+            id: row.id,
+            tenant_id: row.tenant_id,
+            user_id: row.user_id,
+            provider_type: row.provider_type,
+            provider_id: row.provider_id,
+            subject: row.subject,
+            email: row.email,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            last_login_at: row.last_login_at,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct NewFederationLink {
     pub tenant_id: TenantId,
@@ -57,6 +89,18 @@ pub trait FederationLinkRepositoryPort: Send + Sync {
         user_id: UserId,
     ) -> RepositoryFuture<'_, Vec<FederationLink>>;
 
+    fn list_summaries(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Vec<FederationLinkSummary>> {
+        Box::pin(async move {
+            self.list(tenant_id, user_id)
+                .await
+                .map(|rows| rows.into_iter().map(FederationLinkSummary::from).collect())
+        })
+    }
+
     fn delete(
         &self,
         tenant_id: TenantId,
@@ -83,6 +127,9 @@ pub trait FederationLoginRepositoryPort: Send + Sync {
     ) -> RepositoryFuture<'_, PublicAccount>;
 }
 
+/// Callback state is taken only when the stored browser hash matches. A missing,
+/// legacy, corrupt-JSON or nonmatching binding leaves the value and TTL untouched.
+/// A matching raw value is removed atomically before typed parsing.
 pub trait FederationStatePort: Send + Sync {
     fn store_oidc<'a>(
         &'a self,
@@ -94,6 +141,7 @@ pub trait FederationStatePort: Send + Sync {
     fn take_oidc<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::federation::OidcFederationState>>;
 
     fn store_social<'a>(
@@ -106,6 +154,7 @@ pub trait FederationStatePort: Send + Sync {
     fn take_social<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::federation::SocialFederationState>>;
 
     fn reserve_saml_replay<'a>(
@@ -131,8 +180,10 @@ where
     fn take_oidc<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::federation::OidcFederationState>> {
-        self.as_ref().take_oidc(state)
+        self.as_ref()
+            .take_oidc(state, expected_browser_binding_hash)
     }
 
     fn store_social<'a>(
@@ -147,8 +198,10 @@ where
     fn take_social<'a>(
         &'a self,
         state: &'a str,
+        expected_browser_binding_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::federation::SocialFederationState>> {
-        self.as_ref().take_social(state)
+        self.as_ref()
+            .take_social(state, expected_browser_binding_hash)
     }
 
     fn reserve_saml_replay<'a>(

@@ -39,6 +39,23 @@ impl DpopStateStorePort for ReplayStore {
     }
 }
 
+// TIME, acceptance and NX belong to one replay owner. Rechecking expiry
+// prevents reinsertion after marker expiry even when an application node's
+// local clock still accepts the proof. The absolute deadline never slides.
+const CLIENT_ATTESTATION_PROOF_SCRIPT: &str = r#"
+local now = tonumber(redis.call('TIME')[1])
+local not_before = tonumber(ARGV[1])
+local expires_at = tonumber(ARGV[2])
+if now < not_before or now >= expires_at then
+  return 'rejected'
+end
+local result = redis.call('SET', KEYS[1], '1', 'NX', 'EXAT', expires_at)
+if result then
+  return 'accepted'
+end
+return 'rejected'
+"#;
+
 const FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS: i64 = 5;
 
 #[derive(Clone, Debug)]
@@ -153,6 +170,29 @@ impl ReplayStore {
         Ok(command::get(&self.connection, keys::dpop_nonce(nonce))
             .await?
             .is_some())
+    }
+
+    pub async fn consume_client_attestation_proof(
+        &self,
+        client_id: &str,
+        jti: &str,
+        window: nazo_auth::ClientAttestationProofWindow,
+    ) -> Result<bool, Error> {
+        let reply = command::eval_string(
+            &self.connection,
+            CLIENT_ATTESTATION_PROOF_SCRIPT,
+            vec![keys::client_attestation_replay(client_id, jti)],
+            vec![
+                window.not_before().to_string(),
+                window.expires_at().to_string(),
+            ],
+        )
+        .await?;
+        match reply.as_str() {
+            "accepted" => Ok(true),
+            "rejected" => Ok(false),
+            _ => Err(Error::unexpected("invalid client attestation replay reply")),
+        }
     }
 
     pub async fn consume_private_key_jwt(

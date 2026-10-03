@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::{TenantId, UserId};
 
-use super::common::{EncodedSecretHash, RepositoryFuture};
+use super::common::{EncodedSecretHash, RepositoryError, RepositoryFuture};
 
 pub type MfaHashFuture<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, MfaHashError>> + Send + 'a>>;
@@ -103,7 +103,7 @@ pub struct TotpEnrollment {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TotpVerificationOutcome {
-    Accepted,
+    Accepted(Uuid),
     Invalid,
     Replay,
 }
@@ -192,7 +192,7 @@ pub trait MfaRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
         candidate_id: Uuid,
-    ) -> RepositoryFuture<'_, bool>;
+    ) -> RepositoryFuture<'_, Option<Uuid>>;
 
     fn record_invalid_backup_code_attempt(
         &self,
@@ -204,21 +204,41 @@ pub trait MfaRepositoryPort: Send + Sync {
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: Uuid,
         hashes: Vec<EncodedSecretHash>,
-    ) -> RepositoryFuture<'a, ()>;
+    ) -> RepositoryFuture<'a, bool>;
 
-    fn clear_mfa_state<'a>(
+    /// Clear all MFA state only if the confirmed generation is still current.
+    /// A retired proof returns false without modifying any MFA state. Checking
+    /// the generation and clearing its dependent state are one atomic effect.
+    fn clear_mfa_state_if_current<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, ()>;
+        credential_id: Uuid,
+    ) -> RepositoryFuture<'a, bool>;
+
+    /// Disable the exact confirmed generation and persist the complete Required
+    /// `mfa_disabled` outcome in the same accepting transaction. A successful
+    /// response follows its acknowledgement; unavailable/unknown never implies
+    /// a known non-commit. Adapters cannot fall back to the unaudited clear.
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        _tenant_id: TenantId,
+        _user_id: UserId,
+        _credential_id: Uuid,
+        _source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
 
     fn remember_device(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
         expires_at: DateTime<Utc>,
-    ) -> RepositoryFuture<'_, ()>;
+    ) -> RepositoryFuture<'_, bool>;
 }

@@ -264,3 +264,7 @@ fn rotation_error_response(error: RecoveryRotationError) -> HttpResponse {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/http/admin/recovery_root.rs"]
+mod tests;

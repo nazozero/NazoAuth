@@ -94,6 +94,7 @@ fn client() -> ClientRow {
 }
 fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
     CodePayload {
+        redemption_contract_version: nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION,
         code_id: "code-id".to_owned(),
         user_id: Uuid::nil(),
         client_id: "client-1".to_owned(),

@@ -16,10 +16,15 @@ pub enum DynamicRegistrationDependencyError {
 }
 
 /// Persistence boundary for RFC 7591 registration and RFC 7592 client management.
+/// Insert, replacement and deactivation own their required lifecycle event in
+/// the same atomic commit as the effect. `source_ip_hash` contains no credential.
+/// Return success only after the complete result stream and commit acknowledgement;
+/// an unknown outcome must not be retried as a new successful command.
 pub trait DynamicRegistrationClientStore: Send + Sync {
     fn insert<'a>(
         &'a self,
         prepared: &'a PreparedClientRegistration,
+        source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient>;
 
     fn by_registration_access_token<'a>(
@@ -57,12 +62,19 @@ pub trait DynamicRegistrationClientStore: Send + Sync {
         new_registration_access_token_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient>;
 
+    /// A confidential-to-public authentication-class change must atomically
+    /// invalidate every existing refresh family of this client. Issuance and
+    /// mutation serialize on the same client authority before family state;
+    /// discarded confidential replay proofs cannot become public authority.
+    /// Retain revoked rows and durable revocation evidence; failure rolls back
+    /// both the class change and the invalidation.
     fn replace_registration<'a>(
         &'a self,
         client: &'a OAuthClient,
         client_secret_hash: Option<&'a str>,
         expected_registration_access_token_hash: &'a str,
         new_registration_access_token_hash: Option<&'a str>,
+        source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient>;
 
     fn deactivate<'a>(
@@ -70,6 +82,7 @@ pub trait DynamicRegistrationClientStore: Send + Sync {
         tenant_id: Uuid,
         client_id: Uuid,
         expected_registration_access_token_hash: &'a str,
+        source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, bool>;
 }
 

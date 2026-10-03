@@ -3,6 +3,7 @@
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Path, Query};
 use actix_web::{HttpRequest, HttpResponse};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use nazo_http_actix::{
     json_response, json_response_no_store, make_cookie, oauth_error, redirect_found,
@@ -150,32 +151,83 @@ pub(crate) async fn federation_provider_start(
     let Some(provider) = config.providers.enabled_provider(&provider_id) else {
         return unknown_provider_response();
     };
+    let browser_binding_seed =
+        read_federation_binding_seed(&req, &config).unwrap_or_else(rand::random::<[u8; 32]>);
     match &provider.adapter {
         ExternalLoginProviderAdapter::Oidc(provider) => {
             match service
-                .start_oidc(provider.provider_id.clone(), Utc::now())
+                .start_oidc(
+                    provider.provider_id.clone(),
+                    &browser_binding_seed,
+                    Utc::now(),
+                )
                 .await
             {
-                Ok(start) => redirect_found(oidc_authorization_url(
-                    provider,
-                    &start.state,
-                    &start.nonce,
-                    &start.pkce_verifier,
-                )),
+                Ok(start) => federation_start_response(
+                    &config,
+                    oidc_authorization_url(
+                        provider,
+                        &start.state,
+                        &start.nonce,
+                        &start.pkce_verifier,
+                    ),
+                    &browser_binding_seed,
+                ),
                 Err(error) => federation_state_error(error),
             }
         }
         ExternalLoginProviderAdapter::Social(provider) => {
-            match service.start_social(provider_id, Utc::now()).await {
-                Ok(start) => redirect_found(social_authorization_url(
-                    provider,
-                    &start.state,
-                    &start.pkce_verifier,
-                )),
+            match service
+                .start_social(provider_id, &browser_binding_seed, Utc::now())
+                .await
+            {
+                Ok(start) => federation_start_response(
+                    &config,
+                    social_authorization_url(provider, &start.state, &start.pkce_verifier),
+                    &browser_binding_seed,
+                ),
                 Err(error) => federation_state_error(error),
             }
         }
     }
+}
+
+fn federation_binding_cookie_name(config: &FederationHttpConfig) -> &'static str {
+    if config.cookie_secure {
+        "__Host-nazo_federation_binding"
+    } else {
+        "nazo_federation_binding"
+    }
+}
+
+fn read_federation_binding_seed(
+    req: &HttpRequest,
+    config: &FederationHttpConfig,
+) -> Option<[u8; 32]> {
+    let cookie = req.cookie(federation_binding_cookie_name(config))?;
+    let value = cookie.value();
+    if value.len() != 43 {
+        return None;
+    }
+    let seed: [u8; 32] = URL_SAFE_NO_PAD.decode(value).ok()?.try_into().ok()?;
+    (URL_SAFE_NO_PAD.encode(seed) == value).then_some(seed)
+}
+
+fn federation_start_response(
+    config: &FederationHttpConfig,
+    location: String,
+    seed: &[u8; 32],
+) -> HttpResponse {
+    with_cookie_headers(
+        redirect_found(location),
+        &[make_cookie(
+            federation_binding_cookie_name(config),
+            &URL_SAFE_NO_PAD.encode(seed),
+            true,
+            FEDERATION_STATE_TTL_SECONDS,
+            config.cookie_secure,
+        )],
+    )
 }
 
 pub(crate) async fn federation_provider_callback(
@@ -230,8 +282,16 @@ async fn oidc_callback_after_rate_limit_for_provider(
         Ok(input) => input,
         Err(response) => return response,
     };
+    let Some(browser_binding_seed) = read_federation_binding_seed(&req, &config) else {
+        return federation_state_error(FederationError::InvalidState);
+    };
     let stored = match service
-        .consume_oidc(&input.state_token, &provider.provider_id, Utc::now())
+        .consume_oidc(
+            &input.state_token,
+            &provider.provider_id,
+            &browser_binding_seed,
+            Utc::now(),
+        )
         .await
     {
         Ok(stored) => stored,
@@ -336,8 +396,16 @@ async fn social_callback_after_rate_limit(
         Ok(input) => input,
         Err(response) => return response,
     };
+    let Some(browser_binding_seed) = read_federation_binding_seed(&req, &config) else {
+        return federation_state_error(FederationError::InvalidState);
+    };
     let stored = match service
-        .consume_social(&input.state_token, &provider_id, Utc::now())
+        .consume_social(
+            &input.state_token,
+            &provider_id,
+            &browser_binding_seed,
+            Utc::now(),
+        )
         .await
     {
         Ok(stored) => stored,
@@ -435,13 +503,15 @@ pub(crate) async fn federation_saml_acs(
             provider_id: settings.issuer.clone(),
             subject: payload.subject.clone(),
             email: Some(email.clone()),
-            display_name: payload.name.clone(),
+            // This gateway envelope does not authenticate name. It remains
+            // explicitly untrusted link metadata, never local profile identity.
+            display_name: None,
             claims: json!({
                 "iss": payload.issuer,
                 "aud": payload.audience,
                 "sub": payload.subject,
                 "email": email,
-                "name": payload.name,
+                "untrusted_display_name": payload.name,
             }),
         },
         "saml",

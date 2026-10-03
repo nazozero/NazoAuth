@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_openid4vp::{
     PresentationCreateIdempotency, PresentationCreateOutcome, PresentationResult,
     PresentationStoreError, PresentationStoreFuture, PresentationStorePort,
@@ -10,6 +10,12 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{DbPool, get_conn};
+
+#[derive(QueryableByName)]
+struct PresentationCompletionId {
+    #[diesel(sql_type = sql_types::Uuid)]
+    id: Uuid,
+}
 
 #[derive(Clone)]
 pub struct Openid4vpRepository {
@@ -252,27 +258,54 @@ impl PresentationStorePort for Openid4vpRepository {
                 transaction_id,
                 &encoded,
             )?;
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| PresentationStoreError::Unavailable)?;
-            let changed = sql_query(
-                "UPDATE openid4vp_transactions SET result_ciphertext = $5, completed_at = $4, \
-                     ephemeral_private_key_ciphertext = NULL \
-                 WHERE id = $1 AND tenant_id = $2 AND state_hash = $3 \
-                   AND completed_at IS NULL AND expires_at > $4 \
-                   AND openid4vc_presentation_trust_policy_is_active( \
-                       tenant_id, openid4vc_trust_policy_binding_id, \
-                       openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest)",
-            )
-            .bind::<sql_types::Uuid, _>(transaction_id)
-            .bind::<sql_types::Uuid, _>(self.tenant_id)
-            .bind::<sql_types::Text, _>(state_hash)
-            .bind::<sql_types::Timestamptz, _>(now)
-            .bind::<sql_types::Binary, _>(encoded)
-            .execute(&mut connection)
-            .await
-            .map_err(|_| PresentationStoreError::Unavailable)?;
-            Ok(changed == 1)
+            let mut guard = crate::pool::DiscardOnDrop(Some(
+                get_conn(&self.pool)
+                    .await
+                    .map_err(|_| PresentationStoreError::Unavailable)?,
+            ));
+            let completed = guard.connection()
+                .transaction::<bool, diesel::result::Error, _>(async |connection| {
+                    // Finish the potentially blocking record lock before the
+                    // deadline predicate is evaluated. A statement-start clock
+                    // or an UPDATE predicate sampled before its row wait is not
+                    // the accepting clock for this completion.
+                    let locked = sql_query(
+                        "SELECT id FROM openid4vp_transactions \
+                         WHERE id = $1 AND tenant_id = $2 AND state_hash = $3 \
+                           AND completed_at IS NULL FOR UPDATE",
+                    )
+                    .bind::<sql_types::Uuid, _>(transaction_id)
+                    .bind::<sql_types::Uuid, _>(self.tenant_id)
+                    .bind::<sql_types::Text, _>(state_hash)
+                    .load::<PresentationCompletionId>(connection)
+                    .await?;
+                    if !locked.iter().any(|row| row.id == transaction_id) {
+                        return Ok(false);
+                    }
+                    let changed = sql_query(
+                        "UPDATE openid4vp_transactions SET result_ciphertext = $5, completed_at = $4, \
+                             ephemeral_private_key_ciphertext = NULL \
+                         WHERE id = $1 AND tenant_id = $2 AND state_hash = $3 \
+                           AND completed_at IS NULL AND expires_at > $4 \
+                           AND expires_at > clock_timestamp() \
+                           AND openid4vc_presentation_trust_policy_is_active( \
+                               tenant_id, openid4vc_trust_policy_binding_id, \
+                               openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest)",
+                    )
+                    .bind::<sql_types::Uuid, _>(transaction_id)
+                    .bind::<sql_types::Uuid, _>(self.tenant_id)
+                    .bind::<sql_types::Text, _>(state_hash)
+                    .bind::<sql_types::Timestamptz, _>(now)
+                    .bind::<sql_types::Binary, _>(&encoded)
+                    .execute(connection)
+                    .await?;
+                    Ok(changed == 1)
+                })
+                .await;
+            if completed.is_ok() {
+                guard.return_to_pool();
+            }
+            completed.map_err(|_| PresentationStoreError::Unavailable)
         })
     }
     fn result<'a>(

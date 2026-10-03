@@ -24,7 +24,9 @@ if (!uploaded.ok) throw new Error("Avatar upload failed");
 
 `upload` is an opaque storage contract. Clients must not infer a provider, modify the request, reuse it for a different object, or send an avatar through `POST /auth/me/avatar` when the direct target is available. A completion retry is safe after a lost response.
 
-The target accepts only its fixed staging object and its signed exact byte count. Completion reads the bounded staged snapshot, decodes PNG, JPEG, or WebP bytes, records the source version and content-derived immutable candidate, then asks the object store to publish that source version server-side. The database avatar reference CAS remains authoritative. Replaying a staging target later cannot overwrite the final object.
+The target accepts only its fixed staging object and its signed exact byte count. Completion reads the bounded staged snapshot, decodes PNG, JPEG, or WebP bytes, records the source version and content-derived immutable candidate, then asks the object store to publish that source version server-side. The database avatar reference CAS remains authoritative. The initial Pending completion decodes and hashes its snapshot once, releases the byte buffer before recording the candidate, and carries only the validated MIME forward. A Publishing lease retry reads a fresh bounded snapshot and verifies the recorded source version, candidate hash and decoder result before publishing. Replaying a staging target later cannot overwrite the final object.
+
+Final S3 reads obtain Content-Type and bytes from the same signed GET response. Staged reads obtain ETag, declared length and bytes from one signed GET response, enforce the streaming size bound and exact returned length, and retain that ETag for source-if-match copy; candidate publication retains its existing HEAD checks. Failed or ambiguous database CAS outcomes retain a direct-upload candidate because another lease may share it.
 
 For the S3-compatible adapter, set `AVATAR_OBJECT_STORE: s3` plus `AVATAR_S3_ENDPOINT`, `AVATAR_S3_REGION`, `AVATAR_S3_BUCKET`, `AVATAR_S3_ACCESS_KEY`, `AVATAR_S3_SECRET_KEY`, and optional `AVATAR_S3_PATH_STYLE`. The native object-store launcher parses these keys and passes the selected configuration to the S3 adapter. The deployment must keep the `avatars/staging/` prefix unreadable to the public; a private bucket provides this directly. If a deployment serves final objects through a public domain, its access policy must still exclude staging objects. Configure CORS to allow the browser origin to perform the signed PUT and to expose no broader write capability. Configure an object-lifecycle rule that deletes the adapter's `avatars/staging/` prefix after the upload authorization window; final objects require a separate retention process because the server never deletes them after an ambiguous database outcome.
 
@@ -69,6 +71,50 @@ Resource layout remains isolated even when tenants share the same base directory
 
 The existing S3 `tenant_namespace` is the lowercase hexadecimal SHA-256 of the tenant UUID's 16 raw bytes. Both S3 prefixes already isolate tenants; their layout is unchanged. Local disk storage still requires all serving instances to see the same files; a common path string on independent disks does not share data.
 
+## Immutable local versions
+
+New local uploads store a complete pair at
+`{user_directory}/versions/{canonical_uuid}/avatar.bin` and `meta.json`.
+Exclusive directory creation makes a candidate unique to its request. Both
+files and the directory publication are synced before the service attempts
+the database avatar URL CAS. Preparation fails closed when the filesystem
+cannot sync directory entries. Deployment must precreate and durably provision
+the configured tenant storage root and its parent entry before serving uploads.
+Request publication syncs the candidate directory lineage through that root;
+it does not synchronize unrelated filesystem ancestors or establish the root's
+deployment durability.
+
+The version in the database URL is the sole read authority. Preparing another
+candidate does not move or overwrite the selected bytes. Local delete
+preparation performs no filesystem mutation. An affirmative database CAS
+permits awaited best-effort retirement of only the exact previous version.
+A confirmed upload CAS miss permits deletion of only that request's unique
+candidate. Repository errors, cancellation and unknown SQL outcomes retain
+the candidate because the database may already reference it. No file lock
+spans the database await.
+
+Legacy `avatar.bin` and `meta.json` remain readable when their metadata matches
+the selected version, including matching `avatar-*.bak`/`meta-*.bak` pairs
+left by the previous implementation. Historical version text is compared as
+metadata and never interpolated into a path; only canonical UUIDs select new
+version directories. Symlinks and nonregular file paths are rejected.
+Legacy cleanup uses a short local lock and rechecks the metadata version,
+leaving another active version or backup untouched.
+
+Cancellation, ambiguous database results, crashes and cleanup failures can
+leave unreferenced complete or partial directories. There is no local GC,
+TTL, recovery journal or asynchronous Drop compensation. Retire these
+orphans manually only after writes have paused, in-flight database outcomes
+have settled and current database references have been checked. Cleanup
+failure does not invalidate the newly selected version or restore a cleared
+database reference.
+
+This layout requires a coordinated upgrade: pause avatar writes on every
+instance, drain old requests, replace every old reader/writer and verify
+reads before reopening writes. Old binaries cannot read the new version
+directories; mixed-version serving and downgrade after new writes are not
+supported.
+
 ## Manual storage migration
 
 Changing configuration does not move data. Avatar database references do not record the old backend, and the runtime does not search multiple backends.
@@ -76,9 +122,9 @@ Changing configuration does not move data. Avatar database references do not rec
 Before removing the last applicable storage configuration for an existing tenant, migrate its avatars to a remaining configured store or clear its avatar references and retire the old objects while that store is still available. Disabling storage does not silently clear database references or delete files.
 
 1. Pause avatar writes for the affected tenant on every instance, allow issued uploads and completion operations to finish or expire, and retain the old configuration and data until verification succeeds.
-2. For a local directory change, copy the tenant's user directories, including `avatar.bin` and `meta.json`, into the new tenant root. For an S3 bucket or endpoint change, copy the tenant's final objects with exactly the same object keys, bytes and Content-Type metadata. Do not carry unfinished upload authorizations across stores.
+2. For a local directory change, copy the tenant's user directories, including complete `versions/` directories and any legacy `avatar.bin`, `meta.json` and matching backup pairs, into the new tenant root. For an S3 bucket or endpoint change, copy the tenant's final objects with exactly the same object keys, bytes and Content-Type metadata. Do not carry unfinished upload authorizations across stores.
 3. Apply the new configuration consistently, restart the instances, and verify existing avatar reads plus a new upload/read/delete cycle before reopening writes or retiring the old data.
 
 Upgrading from the previous single-tenant local layout requires moving `DATA_DIR/avatars/{user_uuid}/` to `DATA_DIR/tenants/{tenant_uuid}/avatars/{user_uuid}/`, or moving the user directories beneath `{AVATAR_STORAGE_DIR}/{tenant_uuid}/` when an explicit base was used. Existing directory-managed default paths and S3 object paths are unchanged.
 
-Local and S3 layouts differ: local stores each user's bytes and version metadata, while S3 stores an object named by the version in the database avatar URL and carries Content-Type as object metadata. A cross-adapter migration must explicitly translate that layout and preserve the referenced version, or re-upload through the target adapter and update the reference. A recursive directory copy alone is not a cross-adapter migration. No automatic migration or dual write is performed.
+Local and S3 layouts differ: local stores each user's immutable version directories (and readable legacy pairs), while S3 stores an object named by the version in the database avatar URL and carries Content-Type as object metadata. A cross-adapter migration must explicitly translate that layout and preserve the referenced version, or re-upload through the target adapter and update the reference. A recursive directory copy alone is not a cross-adapter migration. No automatic migration or dual write is performed.

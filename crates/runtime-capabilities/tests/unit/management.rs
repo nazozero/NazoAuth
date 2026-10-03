@@ -146,6 +146,8 @@ struct TestRepository {
     state: Mutex<RepositoryState>,
     fail_bulk_desired: AtomicBool,
     fail_single_desired: AtomicBool,
+    fail_instance_cas: AtomicBool,
+    persist_instances: AtomicBool,
     single_desired_reads: AtomicUsize,
     single_instance_reads: AtomicUsize,
     bulk_desired_reads: AtomicUsize,
@@ -348,10 +350,38 @@ impl ModuleStateRepository for TestRepository {
         mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
         let InstanceStateChange { next, .. } = mutation.change;
+        if self.fail_instance_cas.load(Ordering::Relaxed) {
+            return Err(TestError::Unavailable);
+        }
         if let Some(outcome) = self.instance_outcomes.lock().unwrap().pop_front() {
             return Ok(outcome);
         }
+        if self.persist_instances.load(Ordering::Relaxed) {
+            let mut state = self.state.lock().unwrap();
+            if let Some(row) = state
+                .instances
+                .iter_mut()
+                .find(|row| row.instance_id == next.instance_id && row.module_id == next.module_id)
+            {
+                *row = next.clone();
+            } else {
+                state.instances.push(next.clone());
+            }
+        }
         Ok(CasOutcome::Applied(next))
+    }
+
+    async fn record_instance_observation(
+        &self,
+        observation: crate::InstanceStateObservation,
+    ) -> Result<(), Self::Error> {
+        assert_eq!(
+            observation.event.event_type,
+            crate::ModuleEventType::StaleTransitionDiscarded
+        );
+        assert_eq!(observation.event.before, observation.event.after);
+        self.state.lock().unwrap().events.push(observation.event);
+        Ok(())
     }
 
     async fn validate_revision(
@@ -379,6 +409,7 @@ fn management(
         authorization_code: Duration::from_secs(30),
         refresh_token: Duration::from_secs(300),
         session: Duration::from_secs(600),
+        presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
     .unwrap();
@@ -442,6 +473,7 @@ fn fixed_catalog() -> ModuleCatalog {
         authorization_code: Duration::from_secs(30),
         refresh_token: Duration::from_secs(300),
         session: Duration::from_secs(600),
+        presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
     .unwrap()
@@ -796,7 +828,7 @@ fn reconcile_reports_missing_disabled_and_active_dependency_boundaries() {
 }
 
 #[test]
-fn list_uses_two_bulk_reads_and_preserves_typed_state() {
+fn list_uses_one_joined_read_and_preserves_typed_state() {
     let repository = Arc::new(TestRepository::default());
     {
         let mut state = repository.state.lock().unwrap();
@@ -815,8 +847,9 @@ fn list_uses_two_bulk_reads_and_preserves_typed_state() {
     assert_eq!(ciba.actual_state, ModuleState::Draining);
     assert_eq!(ciba.revision, Some(ModuleRevision::new(3)));
     assert_eq!(ciba.applied_revision, Some(ModuleRevision::new(2)));
-    assert_eq!(repository.bulk_desired_reads.load(Ordering::Relaxed), 1);
-    assert_eq!(repository.bulk_instance_reads.load(Ordering::Relaxed), 1);
+    assert_eq!(repository.bulk_desired_reads.load(Ordering::Relaxed), 0);
+    assert_eq!(repository.reconcile_reads.load(Ordering::Relaxed), 1);
+    assert_eq!(repository.bulk_instance_reads.load(Ordering::Relaxed), 0);
     assert_eq!(repository.single_desired_reads.load(Ordering::Relaxed), 0);
     assert_eq!(repository.single_instance_reads.load(Ordering::Relaxed), 0);
 }
@@ -880,6 +913,7 @@ fn management_view_reports_the_security_profiles_effective_disable_policy() {
         authorization_code: Duration::from_secs(30),
         refresh_token: Duration::from_secs(300),
         session: Duration::from_secs(600),
+        presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
     .unwrap()
@@ -969,6 +1003,7 @@ fn concurrent_dependency_disable_and_dependent_enable_cannot_both_commit() {
         authorization_code: Duration::from_secs(30),
         refresh_token: Duration::from_secs(300),
         session: Duration::from_secs(600),
+        presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
     .unwrap()
@@ -1087,6 +1122,7 @@ fn snapshot_revision_exhaustion_returns_instead_of_spinning() {
         authorization_code: Duration::from_secs(30),
         refresh_token: Duration::from_secs(300),
         session: Duration::from_secs(600),
+        presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
     .unwrap();
@@ -1138,6 +1174,7 @@ fn dependency_loss_during_initialize_is_rechecked_and_fails_closed() {
         authorization_code: Duration::from_secs(30),
         refresh_token: Duration::from_secs(300),
         session: Duration::from_secs(600),
+        presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
     .unwrap()
@@ -1476,4 +1513,288 @@ fn disable_stop_failure_is_persisted_after_drain() {
         block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
         ReconcileOutcome::Failed
     );
+}
+
+#[test]
+fn unavailable_constructed_services_keep_desired_history_but_cannot_enable_or_block_dependencies() {
+    let repository = Arc::new(TestRepository::default());
+    let catalog = fixed_catalog()
+        .with_dependencies(ModuleId::Openid4vciIssuer, [ModuleId::AuthorizationDetails])
+        .unwrap()
+        .with_dependencies(ModuleId::Openid4vpVerifier, [ModuleId::RequestObjects])
+        .unwrap()
+        .with_constructed_availability([
+            (ModuleId::Openid4vciIssuer, false),
+            (ModuleId::Openid4vpVerifier, false),
+        ]);
+    {
+        let mut state = repository.state.lock().unwrap();
+        state.desired = ModuleId::ALL
+            .into_iter()
+            .map(|module_id| DesiredStateRecord {
+                module_id,
+                mode: if [
+                    ModuleId::Openid4vciIssuer,
+                    ModuleId::Openid4vpVerifier,
+                    ModuleId::AuthorizationDetails,
+                    ModuleId::RequestObjects,
+                ]
+                .contains(&module_id)
+                {
+                    DesiredMode::Enabled
+                } else {
+                    DesiredMode::Disabled
+                },
+                revision: ModuleRevision::new(1),
+                actor_id: None,
+                reason: None,
+                updated_at: SystemTime::UNIX_EPOCH,
+            })
+            .collect();
+        for module_id in [ModuleId::Openid4vciIssuer, ModuleId::Openid4vpVerifier] {
+            let mut row = instance();
+            row.module_id = module_id;
+            row.state = ModuleState::Enabled;
+            row.transition_revision = ModuleRevision::new(1);
+            row.applied_revision = Some(ModuleRevision::new(1));
+            row.drain_deadline = None;
+            state.instances.push(row);
+        }
+    }
+    repository.persist_instances.store(true, Ordering::Relaxed);
+    let registry = Arc::new(registry(
+        repository.clone(),
+        catalog.clone(),
+        [
+            ModuleId::Openid4vciIssuer,
+            ModuleId::Openid4vpVerifier,
+            ModuleId::AuthorizationDetails,
+            ModuleId::RequestObjects,
+        ]
+        .into_iter()
+        .collect(),
+    ));
+    for module_id in [ModuleId::Openid4vciIssuer, ModuleId::Openid4vpVerifier] {
+        assert!(!registry.snapshot().admits(module_id));
+        assert!(!registry.snapshot().draining.contains(&module_id));
+        assert!(matches!(
+            block_on(registry.set_desired_mode(
+                module_id,
+                DesiredMode::Enabled,
+                Some(ModuleRevision::new(1)),
+                None,
+                None,
+                SystemTime::UNIX_EPOCH
+            )),
+            Err(RegistryError::ServiceNotConstructed(_))
+        ));
+        assert_eq!(
+            block_on(registry.reconcile_once(module_id)).unwrap(),
+            ReconcileOutcome::Disabled
+        );
+        assert_eq!(
+            block_on(registry.reconcile_once(module_id)).unwrap(),
+            ReconcileOutcome::NoChange
+        );
+    }
+    let management =
+        RuntimeModuleManagement::new(repository.clone(), registry.clone(), catalog, "instance-a");
+    let views = block_on(management.list()).unwrap();
+    for module_id in [ModuleId::Openid4vciIssuer, ModuleId::Openid4vpVerifier] {
+        let view = views
+            .iter()
+            .find(|view| view.module_id == module_id)
+            .unwrap();
+        assert_eq!(view.desired_state, DesiredMode::Enabled);
+        assert!(!view.resolved_enabled);
+        assert_eq!(view.actual_state, ModuleState::Disabled);
+        assert!(!view.allowed_actions.contains(&DesiredMode::Enabled));
+        assert_eq!(
+            view.failure_code.as_deref(),
+            Some("service_not_constructed")
+        );
+    }
+    for module_id in [ModuleId::AuthorizationDetails, ModuleId::RequestObjects] {
+        assert!(matches!(
+            block_on(registry.set_desired_mode(
+                module_id,
+                DesiredMode::Disabled,
+                Some(ModuleRevision::new(1)),
+                None,
+                None,
+                SystemTime::UNIX_EPOCH
+            )),
+            Ok(CasOutcome::Applied(_))
+        ));
+    }
+}
+
+#[test]
+fn draining_scim_events_block_parent_disable_until_the_child_finishes() {
+    let repository = Arc::new(TestRepository::default());
+    {
+        let mut state = repository.state.lock().unwrap();
+        state.desired = ModuleId::ALL
+            .into_iter()
+            .map(|module_id| DesiredStateRecord {
+                module_id,
+                mode: DesiredMode::Disabled,
+                revision: ModuleRevision::new(1),
+                actor_id: None,
+                reason: None,
+                updated_at: SystemTime::UNIX_EPOCH,
+            })
+            .collect();
+        state
+            .desired
+            .iter_mut()
+            .find(|row| row.module_id == ModuleId::Scim)
+            .unwrap()
+            .mode = DesiredMode::Enabled;
+    }
+    let catalog = fixed_catalog()
+        .with_dependencies(ModuleId::ScimSecurityEvents, [ModuleId::Scim])
+        .unwrap();
+    let registry = registry(
+        repository.clone(),
+        catalog,
+        BTreeSet::from([ModuleId::Scim]),
+    );
+    let current = registry.snapshot();
+    let mut next = (*current).clone();
+    next.revision = ModuleRevision::new(current.revision.get() + 1);
+    next.draining.insert(ModuleId::ScimSecurityEvents);
+    registry
+        .snapshot_store()
+        .compare_and_publish(current.revision, next)
+        .unwrap();
+    assert!(matches!(
+        block_on(registry.set_desired_mode(
+            ModuleId::Scim,
+            DesiredMode::Disabled,
+            Some(ModuleRevision::new(1)),
+            None,
+            None,
+            SystemTime::UNIX_EPOCH
+        )),
+        Err(RegistryError::ActiveDependent {
+            dependent: ModuleId::ScimSecurityEvents,
+            ..
+        })
+    ));
+    assert!(registry.snapshot().admits(ModuleId::Scim));
+    let current = registry.snapshot();
+    let mut next = (*current).clone();
+    next.revision = ModuleRevision::new(current.revision.get() + 1);
+    next.draining.remove(&ModuleId::ScimSecurityEvents);
+    registry
+        .snapshot_store()
+        .compare_and_publish(current.revision, next)
+        .unwrap();
+    assert!(matches!(
+        block_on(registry.set_desired_mode(
+            ModuleId::Scim,
+            DesiredMode::Disabled,
+            Some(ModuleRevision::new(1)),
+            None,
+            None,
+            SystemTime::UNIX_EPOCH
+        )),
+        Ok(CasOutcome::Applied(_))
+    ));
+}
+
+#[test]
+fn matching_durable_revision_repairs_missing_own_admission() {
+    let repository = Arc::new(TestRepository::default());
+    {
+        let mut state = repository.state.lock().unwrap();
+        state.desired.push(desired(3, DesiredMode::Enabled));
+        state.desired.extend(remaining_explicit_desired_states());
+        let mut row = instance();
+        row.state = ModuleState::Enabled;
+        row.applied_revision = Some(ModuleRevision::new(3));
+        row.drain_deadline = None;
+        state.instances.push(row);
+    }
+    let registry = registry(repository, fixed_catalog(), BTreeSet::new());
+    assert!(
+        block_on(registry.plan_reconciliation())
+            .unwrap()
+            .contains(&ModuleId::Ciba)
+    );
+    assert_eq!(
+        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
+        ReconcileOutcome::Enabled
+    );
+    assert!(registry.snapshot().admits(ModuleId::Ciba));
+}
+
+#[test]
+fn admin_revision_survives_failed_dependency_loss_persistence_and_repairs_admission() {
+    let repository = settled_repository();
+    repository.persist_instances.store(true, Ordering::Relaxed);
+    let registry = registry(
+        repository.clone(),
+        fixed_catalog()
+            .with_dependencies(ModuleId::Ciba, [ModuleId::RequestObjects])
+            .unwrap(),
+        ModuleId::ALL.into_iter().collect(),
+    );
+    assert!(matches!(
+        block_on(registry.set_desired_mode(
+            ModuleId::Ciba,
+            DesiredMode::Enabled,
+            Some(ModuleRevision::new(1)),
+            Some("admin".to_owned()),
+            Some("reinitialize".to_owned()),
+            SystemTime::UNIX_EPOCH
+        )),
+        Ok(CasOutcome::Applied(_))
+    ));
+    assert_eq!(
+        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
+        ReconcileOutcome::Enabled
+    );
+    // Fault barrier: the dependency's in-process admission is lost while its durable desired revision remains enabled.
+    let current = registry.snapshot();
+    let mut next = (*current).clone();
+    next.revision = ModuleRevision::new(current.revision.get() + 1);
+    next.accepting.remove(&ModuleId::RequestObjects);
+    registry
+        .snapshot_store()
+        .compare_and_publish(current.revision, next)
+        .unwrap();
+    repository.fail_instance_cas.store(true, Ordering::Relaxed);
+    assert!(matches!(
+        block_on(registry.reconcile_once(ModuleId::Ciba)),
+        Err(RegistryError::Repository(TestError::Unavailable))
+    ));
+    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    let row = repository
+        .state
+        .lock()
+        .unwrap()
+        .instances
+        .iter()
+        .find(|row| row.module_id == ModuleId::Ciba)
+        .unwrap()
+        .clone();
+    assert_eq!(row.state, ModuleState::Enabled);
+    assert_eq!(row.applied_revision, Some(ModuleRevision::new(2)));
+    repository.fail_instance_cas.store(false, Ordering::Relaxed);
+    assert_eq!(
+        block_on(registry.reconcile_once(ModuleId::RequestObjects)).unwrap(),
+        ReconcileOutcome::Enabled
+    );
+    assert!(
+        block_on(registry.plan_reconciliation())
+            .unwrap()
+            .contains(&ModuleId::Ciba)
+    );
+    assert_eq!(
+        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
+        ReconcileOutcome::Enabled
+    );
+    assert!(registry.snapshot().admits(ModuleId::Ciba));
 }

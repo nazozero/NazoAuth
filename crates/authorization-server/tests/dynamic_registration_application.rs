@@ -128,6 +128,7 @@ impl DynamicRegistrationClientStore for Store {
     fn insert<'a>(
         &'a self,
         prepared: &'a PreparedClientRegistration,
+        _source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient> {
         Box::pin(async move {
             let client = OAuthClient {
@@ -211,6 +212,7 @@ impl DynamicRegistrationClientStore for Store {
         secret: Option<&'a str>,
         expected: &'a str,
         new: Option<&'a str>,
+        _source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient> {
         Box::pin(async move {
             let mut state = self.0.lock().unwrap();
@@ -250,6 +252,7 @@ impl DynamicRegistrationClientStore for Store {
         tenant: Uuid,
         id: Uuid,
         expected: &'a str,
+        _source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, bool> {
         Box::pin(async move {
             let mut state = self.0.lock().unwrap();
@@ -284,14 +287,11 @@ impl DynamicRegistrationRequestGuard for Guard {
     fn audit(&self, event: &'static str, _client: &OAuthClient, _ip: &str) {
         self.events.lock().unwrap().push(event);
     }
-    fn audit_required<'a>(
+    fn ensure_mutation_ready<'a>(
         &'a self,
-        event: &'static str,
-        _client: &'a OAuthClient,
-        _ip: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>
     {
-        self.events.lock().unwrap().push(event);
+        self.events.lock().unwrap().push("mutation_ready");
         Box::pin(async move { Ok(()) })
     }
 }
@@ -401,14 +401,14 @@ fn application_create_read_update_delete_preserves_credentials_and_audit_order()
             *guard.events.lock().unwrap(),
             [
                 "rate_limit",
-                "dynamic_client_registered",
+                "mutation_ready",
                 "rate_limit",
                 "dynamic_client_configuration_read",
                 "rate_limit",
-                "dynamic_client_configuration_updated",
+                "mutation_ready",
                 "rate_limit",
                 "rate_limit",
-                "dynamic_client_deleted",
+                "mutation_ready",
                 "rate_limit"
             ]
         );
@@ -451,12 +451,7 @@ fn stale_update_and_delete_fail_without_mutation_or_success_audit() {
         assert!(store.0.lock().unwrap().client.as_ref().unwrap().is_active);
         assert_eq!(
             *guard.events.lock().unwrap(),
-            [
-                "rate_limit",
-                "dynamic_client_registered",
-                "rate_limit",
-                "rate_limit"
-            ]
+            ["rate_limit", "mutation_ready", "rate_limit", "rate_limit"]
         );
     });
 }

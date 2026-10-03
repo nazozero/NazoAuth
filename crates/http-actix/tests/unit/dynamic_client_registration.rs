@@ -68,6 +68,7 @@ impl DynamicRegistrationClientStore for FakeStore {
     fn insert<'a>(
         &'a self,
         prepared: &'a PreparedClientRegistration,
+        _source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient> {
         let inserted = OAuthClient {
             id: Uuid::now_v7(),
@@ -160,6 +161,7 @@ impl DynamicRegistrationClientStore for FakeStore {
         _client_secret_hash: Option<&'a str>,
         _expected_registration_access_token_hash: &'a str,
         _new_registration_access_token_hash: Option<&'a str>,
+        _source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient> {
         *self.client.lock().expect("client lock") = Some(client.clone());
         Box::pin(async move { Ok(client.clone()) })
@@ -170,6 +172,7 @@ impl DynamicRegistrationClientStore for FakeStore {
         _tenant_id: Uuid,
         _client_id: Uuid,
         _expected_registration_access_token_hash: &'a str,
+        _source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, bool> {
         *self.client.lock().expect("client lock") = None;
         Box::pin(async { Ok(true) })
@@ -296,11 +299,8 @@ impl DynamicRegistrationRequestGuard for FakeGuard {
 
     fn audit(&self, _event: &'static str, _client: &OAuthClient, _source_ip: &str) {}
 
-    fn audit_required<'a>(
+    fn ensure_mutation_ready<'a>(
         &'a self,
-        _event: &'static str,
-        _client: &'a OAuthClient,
-        _source_ip: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>
     {
         Box::pin(async move { Ok(()) })
@@ -638,6 +638,7 @@ async fn configured_initial_access_update_preserves_security_policy() {
     .await;
     assert_eq!(created.status(), StatusCode::CREATED);
     let created: Value = test::read_body_json(created).await;
+    assert_eq!(created["backchannel_user_code_parameter"], false);
     let client_id = created["client_id"].as_str().expect("client id");
     assert!(
         store
@@ -810,6 +811,7 @@ async fn registration_and_management_methods_keep_wire_contracts() {
         Some(&header::HeaderValue::from_static("no-store"))
     );
     let created: Value = test::read_body_json(created).await;
+    assert_eq!(created["backchannel_user_code_parameter"], false);
     let client_id = created["client_id"].as_str().expect("client id");
     assert_eq!(created["registration_access_token"], "registration-token");
     assert!(created.get("client_secret").is_none());
@@ -925,6 +927,7 @@ async fn registration_and_management_methods_keep_wire_contracts() {
     .await;
     assert_eq!(update.status(), StatusCode::OK);
     let updated: Value = test::read_body_json(update).await;
+    assert_eq!(updated["backchannel_user_code_parameter"], false);
     assert_eq!(updated["client_name"], "Updated Client");
     let updated_client_id = updated["client_id"].as_str().expect("updated client id");
 

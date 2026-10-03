@@ -24,7 +24,7 @@ use super::{
     consume_reauth_nonce_with_context, credential_configuration_ids,
     is_pushed_authorization_request_uri, issue_authorization_code_without_interaction_with_context,
     outer_request_uri_parameters_match_pushed, preserve_verified_dpop_binding,
-    runtime_authorization_capability_error, user_grant_covers_requested_scopes_with_context,
+    runtime_authorization_capability_error,
 };
 
 pub(crate) async fn authorize_request_with_context(
@@ -55,6 +55,7 @@ pub(crate) async fn authorize_request_with_context(
     let mut pending_pushed_request_uri = None;
     let mut pending_pushed_request_digest = None;
     let mut pending_pushed_request_version = None;
+    let mut pending_pushed_request_expires_at = None;
     let mut pending_external_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         if !is_pushed_authorization_request_uri(&request_uri) {
@@ -112,6 +113,7 @@ pub(crate) async fn authorize_request_with_context(
                         pending_pushed_request_uri = Some(request_uri);
                         pending_pushed_request_digest = Some(digest);
                         pending_pushed_request_version = Some(snapshot.version);
+                        pending_pushed_request_expires_at = Some(pushed.expires_at);
                         *q = pushed.params;
                     }
                 }
@@ -536,36 +538,16 @@ pub(crate) async fn authorize_request_with_context(
             )
             .await;
         }
-        match user_grant_covers_requested_scopes_with_context(
+        // The accepting owner checks live grant coverage and returns the
+        // existing consent_required outcome when current coverage is absent.
+        return issue_authorization_code_without_interaction_with_context(
             context,
-            payload.user_id,
-            client.id,
-            &payload.scopes,
-            &payload.resource_indicators,
-            &payload.authorization_details,
+            facts,
+            payload,
+            pending_pushed_request_version.as_deref(),
+            pending_pushed_request_expires_at,
         )
-        .await
-        {
-            Ok(true) => {
-                return issue_authorization_code_without_interaction_with_context(
-                    context,
-                    facts,
-                    payload,
-                    pending_pushed_request_version.as_deref(),
-                )
-                .await;
-            }
-            Ok(false) => {
-                return authorization_oauth_error_redirect(
-                    context,
-                    &redirect_uri,
-                    "consent_required",
-                    q,
-                )
-                .await;
-            }
-            Err(response) => return Err(response),
-        }
+        .await;
     }
     if let Err(error) = context
         .service

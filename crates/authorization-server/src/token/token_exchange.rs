@@ -91,15 +91,15 @@ pub fn token_exchange_error_response(error: TokenExchangeError) -> OAuthEndpoint
     }
 }
 
-pub fn token_exchange_request(form: &TokenForm) -> TokenExchangeRequestInput {
+pub fn token_exchange_request(form: &TokenForm) -> TokenExchangeRequestInput<'_> {
     TokenExchangeRequestInput {
-        subject_token: form.subject_token.clone(),
-        subject_token_type: form.subject_token_type.clone(),
-        actor_token: form.actor_token.clone(),
-        actor_token_type: form.actor_token_type.clone(),
-        requested_token_type: form.requested_token_type.clone(),
-        scope: form.scope.clone(),
-        audiences: form.audiences.clone(),
+        subject_token: form.subject_token.as_deref(),
+        subject_token_type: form.subject_token_type.as_deref(),
+        actor_token: form.actor_token.as_deref(),
+        actor_token_type: form.actor_token_type.as_deref(),
+        requested_token_type: form.requested_token_type.as_deref(),
+        scope: form.scope.as_deref(),
+        audiences: &form.audiences,
     }
 }
 
@@ -515,6 +515,7 @@ pub async fn token_exchange(
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: None,
             user_id,
             prepared_subject: None,
             subject: validated_subject.subject,
@@ -532,13 +533,14 @@ pub async fn token_exchange(
             id_token_claim_requests: Vec::new(),
             refresh_id_token_sid: None,
             include_refresh: false,
-            refresh_token_policy: RefreshTokenPolicy::PreserveExisting,
+            refresh_token_policy: RefreshTokenPolicy::NoRefresh,
             dpop_jkt,
             refresh_token_dpop_jkt: None,
             mtls_x5t_s256,
             refresh_token_mtls_x5t_s256: None,
             refresh_token_client_attestation_jkt: None,
-            refresh_token_scopes: None,
+            refresh_authority: None,
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor,
             issued_token_type: Some(admission.issued_token_type),

@@ -61,3 +61,10 @@ fn audit_event_validation_rejects_non_object_and_invalid_names() {
     invalid.event_type = "TokenIssued".to_owned();
     assert!(validate_event(&invalid).is_err());
 }
+
+#[test]
+fn generic_audit_append_rejects_reserved_authorization_authority() {
+    let mut reserved = event(serde_json::json!({}));
+    reserved.event_type = "authorization_decision_committed".to_owned();
+    assert!(validate_event_for_transaction(&reserved).is_err());
+}

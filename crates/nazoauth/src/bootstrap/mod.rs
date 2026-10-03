@@ -150,3 +150,7 @@ fn ui_static_files(root: PathBuf) -> Files {
 #[cfg(test)]
 #[path = "../../tests/unit/bootstrap.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/support/bootstrap.rs"]
+pub(crate) mod test_support;

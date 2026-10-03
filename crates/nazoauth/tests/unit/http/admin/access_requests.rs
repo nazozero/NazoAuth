@@ -1109,8 +1109,8 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .await
         .expect("committed delivery payload should exist");
     let mut staged: Value = serde_json::from_str(&staged_raw).unwrap();
-    staged["delivery_state"] = json!("staged");
-    staged
+    staged["value"]["delivery_state"] = json!("staged");
+    staged["value"]
         .as_object_mut()
         .expect("delivery payload is an object")
         .remove("approved_client_id");
@@ -1139,7 +1139,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .await
         .expect("recovered delivery payload should exist");
     assert_eq!(
-        serde_json::from_str::<Value>(&recovered_raw).unwrap()["delivery_state"],
+        serde_json::from_str::<Value>(&recovered_raw).unwrap()["value"]["delivery_state"],
         "committed"
     );
     let delivery_request = fixture.admin_post_request(
@@ -1461,7 +1461,7 @@ async fn approve_access_request_surfaces_pending_request_lookup_failure_after_ad
 }
 
 #[actix_web::test]
-async fn approve_access_request_rolls_back_when_status_write_fails_after_client_prepare() {
+async fn approve_status_write_failure_keeps_undisclosed_stage_until_original_ttl() {
     let schema = format!("admin_access_write_{}", Uuid::now_v7().simple());
     let Some(fixture) = LiveAdminAccessRequestFixture::new_isolated(&schema).await else {
         return;
@@ -1499,7 +1499,7 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
     )
     .await;
     let state = fixture.access_request_state(request_id).await;
-    let orphan_keys: Vec<String> = fixture
+    let staged_keys: Vec<String> = fixture
         .state
         .valkey
         .custom(
@@ -1511,15 +1511,20 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         )
         .await
         .expect("staged delivery keys should be inspectable");
-    assert_eq!(orphan_keys.len(), 1);
-    let orphan: String = fixture
+    assert_eq!(staged_keys.len(), 1);
+    let staged_payload: String = fixture
         .state
         .valkey
-        .get(&orphan_keys[0])
+        .get(&staged_keys[0])
         .await
         .expect("staged delivery payload should remain after denied cleanup");
-    let orphan: Value = serde_json::from_str(&orphan).expect("staged payload should be JSON");
-    assert_eq!(orphan["delivery_state"], "staged");
+    let staged: Value =
+        serde_json::from_str(&staged_payload).expect("staged payload should be JSON");
+    assert_eq!(staged["value"]["delivery_state"], "staged");
+    let prepared_secret = staged["value"]["client_secret"]
+        .as_str()
+        .expect("the unpublished stage must contain its prepared secret");
+    assert!(!prepared_secret.is_empty());
     let applicant_sid = format!("applicant-write-{}", Uuid::now_v7().simple());
     fixture.store_session(&applicant, &applicant_sid).await;
     let delivery_request = fixture.admin_post_request(
@@ -1533,14 +1538,24 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         Json(crate::http::profile::delivery::AccessDeliveryRequest { request_id }),
     )
     .await;
-    assert_eq!(delivery.status(), StatusCode::NOT_FOUND);
-    let removed: Option<String> = fixture
+    let (delivery_status, delivery_body) = json_body(delivery).await;
+    assert_eq!(delivery_status, StatusCode::NOT_FOUND);
+    assert_eq!(delivery_body["error"], "invalid_request");
+    assert!(delivery_body.get("client_secret").is_none());
+    assert!(delivery_body.get("read_once_notice").is_none());
+    assert!(!delivery_body.to_string().contains(prepared_secret));
+    // Failed producer cleanup leaves preparation under its original TTL.
+    // A requester must not consume or alter that unpublished envelope.
+    let retained: Option<String> = fixture
         .state
         .valkey
-        .get(&orphan_keys[0])
+        .get(&staged_keys[0])
         .await
-        .expect("staged delivery cleanup read should succeed");
-    assert!(removed.is_none());
+        .expect("staged delivery retention read should succeed");
+    assert!(
+        retained.as_deref() == Some(staged_payload.as_str()),
+        "requester reads must preserve the exact stage and its original expiry"
+    );
     fixture.delete_acl_user(&acl_user).await;
     fixture.cleanup().await;
     let (status, body) = json_body(response).await;
@@ -1688,3 +1703,6 @@ async fn reject_access_request_surfaces_projection_failure_after_state_transitio
     assert_eq!(state.status, AccessRequestStatus::Rejected.code());
     assert_eq!(state.admin_note.as_deref(), Some("projection should fail"));
 }
+
+#[path = "access_requests/delivery_races.rs"]
+mod delivery_races;

@@ -29,6 +29,10 @@ The process builds a separate immutable runtime graph for each binding and
 routes a request only by its canonical Host. The directory-derived issuer then
 supplies that graph's frontend and CORS defaults; there is no process-wide
 `TENANT_ID`, `REALM_ID`, or `ORGANIZATION_ID` request selector.
+Authoritative reconciliation accepts a complete coherent directory snapshot
+that advances beyond its compact revision precheck. Cache repair and rejection
+track the returned snapshot revision; an older-than-precheck snapshot is rejected.
+Candidate validation and last-good runtime publication remain unchanged.
 
 ## Minimal deployment
 
@@ -207,23 +211,22 @@ backup and matching recovery tools for an existing deployment.
 
 ## Authorization-code replay state
 
-A redeemed authorization code's replay evidence is durable PostgreSQL state on
-the `oauth_token_issuances` row that the redemption committed: the single-use
-fence key (a digest of the redemption binding), the issued access-token identity
-and expiry, and the refresh-token family when one was issued. A later replay
-resolves the same fence key — which itself proves the request carries the
-original proofs — and revokes the recorded access token and refresh family.
+Authorization-code redemption uses one stable identity derived from the code
+hash, scoped by tenant and authenticated client. The PostgreSQL receipt retains
+versioned holder requirements independently of that identity, together with the
+issued access-token identity/expiry and any refresh family. A fresh replay must
+prove the original holder before those recorded credentials may be revoked.
+The identity alone, missing payload, or a cache-only consumed marker grants no
+revocation authority.
 
-Valkey retains only the short-lived entry for an in-flight code: `Pending`
-payload and the `Consuming` lease, bounded by the authorization-code TTL. Once
-the issuance commit lands, the entry is deleted; a failed redemption keeps a
-`Failed` marker only until the code would have expired anyway. The durable
-fence (`retain_until`) bounds replay evidence to the access-token acceptance
-window extended by the grant deadline, so consumed-code state does not grow
-with refresh-token lifetimes.
-
-Markers written by versions before the ledger-backed replay are still honored
-for their configured TTL during upgrades; new redemptions do not create them.
+Valkey bounds Pending/Consuming/Failed entries by the grant deadline; PostgreSQL
+fences repeated issuance even after cache loss or a hidden commit ACK. Receipt
+retention covers the access-token acceptance window and grant deadline; it is
+not a promise of receipt retention throughout the refresh family's lifetime.
+Historical exact-request receipts remain lookup-only, and old payloads are
+rejected for new issuance. Migration and rollback require coordinated ingress,
+writer and state-epoch boundaries. See
+[authorization-code redemption](../protocol/authorization-code-redemption.md).
 
 ## Composable capability defaults
 

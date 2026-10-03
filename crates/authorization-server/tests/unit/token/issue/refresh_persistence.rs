@@ -1,22 +1,9 @@
 use super::super::tests::client_with_grants;
 use super::*;
 
-#[test]
-fn rotated_refresh_token_preserves_the_original_scope_authorization() {
-    let access_token_scopes = vec!["openid".to_owned()];
-    let original_refresh_token_scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
-
-    assert_eq!(
-        refresh_token_persistence_scopes(
-            &access_token_scopes,
-            Some(&original_refresh_token_scopes),
-        ),
-        original_refresh_token_scopes
-    );
-}
-
 fn openid_issue() -> TokenIssue {
     TokenIssue {
+        native_sso_source: None,
         user_id: Some(Uuid::now_v7()),
         prepared_subject: None,
         subject: "subject-1".to_owned(),
@@ -40,7 +27,8 @@ fn openid_issue() -> TokenIssue {
         mtls_x5t_s256: None,
         refresh_token_mtls_x5t_s256: None,
         refresh_token_client_attestation_jkt: None,
-        refresh_token_scopes: None,
+        refresh_authority: None,
+        refresh_grant_audiences: None,
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,
@@ -51,7 +39,7 @@ fn openid_issue() -> TokenIssue {
 #[test]
 fn refresh_authentication_context_preserves_original_claim_contract_on_scope_narrowing() {
     let mut issue = openid_issue();
-    issue.refresh_token_scopes = Some(vec!["openid".to_owned(), "offline_access".to_owned()]);
+    // The issued AT narrows scopes; its original claim context is unchanged.
     issue.scopes = vec!["openid".to_owned()];
 
     let context = refresh_authentication_context(
@@ -125,4 +113,269 @@ fn should_issue_refresh_token_scope_case_sensitive() {
 
     let scopes = vec!["openid".to_owned(), "offline".to_owned()];
     assert!(!should_issue_refresh_token(&client, &scopes, false));
+}
+
+fn source_for_issue(issue: &TokenIssue, client: &ClientRow) -> nazo_auth::RefreshTokenAuthority {
+    let contract = nazo_auth::RefreshContract {
+        subject: issue.subject.clone(),
+        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+        audiences: vec!["resource://a".to_owned(), "resource://b".to_owned()],
+        authorization_details: issue.authorization_details.clone(),
+        authentication_context: refresh_authentication_context(
+            issue,
+            "https://issuer.example",
+            &client.client_id,
+            None,
+        )
+        .unwrap(),
+    }
+    .persisted();
+    nazo_auth::RefreshTokenAuthority {
+        tenant_id: client.tenant_id,
+        client_id: client.id,
+        user_id: issue.user_id,
+        family_id: Uuid::now_v7(),
+        member_id: Uuid::now_v7(),
+        token_blake3: [4; 32],
+        contract_key: contract.blake3_digest(),
+        current_audiences: contract.audiences.clone(),
+        id_token_sid: None,
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        client_attestation_jkt: None,
+        contract,
+    }
+}
+
+#[test]
+fn rotated_refresh_preserves_original_contract_while_selecting_current_audience() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = openid_issue();
+    let source = source_for_issue(&issue, &client);
+    let original = source.contract.clone();
+    let now = Utc::now();
+    let pending = PendingRefreshToken {
+        raw: "replacement".to_owned(),
+        member_id: Uuid::now_v7(),
+        family: source.family_id,
+        rotated_from: Some(source.member_id),
+        lost_response_retry: None,
+        issued_at: now,
+        expires_at: now + chrono::Duration::hours(1),
+    };
+    issue.audiences = vec!["resource://a".to_owned()];
+    issue.refresh_id_token_sid = Some(None);
+    issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
+        family_id: source.family_id,
+        rotated_from_id: source.member_id,
+    };
+    issue.refresh_authority = Some(source);
+    assert!(refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+    let replacement = prepare_refresh_token(&client, &issue, &pending, None);
+    assert_eq!(replacement.audiences, vec!["resource://a"]);
+    assert_eq!(issue.refresh_authority.as_ref().unwrap().contract, original);
+    assert_eq!(original.scopes, vec!["openid", "offline_access"]);
+    for audience in [vec!["resource://c".to_owned()], vec![]] {
+        issue.audiences = audience;
+        assert!(!refresh_issue_matches_source(
+            &issue,
+            &client,
+            "https://issuer.example"
+        ));
+    }
+    issue.audiences = vec!["resource://a".to_owned()];
+    issue.auth_time = Some(issue.auth_time.unwrap() + 1);
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+}
+
+#[test]
+fn new_refresh_family_retains_full_code_grant_when_access_token_is_narrower() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = openid_issue();
+    issue.audiences = vec!["resource://a".to_owned()];
+    issue.refresh_grant_audiences =
+        Some(vec!["resource://a".to_owned(), "resource://b".to_owned()]);
+    let now = Utc::now();
+    let pending = PendingRefreshToken {
+        raw: "initial".to_owned(),
+        member_id: Uuid::now_v7(),
+        family: Uuid::now_v7(),
+        rotated_from: None,
+        lost_response_retry: None,
+        issued_at: now,
+        expires_at: now + chrono::Duration::hours(1),
+    };
+    let token = prepare_refresh_token(&client, &issue, &pending, None);
+    assert_eq!(issue.audiences, vec!["resource://a"]);
+    assert_eq!(token.audiences, vec!["resource://a", "resource://b"]);
+}
+
+#[test]
+fn refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = openid_issue();
+    issue.audiences = vec!["resource://a".to_owned()];
+    issue.refresh_id_token_sid = Some(None);
+    let mut source = source_for_issue(&issue, &client);
+    source.dpop_jkt = Some("original-key".to_owned());
+    issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
+    issue.refresh_token_dpop_jkt = source.dpop_jkt.clone();
+    issue.refresh_authority = Some(source);
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+    issue.dpop_jkt = Some("different-key".to_owned());
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+    issue.dpop_jkt = Some("original-key".to_owned());
+    assert!(refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+
+    issue.dpop_jkt = None;
+    issue.refresh_token_dpop_jkt = None;
+    let source = issue.refresh_authority.as_mut().unwrap();
+    source.dpop_jkt = None;
+    source.mtls_x5t_s256 = Some("original-certificate".to_owned());
+    issue.refresh_token_mtls_x5t_s256 = Some("original-certificate".to_owned());
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+    issue.mtls_x5t_s256 = Some("different-certificate".to_owned());
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+    issue.mtls_x5t_s256 = Some("original-certificate".to_owned());
+    assert!(refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+    issue.actor = Some(json!({"sub": "different-actor"}));
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+}
+
+#[test]
+fn refresh_policy_requires_exact_source_shape_even_without_a_refresh_response() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = openid_issue();
+    let source = source_for_issue(&issue, &client);
+    issue.audiences = vec!["resource://a".to_owned()];
+    issue.refresh_id_token_sid = Some(None);
+    issue.include_refresh = false;
+    let matches =
+        |issue: &TokenIssue| refresh_issue_matches_source(issue, &client, "https://issuer.example");
+
+    for policy in [RefreshTokenPolicy::NoRefresh, RefreshTokenPolicy::IssueNew] {
+        issue.refresh_token_policy = policy;
+        assert!(matches(&issue));
+        issue.refresh_authority = Some(source.clone());
+        assert!(!matches(&issue));
+        issue.refresh_authority = None;
+    }
+    issue.refresh_token_policy = RefreshTokenPolicy::NoRefresh;
+    issue.include_refresh = true;
+    assert!(!matches(&issue));
+    issue.include_refresh = false;
+
+    for policy in [
+        RefreshTokenPolicy::PreserveExisting,
+        RefreshTokenPolicy::Rotate {
+            family_id: source.family_id,
+            rotated_from_id: source.member_id,
+        },
+        RefreshTokenPolicy::RotateLostResponse {
+            family_id: source.family_id,
+            original_id: Uuid::now_v7(),
+            original_blake3: [5; 32],
+            successor_id: source.member_id,
+            retry_started_at: Utc::now(),
+        },
+    ] {
+        issue.refresh_token_policy = policy;
+        assert!(!matches(&issue));
+        issue.refresh_authority = Some(source.clone());
+        assert!(matches(&issue));
+        issue.subject = "changed-subject".to_owned();
+        assert!(!matches(&issue));
+        issue.subject = source.contract.subject.clone();
+        if !matches!(policy, RefreshTokenPolicy::PreserveExisting) {
+            issue.refresh_authority.as_mut().unwrap().family_id = Uuid::now_v7();
+            assert!(!matches(&issue));
+            issue.refresh_authority = Some(source.clone());
+            issue.refresh_authority.as_mut().unwrap().member_id = Uuid::now_v7();
+            assert!(!matches(&issue));
+        }
+        issue.refresh_authority = None;
+    }
+}
+
+#[test]
+fn unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_token() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = openid_issue();
+    let source = source_for_issue(&issue, &client);
+    issue.audiences = vec!["resource://a".to_owned()];
+    issue.refresh_id_token_sid = Some(None);
+    issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
+    issue.refresh_authority = Some(source.clone());
+    issue.dpop_jkt = Some("new-proof-key".to_owned());
+    let matches =
+        |issue: &TokenIssue| refresh_issue_matches_source(issue, &client, "https://issuer.example");
+    assert!(matches(&issue));
+    issue.refresh_token_dpop_jkt = issue.dpop_jkt.clone();
+    assert!(!matches(&issue));
+    issue.refresh_token_dpop_jkt = None;
+    issue.dpop_jkt = None;
+    issue.mtls_x5t_s256 = Some("new-certificate".to_owned());
+    assert!(matches(&issue));
+    issue.refresh_token_mtls_x5t_s256 = issue.mtls_x5t_s256.clone();
+    assert!(!matches(&issue));
+    issue.refresh_token_mtls_x5t_s256 = None;
+    issue.refresh_token_client_attestation_jkt = Some("new-instance".to_owned());
+    assert!(!matches(&issue));
+    issue.refresh_token_client_attestation_jkt = None;
+
+    issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
+        family_id: source.family_id,
+        rotated_from_id: source.member_id,
+    };
+    assert!(matches(&issue));
+    let now = Utc::now();
+    let pending = PendingRefreshToken {
+        raw: "replacement".to_owned(),
+        member_id: Uuid::now_v7(),
+        family: source.family_id,
+        rotated_from: Some(source.member_id),
+        lost_response_retry: None,
+        issued_at: now,
+        expires_at: now + chrono::Duration::hours(1),
+    };
+    let replacement = prepare_refresh_token(&client, &issue, &pending, None);
+    assert!(replacement.dpop_jkt.is_none());
+    assert!(replacement.mtls_x5t_s256.is_none());
+    assert!(replacement.client_attestation_jkt.is_none());
 }

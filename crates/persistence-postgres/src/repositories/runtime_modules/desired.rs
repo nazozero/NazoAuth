@@ -207,9 +207,17 @@ pub(super) async fn validate_revision(
     requested_module_id: ModuleId,
     expected: ModuleRevision,
 ) -> Result<bool, RepositoryError> {
-    Ok(read_desired(repository, requested_module_id)
-        .await?
-        .is_some_and(|record| record.revision == expected))
+    let mut connection = repository.connection().await?;
+    let current = runtime_module_desired_states::table
+        .find((repository.tenant_id(), module_id(requested_module_id)))
+        .select(runtime_module_desired_states::revision)
+        .first::<i64>(&mut connection)
+        .await
+        .optional()
+        .map_err(map_error)?
+        .map(mapping::parse_revision)
+        .transpose()?;
+    Ok(current == Some(expected))
 }
 
 pub(super) fn next_desired_revision(

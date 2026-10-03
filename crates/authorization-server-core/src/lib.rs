@@ -13,6 +13,7 @@ mod ciba_ping;
 mod claims;
 mod client;
 mod client_assertion;
+mod client_attestation;
 mod client_authentication;
 mod client_jwe_policy;
 mod client_registration;
@@ -77,20 +78,21 @@ pub use authorization_request::{
     validate_expanded_par_admission, validate_raw_par_admission, verify_request_object,
 };
 pub use authorization_service::{
-    AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
-    AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
-    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
-    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateSnapshot,
-    AuthorizationStateStorePort, ClientAuthenticationSnapshot, GrantWrite,
-    StoredAuthorizationGrant, pushed_authorization_request_digest,
-    stored_grant_covers_requested_authorization,
+    AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
+    AuthorizationDecisionCommitResult, AuthorizationDecisionKind, AuthorizationFuture,
+    AuthorizationPortError, AuthorizationRateDimension, AuthorizationRepositoryPort,
+    AuthorizationResponseSignInput, AuthorizationResponseSignerPort, AuthorizationService,
+    AuthorizationStateSnapshot, AuthorizationStateStorePort, ClientAuthenticationSnapshot,
+    DecisionMaterialDiscardError, DecisionMaterialDiscardFuture, DecisionMaterialDiscardOutcome,
+    PreparedAuthorizationCode, StoredAuthorizationGrant, prepare_authorization_code,
+    pushed_authorization_request_digest, stored_grant_covers_requested_authorization,
 };
 pub use ciba::{
     CibaAtomicResult, CibaAuthenticationContext, CibaCommittedDecision, CibaCreateFailure,
     CibaDecision, CibaDecisionEvaluation, CibaDecisionFailure, CibaPingNotification,
     CibaPingNotificationStatus, CibaPollCommit, CibaPollFailure, CibaPollTransition,
     CibaRequestState, CibaService, CibaStateFuture, CibaStatePortError, CibaStateStorePort,
-    CibaStateVersion, CibaStatus, CibaStoredRequest, ciba_retention_deadline,
+    CibaStateVersion, CibaStatus, CibaStoredRequest, PreparedCibaDecision, ciba_retention_deadline,
     evaluate_ciba_decision, evaluate_ciba_poll,
 };
 pub use ciba_ping::{
@@ -110,6 +112,7 @@ pub use client_assertion::{
     SUPPORTED_CLIENT_JWT_SIGNING_ALGS, ValidatedClientAssertion,
     unverified_client_assertion_client_id, verify_private_key_jwt,
 };
+pub use client_attestation::ClientAttestationProofWindow;
 pub use client_authentication::{
     ClientAuthenticationContext, ClientAuthenticationMethod, ClientAuthenticationPolicyError,
     ClientAuthenticationRequirement, PresentedClientCredentials, client_authentication_requirement,
@@ -132,8 +135,9 @@ pub use device::{
     DeviceAuthorizationState, DeviceCreateFailure, DeviceCreateResult, DeviceDecisionFailure,
     DeviceGrantFuture, DeviceGrantPortError, DeviceGrantRepositoryPort, DeviceGrantService,
     DeviceGrantWrite, DevicePollCommit, DevicePollFailure, DevicePollTransition, DeviceStateFuture,
-    DeviceStatePortError, DeviceStateStorePort, DeviceStateVersion, StoredDeviceAuthorization,
-    device_authorization_payload, device_authorization_request_payload, evaluate_device_poll,
+    DeviceStatePortError, DeviceStateReplacement, DeviceStateStorePort, DeviceStateVersion,
+    PreparedDeviceDecision, StoredDeviceAuthorization, device_authorization_payload,
+    device_authorization_request_payload, evaluate_device_poll,
 };
 pub use dpop::{
     DPOP_CLOCK_SKEW_SECONDS, DPOP_REPLAY_TTL_SECONDS, DpopError, DpopNoncePolicy, DpopProofRequest,
@@ -202,7 +206,8 @@ pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{
     BackchannelLogoutDelivery, LostResponseRetry, MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE,
     MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken, PendingBackchannelLogoutDelivery,
-    RefreshContract, RefreshToken, RefreshTokenAuthenticationContext, RefreshTokenPersistResult,
+    RefreshContract, RefreshToken, RefreshTokenAuthenticationContext, RefreshTokenAuthority,
+    RefreshTokenCommit, RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 pub use token_endpoint::{
     AdmittedTokenClient, AppliedSenderConstraint, AuthorizationCodeTokenRequest,
@@ -214,16 +219,17 @@ pub use token_endpoint::{
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
+    AuthorizationCodeClientAuthentication, AuthorizationCodeHolderEvidence,
     AuthorizationCodeTransitionResult, CommitTokenIssuance, CommitTokenIssuanceResult,
-    IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, PreparedTokenSubject,
-    SingleUseRedemption, TokenFuture, TokenInspection, TokenIssuanceMode, TokenIssuedAuditFields,
-    TokenPortError, TokenPrincipalState, TokenRepositoryPort, TokenRevocation, TokenService,
-    TokenSignerPort, TokenStateStorePort, UserinfoSnapshot, UserinfoSubjectRef,
-    validate_sender_constraint,
+    IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, NativeSsoSourceFence,
+    PreparedTokenSubject, SingleUseRedemption, TokenFuture, TokenInspection, TokenIssuanceMode,
+    TokenIssuedAuditFields, TokenPortError, TokenPrincipalState, TokenRepositoryPort,
+    TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort, UserinfoSnapshot,
+    UserinfoSubjectRef, validate_sender_constraint,
 };
 pub use transaction::{
-    AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
-    PushedAuthorizationRequest,
+    AUTHORIZATION_CODE_REDEMPTION_VERSION, AuthorizationCodeState, CodePayload, ConsentPayload,
+    ConsumedAuthorizationCode, PushedAuthorizationRequest,
 };
 pub use uri_policy::{
     RedirectUriError, is_loopback_http_url, is_valid_pkce_value, oauth_redirect_uri_matches,

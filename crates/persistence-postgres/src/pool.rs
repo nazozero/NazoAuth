@@ -244,7 +244,8 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
     )
     .bind::<diesel::sql_types::Text, _>(runtime_role)
     .get_result::<RuntimeRoleStatus>(&mut connection)
-    .await?;
+    .await
+    .map_err(crate::unavailable::migration_query)?;
     if !status.acceptable {
         anyhow::bail!(
             "runtime PostgreSQL role must exist, differ from the lifecycle role, and have no superuser membership"
@@ -253,7 +254,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
 
     let quoted_role = format!("\"{runtime_role}\"");
     connection
-        .transaction::<(), anyhow::Error, _>(async move |connection| {
+        .transaction::<(), diesel::result::Error, _>(async move |connection| {
             connection
                 .batch_execute(&format!(
                     "REVOKE ALL ON SCHEMA public FROM {quoted_role};\
@@ -276,6 +277,8 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_reject_security_audit_event_mutation(), \
                          public.nazo_security_audit_chain_head_for_update(), \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
+                         public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
+                         public.nazo_cleanup_authorization_decisions(), \
                          public.nazo_append_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
                          public.nazo_security_audit_batch_members(), \
                          public.nazo_claim_security_audit_pending(BIGINT), \
@@ -292,6 +295,8 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                      FROM {quoted_role};\
                      GRANT EXECUTE ON FUNCTION \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
+                         public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
+                         public.nazo_cleanup_authorization_decisions(), \
                          public.nazo_oauth_refresh_contract_ensure(UUID, BYTEA, JSONB), \
                          public.nazo_security_audit_shared_anchor_health(), \
                          public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
@@ -300,7 +305,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                 .await?;
             Ok(())
         })
-        .await?;
+        .await.map_err(crate::unavailable::migration_query)?;
     Ok(())
 }
 
@@ -315,7 +320,7 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
         .batch_execute(&format!(
             "SET SESSION lock_timeout = '25s'; SET SESSION statement_timeout = '{MIGRATION_STATEMENT_TIMEOUT}';"
         ))
-        .await?;
+        .await.map_err(crate::unavailable::migration_query)?;
 
     let deadline = tokio::time::Instant::now() + MIGRATION_LOCK_TIMEOUT;
     loop {
@@ -323,12 +328,16 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
             "SELECT pg_try_advisory_lock({MIGRATION_ADVISORY_LOCK}) AS acquired"
         ))
         .get_result::<AdvisoryLockStatus>(&mut connection)
-        .await?;
+        .await
+        .map_err(crate::unavailable::migration_query)?;
         if status.acquired {
             break;
         }
         if tokio::time::Instant::now() >= deadline {
-            anyhow::bail!("migration advisory lock acquisition timed out");
+            return Err(nazo_persistence::MigrationUnavailable(anyhow::anyhow!(
+                "migration advisory lock acquisition timed out"
+            ))
+            .into());
         }
         tokio::time::sleep(MIGRATION_LOCK_RETRY_INTERVAL).await;
     }
@@ -340,7 +349,7 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
     let migration_result = harness
         .run_pending_migrations(MIGRATIONS)
         .map(|applied| !applied.is_empty())
-        .map_err(|error| anyhow::anyhow!(error.to_string()));
+        .map_err(crate::unavailable::migration_harness);
     let mut connection = harness.into_inner();
     let unlock_result: anyhow::Result<()> = match diesel::sql_query(format!(
         "SELECT pg_advisory_unlock({MIGRATION_ADVISORY_LOCK}) AS acquired"
@@ -349,18 +358,11 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
     .await
     {
         Ok(status) if status.acquired => Ok(()),
-        Ok(_) => anyhow::bail!("migration advisory lock release returned false"),
-        Err(error) => Err(error.into()),
+        Ok(_) => Err(anyhow::anyhow!(
+            "migration advisory lock release returned false"
+        )),
+        Err(error) => Err(crate::unavailable::migration_query(error)),
     };
 
-    match (migration_result, unlock_result) {
-        (Ok(applied), Ok(())) => Ok(applied),
-        (Err(error), Ok(())) => Err(error),
-        (Ok(_), Err(error)) => {
-            anyhow::bail!("migration advisory lock release failed: {error}")
-        }
-        (Err(migration_error), Err(unlock_error)) => anyhow::bail!(
-            "migration failed: {migration_error}; advisory lock release failed: {unlock_error}"
-        ),
-    }
+    crate::unavailable::migration_outcome(migration_result, unlock_result)
 }

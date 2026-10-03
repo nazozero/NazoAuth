@@ -32,15 +32,29 @@ impl MfaRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: uuid::Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), RepositoryError> {
+    ) -> Result<bool, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
+                let generation = crate::schema::user_totp_credentials::table
+                    .filter(crate::schema::user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
+                    .filter(crate::schema::user_totp_credentials::user_id.eq(user_id.as_uuid()))
+                    .filter(crate::schema::user_totp_credentials::id.eq(credential_id))
+                    .filter(crate::schema::user_totp_credentials::confirmed_at.is_not_null())
+                    .for_key_share()
+                    .select(crate::schema::user_totp_credentials::id)
+                    .first::<uuid::Uuid>(connection)
+                    .await
+                    .optional()?;
+                if generation.is_none() {
+                    return Ok(false);
+                }
                 diesel::delete(
                     user_mfa_remembered_devices::table
                         .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
@@ -59,7 +73,7 @@ impl MfaRepository {
                     ))
                     .execute(connection)
                     .await?;
-                Ok(())
+                Ok(true)
             })
             .await
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))

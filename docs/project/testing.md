@@ -130,11 +130,53 @@ requires natural autovacuum recovery without manual vacuum of that lifecycle.
 
 Targeted suites with their own entry points:
 
+- `crates/identity/tests/unit/federation.rs` defines tenant-separated digest and
+  legacy parsing checks. `crates/state-store-valkey/tests/federation_binding.rs`
+  defines real-Valkey matching-take concurrency, exact raw/deadline preservation,
+  matching-owner typed corruption and the single-EVAL call-path contract.
+- `crates/nazoauth/tests/unit/http/auth/federation/browser_binding.rs` defines
+  canonical cookie/security attributes, missing-cookie zero-store calls,
+  backend failure mapping, OIDC/social attacker-to-other-browser rejection with
+  subsequent owner completion, parallel established-cookie starts, and the
+  fail-closed simultaneous cold-start race. HTTP completion fixtures use the
+  isolated PostgreSQL and Valkey configured above; the state-only checks require
+  Valkey. These focused cases supplement existing nonce, PKCE and provider
+  mismatch regressions.
+
+- `crates/persistence-postgres/tests/schema_cleanup.rs` exercises the
+  inert-state migration's up/down data preservation, refusal of populated
+  legacy state and schema drift, external dependency blocking, and retained
+  tenant-composite foreign-key behavior. It uses transaction-local schemas
+  in the isolated test database. Existing controller, recovery, MFA and client
+  repository suites cover runtime behavior against the complete migration chain.
+- `crates/nazoauth/tests/unit/http/token/authorization_code/identity.rs` covers
+  real issuance with a hidden commit ACK, stable identity after cache restoration,
+  fresh signed DPoP holder checks with missing or expired Pending payload, mTLS
+  receipt matching after current binding is disabled, and historical payload or
+  cache-only marker denial. It needs both isolated PostgreSQL and Valkey. A port
+  wrapper injects the lost ACK after a real commit; driver packet loss is outside
+  this fixture's evidence boundary.
 - `crates/persistence-postgres/tests/token_issuance_atomicity.rs` covers the
-  durable SingleUse fence, concurrent grant consumption, controlled
+  durable SingleUse fence, concurrent code identities with independent holder
+  evidence, actual receipt migration/old-insert rejection/rollback guard, controlled
   `GrantExpired` rollback (including connection return to the pool), rotation
   conflicts, and the final schema shape. It needs an isolated PostgreSQL from
   `NAZO_TEST_DATABASE_URL`/`DATABASE_URL`.
+- `crates/persistence-postgres/tests/support/mfa_generation.rs`, mounted by
+  `identity_repositories`, uses real MFA confirmation, encryption and factor
+  consumption against isolated PostgreSQL. TOTP and backup-code cases cover an
+  admitted G1 proof delayed until formal G2 installation, reverse lock ordering,
+  rollback after dependent deletes, and a real committed clear with a hidden ACK
+  followed by a stale G1 retry. Full credential/flag/backup/remembered-device
+  snapshots establish preservation; a forwarding fault injector hides only the
+  clear ACK. It does not prove driver packet loss or Required audit crash closure.
+- `crates/state-store-valkey/tests/replay_contract.rs` covers real client-
+  attestation owner-clock expiry, shared token/PAR consumption and concurrent NX.
+  `crates/nazoauth/tests/unit/http/token/dispatch/attestation.rs` combines signed
+  input with real Valkey expiry and covers post-NX Unknown in both endpoints,
+  including the retained physical marker and cross-endpoint rejection. These
+  host cases need both isolated PostgreSQL and Valkey; semantic ACK injection
+  does not substitute for physical failover evidence.
 - `crates/persistence-postgres/tests/security_state_maintenance.rs` covers
   the bounded maintenance pass against the same isolated database.
 - `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real
@@ -197,3 +239,33 @@ and reject fixable HIGH/CRITICAL vulnerabilities before reuse or publication.
 Runtime descendants are rebuilt as well so an imported cached final stage cannot
 retain the former package layer. CI logs the installed versions of the affected
 packages from the final image before scanning its exported archive.
+
+## Avatar focused regressions
+
+Local storage definitions in `crates/nazoauth/tests/unit/adapters/avatar_files.rs`
+exercise immutable preparation, unique CAS loser cleanup, repository errors
+before/after a committed reference, cancellation at each observed I/O suspension
+and either side of CAS, deletion ordering, restart/legacy fallback, tenant/user
+isolation, partial versions, unsafe paths and best-effort retirement. Their
+fixtures live in `tests/support/local_avatar.rs`. The profile HTTP suite also
+wraps the real PostgreSQL CAS with an error after commit and checks that the
+selected image remains readable. Run it with the existing isolated PG/Valkey
+fixture settings; an unconfigured fixture is not execution evidence.
+
+Identity Avatar regressions retain Publishing retry ETag/hash/decoder checks,
+count the initial Pending staged read, verify the single hash and byte-drop
+source contract, reject failed candidate recording before publication and
+preserve shared direct candidates after CAS miss/error. The object-store
+`s3_read_final` integration target records signed HTTP methods and tests one
+GET/no HEAD, MIME/body binding, missing MIME, error mappings and unsafe IDs
+without I/O. Existing staged-read and publication regressions remain applicable.
+
+- OpenID4VC wire/proof repairs: `openid4vc/credential_proofs.rs` uses signed
+  positive and negative cases for scalar audiences, present issuer matching,
+  optional attestation key binding, nonce, advertised algorithms and one-JWT
+  attestation batches. `openid4vci_response.rs`, `transport_contract.rs` and the
+  live deferred fixture cover encrypted HTTP 202 and exact stored response
+  replay. VP service and endpoint mapping tests preserve completion dependency
+  failures as server errors and reject unsupported holder-binding waivers.
+  These mounted tests are source evidence until executed at the candidate SHA.
+  See [validation boundaries](../protocol/openid4vc-validation.md).

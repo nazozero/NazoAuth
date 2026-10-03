@@ -395,6 +395,13 @@ pub async fn token_native_sso_exchange(
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: Some(nazo_auth::NativeSsoSourceFence {
+                tenant_id: secret.tenant_id,
+                user_id: secret.user_id,
+                source_client_id: secret.source_client_id,
+                family_id: secret.refresh_token_family_id,
+                device_secret_expires_at: secret.expires_at,
+            }),
             user_id: Some(secret.user_id),
             prepared_subject: None,
             subject,
@@ -418,7 +425,8 @@ pub async fn token_native_sso_exchange(
             mtls_x5t_s256: mtls_x5t_s256.clone(),
             refresh_token_mtls_x5t_s256: mtls_x5t_s256,
             refresh_token_client_attestation_jkt: None,
-            refresh_token_scopes: None,
+            refresh_authority: None,
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor: None,
             issued_token_type: Some("urn:ietf:params:oauth:token-type:access_token".to_owned()),

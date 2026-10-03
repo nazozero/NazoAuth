@@ -26,7 +26,11 @@ where
                 .await
                 .map_err(RegistryError::Repository)?
                 .ok_or(RegistryError::MissingDesiredState(*dependency))?;
-            if !desired.mode.is_enabled() || !snapshot.admits(*dependency) {
+            if !self
+                .catalog
+                .effective_enabled(*dependency, desired.mode.is_enabled())
+                || !snapshot.admits(*dependency)
+            {
                 return Ok(Some(*dependency));
             }
         }
@@ -50,7 +54,12 @@ where
                 .await
                 .map_err(RegistryError::Repository)?
                 .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
-            if desired.mode.is_enabled() || snapshot.admits(dependent.id) {
+            if self
+                .catalog
+                .effective_enabled(dependent.id, desired.mode.is_enabled())
+                || snapshot.admits(dependent.id)
+                || snapshot.draining.contains(&dependent.id)
+            {
                 return Ok(Some(dependent.id));
             }
         }
@@ -62,9 +71,7 @@ where
         current: &InstanceStateRecord,
         initialized: bool,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        if self.snapshot().admits(current.module_id) {
-            self.publish(current.module_id, false, false)?;
-        }
+        self.publish(current.module_id, false, false)?;
         let failure = if initialized {
             self.lifecycle
                 .stop(current.module_id)

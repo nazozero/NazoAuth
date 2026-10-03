@@ -40,7 +40,7 @@ pub struct PostgresTenantResourceExecutor {
     repository: TenantResourceRepository,
     tenant: TenantContext,
     data_key: Option<[u8; 32]>,
-    preparation: Arc<dyn TenantResourcePreparation>,
+    preparation: Option<Arc<dyn TenantResourcePreparation>>,
 }
 
 impl PostgresTenantResourceExecutor {
@@ -55,7 +55,21 @@ impl PostgresTenantResourceExecutor {
             repository,
             tenant,
             data_key,
-            preparation,
+            preparation: Some(preparation),
+        }
+    }
+
+    /// Enumerate/revoke and exact replay do not require Apply's registration capabilities.
+    #[must_use]
+    pub fn without_apply_preparation(
+        repository: TenantResourceRepository,
+        tenant: TenantContext,
+    ) -> Self {
+        Self {
+            repository,
+            tenant,
+            data_key: None,
+            preparation: None,
         }
     }
 
@@ -72,6 +86,10 @@ impl PostgresTenantResourceExecutor {
         &self,
         resources: &[PreparedTenantResource],
     ) -> Result<Vec<PreparedApplyPayload>, TenantResourceExecutorError> {
+        let preparation = self
+            .preparation
+            .as_ref()
+            .ok_or(TenantResourceExecutorError::Rejected)?;
         let mut prepared = Vec::with_capacity(resources.len());
         for resource in resources {
             let Some(payload) = resource.payload.clone() else {
@@ -79,8 +97,7 @@ impl PostgresTenantResourceExecutor {
             };
             let payload = match payload {
                 TenantResourcePayload::User(value) => {
-                    let password_hash = self
-                        .preparation
+                    let password_hash = preparation
                         .hash_user_password(value.password.clone())
                         .await
                         .map_err(map_preparation_error)?;
@@ -94,8 +111,7 @@ impl PostgresTenantResourceExecutor {
                     }))
                 }
                 TenantResourcePayload::OauthClient(value) => {
-                    let prepared = self
-                        .preparation
+                    let prepared = preparation
                         .prepare_oauth_client(value.request, value.supplied_secret, self.tenant)
                         .await
                         .map_err(map_preparation_error)?;
@@ -112,8 +128,7 @@ impl PostgresTenantResourceExecutor {
                         subject_dn,
                         not_before,
                         not_after,
-                    } = self
-                        .preparation
+                    } = preparation
                         .prepare_mtls_trust_anchor(value.certificate_pem)
                         .await
                         .map_err(map_preparation_error)?;
@@ -177,9 +192,15 @@ impl PostgresTenantResourceExecutor {
         }
         let operation_id =
             Uuid::parse_str(jti).map_err(|_| TenantResourceExecutorError::Rejected)?;
-        if let Some(outcome) = self
-            .existing_control_outcome(deployment_id, operation_id, request_sha256, operation)
-            .await?
+        if let Some(outcome) = Self::control_outcome(
+            &self.repository,
+            self.tenant.tenant_id,
+            deployment_id,
+            operation_id,
+            request_sha256,
+            operation,
+        )
+        .await?
         {
             return Ok(outcome);
         }
@@ -353,19 +374,25 @@ impl PostgresTenantResourceExecutor {
             .map_err(map_transaction_error)
     }
 
-    async fn existing_control_outcome(
-        &self,
+    /// Read the authoritative exact receipt for an already accepted operation.
+    /// This uses the same identity lock and typed validation as execution, without
+    /// requiring current routing/configuration or any Apply preparation capability.
+    pub async fn control_outcome(
+        repository: &TenantResourceRepository,
+        tenant_id: TenantId,
         deployment_id: &str,
         operation_id: Uuid,
         request_hash: &str,
         operation: TenantResourceAction,
     ) -> Result<Option<ControlTenantResourceOutcome>, TenantResourceExecutorError> {
-        let mut connection = self
-            .repository
+        if !is_lower_sha256(request_hash) {
+            return Err(TenantResourceExecutorError::Rejected);
+        }
+        let mut connection = repository
             .connection()
             .await
             .map_err(map_repository_error)?;
-        let tenant_id = self.tenant.tenant_id.as_uuid();
+        let tenant_id = tenant_id.as_uuid();
         connection
             .transaction::<Option<ControlTenantResourceOutcome>, ExecutorTransactionError, _>(
                 async move |connection| {

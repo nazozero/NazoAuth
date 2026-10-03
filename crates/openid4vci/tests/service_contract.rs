@@ -12,10 +12,9 @@ use nazo_openid4vci::{
     CredentialAccess, CredentialConfiguration, CredentialDatasetPort, CredentialError,
     CredentialIdentifier, CredentialIssuance, CredentialIssuanceError, CredentialIssuerService,
     CredentialRequest, CredentialStoreError, CredentialStoreFuture, CredentialStorePort,
-    DeferredCredential, DeferredCredentialClaim, IssuanceCommit, IssuanceDisposition,
-    IssuanceIdentity, IssuanceNotification, NonceRecord, NotificationHandle, ProofError,
-    ProofTypeMetadata, ProofValidatorPort, Proofs, StoredCredentialOffer, StoredCredentialResponse,
-    ValidatedProof,
+    DeferredCredential, IssuanceCommit, IssuanceDisposition, IssuanceIdentity,
+    IssuanceNotification, NonceRecord, NotificationHandle, ProofError, ProofTypeMetadata,
+    ProofValidatorPort, Proofs, StoredCredentialOffer, StoredCredentialResponse, ValidatedProof,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -302,9 +301,11 @@ impl CredentialStorePort for RecordingStore {
         _: Uuid,
         _: &'a str,
         _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
-    {
-        Box::pin(async { Ok(None) })
+    ) -> CredentialStoreFuture<
+        'a,
+        Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
+    > {
+        Box::pin(async { Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid) })
     }
     fn finalize_deferred<'a>(
         &'a self,
@@ -390,6 +391,7 @@ impl ProofValidatorPort for FixedProofs {
         &'a self,
         _: &'a Proofs,
         _: &'a str,
+        _: nazo_openid4vci::CredentialProofOrigin,
         _: &'a str,
         _: &'a str,
         _: &'a ProofTypeMetadata,
@@ -449,6 +451,7 @@ impl ProofValidatorPort for ErrorProofs {
         &'a self,
         _: &'a Proofs,
         _: &'a str,
+        _: nazo_openid4vci::CredentialProofOrigin,
         _: &'a str,
         _: &'a str,
         _: &'a ProofTypeMetadata,
@@ -510,12 +513,15 @@ fn fixture(
     };
     (
         CredentialAccess {
+            authorization_id: None,
+            mtls_x5t_s256: None,
+            proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             token_id: Uuid::now_v7(),
             tenant_id: Uuid::now_v7(),
             subject_id: Uuid::now_v7(),
             client_id: "wallet".to_owned(),
             configuration_ids: vec!["pid".to_owned()],
-            credential_identifiers: vec![CredentialIdentifier("pid-1".to_owned())],
+            credential_identifiers: Vec::new(),
             dpop_jkt: None,
             expires_at: now + Duration::minutes(5),
         },
@@ -564,6 +570,7 @@ fn response_for_pending(
         IssuanceCommit::Deferred { credential, .. } => credential.access.token_id,
     };
     StoredCredentialResponse {
+        selection: None,
         issuance_id: pending.issuance_id,
         token_id,
         request_digest: pending.request_digest.clone(),
@@ -1529,6 +1536,9 @@ async fn doctype_is_used_when_vct_is_absent() {
 async fn persist_pre_authorized_access_forwards_arguments_and_errors() {
     let store = Arc::new(RecordingStore::default());
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         subject_id: Uuid::now_v7(),

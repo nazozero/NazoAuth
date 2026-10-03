@@ -20,14 +20,18 @@ mod support;
 #[path = "support/password.rs"]
 mod password;
 
+#[path = "support/refresh_fixture.rs"]
+mod refresh_fixture;
+use refresh_fixture::RefreshFixture;
+
 use chrono::{DateTime, Duration, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
     AccessTokenRevocation, ClientSecurityPolicy, CommitTokenIssuance, CommitTokenIssuanceResult,
-    NewRefreshToken, OAuthClient, RefreshToken, RefreshTokenAuthenticationContext,
-    TokenIssuanceMode, TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation,
-    UserinfoSubjectRef, ValidatedClientRegistration,
+    OAuthClient, RefreshToken, RefreshTokenAuthenticationContext, TokenIssuanceMode,
+    TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation, UserinfoSubjectRef,
+    ValidatedClientRegistration,
 };
 use nazo_digital_credentials::CredentialFormat;
 use nazo_identity::{AccessRequestStatus, TenantContext, TenantId, UserId};
@@ -362,33 +366,42 @@ fn new_refresh_token(
     raw_token: String,
     rotated_from_id: Option<Uuid>,
     dpop_jkt: Option<String>,
-) -> NewRefreshToken {
+) -> RefreshFixture {
     let issued_at = Utc::now();
-    NewRefreshToken {
-        raw_token,
-        member_id: Uuid::now_v7(),
-        tenant_id,
-        family_id,
-        rotated_from_id,
-        lost_response_retry: None,
-        client_id: seed.client.id,
-        user_id: Some(seed.user_id),
-        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
-        audiences: vec!["resource://default".to_owned()],
-        authorization_details: json!([]),
-        issued_at,
-        expires_at: issued_at + Duration::hours(1),
-        subject: seed.user_id.to_string(),
-        dpop_jkt,
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-        authentication_context: refresh_context(&seed.client.client_id),
-    }
+    RefreshFixture::new(
+        nazo_auth::NewRefreshToken {
+            raw_token,
+            member_id: Uuid::now_v7(),
+            tenant_id,
+            family_id,
+            rotated_from_id,
+            lost_response_retry: None,
+            client_id: seed.client.id,
+            user_id: Some(seed.user_id),
+            audiences: vec!["resource://default".to_owned()],
+            issued_at,
+            expires_at: issued_at + Duration::hours(1),
+            dpop_jkt,
+            mtls_x5t_s256: None,
+            client_attestation_jkt: None,
+            id_token_sid: None,
+        },
+        nazo_auth::RefreshContract {
+            scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+            audiences: vec!["resource://default".to_owned()],
+            authorization_details: json!([]),
+            subject: seed.user_id.to_string(),
+            authentication_context: refresh_context(&seed.client.client_id),
+        }
+        .persisted(),
+    )
 }
 
-fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
+async fn refresh_issuance(token: RefreshFixture) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        authorization_id: None,
+        native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
             user_epoch: (token.user_id).map(|_| 0),
@@ -405,12 +418,14 @@ fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
         access_token_jti: issuance_id.to_string(),
         access_token_expires_at: (token.issued_at + Duration::minutes(5)).timestamp(),
         audit_fields: TokenIssuedAuditFields {
-            client_id: token.authentication_context.audience.clone(),
-            subject_hash: blake3::hash(token.subject.as_bytes()).to_hex().to_string(),
-            scope: token.scopes.join(" "),
+            client_id: token.contract.authentication_context.audience.clone(),
+            subject_hash: blake3::hash(token.contract.subject.as_bytes())
+                .to_hex()
+                .to_string(),
+            scope: token.contract.scopes.join(" "),
             audience: token.audiences.clone(),
         },
-        refresh_token: Some(token),
+        refresh_token: Some(token.into_commit().await),
     }
 }
 
@@ -742,6 +757,51 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
 // RF-01: ordinary refresh rotation
 // ---------------------------------------------------------------------------
 
+/// Malformed immutable input is rejected before the repository checks out a
+/// database connection.
+#[tokio::test]
+async fn rf00_malformed_refresh_contract_is_rejected_before_pool_checkout() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let seed = seed_principal(&database_url, tenant).await;
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = TokenIssuanceRepository::new(pool);
+
+    let mut malformed = new_refresh_token(
+        &seed,
+        tenant_id,
+        Uuid::now_v7(),
+        format!("qc-malformed-{}", Uuid::now_v7()),
+        None,
+        None,
+    );
+    malformed.contract.audiences.clear();
+    let input = refresh_issuance(malformed).await;
+    let (result, delta, acquires) =
+        measure(&counter, repository.commit_token_issuance(input)).await;
+    assert!(
+        result.is_err(),
+        "malformed immutable contracts must be rejected"
+    );
+    assert_eq!(
+        delta,
+        QuerySnapshot::default(),
+        "validation must precede DB work"
+    );
+    assert_eq!(
+        acquires, 0,
+        "malformed input must fail before pool checkout"
+    );
+    cleanup_seed(&database_url, tenant, &seed).await;
+}
+
 /// RF-01: `commit_token_issuance` for an ordinary rotation issues every write
 /// inside one transaction on one connection. The family is read under its
 /// advisory lock to validate the current member and sender binding; rotation
@@ -773,7 +833,8 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
             parent_raw.clone(),
             None,
             Some("qc-parent-dpop".to_owned()),
-        ));
+        ))
+        .await;
         let outcome = seeder
             .commit_token_issuance(input)
             .await
@@ -785,6 +846,33 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
             .expect("parent lookup should succeed")
             .expect("the committed parent must exist")
     };
+    let second_family_id = Uuid::now_v7();
+    let second_parent_raw = format!("qc-parent-{}", Uuid::now_v7());
+    let second_parent = {
+        let seed_pool = create_pool(database_url.as_str(), 2).expect("second seed pool");
+        let seeder = TokenIssuanceRepository::new(seed_pool.clone());
+        let input = refresh_issuance(new_refresh_token(
+            &seed,
+            tenant_id,
+            second_family_id,
+            second_parent_raw.clone(),
+            None,
+            Some("qc-parent-dpop".to_owned()),
+        ))
+        .await;
+        let outcome = seeder
+            .commit_token_issuance(input)
+            .await
+            .expect("second parent issuance should commit");
+        assert_eq!(outcome, CommitTokenIssuanceResult::Committed);
+        TokenRepository::new(seed_pool)
+            .by_raw_refresh_token(tenant_id, &second_parent_raw)
+            .await
+            .expect("second parent lookup should succeed")
+            .expect("the second committed parent must exist")
+    };
+    assert_ne!(family_id, second_family_id);
+    assert_eq!(parent.contract_key, second_parent.contract_key);
 
     let (pool, counter) = instrumented_pool(&database_url).await;
     let repository = TokenIssuanceRepository::new(pool);
@@ -797,7 +885,59 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         // Sender binding is family authority: the successor carries the same
         // DPoP binding as the parent it replaces.
         Some("qc-parent-dpop".to_owned()),
-    ));
+    ))
+    .await;
+    // Preserve keeps the same six statements: timeout, two principal SHARE
+    // reads, shared family advisory, family SHARE read, and Required audit.
+    // Changing lock modes removes reader serialization, not a SQL round trip.
+    let mut preserved = child.clone();
+    preserved.issuance_id = Uuid::now_v7();
+    preserved.access_token_jti = preserved.issuance_id.to_string();
+    preserved.refresh_token = Some(nazo_auth::RefreshTokenCommit::UseExisting {
+        authority: parent.authority(),
+        rotation: None,
+    });
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.commit_token_issuance(preserved.clone()),
+    )
+    .await;
+    assert_eq!(
+        result.expect("preserve should commit"),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert_eq!(delta.data_queries, 6);
+    assert_eq!(delta.begins, 1);
+    assert_eq!(delta.commits, 1);
+    assert_eq!(acquires, 1);
+    assert_eq!(delta.family_contract_cache_queries, 1);
+    assert_clean(delta);
+
+    // The next Preserve reads another family on the same one-slot connection
+    // with the same typed query shape. Its prepared statement is already cached.
+    let mut preserved_second = preserved;
+    preserved_second.issuance_id = Uuid::now_v7();
+    preserved_second.access_token_jti = preserved_second.issuance_id.to_string();
+    preserved_second.refresh_token = Some(nazo_auth::RefreshTokenCommit::UseExisting {
+        authority: second_parent.authority(),
+        rotation: None,
+    });
+    let (result, delta, acquires) =
+        measure(&counter, repository.commit_token_issuance(preserved_second)).await;
+    assert_eq!(
+        result.expect("second-family preserve should commit"),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert_eq!(delta.data_queries, 6);
+    assert_eq!(delta.begins, 1);
+    assert_eq!(delta.commits, 1);
+    assert_eq!(acquires, 1);
+    assert_eq!(
+        delta.family_contract_cache_queries, 0,
+        "the same-mode family query must not emit CacheQuery again"
+    );
+    assert_clean(delta);
+
     let (result, delta, acquires) =
         measure(&counter, repository.commit_token_issuance(child)).await;
 
@@ -889,6 +1029,8 @@ async fn rf06_lost_response_successor_is_single_read() {
         token_family_id: family_id,
         client_id: seed.client.id,
         user_id: Some(seed.user_id),
+        contract_key: [0; 32],
+        contract_audiences: vec!["resource://default".to_owned()],
         scopes: json!(["openid", "offline_access"]),
         audience: json!(["resource://default"]),
         authorization_details: json!([]),
@@ -940,6 +1082,113 @@ async fn rf06_lost_response_successor_is_single_read() {
     );
     assert_clean(delta);
 
+    cleanup_seed(&database_url, tenant, &seed).await;
+}
+
+// ---------------------------------------------------------------------------
+// OIDC subject preparation: claims, epoch and binding in one read
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn oidc_subject_preparation_reads_claims_epoch_and_binding_once() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let seed = seed_principal(&database_url, tenant).await;
+    let other_user = Uuid::now_v7();
+    let public_subject = seed.user_id.to_string();
+    let private_subject = format!("qc-pairwise-{}", Uuid::now_v7());
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = TokenIssuanceRepository::new(pool);
+
+    for subject in [&public_subject, &private_subject] {
+        let (result, delta, acquires) = measure(
+            &counter,
+            repository.active_subject_claims(tenant_id, seed.user_id, subject),
+        )
+        .await;
+        let snapshot = result.unwrap().unwrap();
+        assert_eq!(snapshot.tenant_id, tenant_id);
+        assert_eq!(snapshot.claims.subject.as_uuid(), seed.user_id);
+        assert_eq!(snapshot.token_subject, *subject);
+        assert_eq!(snapshot.user_epoch, 0);
+        assert!(!snapshot.subject_bound);
+        assert_eq!(delta.data_queries, 1);
+        assert_eq!(acquires, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+
+    let mut connection = connect(&database_url).await;
+    seed_user(&mut connection, tenant, other_user).await;
+    sql_query(
+        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Text, _>(&private_subject)
+    .bind::<sql_types::Uuid, _>(seed.user_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    sql_query("UPDATE users SET access_token_epoch = 7 WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.active_subject_claims(tenant_id, seed.user_id, &private_subject),
+    )
+    .await;
+    let snapshot = result.unwrap().unwrap();
+    assert!(snapshot.subject_bound);
+    assert_eq!(snapshot.user_epoch, 7);
+    assert_eq!(delta.data_queries, 1);
+    assert_eq!(acquires, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+
+    // The binding is looked up by tenant and subject, never pre-filtered by
+    // the requested user: a different owner must be a consistency failure.
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.active_subject_claims(tenant_id, other_user, &private_subject),
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(nazo_auth::TokenPortError::CorruptData)
+    ));
+    assert_eq!(delta.data_queries, 1);
+    assert_eq!(acquires, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.active_subject_claims(Uuid::now_v7(), seed.user_id, &private_subject),
+    )
+    .await;
+    assert!(result.unwrap().is_none());
+    assert_eq!(delta.data_queries, 1);
+    assert_eq!(acquires, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+
+    sql_query("DELETE FROM users WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(other_user)
+        .execute(&mut connection)
+        .await
+        .unwrap();
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 
@@ -1096,6 +1345,9 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     // Fixture rows go through the production upsert/store on the instrumented
     // pool; the measurement baseline is taken after they complete.
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
         subject_id: seed.user_id,
@@ -1112,6 +1364,7 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     let ready_at = Utc::now() + Duration::seconds(1);
     let transaction_hash = format!("qc-deferred-{}", Uuid::now_v7());
     let deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: transaction_hash.clone(),
         access: access.clone(),
@@ -1133,9 +1386,11 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     )
     .await;
 
-    let claim = result
-        .expect("claim should succeed")
-        .expect("a ready deferred transaction must be claimable");
+    let nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) =
+        result.expect("claim should succeed")
+    else {
+        panic!("the accepting owner must classify the ready fixture as Claimed");
+    };
     assert_eq!(claim.credential.id, deferred.id);
     assert_eq!(claim.claim_id, "claim-1");
     // 1 data statement: UPDATE openid4vci_deferred_transactions SET claim_id,
@@ -1225,6 +1480,10 @@ async fn exs04_existence_checks_are_single_statements() {
             request_id,
             seed.client.id,
             seed.client.client_id.as_str(),
+            Some(&format!(
+                "client-secret-v1:qc-salt-{}:qc-digest",
+                seed.client.id
+            )),
         ),
     )
     .await;
@@ -1265,6 +1524,9 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
 
     let token_hash = format!("qc-access-hash-{}", Uuid::now_v7());
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
         subject_id: seed.user_id,
@@ -1322,6 +1584,9 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     );
 
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
         subject_id: seed.user_id,
@@ -1377,6 +1642,7 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
             &format!("qc-access-hash-{}", Uuid::now_v7()),
             &CredentialAccess {
                 token_id: Uuid::now_v7(),
+                proof_origin: nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized,
                 ..access.clone()
             },
             None,

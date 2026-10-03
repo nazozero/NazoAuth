@@ -1,6 +1,7 @@
 //! 管理端用户账户接口。
 use crate::http::admin::{
     persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
+    require_transactional_audit_or_unavailable,
 };
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
@@ -157,7 +158,7 @@ pub(crate) async fn system_set_tenant_admin(
             );
         }
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     match users
@@ -167,28 +168,11 @@ pub(crate) async fn system_set_tenant_admin(
             target_tenant,
             target_user,
             payload.admin_level,
+            blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
         )
         .await
     {
         Ok(nazo_identity::AdminUserUpdateOutcome::Updated(user)) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "system_tenant_admin_updated",
-                audit_fields(&[
-                    ("actor_tenant_id", json!(control_tenant.0.as_uuid())),
-                    ("actor_user_id", json!(admin.id())),
-                    ("target_tenant_id", json!(target_tenant.as_uuid())),
-                    ("target_user_id", json!(user_uuid)),
-                    ("admin_level", json!(payload.admin_level)),
-                    (
-                        "source_ip_hash",
-                        json!(blake3_hex(&client_ip_with_config(&req, &client_ip_config))),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
             json_response(admin_user_json(*user))
         }
         Ok(nazo_identity::AdminUserUpdateOutcome::TargetNotFound) => {

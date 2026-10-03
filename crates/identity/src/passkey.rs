@@ -14,8 +14,8 @@ use crate::{
     LoginSuccess, PublicAccount, TenantId, UserId,
     ports::{
         LoginSessionCreate, LoginSessionPort, PasskeyAccountRepositoryPort, PasskeyAuditPort,
-        PasskeyCeremonyPort, PasskeyCredential, PasskeyRepositoryPort, RememberedMfaDevicePort,
-        RepositoryError,
+        PasskeyCeremonyPort, PasskeyCredential, PasskeyCredentialSummary, PasskeyRepositoryPort,
+        RememberedMfaDevicePort, RepositoryError,
     },
     session::SessionRecord,
 };
@@ -88,6 +88,7 @@ pub struct PasskeyServiceConfig {
     pub strict_base64: bool,
     pub ceremony_ttl_seconds: u64,
     pub session_ttl_seconds: u64,
+    pub pending_mfa_session_ttl_seconds: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -294,8 +295,8 @@ where
             return self.dummy_login_begin(account.user_id()).await;
         }
         let credentials = rows
-            .iter()
-            .map(decode_credential)
+            .into_iter()
+            .map(|row| decode_credential(row.credential))
             .collect::<Result<Vec<_>, _>>()?;
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
         let (mut challenge, state) = self
@@ -364,7 +365,7 @@ where
             .await
             .map_err(PasskeyError::State)?
             .ok_or(PasskeyError::LoginFailed)?;
-        let mut credential = decode_credential(&row)?;
+        let mut credential = decode_credential(row.credential)?;
         if i64::from(credential.counter) != row.sign_count {
             return Err(PasskeyError::State(RepositoryError::Consistency(
                 "passkey counter columns disagree".to_owned(),
@@ -428,8 +429,8 @@ where
             .await
             .map_err(PasskeyError::State)?;
         let existing_ids = rows
-            .iter()
-            .map(decode_credential)
+            .into_iter()
+            .map(|row| decode_credential(row.credential))
             .map(|result| result.map(|credential| credential.id))
             .collect::<Result<Vec<_>, _>>()?;
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
@@ -549,6 +550,16 @@ where
             .map_err(PasskeyError::State)
     }
 
+    pub async fn list_summaries(
+        &self,
+        account: &PublicAccount,
+    ) -> Result<Vec<PasskeyCredentialSummary>, PasskeyError> {
+        self.credentials
+            .list_summaries(account.tenant().tenant_id, account.user_id())
+            .await
+            .map_err(PasskeyError::State)
+    }
+
     pub async fn delete(&self, account: &PublicAccount, id: Uuid) -> Result<(), PasskeyError> {
         if self
             .credentials
@@ -592,11 +603,17 @@ where
             amr.push("remembered_mfa".to_owned());
             amr.push("mfa".to_owned());
         }
+        let pending_mfa = account.account.mfa_enabled && !remembered;
+        let ttl_seconds = if pending_mfa {
+            self.config.pending_mfa_session_ttl_seconds
+        } else {
+            self.config.session_ttl_seconds
+        };
         let session = SessionRecord::new(
             account.user_id(),
             now.timestamp(),
             amr,
-            account.account.mfa_enabled && !remembered,
+            pending_mfa,
             Some(random_urlsafe_token()),
         );
         let session_id = random_urlsafe_token();
@@ -607,7 +624,7 @@ where
                 previous_session_id.as_deref(),
                 &session_id,
                 &session,
-                self.config.session_ttl_seconds,
+                ttl_seconds,
             )
             .await
             .map_err(PasskeyError::Session)?
@@ -665,8 +682,8 @@ where
     }
 }
 
-fn decode_credential(row: &PasskeyCredential) -> Result<WebauthnCredential, PasskeyError> {
-    serde_json::from_value(row.credential.clone()).map_err(|_| {
+fn decode_credential(value: serde_json::Value) -> Result<WebauthnCredential, PasskeyError> {
+    serde_json::from_value(value).map_err(|_| {
         PasskeyError::State(RepositoryError::Consistency(
             "stored passkey credential is malformed".to_owned(),
         ))
@@ -695,3 +712,7 @@ fn ceremony_read_error(error: RepositoryError) -> PasskeyError {
         error => PasskeyError::CeremonyState(error),
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/passkey.rs"]
+mod tests;

@@ -57,10 +57,12 @@ pub trait Openid4vciDatasetStore: Send + Sync {
         credential_configuration_id: &'a str,
     ) -> BoxFuture<'a, Result<Option<ManagedCredentialDataset>, CredentialStoreError>>;
 
+    /// Return the view only after the encrypted write, audit record and
+    /// complete transaction acknowledgement succeed. None retains rejection.
     fn upsert_managed_dataset(
         &self,
         write: ManagedCredentialDatasetWrite,
-    ) -> BoxFuture<'_, Result<bool, CredentialStoreError>>;
+    ) -> BoxFuture<'_, Result<Option<ManagedCredentialDataset>, CredentialStoreError>>;
 
     fn delete_managed_dataset<'a>(
         &'a self,

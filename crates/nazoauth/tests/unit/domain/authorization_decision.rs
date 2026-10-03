@@ -887,10 +887,12 @@ async fn authorization_decision_accepts_deny_with_user_match() {
         return;
     };
     let user = fixture.create_user("decision-deny", "user", 0).await;
+    let client_id = format!("client-decision-deny-{}", Uuid::now_v7());
+    fixture.insert_client(&client_id, true).await;
     fixture
         .store_session(&user, "sid-decision-deny", Utc::now().timestamp())
         .await;
-    let payload = consent_payload_for_user("client-1", user.id);
+    let payload = consent_payload_for_user(&client_id, user.id);
     fixture.store_consent_payload(&payload).await;
     let req = fixture.auth_request("sid-decision-deny", Some("csrf-session-token"));
     let form = AuthorizationDecisionForm {
@@ -910,6 +912,52 @@ async fn authorization_decision_accepts_deny_with_user_match() {
         Some("access_denied")
     );
     assert!(!pairs.contains_key("code"));
+
+    #[derive(QueryableByName)]
+    struct CommittedDenial {
+        #[diesel(sql_type = Text)]
+        authorization_decision: String,
+        #[diesel(sql_type = Jsonb)]
+        payload: Value,
+        #[diesel(sql_type = Int4)]
+        grant_count: i32,
+    }
+
+    let mut conn = get_conn(&fixture.state.diesel_db)
+        .await
+        .expect("database connection should open");
+    let decisions = sql_query(
+        r#"
+        SELECT event.authorization_decision, event.payload,
+               (SELECT count(*)::integer FROM user_client_grants grants
+                JOIN oauth_clients clients
+                  ON clients.id = grants.client_id AND clients.tenant_id = grants.tenant_id
+                WHERE grants.tenant_id = $1 AND grants.user_id = $3
+                  AND clients.client_id = $4) AS grant_count
+        FROM security_audit_events event
+        WHERE event.event_type = 'authorization_decision_committed'
+          AND event.authorization_tenant_id = $1 AND event.authorization_request_id = $2
+        "#,
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<Text, _>(&payload.request_id)
+    .bind::<SqlUuid, _>(user.id)
+    .bind::<Text, _>(&client_id)
+    .load::<CommittedDenial>(&mut conn)
+    .await
+    .expect("committed denial should be readable");
+    assert_eq!(decisions.len(), 1);
+    let decision = &decisions[0];
+    assert_eq!(decision.authorization_decision, "deny");
+    assert_eq!(decision.payload["user_id"], json!(user.id));
+    assert_eq!(decision.payload["client_id"], json!(client_id));
+    assert_eq!(decision.grant_count, 0);
+    for field in ["code_id", "code_hash", "code_payload_digest"] {
+        assert!(
+            decision.payload.get(field).is_none(),
+            "denial must not bind {field}"
+        );
+    }
 }
 
 #[actix_web::test]

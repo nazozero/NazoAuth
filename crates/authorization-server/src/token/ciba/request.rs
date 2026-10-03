@@ -52,6 +52,9 @@ pub(crate) fn validate_and_apply_ciba_request_object_claims_with_config(
             .saturating_sub(now)
             .clamp(1, CIBA_REQUEST_OBJECT_MAX_TTL_SECONDS) as u64,
     };
+    // Validation and strict merge use the same trimmed signed value.
+    // Keep its error before outer-parameter conflicts, as before.
+    let signed_binding_checked = claims.binding_message.is_some();
     if let Some(binding_message) = claims.binding_message.as_deref()
         && !ciba_binding_message_is_supported(binding_message)
     {
@@ -96,7 +99,9 @@ pub(crate) fn validate_and_apply_ciba_request_object_claims_with_config(
         claims.client_notification_token,
         "CIBA request object client_notification_token conflicts with outer parameter.",
     )?;
-    validate_ciba_binding_message(form)?;
+    if !signed_binding_checked {
+        validate_ciba_binding_message(form)?;
+    }
     if let Some(requested_expiry) = claims.requested_expiry {
         let Some(seconds) = ciba_requested_expiry_seconds(&requested_expiry) else {
             return Err(ciba_invalid_request(

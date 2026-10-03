@@ -26,6 +26,7 @@ fn access_token_claims_includes_all_required_jwt_fields() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -79,6 +80,7 @@ fn access_token_claims_include_user_id_only_for_public_user_subject() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -112,6 +114,7 @@ fn access_token_claims_client_credentials_omits_user_id() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -145,6 +148,7 @@ fn access_token_claims_cnf_is_none_when_sender_constraints_are_absent() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -174,6 +178,7 @@ fn access_token_claims_cnf_is_none_when_both_dpop_and_mtls_are_present() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -206,6 +211,7 @@ fn access_token_claims_cnf_with_mtls_x5t_only() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -242,6 +248,7 @@ fn access_token_claims_multiple_audiences_produces_json_array() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -279,6 +286,7 @@ fn access_token_claims_single_audience_is_json_string_not_array() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -309,6 +317,7 @@ fn access_token_claims_empty_audience_is_empty_json_array() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -338,6 +347,7 @@ fn access_token_claims_zero_ttl_produces_exp_equal_to_iat() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -374,6 +384,7 @@ fn access_token_claims_scope_is_sorted_alphabetically() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -404,6 +415,7 @@ fn access_token_claims_empty_scope_is_empty_string() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -433,6 +445,7 @@ fn access_token_claims_empty_authorization_details_is_empty_array() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
@@ -476,6 +489,7 @@ fn access_token_claims_carries_userinfo_claim_requests() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,

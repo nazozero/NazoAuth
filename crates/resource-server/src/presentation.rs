@@ -108,6 +108,9 @@ pub(super) fn validate_presented_sender_constraint(
             None => Err(ResourceServerRequestError::MissingSenderConstraint),
         };
     }
+    if scheme == PresentedAccessTokenScheme::Dpop {
+        return Err(ResourceServerRequestError::MissingSenderConstraint);
+    }
     if let Some(expected) = cnf.x5t_s256.as_ref() {
         return match proof.mtls_x5t_s256.as_ref() {
             Some(actual) if actual == expected => Ok(()),

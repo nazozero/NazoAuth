@@ -2,13 +2,16 @@ use crate::{
     DbPool,
     convert::identity,
     get_conn,
-    repositories::audit::insert_identity_security_event,
+    repositories::{
+        audit::insert_identity_security_event,
+        audit_ledger::append_fresh_security_audit_on_connection,
+    },
     rows::identity::{AuthenticationIdentityRow, PrincipalRow, PublicAccountRow, SubjectClaimsRow},
-    schema::{oauth_refresh_families, user_client_grants, users},
+    schema::{oauth_refresh_families, oauth_subject_bindings, user_client_grants, users},
 };
 use diesel::{
-    ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl, SelectableHelper,
-    sql_query, sql_types,
+    BoolExpressionMethods, ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl,
+    SelectableHelper, sql_query, sql_types,
 };
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
@@ -100,22 +103,49 @@ impl UserRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> Result<Option<(SubjectClaims, i64)>, RepositoryError> {
+        token_subject: &str,
+    ) -> Result<Option<(SubjectClaims, i64, bool)>, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        users::table
+        // Claims, their epoch and private-subject ownership must share one
+        // snapshot. Do not filter by owner: a different owner is a collision,
+        // not a missing binding. Public subjects need no binding lookup.
+        let private_subject = token_subject != user_id.as_uuid().to_string();
+        let bound_user = oauth_subject_bindings::table
+            .filter(oauth_subject_bindings::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(
+                oauth_subject_bindings::subject
+                    .eq(token_subject)
+                    .and::<_, sql_types::Bool>(private_subject),
+            )
+            .select(oauth_subject_bindings::user_id)
+            .single_value();
+        let snapshot = users::table
             .find(user_id.as_uuid())
             .filter(users::tenant_id.eq(tenant_id.as_uuid()))
             .filter(users::is_active.eq(true))
-            .select((SubjectClaimsRow::as_select(), users::access_token_epoch))
-            .first::<(SubjectClaimsRow, i64)>(&mut connection)
+            .select((
+                SubjectClaimsRow::as_select(),
+                users::access_token_epoch,
+                bound_user,
+            ))
+            .first::<(SubjectClaimsRow, i64, Option<Uuid>)>(&mut connection)
             .await
             .optional()
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-            .map(|(row, epoch)| identity::active_subject_claims(row).map(|claims| (claims, epoch)))
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+        snapshot
+            .map(|(row, epoch, bound_user)| {
+                let claims = identity::active_subject_claims(row)
+                    .map_err(|error| RepositoryError::Consistency(error.0))?;
+                if bound_user.is_some_and(|owner| owner != user_id.as_uuid()) {
+                    return Err(RepositoryError::Consistency(
+                        "subject ownership collision".to_owned(),
+                    ));
+                }
+                Ok((claims, epoch, bound_user.is_some()))
+            })
             .transpose()
-            .map_err(|error| RepositoryError::Consistency(error.0))
     }
 
     /// Narrow active-principal read: same tenant, same user, `is_active`, and
@@ -259,8 +289,9 @@ impl UserRepository {
             users::address_region.eq(profile.address.region),
             users::address_postal_code.eq(profile.address.postal_code),
             users::address_country.eq(profile.address.country),
-            users::phone_number.eq(profile.phone_number),
-            users::phone_number_verified.eq(profile.phone_number_verified),
+            users::phone_number.eq(profile.phone_number.as_deref()),
+            users::phone_number_verified.eq(users::phone_number_verified
+                .and(users::phone_number.is_not_distinct_from(profile.phone_number.as_deref()))),
             users::updated_at.eq(diesel::dsl::now),
         ))
         .returning(PublicAccountRow::as_returning())
@@ -467,6 +498,7 @@ impl UserRepository {
         .map_err(AdminAuthorizedUpdateError::into_repository)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn set_tenant_admin_authorized(
         &self,
         control_tenant_id: TenantId,
@@ -474,6 +506,7 @@ impl UserRepository {
         target_tenant_id: TenantId,
         target_id: UserId,
         admin_level: i32,
+        source_ip_hash: String,
     ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
         if admin_level < 0 || control_tenant_id == target_tenant_id {
             return Ok(AdminUserUpdateOutcome::Denied(
@@ -508,76 +541,77 @@ impl UserRepository {
                             .admin_level()
                             .is_some_and(|level| level >= 2)
                 });
-                if !authorized {
-                    let persisted_actor = actor.map(|_| actor_id);
+                let (outcome, reason) = if !authorized {
+                    let persisted_actor = actor
+                        .filter(|account| account.tenant().tenant_id == control_tenant_id)
+                        .map(|_| actor_id);
                     insert_identity_security_event(
                         connection,
                         &admin_event(
                             control_tenant_id,
                             persisted_actor,
-                            Some(target_id),
+                            None,
                             IdentitySecurityOutcome::Denied,
                             IdentitySecurityReason::ActorNotAuthorized,
                         ),
                     )
                     .await
                     .map_err(AdminAuthorizedUpdateError::Repository)?;
-                    return Ok(AdminUserUpdateOutcome::Denied(
-                        AdminPolicyError::ActorNotAuthorized,
-                    ));
-                }
-                let Some(target) = accounts.iter().find(|account| {
+                    (AdminUserUpdateOutcome::Denied(AdminPolicyError::ActorNotAuthorized), "actor_not_authorized")
+                } else if let Some(target) = accounts.iter().find(|account| {
                     account.id() == target_id.as_uuid()
                         && account.tenant().tenant_id == target_tenant_id
-                }) else {
+                }) {
+                    let (role, level) = if admin_level == 0 { ("user", 0) } else { ("admin", admin_level) };
+                    let updated = diesel::update(
+                        users::table
+                            .filter(users::id.eq(target.id()))
+                            .filter(users::tenant_id.eq(target_tenant_id.as_uuid())),
+                    )
+                    .set((users::role.eq(role), users::admin_level.eq(level), users::updated_at.eq(diesel::dsl::now)))
+                    .returning(PublicAccountRow::as_returning())
+                    .get_result::<PublicAccountRow>(connection)
+                    .await?;
+                    // Identity events are tenant-local. Cross-tenant actor
+                    // attribution belongs to the atomic security ledger below.
                     insert_identity_security_event(
                         connection,
-                        &admin_event(
-                            target_tenant_id,
-                            Some(actor_id),
-                            None,
-                            IdentitySecurityOutcome::Denied,
-                            IdentitySecurityReason::TargetNotFound,
-                        ),
+                        &admin_event(target_tenant_id, None, Some(target_id), IdentitySecurityOutcome::Success, IdentitySecurityReason::AdminUpdated),
                     )
                     .await
                     .map_err(AdminAuthorizedUpdateError::Repository)?;
-                    return Ok(AdminUserUpdateOutcome::TargetNotFound);
-                };
-                let (role, level) = if admin_level == 0 {
-                    ("user", 0)
+                    (AdminUserUpdateOutcome::Updated(Box::new(
+                        PublicAccount::try_from(updated).map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?,
+                    )), "admin_updated")
                 } else {
-                    ("admin", admin_level)
+                    insert_identity_security_event(
+                        connection,
+                        &admin_event(target_tenant_id, None, None, IdentitySecurityOutcome::Denied, IdentitySecurityReason::TargetNotFound),
+                    )
+                    .await
+                    .map_err(AdminAuthorizedUpdateError::Repository)?;
+                    (AdminUserUpdateOutcome::TargetNotFound, "target_not_found")
                 };
-                let updated = diesel::update(
-                    users::table
-                        .filter(users::id.eq(target.id()))
-                        .filter(users::tenant_id.eq(target_tenant_id.as_uuid())),
-                )
-                .set((
-                    users::role.eq(role),
-                    users::admin_level.eq(level),
-                    users::updated_at.eq(diesel::dsl::now),
-                ))
-                .returning(PublicAccountRow::as_returning())
-                .get_result::<PublicAccountRow>(connection)
-                .await?;
-                insert_identity_security_event(
-                    connection,
-                    &admin_event(
-                        target_tenant_id,
-                        Some(actor_id),
-                        Some(target_id),
-                        IdentitySecurityOutcome::Success,
-                        IdentitySecurityReason::AdminUpdated,
-                    ),
-                )
-                .await
-                .map_err(AdminAuthorizedUpdateError::Repository)?;
-                Ok(AdminUserUpdateOutcome::Updated(Box::new(
-                    PublicAccount::try_from(updated)
-                        .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?,
-                )))
+                let outcome_name = if matches!(outcome, AdminUserUpdateOutcome::Updated(_)) { "success" } else { "denied" };
+                append_fresh_security_audit_on_connection(connection, &nazo_persistence::SecurityAuditEvent {
+                    event_id: Uuid::now_v7(),
+                    event_type: "system_tenant_admin_updated".to_owned(),
+                    event_category: "administration".to_owned(),
+                    payload: serde_json::json!({
+                        "tenant_id": target_tenant_id.as_uuid(),
+                        "control_tenant_id": control_tenant_id.as_uuid(),
+                        "actor_tenant_id": actor.map(|account| account.tenant().tenant_id.as_uuid()),
+                        "actor_user_id": actor_id.as_uuid(),
+                        "target_tenant_id": target_tenant_id.as_uuid(),
+                        "target_user_id": target_id.as_uuid(),
+                        "admin_level": admin_level,
+                        "outcome": outcome_name,
+                        "reason": reason,
+                        "source_ip_hash": source_ip_hash,
+                    }),
+                    occurred_at: chrono::Utc::now(),
+                }).await?;
+                Ok(outcome)
             },
         )
         .await
@@ -844,6 +878,7 @@ impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn set_tenant_admin_authorized(
         &self,
         control_tenant_id: nazo_identity::TenantId,
@@ -851,6 +886,7 @@ impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
         target_tenant_id: nazo_identity::TenantId,
         target_id: nazo_identity::UserId,
         admin_level: i32,
+        source_ip_hash: String,
     ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::AdminUserUpdateOutcome> {
         Box::pin(async move {
             UserRepository::set_tenant_admin_authorized(
@@ -860,6 +896,7 @@ impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
                 target_tenant_id,
                 target_id,
                 admin_level,
+                source_ip_hash,
             )
             .await
         })

@@ -2,9 +2,9 @@ use std::time::SystemTime;
 use uuid::Uuid;
 
 use crate::{
-    CasOutcome, InstanceStateChange, InstanceStateMutation, InstanceStateRecord, LifecycleFailure,
-    ModuleEventRecord, ModuleEventState, ModuleEventType, ModuleId, ModuleLifecycle,
-    ModuleRevision, ModuleState, ModuleStateRepository, RegistryError,
+    CasOutcome, InstanceStateChange, InstanceStateMutation, InstanceStateObservation,
+    InstanceStateRecord, LifecycleFailure, ModuleEventRecord, ModuleEventState, ModuleEventType,
+    ModuleId, ModuleLifecycle, ModuleRevision, ModuleState, ModuleStateRepository, RegistryError,
 };
 
 use super::RuntimeModuleRegistry;
@@ -68,29 +68,29 @@ where
 
     pub(super) async fn discard_stale(
         &self,
-        current: InstanceStateRecord,
+        module_id: ModuleId,
+        revision: ModuleRevision,
+        observed: Option<&InstanceStateRecord>,
     ) -> Result<(), RegistryError<R::Error>> {
-        let event = self.event(
-            &current,
-            ModuleEventType::StaleTransitionDiscarded,
-            Some(current.state),
-            Some("revision_changed"),
-        );
+        let state = observed.map(|record| ModuleEventState::Actual(record.state));
         self.repository
-            .compare_and_set_instance(
-                current.transition_revision,
-                InstanceStateMutation {
-                    change: InstanceStateChange {
-                        expected_revision: Some(current.transition_revision),
-                        next: current,
-                    },
-                    applied_event: event.clone(),
-                    stale_event: event,
+            .record_instance_observation(InstanceStateObservation {
+                event: ModuleEventRecord {
+                    event_id: Uuid::now_v7().to_string(),
+                    module_id,
+                    event_type: ModuleEventType::StaleTransitionDiscarded,
+                    revision,
+                    instance_id: Some(self.instance_id.clone()),
+                    actor_id: None,
+                    reason: None,
+                    before: state,
+                    after: state,
+                    outcome_code: Some("revision_changed".to_owned()),
+                    occurred_at: SystemTime::now(),
                 },
-            )
+            })
             .await
-            .map_err(RegistryError::Repository)?;
-        Ok(())
+            .map_err(RegistryError::Repository)
     }
 
     pub(super) async fn persist_failure(

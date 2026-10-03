@@ -434,6 +434,7 @@ async fn dynamic_profile_metadata_round_trips_through_postgres() {
         .await
         .unwrap();
     assert_eq!(replaced.client_id, client.client_id);
+    assert!(!replaced.backchannel_user_code_parameter);
 
     repository
         .deactivate(client.tenant_id, client.id, rotated_token.as_str())
@@ -554,6 +555,7 @@ async fn dynamic_registration_store_preserves_atomic_credential_semantics() {
         None,
         rotated_token.as_str(),
         Some(replacement_token.as_str()),
+        "fixture-source-ip-hash",
     )
     .await
     .unwrap();
@@ -565,6 +567,7 @@ async fn dynamic_registration_store_preserves_atomic_credential_semantics() {
             client.tenant_id,
             client.id,
             replacement_token.as_str(),
+            "fixture-source-ip-hash",
         )
         .await
         .unwrap()
@@ -575,6 +578,7 @@ async fn dynamic_registration_store_preserves_atomic_credential_semantics() {
             client.tenant_id,
             client.id,
             replacement_token.as_str(),
+            "fixture-source-ip-hash",
         )
         .await
         .unwrap_err(),
@@ -611,9 +615,10 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         registration_access_token_blake3: Some(initial_token.clone()),
     };
 
-    let inserted = DynamicRegistrationClientStore::insert(&repository, &prepared)
-        .await
-        .unwrap();
+    let inserted =
+        DynamicRegistrationClientStore::insert(&repository, &prepared, "fixture-source-ip-hash")
+            .await
+            .unwrap();
     assert_eq!(inserted.client_id, template.client_id);
     assert_eq!(inserted.tenant_id, tenant.tenant_id.as_uuid());
     assert!(
@@ -732,6 +737,7 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         Some(replacement_secret_hash),
         &rotated_token,
         Some(replacement_token.as_str()),
+        "fixture-source-ip-hash",
     )
     .await
     .unwrap();
@@ -785,6 +791,7 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
             inserted.tenant_id,
             inserted.id,
             &replacement_token,
+            "fixture-source-ip-hash",
         )
         .await
         .unwrap()
@@ -857,7 +864,7 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
     };
 
     assert_eq!(
-        DynamicRegistrationClientStore::insert(&repository, &prepared)
+        DynamicRegistrationClientStore::insert(&repository, &prepared, "fixture-source-ip-hash",)
             .await
             .unwrap_err(),
         DynamicRegistrationDependencyError::Unavailable
@@ -932,6 +939,7 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
             None,
             &initial_token,
             Some("unavailable-replacement"),
+            "fixture-source-ip-hash",
         )
         .await
         .unwrap_err(),
@@ -943,6 +951,7 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
             tenant.tenant_id.as_uuid(),
             template.id,
             &initial_token,
+            "fixture-source-ip-hash",
         )
         .await
         .unwrap_err(),
@@ -1350,4 +1359,151 @@ fn replace_registration_returning_and_record_exclude_secret_columns() {
             "OAuthClientRecord keeps the `{field}` column"
         );
     }
+}
+
+#[tokio::test]
+async fn dcr_required_event_failure_rolls_back_each_owned_effect() {
+    let Some(pool) = test_pool() else {
+        return;
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let tenant = TenantContext::default_system();
+    let template = client(tenant);
+    let token_hash = registration_token(&template, "atomic-required");
+    let prepared = PreparedClientRegistration {
+        tenant,
+        registration: template.registration.clone(),
+        require_mtls_bound_tokens: template.require_mtls_bound_tokens,
+        issued_secret: None,
+        client_secret_hash: Some("client-secret-v1:atomic-salt:atomic-digest".to_owned()),
+        registration_access_token_blake3: Some(token_hash.clone()),
+    };
+    let hook = format!("dcr_required_fail_{}", Uuid::now_v7().simple());
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(format!("CREATE FUNCTION {hook}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'task-local required evidence failure'; END $$"))
+        .execute(&mut connection).await.unwrap();
+    let hook_sql = format!(
+        "CREATE TRIGGER {hook} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.payload->>'client_id'='{}') EXECUTE FUNCTION {hook}()",
+        template.client_id
+    );
+    sql_query(&hook_sql).execute(&mut connection).await.unwrap();
+    let failed_insert =
+        DynamicRegistrationClientStore::insert(&repository, &prepared, "fixture-source-ip-hash")
+            .await;
+    sql_query(format!("DROP TRIGGER {hook} ON security_audit_events"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(failed_insert.is_err());
+    assert!(
+        repository
+            .by_client_id(template.tenant_id, &template.client_id)
+            .await
+            .unwrap()
+            .is_none(),
+        "required append failure must roll back the INSERT"
+    );
+    let inserted =
+        DynamicRegistrationClientStore::insert(&repository, &prepared, "fixture-source-ip-hash")
+            .await
+            .unwrap();
+    let before = client_credential_state(&pool, inserted.id).await;
+    let mut candidate = inserted.clone();
+    candidate.client_name = "Must not survive failed evidence".to_owned();
+    sql_query(&hook_sql).execute(&mut connection).await.unwrap();
+    let failed_replace = DynamicRegistrationClientStore::replace_registration(
+        &repository,
+        &candidate,
+        Some("client-secret-v1:new-salt:new-digest"),
+        &token_hash,
+        Some("atomic-next-token"),
+        "fixture-source-ip-hash",
+    )
+    .await;
+    let failed_delete = DynamicRegistrationClientStore::deactivate(
+        &repository,
+        inserted.tenant_id,
+        inserted.id,
+        &token_hash,
+        "fixture-source-ip-hash",
+    )
+    .await;
+    sql_query(format!("DROP TRIGGER {hook} ON security_audit_events"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query(format!("DROP FUNCTION {hook}()"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(failed_replace.is_err());
+    assert!(failed_delete.is_err());
+    assert_eq!(
+        client_credential_state(&pool, inserted.id).await,
+        before,
+        "metadata, credentials and active state must all roll back with required evidence"
+    );
+    let committed = DynamicRegistrationClientStore::replace_registration(
+        &repository,
+        &candidate,
+        Some("client-secret-v1:new-salt:new-digest"),
+        &token_hash,
+        Some("atomic-next-token"),
+        "fixture-source-ip-hash",
+    )
+    .await
+    .unwrap();
+    assert_eq!(committed.client_name, candidate.client_name);
+    DynamicRegistrationClientStore::deactivate(
+        &repository,
+        inserted.tenant_id,
+        inserted.id,
+        "atomic-next-token",
+        "fixture-source-ip-hash",
+    )
+    .await
+    .unwrap();
+    #[derive(diesel::QueryableByName)]
+    struct AuditView {
+        #[diesel(sql_type = diesel::sql_types::Jsonb)]
+        state: serde_json::Value,
+    }
+    let events = sql_query("SELECT jsonb_build_object('event_type',event_type,'payload',payload) AS state FROM security_audit_events WHERE payload->>'client_id'=$1 ORDER BY occurred_at,event_id")
+        .bind::<diesel::sql_types::Text,_>(&inserted.client_id).load::<AuditView>(&mut connection).await.unwrap();
+    assert_eq!(
+        events.len(),
+        3,
+        "one event for each effective lifecycle change and none for rolled-back attempts"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .map(|row| row.state["event_type"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "dynamic_client_registered",
+            "dynamic_client_configuration_updated",
+            "dynamic_client_deleted"
+        ]
+    );
+    for row in &events {
+        assert_eq!(
+            row.state["payload"]["tenant_id"],
+            inserted.tenant_id.to_string()
+        );
+        assert_eq!(row.state["payload"]["client_id"], inserted.client_id);
+        assert_eq!(
+            row.state["payload"]["source_ip_hash"],
+            "fixture-source-ip-hash"
+        );
+        assert_eq!(
+            row.state["payload"]["grant_types"],
+            serde_json::json!(inserted.grant_types)
+        );
+    }
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(inserted.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
 }

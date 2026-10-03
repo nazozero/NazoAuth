@@ -30,12 +30,15 @@ pub enum EmailVerificationConsume {
 ///
 /// Callers must pass the tenant selected for the registration flow to every
 /// operation. Implementations must include it in the authoritative state key
-/// and must not fall back to deployment-global state.
+/// and must not fall back to deployment-global state. Each send attempt owns
+/// its reservations and code through one nonce. Cleanup atomically compares
+/// that owner and must never delete state belonging to a later attempt.
 pub trait EmailVerificationStorePort: Send + Sync {
     fn reserve_peer_send<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         subject: &'a str,
+        owner: &'a str,
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, bool>;
 
@@ -43,6 +46,7 @@ pub trait EmailVerificationStorePort: Send + Sync {
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        owner: &'a str,
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, bool>;
 
@@ -50,6 +54,7 @@ pub trait EmailVerificationStorePort: Send + Sync {
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        owner: &'a str,
         password_hash: PasswordHashInput,
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, ()>;
@@ -71,16 +76,19 @@ pub trait EmailVerificationStorePort: Send + Sync {
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()>;
     fn release_email_send<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()>;
     fn release_peer_send<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         subject: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()>;
 }
 
@@ -92,31 +100,34 @@ where
         &'a self,
         tenant_id: crate::TenantId,
         subject: &'a str,
+        owner: &'a str,
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, bool> {
         self.as_ref()
-            .reserve_peer_send(tenant_id, subject, ttl_seconds)
+            .reserve_peer_send(tenant_id, subject, owner, ttl_seconds)
     }
 
     fn reserve_email_send<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        owner: &'a str,
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, bool> {
         self.as_ref()
-            .reserve_email_send(tenant_id, email, ttl_seconds)
+            .reserve_email_send(tenant_id, email, owner, ttl_seconds)
     }
 
     fn store_code<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        owner: &'a str,
         password_hash: PasswordHashInput,
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, ()> {
         self.as_ref()
-            .store_code(tenant_id, email, password_hash, ttl_seconds)
+            .store_code(tenant_id, email, owner, password_hash, ttl_seconds)
     }
 
     fn load_code<'a>(
@@ -140,24 +151,27 @@ where
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()> {
-        self.as_ref().delete_code(tenant_id, email)
+        self.as_ref().delete_code(tenant_id, email, owner)
     }
 
     fn release_email_send<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()> {
-        self.as_ref().release_email_send(tenant_id, email)
+        self.as_ref().release_email_send(tenant_id, email, owner)
     }
 
     fn release_peer_send<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         subject: &'a str,
+        owner: &'a str,
     ) -> RepositoryFuture<'a, ()> {
-        self.as_ref().release_peer_send(tenant_id, subject)
+        self.as_ref().release_peer_send(tenant_id, subject, owner)
     }
 }
 

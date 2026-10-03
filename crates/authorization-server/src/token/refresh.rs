@@ -53,16 +53,16 @@ fn refresh_token_has_stable_sender_constraint(token: &TokenRow) -> bool {
 }
 
 fn refresh_token_scopes(
-    original_scopes: &[String],
+    original_scopes: Vec<String>,
     requested_scope: Option<&str>,
 ) -> Result<Vec<String>, ()> {
     let Some(requested) = requested_scope.map(parse_scope) else {
-        return Ok(original_scopes.to_vec());
+        return Ok(original_scopes);
     };
     if requested.is_empty() {
-        return Ok(original_scopes.to_vec());
+        return Ok(original_scopes);
     }
-    if is_subset(&requested, original_scopes) {
+    if is_subset(&requested, &original_scopes) {
         Ok(requested)
     } else {
         Err(())
@@ -288,7 +288,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let scopes = match refresh_token_scopes(&original_scopes, form.scope.as_deref()) {
+    let scopes = match refresh_token_scopes(original_scopes, form.scope.as_deref()) {
         Ok(scopes) => scopes,
         Err(()) => {
             return Err(OAuthEndpointError::token(
@@ -336,40 +336,44 @@ pub async fn token_refresh_with_service(
         },
         None => refresh_token_policy(client, &token),
     };
-    let refresh_id_token_sid = Some(authentication_context.id_token_sid.clone());
+    let refresh_id_token_sid = Some(authentication_context.id_token_sid);
+    let refresh_authority = token.authority();
     issue_token_response(
         issuance,
         token_service,
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: None,
             user_id: token.user_id,
             prepared_subject: None,
             subject: token.subject,
             scopes,
             authorization_details: token.authorization_details,
             audiences,
-            // Keep the original nonce in the persisted refresh contract, but
-            // issue.rs suppresses it from the refreshed ID Token as required
-            // by OIDC Core 12.2.
-            nonce: authentication_context.nonce.clone(),
+            // A refreshed ID Token omits the original nonce; the immutable
+            // source contract also strips this first-response-only value.
+            nonce: authentication_context.nonce,
             auth_time: Some(authentication_context.auth_time),
-            amr: authentication_context.amr.clone(),
-            oidc_sid: authentication_context.oidc_sid.clone(),
-            acr: authentication_context.acr.clone(),
-            userinfo_claims: authentication_context.userinfo_claims.clone(),
-            userinfo_claim_requests: authentication_context.userinfo_claim_requests.clone(),
-            id_token_claims: authentication_context.id_token_claims.clone(),
-            id_token_claim_requests: authentication_context.id_token_claim_requests.clone(),
+            amr: authentication_context.amr,
+            oidc_sid: authentication_context.oidc_sid,
+            acr: authentication_context.acr,
+            userinfo_claims: authentication_context.userinfo_claims,
+            userinfo_claim_requests: authentication_context.userinfo_claim_requests,
+            id_token_claims: authentication_context.id_token_claims,
+            id_token_claim_requests: authentication_context.id_token_claim_requests,
             refresh_id_token_sid,
             include_refresh: true,
             refresh_token_policy,
             dpop_jkt: dpop_jkt.clone(),
             refresh_token_dpop_jkt: token.dpop_jkt,
-            mtls_x5t_s256: mtls_x5t_s256.clone(),
-            refresh_token_mtls_x5t_s256: mtls_x5t_s256,
+            mtls_x5t_s256,
+            // Client policy can newly bind this access token; the source RT
+            // and any rotated successor retain their original sender binding.
+            refresh_token_mtls_x5t_s256: token.mtls_x5t_s256,
             refresh_token_client_attestation_jkt: token.client_attestation_jkt,
-            refresh_token_scopes: Some(original_scopes),
+            refresh_authority: Some(refresh_authority),
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,

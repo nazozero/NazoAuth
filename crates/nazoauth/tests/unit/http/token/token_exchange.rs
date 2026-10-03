@@ -111,6 +111,7 @@ fn client() -> ClientRow {
 
 fn claims(client_id: &str, audience: Value, scope: &str) -> Claims {
     Claims {
+        authorization_id: None,
         client_epoch: None,
         user_epoch: None,
         iss: "https://issuer.example".to_owned(),
@@ -854,11 +855,8 @@ async fn token_exchange_subject_boundaries_and_safe_default_scope_are_table_driv
 async fn token_exchange_request_policy_and_admission_wrappers_preserve_boundaries() {
     let input = form();
     let request = token_exchange_request(&input);
-    assert_eq!(request.subject_token.as_deref(), Some("subject-token"));
-    assert_eq!(
-        request.subject_token_type.as_deref(),
-        Some(ACCESS_TOKEN_TYPE)
-    );
+    assert_eq!(request.subject_token, Some("subject-token"));
+    assert_eq!(request.subject_token_type, Some(ACCESS_TOKEN_TYPE));
     assert_eq!(request.audiences, input.audiences);
 
     let state = token_exchange_state();

@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use nazo_digital_credentials::CredentialFormat;
-use nazo_openid4vci::{CredentialIssuanceError, CredentialStoreError, ProofError, Proofs};
+use nazo_openid4vci::{
+    CredentialIssuanceError, CredentialResponse, CredentialStoreError, ProofError, Proofs,
+};
 use p256::{ecdsa::SigningKey, pkcs8::EncodePrivateKey as _};
 use serde_json::json;
 
@@ -24,6 +26,9 @@ fn configuration(scope: Option<&str>) -> CredentialConfiguration {
 
 fn access(configuration_ids: &[&str], credential_identifiers: &[&str]) -> CredentialAccess {
     CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         subject_id: Uuid::now_v7(),
@@ -158,7 +163,7 @@ fn resolve_configuration_id_enforces_exactly_one_identifier_and_access() {
 }
 
 #[test]
-fn resolve_identifier_supports_derived_and_direct_configuration_ids() {
+fn resolve_identifier_uses_only_the_authorized_identifier_namespace() {
     let derived = request_identifier("nazo-vci-cGlk");
     assert_eq!(
         resolve_configuration_id(&derived, &access(&["pid"], &["nazo-vci-cGlk"]))
@@ -166,10 +171,19 @@ fn resolve_identifier_supports_derived_and_direct_configuration_ids() {
         "pid"
     );
     let direct = request_identifier("pid");
+    for identifiers in [Vec::new(), vec!["nazo-vci-cGlk"], vec!["pid"]] {
+        assert_eq!(
+            resolve_configuration_id(&direct, &access(&["pid"], &identifiers))
+                .expect_err("a configuration id is not a credential identifier")
+                .error,
+            "unknown_credential_identifier"
+        );
+    }
     assert_eq!(
-        resolve_configuration_id(&direct, &access(&["pid"], &[]))
-            .expect("identifier equal to configuration id should resolve"),
-        "pid"
+        resolve_configuration_id(&derived, &access(&["pid"], &[]))
+            .expect_err("an ungranted derived identifier cannot select a dataset")
+            .error,
+        "unknown_credential_identifier"
     );
     assert_eq!(
         resolve_configuration_id(&request_identifier("missing"), &access(&["pid"], &[]))
@@ -279,6 +293,7 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         Uuid::now_v7(),
         "digest".to_owned(),
         &final_body,
+        nazo_openid4vci::application::CredentialResponseStatus::Issued,
         Some("dpop".to_owned()),
         now,
     )
@@ -300,12 +315,16 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         Uuid::now_v7(),
         "digest".to_owned(),
         &deferred,
+        nazo_openid4vci::application::CredentialResponseStatus::Deferred,
         None,
         now,
     )
     .expect("deferred response should be stored");
     assert_eq!(stored.status, 202);
-    assert!(body_encoding_is_deferred(&stored.encoding, &stored.body));
+    assert_eq!(
+        response_from_record(stored).unwrap().status,
+        nazo_openid4vci::application::CredentialResponseStatus::Deferred
+    );
 
     let jwt = CredentialResponseBody::Jwt("signed.jwt".to_owned());
     let stored = stored_response(
@@ -313,17 +332,24 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         Uuid::now_v7(),
         "digest".to_owned(),
         &jwt,
+        nazo_openid4vci::application::CredentialResponseStatus::Deferred,
         None,
         now,
     )
     .expect("JWT response should be stored");
-    assert!(!body_encoding_is_deferred(&stored.encoding, &stored.body));
+    assert_eq!(stored.status, 202);
+    let recovered = response_from_record(stored).expect("stored JWT should recover");
+    assert_eq!(
+        recovered.status,
+        nazo_openid4vci::application::CredentialResponseStatus::Deferred
+    );
     assert!(matches!(
-        response_from_record(stored).expect("stored JWT should recover").body,
+        recovered.body,
         CredentialResponseBody::Jwt(value) if value == "signed.jwt"
     ));
 
     let mut invalid = StoredCredentialResponse {
+        selection: None,
         issuance_id: Uuid::nil(),
         token_id: Uuid::nil(),
         request_digest: "digest".to_owned(),
@@ -402,4 +428,32 @@ fn issuance_errors_map_to_stable_http_contracts() {
         ),
         (419, "vp_fixture")
     );
+}
+
+#[test]
+fn presentation_completion_dependency_errors_remain_server_errors() {
+    use nazo_openid4vp::{PresentationError, PresentationServiceError, PresentationStoreError};
+    for error in [
+        PresentationStoreError::Unavailable,
+        PresentationStoreError::InvalidTransition,
+    ] {
+        let mapped = map_presentation_error(PresentationServiceError::Store(error));
+        assert_eq!((mapped.status, mapped.error), (503, "server_error"));
+    }
+    let invalid = map_presentation_error(PresentationServiceError::Presentation(
+        PresentationError::InvalidState,
+    ));
+    assert_eq!((invalid.status, invalid.error), (400, "invalid_request"));
+}
+
+#[test]
+fn presentation_verifier_dependency_errors_remain_server_errors() {
+    for error in [
+        nazo_digital_credentials::CredentialTrustError::Unavailable,
+        nazo_digital_credentials::CredentialTrustError::RevocationSnapshotUnavailable,
+    ] {
+        let mapped =
+            map_presentation_error(nazo_openid4vp::PresentationServiceError::Verifier(error));
+        assert_eq!((mapped.status, mapped.error), (503, "server_error"));
+    }
 }

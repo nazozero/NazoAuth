@@ -1,3 +1,6 @@
+pub(crate) mod admin_mutations;
+pub(crate) mod federation_binding;
+pub(crate) mod local_avatar;
 #[path = "../unit/http/token/response_body.rs"]
 pub(crate) mod token_response_body;
 
@@ -8,8 +11,10 @@ pub(crate) mod client_auth_keys;
 #[allow(unused_imports)]
 pub(crate) use client_auth_keys::CountingJwksResolver;
 
+mod attestation_replay;
 #[path = "counting_ports.rs"]
 pub(crate) mod counting_ports;
+pub(crate) use attestation_replay::UnknownAttestationAck;
 #[allow(unused_imports)]
 pub(crate) use counting_ports::{CountingAuthorizationRepository, CountingTokenRepository};
 
@@ -337,6 +342,7 @@ pub(crate) fn passkey_service(
             strict_base64: passkey.strict_base64,
             ceremony_ttl_seconds: nazo_oauth_server::services::PASSKEY_CEREMONY_TTL_SECONDS,
             session_ttl_seconds: session.session_ttl_seconds,
+            pending_mfa_session_ttl_seconds: session.pending_mfa_session_ttl_seconds,
         },
     ))
 }
@@ -344,6 +350,11 @@ pub(crate) fn passkey_service(
 pub(crate) fn federation_service(
     state: &TestInfrastructure,
 ) -> actix_web::web::Data<nazo_oauth_server::services::LocalFederationService> {
+    // Required federation evidence must use the same process-lifetime audit
+    // fixture as other identity consumers, including when this suite runs alone.
+    if std::env::var_os("DATABASE_URL").is_some() {
+        initialize_audit_dependencies(&state.diesel_db);
+    }
     actix_web::web::Data::new(nazo_oauth_server::services::LocalFederationService::new(
         nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
         std::sync::Arc::new(nazo_valkey::AuthenticationStore::new(
@@ -535,4 +546,44 @@ pub(crate) fn test_key_manager_with_auxiliary(
     algorithm: jsonwebtoken::Algorithm,
 ) -> nazo_key_management::KeyManager {
     nazo_key_management::KeyManager::for_test_with_auxiliary(algorithm)
+}
+
+/// Signed, fresh DPoP fixture. Validation and thumbprint derivation remain in
+/// the production sender-constraint implementation.
+pub(crate) fn dpop_token_request(
+    settings: &crate::settings::Settings,
+    key: &ClientSigningFixture,
+) -> actix_web::HttpRequest {
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
+    header.typ = Some("dpop+jwt".to_owned());
+    header.jwk = Some(serde_json::from_value(key.public_jwk("dpop-test")).unwrap());
+    let claims = json!({"jti":uuid::Uuid::now_v7().to_string(),"htm":"POST","htu":format!("{}/token",settings.endpoint.issuer.trim_end_matches('/')),"iat":chrono::Utc::now().timestamp()});
+    actix_web::test::TestRequest::post()
+        .uri("/token")
+        .insert_header(("dpop", key.encode_jwt(&header, &claims)))
+        .to_http_request()
+}
+
+#[test]
+fn dpop_token_fixture_has_valid_signature_and_target() {
+    let settings =
+        crate::settings::Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let request = dpop_token_request(&settings, &key);
+    let proof = request.headers().get("dpop").unwrap().to_str().unwrap();
+    let target = format!("{}/token", settings.endpoint.issuer.trim_end_matches('/'));
+    let result = nazo_auth::DpopProofVerifier.verify_at(
+        nazo_auth::DpopProofRequest {
+            proof: Some(proof),
+            method: "POST",
+            target_uris: &[target.as_str()],
+            expected_jkt: None,
+            access_token: None,
+        },
+        chrono::Utc::now().timestamp(),
+    );
+    assert!(
+        result.is_ok(),
+        "signed DPoP fixture must validate: {result:?}"
+    );
 }

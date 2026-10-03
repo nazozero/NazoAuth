@@ -3,6 +3,19 @@
 This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
+Audit evidence distinguishes pending export from retained business facts.
+On schemas with `security_audit_events.exported_at`, `pending`/`pending_export`
+and oldest-pending age cover only unexported rows. The ledger's `events` and
+boundary `total` counters still include every row; `exported_retained` counts
+ACKed decision facts kept for replay protection. Those retained rows do not
+prevent export drain. Historical schemas without that column keep the original
+pending=total semantics and report zero exported-retained rows. Schema capability
+is probed once per fixed run/ledger invocation, not per sampled row.
+Full retained-row counts are boundary diagnostics, with an additional sparse
+60-second sampler observation; pending sampling and acceptance thresholds are
+unchanged. Separate statements are observations at different instants, not an
+atomic accounting identity while writers/exporters are active.
+
 The runner image pins `orjson==3.12.0` for the streaming evidence decoder.
 Checkpoint evidence uses k6's buffered `--quiet --out json=-` output,
 redirected to the analyzer FIFO. The script writes summaries only to files;

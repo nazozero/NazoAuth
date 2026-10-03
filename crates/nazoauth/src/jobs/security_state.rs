@@ -32,7 +32,8 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                 match maintenance.cleanup_batch().await {
                     Ok(counts) => {
                         batches += 1;
-                        rows += counts.issuances
+                        rows += counts.authorization_decisions
+                            + counts.issuances
                             + counts.refresh_tokens
                             + counts.spent_refresh_proofs
                             + counts.refresh_contracts
@@ -50,6 +51,7 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                         issuances += counts.issuances;
                         tracing::debug!(
                             issuances = counts.issuances,
+                            authorization_decisions = counts.authorization_decisions,
                             refresh_tokens = counts.refresh_tokens,
                             spent_refresh_proofs = counts.spent_refresh_proofs,
                             refresh_contracts = counts.refresh_contracts,

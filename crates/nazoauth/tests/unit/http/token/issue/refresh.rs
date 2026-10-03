@@ -128,6 +128,7 @@ async fn refresh_token_rotation_failure_does_not_return_partial_credentials() {
         family_id: Uuid::now_v7(),
         rotated_from_id: Uuid::now_v7(),
     };
+    set_refresh_authority_for_issue(&state, &client, &mut issue);
 
     let response = issue_token_response(&state, &client, issue).await;
 
@@ -319,6 +320,7 @@ async fn refresh_rotation_conflict_fails_closed_without_returning_credentials() 
         family_id: Uuid::now_v7(),
         rotated_from_id: Uuid::now_v7(),
     };
+    set_refresh_authority_for_issue(&state, &client, &mut issue);
 
     let response = issue_token_response(&state, &client, issue).await;
 

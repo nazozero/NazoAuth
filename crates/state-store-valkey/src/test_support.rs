@@ -57,6 +57,13 @@ pub fn deployment_storage_key(
     ))
 }
 
+/// Inspect the exact production attestation replay key without duplicating
+/// its namespace or digest format in an application test.
+#[must_use]
+pub fn client_attestation_replay_storage_key(client_id: &str, jti: &str) -> String {
+    state_storage_key(crate::keys::client_attestation_replay(client_id, jti))
+}
+
 /// Returns the actual storage key used for a PAR request URI.
 ///
 /// This is intentionally exposed only through the raw test harness so
@@ -65,6 +72,12 @@ pub fn deployment_storage_key(
 #[must_use]
 pub fn par_storage_key(request_uri: &str) -> String {
     state_storage_key(crate::keys::par(request_uri))
+}
+
+/// Returns the production consent key for raw-version and corruption tests.
+#[must_use]
+pub fn consent_storage_key(request_id: &str) -> String {
+    state_storage_key(crate::keys::consent(request_id))
 }
 
 /// Returns the actual storage key used for an OIDC federation state token.
@@ -76,6 +89,12 @@ pub fn oidc_federation_storage_key(state: &str) -> String {
     state_storage_key(crate::keys::oidc_federation(state))
 }
 
+/// Inspect social callback state using the owning key and namespace derivation.
+#[must_use]
+pub fn social_federation_storage_key(state: &str) -> String {
+    state_storage_key(crate::keys::social_federation(state))
+}
+
 /// Returns the actual storage key used for a CIBA authentication request.
 ///
 /// Raw cross-crate tests use this to inspect or inject state without copying
@@ -83,6 +102,18 @@ pub fn oidc_federation_storage_key(state: &str) -> String {
 #[must_use]
 pub fn ciba_request_storage_key(auth_req_id: &str) -> String {
     state_storage_key(crate::keys::ciba(auth_req_id))
+}
+
+/// Inspect device state without duplicating its hash or namespace derivation.
+#[must_use]
+pub fn device_code_storage_key(device_code: &str) -> String {
+    state_storage_key(crate::keys::device_code(device_code))
+}
+
+/// Inspect the normalized user-code mapping used by the device store.
+#[must_use]
+pub fn device_user_code_storage_key(user_code: &str) -> String {
+    state_storage_key(crate::keys::device_user_code(user_code))
 }
 
 /// Returns the actual storage key used for an authorization code.

@@ -466,6 +466,7 @@ fn ciba_request_object_rejects_unsupported_binding_and_parameter_conflicts() {
         signed_ciba_request_object("ciba-kid", &key, json!({"binding_message": "\u{0001}"}));
     let mut form = BackchannelAuthenticationForm {
         request: Some(unsupported),
+        scope: Some("conflicting-outer-scope".to_owned()),
         ..BackchannelAuthenticationForm::default()
     };
     let response =
@@ -1113,4 +1114,36 @@ fn ciba_token_profile_covers_fapi2_client_and_sender_constraints() {
     assert_eq!(oauth_error_code(bad_auth_method), "invalid_client");
     validate_ciba_token_request_profile(&client, "private_key_jwt")
         .expect("FAPI2 CIBA should accept constrained private_key_jwt clients");
+}
+
+#[test]
+fn ciba_binding_merge_preserves_trimmed_value_and_outer_only_validation() {
+    let state = config();
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let client = ciba_private_key_jwt_client("ciba-kid", &key);
+    let mut trimmed = BackchannelAuthenticationForm {
+        request: Some(signed_ciba_request_object(
+            "ciba-kid",
+            &key,
+            json!({"binding_message": "  1234  "}),
+        )),
+        binding_message: Some("1234".to_owned()),
+        ..BackchannelAuthenticationForm::default()
+    };
+    validate_and_apply_ciba_request_object_claims_with_config(&state, &client, &mut trimmed)
+        .unwrap();
+    assert_eq!(trimmed.binding_message.as_deref(), Some("1234"));
+    let mut outer_only = BackchannelAuthenticationForm {
+        request: Some(signed_ciba_request_object(
+            "ciba-kid",
+            &key,
+            json!({"binding_message": null}),
+        )),
+        binding_message: Some("\u{0001}".to_owned()),
+        ..BackchannelAuthenticationForm::default()
+    };
+    let response =
+        validate_and_apply_ciba_request_object_claims_with_config(&state, &client, &mut outer_only)
+            .expect_err("outer-only merged binding retains validation");
+    assert_eq!(oauth_error_code(response), "invalid_binding_message");
 }

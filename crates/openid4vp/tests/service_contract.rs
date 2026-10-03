@@ -21,6 +21,7 @@ use uuid::Uuid;
 #[derive(Clone, Default)]
 struct RecordingStore {
     completed: Arc<AtomicUsize>,
+    fail_completion: bool,
 }
 
 impl PresentationStorePort for RecordingStore {
@@ -71,6 +72,9 @@ impl PresentationStorePort for RecordingStore {
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
             self.completed.fetch_add(1, Ordering::SeqCst);
+            if self.fail_completion {
+                return Err(PresentationStoreError::Unavailable);
+            }
             Ok(true)
         })
     }
@@ -106,6 +110,7 @@ impl CredentialVerifierPort for RecordingVerifier {
             Ok(VerifiedCredential {
                 format: CredentialFormat::MsoMdoc,
                 issuer: "trusted-issuer".to_owned(),
+                issuer_chain_authority_key_identifiers: vec![vec![1, 2, 3]],
                 credential_type: "org.iso.18013.5.1.mDL".to_owned(),
                 claims: json!({"org.iso.18013.5.1":{"family_name":"Doe"}}),
                 holder_key: Some(json!({"kty":"EC"})),
@@ -129,6 +134,7 @@ impl CredentialVerifierPort for MissingHolderVerifier {
             Ok(VerifiedCredential {
                 format: CredentialFormat::MsoMdoc,
                 issuer: "trusted-issuer".to_owned(),
+                issuer_chain_authority_key_identifiers: vec![vec![1, 2, 3]],
                 credential_type: "org.iso.18013.5.1.mDL".to_owned(),
                 claims: json!({"org.iso.18013.5.1":{"family_name":"Doe"}}),
                 holder_key: None,
@@ -188,6 +194,13 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
         unsupported_transaction_data.validate(),
         Err(PresentationError::InvalidRequest)
     );
+    let mut unsupported_holder_waiver = request.clone();
+    unsupported_holder_waiver.dcql_query.credentials[0].require_cryptographic_holder_binding =
+        Some(false);
+    assert_eq!(
+        unsupported_holder_waiver.validate(),
+        Err(PresentationError::InvalidRequest)
+    );
     let transaction = PresentationTransaction {
         id: transaction_id,
         client_id_prefix: ClientIdPrefix::X509SanDns,
@@ -228,6 +241,37 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
         )
         .await
         .expect("valid mdoc presentation");
+
+    let failed_store = RecordingStore {
+        fail_completion: true,
+        ..RecordingStore::default()
+    };
+    let failing_service = PresentationService::new(
+        failed_store.clone(),
+        RecordingVerifier {
+            transcript: recorded.clone(),
+            trust_anchors: recorded_trust.clone(),
+        },
+    );
+    let error = failing_service
+        .verify_response(
+            &transaction,
+            &AuthorizationResponse {
+                vp_token: Some(json!({"mdl":["base64url-mdoc"]})),
+                state: Some("state".to_owned()),
+                error: None,
+                error_description: None,
+            },
+            &[vec![1, 2, 3]],
+            now,
+        )
+        .await
+        .expect_err("completion outage retains its dependency classification");
+    assert_eq!(
+        error,
+        PresentationServiceError::Store(PresentationStoreError::Unavailable)
+    );
+    assert_eq!(failed_store.completed.load(Ordering::SeqCst), 1);
 
     let transcript = recorded
         .lock()
@@ -474,5 +518,290 @@ async fn dcql_optional_queries_may_be_absent_but_not_malformed_or_overfilled() {
             assert_eq!(result.unwrap().credentials.len(), 1);
             assert_eq!(store.completed.load(Ordering::SeqCst), 1);
         }
+    }
+}
+
+#[derive(Clone)]
+struct OutcomeVerifier {
+    calls: Arc<AtomicUsize>,
+}
+
+impl CredentialVerifierPort for OutcomeVerifier {
+    fn verify<'a>(
+        &'a self,
+        presentation: &'a PresentedCredential,
+    ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
+        Box::pin(async move {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            match presentation.encoded.as_str() {
+                "bad-signature" => return Err(CredentialTrustError::InvalidSignature),
+                "bad-holder" => return Err(CredentialTrustError::InvalidHolderBinding),
+                "bad-nonce" => return Err(CredentialTrustError::InvalidNonce),
+                "bad-session" => return Err(CredentialTrustError::InvalidSessionBinding),
+                "unavailable" => return Err(CredentialTrustError::Unavailable),
+                "revocation-unavailable" => {
+                    return Err(CredentialTrustError::RevocationSnapshotUnavailable);
+                }
+                _ => {}
+            }
+            Ok(VerifiedCredential {
+                format: CredentialFormat::MsoMdoc,
+                issuer: "trusted-issuer".to_owned(),
+                issuer_chain_authority_key_identifiers: vec![vec![1, 2, 3]],
+                credential_type: "org.iso.18013.5.1.mDL".to_owned(),
+                claims: json!({"org.iso.18013.5.1":{"family_name":"Doe"}}),
+                holder_key: Some(json!({"kty":"EC"})),
+                issued_at: None,
+                expires_at: None,
+                status: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn discarded_presentations_are_removed_before_required_alternative_selection() {
+    for (first, second, alternative, multiple, expected_count) in [
+        (
+            json!(["bad-signature"]),
+            json!(["valid"]),
+            true,
+            false,
+            Some(1),
+        ),
+        (
+            json!(["bad-holder"]),
+            json!(["valid"]),
+            true,
+            false,
+            Some(1),
+        ),
+        (
+            json!(["bad-signature", "valid"]),
+            json!(["valid"]),
+            false,
+            true,
+            Some(2),
+        ),
+        (
+            json!(["bad-signature"]),
+            json!(["valid"]),
+            false,
+            false,
+            None,
+        ),
+        (
+            json!(["bad-signature"]),
+            json!(["bad-holder"]),
+            true,
+            false,
+            None,
+        ),
+    ] {
+        let mut transaction = cardinality_transaction();
+        transaction.request.dcql_query.credentials[0].multiple = multiple;
+        if alternative {
+            transaction.request.dcql_query.credential_sets =
+                Some(vec![nazo_digital_credentials::CredentialSetQuery {
+                    options: vec![vec!["first".to_owned()], vec!["second".to_owned()]],
+                    required: true,
+                }]);
+        }
+        let store = RecordingStore::default();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let result = PresentationService::new(
+            store.clone(),
+            OutcomeVerifier {
+                calls: calls.clone(),
+            },
+        )
+        .verify_response(
+            &transaction,
+            &AuthorizationResponse {
+                vp_token: Some(json!({"first": first, "second": second})),
+                state: Some("state".to_owned()),
+                error: None,
+                error_description: None,
+            },
+            &[],
+            Utc::now(),
+        )
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), if multiple { 3 } else { 2 });
+        if let Some(count) = expected_count {
+            assert_eq!(result.unwrap().credentials.len(), count);
+            assert_eq!(store.completed.load(Ordering::SeqCst), 1);
+        } else {
+            assert_eq!(
+                result.unwrap_err(),
+                PresentationServiceError::Presentation(PresentationError::DcqlUnsatisfied)
+            );
+            assert_eq!(store.completed.load(Ordering::SeqCst), 0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn optional_query_nonce_and_session_errors_reject_the_entire_response() {
+    for rejected in ["bad-nonce", "bad-session"] {
+        let mut transaction = cardinality_transaction();
+        transaction.request.dcql_query.credential_sets =
+            Some(vec![nazo_digital_credentials::CredentialSetQuery {
+                options: vec![vec!["first".to_owned()]],
+                required: true,
+            }]);
+        let store = RecordingStore::default();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let result = PresentationService::new(
+            store.clone(),
+            OutcomeVerifier {
+                calls: calls.clone(),
+            },
+        )
+        .verify_response(
+            &transaction,
+            &AuthorizationResponse {
+                vp_token: Some(json!({"first": ["valid"], "second": [rejected]})),
+                state: Some("state".to_owned()),
+                error: None,
+                error_description: None,
+            },
+            &[],
+            Utc::now(),
+        )
+        .await;
+        assert_eq!(
+            result.unwrap_err(),
+            PresentationServiceError::Presentation(PresentationError::UntrustedPresentation)
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(store.completed.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn optional_query_verifier_unavailability_remains_a_dependency_failure() {
+    for (wire, error) in [
+        ("unavailable", CredentialTrustError::Unavailable),
+        (
+            "revocation-unavailable",
+            CredentialTrustError::RevocationSnapshotUnavailable,
+        ),
+    ] {
+        let mut transaction = cardinality_transaction();
+        transaction.request.dcql_query.credential_sets =
+            Some(vec![nazo_digital_credentials::CredentialSetQuery {
+                options: vec![vec!["first".to_owned()]],
+                required: true,
+            }]);
+        let store = RecordingStore::default();
+        let result = PresentationService::new(
+            store.clone(),
+            OutcomeVerifier {
+                calls: Arc::default(),
+            },
+        )
+        .verify_response(
+            &transaction,
+            &AuthorizationResponse {
+                vp_token: Some(json!({"first": ["valid"], "second": [wire]})),
+                state: Some("state".to_owned()),
+                error: None,
+                error_description: None,
+            },
+            &[],
+            Utc::now(),
+        )
+        .await;
+        assert_eq!(
+            result.unwrap_err(),
+            PresentationServiceError::Verifier(error)
+        );
+        assert_eq!(store.completed.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn dcql_aki_matches_authenticated_chain_bytes_and_not_issuer_strings() {
+    for (authority_type, value, accepted) in [
+        ("aki", "AQID", true),
+        ("aki", "BAUG", false),
+        ("aki", "trusted-issuer", false),
+        ("issuer", "trusted-issuer", true),
+    ] {
+        let mut transaction = cardinality_transaction();
+        transaction.request.dcql_query.credentials.truncate(1);
+        transaction.request.dcql_query.credentials[0].trusted_authorities =
+            Some(vec![nazo_digital_credentials::TrustedAuthority {
+                authority_type: authority_type.to_owned(),
+                values: vec![value.to_owned()],
+            }]);
+        let store = RecordingStore::default();
+        let result = PresentationService::new(
+            store.clone(),
+            OutcomeVerifier {
+                calls: Arc::default(),
+            },
+        )
+        .verify_response(
+            &transaction,
+            &AuthorizationResponse {
+                vp_token: Some(json!({"first": ["valid"]})),
+                state: Some("state".to_owned()),
+                error: None,
+                error_description: None,
+            },
+            &[],
+            Utc::now(),
+        )
+        .await;
+        assert_eq!(result.is_ok(), accepted);
+        assert_eq!(
+            store.completed.load(Ordering::SeqCst),
+            usize::from(accepted)
+        );
+    }
+}
+
+#[tokio::test]
+async fn malformed_retained_dcql_never_verifies_or_completes_an_empty_response() {
+    for query in [
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{}}],"credential_sets":[]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":"required-type"}}]}),
+        json!({"credentials":[{"id":"pid","format":"mso_mdoc","meta":{"doctype_value":["required-doctype"]}}]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt"}]}),
+    ] {
+        let mut transaction = cardinality_transaction();
+        transaction.request.dcql_query = serde_json::from_value(query).unwrap();
+        assert_eq!(
+            transaction.request.validate(),
+            Err(PresentationError::InvalidDcql)
+        );
+        let calls = Arc::new(AtomicUsize::new(0));
+        let store = RecordingStore::default();
+        let result = PresentationService::new(
+            store.clone(),
+            OutcomeVerifier {
+                calls: calls.clone(),
+            },
+        )
+        .verify_response(
+            &transaction,
+            &AuthorizationResponse {
+                vp_token: Some(json!({})),
+                state: Some("state".to_owned()),
+                error: None,
+                error_description: None,
+            },
+            &[],
+            Utc::now(),
+        )
+        .await;
+        assert_eq!(
+            result.unwrap_err(),
+            PresentationServiceError::Presentation(PresentationError::InvalidDcql)
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(store.completed.load(Ordering::SeqCst), 0);
     }
 }
