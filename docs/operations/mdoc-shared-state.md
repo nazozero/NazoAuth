@@ -68,7 +68,10 @@ unchanged. A repeated import after success reports that material already exists.
 
 Fresh installations initialize the complete aggregate through tenant bootstrap
 or the existing tenant key-generation operation. Normal server startup reads
-it and does not create certificate files.
+it and does not create certificate files. Tenant key-generation results carry
+the kid, revision and certificate chain from their selected or applied generation,
+including an existing concurrent winner. A later rotation may supersede that
+generation but cannot mix its fields into the completed generation result.
 
 Before 0.5.0, historical release formats are not supported or converted.
 Retaining prior IACA records during normal key rotation serves credentials

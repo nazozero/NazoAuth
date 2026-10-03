@@ -94,11 +94,14 @@ pub(crate) async fn operator_list_database_for_tenant(
     persistence: &dyn crate::operator_task::OperatorPersistence,
 ) -> anyhow::Result<String> {
     let settings = Settings::from_directory_binding(config, binding)?;
-    let manager =
-        database_key_manager_for_tenant(config, &settings, binding.tenant.tenant_id, persistence)
-            .await?;
-    let _ = manager.database_list_keys().await?;
-    manager.database_revision().await
+    let (_, revision) = nazo_key_management::KeyManager::inspect_database(
+        settings.external_key_signer(),
+        binding.tenant.tenant_id.as_uuid(),
+        persistence.signing_key_repository(binding.tenant.tenant_id.as_uuid()),
+        crate::settings::signing_key_wrapping_key_ring(config)?,
+    )
+    .await?;
+    Ok(revision)
 }
 
 pub(crate) async fn operator_validate_database_for_tenant(
@@ -107,11 +110,14 @@ pub(crate) async fn operator_validate_database_for_tenant(
     persistence: &dyn crate::operator_task::OperatorPersistence,
 ) -> anyhow::Result<String> {
     let settings = Settings::from_directory_binding(config, binding)?;
-    let manager =
-        database_key_manager_for_tenant(config, &settings, binding.tenant.tenant_id, persistence)
-            .await?;
-    manager.database_validate().await?;
-    manager.database_revision().await
+    let (_, revision) = nazo_key_management::KeyManager::inspect_database(
+        settings.external_key_signer(),
+        binding.tenant.tenant_id.as_uuid(),
+        persistence.signing_key_repository(binding.tenant.tenant_id.as_uuid()),
+        crate::settings::signing_key_wrapping_key_ring(config)?,
+    )
+    .await?;
+    Ok(revision)
 }
 
 pub(crate) async fn operator_register_external_database_for_tenant(
@@ -156,15 +162,7 @@ pub(crate) async fn operator_generate_local_database_for_tenant(
         database_key_manager_for_tenant(config, &settings, binding.tenant.tenant_id, persistence)
             .await?;
     let profile = database_certificate_profile(binding, config, &options)?;
-    let kid = generate_local_with_database_manager(&manager, profile.as_ref(), options).await?;
-    let state = manager.database_openid4vc_state().await?;
-    Ok((
-        kid,
-        state.revision.to_string(),
-        state
-            .material
-            .map(|material| material.public.certificate_chain_pem),
-    ))
+    generate_local_with_database_manager(&manager, profile.as_ref(), options).await
 }
 
 #[cfg(test)]
