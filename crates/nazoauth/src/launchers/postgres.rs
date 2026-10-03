@@ -47,18 +47,49 @@ impl OperatorPersistence for PostgresOperatorPersistence {
         Arc::new(OAuthClientRepository::new(self.pool.clone()))
     }
 
+    fn tenant_resource_control_outcome<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        deployment_id: &'a str,
+        operation_id: uuid::Uuid,
+        request_hash: &'a str,
+        operation: nazo_persistence::tenant_resources::TenantResourceAction,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<
+            Option<nazo_persistence::tenant_resources::ControlTenantResourceOutcome>,
+            nazo_persistence::tenant_resources::TenantResourceExecutorError,
+        >,
+    > {
+        Box::pin(async move {
+            PostgresTenantResourceExecutor::control_outcome(
+                &TenantResourceRepository::new(self.pool.clone()),
+                tenant_id,
+                deployment_id,
+                operation_id,
+                request_hash,
+                operation,
+            )
+            .await
+        })
+    }
+
     fn tenant_resource_executor(
         &self,
         tenant: nazo_identity::TenantContext,
         data_encryption_key: Option<[u8; 32]>,
-        preparation: Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>,
+        preparation: Option<Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>>,
     ) -> Arc<dyn nazo_persistence::tenant_resources::TenantResourceExecutorPort> {
-        Arc::new(PostgresTenantResourceExecutor::new(
-            TenantResourceRepository::new(self.pool.clone()),
-            tenant,
-            data_encryption_key,
-            preparation,
-        ))
+        let repository = TenantResourceRepository::new(self.pool.clone());
+        Arc::new(match preparation {
+            Some(preparation) => PostgresTenantResourceExecutor::new(
+                repository,
+                tenant,
+                data_encryption_key,
+                preparation,
+            ),
+            None => PostgresTenantResourceExecutor::without_apply_preparation(repository, tenant),
+        })
     }
 
     fn tenant_directory_executor(

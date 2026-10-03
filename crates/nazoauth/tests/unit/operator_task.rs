@@ -872,3 +872,6 @@ async fn permanent_owner_failure_is_terminal_and_never_rerun() {
     assert_eq!(recovered.result, failed.result);
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[path = "operator_task/tenant_resources.rs"]
+mod tenant_resources;

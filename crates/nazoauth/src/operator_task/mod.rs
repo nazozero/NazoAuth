@@ -80,11 +80,28 @@ pub trait OperatorPersistence: Send + Sync {
 
     fn admin_clients(&self) -> Arc<dyn nazo_auth::AdminClientRepositoryPort>;
 
+    /// Recover a committed exact outcome before composing fresh mutation capabilities.
+    /// The adapter owns hash, tenant, operation and stored-outcome validation.
+    fn tenant_resource_control_outcome<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        deployment_id: &'a str,
+        operation_id: uuid::Uuid,
+        request_hash: &'a str,
+        operation: nazo_persistence::tenant_resources::TenantResourceAction,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<
+            Option<nazo_persistence::tenant_resources::ControlTenantResourceOutcome>,
+            nazo_persistence::tenant_resources::TenantResourceExecutorError,
+        >,
+    >;
+
     fn tenant_resource_executor(
         &self,
         tenant: nazo_identity::TenantContext,
         data_encryption_key: Option<[u8; 32]>,
-        preparation: Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>,
+        preparation: Option<Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>>,
     ) -> Arc<dyn nazo_persistence::tenant_resources::TenantResourceExecutorPort>;
 
     fn tenant_directory_executor(

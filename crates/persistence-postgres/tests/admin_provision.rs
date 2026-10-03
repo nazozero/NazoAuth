@@ -139,3 +139,44 @@ async fn operation_and_email_conflicts_are_rejected() {
         AdminProvisionError::EmailConflict
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_provisioning_returns_one_receipt_and_one_admin_effect() {
+    let Some((repository, isolated_url)) = isolated_repository().await else {
+        return;
+    };
+    let (left, right) = tokio::join!(
+        repository.provision(request("admin-provision-concurrent", "Admin@Example.COM")),
+        repository.provision(request("admin-provision-concurrent", "admin@example.com"))
+    );
+    let receipt = left.unwrap();
+    assert_eq!(right.unwrap(), receipt);
+    let mut connection = AsyncPgConnection::establish(&isolated_url).await.unwrap();
+    let user = sql_query("SELECT role, admin_level, email_verified FROM users WHERE id = $1")
+        .bind::<diesel::sql_types::Uuid, _>(receipt.user_id)
+        .get_result::<UserState>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(user.role, "admin");
+    assert_eq!(user.admin_level, 2);
+    assert!(user.email_verified);
+    for (table, predicate) in [
+        ("users", "email = 'admin@example.com'"),
+        (
+            "admin_provision_receipts",
+            "operation_id = 'admin-provision-concurrent'",
+        ),
+        (
+            "identity_security_events",
+            "request_id = 'admin-provision-concurrent' AND event_type = 'admin_user_created'",
+        ),
+    ] {
+        let count = sql_query(format!(
+            "SELECT count(*)::bigint AS count FROM {table} WHERE {predicate}"
+        ))
+        .get_result::<Count>(&mut connection)
+        .await
+        .unwrap();
+        assert_eq!(count.count, 1, "{table} must contain one committed effect");
+    }
+}
