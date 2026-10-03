@@ -314,7 +314,8 @@ async fn public_passkey_projection_excludes_tenant_user_and_credential_material(
         created_at: now,
         updated_at: now,
     };
-    let public = passkey_public_json(&credential);
+    let summary = PasskeyCredentialSummary::from(credential.clone());
+    let public = passkey_public_json(&summary);
     let public = public.as_object().unwrap();
     assert_eq!(public.len(), 7);
     assert_eq!(public["id"], json!(credential.id));
@@ -329,8 +330,8 @@ async fn public_passkey_projection_excludes_tenant_user_and_credential_material(
     }
 
     for response in [
-        passkey_list_response(std::slice::from_ref(&credential)),
-        passkey_created_response(&credential),
+        passkey_list_response(std::slice::from_ref(&summary)),
+        passkey_created_response(credential),
         empty_response_no_store(StatusCode::NO_CONTENT),
     ] {
         assert_no_store(response.headers());

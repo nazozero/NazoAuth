@@ -55,6 +55,7 @@ pub(crate) async fn make_jwt(
     let claims = nazo_auth::access_token_claims(
         issuer,
         AccessTokenClaimsInput {
+            authorization_id: None,
             client_epoch: None,
             user_epoch: None,
             tenant_id: input.tenant_id,

@@ -403,6 +403,9 @@ pub trait ActiveTenantBoundaryStore: Send + Sync {
 pub trait TenantDirectoryStore: Send + Sync {
     fn current_revision(&self) -> BoxFuture<'_, Result<u64, RepositoryError>>;
 
+    /// Return the revision and all active bindings from one coherent storage
+    /// snapshot. Its revision may be newer than a preceding current_revision
+    /// read, but rows from different revisions must never be combined.
     fn load_active(
         &self,
     ) -> BoxFuture<'_, Result<nazo_identity::TenantDirectorySnapshot, RepositoryError>>;
@@ -509,6 +512,15 @@ pub trait CibaAccountStore: Send + Sync {
 /// Administrative access-request workflow. Approval is intentionally one
 /// capability because creating the OAuth client and resolving the request must
 /// remain atomic inside the selected adapter.
+#[derive(Clone, Debug)]
+pub struct AdminAccessRequestApproval {
+    pub client: nazo_auth::ApprovedClient,
+    pub request: nazo_identity::AccessRequest,
+}
+
+/// Decision commands return the actual committed display view after the full
+/// result stream and transaction acknowledgement; authority/recovery reads are
+/// separate capabilities and cannot be replaced by this response snapshot.
 pub trait AdminAccessRequestStore: Send + Sync {
     /// Verify the current Approved request, active client and exact secret
     /// generation before recovering an unpublished credential delivery.
@@ -543,7 +555,7 @@ pub trait AdminAccessRequestStore: Send + Sync {
         request_id: uuid::Uuid,
         actor_user_id: nazo_identity::UserId,
         client: &'a nazo_auth::PreparedClientRegistration,
-    ) -> BoxFuture<'a, Result<nazo_auth::ApprovedClient, RepositoryError>>;
+    ) -> BoxFuture<'a, Result<AdminAccessRequestApproval, RepositoryError>>;
 
     fn reject(
         &self,
@@ -551,7 +563,7 @@ pub trait AdminAccessRequestStore: Send + Sync {
         request_id: uuid::Uuid,
         actor_user_id: nazo_identity::UserId,
         admin_note: String,
-    ) -> BoxFuture<'_, Result<(), RepositoryError>>;
+    ) -> BoxFuture<'_, Result<nazo_identity::AccessRequest, RepositoryError>>;
 }
 
 /// Durable delivery queue used by the back-channel logout worker. Claiming a

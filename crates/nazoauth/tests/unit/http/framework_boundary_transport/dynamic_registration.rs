@@ -18,6 +18,7 @@ impl nazo_http_actix::DynamicRegistrationClientStore for CasRegistrationStore {
     fn insert<'a>(
         &'a self,
         prepared: &'a nazo_auth::PreparedClientRegistration,
+        _source_ip_hash: &'a str,
     ) -> nazo_http_actix::DynamicRegistrationFuture<'a, nazo_auth::OAuthClient> {
         let client = nazo_auth::OAuthClient {
             id: uuid::Uuid::now_v7(),
@@ -100,6 +101,7 @@ impl nazo_http_actix::DynamicRegistrationClientStore for CasRegistrationStore {
         _client_secret_hash: Option<&'a str>,
         expected_registration_access_token_hash: &'a str,
         new_registration_access_token_hash: Option<&'a str>,
+        _source_ip_hash: &'a str,
     ) -> nazo_http_actix::DynamicRegistrationFuture<'a, nazo_auth::OAuthClient> {
         self.calls.lock().unwrap().push("replace_cas");
         let mut state = self.state.lock().unwrap();
@@ -127,6 +129,7 @@ impl nazo_http_actix::DynamicRegistrationClientStore for CasRegistrationStore {
         _tenant_id: uuid::Uuid,
         _client_id: uuid::Uuid,
         _expected_registration_access_token_hash: &'a str,
+        _source_ip_hash: &'a str,
     ) -> nazo_http_actix::DynamicRegistrationFuture<'a, bool> {
         panic!("DELETE must not run")
     }
@@ -221,11 +224,8 @@ impl nazo_oauth_server::contracts::dynamic_client_registration::DynamicRegistrat
         Box::pin(async { Ok(()) })
     }
     fn audit(&self, _event: &'static str, _client: &nazo_auth::OAuthClient, _source_ip: &str) {}
-    fn audit_required<'a>(
+    fn ensure_mutation_ready<'a>(
         &'a self,
-        _event: &'static str,
-        _client: &'a nazo_auth::OAuthClient,
-        _source_ip: &'a str,
     ) -> std::pin::Pin<
         Box<
             dyn std::future::Future<

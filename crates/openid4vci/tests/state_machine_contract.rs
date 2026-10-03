@@ -749,9 +749,12 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
 
 fn deferred_fixture(now: DateTime<Utc>) -> DeferredCredential {
     DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: "tx-hash".to_owned(),
         access: CredentialAccess {
+            authorization_id: None,
+            mtls_x5t_s256: None,
             proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             token_id: Uuid::now_v7(),
             tenant_id: Uuid::now_v7(),
@@ -777,6 +780,7 @@ fn response_fixture(
     now: DateTime<Utc>,
 ) -> StoredCredentialResponse {
     StoredCredentialResponse {
+        selection: None,
         issuance_id,
         token_id,
         request_digest: "request-digest".to_owned(),
@@ -817,6 +821,7 @@ fn nonce_notification_commit_is_atomic_and_rejects_wrong_claim_without_side_effe
     let hash = "nonce-hash";
     let token_id = Uuid::now_v7();
     let handle = NotificationHandle {
+        selection: None,
         notification_id: "notification-1".to_owned(),
         token_id,
         expires_at: now + Duration::minutes(10),
@@ -958,6 +963,7 @@ fn response_lookup_is_bound_to_issuance_identity_and_expiry() {
     let token_id = Uuid::now_v7();
     let response = response_fixture(issuance_id, token_id, now);
     let handle = NotificationHandle {
+        selection: None,
         notification_id: "notification-1".to_owned(),
         token_id,
         expires_at: now + Duration::minutes(10),
@@ -1013,6 +1019,7 @@ fn response_commit_rejects_duplicate_notification_atomically_and_can_retry() {
     let store = TransitionStore::default();
     let token_id = Uuid::now_v7();
     let handle = NotificationHandle {
+        selection: None,
         notification_id: "notification-duplicate".to_owned(),
         token_id,
         expires_at: now + Duration::minutes(10),
@@ -1049,6 +1056,7 @@ fn response_identity_conflict_is_keyed_by_token_and_digest_across_issuances() {
     let token_id = Uuid::now_v7();
     let first = response_fixture(Uuid::now_v7(), token_id, now);
     let first_handle = NotificationHandle {
+        selection: None,
         notification_id: "notification-first".to_owned(),
         token_id,
         expires_at: now + Duration::minutes(10),
@@ -1057,6 +1065,7 @@ fn response_identity_conflict_is_keyed_by_token_and_digest_across_issuances() {
 
     let second = response_fixture(Uuid::now_v7(), token_id, now);
     let second_handle = NotificationHandle {
+        selection: None,
         notification_id: "notification-second".to_owned(),
         token_id,
         expires_at: now + Duration::minutes(10),
@@ -1084,6 +1093,7 @@ fn notification_retains_one_event_accepts_identical_retries_and_expires_with_the
     let store = TransitionStore::default();
     let token_id = Uuid::now_v7();
     let handle = NotificationHandle {
+        selection: None,
         notification_id: "notification-1".to_owned(),
         token_id,
         expires_at: now + Duration::minutes(1),
@@ -1170,6 +1180,8 @@ fn pre_authorized_persist_forwards_arguments_and_errors() {
     let now = Utc::now();
     let store = TransitionStore::default();
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),

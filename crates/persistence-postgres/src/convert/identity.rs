@@ -1,6 +1,7 @@
 use crate::rows::identity::{
-    AuthenticationIdentityRow, ExternalIdentityLinkRow, PasskeyCredentialRow, PrincipalRow,
-    PublicAccountRow, SubjectClaimsRow, UserRow,
+    AuthenticationIdentityRow, ExternalIdentityLinkRow, ExternalIdentityLinkSummaryRow,
+    PasskeyCredentialRow, PasskeyCredentialSummaryRow, PrincipalRow, PublicAccountRow,
+    SubjectClaimsRow, UserRow,
 };
 use nazo_identity::{
     AccountIdentity, AuthenticationIdentity, IdentityModelError, LoginIdentity, OrganizationId,
@@ -267,6 +268,22 @@ pub(crate) fn passkey(
         updated_at: row.updated_at,
     })
 }
+
+pub(crate) fn passkey_summary(
+    row: PasskeyCredentialSummaryRow,
+) -> Result<nazo_identity::ports::PasskeyCredentialSummary, ConversionError> {
+    Ok(nazo_identity::ports::PasskeyCredentialSummary {
+        id: row.id,
+        tenant_id: TenantId::new(row.tenant_id)?,
+        user_id: UserId::new(row.user_id)?,
+        credential_id: row.credential_id,
+        label: row.label,
+        sign_count: row.sign_count,
+        last_used_at: row.last_used_at,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
 pub(crate) fn federation_link(
     row: ExternalIdentityLinkRow,
 ) -> Result<nazo_identity::ports::FederationLink, ConversionError> {
@@ -279,6 +296,23 @@ pub(crate) fn federation_link(
         subject: row.subject,
         email: row.email,
         claims: row.claims,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        last_login_at: row.last_login_at,
+    })
+}
+
+pub(crate) fn federation_link_summary(
+    row: ExternalIdentityLinkSummaryRow,
+) -> Result<nazo_identity::ports::FederationLinkSummary, ConversionError> {
+    Ok(nazo_identity::ports::FederationLinkSummary {
+        id: row.id,
+        tenant_id: TenantId::new(row.tenant_id)?,
+        user_id: UserId::new(row.user_id)?,
+        provider_type: row.provider_type,
+        provider_id: row.provider_id,
+        subject: row.subject,
+        email: row.email,
         created_at: row.created_at,
         updated_at: row.updated_at,
         last_login_at: row.last_login_at,

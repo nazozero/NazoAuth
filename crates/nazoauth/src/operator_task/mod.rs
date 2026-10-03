@@ -46,8 +46,7 @@ use anyhow::{Context as _, bail};
 use chrono::Utc;
 use fs2::FileExt as _;
 use nazo_operator_protocol::{
-    ControlOperation, MAX_COMPACT_JWS_BYTES, encode_control_result,
-    verify_control_operation_signature,
+    ControlOperation, MAX_COMPACT_JWS_BYTES, verify_control_operation_signature,
 };
 
 mod admission;
@@ -160,18 +159,19 @@ pub async fn run(persistence: Arc<dyn OperatorPersistence>) -> anyhow::Result<()
     // execution so only one one-shot process ever drives one state directory.
     // A pre-admission lock timeout is transport failure, not an authoritative
     // outcome: ctl preserves intent and retries.
-    let _task_lock = acquire_task_lock(lock).await?;
+    let task_lock = acquire_task_lock(lock).await?;
 
     let outcome = execute_compact(&state_directory, compact, persistence.as_ref()).await;
+    drop(task_lock);
 
-    // Bounded retention cleanup rides at the tail of the one-shot entry (E03
-    // note): terminal results stay recoverable for thirty days, after which
-    // the next successful operator run deletes them.  Housekeeping must never
-    // fail an executed operation, so its errors are swallowed here.
+    // Retention walks one directory round in bounded batches after releasing
+    // the business lock. Each old terminal candidate is rechecked under its
+    // own non-blocking task lock before deletion. Housekeeping must never fail
+    // an executed operation, so its errors are swallowed here.
     if outcome.is_ok() {
         let cutoff =
             Utc::now().timestamp() - control_journal::CONTROL_JOURNAL_COMPLETED_RETENTION_SECONDS;
-        let _ = control_journal::cleanup_completed_before(&state_directory, cutoff);
+        let _ = control_journal::cleanup_completed_before(&state_directory, cutoff).await;
     }
 
     outcome
@@ -310,7 +310,7 @@ async fn journaled_execution(
     .await
     .map_err(map_journal_error)?;
     let bytes = reject(
-        encode_control_result(&outcome.result).map_err(anyhow::Error::new),
+        outcome.into_stdout().map_err(anyhow::Error::new),
         RejectionClass::Request,
     )?;
     print!("{}", String::from_utf8_lossy(&bytes));

@@ -388,10 +388,16 @@ where
         now: DateTime<Utc>,
     ) -> Result<PendingCredentialIssuance, CredentialIssuanceError> {
         request.validate_identifier()?;
+        let selection = crate::CredentialSelection {
+            configuration_id: issuance.configuration_id.clone(),
+            credential_identifier: request.credential_identifier.clone(),
+        };
         if now >= access.expires_at
-            || !access
-                .configuration_ids
-                .contains(&issuance.configuration_id)
+            || request
+                .credential_configuration_id
+                .as_ref()
+                .is_some_and(|id| id != &issuance.configuration_id)
+            || !access.authorizes_selection(&selection)
         {
             return Err(CredentialIssuanceError::Unauthorized);
         }
@@ -491,6 +497,7 @@ where
             .prepare_after_nonce_claim(
                 access,
                 issuance,
+                selection,
                 holder_bindings,
                 nonce_claim,
                 identity,
@@ -653,6 +660,7 @@ where
         &self,
         access: &CredentialAccess,
         issuance: &CredentialIssuance,
+        selection: crate::CredentialSelection,
         holder_bindings: Vec<Value>,
         nonce_claim: Option<IssuanceClaim>,
         identity: IssuanceIdentity,
@@ -696,9 +704,10 @@ where
                 }
                 let notification_id = Uuid::now_v7().to_string();
                 let notification_handle = crate::NotificationHandle {
+                    selection: Some(selection),
                     notification_id: notification_id.clone(),
                     token_id: access.token_id,
-                    expires_at: access.expires_at.min(issuance.expires_at),
+                    expires_at: access.continuation_expires_at(issuance.expires_at),
                 };
                 Ok(PendingCredentialIssuance {
                     response: CredentialResponse {
@@ -724,6 +733,7 @@ where
                     expires_at: issuance.expires_at,
                 };
                 let deferred = crate::DeferredCredential {
+                    selection: Some(selection),
                     id: Uuid::now_v7(),
                     transaction_hash: blake3::hash(transaction_id.as_bytes()).to_hex().to_string(),
                     access: access.clone(),
@@ -733,7 +743,7 @@ where
                     payload_ciphertext: serde_json::to_vec(&protected)
                         .map_err(|_| CredentialIssuanceError::InvalidConfiguration)?,
                     ready_at,
-                    expires_at: access.expires_at.min(issuance.expires_at),
+                    expires_at: access.continuation_expires_at(issuance.expires_at),
                 };
                 Ok(PendingCredentialIssuance {
                     response: CredentialResponse {

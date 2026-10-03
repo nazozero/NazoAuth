@@ -503,13 +503,15 @@ pub(crate) async fn federation_saml_acs(
             provider_id: settings.issuer.clone(),
             subject: payload.subject.clone(),
             email: Some(email.clone()),
-            display_name: payload.name.clone(),
+            // This gateway envelope does not authenticate name. It remains
+            // explicitly untrusted link metadata, never local profile identity.
+            display_name: None,
             claims: json!({
                 "iss": payload.issuer,
                 "aud": payload.audience,
                 "sub": payload.subject,
                 "email": email,
-                "name": payload.name,
+                "untrusted_display_name": payload.name,
             }),
         },
         "saml",

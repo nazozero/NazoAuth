@@ -187,6 +187,9 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                 .await?;
                 return Err(ScimAuthorizationError::TenantMismatch);
             }
+            if !self.enabled() {
+                return Err(ScimAuthorizationError::Disabled);
+            }
             self.record_use(ip_hash, user_agent_hash, required_scope, &credential);
             Ok(ScimAuthorizedRequest {
                 tenant: credential.tenant,

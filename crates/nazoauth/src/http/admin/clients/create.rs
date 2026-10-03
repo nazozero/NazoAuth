@@ -59,7 +59,7 @@ pub(crate) async fn admin_create_client(
             {
                 return response;
             }
-            let mut body = client_json(created.client.clone());
+            let mut body = client_json(&created.client);
             if let Some(secret) = created.issued_secret.as_deref() {
                 body["client_secret"] = json!(secret);
             }

@@ -338,9 +338,6 @@ where
         source_ip: String,
     ) -> Result<LoginSuccess, FederationError> {
         let account = self.resolve(identity, true).await?;
-        if !account.principal.active {
-            return Err(FederationError::InactiveExistingLink);
-        }
         self.create_session(account, method, source_ip).await
     }
 
@@ -369,64 +366,75 @@ where
             email: identity.email.clone(),
             claims: identity.claims.clone(),
         };
-        if let Some(account) = self
+        let existing = self
             .accounts
             .resolve_existing(login.clone())
             .await
-            .map_err(FederationError::Account)?
-        {
-            if !existing_only && !account.principal.active {
+            .map_err(FederationError::Account)?;
+        let (account, linked) = if let Some(account) = existing {
+            (account, false)
+        } else {
+            if existing_only {
+                return Err(FederationError::VerifiedEmailRequired);
+            }
+            let email = identity
+                .email
+                .clone()
+                .ok_or(FederationError::VerifiedEmailRequired)?;
+            if self
+                .accounts
+                .account_by_email(self.config.tenant.tenant_id, &email)
+                .await
+                .map_err(FederationError::Account)?
+                .is_some()
+            {
+                self.audit
+                    .record_required(FederationAuditEvent::RelinkDenied {
+                        provider_type: identity.provider_type,
+                        provider_id: identity.provider_id,
+                        email,
+                    })
+                    .await
+                    .map_err(FederationError::State)?;
                 return Err(FederationError::LoginFailed);
             }
-            return Ok(account);
+            let password_hash = self
+                .password_hasher
+                .hash_bootstrap_secret()
+                .await
+                .map_err(FederationError::Password)?;
+            let account = self
+                .accounts
+                .create_federated(NewFederatedIdentity {
+                    login,
+                    email,
+                    display_name: identity.display_name,
+                    password_hash,
+                })
+                .await
+                .map_err(FederationError::Account)?;
+            (account, true)
+        };
+        // Every account-producing branch converges here, including an
+        // adapter's unique-conflict recovery. Upstream proof is already
+        // verified; only the returned current account decides this gate.
+        if !account.principal.active {
+            return Err(if existing_only {
+                FederationError::InactiveExistingLink
+            } else {
+                FederationError::LoginFailed
+            });
         }
-        if existing_only {
-            return Err(FederationError::VerifiedEmailRequired);
-        }
-        let email = identity
-            .email
-            .clone()
-            .ok_or(FederationError::VerifiedEmailRequired)?;
-        if self
-            .accounts
-            .account_by_email(self.config.tenant.tenant_id, &email)
-            .await
-            .map_err(FederationError::Account)?
-            .is_some()
-        {
+        if linked {
             self.audit
-                .record_required(FederationAuditEvent::RelinkDenied {
+                .record_required(FederationAuditEvent::IdentityLinked {
+                    user_id: account.user_id(),
                     provider_type: identity.provider_type,
                     provider_id: identity.provider_id,
-                    email,
                 })
                 .await
                 .map_err(FederationError::State)?;
-            return Err(FederationError::LoginFailed);
         }
-        let password_hash = self
-            .password_hasher
-            .hash_bootstrap_secret()
-            .await
-            .map_err(FederationError::Password)?;
-        let account = self
-            .accounts
-            .create_federated(NewFederatedIdentity {
-                login,
-                email,
-                display_name: identity.display_name,
-                password_hash,
-            })
-            .await
-            .map_err(FederationError::Account)?;
-        self.audit
-            .record_required(FederationAuditEvent::IdentityLinked {
-                user_id: account.user_id(),
-                provider_type: identity.provider_type,
-                provider_id: identity.provider_id,
-            })
-            .await
-            .map_err(FederationError::State)?;
         Ok(account)
     }
 

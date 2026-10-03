@@ -6,6 +6,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 
+use fs2::FileExt as _;
 use nazo_operator_protocol::{
     CONTROL_OPERATION_SCHEMA, CONTROL_RESULT_SCHEMA, ControlOperation, ControlOperationPayload,
     ControlOutcome, ControlResult, ControlResultData,
@@ -210,7 +211,7 @@ fn same_id_with_a_different_request_hash_conflicts_permanently() {
     ));
 
     // ...and after the terminal result is durable.
-    complete(&directory, &succeeded_result(OPERATION_ID, &hash('a'))).unwrap();
+    complete(&directory, succeeded_result(OPERATION_ID, &hash('a'))).unwrap();
     assert!(matches!(
         accept(
             &directory,
@@ -655,7 +656,7 @@ async fn after_result_crash_returns_the_durable_result_without_reexecution() {
     begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
     let (_invocations, applications, effect) = ledger_side_effect(&directory);
     let _ = effect().await.unwrap();
-    complete(&directory, &succeeded_result(OPERATION_ID, &hash('a'))).unwrap();
+    complete(&directory, succeeded_result(OPERATION_ID, &hash('a'))).unwrap();
     assert_eq!(applications.load(AtomicOrdering::SeqCst), 1);
 
     // Restart: the stored result comes back verbatim and nothing runs.
@@ -766,7 +767,7 @@ fn journal_records_fail_closed_on_unknown_fields_schema_drift_and_binding_mismat
         &snapshot(),
     )
     .unwrap();
-    complete(&directory, &succeeded_result(OPERATION_ID, &hash('a'))).unwrap();
+    complete(&directory, succeeded_result(OPERATION_ID, &hash('a'))).unwrap();
 
     let corrupt = |mutate: fn(&mut OperationJournalRecord)| {
         let scratch = temporary_directory();
@@ -867,33 +868,50 @@ fn journal_records_fail_closed_on_unknown_fields_schema_drift_and_binding_mismat
     assert!(unbound(|result| result.operation_id = OPERATION_ID_B.to_owned()).is_err());
 }
 
-#[test]
-fn retention_deletes_only_terminal_records_past_the_cutoff() {
+fn cleanup_task_lock(directory: &Path) -> fs::File {
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(directory.join("task.lock"))
+        .unwrap()
+}
+
+fn cleanup_record(directory: &Path, id: &str, phase: &str, completed_at: Option<i64>) -> PathBuf {
+    let mut result = succeeded_result(id, &hash('a'));
+    result.completed_at = completed_at;
+    result.accepted_at = 900;
+    let record = OperationJournalRecord {
+        schema: CONTROL_JOURNAL_SCHEMA,
+        recovery_coverage_version: None,
+        operation_id: id.to_owned(),
+        request_hash: hash('a'),
+        controller_id: CONTROLLER_ID.to_owned(),
+        kid: snapshot().kid,
+        accepted_at: 900,
+        phase: phase.to_owned(),
+        result: if phase == "completed" {
+            Some(result)
+        } else {
+            None
+        },
+    };
+    let journal = control_journal_directory(directory);
+    fs::create_dir_all(&journal).unwrap();
+    let path = record_path(&journal, id);
+    fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+    path
+}
+
+#[tokio::test]
+async fn retention_deletes_only_terminal_records_past_the_cutoff() {
     let directory = temporary_directory();
     let journal = control_journal_directory(&directory);
     fs::create_dir_all(&journal).unwrap();
+    drop(cleanup_task_lock(&directory));
     let write_record = |id: &str, phase: &str, completed_at: Option<i64>| {
-        let mut result = succeeded_result(id, &hash('a'));
-        result.completed_at = completed_at;
-        result.accepted_at = 900;
-        let record = OperationJournalRecord {
-            schema: CONTROL_JOURNAL_SCHEMA,
-            recovery_coverage_version: None,
-            operation_id: id.to_owned(),
-            request_hash: hash('a'),
-            controller_id: CONTROLLER_ID.to_owned(),
-            kid: snapshot().kid,
-            accepted_at: 900,
-            phase: phase.to_owned(),
-            result: if phase == "completed" {
-                Some(result)
-            } else {
-                None
-            },
-        };
-        let path = journal.join(format!("{id}.journal.json"));
-        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
-        path
+        cleanup_record(&directory, id, phase, completed_at)
     };
     const CUTOFF: i64 = 50_000;
     let terminal_old = write_record(
@@ -911,7 +929,10 @@ fn retention_deletes_only_terminal_records_past_the_cutoff() {
     let garbage = journal.join("019c8ca2-30a6-7000-8000-0000000000a5.journal.json");
     fs::write(&garbage, b"not-json").unwrap();
 
-    assert_eq!(cleanup_completed_before(&directory, CUTOFF).unwrap(), 1);
+    assert_eq!(
+        cleanup_completed_before(&directory, CUTOFF).await.unwrap(),
+        1
+    );
     assert!(!terminal_old.exists());
     assert!(terminal_recent.exists());
     assert!(executing.exists());
@@ -920,7 +941,7 @@ fn retention_deletes_only_terminal_records_past_the_cutoff() {
 
     // Cleanup before any journal exists is a no-op.
     let empty = temporary_directory();
-    assert_eq!(cleanup_completed_before(&empty, CUTOFF).unwrap(), 0);
+    assert_eq!(cleanup_completed_before(&empty, CUTOFF).await.unwrap(), 0);
     fs::remove_dir_all(empty).unwrap();
     fs::remove_dir_all(directory).unwrap();
 }
@@ -1003,6 +1024,196 @@ async fn typed_result_data_is_attached_on_success_and_durable_for_recovery() {
         JournalCheckpoint::Completed(stored) => assert_eq!(stored.result, Some(data)),
         other => panic!("expected completed checkpoint, got {other:?}"),
     }
+    let fresh_bytes = outcome.into_stdout().unwrap();
+    let replay = run_journaled_operation(
+        &directory,
+        &operation(OPERATION_ID),
+        &hash('a'),
+        &snapshot(),
+        true,
+        &|_| {},
+        || async { panic!("a durable typed result must not repeat its side effect") },
+    )
+    .await
+    .unwrap();
+    assert!(replay.recovered);
+    assert_eq!(replay.into_stdout().unwrap(), fresh_bytes);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cleanup_entry_budget_advances_past_recent_prefix_to_expired_tail() {
+    let directory = temporary_directory();
+    drop(cleanup_task_lock(&directory));
+    const CUTOFF: i64 = 50_000;
+    let mut retained = Vec::new();
+    for suffix in 1..=5 {
+        let id = format!("019c8ca2-30a6-7000-8000-{suffix:012x}");
+        retained.push(cleanup_record(
+            &directory,
+            &id,
+            "completed",
+            Some(CUTOFF + 1),
+        ));
+    }
+    retained.push(cleanup_record(&directory, OPERATION_ID_B, "accepted", None));
+    let unknown = control_journal_directory(&directory).join("unknown.journal.json");
+    fs::write(&unknown, b"not-json").unwrap();
+    retained.push(unknown);
+    let expired = cleanup_record(
+        &directory,
+        "019c8ca2-30a6-7000-8000-000000000099",
+        "completed",
+        Some(CUTOFF - 1),
+    );
+    // Real filesystem entries are ordered only by this small test fixture,
+    // placing every retained entry before the old terminal tail. Production
+    // consumes ReadDir directly and never collects/sorts a directory.
+    let mut ordered = fs::read_dir(control_journal_directory(&directory))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    ordered.sort_by_key(|entry| entry.path() == expired);
+    let total = ordered.len();
+    let mut entries = ordered.into_iter().map(Ok);
+    let budget = CleanupBudget {
+        max_entries: 2,
+        max_elapsed: Duration::from_secs(60),
+    };
+    let first = cleanup_batch(&directory, CUTOFF, &mut entries, budget).unwrap();
+    assert_eq!(first.checked, 2);
+    assert_eq!(first.deleted, 0);
+    assert!(!first.finished);
+    assert!(expired.exists());
+    let mut checked = first.checked;
+    let mut deleted = first.deleted;
+    for round in 0..=total {
+        let batch = cleanup_batch(&directory, CUTOFF, &mut entries, budget).unwrap();
+        assert!(batch.checked <= 2);
+        checked += batch.checked;
+        deleted += batch.deleted;
+        if batch.finished {
+            break;
+        }
+        assert!(round < total, "a static directory must eventually finish");
+    }
+    assert_eq!(
+        checked, total,
+        "every entry, including unreadable, consumes budget"
+    );
+    assert_eq!(deleted, 1);
+    assert!(!expired.exists());
+    assert!(retained.iter().all(|path| path.exists()));
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cleanup_zero_time_budget_does_not_consume_or_rewind_the_cursor() {
+    let directory = temporary_directory();
+    drop(cleanup_task_lock(&directory));
+    let expired = cleanup_record(&directory, OPERATION_ID, "completed", Some(1_000));
+    let mut entries = fs::read_dir(control_journal_directory(&directory)).unwrap();
+    let zero = cleanup_batch(
+        &directory,
+        2_000,
+        &mut entries,
+        CleanupBudget {
+            max_entries: 1,
+            max_elapsed: Duration::ZERO,
+        },
+    )
+    .unwrap();
+    assert_eq!(zero, CleanupBatch::default());
+    assert!(expired.exists());
+    let next = cleanup_batch(
+        &directory,
+        2_000,
+        &mut entries,
+        CleanupBudget {
+            max_entries: 1,
+            max_elapsed: Duration::from_secs(60),
+        },
+    )
+    .unwrap();
+    assert_eq!(next.checked, 1);
+    assert_eq!(next.deleted, 1);
+    assert!(!expired.exists());
+    drop(entries);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cleanup_enumeration_releases_business_lock_and_contended_deletion_is_retained() {
+    let directory = temporary_directory();
+    let contender = cleanup_task_lock(&directory);
+    let expired = cleanup_record(&directory, OPERATION_ID, "completed", Some(1_000));
+    let mut entries = fs::read_dir(control_journal_directory(&directory))
+        .unwrap()
+        .map(|entry| {
+            contender
+                .try_lock_exclusive()
+                .expect("enumeration must not hold the business lock");
+            fs2::FileExt::unlock(&contender).unwrap();
+            entry
+        });
+    let batch = cleanup_batch(
+        &directory,
+        2_000,
+        &mut entries,
+        CleanupBudget {
+            max_entries: 1,
+            max_elapsed: Duration::from_secs(60),
+        },
+    )
+    .unwrap();
+    assert_eq!(batch.deleted, 1);
+    assert!(!expired.exists());
+    drop(entries);
+
+    let expired = cleanup_record(&directory, OPERATION_ID_B, "completed", Some(1_000));
+    contender.lock_exclusive().unwrap();
+    let mut entries = fs::read_dir(control_journal_directory(&directory)).unwrap();
+    let batch = cleanup_batch(
+        &directory,
+        2_000,
+        &mut entries,
+        CleanupBudget {
+            max_entries: 1,
+            max_elapsed: Duration::from_secs(60),
+        },
+    )
+    .unwrap();
+    assert_eq!(batch.checked, 1);
+    assert_eq!(batch.deleted, 0);
+    assert!(expired.exists());
+    drop(entries);
+    drop(contender);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cleanup_rechecks_final_phase_and_preserves_unresolved_temporaries_and_oversized_records() {
+    let directory = temporary_directory();
+    drop(cleanup_task_lock(&directory));
+    let path = cleanup_record(&directory, OPERATION_ID, "completed", Some(1_000));
+    assert!(expired_cleanup_candidate(&path, 2_000));
+    cleanup_record(&directory, OPERATION_ID, "executing", None);
+    assert!(!delete_expired_cleanup_candidate(&directory, &path, 2_000).unwrap());
+    assert!(
+        path.exists(),
+        "the unlocked candidate read is never deletion authority"
+    );
+
+    let path = cleanup_record(&directory, OPERATION_ID_B, "completed", Some(1_000));
+    let temporary = record_temporary_path(&path);
+    fs::write(&temporary, b"unknown interrupted publication").unwrap();
+    assert!(!delete_expired_cleanup_candidate(&directory, &path, 2_000).unwrap());
+    assert!(path.exists());
+    assert!(temporary.exists());
+    let oversized = control_journal_directory(&directory).join("oversized.journal.json");
+    fs::write(&oversized, vec![b'x'; MAX_CLEANUP_RECORD_BYTES + 1]).unwrap();
+    assert!(!expired_cleanup_candidate(&oversized, 2_000));
+    assert!(oversized.exists());
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1092,7 +1303,7 @@ fn covered_recovery_journal_requires_marker_without_changing_result_wire() {
     .unwrap();
     begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
     let result = recovery_result();
-    complete(&directory, &result).unwrap();
+    complete(&directory, result.clone()).unwrap();
     let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
     let record = read_record(&path).unwrap();
     assert_eq!(record.recovery_coverage_version, Some(1));
@@ -1173,7 +1384,7 @@ fn recovery_coverage_marker_is_closed_and_nonterminal_records_remain_resumable()
     validate_record(&record).unwrap();
     begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
     begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
-    complete(&directory, &recovery_result()).unwrap();
+    complete(&directory, recovery_result()).unwrap();
     record = read_record(&path).unwrap();
     for marker in [None, Some(0), Some(2)] {
         record.recovery_coverage_version = marker;

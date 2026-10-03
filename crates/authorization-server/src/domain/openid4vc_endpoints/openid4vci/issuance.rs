@@ -24,13 +24,21 @@ impl ServerCredentialIssuerOperations {
                 request.credential_response_encryption.as_ref(),
             )?;
             let access = self.access(&context).await?;
+            let configuration_id = resolve_configuration_id(&request, &access)?;
+            let selection = Some(nazo_openid4vci::CredentialSelection {
+                configuration_id: configuration_id.clone(),
+                credential_identifier: request.credential_identifier.clone(),
+            });
             let request_digest = issuance_request_digest(
                 "credential",
                 &request,
                 &context.request_url,
                 context.method,
             )?;
-            let issuance_id = stable_issuance_id(access.token_id, &request_digest);
+            let issuance_id = stable_issuance_id(
+                access.authorization_id.unwrap_or(access.token_id),
+                &request_digest,
+            );
             if let Some(response) = self
                 .store
                 .find_response(issuance_id, access.token_id, &request_digest, Utc::now())
@@ -46,7 +54,6 @@ impl ServerCredentialIssuerOperations {
                 return response_from_record(response);
             }
             let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
-            let configuration_id = resolve_configuration_id(&request, &access)?;
             let configuration = self
                 .configurations
                 .get(&configuration_id)
@@ -66,6 +73,7 @@ impl ServerCredentialIssuerOperations {
                 })?)
             };
             let now = Utc::now();
+            let intent_expires_at = now + Duration::days(365);
             let disposition = if self.deferred_configurations.contains(&configuration_id) {
                 IssuanceDisposition::Deferred {
                     ready_at: now + Duration::seconds(1),
@@ -83,7 +91,7 @@ impl ServerCredentialIssuerOperations {
                         configuration,
                         disposition,
                         status: None,
-                        expires_at: now + Duration::days(365),
+                        expires_at: intent_expires_at,
                     },
                     nonce.as_deref().unwrap_or(""),
                     nazo_openid4vci::IssuanceIdentity {
@@ -105,15 +113,16 @@ impl ServerCredentialIssuerOperations {
                     return Err(error);
                 }
             };
-            let response_record = stored_response(
+            let mut response_record = stored_response(
                 issuance_id,
                 access.token_id,
                 request_digest,
                 &body,
                 status,
                 dpop_nonce.clone(),
-                access.expires_at,
+                access.continuation_expires_at(intent_expires_at),
             )?;
+            response_record.selection = selection;
             if let Err(error) = self
                 .service
                 .commit_pending_with_response(&pending, &response_record, Utc::now())
@@ -159,7 +168,10 @@ impl ServerCredentialIssuerOperations {
                 &context.request_url,
                 context.method,
             )?;
-            let issuance_id = stable_issuance_id(access.token_id, &request_digest);
+            let issuance_id = stable_issuance_id(
+                access.authorization_id.unwrap_or(access.token_id),
+                &request_digest,
+            );
             if let Some(response) = self
                 .store
                 .find_response(issuance_id, access.token_id, &request_digest, Utc::now())
@@ -277,9 +289,10 @@ impl ServerCredentialIssuerOperations {
                 }
                 let notification_id = Uuid::now_v7().to_string();
                 let notification_handle = nazo_openid4vci::NotificationHandle {
+                    selection: deferred.selection.clone(),
                     notification_id: notification_id.clone(),
                     token_id: access.token_id,
-                    expires_at: access.expires_at.min(payload.expires_at),
+                    expires_at: access.continuation_expires_at(payload.expires_at),
                 };
                 // Finish response encoding before committing the lease. If
                 // encryption fails, the transaction remains retryable.
@@ -292,15 +305,16 @@ impl ServerCredentialIssuerOperations {
                     },
                     request.credential_response_encryption.as_ref(),
                 )?;
-                let response_record = stored_response(
+                let mut response_record = stored_response(
                     issuance_id,
                     access.token_id,
                     request_digest.clone(),
                     &body,
                     CredentialResponseStatus::Issued,
                     dpop_nonce.clone(),
-                    access.expires_at.min(payload.expires_at),
+                    access.continuation_expires_at(payload.expires_at),
                 )?;
+                response_record.selection = deferred.selection.clone();
                 let committed = self
                     .store
                     .finalize_deferred_with_notification_and_response(

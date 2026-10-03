@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::{TenantId, UserId};
 
-use super::common::{EncodedSecretHash, RepositoryFuture};
+use super::common::{EncodedSecretHash, RepositoryError, RepositoryFuture};
 
 pub type MfaHashFuture<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, MfaHashError>> + Send + 'a>>;
@@ -217,6 +217,20 @@ pub trait MfaRepositoryPort: Send + Sync {
         user_id: UserId,
         credential_id: Uuid,
     ) -> RepositoryFuture<'a, bool>;
+
+    /// Disable the exact confirmed generation and persist the complete Required
+    /// `mfa_disabled` outcome in the same accepting transaction. A successful
+    /// response follows its acknowledgement; unavailable/unknown never implies
+    /// a known non-commit. Adapters cannot fall back to the unaudited clear.
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        _tenant_id: TenantId,
+        _user_id: UserId,
+        _credential_id: Uuid,
+        _source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
 
     fn remember_device(
         &self,

@@ -60,7 +60,7 @@ pub(crate) async fn admin_patch_client(
             {
                 return response;
             }
-            json_response(client_json(client))
+            json_response(client_json(&client))
         }
         Err(AdminClientError::NotFound) => {
             oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.")
@@ -69,6 +69,11 @@ pub(crate) async fn admin_patch_client(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             &format!("客户端更新失败: {message}"),
+        ),
+        Err(AdminClientError::Write(nazo_auth::AdminClientPortError::Conflict)) => oauth_error(
+            StatusCode::CONFLICT,
+            "invalid_request",
+            "Client metadata changed while preparing this update. Reload and retry.",
         ),
         Err(AdminClientError::Lookup(error)) => {
             tracing::warn!(%error, "failed to query oauth client for admin update");

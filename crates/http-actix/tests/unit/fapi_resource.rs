@@ -13,6 +13,8 @@ use nazo_resource_server::{
 };
 use serde_json::{Value, json};
 
+use nazo_http_signatures::{content_digest, content_digest_field_matches};
+
 use super::*;
 
 struct Authorizer {
@@ -696,7 +698,8 @@ async fn response_signing_preserves_multiple_physical_header_values() {
         .insert_header(("signature-input", fields.signature_input))
         .insert_header(("signature", fields.signature))
         .to_http_request();
-    let original = CapturedRequest::capture("https://auth.example", &request, &Bytes::new());
+    let request_body = Bytes::new();
+    let original = CapturedRequest::capture("https://auth.example", &request, &request_body);
     let response = HttpResponse::Ok()
         .append_header((header::SET_COOKIE, "first=1; Secure"))
         .append_header((header::SET_COOKIE, "second=2; Secure"))

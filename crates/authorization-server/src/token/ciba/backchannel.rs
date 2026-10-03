@@ -196,7 +196,9 @@ impl CibaApplication {
             Ok(replay) => replay,
             Err(response) => return Err(response),
         };
-        validate_ciba_binding_message(&form)?;
+        if request_object_replay.is_none() {
+            validate_ciba_binding_message(&form)?;
+        }
         validate_ciba_delivery_request(&client, &form)?;
         let scopes = parse_scope(form.scope.as_deref().unwrap_or(""));
         if !scopes.iter().any(|scope| scope == "openid") || !is_subset(&scopes, &client.scopes) {

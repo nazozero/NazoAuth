@@ -70,7 +70,7 @@ impl CredentialDatasetAdminService {
                 actor_user_id,
                 subject_id,
                 credential_configuration_id: configuration_id.clone(),
-                claims: request.claims.clone(),
+                claims: request.claims,
                 valid_from: request.valid_from,
                 valid_until: request.valid_until,
             })
@@ -82,16 +82,22 @@ impl CredentialDatasetAdminService {
                     "Credential dataset persistence failed.",
                 )
             })?;
-        if !stored {
+        let Some(dataset) = stored else {
             return Err(vci_error(
                 404,
                 "invalid_request",
                 "Credential subject is not active.",
             ));
-        }
+        };
         tracing::info!(%subject_id, %configuration_id, "issuer credential dataset updated");
-        self.get_dataset(tenant_id, subject_id, configuration_id)
-            .await
+        Ok(CredentialDatasetResponse {
+            subject_id,
+            credential_configuration_id: configuration_id,
+            claims: dataset.claims,
+            valid_from: dataset.valid_from,
+            valid_until: dataset.valid_until,
+            updated_at: dataset.updated_at,
+        })
     }
 
     pub async fn get_dataset(

@@ -353,6 +353,119 @@ async fn audit_ledger_append_is_chained_and_pending() {
     );
 }
 
+#[derive(Debug, Eq, PartialEq, QueryableByName)]
+struct AnchorHeartbeatRow {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    row_version: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
+    observed_at: Option<chrono::DateTime<Utc>>,
+}
+
+async fn anchor_heartbeat(connection: &mut AsyncPgConnection) -> AnchorHeartbeatRow {
+    sql_query(
+        "SELECT xmin::text AS row_version, anchor_observed_at AS observed_at \
+         FROM public.security_audit_chain_state WHERE singleton IS TRUE",
+    )
+    .get_result(connection)
+    .await
+    .expect("the physical audit heartbeat row should be readable")
+}
+
+#[tokio::test]
+async fn recent_durable_ack_throttles_heartbeat_writes_without_acknowledging_backlog() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("audit ledger migration should apply");
+    let repository = AuditLedgerRepository::new(
+        create_pool(database_url.clone(), 4).expect("audit pool should create"),
+    );
+    let initial = repository.anchor_health().await.unwrap();
+    if initial.head_sequence == 0 {
+        repository
+            .record_genesis("test-deployment", &initial.head_hash)
+            .await
+            .expect("an empty ledger should accept its genesis checkpoint");
+    }
+    drain_pending(&repository).await;
+    for subject in ["heartbeat-first", "heartbeat-backlog"] {
+        repository
+            .append(SecurityAuditEvent {
+                event_id: Uuid::now_v7(),
+                event_type: "token_issued".to_owned(),
+                event_category: "token_lifecycle".to_owned(),
+                payload: json!({"subject_hash": subject}),
+                occurred_at: Utc::now(),
+            })
+            .await
+            .expect("heartbeat fixture event should append");
+    }
+    let batch = match repository
+        .claim_batch("test-deployment", 1, 1024 * 1024, 60)
+        .await
+        .unwrap()
+    {
+        SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected one heartbeat fixture batch, got {other:?}"),
+    };
+    assert_eq!(batch.event_count(), 1);
+    repository.ack_batch(batch_ack(&batch)).await.unwrap();
+    let acknowledged = repository.anchor_health().await.unwrap();
+    assert!(acknowledged.pending_exists);
+    assert_eq!(
+        acknowledged.last_exported_sequence,
+        Some(batch.last_sequence)
+    );
+    assert!(acknowledged.last_exported_at.is_some());
+    assert_eq!(acknowledged.observed_at, acknowledged.last_exported_at);
+
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let after_ack = anchor_heartbeat(&mut connection).await;
+    for _ in 0..3 {
+        repository.observe_anchor("test-deployment").await.unwrap();
+        assert_eq!(anchor_heartbeat(&mut connection).await, after_ack);
+    }
+    assert!(matches!(
+        repository.observe_anchor("other-deployment").await,
+        Err(RepositoryError::Consistency(_))
+    ));
+    assert_eq!(anchor_heartbeat(&mut connection).await, after_ack);
+
+    // Advance only the fixture's observation age using the database clock;
+    // waiting thirty real seconds is unnecessary and would hide row rewrites.
+    sql_query(
+        "UPDATE public.security_audit_chain_state \
+         SET anchor_observed_at = CURRENT_TIMESTAMP - INTERVAL '31 seconds' \
+         WHERE singleton IS TRUE",
+    )
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let aged = anchor_heartbeat(&mut connection).await;
+    repository.observe_anchor("test-deployment").await.unwrap();
+    let refreshed = anchor_heartbeat(&mut connection).await;
+    assert_ne!(refreshed.row_version, aged.row_version);
+    assert!(refreshed.observed_at > aged.observed_at);
+    let health = repository.anchor_health().await.unwrap();
+    assert!(health.pending_exists);
+    assert_eq!(
+        health.last_exported_sequence,
+        acknowledged.last_exported_sequence
+    );
+    assert_eq!(health.last_exported_hash, acknowledged.last_exported_hash);
+    assert_eq!(health.last_exported_at, acknowledged.last_exported_at);
+    assert_eq!(
+        health.last_exported_occurred_at,
+        acknowledged.last_exported_occurred_at
+    );
+    assert_eq!(health.deployment_id, acknowledged.deployment_id);
+    assert!(health.batch.is_none());
+    drain_pending(&repository).await;
+}
+
 #[tokio::test]
 async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
     let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;

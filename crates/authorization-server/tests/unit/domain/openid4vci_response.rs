@@ -22,6 +22,8 @@ impl DpopStateStorePort for UnavailableDpopState {
 fn dpop_nonce_generation_fails_closed_when_nonce_state_is_unavailable() {
     futures_executor::block_on(async {
         let access = CredentialAccess {
+            authorization_id: None,
+            mtls_x5t_s256: None,
             proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             token_id: Uuid::now_v7(),
             tenant_id: Uuid::now_v7(),

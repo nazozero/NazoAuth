@@ -11,7 +11,7 @@ mod request;
 mod response;
 mod verify;
 
-pub use digest::{content_digest, content_digest_field_matches};
+pub use digest::{BodyDigest, content_digest, content_digest_field_matches};
 pub use error::VerifyError;
 pub use jwk::{JwkSignatureVerificationError, verify_jwk_signature};
 pub use request::{
@@ -19,6 +19,9 @@ pub use request::{
 };
 pub use response::{
     OriginalRequest, ResponseError, ResponseInput, ResponsePolicy, parse_response_for_verification,
-    prepare_response,
+    prepare_response, prepare_response_with_digests,
 };
-pub use verify::{VerificationPolicy, VerifiedInput, parse_request_for_verification};
+pub use verify::{
+    VerificationPolicy, VerifiedInput, parse_request_for_verification,
+    parse_request_for_verification_with_digest,
+};

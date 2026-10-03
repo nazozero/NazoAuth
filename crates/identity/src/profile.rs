@@ -12,7 +12,8 @@ use crate::{
     ports::{
         AccessRequestRepositoryPort, AuthorizedApplication, AuthorizedApplicationRepositoryPort,
         DeliveryConsume, DeliveryStorePort, FederationLink, FederationLinkRepositoryPort,
-        GrantSummaryRepositoryPort, ProfileRepositoryPort, ProfileUpdate, RepositoryError,
+        FederationLinkSummary, GrantSummaryRepositoryPort, ProfileRepositoryPort, ProfileUpdate,
+        RepositoryError,
     },
 };
 
@@ -712,6 +713,15 @@ impl FederationLinksService {
     ) -> Result<Vec<FederationLink>, RepositoryError> {
         self.links
             .list(account.tenant().tenant_id, account.user_id())
+            .await
+    }
+
+    pub async fn list_summaries(
+        &self,
+        account: &PublicAccount,
+    ) -> Result<Vec<FederationLinkSummary>, RepositoryError> {
+        self.links
+            .list_summaries(account.tenant().tenant_id, account.user_id())
             .await
     }
 

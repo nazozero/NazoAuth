@@ -28,14 +28,11 @@ pub trait DynamicRegistrationRequestGuard: Send + Sync {
 
     fn audit(&self, event: &'static str, client: &OAuthClient, source_ip: &str);
 
-    /// Durable append for Required-class lifecycle events. Unlike `audit`,
-    /// which is best-effort telemetry, a failure here must propagate so the
-    /// caller fails closed instead of losing required evidence.
-    fn audit_required<'a>(
+    /// Dynamic readiness before a mutation whose required lifecycle event is
+    /// owned by the client-store transaction. Retain current anchor health;
+    /// a preflight alone never proves later effect/evidence atomicity.
+    fn ensure_mutation_ready<'a>(
         &'a self,
-        event: &'static str,
-        client: &'a OAuthClient,
-        source_ip: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>;
 }
 

@@ -308,6 +308,11 @@ pub struct ClientAuthenticationSnapshot {
 pub trait AuthorizationRepositoryPort: Send + Sync {
     /// Only Committed permits code publication. Unavailable may mean an
     /// unknown commit outcome; callers must not release or replace its fence.
+    /// PromptNone must check the current active tenant/client/user and canonical
+    /// scope/resource/authorization-detail coverage at this accepting commit.
+    /// Missing or insufficient current coverage returns GrantUnavailable without
+    /// consuming request/PAR authority, writing a fact, or publishing a code.
+    /// Early grant snapshots never substitute for this final authority.
     fn commit_decision<'a>(
         &'a self,
         input: AuthorizationDecisionCommit,

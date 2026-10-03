@@ -111,9 +111,11 @@ impl ServerCredentialIssuerOperations {
                 .iter()
                 .map(|id| openid4vci_authorization_detail(&self.issuer, id))
                 .collect::<Vec<_>>();
+            let authorization_id = Uuid::now_v7();
             let issued = self
                 .token_service
                 .sign_access_token(nazo_auth::AccessTokenSignInput {
+                    authorization_id: Some(authorization_id),
                     client_epoch: None,
                     user_epoch: None,
                     issuer: &self.issuer,
@@ -164,6 +166,8 @@ impl ServerCredentialIssuerOperations {
                 .persist_pre_authorized_access(
                     &blake3_hex(&issued.token),
                     &CredentialAccess {
+                        authorization_id: Some(authorization_id),
+                        mtls_x5t_s256: request.mtls_x5t_s256.clone(),
                         proof_origin: if request.client_id.is_some() {
                             nazo_openid4vci::CredentialProofOrigin::RegisteredClient
                         } else {

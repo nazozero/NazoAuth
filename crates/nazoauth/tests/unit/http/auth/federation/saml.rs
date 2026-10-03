@@ -220,3 +220,22 @@ fn valid_saml_gateway_assertion_rejects_normalized_email_mismatch() {
         "other@example.com"
     ));
 }
+
+#[test]
+fn gateway_name_is_unsigned_and_must_remain_untrusted_metadata() {
+    let settings = settings();
+    let now = Utc::now().timestamp();
+    let mut value = assertion(&settings, "subject", "user@example.com", now, now + 60);
+    value.name = Some("unauthenticated replacement".to_owned());
+    assert!(valid_saml_gateway_assertion(
+        &settings,
+        &value,
+        "user@example.com"
+    ));
+    value.subject = "another-subject".to_owned();
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &value,
+        "user@example.com"
+    ));
+}

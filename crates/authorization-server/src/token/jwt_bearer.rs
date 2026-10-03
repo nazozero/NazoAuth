@@ -262,6 +262,18 @@ pub async fn token_jwt_bearer_with_service(
         sender.dpop_jkt.as_deref(),
         sender.mtls_x5t_s256.as_deref(),
     );
+    // Known invalid scope/target input does not burn either replay role.
+    // The cryptographic validator and sender proof above still run first;
+    // distinct client-assertion and grant replay consumers remain below.
+    let admission = match admit_jwt_bearer_grant(
+        form.assertion.as_deref(),
+        form.scope.as_deref(),
+        &form.audiences,
+        policy,
+    ) {
+        Ok(admission) => admission,
+        Err(error) => return Err(jwt_bearer_grant_error_response(error, client, form)),
+    };
     if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
@@ -296,15 +308,6 @@ pub async fn token_jwt_bearer_with_service(
             }
         };
     }
-    let admission = match admit_jwt_bearer_grant(
-        form.assertion.as_deref(),
-        form.scope.as_deref(),
-        &form.audiences,
-        policy,
-    ) {
-        Ok(admission) => admission,
-        Err(error) => return Err(jwt_bearer_grant_error_response(error, client, form)),
-    };
     issue_token_response(
         issuance,
         token_service,

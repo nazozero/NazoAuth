@@ -86,7 +86,7 @@ pub struct ClientPresentationMetadata {
 ///
 /// Tenant placement, credential digests, issued plaintext credentials, and
 /// database command shape belong to the coordinating service and adapters.
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct ValidatedClientRegistration {
     pub client_id: String,
     pub client_name: String,
@@ -165,7 +165,7 @@ pub struct ApprovedClient {
 /// The validated registration metadata is composed rather than copied into a
 /// second flat persistence-shaped DTO. Credential digests deliberately do not
 /// cross this boundary.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OAuthClient {
     pub id: Uuid,
     pub tenant_id: Uuid,

@@ -111,6 +111,7 @@ fn client() -> ClientRow {
 
 fn claims(client_id: &str, audience: Value, scope: &str) -> Claims {
     Claims {
+        authorization_id: None,
         client_epoch: None,
         user_epoch: None,
         iss: "https://issuer.example".to_owned(),

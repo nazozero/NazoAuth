@@ -263,3 +263,69 @@ fn denied_authorization_fails_closed_if_required_audit_is_unavailable() {
         assert!(audit.events.lock().unwrap().is_empty());
     });
 }
+
+struct DisableDuringLookup {
+    runtime: Arc<SnapshotStore>,
+    credential: ScimTokenCredential,
+}
+
+impl ScimCredentialPort for DisableDuringLookup {
+    fn active_credential<'a>(
+        &'a self,
+        token_hash: &'a str,
+    ) -> RepositoryFuture<'a, Option<ScimTokenCredential>> {
+        assert_eq!(token_hash, blake3_hex("bearer-secret"));
+        Box::pin(async move {
+            // Publication occurs inside the awaited lookup, after admission.
+            self.runtime
+                .compare_and_publish(
+                    ModuleRevision::new(1),
+                    ActiveModuleSnapshot {
+                        revision: ModuleRevision::new(2),
+                        accepting: Default::default(),
+                        draining: Default::default(),
+                    },
+                )
+                .unwrap();
+            Ok(Some(self.credential.clone()))
+        })
+    }
+}
+
+#[test]
+fn module_shutdown_during_live_credential_lookup_blocks_authorization() {
+    futures_executor::block_on(async {
+        let tenant = TenantContext::default_system();
+        let runtime = Arc::new(SnapshotStore::new(ActiveModuleSnapshot {
+            revision: ModuleRevision::new(1),
+            accepting: [ModuleId::Scim].into(),
+            draining: Default::default(),
+        }));
+        let audit = Arc::new(Audit::default());
+        let authorizer = ServerScimRequestAuthorizer::new(
+            ScimService::new(
+                Arc::new(UnusedUsers),
+                Arc::new(DisableDuringLookup {
+                    runtime: runtime.clone(),
+                    credential: ScimTokenCredential {
+                        id: uuid::Uuid::from_u128(11),
+                        tenant_id: tenant.tenant_id.as_uuid(),
+                        scopes: vec!["scim:read".into()],
+                        event_audience: None,
+                    },
+                }),
+            ),
+            tenant,
+            runtime,
+            audit.clone(),
+        );
+        assert_eq!(
+            authorizer
+                .authorize(facts(), ScimRequiredScope::Read)
+                .await
+                .unwrap_err(),
+            ScimAuthorizationError::Disabled
+        );
+        assert!(audit.events.lock().unwrap().is_empty());
+    });
+}

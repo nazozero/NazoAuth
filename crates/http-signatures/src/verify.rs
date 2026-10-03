@@ -1,10 +1,11 @@
 use std::fmt;
 
+use crate::digest::digest_matches;
 use crate::request::{
     canonical_target_uri, component, field_component, is_reserved_signature_field, is_token_byte,
     method_component,
 };
-use crate::{RequestInput, SignatureFields, VerifyError, content_digest_field_matches};
+use crate::{BodyDigest, RequestInput, SignatureFields, VerifyError};
 use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser};
 use sha2::{Digest, Sha256};
 
@@ -81,6 +82,18 @@ pub fn parse_request_for_verification(
     fields: SignatureFields,
     policy: VerificationPolicy,
 ) -> Result<VerifiedInput, VerifyError> {
+    parse_request_for_verification_with_digest(input, fields, policy, None)
+}
+
+/// Reuses previously established body evidence while retaining every signature,
+/// header uniqueness, time, coverage, algorithm and replay-fingerprint check.
+/// Evidence for a different body or field fails closed.
+pub fn parse_request_for_verification_with_digest(
+    input: RequestInput<'_>,
+    fields: SignatureFields,
+    policy: VerificationPolicy,
+    digest: Option<&BodyDigest<'_>>,
+) -> Result<VerifiedInput, VerifyError> {
     let signature_input: Dictionary = Parser::new(&fields.signature_input)
         .parse()
         .map_err(|_| VerifyError::MalformedSignature)?;
@@ -132,7 +145,7 @@ pub fn parse_request_for_verification(
     }
     validate_parameters(params)?;
     validate_time(params, created, policy)?;
-    let supplied_digest = validate_digest(&input)?;
+    let supplied_digest = validate_digest(&input, digest)?;
 
     unique_header(input.headers, "authorization")
         .map_err(|_| VerifyError::MissingComponent)?
@@ -286,7 +299,10 @@ pub(crate) fn validate_time(
     Ok(())
 }
 
-fn validate_digest<'a>(input: &'a RequestInput<'_>) -> Result<Option<&'a str>, VerifyError> {
+fn validate_digest<'a>(
+    input: &'a RequestInput<'_>,
+    evidence: Option<&BodyDigest<'_>>,
+) -> Result<Option<&'a str>, VerifyError> {
     let supplied =
         unique_header(input.headers, "content-digest").map_err(|_| VerifyError::DigestMismatch)?;
     if input.body.is_empty() {
@@ -296,7 +312,7 @@ fn validate_digest<'a>(input: &'a RequestInput<'_>) -> Result<Option<&'a str>, V
             .ok_or(VerifyError::DigestMismatch);
     }
     let supplied = supplied.ok_or(VerifyError::DigestMismatch)?;
-    if !content_digest_field_matches(supplied, input.body) {
+    if !digest_matches(supplied, input.body, evidence) {
         return Err(VerifyError::DigestMismatch);
     }
     Ok(Some(supplied))

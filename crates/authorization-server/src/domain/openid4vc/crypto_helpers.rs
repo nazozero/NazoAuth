@@ -198,5 +198,14 @@ pub(super) fn verify_openid4vc_chain_with_scoped<'a>(
             "OpenID4VC signing certificate is not anchored by the configured trust store"
         );
     };
+    // A presented configured anchor is a chain fact only when it is the
+    // actual authenticated terminus. Do not admit ignored, unrelated anchors
+    // into later revocation or trusted-authority projections.
+    if certificates.iter().enumerate().skip(1).any(|(index, der)| {
+        (anchors.contains(der) || scoped.contains(der))
+            && (index + 1 != certificates.len() || der.as_slice() != anchored.as_slice())
+    }) {
+        anyhow::bail!("OpenID4VC presented chain contains an unused configured anchor");
+    }
     Ok(anchored.as_slice())
 }

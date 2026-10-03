@@ -20,6 +20,36 @@ pub struct PasskeyCredential {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Display metadata scoped to one tenant and user; contains no credential payload.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PasskeyCredentialSummary {
+    pub id: Uuid,
+    pub tenant_id: TenantId,
+    pub user_id: UserId,
+    pub credential_id: String,
+    pub label: String,
+    pub sign_count: i64,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<PasskeyCredential> for PasskeyCredentialSummary {
+    fn from(row: PasskeyCredential) -> Self {
+        Self {
+            id: row.id,
+            tenant_id: row.tenant_id,
+            user_id: row.user_id,
+            credential_id: row.credential_id,
+            label: row.label,
+            sign_count: row.sign_count,
+            last_used_at: row.last_used_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
 pub trait PasskeyAccountRepositoryPort: Send + Sync {
     fn by_email<'a>(
         &'a self,
@@ -40,6 +70,20 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> RepositoryFuture<'_, Vec<PasskeyCredential>>;
+
+    fn list_summaries(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Vec<PasskeyCredentialSummary>> {
+        Box::pin(async move {
+            self.list(tenant_id, user_id).await.map(|rows| {
+                rows.into_iter()
+                    .map(PasskeyCredentialSummary::from)
+                    .collect()
+            })
+        })
+    }
 
     fn by_credential_id<'a>(
         &'a self,

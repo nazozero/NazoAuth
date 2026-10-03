@@ -260,13 +260,15 @@ impl MfaService {
         &self,
         account: &PublicAccount,
         proof: &MfaVerificationProof,
+        source_ip_hash: String,
     ) -> Result<(), MfaServiceError> {
         let cleared = self
             .repository
-            .clear_mfa_state_if_current(
+            .clear_mfa_state_if_current_with_required_audit(
                 account.tenant().tenant_id,
                 account.user_id(),
                 proof.credential_id,
+                source_ip_hash,
             )
             .await
             .map_err(MfaServiceError::repository)?;

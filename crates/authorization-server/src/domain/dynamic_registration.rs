@@ -125,13 +125,14 @@ impl DynamicRegistrationApplication {
             Err(_) => return Err(server_error("Dynamic client registration failed.")),
         };
         let issued_secret = prepared_insert.issued_secret.clone();
-        let client = self
-            .clients
-            .insert(&prepared_insert)
+        self.request_guard
+            .ensure_mutation_ready()
             .await
             .map_err(|_| server_error("Dynamic client registration failed."))?;
-        self.request_guard
-            .audit_required("dynamic_client_registered", &client, source_ip)
+        let source_ip_hash = blake3_hex(source_ip);
+        let client = self
+            .clients
+            .insert(&prepared_insert, &source_ip_hash)
             .await
             .map_err(|_| server_error("Dynamic client registration failed."))?;
         Ok(DynamicRegistrationResult::Created(
@@ -222,6 +223,11 @@ impl DynamicRegistrationApplication {
             require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
             is_active: current.is_active,
         };
+        self.request_guard
+            .ensure_mutation_ready()
+            .await
+            .map_err(|_| server_error("Client configuration update failed."))?;
+        let source_ip_hash = blake3_hex(source_ip);
         let client = match self
             .clients
             .replace_registration(
@@ -229,6 +235,7 @@ impl DynamicRegistrationApplication {
                 prepared.client_secret_hash.as_deref(),
                 &authenticated_token_hash,
                 prepared.registration_access_token_blake3.as_deref(),
+                &source_ip_hash,
             )
             .await
         {
@@ -240,10 +247,6 @@ impl DynamicRegistrationApplication {
                 return Err(server_error("Client configuration update failed."));
             }
         };
-        self.request_guard
-            .audit_required("dynamic_client_configuration_updated", &client, source_ip)
-            .await
-            .map_err(|_| server_error("Client configuration update failed."))?;
         Ok(DynamicRegistrationResult::Updated(
             DynamicRegistrationResponse {
                 client,
@@ -265,9 +268,19 @@ impl DynamicRegistrationApplication {
         let (current, authenticated_token_hash, _) = self
             .authenticate_registration_client(registration_token, client_id)
             .await?;
+        self.request_guard
+            .ensure_mutation_ready()
+            .await
+            .map_err(|_| server_error("Client deletion failed."))?;
+        let source_ip_hash = blake3_hex(source_ip);
         match self
             .clients
-            .deactivate(current.tenant_id, current.id, &authenticated_token_hash)
+            .deactivate(
+                current.tenant_id,
+                current.id,
+                &authenticated_token_hash,
+                &source_ip_hash,
+            )
             .await
         {
             Ok(true) => {}
@@ -278,10 +291,6 @@ impl DynamicRegistrationApplication {
                 return Err(server_error("Client deletion failed."));
             }
         }
-        self.request_guard
-            .audit_required("dynamic_client_deleted", &current, source_ip)
-            .await
-            .map_err(|_| server_error("Client deletion failed."))?;
         Ok(DynamicRegistrationResult::Deleted)
     }
 
@@ -551,31 +560,16 @@ impl DynamicRegistrationRequestGuard for ServerDynamicRegistrationRequestGuard {
         );
     }
 
-    fn audit_required<'a>(
+    fn ensure_mutation_ready<'a>(
         &'a self,
-        event: &'static str,
-        client: &'a nazo_auth::OAuthClient,
-        source_ip: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>
     {
         Box::pin(async move {
             self.audit
-                .record_required(
-                    event,
-                    audit_fields(&[
-                        ("client_id", json!(client.client_id)),
-                        ("client_type", json!(client.client_type)),
-                        ("grant_types", json!(client.grant_types)),
-                        (
-                            "token_endpoint_auth_method",
-                            json!(client.token_endpoint_auth_method),
-                        ),
-                        ("source_ip_hash", json!(blake3_hex(source_ip))),
-                    ]),
-                )
+                .ensure_transactional_ready()
                 .await
                 .map_err(|error| {
-                    tracing::error!(%error, event, "dynamic registration audit append failed");
+                    tracing::error!(%error, "dynamic registration audit readiness failed");
                     DynamicRegistrationRateLimitError::Unavailable
                 })
         })

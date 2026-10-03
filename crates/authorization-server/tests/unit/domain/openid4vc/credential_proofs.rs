@@ -232,9 +232,10 @@ fn credential_proof_issuer_uses_origin_even_for_a_registered_placeholder_name() 
 
 #[test]
 fn anonymous_credential_proof_origin_ignores_same_named_registered_client_trust() {
+    use nazo_identity::ports::RepositoryError;
     use nazo_openid4vci::CredentialProofOrigin::{AnonymousPreAuthorized, RegisteredClient};
     use nazo_persistence::{
-        ClientTrustPolicy, Openid4vcTrustPolicyRecord, Openid4vcTrustPolicyStore, RepositoryError,
+        ClientTrustPolicy, Openid4vcTrustPolicyRecord, Openid4vcTrustPolicyStore,
     };
     use std::sync::{
         Arc,

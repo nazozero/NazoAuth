@@ -26,6 +26,8 @@ fn configuration(scope: Option<&str>) -> CredentialConfiguration {
 
 fn access(configuration_ids: &[&str], credential_identifiers: &[&str]) -> CredentialAccess {
     CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
@@ -347,6 +349,7 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
     ));
 
     let mut invalid = StoredCredentialResponse {
+        selection: None,
         issuance_id: Uuid::nil(),
         token_id: Uuid::nil(),
         request_digest: "digest".to_owned(),
@@ -441,4 +444,16 @@ fn presentation_completion_dependency_errors_remain_server_errors() {
         PresentationError::InvalidState,
     ));
     assert_eq!((invalid.status, invalid.error), (400, "invalid_request"));
+}
+
+#[test]
+fn presentation_verifier_dependency_errors_remain_server_errors() {
+    for error in [
+        nazo_digital_credentials::CredentialTrustError::Unavailable,
+        nazo_digital_credentials::CredentialTrustError::RevocationSnapshotUnavailable,
+    ] {
+        let mapped =
+            map_presentation_error(nazo_openid4vp::PresentationServiceError::Verifier(error));
+        assert_eq!((mapped.status, mapped.error), (503, "server_error"));
+    }
 }

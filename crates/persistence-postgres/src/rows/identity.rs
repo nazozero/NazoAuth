@@ -164,6 +164,20 @@ pub(crate) struct PasskeyCredentialRow {
 }
 
 #[derive(Clone, Debug, Queryable, Selectable)]
+#[diesel(table_name = crate::schema::user_passkey_credentials)]
+pub(crate) struct PasskeyCredentialSummaryRow {
+    pub(crate) id: Uuid,
+    pub(crate) tenant_id: Uuid,
+    pub(crate) user_id: Uuid,
+    pub(crate) credential_id: String,
+    pub(crate) label: String,
+    pub(crate) sign_count: i64,
+    pub(crate) last_used_at: Option<DateTime<Utc>>,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::external_identity_links)]
 pub(crate) struct ExternalIdentityLinkRow {
     pub(crate) id: Uuid,
@@ -174,6 +188,21 @@ pub(crate) struct ExternalIdentityLinkRow {
     pub(crate) subject: String,
     pub(crate) email: String,
     pub(crate) claims: Value,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) last_login_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Queryable, Selectable)]
+#[diesel(table_name = crate::schema::external_identity_links)]
+pub(crate) struct ExternalIdentityLinkSummaryRow {
+    pub(crate) id: Uuid,
+    pub(crate) tenant_id: Uuid,
+    pub(crate) user_id: Uuid,
+    pub(crate) provider_type: String,
+    pub(crate) provider_id: String,
+    pub(crate) subject: String,
+    pub(crate) email: String,
     pub(crate) created_at: DateTime<Utc>,
     pub(crate) updated_at: DateTime<Utc>,
     pub(crate) last_login_at: Option<DateTime<Utc>>,

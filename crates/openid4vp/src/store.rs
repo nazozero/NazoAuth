@@ -51,6 +51,12 @@ pub trait PresentationStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>;
 
+    /// Accept exactly one completion under the current tenant, state and trust
+    /// policy. `now` is the caller's reported verification time; it cannot stand
+    /// in for a fresh deadline check after connection or record-lock waits.
+    /// The store owns the deadline check at its locked mutation acceptance point.
+    /// An expired completion returns false without storing a result or erasing
+    /// the response key. Keep the recorded result time and wire shape unchanged.
     fn complete<'a>(
         &'a self,
         transaction_id: Uuid,

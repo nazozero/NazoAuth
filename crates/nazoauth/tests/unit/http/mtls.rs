@@ -256,7 +256,7 @@ fn pki_certificate_requires_the_selected_trust_anchor_and_valid_chain() {
         "revoked trust cannot be cached in certificate facts"
     );
     let mut missing_intermediate = certificate.clone();
-    missing_intermediate.certificate_chain_der.truncate(1);
+    std::sync::Arc::make_mut(&mut missing_intermediate.certificate_chain_der).truncate(1);
     assert!(!certificate_chain_trusted(
         &missing_intermediate,
         &root.pem()

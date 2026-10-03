@@ -117,6 +117,11 @@ boundary explicitly:
   module can accept new mutations. Asynchronous SCIM requests remain unsupported,
   so `securityEvents.asyncRequest` stays `none`.
 
+Discovery handlers reuse serialized immutable document bodies. Service provider
+configuration has separate event-enabled and disabled variants, selected from the
+current runtime state after each request's bearer, tenant and scope authorization.
+The cached bodies do not retain authorization or tenant facts.
+
 ## RFC 9967 Security Event Tokens
 
 When enabled, successful create, replace, patch, activate, and deactivate
@@ -133,6 +138,22 @@ at least once: an event remains visible to a receiver until that receiver
 acknowledges it or reports a terminal error. Receipts are isolated by SCIM
 token, so one receiver cannot consume another receiver's copy. A newly created
 receiver begins at its credential creation time and cannot read older events.
+
+Polling keeps authoritative page reads at entry and at the final response, with
+the existing 250 ms cross-instance fallback during an empty wait. Before releasing
+either an empty or populated response, the server checks current credential,
+scope, tenant and module authority and requires the original receiver identity
+and audience. Transport facts are extracted once; the SCIM bearer is an opaque
+database credential rather than a JWT proof. This final check uses the existing
+authorization owner, including its audit contract, and adds one live credential
+lookup on successful responses.
+
+Caller-supplied `ack` and `setErrs` remain durable receiver dispositions applied
+by the first poll transaction. A later authorization denial does not undo them.
+Local database commit acknowledgement does not prove receiver acceptance of new
+SETs, and returning a SET does not acknowledge it. The query frequency is retained
+until an owned cross-instance wakeup/subscription path and lost-notification
+fallback can preserve these boundaries.
 
 Each SET is signed only when delivered, uses `typ=secevent+jwt`, and contains
 `iss`, `iat`, `jti`, `txn`, receiver-bound `aud`, SCIM `sub_id`, and the RFC 9967

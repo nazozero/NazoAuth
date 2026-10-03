@@ -51,3 +51,18 @@ pub(crate) async fn persist_required_audit_or_unavailable(
         )
     })
 }
+
+/// Current readiness for a command whose accepting owner also persists its
+/// complete Required event. This does not emit an independently committed intent.
+pub(crate) async fn require_transactional_audit_or_unavailable() -> Result<(), HttpResponse> {
+    crate::adapters::audit::ensure_transactional_audit_ready()
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "transactional security audit readiness failed");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "Durable security audit storage is unavailable.",
+            )
+        })
+}

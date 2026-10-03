@@ -175,7 +175,11 @@ async fn database_diagnostics_reject_invalid_creation_times_without_writing() {
         writes: AtomicUsize::new(0),
     });
 
-    for created_at in [None, Some(serde_json::json!("bad")), Some(serde_json::json!(7))] {
+    for created_at in [
+        None,
+        Some(serde_json::json!("bad")),
+        Some(serde_json::json!(7)),
+    ] {
         let mut payload = valid.clone();
         let entry = payload["keys"]
             .as_array_mut()

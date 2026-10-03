@@ -18,6 +18,18 @@ pub struct ObjectServer {
 
 impl ObjectServer {
     pub fn new(status: u16, content_type: Option<&str>, body: Vec<u8>) -> Self {
+        Self::new_with_etag(status, content_type, body, None)
+    }
+
+    pub fn new_with_etag(
+        status: u16,
+        content_type: Option<&str>,
+        body: Vec<u8>,
+        etag: Option<&str>,
+    ) -> Self {
+        let etag = etag
+            .map(|value| format!("ETag: {value}\r\n"))
+            .unwrap_or_default();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
@@ -51,7 +63,7 @@ impl ObjectServer {
                     .map(|value| format!("Content-Type: {value}\r\n"))
                     .unwrap_or_default();
                 let response = format!(
-                    "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\n{mime}Connection: close\r\n\r\n",
+                    "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\n{mime}{etag}Connection: close\r\n\r\n",
                     body.len()
                 );
                 let _ = stream.write_all(response.as_bytes());

@@ -714,3 +714,107 @@ async fn live_pre_authorized_rejects_client_deactivated_before_persistence() {
     );
     fixture.cleanup().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_pre_authorized_mtls_access_preserves_the_signed_sender_and_denies_other_certificates()
+{
+    let Some(fixture) = LiveEndpointFixture::new("unit-live-preauth-mtls", false).await else {
+        return;
+    };
+    let offer = fixture
+        .issuer
+        .create_offer(CreateCredentialOfferRequest {
+            subject_id: fixture.subject_id,
+            credential_configuration_ids: vec!["unit-live-preauth-mtls".to_owned()],
+            grant_types: vec![nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT.to_owned()],
+            tx_code: None,
+            expires_in: 300,
+        })
+        .await
+        .unwrap();
+    let fingerprint = "verified-client-certificate-fingerprint";
+    let token = fixture
+        .issuer
+        .pre_authorized_token(PreAuthorizedTokenRequest {
+            pre_authorized_code: pre_authorized_code(&offer),
+            tx_code: None,
+            client_id: Some(fixture.wallet_client_id.clone()),
+            dpop_jkt: None,
+            mtls_x5t_s256: Some(fingerprint.to_owned()),
+        })
+        .await
+        .unwrap();
+    let context = CredentialRequestContext {
+        bearer_token: token.access_token,
+        mtls_x5t_s256: Some(fingerprint.to_owned()),
+        ..request_context()
+    };
+    fixture
+        .issuer
+        .access(&context)
+        .await
+        .expect("matching signed/persisted sender must resolve instead of 503");
+    let claims = fixture
+        .issuer
+        .token_service
+        .decode_access_token(&fixture.issuer.issuer, &context.bearer_token)
+        .await
+        .expect("production keyset must verify the pre-authorized access token")
+        .expect("the issued access token must be valid");
+    assert!(claims.authorization_id.is_some());
+    assert_eq!(
+        claims.cnf.as_ref().and_then(|cnf| cnf.x5t_s256.as_deref()),
+        Some(fingerprint),
+    );
+    #[derive(diesel::QueryableByName)]
+    struct PersistedSender {
+        #[diesel(sql_type = diesel::sql_types::Nullable<SqlUuid>)]
+        authorization_id: Option<Uuid>,
+        #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
+        mtls_x5t_s256: Option<String>,
+    }
+    let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
+    let persisted = sql_query(
+        "SELECT authorization_id, mtls_x5t_s256 FROM openid4vci_access_grants \
+         WHERE tenant_id=$1 AND subject_id=$2 AND token_id=$3 AND client_id=$4",
+    )
+    .bind::<SqlUuid, _>(fixture.issuer.tenant_id)
+    .bind::<SqlUuid, _>(fixture.subject_id)
+    .bind::<SqlUuid, _>(Uuid::parse_str(&claims.jti).unwrap())
+    .bind::<Text, _>(&fixture.wallet_client_id)
+    .get_result::<PersistedSender>(&mut connection)
+    .await
+    .expect("exact signed token must have persisted sender provenance");
+    assert_eq!(persisted.authorization_id, claims.authorization_id);
+    assert_eq!(persisted.mtls_x5t_s256.as_deref(), Some(fingerprint));
+    drop(connection);
+    let nonce = fixture.issuer.nonce(None).await.unwrap();
+    let request = jwt_credential_request("unit-live-preauth-mtls", &fixture.issuer.issuer, &nonce);
+    for other in [None, Some("another-certificate".to_owned())] {
+        let error = fixture
+            .issuer
+            .credential(
+                CredentialRequestContext {
+                    mtls_x5t_s256: other,
+                    ..context.clone()
+                },
+                CredentialRequestBody::Json(request.clone()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!((error.status, error.error), (401, "invalid_token"));
+    }
+    let response = fixture
+        .issuer
+        .credential(context, CredentialRequestBody::Json(request))
+        .await
+        .unwrap();
+    assert!(matches!(
+        response.body,
+        CredentialResponseBody::Json(CredentialResponse {
+            credentials: Some(_),
+            ..
+        })
+    ));
+    fixture.cleanup().await;
+}

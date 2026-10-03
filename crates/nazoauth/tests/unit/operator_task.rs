@@ -809,8 +809,14 @@ async fn typed_owner_failure_keeps_executing_then_resumes_without_duplicate_muta
     )
     .await
     .unwrap();
+    let resumed_result = nazo_operator_protocol::decode_control_result(
+        &resumed
+            .into_stdout()
+            .expect("resumed result must have valid public wire bytes"),
+    )
+    .unwrap();
     assert_eq!(
-        resumed.result.outcome,
+        resumed_result.outcome,
         nazo_operator_protocol::ControlOutcome::Succeeded
     );
     let recovered = control_journal::run_journaled_operation(
@@ -853,8 +859,12 @@ async fn permanent_owner_failure_is_terminal_and_never_rerun() {
     )
     .await
     .unwrap();
+    let failed_stdout = failed
+        .into_stdout()
+        .expect("terminal failure must encode its public result");
+    let failed_result = nazo_operator_protocol::decode_control_result(&failed_stdout).unwrap();
     assert_eq!(
-        failed.result.outcome,
+        failed_result.outcome,
         nazo_operator_protocol::ControlOutcome::Failed
     );
     let recovered = control_journal::run_journaled_operation(
@@ -869,7 +879,13 @@ async fn permanent_owner_failure_is_terminal_and_never_rerun() {
     .await
     .unwrap();
     assert!(recovered.recovered);
-    assert_eq!(recovered.result, failed.result);
+    let recovered_stdout = recovered
+        .into_stdout()
+        .expect("recovered result must encode its public result");
+    let recovered_result =
+        nazo_operator_protocol::decode_control_result(&recovered_stdout).unwrap();
+    assert_eq!(recovered_result, failed_result);
+    assert_eq!(recovered_stdout, failed_stdout);
     fs::remove_dir_all(directory).unwrap();
 }
 

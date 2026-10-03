@@ -289,8 +289,8 @@ pub(crate) async fn admin_approve_access_request(
             &prepared,
         )
         .await;
-    let client = match approval {
-        Ok(client) => client,
+    let approved = match approval {
+        Ok(approved) => approved,
         Err(error) => {
             if let Some(response) = access_request_approval_error_response(&error) {
                 if let Err(cleanup_error) =
@@ -310,6 +310,7 @@ pub(crate) async fn admin_approve_access_request(
             );
         }
     };
+    let client = &approved.client;
     match delivery_store
         .publish(request_user, &token, &staged, client.id)
         .await
@@ -347,21 +348,7 @@ pub(crate) async fn admin_approve_access_request(
     {
         return response;
     }
-    match repository
-        .by_id(admin.principal.tenant.tenant_id, request_id)
-        .await
-    {
-        Ok(Some(row)) => json_response(access_request_json(row)),
-        Ok(None) => json_response(json!({"id": request_id})),
-        Err(error) => {
-            tracing::warn!(%error, "failed to load approved access request");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "接入申请查询失败.",
-            )
-        }
-    }
+    json_response(access_request_json(approved.request))
 }
 
 async fn resume_staged_client_delivery(
@@ -464,8 +451,8 @@ pub(crate) async fn admin_reject_access_request(
         )
         .await
     {
-        Ok(()) => true,
-        Err(nazo_identity::ports::RepositoryError::Conflict) => false,
+        Ok(view) => Some(view),
+        Err(nazo_identity::ports::RepositoryError::Conflict) => None,
         Err(error) => {
             tracing::warn!(%error, "failed to reject access request");
             return oauth_error(
@@ -475,9 +462,9 @@ pub(crate) async fn admin_reject_access_request(
             );
         }
     };
-    if !updated {
+    let Some(updated) = updated else {
         return access_request_already_rejected_response();
-    }
+    };
     if let Err(response) = persist_required_audit_or_unavailable(
         "admin_access_request_rejected",
         audit_fields(&[
@@ -489,21 +476,7 @@ pub(crate) async fn admin_reject_access_request(
     {
         return response;
     }
-    match repository
-        .by_id(admin.principal.tenant.tenant_id, request_id)
-        .await
-    {
-        Ok(Some(row)) => json_response(access_request_json(row)),
-        Ok(None) => json_response(json!({"id": request_id})),
-        Err(error) => {
-            tracing::warn!(%error, "failed to load rejected access request");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "接入申请查询失败.",
-            )
-        }
-    }
+    json_response(access_request_json(updated))
 }
 
 fn access_request_json(row: nazo_identity::AccessRequest) -> Value {

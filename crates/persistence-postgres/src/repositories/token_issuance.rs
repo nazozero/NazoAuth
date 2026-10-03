@@ -418,6 +418,19 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
             "authorization code holder contract is malformed".to_owned(),
         ));
     }
+    let expected_authorization_id = input
+        .refresh_token
+        .as_ref()
+        .map(RefreshTokenCommit::family_id)
+        .unwrap_or(input.issuance_id);
+    if input
+        .authorization_id
+        .is_some_and(|id| id != expected_authorization_id)
+    {
+        return Err(RepositoryError::Consistency(
+            "authorization reference does not match issuance source".to_owned(),
+        ));
+    }
     if let Some(refresh) = input.refresh_token.as_ref() {
         let (tenant_id, client_id, user_id) = match refresh {
             RefreshTokenCommit::IssueNew { token, .. } => {
@@ -964,6 +977,25 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     input.client_id,
                     input.raw_token,
                     input.access_token.as_ref(),
+                )
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize> {
+        Box::pin(async move {
+            self.tokens
+                .revoke_for_client_with_audit(
+                    input.tenant_id,
+                    input.client_id,
+                    input.raw_token,
+                    input.access_token.as_ref(),
+                    Some((client_public_id, source_ip_hash)),
                 )
                 .await
                 .map_err(map_repository_error)

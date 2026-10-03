@@ -94,48 +94,47 @@ pub(super) fn resolve_configuration_id(
             "Exactly one credential identifier is required.",
         )
     })?;
-    if let Some(id) = &request.credential_configuration_id {
-        if !access.configuration_ids.iter().any(|allowed| allowed == id) {
+    let configuration_id = if let Some(id) = request.credential_configuration_id.as_ref() {
+        id.clone()
+    } else {
+        request
+            .credential_identifier
+            .as_ref()
+            .and_then(openid4vci_configuration_id_from_identifier)
+            .ok_or_else(|| {
+                vci_error(
+                    400,
+                    "unknown_credential_identifier",
+                    "Credential identifier is not authorized.",
+                )
+            })?
+    };
+    let selection = nazo_openid4vci::CredentialSelection {
+        configuration_id: configuration_id.clone(),
+        credential_identifier: request.credential_identifier.clone(),
+    };
+    if !access.authorizes_selection(&selection) {
+        if selection.credential_identifier.is_some() {
+            return Err(vci_error(
+                400,
+                "unknown_credential_identifier",
+                "Credential identifier is not authorized.",
+            ));
+        }
+        if !access.configuration_ids.contains(&configuration_id) {
             return Err(vci_error(
                 400,
                 "unknown_credential_configuration",
                 "Credential configuration is not authorized.",
             ));
         }
-        if !access.credential_identifiers.is_empty() {
-            return Err(vci_error(
-                400,
-                "invalid_credential_request",
-                "Credential identifier is required for this access token.",
-            ));
-        }
-        return Ok(id.clone());
-    }
-    let identifier = request.credential_identifier.as_ref().expect("validated");
-    let Some(configuration_id) = access
-        .credential_identifiers
-        .iter()
-        .find(|allowed| *allowed == identifier)
-        .and_then(openid4vci_configuration_id_from_identifier)
-    else {
         return Err(vci_error(
             400,
-            "unknown_credential_identifier",
-            "Credential identifier is not authorized.",
+            "invalid_credential_request",
+            "Credential identifier is required for this access token.",
         ));
-    };
-    access
-        .configuration_ids
-        .iter()
-        .any(|allowed| allowed == &configuration_id)
-        .then_some(configuration_id)
-        .ok_or_else(|| {
-            vci_error(
-                400,
-                "unknown_credential_identifier",
-                "Credential identifier does not match an authorized configuration.",
-            )
-        })
+    }
+    Ok(configuration_id)
 }
 
 pub(super) fn extract_proof_nonce(proofs: Option<&nazo_openid4vci::Proofs>) -> Option<String> {
@@ -207,6 +206,7 @@ pub(super) fn stored_response(
     };
     let status = status.http_status();
     Ok(StoredCredentialResponse {
+        selection: None,
         issuance_id,
         token_id,
         request_digest,
@@ -304,6 +304,11 @@ pub(super) fn map_presentation_error(
             503,
             "server_error",
             "Presentation completion state is unavailable.",
+        ),
+        nazo_openid4vp::PresentationServiceError::Verifier(_) => vp_error(
+            503,
+            "server_error",
+            "Presentation verification service is unavailable.",
         ),
         nazo_openid4vp::PresentationServiceError::Presentation(_) => {
             vp_error(400, "invalid_request", "Presentation verification failed.")

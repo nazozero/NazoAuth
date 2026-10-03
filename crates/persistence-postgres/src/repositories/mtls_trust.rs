@@ -107,6 +107,21 @@ fn map_request_row(row: RequestRow) -> Result<MtlsTrustAnchorRequest, Repository
     })
 }
 
+// The complete result stream and transaction commit have succeeded before
+// exposing this view; a RETURNING row alone is not a commit acknowledgement.
+fn committed_request_view(
+    mut rows: Vec<RequestRow>,
+) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
+    if rows.len() > 1 {
+        return Err(RepositoryError::Consistency(
+            "trust mutation returned multiple views".to_owned(),
+        ));
+    }
+    rows.pop()
+        .ok_or(RepositoryError::Conflict)
+        .and_then(map_request_row)
+}
+
 const REQUEST_PROJECTION: &str = "
     r.id, r.tenant_id, r.user_id, u.email AS requester_email,
     c.client_id, r.certificate_pem, r.certificate_sha256, r.subject_dn,
@@ -333,9 +348,9 @@ impl MtlsTrustAnchorRepository {
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
         let mut connection = self.connection().await?;
         let updated = connection
-            .transaction::<Option<Uuid>, diesel::result::Error, _>(async |connection| {
+            .transaction::<Vec<RequestRow>, diesel::result::Error, _>(async |connection| {
                 acquire_tenant_trust_lock(connection, tenant_id).await?;
-                sql_query(
+                sql_query(format!(
                     "WITH admin_actor AS (
                  SELECT id FROM users
                  WHERE tenant_id = $1 AND id = $3 AND is_active = TRUE
@@ -387,7 +402,7 @@ impl MtlsTrustAnchorRepository {
                              oauth_client_mtls_trust_anchor_requests.client_id
                    ) < $7
                ))
-             RETURNING id, tenant_id, resolved_by_user_id
+             RETURNING *
              ), recorded AS (
                  INSERT INTO oauth_client_mtls_trust_anchor_events (
                      tenant_id, request_id, actor_user_id, action, note
@@ -395,8 +410,12 @@ impl MtlsTrustAnchorRepository {
                  SELECT tenant_id, id, resolved_by_user_id, $4, $5 FROM updated
                  RETURNING request_id
              )
-             SELECT request_id AS id FROM recorded",
-                )
+             SELECT {REQUEST_PROJECTION}
+              FROM updated r
+              JOIN recorded event ON event.request_id = r.id
+              JOIN users u ON u.id = r.user_id AND u.tenant_id = r.tenant_id
+              JOIN oauth_clients c ON c.id = r.client_id AND c.tenant_id = r.tenant_id"
+                ))
                 .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
                 .bind::<sql_types::Uuid, _>(id)
                 .bind::<sql_types::Uuid, _>(actor.as_uuid())
@@ -404,20 +423,12 @@ impl MtlsTrustAnchorRepository {
                 .bind::<sql_types::Nullable<sql_types::Text>, _>(note)
                 .bind::<sql_types::BigInt, _>(MAX_ACTIVE_TRUST_ANCHORS_PER_TENANT)
                 .bind::<sql_types::BigInt, _>(MAX_ACTIVE_TRUST_ANCHORS_PER_CLIENT)
-                .get_result::<IdRow>(connection)
+                .load::<RequestRow>(connection)
                 .await
-                .optional()
-                .map(|row| row.map(|row| row.id))
             })
             .await
             .map_err(map_error)?;
-        if updated.is_none() {
-            return Err(RepositoryError::Conflict);
-        }
-        drop(connection);
-        self.by_id(tenant_id, id).await?.ok_or_else(|| {
-            RepositoryError::Consistency("resolved trust request is missing".to_owned())
-        })
+        committed_request_view(updated)
     }
 
     pub async fn revoke(
@@ -428,8 +439,10 @@ impl MtlsTrustAnchorRepository {
         note: String,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
         let mut connection = self.connection().await?;
-        let updated = sql_query(
-            "WITH admin_actor AS (
+        let updated = connection
+            .transaction::<Vec<RequestRow>, diesel::result::Error, _>(async |connection| {
+                sql_query(format!(
+                    "WITH admin_actor AS (
                  SELECT id FROM users
                  WHERE tenant_id = $1 AND id = $3 AND is_active = TRUE
                    AND role = 'admin' AND admin_level > 0
@@ -440,7 +453,7 @@ impl MtlsTrustAnchorRepository {
              WHERE tenant_id = $1 AND id = $2 AND status = 1
                AND source = 'admin-session'
                AND EXISTS (SELECT 1 FROM admin_actor)
-             RETURNING id, tenant_id, revoked_by_user_id
+             RETURNING *
              ), recorded AS (
                  INSERT INTO oauth_client_mtls_trust_anchor_events (
                      tenant_id, request_id, actor_user_id, action, note
@@ -448,24 +461,22 @@ impl MtlsTrustAnchorRepository {
                  SELECT tenant_id, id, revoked_by_user_id, 3, $4 FROM updated
                  RETURNING request_id
              )
-             SELECT request_id AS id FROM recorded",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
-        .bind::<sql_types::Uuid, _>(id)
-        .bind::<sql_types::Uuid, _>(actor.as_uuid())
-        .bind::<sql_types::Text, _>(note)
-        .get_result::<IdRow>(&mut connection)
-        .await
-        .optional()
-        .map(|row| row.map(|row| row.id))
-        .map_err(map_error)?;
-        if updated.is_none() {
-            return Err(RepositoryError::Conflict);
-        }
-        drop(connection);
-        self.by_id(tenant_id, id).await?.ok_or_else(|| {
-            RepositoryError::Consistency("revoked trust request is missing".to_owned())
-        })
+             SELECT {REQUEST_PROJECTION}
+              FROM updated r
+              JOIN recorded event ON event.request_id = r.id
+              JOIN users u ON u.id = r.user_id AND u.tenant_id = r.tenant_id
+              JOIN oauth_clients c ON c.id = r.client_id AND c.tenant_id = r.tenant_id"
+                ))
+                .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
+                .bind::<sql_types::Uuid, _>(id)
+                .bind::<sql_types::Uuid, _>(actor.as_uuid())
+                .bind::<sql_types::Text, _>(note)
+                .load::<RequestRow>(connection)
+                .await
+            })
+            .await
+            .map_err(map_error)?;
+        committed_request_view(updated)
     }
 
     pub async fn active_bundle(

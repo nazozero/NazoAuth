@@ -241,15 +241,9 @@ impl ServerAuthorizationDecisionOperations {
                 return Err(AuthorizationDecisionError::ApprovalUnavailable);
             }
         }
-        // These are now disposable preparation objects, not consumption fences.
-        // The durable fact survives cleanup failure, response loss, and audit ACK.
-        if let Err(error) = self
-            .service
-            .discard_decision_material(&command.request_id, &preview)
-            .await
-        {
-            tracing::warn!(%error, "failed to discard committed authorization preparation");
-        }
+        // The original consent/PAR TTL disposes preparation. The durable
+        // accepting decision owns reuse prevention; response completion does
+        // not wait for cache compare-delete or start detached cleanup work.
         let Some(code) = code else {
             return self
                 .response_location(&payload, None, Some("access_denied"), None)

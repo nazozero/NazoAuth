@@ -1333,6 +1333,128 @@ async fn passkey_and_federation_uniqueness_are_typed_conflicts() {
 }
 
 #[tokio::test]
+async fn federated_unique_conflict_recovery_returns_current_inactive_account() {
+    let Some((pool, tenant, fixture_user)) = database_fixture().await else {
+        return;
+    };
+    let repository = FederationRepository::new(pool.clone());
+    let suffix = Uuid::now_v7();
+    let email = format!("federation-conflict-{suffix}@example.test");
+    let identity = NewFederatedIdentity {
+        login: FederationLogin {
+            tenant,
+            provider_type: "oidc".to_owned(),
+            provider_id: "conflict-provider".to_owned(),
+            subject: suffix.to_string(),
+            email: Some(email.clone()),
+            claims: json!({"generation": 1}),
+        },
+        email,
+        display_name: None,
+        password_hash: nazo_identity::ports::PasswordHashInput::new("test-bootstrap-hash").unwrap(),
+    };
+    let created = repository.create_federated(identity.clone()).await.unwrap();
+    assert!(created.principal.active);
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET is_active = FALSE WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(created.user_id().as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    // The second insert hits real uniqueness and executes the adapter's
+    // conflict-recovery lookup. The current inactive fact reaches the domain
+    // active gate, rather than an assumed active newly-created account.
+    let recovered = repository.create_federated(identity).await.unwrap();
+    assert_eq!(recovered.user_id(), created.user_id());
+    assert!(!recovered.principal.active);
+    cleanup(&pool, created.user_id()).await;
+    cleanup(&pool, fixture_user).await;
+}
+
+#[tokio::test]
+async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() {
+    use nazo_identity::ports::{
+        FederationLinkRepositoryPort, FederationLinkSummary, PasskeyCredentialSummary,
+        PasskeyRepositoryPort,
+    };
+
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let passkeys = PasskeyRepository::new(pool.clone());
+    let credential = passkeys
+        .insert(
+            tenant.tenant_id,
+            user_id,
+            "display-credential".into(),
+            json!({"not_a_webauthn_credential": "display never decoded this payload"}),
+            "Laptop".into(),
+            7,
+        )
+        .await
+        .unwrap();
+    let links = FederationRepository::new(pool.clone());
+    let link = links
+        .insert(NewFederationLink {
+            tenant_id: tenant.tenant_id,
+            user_id,
+            provider_type: "oidc".into(),
+            provider_id: "display-provider".into(),
+            subject: "display-subject".into(),
+            email: "display@example.test".into(),
+            claims: json!({"raw_provider_payload": ["still stored", "never displayed"]}),
+        })
+        .await
+        .unwrap();
+    let passkey_port: &dyn PasskeyRepositoryPort = &passkeys;
+    let link_port: &dyn FederationLinkRepositoryPort = &links;
+    assert_eq!(
+        passkey_port
+            .list_summaries(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        vec![PasskeyCredentialSummary::from(credential.clone())],
+    );
+    assert_eq!(
+        link_port
+            .list_summaries(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        vec![FederationLinkSummary::from(link.clone())],
+    );
+    // Display reads do not mutate or replace the complete stored payload.
+    assert_eq!(
+        passkeys.list(tenant.tenant_id, user_id).await.unwrap(),
+        vec![credential]
+    );
+    assert_eq!(
+        links.list(tenant.tenant_id, user_id).await.unwrap(),
+        vec![link]
+    );
+    let foreign_tenant = TenantId::new(Uuid::now_v7()).unwrap();
+    let foreign_user = UserId::new(Uuid::now_v7()).unwrap();
+    for (tenant_id, scoped_user) in [(foreign_tenant, user_id), (tenant.tenant_id, foreign_user)] {
+        assert!(
+            passkey_port
+                .list_summaries(tenant_id, scoped_user)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            link_port
+                .list_summaries(tenant_id, scoped_user)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn passkey_counter_update_is_monotonic_compare_and_set() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;

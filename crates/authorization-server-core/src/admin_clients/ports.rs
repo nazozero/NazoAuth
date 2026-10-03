@@ -59,7 +59,14 @@ pub trait AdminClientRepositoryPort: Send + Sync {
     /// discarded confidential replay proofs cannot become public authority.
     /// Retain revoked rows and durable revocation evidence; failure rolls back
     /// both the class change and the invalidation.
-    fn update<'a>(&'a self, client: &'a OAuthClient) -> AdminClientFuture<'a, OAuthClient>;
+    /// Atomically compare all current semantic metadata with the snapshot used
+    /// to prepare this patch before applying it; return Conflict on mismatch.
+    /// This port carries no current admin principal or hierarchy proof.
+    fn update<'a>(
+        &'a self,
+        expected: &'a OAuthClient,
+        client: &'a OAuthClient,
+    ) -> AdminClientFuture<'a, OAuthClient>;
 }
 
 impl<T> AdminClientRepositoryPort for Arc<T>
@@ -93,8 +100,12 @@ where
             .insert(client, client_secret_hash, registration_access_token_blake3)
     }
 
-    fn update<'a>(&'a self, client: &'a OAuthClient) -> AdminClientFuture<'a, OAuthClient> {
-        self.as_ref().update(client)
+    fn update<'a>(
+        &'a self,
+        expected: &'a OAuthClient,
+        client: &'a OAuthClient,
+    ) -> AdminClientFuture<'a, OAuthClient> {
+        self.as_ref().update(expected, client)
     }
 }
 

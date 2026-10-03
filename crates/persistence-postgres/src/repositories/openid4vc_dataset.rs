@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_openid4vci::CredentialStoreError;
 use rand::Rng;
 use uuid::Uuid;
@@ -262,6 +262,15 @@ impl Openid4vciDatasetRepository {
         &self,
         write: ManagedCredentialDatasetWrite<'_>,
     ) -> Result<bool, CredentialStoreError> {
+        self.upsert_managed_dataset_committed(write)
+            .await
+            .map(|committed| committed.is_some())
+    }
+
+    async fn upsert_managed_dataset_committed(
+        &self,
+        write: ManagedCredentialDatasetWrite<'_>,
+    ) -> Result<Option<DateTime<Utc>>, CredentialStoreError> {
         let ManagedCredentialDatasetWrite {
             tenant_id,
             actor_user_id,
@@ -281,7 +290,14 @@ impl Openid4vciDatasetRepository {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
-        let affected = sql_query(
+        #[derive(QueryableByName)]
+        struct CommittedDatasetTime {
+            #[diesel(sql_type = sql_types::Timestamptz)]
+            updated_at: DateTime<Utc>,
+        }
+        let mut rows = connection
+            .transaction::<Vec<CommittedDatasetTime>, diesel::result::Error, _>(async move |connection| {
+                sql_query(
             "WITH authorized_actor AS (
                 SELECT id FROM users
                 WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE
@@ -297,12 +313,16 @@ impl Openid4vciDatasetRepository {
                     valid_from = EXCLUDED.valid_from, valid_until = EXCLUDED.valid_until,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE openid4vci_credential_datasets.source = 'admin-session'
-                RETURNING tenant_id, subject_id, credential_configuration_id
-             )
+                RETURNING tenant_id, subject_id, credential_configuration_id, updated_at
+             ), recorded AS (
              INSERT INTO openid4vci_credential_dataset_events
                 (tenant_id, subject_id, credential_configuration_id, action, actor_user_id, source)
              SELECT tenant_id, subject_id, credential_configuration_id, 1, $2, 'admin-session'
-             FROM upserted",
+             FROM upserted
+             RETURNING tenant_id, subject_id, credential_configuration_id
+             )
+             SELECT u.updated_at FROM upserted u
+             JOIN recorded e USING (tenant_id, subject_id, credential_configuration_id)",
         )
         .bind::<sql_types::Uuid, _>(tenant_id)
         .bind::<sql_types::Uuid, _>(actor_user_id)
@@ -311,10 +331,15 @@ impl Openid4vciDatasetRepository {
         .bind::<sql_types::Binary, _>(claims_ciphertext)
         .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(valid_from)
         .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(valid_until)
-        .execute(&mut connection)
+        .load::<CommittedDatasetTime>(connection)
         .await
-        .map_err(|_| CredentialStoreError::Unavailable)?;
-        Ok(affected == 1)
+            })
+            .await
+            .map_err(|_| CredentialStoreError::Unavailable)?;
+        if rows.len() > 1 {
+            return Err(CredentialStoreError::InvalidTransition);
+        }
+        Ok(rows.pop().map(|row| row.updated_at))
     }
 
     pub async fn delete_managed_dataset(
@@ -406,9 +431,12 @@ impl nazo_persistence::Openid4vciDatasetStore for Openid4vciDatasetRepository {
     fn upsert_managed_dataset(
         &self,
         write: nazo_persistence::ManagedCredentialDatasetWrite,
-    ) -> futures_util::future::BoxFuture<'_, Result<bool, CredentialStoreError>> {
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<Option<nazo_persistence::ManagedCredentialDataset>, CredentialStoreError>,
+    > {
         Box::pin(async move {
-            Openid4vciDatasetRepository::upsert_managed_dataset(
+            let committed = Openid4vciDatasetRepository::upsert_managed_dataset_committed(
                 self,
                 ManagedCredentialDatasetWrite {
                     tenant_id: write.tenant_id,
@@ -420,7 +448,15 @@ impl nazo_persistence::Openid4vciDatasetStore for Openid4vciDatasetRepository {
                     valid_until: write.valid_until,
                 },
             )
-            .await
+            .await?;
+            Ok(
+                committed.map(|updated_at| nazo_persistence::ManagedCredentialDataset {
+                    claims: write.claims,
+                    valid_from: write.valid_from,
+                    valid_until: write.valid_until,
+                    updated_at,
+                }),
+            )
         })
     }
 
