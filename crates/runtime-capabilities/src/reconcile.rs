@@ -62,6 +62,10 @@ pub enum ReconcileOutcome {
 #[derive(Debug)]
 pub enum RegistryError<E> {
     Repository(E),
+    Compensation {
+        operation: Box<RegistryError<E>>,
+        compensation: Box<RegistryError<E>>,
+    },
     MissingDesiredState(ModuleId),
     MissingCatalogSpec(ModuleId),
     RuntimeDisableBlocked(ModuleId),

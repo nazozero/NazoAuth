@@ -71,9 +71,7 @@ where
         current: &InstanceStateRecord,
         initialized: bool,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        if self.snapshot().admits(current.module_id) {
-            self.publish(current.module_id, false, false)?;
-        }
+        self.publish(current.module_id, false, false)?;
         let failure = if initialized {
             self.lifecycle
                 .stop(current.module_id)

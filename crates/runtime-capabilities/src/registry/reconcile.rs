@@ -120,22 +120,40 @@ where
         &self,
         module_id: ModuleId,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        let desired = self
-            .repository
-            .read_desired(module_id)
-            .await
-            .map_err(RegistryError::Repository)?
-            .ok_or(RegistryError::MissingDesiredState(module_id))?;
+        let desired = match self.repository.read_desired(module_id).await {
+            Ok(Some(desired)) => desired,
+            Ok(None) => {
+                self.publish(module_id, false, false)?;
+                return Err(RegistryError::MissingDesiredState(module_id));
+            }
+            Err(error) => {
+                self.publish(module_id, false, false)?;
+                return Err(RegistryError::Repository(error));
+            }
+        };
         let enabled = self
             .catalog
             .effective_enabled(module_id, desired.mode.is_enabled());
-        let current = self
+        let current = match self
             .repository
             .read_instance(&self.instance_id, module_id)
             .await
-            .map_err(RegistryError::Repository)?;
+        {
+            Ok(current) => current,
+            Err(error) => {
+                self.publish(module_id, false, false)?;
+                return Err(RegistryError::Repository(error));
+            }
+        };
         if enabled {
-            if let Some(dependency) = self.first_unavailable_dependency(module_id).await? {
+            let dependency = match self.first_unavailable_dependency(module_id).await {
+                Ok(dependency) => dependency,
+                Err(error) => {
+                    self.publish(module_id, false, false)?;
+                    return Err(error);
+                }
+            };
+            if let Some(dependency) = dependency {
                 if self.snapshot().admits(module_id) {
                     self.publish(module_id, false, false)?;
                 }
@@ -149,11 +167,20 @@ where
                     dependency,
                 });
             }
-        } else if let Some(dependent) = self.first_enabled_dependent(module_id).await? {
-            return Err(RegistryError::ActiveDependent {
-                module_id,
-                dependent,
-            });
+        } else {
+            let dependent = match self.first_enabled_dependent(module_id).await {
+                Ok(dependent) => dependent,
+                Err(error) => {
+                    self.publish(module_id, false, false)?;
+                    return Err(error);
+                }
+            };
+            if let Some(dependent) = dependent {
+                return Err(RegistryError::ActiveDependent {
+                    module_id,
+                    dependent,
+                });
+            }
         }
         let snapshot = self.snapshot();
         if snapshot.admits(module_id) == enabled
