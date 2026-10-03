@@ -294,6 +294,15 @@ impl AuthorizationStateStorePort for FakeStore {
         Box::pin(async move { error.map_or(Ok(true), Err) })
     }
 
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        _client_id: &'a str,
+        _jti: &'a str,
+        _window: crate::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        Box::pin(async { Ok(true) })
+    }
+
     fn consume_private_key_jwt<'a>(
         &'a self,
         _client_id: &'a str,

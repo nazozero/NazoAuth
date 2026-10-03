@@ -344,6 +344,18 @@ impl AuthorizationStateStorePort for Ports {
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::consume_jar call")
     }
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        _client_id: &'a str,
+        _jti: &'a str,
+        _window: nazo_auth::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        self.record("assertion_replay");
+        Box::pin(async {
+            *self.assertion_replay.lock().unwrap().as_ref().expect("replay must be configured")
+        })
+    }
+
     fn consume_private_key_jwt<'a>(
         &'a self,
         _client_id: &'a str,

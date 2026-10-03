@@ -159,25 +159,35 @@ pub fn legacy_authorization_code_redemption_key(
     format!("authorization_code:{}", blake3_hex(&proof.to_string()))
 }
 
-pub(super) fn holder_evidence(
-    client: &ClientRow,
-    form: &TokenForm,
-    dpop_jkt: Option<&str>,
-    mtls_x5t_s256: Option<&str>,
-    client_attestation_jkt: Option<&str>,
-) -> nazo_auth::AuthorizationCodeHolderEvidence {
-    nazo_auth::AuthorizationCodeHolderEvidence {
-        version: 1,
-        authenticated_client: client.client_type == "confidential"
-            && client.token_endpoint_auth_method != "none",
-        pkce_s256: form
-            .code_verifier
-            .as_deref()
-            .filter(|verifier| is_valid_pkce_value(verifier))
-            .map(pkce_s256),
-        dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
-        mtls_x5t_s256: mtls_x5t_s256.map(ToOwned::to_owned),
-        client_attestation_jkt: client_attestation_jkt.map(ToOwned::to_owned),
+/// Facts from this request's validated client, PKCE candidate, sender proof and
+/// certificate transport. Never deserialize a receipt into these fresh facts.
+struct FreshCodeHolderFacts {
+    client_authentication: nazo_auth::AuthorizationCodeClientAuthentication,
+    pkce_s256: Option<String>,
+    dpop_jkt: Option<String>,
+    certificate_thumbprint: Option<String>,
+    client_attestation_jkt: Option<String>,
+}
+
+impl FreshCodeHolderFacts {
+    fn requirements(&self, mtls_binding: Option<&str>) -> Option<nazo_auth::AuthorizationCodeHolderEvidence> {
+        nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
+            self.client_authentication, self.pkce_s256.clone(), self.dpop_jkt.clone(),
+            mtls_binding.map(ToOwned::to_owned), self.client_attestation_jkt.clone(),
+        )
+    }
+
+    /// Project only the receipt's original required mask, retaining the fresh
+    /// verified certificate even when current client policy no longer binds it.
+    fn matches(&self, expected: &nazo_auth::AuthorizationCodeHolderEvidence) -> bool {
+        let candidate = nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
+            self.client_authentication,
+            expected.pkce_s256().and(self.pkce_s256.clone()),
+            expected.dpop_jkt().and(self.dpop_jkt.clone()),
+            expected.mtls_x5t_s256().and(self.certificate_thumbprint.clone()),
+            expected.client_attestation_jkt().and(self.client_attestation_jkt.clone()),
+        );
+        candidate.as_ref().is_some_and(|candidate| holder_matches_original(expected, candidate))
     }
 }
 
@@ -185,21 +195,16 @@ pub(super) fn holder_matches_original(
     expected: &nazo_auth::AuthorizationCodeHolderEvidence,
     candidate: &nazo_auth::AuthorizationCodeHolderEvidence,
 ) -> bool {
-    fn matches(expected: &Option<String>, candidate: &Option<String>) -> bool {
-        expected.as_ref().is_none_or(|expected| {
-            candidate.as_ref().is_some_and(|candidate| {
-                constant_time_eq(expected.as_bytes(), candidate.as_bytes())
-            })
-        })
+    fn matches(expected: Option<&str>, candidate: Option<&str>) -> bool {
+        expected.is_none_or(|expected| candidate.is_some_and(|candidate| {
+            constant_time_eq(expected.as_bytes(), candidate.as_bytes())
+        }))
     }
-    expected.is_well_formed()
-        && candidate.is_well_formed()
-        && candidate.version == expected.version
-        && (!expected.authenticated_client || candidate.authenticated_client)
-        && matches(&expected.pkce_s256, &candidate.pkce_s256)
-        && matches(&expected.dpop_jkt, &candidate.dpop_jkt)
-        && matches(&expected.mtls_x5t_s256, &candidate.mtls_x5t_s256)
-        && matches(&expected.client_attestation_jkt, &candidate.client_attestation_jkt)
+    (!expected.authenticated_client() || candidate.authenticated_client())
+        && matches(expected.pkce_s256(), candidate.pkce_s256())
+        && matches(expected.dpop_jkt(), candidate.dpop_jkt())
+        && matches(expected.mtls_x5t_s256(), candidate.mtls_x5t_s256())
+        && matches(expected.client_attestation_jkt(), candidate.client_attestation_jkt())
 }
 
 /// A durable code receipt is the consumption authority. A fresh request may
@@ -209,7 +214,8 @@ async fn committed_single_use_redemption(
     client: &ClientRow,
     code_identity: &str,
     legacy_key: &str,
-    candidate: &nazo_auth::AuthorizationCodeHolderEvidence,
+    candidate: &FreshCodeHolderFacts,
+    selected_mtls: Option<&str>,
 ) -> Result<Option<SingleUseRedemption>, OAuthEndpointError> {
     let unavailable = |error| {
         tracing::warn!(%error, "failed to read single-use grant redemption");
@@ -228,12 +234,12 @@ async fn committed_single_use_redemption(
         return Ok(receipt
             .authorization_code_holder
             .as_ref()
-            .is_some_and(|expected| holder_matches_original(expected, candidate))
+            .is_some_and(|expected| candidate.matches(expected))
             .then_some(receipt));
     }
     // No public-client empty proof can qualify for legacy revocation. The
     // compatibility key still demands the original exact request proof set.
-    if !candidate.is_well_formed() {
+    if candidate.requirements(selected_mtls).is_none() {
         return Ok(None);
     }
     Ok(token_service
@@ -423,6 +429,10 @@ pub async fn token_authorization_code_with_service(
     {
         return Err(authorization_code_client_mismatch_response());
     }
+    // Expired cache contents are evidence hints, not issuance eligibility.
+    // Their original receipt must still be considered after fresh holder auth.
+    let expired_pending = expected_payload.as_ref().is_some_and(|payload| payload.expires_at <= Utc::now());
+    let expected_payload = expected_payload.filter(|_| !expired_pending);
     // Pure parameter validation runs before any sender proof, client
     // assertion, or state transition so that an erroneous redemption never
     // consumes a Pending authorization code.
@@ -465,13 +475,19 @@ pub async fn token_authorization_code_with_service(
     let dpop_jkt = sender.dpop_jkt;
     let mtls_x5t_s256 = sender.mtls_x5t_s256;
     let code_identity = authorization_code_identity(&code_hash);
-    let holder = holder_evidence(
-        client,
-        form,
-        dpop_jkt.as_deref(),
-        mtls_x5t_s256.as_deref(),
-        client_attestation_jkt,
-    );
+    let holder = FreshCodeHolderFacts {
+        client_authentication: if client.client_type == "confidential" && client.token_endpoint_auth_method != "none" {
+            nazo_auth::AuthorizationCodeClientAuthentication::Authenticated
+        } else { nazo_auth::AuthorizationCodeClientAuthentication::Public },
+        pkce_s256: form.code_verifier.as_deref().filter(|verifier| is_valid_pkce_value(verifier)).map(pkce_s256),
+        dpop_jkt: dpop_jkt.clone(),
+        certificate_thumbprint: facts.certificate.as_ref().and_then(|certificate| certificate.thumbprint.clone()),
+        client_attestation_jkt: client_attestation_jkt.map(ToOwned::to_owned),
+    };
+    let issuance_holder = holder.requirements(mtls_x5t_s256.as_deref());
+    if expected_payload.is_some() && issuance_holder.is_none() {
+        return Err(authorization_code_client_mismatch_response());
+    }
     let legacy_key = legacy_authorization_code_redemption_key(
         &code_hash,
         form,
@@ -489,12 +505,17 @@ pub async fn token_authorization_code_with_service(
     {
         return Err(crate::token::token_client_assertion_error(error));
     }
-    // A code that expired while the sender proof was being validated must
-    // not be consumed at all: no begin, no Failed transition.
-    if expected_payload
+    // An expired Pending is never consumed or issued anew. It may still be a
+    // replay of a committed code whose token/family are live.
+    if expired_pending || expected_payload
         .as_ref()
         .is_some_and(|payload| payload.expires_at <= Utc::now())
     {
+        if let Some(redemption) = committed_single_use_redemption(
+            token_service, client, &code_identity, &legacy_key, &holder, mtls_x5t_s256.as_deref(),
+        ).await? {
+            revoke_replayed_redemption(token_service, client, &redemption).await?;
+        }
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
@@ -514,6 +535,7 @@ pub async fn token_authorization_code_with_service(
                     &code_identity,
                     &legacy_key,
                     &holder,
+                    mtls_x5t_s256.as_deref(),
                 )
                 .await?
                 {
@@ -536,6 +558,7 @@ pub async fn token_authorization_code_with_service(
                     &code_identity,
                     &legacy_key,
                     &holder,
+                    mtls_x5t_s256.as_deref(),
                 )
                 .await?
                 {
@@ -563,6 +586,7 @@ pub async fn token_authorization_code_with_service(
                     &code_identity,
                     &legacy_key,
                     &holder,
+                    mtls_x5t_s256.as_deref(),
                 )
                 .await?
                 {
@@ -585,6 +609,7 @@ pub async fn token_authorization_code_with_service(
                     &code_identity,
                     &legacy_key,
                     &holder,
+                    mtls_x5t_s256.as_deref(),
                 )
                 .await?
                 {
@@ -615,6 +640,11 @@ pub async fn token_authorization_code_with_service(
         };
     let payload = *payload;
     if payload.expires_at <= Utc::now() {
+        if let Some(redemption) = committed_single_use_redemption(
+            token_service, client, &code_identity, &legacy_key, &holder, mtls_x5t_s256.as_deref(),
+        ).await? {
+            revoke_replayed_redemption(token_service, client, &redemption).await?;
+        }
         mark_failed_authorization_code(
             token_service,
             issuance.config.auth_code_ttl_seconds(),
@@ -671,6 +701,9 @@ pub async fn token_authorization_code_with_service(
                 false,
             ));
         }
+    };
+    let Some(holder) = issuance_holder else {
+        return Err(authorization_code_client_mismatch_response());
     };
     issue_token_response(
         issuance,

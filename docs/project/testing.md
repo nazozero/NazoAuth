@@ -151,7 +151,8 @@ Targeted suites with their own entry points:
   repository suites cover runtime behavior against the complete migration chain.
 - `crates/nazoauth/tests/unit/http/token/authorization_code/identity.rs` covers
   real issuance with a hidden commit ACK, stable identity after cache restoration,
-  fresh signed DPoP holder checks with missing payload, and historical payload or
+  fresh signed DPoP holder checks with missing or expired Pending payload, mTLS
+  receipt matching after current binding is disabled, and historical payload or
   cache-only marker denial. It needs both isolated PostgreSQL and Valkey. A port
   wrapper injects the lost ACK after a real commit; driver packet loss is outside
   this fixture's evidence boundary.
@@ -161,6 +162,21 @@ Targeted suites with their own entry points:
   `GrantExpired` rollback (including connection return to the pool), rotation
   conflicts, and the final schema shape. It needs an isolated PostgreSQL from
   `NAZO_TEST_DATABASE_URL`/`DATABASE_URL`.
+- `crates/persistence-postgres/tests/support/mfa_generation.rs`, mounted by
+  `identity_repositories`, uses real MFA confirmation, encryption and factor
+  consumption against isolated PostgreSQL. TOTP and backup-code cases cover an
+  admitted G1 proof delayed until formal G2 installation, reverse lock ordering,
+  rollback after dependent deletes, and a real committed clear with a hidden ACK
+  followed by a stale G1 retry. Full credential/flag/backup/remembered-device
+  snapshots establish preservation; a forwarding fault injector hides only the
+  clear ACK. It does not prove driver packet loss or Required audit crash closure.
+- `crates/state-store-valkey/tests/replay_contract.rs` covers real client-
+  attestation owner-clock expiry, shared token/PAR consumption and concurrent NX.
+  `crates/nazoauth/tests/unit/http/token/dispatch/attestation.rs` combines signed
+  input with real Valkey expiry and covers post-NX Unknown in both endpoints,
+  including the retained physical marker and cross-endpoint rejection. These
+  host cases need both isolated PostgreSQL and Valkey; semantic ACK injection
+  does not substitute for physical failover evidence.
 - `crates/persistence-postgres/tests/security_state_maintenance.rs` covers
   the bounded maintenance pass against the same isolated database.
 - `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real

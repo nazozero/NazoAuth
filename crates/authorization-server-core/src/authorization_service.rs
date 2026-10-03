@@ -420,6 +420,16 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool>;
+    /// Validate the verified PoP's absolute window using the replay owner's
+    /// clock and consume its client-scoped JTI in the same atomic operation.
+    /// Both token and PAR use this namespace. False means expired, too early,
+    /// or already consumed; an error never grants authentication.
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        window: crate::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool>;
     fn consume_private_key_jwt<'a>(
         &'a self,
         client_id: &'a str,
@@ -565,6 +575,16 @@ where
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool> {
         self.as_ref().consume_jar(client_id, jti, ttl_seconds)
+    }
+
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        window: crate::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        self.as_ref()
+            .consume_client_attestation_proof(client_id, jti, window)
     }
 
     fn consume_private_key_jwt<'a>(
@@ -1022,6 +1042,17 @@ where
             Err(error) => Err(PushedAuthorizationRequestConsumeError::Dependency(error)),
         }
     }
+    pub async fn consume_client_attestation_proof(
+        &self,
+        client_id: &str,
+        jti: &str,
+        window: crate::ClientAttestationProofWindow,
+    ) -> Result<bool, AuthorizationPortError> {
+        self.state
+            .consume_client_attestation_proof(client_id, jti, window)
+            .await
+    }
+
     pub async fn consume_private_key_jwt(
         &self,
         client_id: &str,

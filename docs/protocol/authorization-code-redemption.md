@@ -7,7 +7,12 @@ tenant and client, atomically commits the refresh family and Required issuance
 audit, and acknowledges success only after commit. An unknown commit result
 returns a dependency error without tokens. A retry never chooses another identity.
 
-Original possession requirements are a separate versioned receipt: authenticated
+Original possession requirements are immutable checked values behind private
+fields, constructed after validation or restored through a strict persisted
+requirements reader. They are distinct from the application's private fresh
+request facts; a receipt cannot deserialize into fresh authentication evidence.
+The constructor closes the structural contract and does not itself authenticate
+an HTTP request. Original possession requirements are a separate versioned receipt: authenticated
 client status, S256 verifier commitment, and any actually verified DPoP, mTLS or
 client-attestation binding. These requirements come from the validated first
 issuance. After cache expiry, replay still performs fresh client and presented
@@ -19,7 +24,14 @@ An extra valid optional proof does not erase the original requirements.
 
 Pending parameter errors do not consume the code. The existing state-store begin
 lease is retained for this repair, including Native SSO's preparation behavior.
-Busy, Failed, Missing and cached Consumed states all consult the durable receipt;
+Busy, Failed, Missing and cached Consumed states all consult the durable receipt.
+An expired cached Pending is also replay evidence, not new issuance eligibility:
+it consults the receipt after fresh holder validation without beginning another
+redemption. Wrong/missing proofs never revoke, and expiry is never bypassed to
+issue again. The receipt's original mask also selects the already verified
+certificate facts even if current client policy has disabled mTLS binding;
+current flags do not erase original possession requirements. Thus
+
 cache markers alone cannot authorize revocation or a second issuance. An unknown
 receipt read fails closed and does not fall back to historical lookup.
 

@@ -285,6 +285,15 @@ impl AuthorizationStateStorePort for HolderFixture {
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::consume_jar call")
     }
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        _client_id: &'a str,
+        _jti: &'a str,
+        _window: nazo_auth::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        panic!("unexpected AuthorizationStateStorePort::consume_client_attestation_proof call")
+    }
+
     fn consume_private_key_jwt<'a>(
         &'a self,
         client_id: &'a str,

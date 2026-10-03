@@ -179,7 +179,21 @@ controls:
 - selected persistence policy: AOF or managed persistence for faster recovery, or documented acceptance of losing transient security state
 - failover tests that include in-flight sessions, PAR handles, authorization codes, and replay caches
 
-Valkey is not the durable source of truth. Losing it invalidates or interrupts transient flows rather than weakening replay prevention.
+Valkey is not the durable source of truth for durable grants. Losing a
+transient payload interrupts its flow, but losing an acknowledged replay marker
+can permit an externally signed proof to be presented again. Keep ingress closed
+across uncertain marker loss until the relevant proof acceptance windows are
+drained or their trust/credentials are invalidated. A namespace change alone
+does not invalidate those proofs.
+
+Client-attestation token/PAR consumption checks the signed absolute interval
+against Valkey `TIME` and writes NX/EXAT in the same atomic script. Preserve
+unexpired markers, ensure owner-clock continuity, and quiesce old TTL-based
+consumers during upgrade. An unknown ACK fails closed, while an ACK lost after
+NX may leave a committed marker. See the
+[client-attestation replay cutover](../protocol/client-attestation-replay.md#clock-failover-and-upgrade-requirements)
+for the required clock bound and ingress boundary; there is no unconditional
+fixed-duration wait when that bound cannot be established.
 
 ## Valkey Timeouts
 
@@ -203,6 +217,7 @@ When Valkey is unavailable or times out:
 | PAR | pushed request storage and lookup fail closed; authorization requests must not fall back to unsigned or unpushed parameters in FAPI/PAR-required profiles |
 | DPoP replay cache | proof replay checks fail closed; a token must not be issued or accepted without replay state when the profile requires it |
 | `private_key_jwt` replay cache | assertion `jti` storage failures reject the assertion |
+| Client-attestation PoP | unavailable/unknown atomic window consumption returns `503` before token/PAR publication; an existing marker or expired owner window rejects authentication |
 | Rate limiting | rate-limit storage errors fail closed for protected auth/token-management paths instead of disabling limits |
 | Consent preparation | missing/unavailable preparation fails closed before decision commit. After durable commit, preparation-disposal failure cannot release its consumption fence or undo the grant. Code-store failure still prevents a successful response |
 

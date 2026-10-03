@@ -1,67 +1,65 @@
 use super::*;
+use nazo_auth::{AuthorizationCodeClientAuthentication as Auth, AuthorizationCodeHolderEvidence as Evidence};
 
-fn original_holder() -> nazo_auth::AuthorizationCodeHolderEvidence {
-    nazo_auth::AuthorizationCodeHolderEvidence {
-        version: 1,
-        authenticated_client: false,
-        pkce_s256: Some(pkce_s256(&"a".repeat(43))),
-        dpop_jkt: Some("validated-dpop-key".to_owned()),
-        mtls_x5t_s256: None,
-        client_attestation_jkt: Some("validated-instance-key".to_owned()),
-    }
+fn original_holder() -> Evidence {
+    Evidence::from_verified_requirements(Auth::Public, Some(pkce_s256(&"a".repeat(43))),
+        Some("validated-dpop-key".to_owned()), None, Some("validated-instance-key".to_owned())).unwrap()
+}
+
+fn changed(expected: &Evidence, key: &str, value: serde_json::Value) -> Option<Evidence> {
+    let mut stored = serde_json::to_value(expected).unwrap();
+    stored[key] = value;
+    Evidence::from_persisted(stored)
 }
 
 #[test]
 fn code_holder_evidence_requires_every_original_proof_and_version() {
     let expected = original_holder();
     assert!(holder_matches_original(&expected, &expected));
-    let mut missing = expected.clone();
-    missing.pkce_s256 = None;
-    assert!(!holder_matches_original(&expected, &missing));
-    let mut wrong = expected.clone();
-    wrong.pkce_s256 = Some(pkce_s256(&"b".repeat(43)));
-    assert!(!holder_matches_original(&expected, &wrong));
-    let mut wrong = expected.clone();
-    wrong.dpop_jkt = Some("other-validated-key".to_owned());
-    assert!(!holder_matches_original(&expected, &wrong));
-    let mut wrong = expected.clone();
-    wrong.client_attestation_jkt = Some("other-validated-instance".to_owned());
-    assert!(!holder_matches_original(&expected, &wrong));
-    let mut wrong = expected.clone();
-    wrong.version = 0;
-    assert!(!holder_matches_original(&expected, &wrong));
-    assert!(!holder_matches_original(&wrong, &expected));
+    for (key, value) in [
+        ("pkce_s256", serde_json::Value::Null),
+        ("pkce_s256", json!(pkce_s256(&"b".repeat(43)))),
+        ("dpop_jkt", json!("other-validated-key")),
+        ("client_attestation_jkt", json!("other-validated-instance")),
+    ] {
+        assert!(!holder_matches_original(&expected, &changed(&expected,key,value).unwrap()));
+    }
+    assert!(changed(&expected,"version",json!(0)).is_none());
+    assert!(changed(&expected,"unknown_field",json!(true)).is_none());
+    assert!(changed(&expected,"mtls_x5t_s256",json!("extra-mtls")).is_none());
 }
 
 #[test]
 fn code_holder_evidence_ignores_only_additional_valid_proofs() {
-    let mut expected = original_holder();
-    expected.dpop_jkt = None;
-    expected.client_attestation_jkt = None;
+    let expected = Evidence::from_verified_requirements(Auth::Public,
+        original_holder().pkce_s256().map(ToOwned::to_owned), None, None, None).unwrap();
     assert!(holder_matches_original(&expected, &original_holder()));
-    expected.authenticated_client = true;
+    let expected = changed(&expected,"authenticated_client",json!(true)).unwrap();
     assert!(!holder_matches_original(&expected, &original_holder()));
-    let mut authenticated = original_holder();
-    authenticated.authenticated_client = true;
+    let authenticated = changed(&original_holder(),"authenticated_client",json!(true)).unwrap();
     assert!(holder_matches_original(&expected, &authenticated));
 }
 
 #[test]
 fn empty_public_code_holder_is_never_a_possession_wildcard() {
-    let mut empty = nazo_auth::AuthorizationCodeHolderEvidence {
-        version: 1,
-        authenticated_client: false,
-        pkce_s256: None,
-        dpop_jkt: None,
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
+    assert!(Evidence::from_verified_requirements(Auth::Public,None,None,None,None).is_none());
+    assert!(Evidence::from_verified_requirements(Auth::Public,Some(String::new()),None,None,None).is_none());
+    let authenticated = Evidence::from_verified_requirements(Auth::Authenticated,None,None,None,None).unwrap();
+    assert!(holder_matches_original(&authenticated,&authenticated));
+}
+
+#[test]
+fn fresh_verified_certificate_is_projected_by_original_receipt_requirements() {
+    let expected = Evidence::from_verified_requirements(Auth::Public,
+        Some(pkce_s256(&"a".repeat(43))), None, Some("original-certificate".to_owned()), None).unwrap();
+    let mut fresh = FreshCodeHolderFacts {
+        client_authentication: Auth::Public, pkce_s256: expected.pkce_s256().map(ToOwned::to_owned),
+        dpop_jkt: Some("extra-validated-dpop".to_owned()),
+        certificate_thumbprint: Some("original-certificate".to_owned()), client_attestation_jkt: None,
     };
-    assert!(!empty.is_well_formed());
-    assert!(!holder_matches_original(&empty, &empty));
-    assert!(!holder_matches_original(&original_holder(), &empty));
-    empty.authenticated_client = true;
-    assert!(holder_matches_original(&empty, &empty));
-    empty.authenticated_client = false;
-    empty.pkce_s256 = Some(String::new());
-    assert!(!empty.is_well_formed());
+    assert!(fresh.matches(&expected));
+    fresh.certificate_thumbprint = Some("wrong-certificate".to_owned());
+    assert!(!fresh.matches(&expected));
+    fresh.certificate_thumbprint = None;
+    assert!(!fresh.matches(&expected));
 }

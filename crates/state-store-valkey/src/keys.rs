@@ -20,6 +20,11 @@ pub(crate) fn dpop_nonce(nonce: &str) -> String {
     format!("oauth:dpop:nonce:{}", blake3_hex(nonce))
 }
 
+pub(crate) fn client_attestation_replay(client_id: &str, jti: &str) -> String {
+    // Preserve the existing shared token/PAR namespace through this repair.
+    private_key_jwt_replay(&format!("client-attestation:{client_id}"), jti)
+}
+
 pub(crate) fn private_key_jwt_replay(client_id: &str, jti: &str) -> String {
     format!(
         "oauth:client_assertion:jti:{}:{}",
