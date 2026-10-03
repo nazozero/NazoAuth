@@ -330,6 +330,17 @@ fn map_management_error(
             tracing::warn!(%error, "runtime module administration repository failed");
             RuntimeModuleAdminError::Unavailable
         }
+        RuntimeModuleManagementError::Registry(RegistryError::Compensation {
+            operation,
+            compensation,
+        }) => {
+            tracing::warn!(
+                ?operation,
+                ?compensation,
+                "runtime module operation and admission compensation failed"
+            );
+            RuntimeModuleAdminError::Unavailable
+        }
         RuntimeModuleManagementError::Registry(RegistryError::ServiceNotConstructed(_)) => {
             RuntimeModuleAdminError::ServiceNotConstructed
         }

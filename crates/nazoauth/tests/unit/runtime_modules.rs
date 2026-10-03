@@ -298,3 +298,17 @@ mod scheduler {
         assert_eq!(counts.writes.load(Ordering::SeqCst), 0);
     }
 }
+
+#[test]
+fn failed_operation_and_compensation_map_to_unavailable() {
+    let error = RuntimeModuleManagementError::Registry(RegistryError::Compensation {
+        operation: Box::new(RegistryError::Repository(
+            nazo_identity::ports::RepositoryError::Unavailable,
+        )),
+        compensation: Box::new(RegistryError::MissingDesiredState(ModuleId::Ciba)),
+    });
+    assert!(matches!(
+        map_management_error(error),
+        RuntimeModuleAdminError::Unavailable
+    ));
+}
