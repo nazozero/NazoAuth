@@ -89,6 +89,7 @@ impl ServerCredentialIssuerOperations {
                 )
                 .await
                 .map_err(map_issuance_error)?;
+            let status = CredentialResponseStatus::for_response(&pending.response);
             let body = match finish_response(
                 pending.response.clone(),
                 request.credential_response_encryption.as_ref(),
@@ -104,6 +105,7 @@ impl ServerCredentialIssuerOperations {
                 access.token_id,
                 request_digest,
                 &body,
+                status,
                 dpop_nonce.clone(),
                 access.expires_at,
             )?;
@@ -115,7 +117,7 @@ impl ServerCredentialIssuerOperations {
                 let _ = self.service.rollback_pending(&pending, Utc::now()).await;
                 return Err(map_issuance_error(error));
             }
-            Ok(CredentialEndpointResponse { body, dpop_nonce })
+            Ok(CredentialEndpointResponse { body, status, dpop_nonce })
         })
     }
 
@@ -257,6 +259,7 @@ impl ServerCredentialIssuerOperations {
                     access.token_id,
                     request_digest.clone(),
                     &body,
+                    CredentialResponseStatus::Issued,
                     dpop_nonce.clone(),
                     access.expires_at.min(payload.expires_at),
                 )?;
@@ -285,7 +288,11 @@ impl ServerCredentialIssuerOperations {
                         "Deferred credential state transition was lost.",
                     ));
                 }
-                Ok(CredentialEndpointResponse { body, dpop_nonce })
+                Ok(CredentialEndpointResponse {
+                    body,
+                    status: CredentialResponseStatus::Issued,
+                    dpop_nonce,
+                })
             }
             .await;
             if result.is_err() {
@@ -336,6 +343,7 @@ impl ServerCredentialIssuerOperations {
             }
             Ok(CredentialEndpointResponse {
                 body: (),
+                status: CredentialResponseStatus::Issued,
                 dpop_nonce,
             })
         })

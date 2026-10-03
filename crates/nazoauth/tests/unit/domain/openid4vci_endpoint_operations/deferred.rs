@@ -55,22 +55,28 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         .nonce(None)
         .await
         .expect("live deferred credential nonce should be issued");
-    let request = jwt_credential_request("unit-live-deferred", &fixture.issuer.issuer, &nonce);
+    let wallet = nazo_digital_credentials::EphemeralEncryptionKey::derive(&[0x67;32], b"live-wallet-response").unwrap();
+    let mut jwk = wallet.public_jwk();
+    jwk["alg"] = json!("ECDH-ES");
+    let mut request = jwt_credential_request("unit-live-deferred", &fixture.issuer.issuer, &nonce);
+    request.credential_response_encryption = Some(nazo_openid4vci::CredentialResponseEncryption {
+        jwk, enc:"A256GCM".to_owned(), zip:Some("DEF".to_owned()),
+    });
     let mut context = request_context();
     context.bearer_token = access.access_token;
     let pending = fixture
         .issuer
-        .credential(context.clone(), CredentialRequestBody::Json(request))
+        .credential(context.clone(), CredentialRequestBody::Json(request.clone()))
         .await
         .expect("live deferred credential should return a transaction");
-    let transaction_id = match pending.body {
-        CredentialResponseBody::Json(CredentialResponse {
-            transaction_id: Some(transaction_id),
-            credentials: None,
-            ..
-        }) => transaction_id,
-        _ => panic!("live deferred response should contain a transaction id"),
-    };
+    assert_eq!(pending.status, nazo_openid4vci::application::CredentialResponseStatus::Deferred);
+    let replay = fixture.issuer.credential(context.clone(), CredentialRequestBody::Json(request))
+        .await.expect("initial encrypted response is replayed from durable storage");
+    assert_eq!(replay, pending);
+    let CredentialResponseBody::Jwt(encoded) = pending.body else { panic!("expected encrypted deferred response"); };
+    let decoded: CredentialResponse = serde_json::from_slice(&wallet.decrypt(&encoded).unwrap()).unwrap();
+    assert!(decoded.credentials.is_none());
+    let transaction_id = decoded.transaction_id.expect("encrypted response retains transaction id");
 
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let deferred_request = DeferredCredentialRequest {
@@ -89,6 +95,7 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         )
         .await
         .expect("live deferred credential should be released");
+    assert_eq!(response.status, nazo_openid4vci::application::CredentialResponseStatus::Issued);
     let notification_id = match &response.body {
         CredentialResponseBody::Json(body) => body
             .notification_id

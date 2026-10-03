@@ -19,7 +19,7 @@ use nazo_openid4vci::application::{
     AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
     CredentialEndpointResponse, CredentialHttpError, CredentialIssuerFuture,
     CredentialIssuerOperations, CredentialRequestBody, CredentialRequestContext,
-    CredentialResponseBody, PreAuthorizedTokenRequest, PreAuthorizedTokenResponse,
+    CredentialResponseBody, CredentialResponseStatus, PreAuthorizedTokenRequest, PreAuthorizedTokenResponse,
 };
 use nazo_openid4vci::{
     AuthorizationCodeGrant, BatchCredentialIssuance, CredentialAccess, CredentialConfiguration,

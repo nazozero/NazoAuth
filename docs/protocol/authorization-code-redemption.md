@@ -79,3 +79,14 @@ The migration test applies actual up/down SQL to a transaction-owned table copie
 from the complete migrated schema. It tests the old insert shape and rollback
 guard, not execution of an old binary. Both require isolated CNB fixtures and an
 exact source SHA before any acceptance claim.
+
+## Historical mTLS policy boundary
+
+Version-zero receipts are found through their original exact-request digest.
+That digest uses the sender binding selected by current client policy. Keep
+`require_mtls_bound_tokens` enabled for a client while its historical mTLS
+receipts remain eligible for replay-directed revocation. Disabling that flag
+can prevent the legacy lookup from locating an otherwise valid original mTLS
+holder's target; it does not reopen issuance or authorize another holder.
+The raw verified certificate projection described above applies to version-two
+receipts and does not remove this historical lookup limitation.

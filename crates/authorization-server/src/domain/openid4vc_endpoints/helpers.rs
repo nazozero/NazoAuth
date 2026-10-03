@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nazo_openid4vci::application::{
-    CredentialEndpointResponse, CredentialHttpError, CredentialResponseBody,
+    CredentialEndpointResponse, CredentialHttpError, CredentialResponseBody, CredentialResponseStatus,
 };
 use nazo_openid4vci::{
     CredentialAccess, CredentialConfiguration, CredentialError, CredentialRequest,
-    CredentialResponse, CredentialResponseEncoding, StoredCredentialResponse,
+    CredentialResponseEncoding, StoredCredentialResponse,
 };
 use nazo_openid4vp::application::PresentationHttpError;
 use serde_json::Value;
@@ -116,13 +116,6 @@ pub(super) fn resolve_configuration_id(
         .iter()
         .find(|allowed| *allowed == identifier)
         .and_then(openid4vci_configuration_id_from_identifier)
-        .or_else(|| {
-            access
-                .configuration_ids
-                .iter()
-                .any(|allowed| allowed == &identifier.0)
-                .then(|| identifier.0.clone())
-        })
     else {
         return Err(vci_error(
             400,
@@ -196,6 +189,7 @@ pub(super) fn stored_response(
     token_id: Uuid,
     request_digest: String,
     body: &CredentialResponseBody,
+    status: CredentialResponseStatus,
     dpop_nonce: Option<String>,
     expires_at: chrono::DateTime<chrono::Utc>,
 ) -> Result<StoredCredentialResponse, CredentialHttpError> {
@@ -210,10 +204,7 @@ pub(super) fn stored_response(
             (CredentialResponseEncoding::Jwt, value.as_bytes().to_vec())
         }
     };
-    let status = match body_encoding_is_deferred(&encoding, &body) {
-        true => 202,
-        false => 200,
-    };
+    let status = status.http_status();
     Ok(StoredCredentialResponse {
         issuance_id,
         token_id,
@@ -226,19 +217,14 @@ pub(super) fn stored_response(
     })
 }
 
-pub(super) fn body_encoding_is_deferred(
-    encoding: &CredentialResponseEncoding,
-    body: &[u8],
-) -> bool {
-    matches!(encoding, CredentialResponseEncoding::Json)
-        && serde_json::from_slice::<CredentialResponse>(body)
-            .ok()
-            .is_some_and(|response| response.transaction_id.is_some())
-}
-
 pub(super) fn response_from_record(
     response: StoredCredentialResponse,
 ) -> Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError> {
+    let status = match response.status {
+        200 => CredentialResponseStatus::Issued,
+        202 => CredentialResponseStatus::Deferred,
+        _ => return Err(vci_error(503, "server_error", "Stored credential response status is invalid.")),
+    };
     let body = match response.encoding {
         CredentialResponseEncoding::Json => serde_json::from_slice(&response.body)
             .map(CredentialResponseBody::Json)
@@ -261,6 +247,7 @@ pub(super) fn response_from_record(
     };
     Ok(CredentialEndpointResponse {
         body,
+        status,
         dpop_nonce: response.dpop_nonce,
     })
 }
@@ -302,6 +289,17 @@ pub(super) const fn vci_error(
         dpop_nonce: None,
     }
 }
+pub(super) fn map_presentation_error(error: nazo_openid4vp::PresentationServiceError) -> nazo_openid4vp::application::PresentationHttpError {
+    match error {
+        nazo_openid4vp::PresentationServiceError::Store(_) => vp_error(
+            503, "server_error", "Presentation completion state is unavailable.",
+        ),
+        nazo_openid4vp::PresentationServiceError::Presentation(_) => vp_error(
+            400, "invalid_request", "Presentation verification failed.",
+        ),
+    }
+}
+
 pub(super) const fn vp_error(
     status: u16,
     error: &'static str,

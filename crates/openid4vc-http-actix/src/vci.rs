@@ -267,13 +267,10 @@ fn protected_context(
 fn credential_success(
     response: CredentialEndpointResponse<CredentialResponseBody>,
 ) -> HttpResponse {
-    let CredentialEndpointResponse { body, dpop_nonce } = response;
-    let accepted =
-        matches!(&body, CredentialResponseBody::Json(value) if value.transaction_id.is_some());
-    let status = if accepted {
-        actix_web::http::StatusCode::ACCEPTED
-    } else {
-        actix_web::http::StatusCode::OK
+    let CredentialEndpointResponse { body, status, dpop_nonce } = response;
+    let status = match status {
+        nazo_openid4vci::application::CredentialResponseStatus::Issued => actix_web::http::StatusCode::OK,
+        nazo_openid4vci::application::CredentialResponseStatus::Deferred => actix_web::http::StatusCode::ACCEPTED,
     };
     let mut builder = HttpResponse::build(status);
     builder.insert_header((header::CACHE_CONTROL, "no-store"));

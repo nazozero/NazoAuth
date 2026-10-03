@@ -54,7 +54,6 @@ impl CredentialRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct DeferredCredentialRequest {
     pub transaction_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

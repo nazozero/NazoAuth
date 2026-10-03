@@ -337,7 +337,7 @@ fn jwt_proof_key_attestation_requires_expiration() {
 }
 
 #[test]
-fn jwt_proof_key_attestation_accepts_missing_nonce() {
+fn jwt_proof_key_attestation_rejects_missing_nonce() {
     let now = Utc::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
         "iat": now.timestamp(),
@@ -345,15 +345,14 @@ fn jwt_proof_key_attestation_accepts_missing_nonce() {
         "attested_keys": [es256_test_key(25).0],
     }));
 
-    validate_key_attestation(
+    assert_eq!(validate_key_attestation(
         &validator,
         &encoded,
         "expected-nonce",
         &metadata,
         now,
         KeyAttestationContext::JwtProof,
-    )
-    .expect("the outer JWT proof already carries the required nonce");
+    ), Err(ProofError::InvalidKeyAttestation));
 }
 
 #[test]
@@ -899,6 +898,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
             "iat": now.timestamp(),
             "exp": now.timestamp() + 300,
             "attested_keys": [wallet_jwk.clone()],
+            "nonce": "expected-nonce",
             "key_storage": ["iso_18045_moderate"],
         }));
         let mut required = std::collections::BTreeMap::new();
@@ -1085,3 +1085,6 @@ fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
         ));
     }
 }
+
+#[path = "openid4vc/credential_proofs.rs"]
+mod credential_proofs;
