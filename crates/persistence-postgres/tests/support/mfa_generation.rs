@@ -320,7 +320,10 @@ async fn mfa_clear_generation_lock_orders_formal_g2_install_after_commit() {
     blocker.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({key}); RETURN OLD; END $$; CREATE TRIGGER {name} BEFORE DELETE ON user_mfa_backup_codes FOR EACH ROW WHEN (OLD.user_id='{}'::uuid) EXECUTE FUNCTION {name}();", user.as_uuid())).await.unwrap();
     // Commit the trigger before opening the blocker transaction so the
     // independent clear connection can see it and rollback cannot remove it.
-    blocker.batch_execute(&format!("BEGIN; SELECT pg_advisory_xact_lock({key});")).await.unwrap();
+    blocker
+        .batch_execute(&format!("BEGIN; SELECT pg_advisory_xact_lock({key});"))
+        .await
+        .unwrap();
     let clear_service = service.clone();
     let clear_account = admitted.clone();
     let mut clear =

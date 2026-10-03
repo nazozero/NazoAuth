@@ -214,11 +214,18 @@ fn deferred_response_status_survives_real_encryption_and_stored_replay() {
 
 #[test]
 fn response_encryption_requires_an_encrypted_request_before_any_issuance_effect() {
-    let encryption=CredentialResponseEncryption { jwk:json!({}),enc:"A256GCM".to_owned(),zip:None };
-    for encrypted_request in [false,true] {
-        assert!(validate_response_encryption_transport(encrypted_request,None).is_ok());
+    let encryption = CredentialResponseEncryption {
+        jwk: json!({}),
+        enc: "A256GCM".to_owned(),
+        zip: None,
+    };
+    for encrypted_request in [false, true] {
+        assert!(validate_response_encryption_transport(encrypted_request, None).is_ok());
     }
-    assert!(validate_response_encryption_transport(true,Some(&encryption)).is_ok());
-    let error=validate_response_encryption_transport(false,Some(&encryption)).unwrap_err();
-    assert_eq!((error.status,error.error),(400,"invalid_encryption_parameters"));
+    assert!(validate_response_encryption_transport(true, Some(&encryption)).is_ok());
+    let error = validate_response_encryption_transport(false, Some(&encryption)).unwrap_err();
+    assert_eq!(
+        (error.status, error.error),
+        (400, "invalid_encryption_parameters")
+    );
 }

@@ -472,7 +472,11 @@ impl ServerCredentialIssuerOperations {
             .resolve_access(&token_hash, Utc::now())
             .await
             .map_err(|_| {
-                vci_error(503, "server_error", "Credential proof provenance is unavailable.")
+                vci_error(
+                    503,
+                    "server_error",
+                    "Credential proof provenance is unavailable.",
+                )
             })?;
         let proof_origin = match retained_access {
             Some(retained)

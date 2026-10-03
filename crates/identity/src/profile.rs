@@ -580,7 +580,10 @@ where
             // publication. Only the producer owns that unpublished stage;
             // leave it retryable under its original TTL.
             if stored.value.get("delivery_state").and_then(Value::as_str) == Some("committed") {
-                let _ = self.deliveries.retire(account.user_id(), &token, &stored).await;
+                let _ = self
+                    .deliveries
+                    .retire(account.user_id(), &token, &stored)
+                    .await;
             }
             return Err(DeliveryReadError::Invalid);
         };

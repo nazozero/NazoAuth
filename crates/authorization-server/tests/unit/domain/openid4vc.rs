@@ -321,16 +321,25 @@ fn key_attestation_rejects_expired_optional_expiration() {
 #[test]
 fn jwt_proof_key_attestation_requires_expiration() {
     futures_executor::block_on(async {
-        let now=Utc::now();
-        let (jwk,key)=es256_test_key(23);
-        let (validator,attestation,metadata)=key_attestation_fixture(json!({
+        let now = Utc::now();
+        let (jwk, key) = es256_test_key(23);
+        let (validator, attestation, metadata) = key_attestation_fixture(json!({
             "iat":now.timestamp(), "nonce":"expected-nonce", "attested_keys":[jwk.clone()],
         }));
-        let proof=signed_jwt_proof(Some(&jwk),&key,&json!({
-            "aud":"https://issuer.example", "iat":now.timestamp(), "nonce":"expected-nonce",
-        }),Some("openid4vci-proof+jwt"),Algorithm::ES256,Some(&attestation));
-        assert_eq!(validate_jwt_proof(&validator,proof,&metadata).await,
-            Err(ProofError::InvalidKeyAttestation));
+        let proof = signed_jwt_proof(
+            Some(&jwk),
+            &key,
+            &json!({
+                "aud":"https://issuer.example", "iat":now.timestamp(), "nonce":"expected-nonce",
+            }),
+            Some("openid4vci-proof+jwt"),
+            Algorithm::ES256,
+            Some(&attestation),
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, proof, &metadata).await,
+            Err(ProofError::InvalidKeyAttestation)
+        );
     })
 }
 
