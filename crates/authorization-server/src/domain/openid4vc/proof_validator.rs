@@ -6,7 +6,9 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use chrono::{Duration, Utc};
 use nazo_crypto::jwt::{Algorithm, Validation, decode, decode_header};
 use nazo_digital_credentials::decode_compact_jwt;
-use nazo_openid4vci::{CredentialProofOrigin, ProofError, ProofValidatorPort, Proofs, ValidatedProof};
+use nazo_openid4vci::{
+    CredentialProofOrigin, ProofError, ProofValidatorPort, Proofs, ValidatedProof,
+};
 use nazo_operator_protocol::Openid4vcTrustPolicy;
 use nazo_persistence::{ClientTrustPolicy, Openid4vcTrustPolicyStore};
 use serde::Deserialize;
@@ -85,7 +87,8 @@ impl ProofValidatorPort for Openid4vcProofValidator {
         Box::pin(async move {
             let trust_jwks = match origin {
                 CredentialProofOrigin::AnonymousPreAuthorized => self.key_attestation_jwks.clone(),
-                CredentialProofOrigin::RegisteredClient | CredentialProofOrigin::LegacyUnspecified => {
+                CredentialProofOrigin::RegisteredClient
+                | CredentialProofOrigin::LegacyUnspecified => {
                     self.effective_key_attestation_jwks(client_id).await?
                 }
             };

@@ -3254,14 +3254,31 @@ async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
         .await
         .expect("the anonymous grant must persist");
     assert_persisted_access_grant(&anonymous_row, &anonymous_hash, &anonymous);
-    assert_eq!(issuer.resolve_access(&anonymous_hash,Utc::now()).await.unwrap().unwrap().proof_origin,
-        nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized);
-    let mut attempted_projection=anonymous.clone();
-    attempted_projection.proof_origin=nazo_openid4vci::CredentialProofOrigin::RegisteredClient;
-    issuer.upsert_access(&anonymous_hash,&attempted_projection).await.unwrap();
-    assert_eq!(issuer.resolve_access(&anonymous_hash,Utc::now()).await.unwrap().unwrap().proof_origin,
+    assert_eq!(
+        issuer
+            .resolve_access(&anonymous_hash, Utc::now())
+            .await
+            .unwrap()
+            .unwrap()
+            .proof_origin,
+        nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized
+    );
+    let mut attempted_projection = anonymous.clone();
+    attempted_projection.proof_origin = nazo_openid4vci::CredentialProofOrigin::RegisteredClient;
+    issuer
+        .upsert_access(&anonymous_hash, &attempted_projection)
+        .await
+        .unwrap();
+    assert_eq!(
+        issuer
+            .resolve_access(&anonymous_hash, Utc::now())
+            .await
+            .unwrap()
+            .unwrap()
+            .proof_origin,
         nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized,
-        "an ordinary projection sync cannot replace retained anonymous provenance");
+        "an ordinary projection sync cannot replace retained anonymous provenance"
+    );
 
     // A grant whose access.client_id names an *inactive* registered client
     // still succeeds with registered_client_id = None, proving no lookup ran.
@@ -4716,7 +4733,9 @@ async fn credential_proof_origin_migration_preserves_legacy_and_guards_anonymous
     let Some(database_url) = database_url() else {
         return;
     };
-    nazo_postgres::run_pending_migrations(&database_url).await.unwrap();
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     let schema = format!("credential_origin_{}", Uuid::now_v7().simple());
     // Exercise the actual migration against a copy of its deployed table.
@@ -4770,12 +4789,18 @@ async fn credential_proof_origin_migration_preserves_legacy_and_guards_anonymous
         .execute(&mut connection)
         .await
         .unwrap();
-    connection.batch_execute("SAVEPOINT rollback_guard").await.unwrap();
+    connection
+        .batch_execute("SAVEPOINT rollback_guard")
+        .await
+        .unwrap();
     assert!(
         connection.batch_execute(down).await.is_err(),
         "rollback cannot discard retained anonymous authorization provenance"
     );
-    connection.batch_execute("ROLLBACK TO SAVEPOINT rollback_guard").await.unwrap();
+    connection
+        .batch_execute("ROLLBACK TO SAVEPOINT rollback_guard")
+        .await
+        .unwrap();
     let rows = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants")
         .get_result::<CountRow>(&mut connection)
         .await

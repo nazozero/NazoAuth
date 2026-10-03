@@ -52,7 +52,8 @@ async fn par_with_state(
     attestation: &str,
     proof: &str,
 ) -> HttpResponse {
-    let dependencies = crate::http::authorization::test_support::TestAuthorizationDependencies::new(state);
+    let dependencies =
+        crate::http::authorization::test_support::TestAuthorizationDependencies::new(state);
     let original = &dependencies.fixture;
     let fixture = crate::http::authorization::test_support::AuthorizationTestFixture::new(
         ServerAuthorizationService::from_port(

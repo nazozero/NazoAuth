@@ -181,21 +181,49 @@ fn credential_attestation_is_one_jwt_with_multiple_attested_keys() {
 #[test]
 fn credential_proof_issuer_uses_origin_even_for_a_registered_placeholder_name() {
     futures_executor::block_on(async {
-        use nazo_openid4vci::CredentialProofOrigin::{RegisteredClient,AnonymousPreAuthorized,LegacyUnspecified};
-        let (jwk,key)=es256_test_key(101);
-        let validator=Openid4vcProofValidator::new(json!({"keys":[]})).unwrap();
-        let metadata=proof_metadata(None);
-        for client in ["wallet-client","pre-authorized-wallet"] {
-            for origin in [RegisteredClient,AnonymousPreAuthorized,LegacyUnspecified] {
-                for issuer in [None,Some(json!(client)),Some(json!("wrong-client"))] {
-                    let mut claims=json!({"aud":"https://issuer.example","nonce":"expected-nonce","iat":Utc::now().timestamp()});
-                    if let Some(value)=&issuer { claims["iss"]=value.clone(); }
-                    let proof=signed_jwt_proof(Some(&jwk),&key,&claims,Some("openid4vci-proof+jwt"),Algorithm::ES256,None);
-                    let proofs=Proofs(std::collections::BTreeMap::from([("jwt".to_owned(),vec![json!(proof)])]));
-                    let result=validator.validate(&proofs,client,origin,"https://issuer.example","expected-nonce",&metadata).await;
-                    if issuer.is_none() || (origin==RegisteredClient && issuer.as_ref().and_then(Value::as_str)==Some(client)) {
-                        assert_eq!(result.unwrap().len(),1);
-                    } else { assert_eq!(result,Err(ProofError::InvalidSignature)); }
+        use nazo_openid4vci::CredentialProofOrigin::{
+            AnonymousPreAuthorized, LegacyUnspecified, RegisteredClient,
+        };
+        let (jwk, key) = es256_test_key(101);
+        let validator = Openid4vcProofValidator::new(json!({"keys":[]})).unwrap();
+        let metadata = proof_metadata(None);
+        for client in ["wallet-client", "pre-authorized-wallet"] {
+            for origin in [RegisteredClient, AnonymousPreAuthorized, LegacyUnspecified] {
+                for issuer in [None, Some(json!(client)), Some(json!("wrong-client"))] {
+                    let mut claims = json!({"aud":"https://issuer.example","nonce":"expected-nonce","iat":Utc::now().timestamp()});
+                    if let Some(value) = &issuer {
+                        claims["iss"] = value.clone();
+                    }
+                    let proof = signed_jwt_proof(
+                        Some(&jwk),
+                        &key,
+                        &claims,
+                        Some("openid4vci-proof+jwt"),
+                        Algorithm::ES256,
+                        None,
+                    );
+                    let proofs = Proofs(std::collections::BTreeMap::from([(
+                        "jwt".to_owned(),
+                        vec![json!(proof)],
+                    )]));
+                    let result = validator
+                        .validate(
+                            &proofs,
+                            client,
+                            origin,
+                            "https://issuer.example",
+                            "expected-nonce",
+                            &metadata,
+                        )
+                        .await;
+                    if issuer.is_none()
+                        || (origin == RegisteredClient
+                            && issuer.as_ref().and_then(Value::as_str) == Some(client))
+                    {
+                        assert_eq!(result.unwrap().len(), 1);
+                    } else {
+                        assert_eq!(result, Err(ProofError::InvalidSignature));
+                    }
                 }
             }
         }
@@ -205,28 +233,61 @@ fn credential_proof_issuer_uses_origin_even_for_a_registered_placeholder_name() 
 #[test]
 fn credential_embedded_attestation_algorithm_is_checked_after_valid_eddsa_outer_proof() {
     futures_executor::block_on(async {
-        use aws_lc_rs::signature::{Ed25519KeyPair,KeyPair as _};
-        let document=Ed25519KeyPair::generate_pkcs8(&aws_lc_rs::rand::SystemRandom::new()).unwrap();
-        let pair=Ed25519KeyPair::from_pkcs8(document.as_ref()).unwrap();
-        let jwk=json!({"kty":"OKP","crv":"Ed25519","x":URL_SAFE_NO_PAD.encode(pair.public_key().as_ref())});
-        let key=EncodingKey::from_ed_der(document.as_ref());
-        let now=Utc::now();
-        let (validator,attestation,_)=key_attestation_fixture(json!({
+        use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair as _};
+        let document =
+            Ed25519KeyPair::generate_pkcs8(&aws_lc_rs::rand::SystemRandom::new()).unwrap();
+        let pair = Ed25519KeyPair::from_pkcs8(document.as_ref()).unwrap();
+        let jwk = json!({"kty":"OKP","crv":"Ed25519","x":URL_SAFE_NO_PAD.encode(pair.public_key().as_ref())});
+        let key = EncodingKey::from_ed_der(document.as_ref());
+        let now = Utc::now();
+        let (validator, attestation, _) = key_attestation_fixture(json!({
             "iat":now.timestamp(),"exp":now.timestamp()+300,"nonce":"expected-nonce","attested_keys":[jwk.clone()],
         }));
-        let claims=json!({"aud":"https://issuer.example","iat":now.timestamp(),"nonce":"expected-nonce"});
-        let allowed=nazo_openid4vci::ProofTypeMetadata {
-            proof_signing_alg_values_supported:vec!["EdDSA".to_owned(),"ES256".to_owned()],key_attestations_required:None,
+        let claims =
+            json!({"aud":"https://issuer.example","iat":now.timestamp(),"nonce":"expected-nonce"});
+        let allowed = nazo_openid4vci::ProofTypeMetadata {
+            proof_signing_alg_values_supported: vec!["EdDSA".to_owned(), "ES256".to_owned()],
+            key_attestations_required: None,
         };
-        let only_outer=nazo_openid4vci::ProofTypeMetadata {
-            proof_signing_alg_values_supported:vec!["EdDSA".to_owned()],key_attestations_required:None,
+        let only_outer = nazo_openid4vci::ProofTypeMetadata {
+            proof_signing_alg_values_supported: vec!["EdDSA".to_owned()],
+            key_attestations_required: None,
         };
-        let plain=signed_jwt_proof(Some(&jwk),&key,&claims,Some("openid4vci-proof+jwt"),Algorithm::EdDSA,None);
-        assert_eq!(validate_jwt_proof(&validator,plain,&only_outer).await.unwrap().len(),1,
-            "the outer EdDSA signature and selected algorithm are valid");
-        let embedded=signed_jwt_proof(Some(&jwk),&key,&claims,Some("openid4vci-proof+jwt"),Algorithm::EdDSA,Some(&attestation));
-        assert_eq!(validate_jwt_proof(&validator,embedded.clone(),&allowed).await.unwrap().len(),1);
-        assert_eq!(validate_jwt_proof(&validator,embedded,&only_outer).await,
-            Err(ProofError::InvalidKeyAttestation),"only the inner ES256 advertised subset check rejects this request");
+        let plain = signed_jwt_proof(
+            Some(&jwk),
+            &key,
+            &claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::EdDSA,
+            None,
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, plain, &only_outer)
+                .await
+                .unwrap()
+                .len(),
+            1,
+            "the outer EdDSA signature and selected algorithm are valid"
+        );
+        let embedded = signed_jwt_proof(
+            Some(&jwk),
+            &key,
+            &claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::EdDSA,
+            Some(&attestation),
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, embedded.clone(), &allowed)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, embedded, &only_outer).await,
+            Err(ProofError::InvalidKeyAttestation),
+            "only the inner ES256 advertised subset check rejects this request"
+        );
     })
 }

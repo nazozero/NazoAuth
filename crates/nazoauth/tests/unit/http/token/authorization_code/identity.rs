@@ -67,11 +67,9 @@ async fn authorization_code_unknown_commit_keeps_one_identity_and_requires_fresh
             },
         )
         .await;
-    let repository = Arc::new(CountingTokenRepository::with_lost_commit_ack(
-        Arc::new(crate::test_support::token_issuance_repository(
-            fixture.state.diesel_db.clone(),
-        )),
-    ));
+    let repository = Arc::new(CountingTokenRepository::with_lost_commit_ack(Arc::new(
+        crate::test_support::token_issuance_repository(fixture.state.diesel_db.clone()),
+    )));
     let service = ServerTokenService::from_port(
         repository.clone(),
         Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
