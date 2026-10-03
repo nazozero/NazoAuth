@@ -427,6 +427,7 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
                 first.id,
                 approved.id,
                 &approved.client_id,
+                None,
             )
             .await
             .unwrap()
@@ -439,6 +440,7 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
                 first.id,
                 approved.id,
                 "wrong-client-id",
+                None,
             )
             .await
             .unwrap()
@@ -500,6 +502,7 @@ async fn approved_delivery_matches_requires_every_predicate_to_hold() {
                 request.id,
                 approved.id,
                 &approved.client_id,
+                None,
             )
             .await
             .unwrap(),
@@ -519,6 +522,7 @@ async fn approved_delivery_matches_requires_every_predicate_to_hold() {
                 pending.id,
                 approved.id,
                 &approved.client_id,
+                None,
             )
             .await
             .unwrap(),
@@ -574,6 +578,7 @@ async fn approved_delivery_matches_requires_every_predicate_to_hold() {
                     flipped_request,
                     flipped_approved,
                     flipped_client,
+                    None,
                 )
                 .await
                 .unwrap(),
@@ -596,6 +601,7 @@ async fn approved_delivery_matches_requires_every_predicate_to_hold() {
                 request.id,
                 approved.id,
                 &approved.client_id,
+                None,
             )
             .await
             .unwrap(),
@@ -634,6 +640,7 @@ async fn existence_predicates_return_booleans_while_page_keeps_count_semantics()
             request.id,
             approved.id,
             &approved.client_id,
+            None,
         )
         .await
         .unwrap();
@@ -689,4 +696,74 @@ async fn existence_predicates_return_booleans_while_page_keeps_count_semantics()
         .unwrap();
     assert_eq!(pending.total, 1, "only the newest request stays pending");
     cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn delivery_binding_requires_the_exact_approved_secret_generation() {
+    let Some((pool, tenant, user)) = fixture().await else {
+        return;
+    };
+    let repository = AccessRequestRepository::new(pool.clone());
+    let suffix = Uuid::now_v7().to_string();
+    let request = repository
+        .create(new_request(tenant, user, &suffix))
+        .await
+        .unwrap();
+    let mut prepared = prepared_client(tenant, client(&suffix), false);
+    prepared.registration.client_type = "confidential".to_owned();
+    prepared.registration.token_endpoint_auth_method = "client_secret_post".to_owned();
+    prepared.client_secret_hash = Some("client-secret-v1:attempt-salt:attempt-digest".to_owned());
+    let approved = repository
+        .approve(tenant, request.id, user, &prepared)
+        .await
+        .unwrap();
+    for binding in [None, Some("client-secret-v1:other-salt:other-digest")] {
+        assert!(
+            !repository
+                .approved_delivery_matches(
+                    tenant.tenant_id,
+                    user,
+                    request.id,
+                    approved.id,
+                    &approved.client_id,
+                    binding
+                )
+                .await
+                .unwrap()
+        );
+    }
+    assert!(
+        nazo_persistence::AdminAccessRequestStore::approved_delivery_matches(
+            &repository,
+            tenant.tenant_id,
+            user,
+            request.id,
+            approved.id,
+            &approved.client_id,
+            prepared.client_secret_hash.as_deref()
+        )
+        .await
+        .unwrap()
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET client_secret_hash=$1 WHERE id=$2")
+        .bind::<Text, _>("client-secret-v1:rotated-salt:rotated-digest")
+        .bind::<SqlUuid, _>(approved.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        !repository
+            .approved_delivery_matches(
+                tenant.tenant_id,
+                user,
+                request.id,
+                approved.id,
+                &approved.client_id,
+                prepared.client_secret_hash.as_deref()
+            )
+            .await
+            .unwrap()
+    );
+    cleanup(&pool, user).await;
 }

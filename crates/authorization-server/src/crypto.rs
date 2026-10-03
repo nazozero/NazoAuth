@@ -31,6 +31,26 @@ pub fn client_secret_digest(secret: &str, pepper: &str, salt: &str) -> String {
     format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{mac}")
 }
 
+/// Verify an issued secret against its complete versioned digest without
+/// disclosing the stored verifier or reimplementing the MAC at the caller.
+pub fn client_secret_matches_digest(secret: &str, pepper: &str, encoded: &str) -> bool {
+    let mut parts = encoded.split(':');
+    if parts.next() != Some(CLIENT_SECRET_HASH_VERSION) {
+        return false;
+    }
+    let Some(salt) = parts.next().filter(|salt| !salt.is_empty()) else {
+        return false;
+    };
+    let Some(mac) = parts.next().filter(|mac| !mac.is_empty()) else {
+        return false;
+    };
+    if parts.next().is_some() {
+        return false;
+    }
+    let candidate = client_secret_mac(secret, pepper, salt);
+    constant_time_eq(candidate.as_bytes(), mac.as_bytes())
+}
+
 pub fn access_delivery_token(secret: &str, user_id: Uuid, request_id: Uuid) -> String {
     nazo_identity::access_delivery_token(secret, user_id, request_id)
 }

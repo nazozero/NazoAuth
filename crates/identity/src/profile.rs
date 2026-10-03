@@ -576,9 +576,21 @@ where
             .map_err(DeliveryReadError::DeliveryStore)?
             .ok_or(DeliveryReadError::Invalid)?;
         let Some(claim) = delivery_claim(&stored.value) else {
-            let _ = self.deliveries.delete(account.user_id(), &token).await;
+            let _ = self
+                .deliveries
+                .retire(account.user_id(), &token, &stored)
+                .await;
             return Err(DeliveryReadError::Invalid);
         };
+        if claim.request_id != request_id
+            || stored.value["user_id"] != serde_json::json!(account.user_id().as_uuid())
+        {
+            let _ = self
+                .deliveries
+                .retire(account.user_id(), &token, &stored)
+                .await;
+            return Err(DeliveryReadError::Invalid);
+        }
         match self
             .requests
             .approved_delivery_matches(
@@ -587,12 +599,16 @@ where
                 claim.request_id,
                 claim.approved_client_id,
                 &claim.client_id,
+                stored.secret_binding.as_deref(),
             )
             .await
         {
             Ok(true) => {}
             Ok(false) => {
-                let _ = self.deliveries.delete(account.user_id(), &token).await;
+                let _ = self
+                    .deliveries
+                    .retire(account.user_id(), &token, &stored)
+                    .await;
                 return Err(DeliveryReadError::Invalid);
             }
             Err(error) => return Err(DeliveryReadError::Repository(error)),

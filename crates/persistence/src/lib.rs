@@ -502,6 +502,18 @@ pub trait CibaAccountStore: Send + Sync {
 /// capability because creating the OAuth client and resolving the request must
 /// remain atomic inside the selected adapter.
 pub trait AdminAccessRequestStore: Send + Sync {
+    /// Verify the current Approved request, active client and exact secret
+    /// generation before recovering an unpublished credential delivery.
+    fn approved_delivery_matches<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+        request_id: uuid::Uuid,
+        approved_client_id: uuid::Uuid,
+        client_id: &'a str,
+        secret_binding: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<bool, RepositoryError>>;
+
     fn page<'a>(
         &'a self,
         tenant_id: nazo_identity::TenantId,

@@ -1109,8 +1109,8 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .await
         .expect("committed delivery payload should exist");
     let mut staged: Value = serde_json::from_str(&staged_raw).unwrap();
-    staged["delivery_state"] = json!("staged");
-    staged
+    staged["value"]["delivery_state"] = json!("staged");
+    staged["value"]
         .as_object_mut()
         .expect("delivery payload is an object")
         .remove("approved_client_id");
@@ -1139,7 +1139,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .await
         .expect("recovered delivery payload should exist");
     assert_eq!(
-        serde_json::from_str::<Value>(&recovered_raw).unwrap()["delivery_state"],
+        serde_json::from_str::<Value>(&recovered_raw).unwrap()["value"]["delivery_state"],
         "committed"
     );
     let delivery_request = fixture.admin_post_request(
@@ -1519,7 +1519,7 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         .await
         .expect("staged delivery payload should remain after denied cleanup");
     let orphan: Value = serde_json::from_str(&orphan).expect("staged payload should be JSON");
-    assert_eq!(orphan["delivery_state"], "staged");
+    assert_eq!(orphan["value"]["delivery_state"], "staged");
     let applicant_sid = format!("applicant-write-{}", Uuid::now_v7().simple());
     fixture.store_session(&applicant, &applicant_sid).await;
     let delivery_request = fixture.admin_post_request(
@@ -1688,3 +1688,6 @@ async fn reject_access_request_surfaces_projection_failure_after_state_transitio
     assert_eq!(state.status, AccessRequestStatus::Rejected.code());
     assert_eq!(state.admin_note.as_deref(), Some("projection should fail"));
 }
+
+#[path = "access_requests/delivery_races.rs"]
+mod delivery_races;

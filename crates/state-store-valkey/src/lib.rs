@@ -32,7 +32,7 @@ pub use ciba::{
     CibaPingFinishResult, CibaStore,
 };
 pub use connection::{ValkeyClient, ValkeyConnection};
-pub use delivery::{DeliveryConsume, DeliveryStore, StoredDelivery};
+pub use delivery::DeliveryStore;
 pub use device::{DeviceCreateResult, DeviceStore};
 pub use error::{Error, ErrorKind};
 

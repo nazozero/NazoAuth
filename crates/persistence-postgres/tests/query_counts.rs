@@ -1473,6 +1473,10 @@ async fn exs04_existence_checks_are_single_statements() {
             request_id,
             seed.client.id,
             seed.client.client_id.as_str(),
+            Some(&format!(
+                "client-secret-v1:qc-salt-{}:qc-digest",
+                seed.client.id
+            )),
         ),
     )
     .await;

@@ -466,3 +466,20 @@ session snapshot and check the account once. An active session with no pending
 challenge returns the existing challenge-missing response without clearing
 cookies; inactive or corrupt sessions are invalidated, while dependency failures
 retain the browser session and return its unavailable response.
+
+
+## Access-request credential delivery
+
+Approval stages one immutable attempt if the delivery key is absent, with an
+absolute disclosure deadline and private secret-generation binding. A competing
+attempt cannot replace it. The PostgreSQL approval still creates the client and
+resolves Pending in one transaction. Known non-commit conflicts may retire only
+the producer's exact unpublished version; uncertain acknowledgements retain the
+original attempt until its deadline.
+
+Recovery verifies the actual Approved request, owner, active approved client and
+current secret generation, and validates the staged issued secret against its
+binding. It publishes only the exact existing stage and preserves its original
+expiry. Missing, changed, consumed or expired stages cannot be recreated by a
+late publisher or recovery. Consumption retains current approval matching and
+the exact version take. Storage metadata is never part of the disclosed payload.
