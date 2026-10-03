@@ -213,6 +213,7 @@ pub fn prepare_authorization_code(
 ) -> PreparedAuthorizationCode {
     let consent = input.consent;
     let code_payload = crate::CodePayload {
+        redemption_contract_version: crate::AUTHORIZATION_CODE_REDEMPTION_VERSION,
         code_id: input.code_id.to_owned(),
         user_id: consent.user_id,
         client_id: consent.client_id.clone(),

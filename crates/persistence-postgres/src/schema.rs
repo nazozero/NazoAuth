@@ -271,6 +271,8 @@ diesel::table! {
 
 diesel::table! {
     oauth_token_issuances (issuance_id) {
+        receipt_contract_version -> Int2,
+        authorization_code_holder -> Nullable<Jsonb>,
         principal_epoch_bound -> Bool,
         issuance_id -> Uuid,
         tenant_id -> Uuid,

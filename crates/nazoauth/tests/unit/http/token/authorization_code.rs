@@ -25,7 +25,7 @@ use nazo_oauth_server::token::authorization_code::AuthorizationCodeConsumption;
 use nazo_oauth_server::token::authorization_code::AuthorizationCodeIssueInput;
 use nazo_oauth_server::token::authorization_code::authorization_code_client_mismatch_response;
 use nazo_oauth_server::token::authorization_code::authorization_code_dpop_error_response;
-use nazo_oauth_server::token::authorization_code::authorization_code_grant_key;
+use nazo_oauth_server::token::authorization_code::legacy_authorization_code_redemption_key;
 use nazo_oauth_server::token::authorization_code::authorization_code_mtls_holder_error_response;
 use nazo_oauth_server::token::authorization_code::begin_authorization_code_consumption_with_service;
 use nazo_oauth_server::token::authorization_code::load_pending_authorization_code_payload_with_service;
@@ -90,6 +90,8 @@ mod admission;
 mod issuance;
 #[path = "authorization_code/replay.rs"]
 mod replay;
+#[path = "authorization_code/identity.rs"]
+mod identity;
 #[path = "authorization_code/sender_constraints.rs"]
 mod sender_constraints;
 
@@ -125,12 +127,23 @@ pub(crate) async fn token_authorization_code(
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
     let service = test_token_service(state);
+    token_authorization_code_using_service(state, req, client, form, client_assertion, &service).await
+}
+
+async fn token_authorization_code_using_service(
+    state: &TestInfrastructure,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+    service: &ServerTokenService,
+) -> HttpResponse {
     let config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(state);
     crate::http::token::issue::test_support::present_token_result(
         token_authorization_code_with_service(
-            &service,
+            service,
             &TokenIssuanceContext {
                 client_epoch: 0,
                 config: &config,
@@ -483,10 +496,11 @@ impl LiveAuthorizationCodeFixture {
             INSERT INTO oauth_token_issuances (
                 issuance_id, tenant_id, client_id, user_id,
                 single_use_key_blake3, access_token_jti,
-                access_token_expires_at, retain_until, refresh_token_family_id
+                access_token_expires_at, retain_until, refresh_token_family_id,
+                receipt_contract_version
             )
             VALUES ($1, $2, $3, NULL, $4, $5, now() + interval '5 minutes',
-                    now() + interval '1 day', $6)
+                    now() + interval '1 day', $6, 2)
             "#,
         )
         .bind::<SqlUuid, _>(Uuid::now_v7())

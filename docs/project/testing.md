@@ -149,8 +149,15 @@ Targeted suites with their own entry points:
   tenant-composite foreign-key behavior. It uses transaction-local schemas
   in the isolated test database. Existing controller, recovery, MFA and client
   repository suites cover runtime behavior against the complete migration chain.
+- `crates/nazoauth/tests/unit/http/token/authorization_code/identity.rs` covers
+  real issuance with a hidden commit ACK, stable identity after cache restoration,
+  fresh signed DPoP holder checks with missing payload, and historical payload or
+  cache-only marker denial. It needs both isolated PostgreSQL and Valkey. A port
+  wrapper injects the lost ACK after a real commit; driver packet loss is outside
+  this fixture's evidence boundary.
 - `crates/persistence-postgres/tests/token_issuance_atomicity.rs` covers the
-  durable SingleUse fence, concurrent grant consumption, controlled
+  durable SingleUse fence, concurrent code identities with independent holder
+  evidence, actual receipt migration/old-insert rejection/rollback guard, controlled
   `GrantExpired` rollback (including connection return to the pool), rotation
   conflicts, and the final schema shape. It needs an isolated PostgreSQL from
   `NAZO_TEST_DATABASE_URL`/`DATABASE_URL`.

@@ -1095,3 +1095,219 @@ async fn native_source_cross_client_capacity_and_maintenance_complete_without_de
     assert_eq!(native_active_count(&url, one.client_id).await, 10);
     assert_eq!(native_active_count(&url, two.client_id).await, 10);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn authorization_code_identity_fences_concurrent_holders_and_refresh_families() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let code_identity = format!("authorization_code:v2:fixture-{}", Uuid::now_v7());
+    let repository = std::sync::Arc::new(TokenIssuanceRepository::new(
+        create_pool(&database_url, 4).unwrap(),
+    ));
+    let mut handles = Vec::new();
+    for index in 0..4 {
+        let repository = repository.clone();
+        let ids = FixtureIds {
+            user_id: fixture.user_id,
+            client_id: fixture.client_id,
+            client_public_id: fixture.client_public_id.clone(),
+        };
+        let code_identity = code_identity.clone();
+        handles.push(tokio::spawn(async move {
+            let refresh = refresh_token_fixture(
+                &ids,
+                tenant_id,
+                Uuid::now_v7(),
+                Uuid::now_v7().to_string(),
+                None,
+            );
+            let holder = nazo_auth::AuthorizationCodeHolderEvidence {
+                version: 1,
+                authenticated_client: true,
+                pkce_s256: Some("original-verified-pkce".to_owned()),
+                dpop_jkt: Some(format!("validated-key-{index}")),
+                mtls_x5t_s256: None,
+                client_attestation_jkt: None,
+            };
+            let mut input = issuance(
+                &ids,
+                tenant_id,
+                TokenIssuanceMode::AuthorizationCode {
+                    code_identity,
+                    grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+                    holder: holder.clone(),
+                },
+                Some(refresh),
+            )
+            .await;
+            input.audit_fields.audience = vec![format!("resource://subset-{index}")];
+            let result = repository.commit_token_issuance(input).await.unwrap();
+            (result, holder)
+        }));
+    }
+    let mut winner = None;
+    let mut rejected = 0;
+    for handle in handles {
+        let (result, holder) = handle.await.unwrap();
+        match result {
+            CommitTokenIssuanceResult::Committed => {
+                assert!(winner.replace(holder).is_none());
+            }
+            CommitTokenIssuanceResult::AlreadyUsed => rejected += 1,
+            other => panic!("unexpected code commit result {other:?}"),
+        }
+    }
+    assert_eq!(rejected, 3);
+    let receipt = repository
+        .single_use_redemption(tenant_id, fixture.client_id, &code_identity)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(receipt.authorization_code_holder, winner);
+    assert!(receipt.refresh_token_family_id.is_some());
+    assert!(
+        repository
+            .single_use_redemption(Uuid::now_v7(), fixture.client_id, &code_identity)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        repository
+            .single_use_redemption(tenant_id, Uuid::now_v7(), &code_identity)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    for table in ["oauth_token_issuances", "oauth_refresh_families"] {
+        let count = sql_query(format!(
+            "SELECT COUNT(*)::bigint AS count FROM {table} WHERE tenant_id=$1 AND client_id=$2"
+        ))
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(fixture.client_id)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+        assert_eq!(count.count, 1, "a losing holder must not create another {table} row");
+    }
+    let audits = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type='token_issued' AND payload->>'client_id'=$1",
+    )
+    .bind::<sql_types::Text, _>(&fixture.client_public_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(audits.count, 1);
+}
+
+#[tokio::test]
+async fn authorization_code_receipt_migration_preserves_legacy_and_rejects_old_writers() {
+    use diesel_async::SimpleAsyncConnection;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url).await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let schema = format!("code_receipt_{}", Uuid::now_v7().simple());
+    // This transaction owns the whole copied schema. Public tables are read
+    // only; rollback removes every fixture object even if the test is aborted.
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema}, public; \
+             CREATE TABLE oauth_token_issuances (LIKE public.oauth_token_issuances INCLUDING ALL); \
+             ALTER TABLE oauth_token_issuances DROP CONSTRAINT oauth_token_issuances_receipt_contract_check, \
+             DROP COLUMN authorization_code_holder, DROP COLUMN receipt_contract_version;"
+        ))
+        .await
+        .unwrap();
+    let legacy_id = Uuid::now_v7();
+    let tenant = Uuid::now_v7();
+    let client = Uuid::now_v7();
+    let legacy_digest = blake3::hash(b"historical-request-digest-not-invertible");
+    let legacy_insert = "INSERT INTO oauth_token_issuances \
+        (issuance_id,tenant_id,client_id,single_use_key_blake3,access_token_jti,access_token_expires_at,retain_until) \
+        VALUES ($1,$2,$3,$4,$5,clock_timestamp()+interval '5 minutes',clock_timestamp()+interval '1 hour')";
+    sql_query(legacy_insert)
+        .bind::<sql_types::Uuid, _>(legacy_id)
+        .bind::<sql_types::Uuid, _>(tenant)
+        .bind::<sql_types::Uuid, _>(client)
+        .bind::<sql_types::Binary, _>(legacy_digest.as_bytes().as_slice())
+        .bind::<sql_types::Text, _>("historical-jti")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let up = include_str!("../../../migrations/20261003000100_authorization_code_identity/up.sql");
+    let down = include_str!("../../../migrations/20261003000100_authorization_code_identity/down.sql");
+    connection.batch_execute(up).await.unwrap();
+    #[derive(QueryableByName)]
+    struct LegacyReceipt {
+        #[diesel(sql_type = sql_types::Binary)]
+        single_use_key_blake3: Vec<u8>,
+        #[diesel(sql_type = sql_types::SmallInt)]
+        receipt_contract_version: i16,
+        #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+        authorization_code_holder: Option<serde_json::Value>,
+    }
+    let legacy = sql_query("SELECT single_use_key_blake3, receipt_contract_version, authorization_code_holder FROM oauth_token_issuances WHERE issuance_id=$1")
+        .bind::<sql_types::Uuid, _>(legacy_id)
+        .get_result::<LegacyReceipt>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(legacy.single_use_key_blake3, legacy_digest.as_bytes());
+    assert_eq!(legacy.receipt_contract_version, 0);
+    assert!(legacy.authorization_code_holder.is_none(), "never guess a legacy code or proof mask");
+    connection.batch_execute("SAVEPOINT legacy_writer").await.unwrap();
+    let old_writer = sql_query(legacy_insert)
+        .bind::<sql_types::Uuid, _>(Uuid::now_v7())
+        .bind::<sql_types::Uuid, _>(tenant)
+        .bind::<sql_types::Uuid, _>(client)
+        .bind::<sql_types::Binary, _>(blake3::hash(b"second-old-request-key").as_bytes().as_slice())
+        .bind::<sql_types::Text, _>("forbidden-old-writer-jti")
+        .execute(&mut connection)
+        .await;
+    assert!(matches!(
+        old_writer,
+        Err(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::CheckViolation,
+            _
+        ))
+    ));
+    connection.batch_execute("ROLLBACK TO SAVEPOINT legacy_writer").await.unwrap();
+    let current_id = Uuid::now_v7();
+    sql_query("INSERT INTO oauth_token_issuances (issuance_id,tenant_id,client_id,single_use_key_blake3,access_token_jti,access_token_expires_at,retain_until,receipt_contract_version) VALUES ($1,$2,$3,$4,'current-jti',clock_timestamp()+interval '5 minutes',clock_timestamp()+interval '1 hour',2)")
+        .bind::<sql_types::Uuid, _>(current_id)
+        .bind::<sql_types::Uuid, _>(tenant)
+        .bind::<sql_types::Uuid, _>(client)
+        .bind::<sql_types::Binary, _>(blake3::hash(b"current-code-identity").as_bytes().as_slice())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    connection.batch_execute("SAVEPOINT rollback_guard").await.unwrap();
+    assert!(connection.batch_execute(down).await.is_err(), "a live v2 fence blocks schema rollback");
+    connection.batch_execute("ROLLBACK TO SAVEPOINT rollback_guard").await.unwrap();
+    let rows = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances")
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(rows.count, 2);
+    sql_query("DELETE FROM oauth_token_issuances WHERE issuance_id=$1")
+        .bind::<sql_types::Uuid, _>(current_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    connection.batch_execute(down).await.unwrap();
+    connection.batch_execute(up).await.unwrap();
+    let legacy = sql_query("SELECT single_use_key_blake3, receipt_contract_version, authorization_code_holder FROM oauth_token_issuances WHERE issuance_id=$1")
+        .bind::<sql_types::Uuid, _>(legacy_id)
+        .get_result::<LegacyReceipt>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(legacy.single_use_key_blake3, legacy_digest.as_bytes());
+    assert_eq!(legacy.receipt_contract_version, 0);
+    assert!(legacy.authorization_code_holder.is_none());
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}

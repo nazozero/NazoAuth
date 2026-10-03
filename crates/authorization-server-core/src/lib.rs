@@ -217,6 +217,7 @@ pub use token_endpoint::{
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
+    AuthorizationCodeHolderEvidence,
     AuthorizationCodeTransitionResult, CommitTokenIssuance, CommitTokenIssuanceResult,
     IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, NativeSsoSourceFence,
     PreparedTokenSubject, SingleUseRedemption, TokenFuture, TokenInspection, TokenIssuanceMode,
@@ -225,8 +226,8 @@ pub use token_service::{
     UserinfoSubjectRef, validate_sender_constraint,
 };
 pub use transaction::{
-    AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
-    PushedAuthorizationRequest,
+    AUTHORIZATION_CODE_REDEMPTION_VERSION, AuthorizationCodeState, CodePayload, ConsentPayload,
+    ConsumedAuthorizationCode, PushedAuthorizationRequest,
 };
 pub use uri_policy::{
     RedirectUriError, is_loopback_http_url, is_valid_pkce_value, oauth_redirect_uri_matches,

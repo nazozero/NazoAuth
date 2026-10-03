@@ -34,7 +34,6 @@ use crate::token::client_auth::consume_token_client_assertion_with_authorization
 use crate::token::issue::TokenIssuanceConfig;
 use crate::token::issue::TokenIssuanceContext;
 use crate::token::issue::issue_token_response;
-use crate::token::issue::revoke_issued_authorization_code_tokens;
 use crate::token::native_sso::native_sso_requested;
 use crate::token::native_sso::new_native_sso_token_binding;
 use crate::token::sender_constraint_multiple_error;
@@ -131,10 +130,16 @@ pub fn authorization_code_client_mismatch_response() -> OAuthEndpointError {
     )
 }
 
-/// Bind the one-time authorization-code redemption to the request proofs that
-/// produced its tokens. The binding is retained only to decide whether a
-/// later replay may revoke those tokens; a replay never recovers a response.
-pub fn authorization_code_grant_key(
+/// Stable consumption identity. Tenant and client ownership are separately
+/// enforced by the durable commit; request scope/resource/proof variation
+/// never creates a second fence for the same code.
+pub fn authorization_code_identity(code_hash: &str) -> String {
+    format!("authorization_code:v2:{code_hash}")
+}
+
+/// Lookup-only compatibility with historical exact-request receipts. Never
+/// use this key for a new issuance or attempt to derive a code from its digest.
+pub fn legacy_authorization_code_redemption_key(
     code_hash: &str,
     form: &TokenForm,
     dpop_jkt: Option<&str>,
@@ -154,41 +159,88 @@ pub fn authorization_code_grant_key(
     format!("authorization_code:{}", blake3_hex(&proof.to_string()))
 }
 
-fn replay_matches_original_redemption(
-    marker: &ConsumedAuthorizationCode,
-    client_id: uuid::Uuid,
-    redemption_binding: &str,
-) -> bool {
-    marker.client_id == client_id
-        && marker
-            .redemption_binding
+pub(super) fn holder_evidence(
+    client: &ClientRow,
+    form: &TokenForm,
+    dpop_jkt: Option<&str>,
+    mtls_x5t_s256: Option<&str>,
+    client_attestation_jkt: Option<&str>,
+) -> nazo_auth::AuthorizationCodeHolderEvidence {
+    nazo_auth::AuthorizationCodeHolderEvidence {
+        version: 1,
+        authenticated_client: client.client_type == "confidential"
+            && client.token_endpoint_auth_method != "none",
+        pkce_s256: form
+            .code_verifier
             .as_deref()
-            .is_some_and(|expected| {
-                constant_time_eq(expected.as_bytes(), redemption_binding.as_bytes())
-            })
+            .filter(|verifier| is_valid_pkce_value(verifier))
+            .map(pkce_s256),
+        dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
+        mtls_x5t_s256: mtls_x5t_s256.map(ToOwned::to_owned),
+        client_attestation_jkt: client_attestation_jkt.map(ToOwned::to_owned),
+    }
 }
 
-/// Durable replay evidence: a code entry that is absent or still leased in
-/// the state store may already be committed behind the single-use fence.
-/// The fence lookup key is the redemption binding itself, so a returned row
-/// proves the replay carries the original proofs and may revoke directly.
+pub(super) fn holder_matches_original(
+    expected: &nazo_auth::AuthorizationCodeHolderEvidence,
+    candidate: &nazo_auth::AuthorizationCodeHolderEvidence,
+) -> bool {
+    fn matches(expected: &Option<String>, candidate: &Option<String>) -> bool {
+        expected.as_ref().is_none_or(|expected| {
+            candidate.as_ref().is_some_and(|candidate| {
+                constant_time_eq(expected.as_bytes(), candidate.as_bytes())
+            })
+        })
+    }
+    expected.is_well_formed()
+        && candidate.is_well_formed()
+        && candidate.version == expected.version
+        && (!expected.authenticated_client || candidate.authenticated_client)
+        && matches(&expected.pkce_s256, &candidate.pkce_s256)
+        && matches(&expected.dpop_jkt, &candidate.dpop_jkt)
+        && matches(&expected.mtls_x5t_s256, &candidate.mtls_x5t_s256)
+        && matches(&expected.client_attestation_jkt, &candidate.client_attestation_jkt)
+}
+
+/// A durable code receipt is the consumption authority. A fresh request may
+/// revoke only after matching its independent original proof requirements.
 async fn committed_single_use_redemption(
     token_service: &ServerTokenService,
     client: &ClientRow,
-    grant_key: &str,
+    code_identity: &str,
+    legacy_key: &str,
+    candidate: &nazo_auth::AuthorizationCodeHolderEvidence,
 ) -> Result<Option<SingleUseRedemption>, OAuthEndpointError> {
-    token_service
-        .single_use_redemption(client.tenant_id, client.id, grant_key)
+    let unavailable = |error| {
+        tracing::warn!(%error, "failed to read single-use grant redemption");
+        OAuthEndpointError::token(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "授权码校验失败.",
+            false,
+        )
+    };
+    if let Some(receipt) = token_service
+        .single_use_redemption(client.tenant_id, client.id, code_identity)
         .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to read single-use grant redemption");
-            OAuthEndpointError::token(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权码校验失败.",
-                false,
-            )
-        })
+        .map_err(unavailable)?
+    {
+        return Ok(receipt
+            .authorization_code_holder
+            .as_ref()
+            .is_some_and(|expected| holder_matches_original(expected, candidate))
+            .then_some(receipt));
+    }
+    // No public-client empty proof can qualify for legacy revocation. The
+    // compatibility key still demands the original exact request proof set.
+    if !candidate.is_well_formed() {
+        return Ok(None);
+    }
+    Ok(token_service
+        .single_use_redemption(client.tenant_id, client.id, legacy_key)
+        .await
+        .map_err(unavailable)?
+        .filter(|receipt| receipt.authorization_code_holder.is_none()))
 }
 
 async fn revoke_replayed_redemption(
@@ -341,31 +393,6 @@ pub async fn begin_authorization_code_consumption_with_service(
     }
 }
 
-async fn revoke_replayed_authorization_code(
-    service: &ServerTokenService,
-    client: &ClientRow,
-    marker: ConsumedAuthorizationCode,
-) -> Result<(), OAuthEndpointError> {
-    if let Err(error) = revoke_issued_authorization_code_tokens(
-        service,
-        client,
-        &marker.access_token_jti,
-        marker.access_token_expires_at,
-        marker.refresh_token_family_id,
-    )
-    .await
-    {
-        tracing::warn!(%error, "failed to revoke tokens after authorization code replay");
-        return Err(OAuthEndpointError::token(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "授权码重放撤销失败.",
-            false,
-        ));
-    }
-    Ok(())
-}
-
 pub async fn token_authorization_code_with_service(
     token_service: &ServerTokenService,
     issuance: &TokenIssuanceContext<'_>,
@@ -437,7 +464,15 @@ pub async fn token_authorization_code_with_service(
     };
     let dpop_jkt = sender.dpop_jkt;
     let mtls_x5t_s256 = sender.mtls_x5t_s256;
-    let authorization_code_grant_key = authorization_code_grant_key(
+    let code_identity = authorization_code_identity(&code_hash);
+    let holder = holder_evidence(
+        client,
+        form,
+        dpop_jkt.as_deref(),
+        mtls_x5t_s256.as_deref(),
+        client_attestation_jkt,
+    );
+    let legacy_key = legacy_authorization_code_redemption_key(
         &code_hash,
         form,
         dpop_jkt.as_deref(),
@@ -470,29 +505,24 @@ pub async fn token_authorization_code_with_service(
     let payload =
         match begin_authorization_code_consumption_with_service(token_service, &code_hash).await {
             Ok(AuthorizationCodeConsumption::Consuming(payload)) => payload,
-            Ok(AuthorizationCodeConsumption::Consumed(marker)) => {
-                // Authorization codes are single-use even when the original
-                // HTTP response may have been lost. Only an exact replay by
-                // the same client and proof set can trigger revocation; all
-                // other attempts are rejected without becoming a revocation
-                // oracle for another client's tokens.
-                if !replay_matches_original_redemption(
-                    &marker,
-                    client.id,
-                    &authorization_code_grant_key,
-                ) {
-                    return Err(OAuthEndpointError::token(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_grant",
-                        "授权码已被使用.",
-                        false,
-                    ));
+            Ok(AuthorizationCodeConsumption::Consumed(_)) => {
+                // Cached markers do not authorize revocation. Read the durable
+                // receipt and require freshly verified original possession.
+                if let Some(redemption) = committed_single_use_redemption(
+                    token_service,
+                    client,
+                    &code_identity,
+                    &legacy_key,
+                    &holder,
+                )
+                .await?
+                {
+                    revoke_replayed_redemption(token_service, client, &redemption).await?;
                 }
-                revoke_replayed_authorization_code(token_service, client, marker).await?;
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
-                    "授权码已被使用，相关令牌已撤销.",
+                    "授权码已被使用.",
                     false,
                 ));
             }
@@ -503,7 +533,9 @@ pub async fn token_authorization_code_with_service(
                 if let Some(redemption) = committed_single_use_redemption(
                     token_service,
                     client,
-                    &authorization_code_grant_key,
+                    &code_identity,
+                    &legacy_key,
+                    &holder,
                 )
                 .await?
                 {
@@ -523,6 +555,19 @@ pub async fn token_authorization_code_with_service(
                 ));
             }
             Ok(AuthorizationCodeConsumption::Failed) => {
+                // A lost commit ACK may have led to a transient Failed marker.
+                // It never justifies retrying under another consumption key.
+                if let Some(redemption) = committed_single_use_redemption(
+                    token_service,
+                    client,
+                    &code_identity,
+                    &legacy_key,
+                    &holder,
+                )
+                .await?
+                {
+                    revoke_replayed_redemption(token_service, client, &redemption).await?;
+                }
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
@@ -537,7 +582,9 @@ pub async fn token_authorization_code_with_service(
                 if let Some(redemption) = committed_single_use_redemption(
                     token_service,
                     client,
-                    &authorization_code_grant_key,
+                    &code_identity,
+                    &legacy_key,
+                    &holder,
                 )
                 .await?
                 {
@@ -589,7 +636,24 @@ pub async fn token_authorization_code_with_service(
     // derivation is intentionally performed after begin: a missing pairwise
     // secret is a server-side policy failure, not a client parameter error,
     // and must terminally fail the one-time grant.
-    let audiences = pending_audiences.expect("Consuming requires pre-computed pending facts");
+    let Some(audiences) = pending_audiences else {
+        // A cache failover can restore Pending between the initial read and
+        // begin. No proof was checked against that payload; deny rather than
+        // treating its presence as authorization or panicking.
+        mark_failed_authorization_code(
+            token_service,
+            issuance.config.auth_code_ttl_seconds(),
+            &code_hash,
+            "authorization_code_state_changed",
+        )
+        .await;
+        return Err(OAuthEndpointError::token(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "authorization code state changed during validation.",
+            false,
+        ));
+    };
     let subject = match authorization_code_subject(issuance.config, &payload, client) {
         Ok(subject) => subject,
         Err(_) => {
@@ -612,9 +676,10 @@ pub async fn token_authorization_code_with_service(
         issuance,
         token_service,
         client,
-        TokenIssuanceMode::SingleUse {
-            grant_key: authorization_code_grant_key,
+        TokenIssuanceMode::AuthorizationCode {
+            code_identity,
             grant_expires_at: payload.expires_at,
+            holder,
         },
         token_issue_from_authorization_code(AuthorizationCodeIssueInput {
             payload,
@@ -640,6 +705,14 @@ pub fn validate_pending_authorization_code_request(
     form: &TokenForm,
     payload: &CodePayload,
 ) -> Result<Vec<String>, OAuthEndpointError> {
+    if payload.redemption_contract_version != nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION {
+        return Err(OAuthEndpointError::token(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "授权码签发版本已失效.",
+            false,
+        ));
+    }
     if payload.expires_at <= Utc::now() {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,

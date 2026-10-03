@@ -389,11 +389,33 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
             "token issuance commit input is malformed".to_owned(),
         ));
     }
-    if let TokenIssuanceMode::SingleUse { grant_key, .. } = &input.mode
+    if let TokenIssuanceMode::SingleUse { grant_key, .. }
+    | TokenIssuanceMode::AuthorizationCode {
+        code_identity: grant_key,
+        ..
+    } = &input.mode
         && grant_key.trim().is_empty()
     {
         return Err(RepositoryError::Consistency(
             "single-use token issuance grant key is empty".to_owned(),
+        ));
+    }
+    if let TokenIssuanceMode::SingleUse { grant_key, .. } = &input.mode
+        && grant_key.starts_with("authorization_code:")
+    {
+        return Err(RepositoryError::Consistency(
+            "authorization codes require the code identity and holder contract".to_owned(),
+        ));
+    }
+    if let TokenIssuanceMode::AuthorizationCode {
+        code_identity,
+        holder,
+        ..
+    } = &input.mode
+        && (!code_identity.starts_with("authorization_code:v2:") || !holder.is_well_formed())
+    {
+        return Err(RepositoryError::Consistency(
+            "authorization code holder contract is malformed".to_owned(),
         ));
     }
     if let Some(refresh) = input.refresh_token.as_ref() {
@@ -537,6 +559,11 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 TokenIssuanceMode::SingleUse {
                     grant_key,
                     grant_expires_at,
+                }
+                | TokenIssuanceMode::AuthorizationCode {
+                    code_identity: grant_key,
+                    grant_expires_at,
+                    ..
                 } => (
                     Some((
                         <[u8; 32]>::from(blake3::hash(grant_key.as_bytes())),
@@ -544,6 +571,12 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     )),
                     std::cmp::max(ownership_horizon, *grant_expires_at),
                 ),
+            };
+            let authorization_code_holder = match &input.mode {
+                TokenIssuanceMode::AuthorizationCode { holder, .. } => Some(
+                    serde_json::to_value(holder).map_err(|_| TokenPortError::CorruptData)?,
+                ),
+                _ => None,
             };
             // Pure preparation before the connection checkout: contract
             // serialization and its digest carry no database state, so they
@@ -590,8 +623,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                          issuance_id, tenant_id, client_id, user_id, \
                                          single_use_key_blake3, access_token_jti, \
                                          access_token_expires_at, retain_until, \
-                                         refresh_token_family_id, principal_epoch_bound) \
-                                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE) \
+                                         refresh_token_family_id, principal_epoch_bound, \
+                                         receipt_contract_version, authorization_code_holder) \
+                                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 2, $11) \
                                      ON CONFLICT (tenant_id, client_id, single_use_key_blake3) \
                                        WHERE single_use_key_blake3 IS NOT NULL \
                                      DO NOTHING \
@@ -612,6 +646,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                             .map(RefreshTokenCommit::family_id),
                                     )
                                     .bind::<sql_types::Timestamptz, _>(grant_expires_at)
+                                    .bind::<sql_types::Nullable<sql_types::Jsonb>, _>(
+                                        authorization_code_holder.as_ref(),
+                                    )
                                     .get_result::<SingleUseInsertRow>(connection)
                                     .await
                                     .optional()?;
@@ -739,22 +776,35 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     oauth_token_issuances::access_token_jti,
                     oauth_token_issuances::access_token_expires_at,
                     oauth_token_issuances::refresh_token_family_id,
+                    oauth_token_issuances::authorization_code_holder,
                 ))
-                .first::<(String, DateTime<Utc>, Option<Uuid>)>(
+                .first::<(String, DateTime<Utc>, Option<Uuid>, Option<serde_json::Value>)>(
                     &mut self.connection().await.map_err(map_repository_error)?,
                 )
                 .await
                 .optional()
                 .map_err(map_diesel_error)?;
-            Ok(row.map(
-                |(access_token_jti, access_token_expires_at, refresh_token_family_id)| {
-                    SingleUseRedemption {
+            row.map(
+                |(access_token_jti, access_token_expires_at, refresh_token_family_id, holder)| {
+                    let authorization_code_holder = holder
+                        .map(serde_json::from_value::<nazo_auth::AuthorizationCodeHolderEvidence>)
+                        .transpose()
+                        .map_err(|_| TokenPortError::CorruptData)?;
+                    if authorization_code_holder
+                        .as_ref()
+                        .is_some_and(|holder| !holder.is_well_formed())
+                    {
+                        return Err(TokenPortError::CorruptData);
+                    }
+                    Ok(SingleUseRedemption {
+                        authorization_code_holder,
                         access_token_jti,
                         access_token_expires_at,
                         refresh_token_family_id,
-                    }
+                    })
                 },
-            ))
+            )
+            .transpose()
         })
     }
 

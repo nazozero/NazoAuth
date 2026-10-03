@@ -32,6 +32,7 @@ async fn setup() -> Option<(AuthorizationStore, fred::prelude::Client)> {
 
 fn code_payload(code_id: &str) -> CodePayload {
     CodePayload {
+        redemption_contract_version: nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION,
         code_id: code_id.to_owned(),
         user_id: uuid::Uuid::from_u128(1),
         client_id: "client-a".to_owned(),
