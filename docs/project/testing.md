@@ -259,3 +259,13 @@ preserve shared direct candidates after CAS miss/error. The object-store
 `s3_read_final` integration target records signed HTTP methods and tests one
 GET/no HEAD, MIME/body binding, missing MIME, error mappings and unsafe IDs
 without I/O. Existing staged-read and publication regressions remain applicable.
+
+- OpenID4VC wire/proof repairs: `openid4vc/credential_proofs.rs` uses signed
+  positive and negative cases for scalar audiences, present issuer matching,
+  optional attestation key binding, nonce, advertised algorithms and one-JWT
+  attestation batches. `openid4vci_response.rs`, `transport_contract.rs` and the
+  live deferred fixture cover encrypted HTTP 202 and exact stored response
+  replay. VP service and endpoint mapping tests preserve completion dependency
+  failures as server errors and reject unsupported holder-binding waivers.
+  These mounted tests are source evidence until executed at the candidate SHA.
+  See [validation boundaries](../protocol/openid4vc-validation.md).

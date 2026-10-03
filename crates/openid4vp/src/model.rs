@@ -157,6 +157,12 @@ impl AuthorizationRequest {
             // let a wallet present a proof that is not bound to the requested
             // transaction, so fail closed until that verifier path exists.
             || self.transaction_data.is_some()
+            // The available credential verifiers require holder proofs. Reject
+            // this unsupported profile before creating a request rather than
+            // silently advertising a waiver that cannot be honored.
+            || self.dcql_query.credentials.iter().any(|query| {
+                query.require_cryptographic_holder_binding == Some(false)
+            })
             || !matches!(
                 self.response_mode.as_str(),
                 "direct_post" | "direct_post.jwt"

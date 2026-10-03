@@ -160,3 +160,28 @@ fn finish_response_supports_json_ecdh_and_deflate_and_rejects_unsupported_parame
         "Credential response encryption key is invalid.",
     );
 }
+
+#[test]
+fn deferred_response_status_survives_real_encryption_and_stored_replay() {
+    use nazo_openid4vci::application::CredentialResponseStatus;
+    let wallet = EphemeralEncryptionKey::derive(&[0x65;32], b"wallet-response").unwrap();
+    let mut jwk = wallet.public_jwk();
+    jwk["alg"] = json!("ECDH-ES");
+    let response = CredentialResponse { credentials:None,
+        transaction_id:Some("pending-transaction".to_owned()), notification_id:None, interval:Some(5) };
+    for zip in [None, Some("DEF".to_owned())] {
+        let status = CredentialResponseStatus::for_response(&response);
+        let body = finish_response(response.clone(), Some(&CredentialResponseEncryption {
+            jwk:jwk.clone(), enc:"A256GCM".to_owned(), zip,
+        })).expect("deferred body encrypts");
+        let stored = stored_response(Uuid::now_v7(), Uuid::now_v7(), "request-digest".to_owned(),
+            &body, status, Some("next-nonce".to_owned()), Utc::now()+Duration::minutes(5)).unwrap();
+        assert_eq!(stored.status, 202);
+        let replay = response_from_record(stored).unwrap();
+        assert_eq!(replay.status, CredentialResponseStatus::Deferred);
+        assert_eq!(replay.body, body);
+        let CredentialResponseBody::Jwt(encoded) = replay.body else { panic!("expected JWE"); };
+        let decrypted = wallet.decrypt(&encoded).expect("original wallet decrypts replay");
+        assert_eq!(serde_json::from_slice::<CredentialResponse>(&decrypted).unwrap(), response);
+    }
+}

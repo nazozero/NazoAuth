@@ -338,3 +338,8 @@ target is:
   controls, not deployment footnotes;
 - keep deferred standards out of metadata until their full security model,
   state model, policy model, and negative tests exist.
+
+OpenID4VC wire/proof validation details and remaining profile limits are tracked
+in [validation boundaries](openid4vc-validation.md). In particular, anonymous
+pre-authorized proof provenance and stable deferred authorization across refresh
+remain open; the current verifier rejects explicit holder-binding waivers.

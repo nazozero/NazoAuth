@@ -35,9 +35,34 @@ pub enum CredentialResponseBody {
     Jwt(String),
 }
 
+/// Issuance outcome selected before response encryption and retained on replay.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CredentialResponseStatus {
+    Issued,
+    Deferred,
+}
+
+impl CredentialResponseStatus {
+    pub fn for_response(response: &CredentialResponse) -> Self {
+        if response.transaction_id.is_some() {
+            Self::Deferred
+        } else {
+            Self::Issued
+        }
+    }
+
+    pub const fn http_status(self) -> u16 {
+        match self {
+            Self::Issued => 200,
+            Self::Deferred => 202,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CredentialEndpointResponse<T> {
     pub body: T,
+    pub status: CredentialResponseStatus,
     pub dpop_nonce: Option<String>,
 }
 

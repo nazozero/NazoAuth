@@ -21,6 +21,7 @@ use uuid::Uuid;
 #[derive(Clone, Default)]
 struct RecordingStore {
     completed: Arc<AtomicUsize>,
+    fail_completion: bool,
 }
 
 impl PresentationStorePort for RecordingStore {
@@ -71,6 +72,9 @@ impl PresentationStorePort for RecordingStore {
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
             self.completed.fetch_add(1, Ordering::SeqCst);
+            if self.fail_completion {
+                return Err(PresentationStoreError::Unavailable);
+            }
             Ok(true)
         })
     }
@@ -188,6 +192,9 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
         unsupported_transaction_data.validate(),
         Err(PresentationError::InvalidRequest)
     );
+    let mut unsupported_holder_waiver = request.clone();
+    unsupported_holder_waiver.dcql_query.credentials[0].require_cryptographic_holder_binding = Some(false);
+    assert_eq!(unsupported_holder_waiver.validate(), Err(PresentationError::InvalidRequest));
     let transaction = PresentationTransaction {
         id: transaction_id,
         client_id_prefix: ClientIdPrefix::X509SanDns,
@@ -228,6 +235,17 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
         )
         .await
         .expect("valid mdoc presentation");
+
+    let failed_store = RecordingStore { fail_completion:true, ..RecordingStore::default() };
+    let failing_service = PresentationService::new(failed_store.clone(), RecordingVerifier {
+        transcript:recorded.clone(), trust_anchors:recorded_trust.clone(),
+    });
+    let error = failing_service.verify_response(&transaction, &AuthorizationResponse {
+        vp_token:Some(json!({"mdl":["base64url-mdoc"]})), state:Some("state".to_owned()),
+        error:None, error_description:None,
+    }, &[vec![1,2,3]], now).await.expect_err("completion outage retains its dependency classification");
+    assert_eq!(error, PresentationServiceError::Store(PresentationStoreError::Unavailable));
+    assert_eq!(failed_store.completed.load(Ordering::SeqCst), 1);
 
     let transcript = recorded
         .lock()

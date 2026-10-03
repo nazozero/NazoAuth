@@ -70,3 +70,14 @@ fn metadata_rejects_algorithms_the_issuer_cannot_execute() {
     .unwrap();
     assert!(proof.validate().is_err());
 }
+
+#[test]
+fn deferred_wire_request_ignores_extensions_but_validates_known_field_types() {
+    let request: nazo_openid4vci::DeferredCredentialRequest = serde_json::from_value(serde_json::json!({
+        "transaction_id":"existing-transaction", "future_extension":{"value":true},
+    })).expect("unknown Final wire extensions are ignored");
+    assert_eq!(request.transaction_id, "existing-transaction");
+    assert!(serde_json::from_value::<nazo_openid4vci::DeferredCredentialRequest>(serde_json::json!({
+        "transaction_id":42, "future_extension":true,
+    })).is_err());
+}

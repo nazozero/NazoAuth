@@ -780,7 +780,7 @@ impl PresentationOperations for ServerPresentationOperations {
                         %error,
                         "OpenID4VP presentation verification rejected a response"
                     );
-                    vp_error(400, "invalid_request", "Presentation verification failed.")
+                    map_presentation_error(error)
                 })?;
             Ok(Some(format!(
                 "{}/openid4vp/complete/{transaction_id}",
