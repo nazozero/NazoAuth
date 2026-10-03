@@ -280,8 +280,10 @@ impl Openid4vciRepository {
         token_id: Uuid,
         claim_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>>
-    {
+    ) -> CredentialStoreFuture<
+        'a,
+        Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
+    > {
         Box::pin(async move {
             let claim_expires_at = now + chrono::Duration::minutes(5);
             let claim_id_owned = claim_id.to_owned();

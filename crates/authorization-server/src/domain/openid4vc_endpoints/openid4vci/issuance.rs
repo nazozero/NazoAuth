@@ -182,7 +182,11 @@ impl ServerCredentialIssuerOperations {
                 .claim_ready_deferred(&transaction_hash, access.token_id, &claim_id, Utc::now())
                 .await
                 .map_err(|_| {
-                    vci_error(503, "server_error", "Deferred credential state is unavailable.")
+                    vci_error(
+                        503,
+                        "server_error",
+                        "Deferred credential state is unavailable.",
+                    )
                 })?;
             let deferred = match outcome {
                 nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) => claim.credential,

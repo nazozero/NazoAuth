@@ -214,8 +214,10 @@ impl CredentialStorePort for ClientDeactivatingStore {
         token_id: Uuid,
         claim_id: &'a str,
         now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>>
-    {
+    ) -> CredentialStoreFuture<
+        'a,
+        Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
+    > {
         self.inner
             .claim_ready_deferred(transaction_hash, token_id, claim_id, now)
     }
