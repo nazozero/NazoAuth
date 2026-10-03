@@ -57,6 +57,13 @@ pub fn deployment_storage_key(
     ))
 }
 
+/// Inspect the exact production attestation replay key without duplicating
+/// its namespace or digest format in an application test.
+#[must_use]
+pub fn client_attestation_replay_storage_key(client_id: &str, jti: &str) -> String {
+    state_storage_key(crate::keys::client_attestation_replay(client_id, jti))
+}
+
 /// Returns the actual storage key used for a PAR request URI.
 ///
 /// This is intentionally exposed only through the raw test harness so

@@ -162,34 +162,86 @@ pub enum CommitTokenIssuanceResult {
     RotationConflict,
 }
 
-/// Versioned, typed proof requirements retained independently of a code fence.
-/// Values come only from validated client/PKCE/sender/attestation evidence.
-/// Missing optional fields mean that proof was not bound by the original
-/// issuance; an extra valid proof on a replay does not change its identity.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Client-authentication requirement selected after the owning application has
+/// authenticated the request. This is a retained requirement, not a credential
+/// parser or a fresh HTTP-authentication capability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthorizationCodeClientAuthentication {
+    Public,
+    Authenticated,
+}
+
+/// Checked, immutable original holder requirements stored with a code fence.
+/// Fresh replay facts are owned separately by the validating application.
+/// This type cannot be mutated or deserialized directly into issuance input.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct AuthorizationCodeHolderEvidence {
-    pub version: u8,
-    pub authenticated_client: bool,
-    pub pkce_s256: Option<String>,
-    pub dpop_jkt: Option<String>,
-    pub mtls_x5t_s256: Option<String>,
-    pub client_attestation_jkt: Option<String>,
+    version: u8,
+    authenticated_client: bool,
+    pkce_s256: Option<String>,
+    dpop_jkt: Option<String>,
+    mtls_x5t_s256: Option<String>,
+    client_attestation_jkt: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredAuthorizationCodeHolderEvidence {
+    version: u8,
+    authenticated_client: bool,
+    pkce_s256: Option<String>,
+    dpop_jkt: Option<String>,
+    mtls_x5t_s256: Option<String>,
+    client_attestation_jkt: Option<String>,
 }
 
 impl AuthorizationCodeHolderEvidence {
+    /// The caller supplies already verified requirements. This constructor
+    /// closes the structural contract; it does not perform client/sender auth.
+    #[must_use]
+    pub fn from_verified_requirements(
+        client_authentication: AuthorizationCodeClientAuthentication,
+        pkce_s256: Option<String>,
+        dpop_jkt: Option<String>,
+        mtls_x5t_s256: Option<String>,
+        client_attestation_jkt: Option<String>,
+    ) -> Option<Self> {
+        let value = Self {
+            version: 1,
+            authenticated_client: client_authentication == AuthorizationCodeClientAuthentication::Authenticated,
+            pkce_s256, dpop_jkt, mtls_x5t_s256, client_attestation_jkt,
+        };
+        value.is_well_formed().then_some(value)
+    }
+
+    /// Restore persisted requirements through the same checked boundary.
+    /// Reading a receipt never creates fresh request authentication evidence.
+    #[must_use]
+    pub fn from_persisted(value: serde_json::Value) -> Option<Self> {
+        let stored: StoredAuthorizationCodeHolderEvidence = serde_json::from_value(value).ok()?;
+        if stored.version != 1 { return None; }
+        Self::from_verified_requirements(
+            if stored.authenticated_client { AuthorizationCodeClientAuthentication::Authenticated } else { AuthorizationCodeClientAuthentication::Public },
+            stored.pkce_s256, stored.dpop_jkt, stored.mtls_x5t_s256, stored.client_attestation_jkt,
+        )
+    }
+
+    #[must_use]
+    pub fn authenticated_client(&self) -> bool { self.authenticated_client }
+    #[must_use]
+    pub fn pkce_s256(&self) -> Option<&str> { self.pkce_s256.as_deref() }
+    #[must_use]
+    pub fn dpop_jkt(&self) -> Option<&str> { self.dpop_jkt.as_deref() }
+    #[must_use]
+    pub fn mtls_x5t_s256(&self) -> Option<&str> { self.mtls_x5t_s256.as_deref() }
+    #[must_use]
+    pub fn client_attestation_jkt(&self) -> Option<&str> { self.client_attestation_jkt.as_deref() }
+
     #[must_use]
     pub fn is_well_formed(&self) -> bool {
-        let proofs = [
-            &self.pkce_s256,
-            &self.dpop_jkt,
-            &self.mtls_x5t_s256,
-            &self.client_attestation_jkt,
-        ];
+        let proofs = [&self.pkce_s256, &self.dpop_jkt, &self.mtls_x5t_s256, &self.client_attestation_jkt];
         self.version == 1
-            && proofs
-                .iter()
-                .all(|proof| proof.as_ref().is_none_or(|value| !value.is_empty()))
+            && proofs.iter().all(|proof| proof.as_ref().is_none_or(|value| !value.is_empty()))
             && (self.authenticated_client || proofs.iter().any(|proof| proof.is_some()))
             && !(self.dpop_jkt.is_some() && self.mtls_x5t_s256.is_some())
     }

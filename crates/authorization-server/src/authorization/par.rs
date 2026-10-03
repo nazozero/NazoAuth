@@ -311,13 +311,12 @@ impl PreparedParClient<'_> {
                     ));
                 }
             };
-            let replay_key = format!("client-attestation:{}", validated.client_id);
             match context
                 .service
-                .consume_private_key_jwt(
-                    &replay_key,
+                .consume_client_attestation_proof(
+                    &validated.client_id,
                     &validated.replay_id,
-                    validated.replay_ttl_seconds,
+                    validated.replay_window,
                 )
                 .await
             {

@@ -133,7 +133,7 @@ fn client_attestation_draft_07_accepts_optional_time_claims_and_binds_instance_k
         client_instance_key_thumbprint(&instance_jwk).expect("instance JWK thumbprint")
     );
     assert_eq!(validated.replay_id, "fresh-proof");
-    assert_eq!(validated.replay_ttl_seconds, 301);
+    assert_eq!(validated.replay_window.expires_at(), now + 301);
 }
 
 #[test]
@@ -404,8 +404,8 @@ fn client_attestation_replay_marker_outlives_every_accepted_iat_second() {
         let accepted = validator
             .validate(&attestation, &proof, "https://issuer.example", now)
             .expect("accepted iat boundary");
-        assert_eq!(accepted.replay_ttl_seconds, expected_ttl);
-        let marker_expires_at = now + accepted.replay_ttl_seconds as i64;
+        assert_eq!(accepted.replay_window.expires_at() - now, expected_ttl);
+        let marker_expires_at = accepted.replay_window.expires_at();
         assert!(
             validator
                 .validate(
@@ -428,4 +428,24 @@ fn client_attestation_replay_marker_outlives_every_accepted_iat_second() {
             "the same proof must be expired when its replay marker can disappear"
         );
     }
+}
+
+#[test]
+fn client_attestation_one_second_node_difference_does_not_change_owner_window() {
+    let (validator, attestation, _, _, instance_key, now) = valid_client_attestation_fixture();
+    let iat = now + 61;
+    let proof = signed_client_attestation_jwt(
+        &json!({"iss":"wallet-client", "aud":"https://issuer.example", "iat":iat, "jti":"node-difference"}),
+        &instance_key,
+        "oauth-client-attestation-pop+jwt",
+        Algorithm::ES256,
+        None,
+    );
+    let fast = validator.validate(&attestation, &proof, "https://issuer.example", now + 1).unwrap();
+    assert!(validator.validate(&attestation, &proof, "https://issuer.example", now).is_err());
+    let end = fast.replay_window.expires_at();
+    let slow = validator.validate(&attestation, &proof, "https://issuer.example", end - 1).unwrap();
+    assert_eq!(fast.replay_window, slow.replay_window);
+    assert!(slow.replay_window.accepts(end - 1));
+    assert!(!slow.replay_window.accepts(end));
 }

@@ -13,6 +13,7 @@ mod ciba_ping;
 mod claims;
 mod client;
 mod client_assertion;
+mod client_attestation;
 mod client_authentication;
 mod client_jwe_policy;
 mod client_registration;
@@ -111,6 +112,7 @@ pub use client_assertion::{
     SUPPORTED_CLIENT_JWT_SIGNING_ALGS, ValidatedClientAssertion,
     unverified_client_assertion_client_id, verify_private_key_jwt,
 };
+pub use client_attestation::ClientAttestationProofWindow;
 pub use client_authentication::{
     ClientAuthenticationContext, ClientAuthenticationMethod, ClientAuthenticationPolicyError,
     ClientAuthenticationRequirement, PresentedClientCredentials, client_authentication_requirement,
@@ -217,7 +219,7 @@ pub use token_endpoint::{
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
-    AuthorizationCodeHolderEvidence,
+    AuthorizationCodeClientAuthentication, AuthorizationCodeHolderEvidence,
     AuthorizationCodeTransitionResult, CommitTokenIssuance, CommitTokenIssuanceResult,
     IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, NativeSsoSourceFence,
     PreparedTokenSubject, SingleUseRedemption, TokenFuture, TokenInspection, TokenIssuanceMode,

@@ -265,6 +265,14 @@ dependency errors fail closed. Historical exact-request receipts are lookup-only
 Payload versioning and a new-write schema constraint require a coordinated upgrade;
 see [authorization-code redemption](../protocol/authorization-code-redemption.md).
 
+Client-attestation PoP carries a verified absolute acceptance window through a
+dedicated authorization state port. The core owns its age/skew policy; the
+Valkey adapter owns atomic owner-clock acceptance and NX consumption. Token and
+PAR use the same replay key and deadline. Unknown consumption rejects the
+request before publication. Clock continuity, preserved replay markers and
+coordinated upgrades remain deployment requirements; see
+[client-attestation replay](../protocol/client-attestation-replay.md).
+
 Device and CIBA SingleUse identities depend only on the immutable device code
 or `auth_req_id`; tenant and client fences remain PostgreSQL-owned. Sender
 proofs are still validated and constrain the issued tokens, but cannot create
@@ -443,7 +451,11 @@ The tenant reconciler owns at most one transition future per module. A retained 
 
 The shared Actix extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.
 
-MFA verification retains the confirmed TOTP credential row UUID as the generation proof. Remembered-device insertion takes a key-share lock on that exact row; backup-code regeneration takes an update lock on it after hashing. A retired generation cannot publish a remember cookie, replace a new generation’s codes, or disable a new enrollment. Disabling carries the already consumed factor proof to `clear_mfa_state_if_current`; the adapter atomically checks that exact confirmed generation before clearing its dependent state, without consuming a second factor. Clearing MFA uses READ COMMITTED and orders writes TOTP → backup codes → remembered devices → user; enrollment confirmation follows the same order.
+MFA verification retains the confirmed TOTP credential row UUID as the generation proof. Remembered-device insertion takes a key-share lock on that exact row; backup-code regeneration takes an update lock on it after hashing. A retired generation cannot publish a remember cookie, replace a new generation’s codes, or disable a new enrollment. Disabling carries the already consumed factor proof to `clear_mfa_state_if_current`; the adapter atomically checks that exact confirmed generation before clearing its dependent state, without consuming a second factor. Clearing MFA uses READ COMMITTED and orders writes TOTP → backup codes → remembered devices → user; enrollment confirmation follows the same order. An unavailable clear ACK
+can follow a committed effect; it must not be interpreted as proof that the old
+generation remains active. Retrying that consumed proof after a formal new
+generation is installed returns stale-proof rejection and preserves all of the
+new generation's credential, flag, backup codes and remembered devices.
 
 Credential revocation’s scoped unknown-status exemption follows the successfully authenticated path anchor DER. Scoped anchors are considered before global anchors during the same path validation; an unrelated loaded or attached scoped certificate supplies no exemption. Known revocation and missing/stale required snapshots remain failures.
 

@@ -787,7 +787,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             row.map(
                 |(access_token_jti, access_token_expires_at, refresh_token_family_id, holder)| {
                     let authorization_code_holder = holder
-                        .map(serde_json::from_value::<nazo_auth::AuthorizationCodeHolderEvidence>)
+                        .map(|value| nazo_auth::AuthorizationCodeHolderEvidence::from_persisted(value).ok_or(TokenPortError::CorruptData))
                         .transpose()
                         .map_err(|_| TokenPortError::CorruptData)?;
                     if authorization_code_holder

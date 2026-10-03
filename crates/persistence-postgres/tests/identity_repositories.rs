@@ -3614,3 +3614,6 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
     drop(blocker);
     cleanup(&pool, user_id).await;
 }
+
+#[path = "support/mfa_generation.rs"]
+mod mfa_generation;

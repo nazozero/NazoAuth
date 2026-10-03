@@ -4209,14 +4209,9 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
     );
     let family_id = token.family_id;
     let mut input = refresh_issuance(token).await;
-    let holder = nazo_auth::AuthorizationCodeHolderEvidence {
-        version: 1,
-        authenticated_client: true,
-        pkce_s256: None,
-        dpop_jkt: None,
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-    };
+    let holder = nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
+        nazo_auth::AuthorizationCodeClientAuthentication::Authenticated, None, None, None, None,
+    ).unwrap();
     input.mode = TokenIssuanceMode::AuthorizationCode {
         code_identity: grant_key.clone(),
         grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),

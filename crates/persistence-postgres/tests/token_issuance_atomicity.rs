@@ -1124,14 +1124,11 @@ async fn authorization_code_identity_fences_concurrent_holders_and_refresh_famil
                 Uuid::now_v7().to_string(),
                 None,
             );
-            let holder = nazo_auth::AuthorizationCodeHolderEvidence {
-                version: 1,
-                authenticated_client: true,
-                pkce_s256: Some("original-verified-pkce".to_owned()),
-                dpop_jkt: Some(format!("validated-key-{index}")),
-                mtls_x5t_s256: None,
-                client_attestation_jkt: None,
-            };
+            let holder = nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
+                nazo_auth::AuthorizationCodeClientAuthentication::Authenticated,
+                Some("original-verified-pkce".to_owned()), Some(format!("validated-key-{index}")),
+                None, None,
+            ).unwrap();
             let mut input = issuance(
                 &ids,
                 tenant_id,

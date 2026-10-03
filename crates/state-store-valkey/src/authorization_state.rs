@@ -199,6 +199,20 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         })
     }
 
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        window: nazo_auth::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        Box::pin(async move {
+            self.replay
+                .consume_client_attestation_proof(client_id, jti, window)
+                .await
+                .map_err(map_error)
+        })
+    }
+
     fn consume_private_key_jwt<'a>(
         &'a self,
         client_id: &'a str,
