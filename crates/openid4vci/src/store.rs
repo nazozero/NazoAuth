@@ -2,6 +2,7 @@ use std::{future::Future, pin::Pin};
 
 use chrono::{DateTime, Utc};
 use nazo_digital_credentials::CredentialFormat;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
