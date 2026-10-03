@@ -142,12 +142,16 @@ impl MfaRepositoryPort for MfaRepository {
             .await
         })
     }
-    fn clear_mfa_state<'a>(
+    fn clear_mfa_state_if_current<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, ()> {
-        Box::pin(async move { self.clear_mfa_state(tenant_id, user_id).await })
+        credential_id: uuid::Uuid,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            self.clear_mfa_state_if_current(tenant_id, user_id, credential_id)
+                .await
+        })
     }
 
     fn remember_device(

@@ -208,11 +208,15 @@ pub trait MfaRepositoryPort: Send + Sync {
         hashes: Vec<EncodedSecretHash>,
     ) -> RepositoryFuture<'a, bool>;
 
-    fn clear_mfa_state<'a>(
+    /// Clear all MFA state only if the confirmed generation is still current.
+    /// A retired proof returns false without modifying any MFA state. Checking
+    /// the generation and clearing its dependent state are one atomic effect.
+    fn clear_mfa_state_if_current<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, ()>;
+        credential_id: Uuid,
+    ) -> RepositoryFuture<'a, bool>;
 
     fn remember_device(
         &self,

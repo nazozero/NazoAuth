@@ -177,8 +177,11 @@ impl Openid4vcClientAttestationValidator {
             client_id: client_id.to_owned(),
             client_instance_key_thumbprint,
             replay_id: replay_id.to_owned(),
+            // The accepted window includes age == max_age. Keep the replay
+            // marker through that whole second, including future-iat skew.
             replay_ttl_seconds: CLIENT_ATTESTATION_POP_MAX_AGE_SECONDS
-                .saturating_sub(age.max(0))
+                .saturating_sub(age)
+                .saturating_add(1)
                 .max(1) as u64,
         })
     }

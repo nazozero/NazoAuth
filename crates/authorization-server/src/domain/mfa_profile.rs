@@ -444,11 +444,16 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 return Ok(false);
             }
             self.reserve_mfa_attempt(&command.context, &account).await?;
-            self.verify_reserved_factor(&command.context, &account, &command.code)
+            let proof = self
+                .verify_reserved_factor(&command.context, &account, &command.code)
                 .await?;
-            self.mfa.disable(&account).await.map_err(|error| {
+            self.mfa.disable(&account, &proof).await.map_err(|error| {
                 tracing::warn!(?error, "failed to disable MFA");
-                MfaProfileError::new(MfaProfileErrorKind::DisableFailed)
+                if error.kind() == MfaServiceErrorKind::InvalidCode {
+                    map_core_error(error)
+                } else {
+                    MfaProfileError::new(MfaProfileErrorKind::DisableFailed)
+                }
             })?;
             self.record_required("mfa_disabled", self.mfa_fields(&account, &command.context))
                 .await?;

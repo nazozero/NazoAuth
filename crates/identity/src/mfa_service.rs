@@ -256,11 +256,24 @@ impl MfaService {
         Ok(codes)
     }
 
-    pub async fn disable(&self, account: &PublicAccount) -> Result<(), MfaServiceError> {
-        self.repository
-            .clear_mfa_state(account.tenant().tenant_id, account.user_id())
+    pub async fn disable(
+        &self,
+        account: &PublicAccount,
+        proof: &MfaVerificationProof,
+    ) -> Result<(), MfaServiceError> {
+        let cleared = self
+            .repository
+            .clear_mfa_state_if_current(
+                account.tenant().tenant_id,
+                account.user_id(),
+                proof.credential_id,
+            )
             .await
-            .map_err(MfaServiceError::repository)
+            .map_err(MfaServiceError::repository)?;
+        if !cleared {
+            return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
+        }
+        Ok(())
     }
 
     pub async fn remember_device(

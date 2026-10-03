@@ -112,12 +112,14 @@ impl MfaRepositoryPort for ConfirmRepository {
         unreachable!()
     }
 
-    fn clear_mfa_state<'a>(
+    fn clear_mfa_state_if_current<'a>(
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-    ) -> RepositoryFuture<'a, ()> {
-        unreachable!()
+        credential_id: Uuid,
+    ) -> RepositoryFuture<'a, bool> {
+        let current = *self.0.lock().unwrap();
+        Box::pin(async move { Ok(current == TotpVerificationOutcome::Accepted(credential_id)) })
     }
 
     fn remember_device(
@@ -198,5 +200,37 @@ fn account() -> PublicAccount {
         profile: UserProfile::default(),
         created_at: now,
         updated_at: now,
+    }
+}
+
+
+#[tokio::test]
+async fn disable_reuses_verified_generation_without_consuming_another_factor() {
+    let current = Uuid::now_v7();
+    let service = MfaService::new(
+        Arc::new(ConfirmRepository(Mutex::new(
+            TotpVerificationOutcome::Accepted(current),
+        ))),
+        Arc::new(UnusedHasher),
+    );
+    for method in [MfaVerificationMethod::Totp, MfaVerificationMethod::BackupCode] {
+        let stale = MfaVerificationProof {
+            method,
+            credential_id: Uuid::now_v7(),
+        };
+        assert_eq!(
+            service.disable(&account(), &stale).await.unwrap_err().kind(),
+            MfaServiceErrorKind::InvalidCode,
+        );
+        service
+            .disable(
+                &account(),
+                &MfaVerificationProof {
+                    method,
+                    credential_id: current,
+                },
+            )
+            .await
+            .expect("the current generation can be cleared with either consumed factor");
     }
 }
