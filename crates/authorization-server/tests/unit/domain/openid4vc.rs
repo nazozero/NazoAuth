@@ -50,7 +50,18 @@ fn key_attestation_fixture(
     String,
     nazo_openid4vci::ProofTypeMetadata,
 ) {
-    let (mut attester_jwk, attester_key) = es256_test_key(13);
+    key_attestation_fixture_with_seed(claims, 13)
+}
+
+fn key_attestation_fixture_with_seed(
+    claims: Value,
+    seed: u8,
+) -> (
+    Openid4vcProofValidator,
+    String,
+    nazo_openid4vci::ProofTypeMetadata,
+) {
+    let (mut attester_jwk, attester_key) = es256_test_key(seed);
     attester_jwk["kid"] = json!("attester-key");
     attester_jwk["alg"] = json!("ES256");
     let mut header = Header::new(Algorithm::ES256);
