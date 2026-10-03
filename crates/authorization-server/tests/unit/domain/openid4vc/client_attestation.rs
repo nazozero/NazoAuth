@@ -385,7 +385,6 @@ fn client_attestation_validate_for_client_uses_static_trust_when_client_is_unbou
     });
 }
 
-
 #[test]
 fn client_attestation_replay_marker_outlives_every_accepted_iat_second() {
     let (validator, attestation, _, _, instance_key, now) = valid_client_attestation_fixture();
