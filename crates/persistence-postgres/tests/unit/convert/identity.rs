@@ -118,3 +118,45 @@ fn persisted_blank_password_hash_is_rejected() {
 
     assert_eq!(error.0, "password hash must not be blank");
 }
+
+#[test]
+fn display_summaries_reject_corrupt_tenant_and_user_identifiers() {
+    let now = Utc::now();
+    for corrupt_tenant in [true, false] {
+        let tenant_id = if corrupt_tenant {
+            Uuid::nil()
+        } else {
+            Uuid::now_v7()
+        };
+        let user_id = if corrupt_tenant {
+            Uuid::now_v7()
+        } else {
+            Uuid::nil()
+        };
+        let passkey = PasskeyCredentialSummaryRow {
+            id: Uuid::now_v7(),
+            tenant_id,
+            user_id,
+            credential_id: "credential".into(),
+            label: "Laptop".into(),
+            sign_count: 3,
+            last_used_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        };
+        assert!(passkey_summary(passkey).is_err());
+        let link = ExternalIdentityLinkSummaryRow {
+            id: Uuid::now_v7(),
+            tenant_id,
+            user_id,
+            provider_type: "oidc".into(),
+            provider_id: "provider".into(),
+            subject: "subject".into(),
+            email: "user@example.test".into(),
+            created_at: now,
+            updated_at: now,
+            last_login_at: Some(now),
+        };
+        assert!(federation_link_summary(link).is_err());
+    }
+}

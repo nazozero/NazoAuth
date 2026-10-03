@@ -513,13 +513,15 @@ fn fixture(
     };
     (
         CredentialAccess {
+            authorization_id: None,
+            mtls_x5t_s256: None,
             proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             token_id: Uuid::now_v7(),
             tenant_id: Uuid::now_v7(),
             subject_id: Uuid::now_v7(),
             client_id: "wallet".to_owned(),
             configuration_ids: vec!["pid".to_owned()],
-            credential_identifiers: vec![CredentialIdentifier("pid-1".to_owned())],
+            credential_identifiers: Vec::new(),
             dpop_jkt: None,
             expires_at: now + Duration::minutes(5),
         },
@@ -568,6 +570,7 @@ fn response_for_pending(
         IssuanceCommit::Deferred { credential, .. } => credential.access.token_id,
     };
     StoredCredentialResponse {
+        selection: None,
         issuance_id: pending.issuance_id,
         token_id,
         request_digest: pending.request_digest.clone(),
@@ -1533,6 +1536,8 @@ async fn doctype_is_used_when_vct_is_absent() {
 async fn persist_pre_authorized_access_forwards_arguments_and_errors() {
     let store = Arc::new(RecordingStore::default());
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),

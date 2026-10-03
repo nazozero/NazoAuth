@@ -45,7 +45,11 @@ pub(crate) fn capture_direct_tls_client_certificate(
         return;
     };
     if let Some(mut identity) = certificate_der_identity(certificate.as_ref()) {
-        identity.certificate_chain_der = chain.iter().map(|der| der.as_ref().to_vec()).collect();
+        identity.certificate_chain_der = chain
+            .iter()
+            .map(|der| der.as_ref().to_vec())
+            .collect::<Vec<_>>()
+            .into();
         identity.deployment_trusted_chain = deployment_verifier.is_some_and(|verifier| {
             verifier
                 .verify_client_cert(
@@ -181,8 +185,7 @@ pub(crate) fn request_mtls_client_certificate_from_rfc9440(
             return None;
         }
         for value in chain.to_str().ok()?.split(',') {
-            certificate
-                .certificate_chain_der
+            std::sync::Arc::make_mut(&mut certificate.certificate_chain_der)
                 .push(decode_forwarded_certificate(value.trim())?);
         }
     }

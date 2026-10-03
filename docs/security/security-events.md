@@ -164,3 +164,89 @@ The event type is reserved: ordinary audit append cannot create a business
 authority fact. Export and chain construction may happen later, but export
 acknowledgement does not erase a still-needed business fence. The exporter
 projects only audit-safe fact fields, not raw code or full code payload.
+
+
+### DCR and endpoint revocation transaction ownership
+
+Dynamic client registration creation, configuration replacement, and deletion
+now pass the hashed source address through the existing purpose store. The
+PostgreSQL owner obtains the actual client view and appends respectively
+`dynamic_client_registered`, `dynamic_client_configuration_updated`, or
+`dynamic_client_deleted` on the same connection inside its business transaction.
+Replacement retains the current registration credential comparison; deletion
+retains dependent grant/family invalidation. Lifecycle evidence is derived from
+the actual changed row and contains no registration token, secret, or digest.
+The application no longer appends a separate successful outcome after commit.
+
+The authenticated revocation endpoint uses the audited revocation command.
+Verified access tokens remain access-only revocation authority and retain a zero
+refresh-member count. Refresh revocation retains the existing family lock and
+client/tenant predicates. Both effects and the `token_revoked` event commit
+together. An unknown token remains a successful, non-disclosing no-op with
+attempt evidence; an audit event does not assert that a token existed.
+Lower-level recovery revocation retains its separate existing contract.
+
+Dynamic transactional readiness still checks current anchor health in required
+mode. The transaction's own required append is the writer failure boundary;
+preflight is not an atomicity proof. Complete result and transaction
+acknowledgement precede success. The existing `DiscardOnDrop` guard discards the
+physical connection on error or cancellation until a successful complete
+transaction outcome is known. An unknown acknowledgement does not prove
+rollback and does not authorize an automatic retry under a new operation.
+
+Source regressions `dcr_required_event_failure_rolls_back_each_owned_effect` and
+`required_revocation_event_failure_rolls_back_access_and_refresh_effects` inject
+task-scoped PostgreSQL audit INSERT failures, compare actual business rollback
+state, and read committed event counts. They have not been formatted, compiled,
+or executed at this integrated candidate. Physical commit acknowledgement loss,
+cancellation, process crashes, and pool behavior still need independent
+execution. This change does not extend transaction ownership to remaining
+administrative effect/outcome windows tracked separately as I07.
+
+
+### Silent decision admission and preparation lifetime
+
+The prompt-none application delegates live grant coverage to the accepting
+decision owner. Its neutral contract requires current active tenant/client/user
+and canonical scope/resource/authorization-detail coverage at commit. The
+PostgreSQL owner retains principal-then-grant locks and the existing canonical
+coverage policy; missing coverage retains `consent_required`, and unavailable
+storage remains a dependency failure. The removed early read did not authorize
+a later decision. Denied coverage can now reach code preparation; no measured
+CPU or latency improvement is claimed.
+
+Committed silent and interactive decisions leave consent/PAR preparation to
+its original TTL. The retained durable request/PAR identity prevents reuse;
+expiry and retention deadlines are unchanged. Response completion no longer
+awaits best-effort cache compare-delete, and no detached cleanup task is added.
+Existing direct disposal APIs keep their exact-version comparison contract.
+The adapted real PG/Valkey source regressions still check single-use code,
+durable decision/authorization counts and final coverage storage failures;
+they have not been executed at this candidate.
+
+
+JWT bearer grant processing now evaluates pure scope/target admission after
+signature/sender validation and before client-assertion and grant replay
+consumption. Known-invalid admission does not burn either assertion role. This
+changes only that pre-consumption failure ordering; both existing replay
+namespaces and the durable JTI-plus-sender issuance identity remain. It does not
+make an indeterminate consumption or issuance retryable, and it does not infer
+durable equivalence from a cache marker. The real signed-JWT/Valkey regression
+source proves the intended boundary when executed; current execution is pending.
+
+Refresh preparation consumes its owned default scopes and terminal original
+authentication-context fields into TokenIssue. The original context snapshot
+still survives an eligible successor replacement, and the nested ID-token SID
+Some/None representation is preserved. The existing consistency guard remains
+because public mutable issuance fields still permit a contradictory input;
+ownership moves do not establish a sealed refresh-issuance type.
+
+
+Certificate facts now share the immutable DER-chain owner when transport facts
+are cloned into authentication work. Builders finish the chain before
+publication; test-only corruption uses copy-on-write so it cannot alter a second
+request fact owner. Trusted-proxy admission, cached parse failures, current
+tenant trust, client identity, token binding, and keepalive revocation checks
+retain their existing owners. Sharing DER is not caching a trust or authorization
+result. Existing real-certificate and live tenant-anchor tests are retained;
+candidate formatting, compilation and execution remain pending.

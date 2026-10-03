@@ -2086,7 +2086,9 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["mfa_required"], false);
     assert_eq!(body["csrf_token"], csrf_cookie);
-    assert_eq!(user.profile.display_name.as_deref(), Some("SAML User"));
+    assert_eq!(user.profile.display_name, None);
+    assert_eq!(link.claims["untrusted_display_name"], "SAML User");
+    assert!(link.claims.get("name").is_none());
     assert_eq!(link.user_id, user.id());
     assert_eq!(session.user_id, user.id());
     assert_eq!(session.amr, vec!["saml".to_owned(), "federated".to_owned()]);

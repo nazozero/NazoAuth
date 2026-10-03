@@ -8,11 +8,26 @@ impl nazo_auth::DynamicRegistrationClientStore for OAuthClientRepository {
     fn insert<'a>(
         &'a self,
         prepared: &'a nazo_auth::PreparedClientRegistration,
+        source_ip_hash: &'a str,
     ) -> nazo_auth::DynamicRegistrationFuture<'a, OAuthClient> {
         Box::pin(async move {
-            nazo_auth::insert_prepared_client(self, prepared)
-                .await
-                .map_err(|_| nazo_auth::DynamicRegistrationDependencyError::Unavailable)
+            let client = OAuthClient {
+                id: Uuid::now_v7(),
+                tenant_id: prepared.tenant.tenant_id.as_uuid(),
+                realm_id: prepared.tenant.realm_id.as_uuid(),
+                organization_id: prepared.tenant.organization_id.as_uuid(),
+                registration: prepared.registration.clone(),
+                require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
+                is_active: true,
+            };
+            self.insert_with_audit(
+                &client,
+                prepared.client_secret_hash.as_deref(),
+                prepared.registration_access_token_blake3.as_deref(),
+                Some(source_ip_hash),
+            )
+            .await
+            .map_err(|_| nazo_auth::DynamicRegistrationDependencyError::Unavailable)
         })
     }
 
@@ -101,14 +116,16 @@ impl nazo_auth::DynamicRegistrationClientStore for OAuthClientRepository {
         client_secret_hash: Option<&'a str>,
         expected_registration_access_token_hash: &'a str,
         new_registration_access_token_hash: Option<&'a str>,
+        source_ip_hash: &'a str,
     ) -> nazo_auth::DynamicRegistrationFuture<'a, OAuthClient> {
         Box::pin(async move {
-            OAuthClientRepository::replace_registration(
+            OAuthClientRepository::replace_registration_with_audit(
                 self,
                 client,
                 client_secret_hash,
                 expected_registration_access_token_hash,
                 new_registration_access_token_hash,
+                Some(source_ip_hash),
             )
             .await
             .map_err(|error: RepositoryError| map_dynamic_registration_mutation_error(error))
@@ -120,13 +137,15 @@ impl nazo_auth::DynamicRegistrationClientStore for OAuthClientRepository {
         tenant_id: Uuid,
         client_id: Uuid,
         expected_registration_access_token_hash: &'a str,
+        source_ip_hash: &'a str,
     ) -> nazo_auth::DynamicRegistrationFuture<'a, bool> {
         Box::pin(async move {
-            OAuthClientRepository::deactivate(
+            OAuthClientRepository::deactivate_with_audit(
                 self,
                 tenant_id,
                 client_id,
                 expected_registration_access_token_hash,
+                Some(source_ip_hash),
             )
             .await
             .map_err(|error: RepositoryError| map_dynamic_registration_mutation_error(error))

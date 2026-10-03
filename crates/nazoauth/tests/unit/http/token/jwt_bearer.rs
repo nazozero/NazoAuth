@@ -495,3 +495,33 @@ async fn jwt_bearer_replay_rejects_a_consumed_jti_after_a_committed_issuance() {
         Some("invalid_grant")
     );
 }
+
+#[actix_web::test]
+async fn jwt_bearer_invalid_scope_does_not_consume_the_valid_signed_assertion() {
+    let Some(state) = live_jwt_bearer_state().await else {
+        return;
+    };
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let client_id = format!("jwt-pure-admission-{}", Uuid::now_v7());
+    let client = jwt_bearer_client(&client_id, "pure-admission-kid", &key);
+    let assertion = signed_jwt_bearer_assertion(
+        &client_id,
+        "pure-admission-kid",
+        &key,
+        json!({"jti": format!("pure-admission-{}", Uuid::now_v7())}),
+    );
+    let validated =
+        validate_jwt_bearer_assertion(&jwt_bearer_settings(), &client, &assertion).unwrap();
+    let mut form = jwt_bearer_form(Some(&assertion));
+    form.scope = Some("administrator".to_owned());
+    let request = TestRequest::post().uri("/token").to_http_request();
+    let response = token_jwt_bearer(&state, &request, &client, &form, None).await;
+    assert_eq!(oauth_error_code(response).await, "invalid_scope");
+    consume_jwt_bearer_assertion(&state, &client, &validated)
+        .await
+        .expect("pure denial must not consume the grant's original replay identity");
+    assert!(matches!(
+        consume_jwt_bearer_assertion(&state, &client, &validated).await,
+        Err(JwtBearerAssertionError::ReplayDetected)
+    ));
+}

@@ -467,6 +467,16 @@ impl TokenRepositoryPort for SubjectStateOutage {
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> nazo_auth::TokenFuture<'a, usize> {
         self.inner.revoke_token(input)
     }
+
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: nazo_auth::TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, usize> {
+        self.inner
+            .revoke_token_with_audit(input, client_public_id, source_ip_hash)
+    }
 }
 
 fn live_configuration(configuration_id: &str) -> (String, CredentialConfiguration) {
@@ -654,7 +664,7 @@ impl LiveEndpointFixture {
             .await
             .expect("OpenID4VC endpoint fixture dataset upsert");
         assert!(
-            inserted,
+            inserted.is_some(),
             "OpenID4VC endpoint fixture dataset must be inserted"
         );
         Some(Self {

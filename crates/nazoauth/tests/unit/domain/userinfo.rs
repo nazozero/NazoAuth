@@ -687,6 +687,7 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
         return;
     };
     let claims = Claims {
+        authorization_id: None,
         client_epoch: None,
         user_epoch: None,
         iss: state.settings.endpoint.issuer.clone(),

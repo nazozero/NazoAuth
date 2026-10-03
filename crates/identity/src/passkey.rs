@@ -14,8 +14,8 @@ use crate::{
     LoginSuccess, PublicAccount, TenantId, UserId,
     ports::{
         LoginSessionCreate, LoginSessionPort, PasskeyAccountRepositoryPort, PasskeyAuditPort,
-        PasskeyCeremonyPort, PasskeyCredential, PasskeyRepositoryPort, RememberedMfaDevicePort,
-        RepositoryError,
+        PasskeyCeremonyPort, PasskeyCredential, PasskeyCredentialSummary, PasskeyRepositoryPort,
+        RememberedMfaDevicePort, RepositoryError,
     },
     session::SessionRecord,
 };
@@ -546,6 +546,16 @@ where
     ) -> Result<Vec<PasskeyCredential>, PasskeyError> {
         self.credentials
             .list(account.tenant().tenant_id, account.user_id())
+            .await
+            .map_err(PasskeyError::State)
+    }
+
+    pub async fn list_summaries(
+        &self,
+        account: &PublicAccount,
+    ) -> Result<Vec<PasskeyCredentialSummary>, PasskeyError> {
+        self.credentials
+            .list_summaries(account.tenant().tenant_id, account.user_id())
             .await
             .map_err(PasskeyError::State)
     }

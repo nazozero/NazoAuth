@@ -308,6 +308,37 @@ pub async fn issue_token_response(
         ));
     }
     let now = Utc::now();
+    // Select the owned lineage before signing. Only a checked refresh source
+    // can inherit it; unrelated fresh exchanges get a new issuance root.
+    let refresh_family = if will_issue_refresh {
+        match issue.refresh_token_policy {
+            RefreshTokenPolicy::IssueNew => Some((Uuid::now_v7(), None, None)),
+            RefreshTokenPolicy::Rotate {
+                family_id,
+                rotated_from_id,
+            } => Some((family_id, Some(rotated_from_id), None)),
+            RefreshTokenPolicy::RotateLostResponse {
+                family_id,
+                original_id,
+                original_blake3,
+                successor_id,
+                retry_started_at,
+            } => Some((
+                family_id,
+                Some(successor_id),
+                Some((original_id, original_blake3, retry_started_at)),
+            )),
+            RefreshTokenPolicy::NoRefresh | RefreshTokenPolicy::PreserveExisting => None,
+        }
+    } else {
+        None
+    };
+    let authorization_id = issue
+        .refresh_authority
+        .as_ref()
+        .map(|source| source.family_id)
+        .or_else(|| refresh_family.as_ref().map(|(family, _, _)| *family))
+        .unwrap_or(issuance_id);
     let next_dpop_nonce = if issue.dpop_jkt.is_some() {
         match issue_authorization_server_dpop_nonce(context.authorization).await {
             Ok(nonce) => Some(nonce),
@@ -330,6 +361,7 @@ pub async fn issue_token_response(
     };
     let issued_access_token = match token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            authorization_id: Some(authorization_id),
             client_epoch: Some(principal_state.client_epoch),
             user_epoch: principal_state.user_epoch,
             issuer: &context.config.issuer,
@@ -518,25 +550,6 @@ pub async fn issue_token_response(
     }
     let mut refresh_token_to_commit = None;
     if will_issue_refresh {
-        let refresh_family = match issue.refresh_token_policy {
-            RefreshTokenPolicy::IssueNew => Some((Uuid::now_v7(), None, None)),
-            RefreshTokenPolicy::Rotate {
-                family_id,
-                rotated_from_id,
-            } => Some((family_id, Some(rotated_from_id), None)),
-            RefreshTokenPolicy::RotateLostResponse {
-                family_id,
-                original_id,
-                original_blake3,
-                successor_id,
-                retry_started_at,
-            } => Some((
-                family_id,
-                Some(successor_id),
-                Some((original_id, original_blake3, retry_started_at)),
-            )),
-            RefreshTokenPolicy::NoRefresh | RefreshTokenPolicy::PreserveExisting => None,
-        };
         if let Some((family, rotated_from, lost_response_retry)) = refresh_family {
             let refresh = PendingRefreshToken {
                 raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
@@ -636,6 +649,7 @@ pub async fn issue_token_response(
     };
     match token_service
         .commit_token_issuance(nazo_auth::CommitTokenIssuance {
+            authorization_id: Some(authorization_id),
             native_sso_source: issue.native_sso_source,
             principal_state,
             subject: issue.subject.clone(),

@@ -361,6 +361,7 @@ async fn refresh_issuance(fixture: RefreshFixture) -> CommitTokenIssuance {
         .unwrap()
         .insert(token.member_id, (token.tenant_id, token.raw_token.clone()));
     CommitTokenIssuance {
+        authorization_id: None,
         native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
@@ -4755,4 +4756,174 @@ async fn refresh_contract_ensure_rolls_back_with_caller_and_validates_args() {
         error.to_string().contains("arguments are invalid"),
         "unexpected ensure error classification: {error}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn required_revocation_event_failure_rolls_back_access_and_refresh_effects() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let owner = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let family_id = Uuid::now_v7();
+    let raw = format!("required-revoke-{}", Uuid::now_v7());
+    let jti = format!("required-access-{}", Uuid::now_v7());
+    let expires_at = chrono::Utc::now() + chrono::Duration::hours(1);
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let context = refresh_context_json(&owner.client_public_id, chrono::Utc::now());
+    insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(&owner, tenant_id, family_id, &raw, &context),
+    )
+    .await;
+    let pool = create_pool(&database_url, 2).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let tokens = TokenRepository::new(pool);
+    let hook = format!("revoke_required_fail_{}", Uuid::now_v7().simple());
+    sql_query(format!("CREATE FUNCTION {hook}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'task-local required revocation evidence failure'; END $$"))
+        .execute(&mut connection).await.unwrap();
+    sql_query(format!("CREATE TRIGGER {hook} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type='token_revoked' AND NEW.payload->>'client_id'='{}') EXECUTE FUNCTION {hook}()", owner.client_public_id))
+        .execute(&mut connection).await.unwrap();
+    let failed_refresh = repository
+        .revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: &raw,
+                access_token: None,
+            },
+            &owner.client_public_id,
+            "fixture-source-ip-hash",
+        )
+        .await;
+    let failed_access = repository
+        .revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: "fixture-verified-access-token",
+                access_token: Some(AccessTokenRevocation {
+                    jti: jti.clone(),
+                    expires_at,
+                }),
+            },
+            &owner.client_public_id,
+            "fixture-source-ip-hash",
+        )
+        .await;
+    sql_query(format!("DROP TRIGGER {hook} ON security_audit_events"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query(format!("DROP FUNCTION {hook}()"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(failed_refresh.is_err());
+    assert!(failed_access.is_err());
+    assert!(
+        tokens
+            .family_active(tenant_id, family_id, owner.user_id)
+            .await
+            .unwrap(),
+        "audit failure cannot leave the refresh family revoked"
+    );
+    assert!(
+        !tokens.access_token_revoked(tenant_id, &jti).await.unwrap(),
+        "audit failure cannot leave the access revocation fact"
+    );
+    let updated = repository
+        .revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: &raw,
+                access_token: None,
+            },
+            &owner.client_public_id,
+            "fixture-source-ip-hash",
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated, 1);
+    let access_updated = repository
+        .revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: "fixture-verified-access-token",
+                access_token: Some(AccessTokenRevocation {
+                    jti: jti.clone(),
+                    expires_at,
+                }),
+            },
+            &owner.client_public_id,
+            "fixture-source-ip-hash",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        access_updated, 0,
+        "access-only count retains its original contract"
+    );
+    assert!(
+        !tokens
+            .family_active(tenant_id, family_id, owner.user_id)
+            .await
+            .unwrap()
+    );
+    assert!(tokens.access_token_revoked(tenant_id, &jti).await.unwrap());
+    let audits = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type='token_revoked' AND payload->>'client_id'=$1")
+        .bind::<diesel::sql_types::Text,_>(&owner.client_public_id).get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        audits.count, 2,
+        "failed transactions commit neither effect nor event"
+    );
+    // Unknown token remains successful and non-disclosing, with its own attempt
+    // evidence; a committed event does not imply that a bearer was found.
+    assert_eq!(
+        repository
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id,
+                    client_id: owner.client_id,
+                    raw_token: "task-local-unknown-token",
+                    access_token: None
+                },
+                &owner.client_public_id,
+                "fixture-source-ip-hash"
+            )
+            .await
+            .unwrap(),
+        0
+    );
+    sql_query("DELETE FROM access_token_revocations WHERE tenant_id=$1 AND client_id=$2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(owner.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    // The runtime intentionally retains revoked refresh families. Remove this
+    // exact fixture child before deleting its client/user owners; leave the
+    // immutable Required audit evidence and production FK contract intact.
+    assert_eq!(
+        sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id=$1 AND token_family_id=$2 AND client_id=$3")
+            .bind::<SqlUuid, _>(tenant_id)
+            .bind::<SqlUuid, _>(family_id)
+            .bind::<SqlUuid, _>(owner.client_id)
+            .execute(&mut connection)
+            .await
+            .expect("fixture refresh family cleanup must precede owner deletion"),
+        1,
+    );
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(owner.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<SqlUuid, _>(owner.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
 }

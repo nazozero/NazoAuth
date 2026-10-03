@@ -538,12 +538,25 @@ impl VcIssuerTrustPolicy {
 pub struct VerifiedCredential {
     pub format: CredentialFormat,
     pub issuer: String,
+    /// Raw AKI KeyIdentifiers from the authenticated credential issuer chain.
+    /// Holder certificates and separately loaded trust anchors are not evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub issuer_chain_authority_key_identifiers: Vec<Vec<u8>>,
     pub credential_type: String,
     pub claims: Value,
     pub holder_key: Option<Value>,
     pub issued_at: Option<DateTime<Utc>>,
     pub expires_at: Option<DateTime<Utc>>,
     pub status: Option<Value>,
+}
+
+impl VerifiedCredential {
+    pub fn has_issuer_authority_key_identifier(&self, encoded: &str) -> bool {
+        URL_SAFE_NO_PAD.decode(encoded).is_ok_and(|identifier| {
+            self.issuer_chain_authority_key_identifiers
+                .contains(&identifier)
+        })
+    }
 }
 
 pub trait CredentialVerifierPort: Send + Sync {
@@ -565,6 +578,10 @@ pub enum CredentialTrustError {
     InvalidStatus,
     #[error("credential holder binding is invalid")]
     InvalidHolderBinding,
+    #[error("authenticated presentation nonce does not match the transaction")]
+    InvalidNonce,
+    #[error("presentation proof does not authenticate the current session")]
+    InvalidSessionBinding,
     #[error("credential encoding is invalid")]
     InvalidEncoding,
     #[error("credential cryptographic operation is unavailable")]

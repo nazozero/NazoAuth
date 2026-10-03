@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use nazo_oauth_server::contracts::fapi_resource::{
     FapiAuthorizationError, FapiHttpMessageSignatures, FapiResourceAuthorizer,
@@ -13,9 +13,9 @@ use actix_web::{
 };
 use chrono::Utc;
 use nazo_http_signatures::{
-    OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,
-    VerificationPolicy, VerifiedInput, content_digest, content_digest_field_matches,
-    parse_request_for_verification, prepare_response,
+    BodyDigest, OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,
+    VerificationPolicy, VerifiedInput, parse_request_for_verification_with_digest,
+    prepare_response_with_digests,
 };
 use nazo_resource_server::{
     AccessTokenScheme, DpopProofVerifierError, ProtectedResourceAuthorizationContext,
@@ -83,7 +83,7 @@ async fn fapi_resource_inner(
     endpoint: &FapiResourceEndpoint,
     request: &HttpRequest,
     body: &Bytes,
-    original: Option<&CapturedRequest>,
+    original: Option<&CapturedRequest<'_>>,
 ) -> HttpResponse {
     // High-assurance resources require the Authorization header. RFC 6750 form
     // body transport remains available only to the baseline UserInfo endpoint.
@@ -367,10 +367,11 @@ impl CapturedHeader {
     }
 }
 
-struct CapturedRequest {
+struct CapturedRequest<'body> {
     method: String,
     target_uri: String,
-    body: Bytes,
+    body: &'body [u8],
+    digest: OnceLock<Option<BodyDigest<'body>>>,
     authorization: CapturedHeader,
     dpop: CapturedHeader,
     content_digest: CapturedHeader,
@@ -380,8 +381,8 @@ struct CapturedRequest {
     captured_at: i64,
 }
 
-impl CapturedRequest {
-    fn capture(issuer: &str, request: &HttpRequest, body: &Bytes) -> Self {
+impl<'body> CapturedRequest<'body> {
+    fn capture(issuer: &str, request: &HttpRequest, body: &'body Bytes) -> Self {
         let target_uri = endpoint_uri(
             issuer,
             request
@@ -413,7 +414,8 @@ impl CapturedRequest {
         Self {
             method: request.method().as_str().to_owned(),
             target_uri,
-            body: body.clone(),
+            body: body.as_ref(),
+            digest: OnceLock::new(),
             authorization: CapturedHeader::capture(request, "authorization"),
             dpop: CapturedHeader::capture(request, "dpop"),
             content_digest: CapturedHeader::capture(request, "content-digest"),
@@ -457,12 +459,16 @@ impl CapturedRequest {
     fn parse(&self, max_age_seconds: i64) -> Result<VerifiedInput, ()> {
         let fields = self.signature_fields()?;
         let headers = self.verification_headers()?;
-        parse_request_for_verification(
+        let digest = self.valid_digest();
+        if !self.body.is_empty() && digest.is_none() {
+            return Err(());
+        }
+        parse_request_for_verification_with_digest(
             RequestInput {
                 method: &self.method,
                 target_uri: &self.target_uri,
                 headers: &headers,
-                body: &self.body,
+                body: self.body,
             },
             fields,
             VerificationPolicy {
@@ -470,20 +476,27 @@ impl CapturedRequest {
                 max_age_seconds,
                 future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
             },
+            digest,
         )
         .map_err(|_| ())
     }
 
-    fn valid_digest(&self) -> Option<&str> {
-        let value = self.content_digest.unique().ok().flatten()?;
-        (!self.body.is_empty() && content_digest_field_matches(value, &self.body))
-            .then(|| value.trim_matches([' ', '\t']))
+    fn valid_digest(&self) -> Option<&BodyDigest<'body>> {
+        self.digest
+            .get_or_init(|| {
+                if self.body.is_empty() {
+                    return None;
+                }
+                let value = self.content_digest.unique().ok().flatten()?;
+                BodyDigest::from_field(value, self.body)
+            })
+            .as_ref()
     }
 }
 
 async fn sign_response(
     endpoint: &FapiResourceEndpoint,
-    original: &CapturedRequest,
+    original: &CapturedRequest<'_>,
     response: HttpResponse,
 ) -> HttpResponse {
     let status = response.status();
@@ -492,10 +505,10 @@ async fn sign_response(
         Ok(body) => body,
         Err(_) => return HttpResponse::ServiceUnavailable().finish(),
     };
-    let digest = (!response_body.is_empty()).then(|| content_digest(&response_body));
+    let digest = (!response_body.is_empty()).then(|| BodyDigest::for_body(&response_body));
     let mut signature_headers = digest
-        .as_deref()
-        .map(|value| vec![("content-digest", value)])
+        .as_ref()
+        .map(|value| vec![("content-digest", value.field_value())])
         .unwrap_or_default();
     let mut covered_headers = Vec::new();
     for name in ["content-type", "x-fapi-interaction-id"] {
@@ -515,7 +528,7 @@ async fn sign_response(
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect::<Vec<_>>();
     if let Some(digest) = request_digest {
-        request_headers.push(("content-digest", digest));
+        request_headers.push(("content-digest", digest.field_value()));
     }
     let request_fields = original.signature_fields().ok();
     let signer = match endpoint.signatures.response_signature() {
@@ -524,7 +537,7 @@ async fn sign_response(
             return HttpResponse::ServiceUnavailable().finish();
         }
     };
-    let signing = match prepare_response(
+    let signing = match prepare_response_with_digests(
         ResponseInput {
             status: status.as_u16(),
             headers: &signature_headers,
@@ -535,7 +548,7 @@ async fn sign_response(
                 method: &original.method,
                 target_uri: &original.target_uri,
                 headers: &request_headers,
-                body: request_digest.map_or(b"", |_| original.body.as_ref()),
+                body: request_digest.map_or(b"", |_| original.body),
             },
             signature_fields: request_fields.as_ref(),
         },
@@ -546,6 +559,8 @@ async fn sign_response(
             covered_headers: &covered_headers,
             covered_request_headers: &[],
         },
+        digest.as_ref(),
+        request_digest,
     ) {
         Ok(signing) => signing,
         Err(_) => return HttpResponse::ServiceUnavailable().finish(),
@@ -569,7 +584,7 @@ async fn sign_response(
         }
     }
     if let Some(digest) = digest {
-        builder.insert_header(("content-digest", digest));
+        builder.insert_header(("content-digest", digest.field_value()));
     }
     builder.insert_header(("signature-input", fields.signature_input));
     builder.insert_header(("signature", fields.signature));

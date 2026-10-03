@@ -84,7 +84,7 @@ fn consent() -> ConsentPayload {
 }
 
 #[test]
-fn decision_commits_durable_denial_before_discarding_preparation() {
+fn decision_commits_durable_denial_without_waiting_for_preparation_disposal() {
     block_on(async {
         for failure in [
             Failure::None,
@@ -149,17 +149,9 @@ fn decision_commits_durable_denial_before_discarding_preparation() {
             match failure {
                 Failure::None => {
                     assert!(result.is_ok(), "{result:?}");
-                    assert!(fixture.ports.consent.lock().unwrap().is_none());
-                    assert!(
-                        calls
-                            .iter()
-                            .position(|call| *call == "commit_decision")
-                            .unwrap()
-                            < calls
-                                .iter()
-                                .position(|call| *call == "consume_consent")
-                                .unwrap()
-                    );
+                    assert!(fixture.ports.consent.lock().unwrap().is_some());
+                    assert!(calls.contains(&"commit_decision"));
+                    assert!(!calls.contains(&"consume_consent"));
                     let decisions = fixture.ports.decisions.lock().unwrap();
                     assert_eq!(decisions.facts.len(), 1);
                     assert_eq!(

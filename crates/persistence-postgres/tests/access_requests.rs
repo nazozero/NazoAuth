@@ -767,3 +767,187 @@ async fn delivery_binding_requires_the_exact_approved_secret_generation() {
     );
     cleanup(&pool, user).await;
 }
+
+#[tokio::test]
+async fn decision_write_ports_return_acknowledged_views_without_a_display_reread() {
+    let Some((pool, tenant, user)) = fixture().await else {
+        return;
+    };
+    let repository = AccessRequestRepository::new(pool.clone());
+    let suffix = Uuid::now_v7().simple().to_string();
+    let pending = repository
+        .create(new_request(tenant, user, &suffix))
+        .await
+        .unwrap();
+    let prepared = prepared_client(tenant, client(&suffix), false);
+    let approved = nazo_persistence::AdminAccessRequestStore::approve(
+        &repository,
+        tenant,
+        pending.id,
+        user,
+        &prepared,
+    )
+    .await
+    .unwrap();
+    assert_eq!(approved.request.id, pending.id);
+    assert_eq!(approved.request.status, AccessRequestStatus::Approved);
+    assert_eq!(
+        approved.request.approved_client_id,
+        Some(approved.client.id)
+    );
+    assert_eq!(approved.request.created_at, pending.created_at);
+    assert!(approved.request.resolved_at.is_some());
+    assert!(approved.request.requester_email.is_some());
+    assert_eq!(
+        approved.request,
+        repository
+            .by_id(tenant.tenant_id, pending.id)
+            .await
+            .unwrap()
+            .unwrap()
+    );
+
+    let to_reject = repository
+        .create(new_request(tenant, user, &format!("rejected-{suffix}")))
+        .await
+        .unwrap();
+    let rejected = nazo_persistence::AdminAccessRequestStore::reject(
+        &repository,
+        tenant.tenant_id,
+        to_reject.id,
+        user,
+        "reviewed rejection".to_owned(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(rejected.status, AccessRequestStatus::Rejected);
+    assert_eq!(rejected.created_at, to_reject.created_at);
+    assert!(rejected.resolved_at.is_some());
+    assert_eq!(rejected.admin_note.as_deref(), Some("reviewed rejection"));
+    assert_eq!(
+        rejected,
+        repository
+            .by_id(tenant.tenant_id, to_reject.id)
+            .await
+            .unwrap()
+            .unwrap()
+    );
+    assert_eq!(
+        nazo_persistence::AdminAccessRequestStore::reject(
+            &repository,
+            tenant.tenant_id,
+            to_reject.id,
+            user,
+            "another attempt".to_owned(),
+        )
+        .await
+        .unwrap_err(),
+        RepositoryError::Conflict
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE client_access_requests SET admin_note = 'later metadata' WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(to_reject.id)
+        .execute(&mut connection).await.unwrap();
+    assert_eq!(rejected.admin_note.as_deref(), Some("reviewed rejection"));
+    assert_eq!(approved.request.status, AccessRequestStatus::Approved);
+    assert_eq!(
+        sql_query("DELETE FROM client_access_requests WHERE tenant_id=$1 AND id=$2 AND user_id=$3 AND approved_client_id=$4")
+            .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+            .bind::<SqlUuid, _>(pending.id)
+            .bind::<SqlUuid, _>(user.as_uuid())
+            .bind::<SqlUuid, _>(approved.client.id)
+            .execute(&mut connection)
+            .await
+            .expect("exact approved fixture request must be removed before its client"),
+        1,
+    );
+    sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(approved.client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    cleanup(&pool, user).await;
+}
+
+#[tokio::test]
+async fn metadata_patch_rejects_stale_semantic_snapshot_and_preserves_unrelated_updates() {
+    let Some((pool, tenant, user)) = fixture().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let repository = OAuthClientRepository::new(pool.clone());
+    let initial = nazo_auth::OAuthClient {
+        id: Uuid::now_v7(),
+        tenant_id: tenant.tenant_id.as_uuid(),
+        realm_id: tenant.realm_id.as_uuid(),
+        organization_id: tenant.organization_id.as_uuid(),
+        registration: client(&suffix),
+        require_mtls_bound_tokens: false,
+        is_active: true,
+    };
+    let expected = repository.insert(&initial, None, None).await.unwrap();
+    let mut name_patch = expected.clone();
+    name_patch.client_name = "updated during sector lookup".to_owned();
+    let mut stale_redirect_patch = expected.clone();
+    stale_redirect_patch
+        .redirect_uris
+        .push("https://client.example.test/another-callback".to_owned());
+    let changed = repository
+        .update_metadata_if_current(&expected, &name_patch)
+        .await
+        .unwrap();
+    assert_eq!(
+        repository
+            .update_metadata_if_current(&expected, &stale_redirect_patch)
+            .await
+            .unwrap_err(),
+        RepositoryError::Conflict
+    );
+    let still_current = repository
+        .by_id(tenant.tenant_id.as_uuid(), initial.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(still_current, changed);
+    assert_eq!(still_current.redirect_uris, expected.redirect_uris);
+
+    let mut retried = still_current.clone();
+    retried
+        .redirect_uris
+        .push("https://client.example.test/another-callback".to_owned());
+    let completed = repository
+        .update_metadata_if_current(&still_current, &retried)
+        .await
+        .unwrap();
+    assert_eq!(completed.client_name, name_patch.client_name);
+    assert_eq!(completed.redirect_uris, retried.redirect_uris);
+    let mut cross_identity = retried.clone();
+    cross_identity.tenant_id = Uuid::now_v7();
+    assert!(matches!(
+        repository
+            .update_metadata_if_current(&completed, &cross_identity)
+            .await,
+        Err(RepositoryError::Consistency(_))
+    ));
+    assert_eq!(
+        repository
+            .by_id(tenant.tenant_id.as_uuid(), initial.id)
+            .await
+            .unwrap()
+            .unwrap(),
+        completed
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(initial.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    cleanup(&pool, user).await;
+}

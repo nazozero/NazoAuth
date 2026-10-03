@@ -18,37 +18,6 @@ use nazo_auth::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-pub(super) async fn user_grant_covers_requested_scopes_with_context(
-    context: &AuthorizationRequestContext<'_>,
-    user_id: Uuid,
-    client_id: Uuid,
-    requested_scopes: &[String],
-    requested_resource_indicators: &[String],
-    requested_authorization_details: &Value,
-) -> Result<bool, OAuthEndpointError> {
-    match context
-        .service
-        .grant_covers(
-            user_id,
-            client_id,
-            requested_scopes,
-            requested_resource_indicators,
-            requested_authorization_details,
-        )
-        .await
-    {
-        Ok(value) => Ok(value),
-        Err(error) => {
-            tracing::warn!(%error, "failed to query authorization grant");
-            Err(OAuthEndpointError::json(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权记录查询失败.",
-            ))
-        }
-    }
-}
-
 pub(super) async fn issue_authorization_code_without_interaction_with_context(
     context: &AuthorizationRequestContext<'_>,
     facts: &AuthorizationRequestFacts<'_>,
@@ -201,16 +170,8 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         )
         .await;
     }
-    if let (Some(uri), Some(version)) = (
-        payload.pushed_request_uri.as_deref(),
-        pushed_request_version,
-    ) && let Err(error) = context
-        .service
-        .discard_pushed_authorization_request(uri, version)
-        .await
-    {
-        tracing::warn!(?error, "failed to discard committed PAR preparation");
-    }
+    // Preparation keeps its original TTL. The durable request/PAR decision
+    // identity, not eager cache deletion, prevents a second effective decision.
     if payload.scopes.iter().any(|scope| scope == "openid") {
         let bound = match facts.session_id {
             Some(session_id) => context

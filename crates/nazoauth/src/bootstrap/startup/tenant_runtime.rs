@@ -536,13 +536,16 @@ impl TenantRuntimeRefresher {
             .load_active()
             .await
             .map_err(|error| anyhow::anyhow!("tenant directory read failed: {error}"))?;
-        if snapshot.revision != revision {
+        if snapshot.revision < revision {
             anyhow::bail!(
-                "tenant directory revision changed during read (expected {revision}, got {})",
+                "tenant directory snapshot precedes revision check (expected at least {revision}, got {})",
                 snapshot.revision
             );
         }
-        let cache_was_ahead = local_revision > revision;
+        // The authoritative read owns one complete coherent snapshot. A commit
+        // between the compact precheck and that read may advance its revision.
+        let authoritative_revision = snapshot.revision;
+        let cache_was_ahead = local_revision > authoritative_revision;
         let snapshot = Arc::new(snapshot);
         let outcome = self
             .apply_snapshot(&snapshot, SnapshotSource::Database)
@@ -557,7 +560,7 @@ impl TenantRuntimeRefresher {
                 state.rejected_cache_revision = Some(local_revision);
             } else if state
                 .rejected_cache_revision
-                .is_some_and(|rejected| revision >= rejected)
+                .is_some_and(|rejected| authoritative_revision >= rejected)
             {
                 state.rejected_cache_revision = None;
             }

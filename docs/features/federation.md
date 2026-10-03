@@ -147,7 +147,11 @@ Endpoint:
 The gateway assertion is HMAC-SHA256 signed over issuer, audience, subject,
 normalized email, `iat`, and `exp`. The application enforces issuer, audience,
 timestamp bounds, a five-minute maximum assertion lifetime, normalized email,
-and constant-time signature comparison.
+and constant-time signature comparison. This is the application's custom JSON
+gateway envelope, not a direct XML SAML assertion parser. The legacy `name`
+member is unsigned; it is stored only as `untrusted_display_name` link metadata
+and does not initialize the local display name or select identity/permissions.
+Identity selection uses the authenticated provider type, issuer and subject.
 
 ## Identity Linking
 
@@ -164,6 +168,10 @@ Resolution order:
 - otherwise a local user is provisioned with a random unusable password hash and
   `email_verified=true`
 
+Existing lookup, new provisioning and unique-conflict recovery all pass the same
+active-account gate on the account returned by storage before session creation.
+Upstream identity proof is not repeated at this gate.
+
 Successful federation login creates the normal HTTPOnly server-side session.
 The session `amr` contains the federation method and `federated`.
 
@@ -172,8 +180,12 @@ Current users can inspect and remove their own external identity links through:
 - `GET /auth/me/federation/links`
 - `DELETE /auth/me/federation/links/{link_id}`
 
-The link list omits raw provider claims. Unlink operations are scoped by the
-current session user and emit `external_identity_unlinked` audit events.
+The link list uses a tenant/user-scoped metadata projection without loading raw
+provider claims. Unlink keeps the complete deleted-link result for its existing
+audit contract. Unlink operations are scoped by the
+current session user, require the same configured cookie/header CSRF token check
+as other profile writes before account/link lookup, and emit
+`external_identity_unlinked` audit events.
 
 Local session state remains the NazoAuth fact source. External provider logout
 failures do not mark remote logout as complete; local `/auth/logout` and OIDC

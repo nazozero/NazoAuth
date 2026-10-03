@@ -63,9 +63,9 @@ where
         &self,
         request: CreateClientRequest,
     ) -> Result<CreatedClient, AdminClientError> {
-        let prepared = self.prepare_registration(request).await?;
-        let issued_secret = prepared.issued_secret.clone();
+        let mut prepared = self.prepare_registration(request).await?;
         let client = insert_prepared_client(&self.repository, &prepared).await?;
+        let issued_secret = prepared.issued_secret.take();
         Ok(CreatedClient {
             client,
             issued_secret,
@@ -94,9 +94,9 @@ where
         client_id: &str,
         request: PatchClientRequest,
     ) -> Result<OAuthClient, AdminClientError> {
-        let current = self.detail(client_id).await?;
+        let expected = self.detail(client_id).await?;
         let updated = super::patch::prepare_client_patch(
-            current,
+            expected.clone(),
             request,
             &self.policy,
             &self.sector_identifiers,
@@ -104,7 +104,7 @@ where
         )
         .await?;
         self.repository
-            .update(&updated)
+            .update(&expected, &updated)
             .await
             .map_err(AdminClientError::Write)
     }

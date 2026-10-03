@@ -12,6 +12,30 @@ use super::Openid4vcCredentialCrypto;
 
 const MAX_SCOPED_CREDENTIAL_TRUST_ANCHORS: usize = 4;
 
+/// Project metadata only after the format verifier authenticates this issuer
+/// chain. Do not append loaded anchors or perform a second signature check.
+pub(super) fn issuer_authority_key_identifiers(
+    certificates: &[Vec<u8>],
+) -> Result<Vec<Vec<u8>>, CredentialTrustError> {
+    let mut identifiers: Vec<Vec<u8>> = Vec::new();
+    for der in certificates {
+        let (_, certificate) = parse_x509(der, "credential issuer certificate")
+            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+        for extension in certificate.extensions() {
+            if let x509_parser::extensions::ParsedExtension::AuthorityKeyIdentifier(authority) =
+                extension.parsed_extension()
+                && let Some(identifier) = authority.key_identifier.as_ref()
+                && !identifiers
+                    .iter()
+                    .any(|existing| existing.as_slice() == identifier.0)
+            {
+                identifiers.push(identifier.0.to_vec());
+            }
+        }
+    }
+    Ok(identifiers)
+}
+
 pub fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Vec<u8>>> {
     let certificates = parse_pem_certificates(pem.as_bytes())?;
     if certificates.is_empty() || certificates.len() > MAX_SCOPED_CREDENTIAL_TRUST_ANCHORS {

@@ -374,3 +374,85 @@ async fn update_disable_finalize_and_describe_complete_the_lifecycle() {
     assert_eq!(audit_rows_for(&probe, &post_finalize_describe_jti).await, 1);
     assert_eq!(ledger_rows(&probe).await, 7);
 }
+
+#[derive(Debug, diesel::QueryableByName)]
+struct AuditPayloadRow {
+    #[diesel(sql_type = sql_types::Jsonb)]
+    payload: serde_json::Value,
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn audit_before_revision_is_the_locked_mutation_fact_after_a_concurrent_commit() {
+    let Some((executor, probe)) = isolated_executor().await else {
+        return;
+    };
+    let request = provisioning_request("locked", "locked.example");
+    let tenant_id = request.binding.tenant.tenant_id;
+    let create = operation_identity();
+    executor
+        .execute_control_operation(frame(
+            DirectoryControlAction::Create {
+                expected_revision: 0,
+                provisioning: Box::new(request),
+            },
+            &create,
+        ))
+        .await
+        .unwrap();
+    let mut blocker = probe.pool.get().await.unwrap();
+    blocker.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT revision FROM tenant_runtime_directory_state WHERE singleton FOR UPDATE")
+        .execute(&mut blocker)
+        .await
+        .unwrap();
+    let update = operation_identity();
+    let action = DirectoryControlAction::Update {
+        expected_revision: 2,
+        tenant_id,
+        issuer: "https://updated.example".to_owned(),
+        external_host: "updated.example".to_owned(),
+    };
+    let (outcome, ()) = tokio::join!(
+        executor.execute_control_operation(frame(action.clone(), &update)),
+        async {
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                loop {
+                    let mut connection = probe.pool.get().await.unwrap();
+                    let waiting = sql_query("SELECT count(*)::bigint AS value FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%tenant_runtime_directory_state%'")
+                        .get_result::<ScalarRow>(&mut connection).await.unwrap().value;
+                    if waiting > 0 { break; }
+                    tokio::task::yield_now().await;
+                }
+            }).await.expect("operation must reach the held revision lock");
+            sql_query("UPDATE tenant_runtime_bindings SET runtime_revision = runtime_revision + 1 WHERE tenant_id = $1")
+                .bind::<sql_types::Uuid, _>(tenant_id.as_uuid()).execute(&mut blocker).await.unwrap();
+            blocker.batch_execute("COMMIT").await.unwrap();
+        }
+    );
+    drop(blocker);
+    let outcome = outcome.unwrap();
+    let DirectoryControlOutcome::Mutation(mutation) = &outcome else {
+        panic!("mutation expected");
+    };
+    assert_eq!(mutation.previous_revision, 2);
+    assert_eq!(mutation.revision, 3);
+    let mut connection = probe.pool.get().await.unwrap();
+    let audit = sql_query("SELECT payload FROM security_audit_events WHERE payload->>'jti' = $1")
+        .bind::<sql_types::Text, _>(&update.jti_string)
+        .get_result::<AuditPayloadRow>(&mut connection)
+        .await
+        .unwrap()
+        .payload;
+    drop(connection);
+    assert_eq!(audit["previous_revision"], json!(2));
+    assert_eq!(audit["revision"], json!(3));
+    assert_eq!(
+        executor
+            .execute_control_operation(frame(action, &update))
+            .await
+            .unwrap(),
+        outcome
+    );
+    assert_eq!(audit_rows_for(&probe, &update.jti).await, 1);
+    assert_eq!(ledger_rows(&probe).await, 2);
+}

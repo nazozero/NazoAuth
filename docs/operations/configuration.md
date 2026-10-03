@@ -29,6 +29,10 @@ The process builds a separate immutable runtime graph for each binding and
 routes a request only by its canonical Host. The directory-derived issuer then
 supplies that graph's frontend and CORS defaults; there is no process-wide
 `TENANT_ID`, `REALM_ID`, or `ORGANIZATION_ID` request selector.
+Authoritative reconciliation accepts a complete coherent directory snapshot
+that advances beyond its compact revision precheck. Cache repair and rejection
+track the returned snapshot revision; an older-than-precheck snapshot is rejected.
+Candidate validation and last-good runtime publication remain unchanged.
 
 ## Minimal deployment
 

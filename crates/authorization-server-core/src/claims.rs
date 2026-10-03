@@ -52,6 +52,9 @@ pub struct OidcClaimRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Claims {
+    /// Issuer-owned authorization instance. Old tokens remain token-bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_epoch: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -83,6 +86,7 @@ pub struct Claims {
 }
 
 pub struct AccessTokenClaimsInput<'a> {
+    pub authorization_id: Option<Uuid>,
     pub client_epoch: Option<i64>,
     pub user_epoch: Option<i64>,
     pub tenant_id: Uuid,
@@ -109,6 +113,7 @@ pub fn access_token_claims(
     jti: &str,
 ) -> Claims {
     Claims {
+        authorization_id: input.authorization_id,
         client_epoch: input.client_epoch,
         user_epoch: input.user_epoch,
         iss: issuer.to_owned(),

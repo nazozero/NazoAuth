@@ -52,6 +52,25 @@ macro_rules! user_record_selection {
     };
 }
 
+macro_rules! mutation_record_selection {
+    () => {
+        (
+            client_access_requests::id,
+            client_access_requests::tenant_id,
+            client_access_requests::user_id,
+            diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>("(SELECT email FROM users WHERE users.id = client_access_requests.user_id AND users.tenant_id = client_access_requests.tenant_id)"),
+            client_access_requests::site_name,
+            client_access_requests::site_url,
+            client_access_requests::request_description,
+            client_access_requests::status,
+            client_access_requests::admin_note,
+            client_access_requests::approved_client_id,
+            client_access_requests::created_at,
+            client_access_requests::resolved_at,
+        )
+    };
+}
+
 macro_rules! admin_record_selection {
     () => {
         (
@@ -292,6 +311,18 @@ impl AccessRequestRepository {
         actor_user_id: UserId,
         client: &PreparedClientRegistration,
     ) -> Result<ApprovedClient, RepositoryError> {
+        self.approve_with_view(tenant, request_id, actor_user_id, client)
+            .await
+            .map(|approved| approved.client)
+    }
+
+    async fn approve_with_view(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        client: &PreparedClientRegistration,
+    ) -> Result<nazo_persistence::AdminAccessRequestApproval, RepositoryError> {
         if client.tenant != tenant {
             return Err(RepositoryError::Consistency(
                 "prepared client tenant does not match the approving administrator".to_owned(),
@@ -299,62 +330,79 @@ impl AccessRequestRepository {
         }
         let mut connection = self.connection().await?;
         connection
-            .transaction::<ApprovedClient, ApprovalError, _>(async |connection| {
-                let pending = client_access_requests::table
-                    .filter(client_access_requests::tenant_id.eq(tenant.tenant_id.as_uuid()))
-                    .filter(client_access_requests::id.eq(request_id))
-                    .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code()))
-                    .select(client_access_requests::user_id)
-                    .for_update()
-                    .first::<Uuid>(connection)
-                    .await
-                    .optional()
-                    .map_err(map_error)?;
-                let Some(request_user_id) = pending else {
-                    return Err(ApprovalError::Repository(RepositoryError::AlreadyProcessed));
-                };
-                for user_id in [request_user_id, actor_user_id.as_uuid()] {
-                    let consistent = users::table
-                        .find(user_id)
-                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
-                        .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
-                        .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
-                        .select(users::id)
-                        .first::<Uuid>(connection)
-                        .await
-                        .optional()
-                        .map_err(map_error)?
-                        .is_some();
-                    if !consistent {
-                        return Err(ApprovalError::Repository(RepositoryError::Consistency(
-                            "access-request user context is inconsistent".to_owned(),
-                        )));
-                    }
-                }
-                let approved = insert_client(connection, tenant, client).await?;
-                let updated = diesel::update(
-                    client_access_requests::table
+            .transaction::<nazo_persistence::AdminAccessRequestApproval, ApprovalError, _>(
+                async |connection| {
+                    let pending = client_access_requests::table
                         .filter(client_access_requests::tenant_id.eq(tenant.tenant_id.as_uuid()))
                         .filter(client_access_requests::id.eq(request_id))
                         .filter(
                             client_access_requests::status.eq(AccessRequestStatus::Pending.code()),
-                        ),
-                )
-                .set((
-                    client_access_requests::status.eq(AccessRequestStatus::Approved.code()),
-                    client_access_requests::resolved_by_user_id.eq(actor_user_id.as_uuid()),
-                    client_access_requests::approved_client_id.eq(approved.id),
-                    client_access_requests::resolved_at.eq(diesel::dsl::now),
-                    client_access_requests::updated_at.eq(diesel::dsl::now),
-                ))
-                .execute(connection)
-                .await
-                .map_err(map_error)?;
-                if updated != 1 {
-                    return Err(ApprovalError::Repository(RepositoryError::AlreadyProcessed));
-                }
-                Ok(approved)
-            })
+                        )
+                        .select(client_access_requests::user_id)
+                        .for_update()
+                        .first::<Uuid>(connection)
+                        .await
+                        .optional()
+                        .map_err(map_error)?;
+                    let Some(request_user_id) = pending else {
+                        return Err(ApprovalError::Repository(RepositoryError::AlreadyProcessed));
+                    };
+                    for user_id in [request_user_id, actor_user_id.as_uuid()] {
+                        let consistent = users::table
+                            .find(user_id)
+                            .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                            .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
+                            .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
+                            .select(users::id)
+                            .first::<Uuid>(connection)
+                            .await
+                            .optional()
+                            .map_err(map_error)?
+                            .is_some();
+                        if !consistent {
+                            return Err(ApprovalError::Repository(RepositoryError::Consistency(
+                                "access-request user context is inconsistent".to_owned(),
+                            )));
+                        }
+                    }
+                    let approved = insert_client(connection, tenant, client).await?;
+                    let updated = diesel::update(
+                        client_access_requests::table
+                            .filter(
+                                client_access_requests::tenant_id.eq(tenant.tenant_id.as_uuid()),
+                            )
+                            .filter(client_access_requests::id.eq(request_id))
+                            .filter(
+                                client_access_requests::status
+                                    .eq(AccessRequestStatus::Pending.code()),
+                            ),
+                    )
+                    .set((
+                        client_access_requests::status.eq(AccessRequestStatus::Approved.code()),
+                        client_access_requests::resolved_by_user_id.eq(actor_user_id.as_uuid()),
+                        client_access_requests::approved_client_id.eq(approved.id),
+                        client_access_requests::resolved_at.eq(diesel::dsl::now),
+                        client_access_requests::updated_at.eq(diesel::dsl::now),
+                    ))
+                    .returning(mutation_record_selection!())
+                    .load::<AccessRequestRecord>(connection)
+                    .await
+                    .map_err(map_error)?;
+                    if updated.len() != 1 {
+                        return Err(ApprovalError::Repository(RepositoryError::AlreadyProcessed));
+                    }
+                    let request = AccessRequest::try_from(
+                        updated
+                            .into_iter()
+                            .next()
+                            .expect("one committed request row"),
+                    )?;
+                    Ok(nazo_persistence::AdminAccessRequestApproval {
+                        client: approved,
+                        request,
+                    })
+                },
+            )
             .await
             .map_err(ApprovalError::into_repository)
     }
@@ -366,28 +414,53 @@ impl AccessRequestRepository {
         actor_user_id: UserId,
         admin_note: String,
     ) -> Result<(), RepositoryError> {
+        self.reject_with_view(tenant_id, request_id, actor_user_id, admin_note)
+            .await
+            .map(|_| ())
+    }
+
+    async fn reject_with_view(
+        &self,
+        tenant_id: TenantId,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        admin_note: String,
+    ) -> Result<AccessRequest, RepositoryError> {
         let mut connection = self.connection().await?;
-        let updated = diesel::update(
-            client_access_requests::table
-                .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
-                .filter(client_access_requests::id.eq(request_id))
-                .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code())),
-        )
-        .set((
-            client_access_requests::status.eq(AccessRequestStatus::Rejected.code()),
-            client_access_requests::admin_note.eq(admin_note),
-            client_access_requests::resolved_by_user_id.eq(actor_user_id.as_uuid()),
-            client_access_requests::resolved_at.eq(diesel::dsl::now),
-            client_access_requests::updated_at.eq(diesel::dsl::now),
-        ))
-        .execute(&mut connection)
-        .await
-        .map_err(map_error)?;
-        if updated == 1 {
-            Ok(())
-        } else {
-            Err(RepositoryError::Conflict)
-        }
+        connection
+            .transaction::<AccessRequest, ApprovalError, _>(async move |connection| {
+                let updated = diesel::update(
+                    client_access_requests::table
+                        .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(client_access_requests::id.eq(request_id))
+                        .filter(
+                            client_access_requests::status.eq(AccessRequestStatus::Pending.code()),
+                        ),
+                )
+                .set((
+                    client_access_requests::status.eq(AccessRequestStatus::Rejected.code()),
+                    client_access_requests::admin_note.eq(admin_note),
+                    client_access_requests::resolved_by_user_id.eq(actor_user_id.as_uuid()),
+                    client_access_requests::resolved_at.eq(diesel::dsl::now),
+                    client_access_requests::updated_at.eq(diesel::dsl::now),
+                ))
+                .returning(mutation_record_selection!())
+                .load::<AccessRequestRecord>(connection)
+                .await
+                .map_err(map_error)?;
+                if updated.len() != 1 {
+                    return Err(ApprovalError::Repository(RepositoryError::Conflict));
+                }
+                AccessRequest::try_from(
+                    updated
+                        .into_iter()
+                        .next()
+                        .expect("one committed request row"),
+                )
+                .map_err(ApprovalError::Repository)
+            })
+            .await
+            .map_err(ApprovalError::into_repository)
     }
 
     pub async fn cancel_pending(
@@ -514,9 +587,19 @@ impl nazo_persistence::AdminAccessRequestStore for AccessRequestRepository {
         request_id: Uuid,
         actor_user_id: UserId,
         client: &'a PreparedClientRegistration,
-    ) -> futures_util::future::BoxFuture<'a, Result<ApprovedClient, RepositoryError>> {
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<nazo_persistence::AdminAccessRequestApproval, RepositoryError>,
+    > {
         Box::pin(async move {
-            AccessRequestRepository::approve(self, tenant, request_id, actor_user_id, client).await
+            AccessRequestRepository::approve_with_view(
+                self,
+                tenant,
+                request_id,
+                actor_user_id,
+                client,
+            )
+            .await
         })
     }
 
@@ -526,10 +609,16 @@ impl nazo_persistence::AdminAccessRequestStore for AccessRequestRepository {
         request_id: Uuid,
         actor_user_id: UserId,
         admin_note: String,
-    ) -> futures_util::future::BoxFuture<'_, Result<(), RepositoryError>> {
+    ) -> futures_util::future::BoxFuture<'_, Result<AccessRequest, RepositoryError>> {
         Box::pin(async move {
-            AccessRequestRepository::reject(self, tenant_id, request_id, actor_user_id, admin_note)
-                .await
+            AccessRequestRepository::reject_with_view(
+                self,
+                tenant_id,
+                request_id,
+                actor_user_id,
+                admin_note,
+            )
+            .await
         })
     }
 }

@@ -129,6 +129,9 @@ pub struct NativeSsoSourceFence {
 /// Owned input for the one durable token-issuance commit boundary.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommitTokenIssuance {
+    /// When present, must be this issuance root or its checked refresh family.
+    /// None is the explicit legacy token-bound contract.
+    pub authorization_id: Option<Uuid>,
     pub principal_state: TokenPrincipalState,
     pub subject: String,
     pub issuance_id: Uuid,
@@ -290,6 +293,7 @@ pub struct SingleUseRedemption {
 }
 
 pub struct AccessTokenSignInput<'a> {
+    pub authorization_id: Option<Uuid>,
     pub client_epoch: Option<i64>,
     pub user_epoch: Option<i64>,
     pub issuer: &'a str,
@@ -526,6 +530,18 @@ pub trait TokenRepositoryPort: Send + Sync {
     ) -> TokenFuture<'_, bool>;
 
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize>;
+
+    /// Own the required revocation event in the same atomic commit as access
+    /// denial or refresh-family invalidation. Unsupported adapters fail before
+    /// effects; never emulate this by calling the ordinary mutation then audit.
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        _input: TokenRevocation<'a>,
+        _client_public_id: &'a str,
+        _source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize> {
+        Box::pin(async { Err(TokenPortError::Unavailable) })
+    }
 }
 
 pub trait TokenStateStorePort: Send + Sync {
@@ -989,19 +1005,8 @@ where
         client: &OAuthClient,
     ) -> Result<usize, TokenPortError> {
         let access_token = self
-            .signer
-            .decode_access_token(issuer, raw_token)
-            .await?
-            .filter(|claims| {
-                claims.client_id == client.client_id
-                    && claims.tenant_id.parse::<Uuid>().ok() == Some(client.tenant_id)
-            })
-            .and_then(|claims| {
-                Some(AccessTokenRevocation {
-                    jti: claims.jti,
-                    expires_at: DateTime::<Utc>::from_timestamp(claims.exp, 0)?,
-                })
-            });
+            .verified_revocation_target(issuer, raw_token, client)
+            .await?;
         if let Some(access_token) = access_token {
             self.repository
                 .revoke_issued_tokens(
@@ -1024,6 +1029,55 @@ where
                 access_token: None,
             })
             .await
+    }
+
+    /// The authenticated endpoint uses this command so Required evidence cannot
+    /// lag a separately committed security effect. Token text is never logged.
+    pub async fn revoke_token_with_audit(
+        &self,
+        issuer: &str,
+        raw_token: &str,
+        client: &OAuthClient,
+        source_ip_hash: &str,
+    ) -> Result<usize, TokenPortError> {
+        let access_token = self
+            .verified_revocation_target(issuer, raw_token, client)
+            .await?;
+        self.repository
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id: client.tenant_id,
+                    client_id: client.id,
+                    raw_token,
+                    access_token,
+                },
+                &client.client_id,
+                source_ip_hash,
+            )
+            .await
+    }
+
+    async fn verified_revocation_target(
+        &self,
+        issuer: &str,
+        raw_token: &str,
+        client: &OAuthClient,
+    ) -> Result<Option<AccessTokenRevocation>, TokenPortError> {
+        let access_token = self
+            .signer
+            .decode_access_token(issuer, raw_token)
+            .await?
+            .filter(|claims| {
+                claims.client_id == client.client_id
+                    && claims.tenant_id.parse::<Uuid>().ok() == Some(client.tenant_id)
+            })
+            .and_then(|claims| {
+                Some(AccessTokenRevocation {
+                    jti: claims.jti,
+                    expires_at: DateTime::<Utc>::from_timestamp(claims.exp, 0)?,
+                })
+            });
+        Ok(access_token)
     }
 
     pub async fn sign_introspection_response(

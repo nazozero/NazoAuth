@@ -1793,6 +1793,12 @@ async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writ
     let Some(database_url) = database_url() else {
         return;
     };
+    // The isolated schema proves application migration from empty. Runtime role
+    // grants separately target the production public schema, which needs its
+    // actual complete migration baseline before configure_runtime_role.
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("runtime role fixture public baseline must be fully migrated");
     let schema = format!("access_revocation_baseline_{}", Uuid::now_v7().simple());
     let mut bootstrap = AsyncPgConnection::establish(&database_url)
         .await

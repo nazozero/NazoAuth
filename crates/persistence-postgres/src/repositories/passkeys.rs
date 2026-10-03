@@ -1,5 +1,8 @@
 use crate::{
-    DbPool, convert::identity, get_conn, rows::identity::PasskeyCredentialRow,
+    DbPool,
+    convert::identity,
+    get_conn,
+    rows::identity::{PasskeyCredentialRow, PasskeyCredentialSummaryRow},
     schema::user_passkey_credentials,
 };
 use diesel::{
@@ -10,7 +13,7 @@ use diesel::{
 use diesel_async::RunQueryDsl;
 use nazo_identity::{
     TenantId, UserId,
-    ports::{PasskeyCredential, RepositoryError},
+    ports::{PasskeyCredential, PasskeyCredentialSummary, RepositoryError},
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -42,6 +45,27 @@ impl PasskeyRepository {
             .map_err(map_error)?
             .into_iter()
             .map(identity::passkey)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+    pub async fn list_summaries(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> Result<Vec<PasskeyCredentialSummary>, RepositoryError> {
+        let mut connection = get_conn(&self.pool)
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        user_passkey_credentials::table
+            .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid()))
+            .order(user_passkey_credentials::created_at.asc())
+            .select(PasskeyCredentialSummaryRow::as_select())
+            .load(&mut connection)
+            .await
+            .map_err(map_error)?
+            .into_iter()
+            .map(identity::passkey_summary)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
@@ -163,6 +187,14 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
         user_id: UserId,
     ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<PasskeyCredential>> {
         Box::pin(async move { PasskeyRepository::list(self, tenant_id, user_id).await })
+    }
+
+    fn list_summaries(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<PasskeyCredentialSummary>> {
+        Box::pin(async move { PasskeyRepository::list_summaries(self, tenant_id, user_id).await })
     }
 
     fn by_credential_id<'a>(

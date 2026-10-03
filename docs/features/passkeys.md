@@ -43,6 +43,11 @@ Ceremony state is stored only in Valkey with a five-minute TTL and is consumed w
 Successful passkey login creates the normal HTTPOnly server-side session with
 `amr=["passkey"]`.
 
+The profile list selects only tenant/user-scoped display metadata, without loading
+the credential JSON. Login and registration still load and decode complete
+credentials; registration obtains exclusion IDs from that decoded material, so
+damaged credential data cannot silently turn into a usable exclusion list.
+
 ## Credential Persistence
 
 Credential JSONB uses the existing WebAuthn Serde implementation. Identity

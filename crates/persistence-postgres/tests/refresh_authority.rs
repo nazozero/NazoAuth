@@ -131,6 +131,7 @@ fn new_token(fixture: &Fixture, issued_at: DateTime<Utc>) -> NewRefreshToken {
 fn issuance(fixture: &Fixture, refresh_token: RefreshTokenCommit) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        authorization_id: None,
         native_sso_source: None,
         principal_state: TokenPrincipalState {
             client_epoch: 0,

@@ -41,7 +41,11 @@ impl AdminClientRepositoryPort for CapturingRepository {
         Box::pin(async { Err(AdminClientPortError::Unexpected) })
     }
 
-    fn update<'a>(&'a self, _client: &'a OAuthClient) -> AdminClientFuture<'a, OAuthClient> {
+    fn update<'a>(
+        &'a self,
+        _expected: &'a OAuthClient,
+        _client: &'a OAuthClient,
+    ) -> AdminClientFuture<'a, OAuthClient> {
         Box::pin(async { Err(AdminClientPortError::Unexpected) })
     }
 }

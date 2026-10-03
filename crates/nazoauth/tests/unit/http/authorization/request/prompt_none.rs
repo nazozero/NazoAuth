@@ -56,14 +56,14 @@ impl AuthorizationRepositoryPort for GrantFailureRepository {
         user_id: Uuid,
         client_id: Uuid,
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>> {
-        self.reached.fetch_add(1, Ordering::SeqCst);
-        self.failed.grant(user_id, client_id)
+        self.live.grant(user_id, client_id)
     }
     fn commit_decision(
         &self,
         input: nazo_auth::AuthorizationDecisionCommit,
     ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
-        self.live.commit_decision(input)
+        self.reached.fetch_add(1, Ordering::SeqCst);
+        self.failed.commit_decision(input)
     }
 
     fn client_authentication_snapshot<'a>(
@@ -505,7 +505,7 @@ async fn assert_storage_failure(response: HttpResponse) {
     );
 }
 #[actix_web::test]
-async fn prompt_none_grant_lookup_fails_closed_when_database_connection_fails() {
+async fn prompt_none_final_coverage_fails_closed_when_database_connection_fails() {
     let failed = create_pool("postgres://invalid:invalid@127.0.0.1:1/nazo".to_owned(), 1)
         .expect("pool builds without connecting");
     let Some(mut fixture) = PromptNoneFixture::new(Fault::None, Some(failed)).await else {
@@ -516,11 +516,11 @@ async fn prompt_none_grant_lookup_fails_closed_when_database_connection_fails() 
     assert_eq!(
         fixture.reached.as_ref().load(Ordering::SeqCst),
         1,
-        "grant lookup must reach the failed database"
+        "accepting coverage transaction must reach the failed database"
     );
 }
 #[actix_web::test]
-async fn prompt_none_grant_lookup_fails_closed_when_query_fails() {
+async fn prompt_none_final_coverage_fails_closed_when_query_fails() {
     let schema = format!(
         "prompt_none_grant_query_failure_{}",
         Uuid::now_v7().simple()
@@ -532,7 +532,13 @@ async fn prompt_none_grant_lookup_fails_closed_when_query_fails() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::None, Some(failed)).await else {
         return;
     };
-    create_isolated_schema(&fixture.live.state, &schema, &["user_client_grants"]).await;
+    create_isolated_schema(
+        &fixture.live.state,
+        &schema,
+        &["oauth_clients", "users", "user_client_grants"],
+    )
+    .await;
+    exec_sql(&fixture.live.state, &format!("INSERT INTO {schema}.users SELECT * FROM public.users WHERE id='{}'; INSERT INTO {schema}.oauth_clients SELECT * FROM public.oauth_clients WHERE client_id='{}';", fixture.user_id, fixture.client_id)).await;
     rename_column(
         &fixture.live.state,
         &schema,
@@ -547,7 +553,7 @@ async fn prompt_none_grant_lookup_fails_closed_when_query_fails() {
     assert_eq!(
         fixture.reached.as_ref().load(Ordering::SeqCst),
         1,
-        "grant lookup must reach the malformed schema"
+        "accepting coverage transaction must reach the malformed schema"
     );
 }
 #[actix_web::test]
@@ -582,7 +588,7 @@ async fn prompt_none_issues_single_use_authorization_code_without_user_interacti
     }
 }
 #[actix_web::test]
-async fn prompt_none_discards_preparation_after_committing_and_publishing_code() {
+async fn prompt_none_retains_original_ttl_preparation_after_committing_and_publishing_code() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::None, None).await else {
         return;
     };
@@ -592,14 +598,18 @@ async fn prompt_none_discards_preparation_after_committing_and_publishing_code()
     let query = redirect_query(&response);
     assert!(query.contains_key("code"));
     assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
-    assert_eq!(
+    assert!(
         valkey_get(&fixture.live.state.valkey, par_storage_key(&uri))
             .await
-            .expect("PAR lookup"),
-        None,
-        "committed PAR preparation is discarded"
+            .expect("PAR lookup")
+            .is_some(),
+        "original TTL preparation remains disposable"
     );
-    assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 1);
+    assert_eq!(
+        fixture.reached.as_ref().load(Ordering::SeqCst),
+        0,
+        "response does not await preparation disposal"
+    );
 }
 #[actix_web::test]
 async fn prompt_none_undelivered_commit_keeps_par_fence_and_grant_count() {
@@ -703,26 +713,26 @@ async fn assert_par_disposal_failure_keeps_committed_code(fault: Fault) {
     assert_eq!(authorization_count(&fixture).await, 1);
     assert_eq!(
         fixture.reached.as_ref().load(Ordering::SeqCst),
-        1,
-        "fault occurs only in post-commit preparation disposal"
+        0,
+        "post-commit preparation disposal is absent from the response path"
     );
 }
 
 #[actix_web::test]
-async fn prompt_none_cache_eviction_during_disposal_keeps_committed_code() {
+async fn prompt_none_does_not_call_cache_eviction_disposal() {
     assert_par_disposal_failure_keeps_committed_code(Fault::ParMissing).await;
 }
 #[actix_web::test]
-async fn prompt_none_corrupt_disposal_snapshot_keeps_committed_code() {
+async fn prompt_none_does_not_call_corrupt_snapshot_disposal() {
     assert_par_disposal_failure_keeps_committed_code(Fault::ParMalformed).await;
 }
 #[actix_web::test]
-async fn prompt_none_disposal_storage_failure_keeps_committed_code() {
+async fn prompt_none_does_not_call_unavailable_disposal_storage() {
     assert_par_disposal_failure_keeps_committed_code(Fault::ParRead).await;
 }
 
 #[actix_web::test]
-async fn prompt_none_replacement_attempt_is_rejected_and_original_decision_commits() {
+async fn prompt_none_does_not_attempt_a_post_commit_par_replacement() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::ParReplaced, None).await else {
         return;
     };
@@ -739,8 +749,8 @@ async fn prompt_none_replacement_attempt_is_rejected_and_original_decision_commi
             .load_par(&uri)
             .await
             .unwrap()
-            .is_none()
+            .is_some()
     );
     assert_eq!(decision_fact_count(&fixture, &uri).await, 1);
-    assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 0);
 }

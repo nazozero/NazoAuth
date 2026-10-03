@@ -154,6 +154,25 @@ impl MfaRepositoryPort for MfaRepository {
         })
     }
 
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: uuid::Uuid,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            MfaRepository::clear_mfa_state_if_current_with_required_audit(
+                self,
+                tenant_id,
+                user_id,
+                credential_id,
+                source_ip_hash,
+            )
+            .await
+        })
+    }
+
     fn remember_device(
         &self,
         tenant_id: TenantId,

@@ -483,7 +483,11 @@ impl ServerCredentialIssuerOperations {
                 if retained.token_id == token_id
                     && retained.tenant_id == tenant_id
                     && retained.subject_id == subject_id
-                    && retained.client_id == claims.client_id =>
+                    && retained.client_id == claims.client_id
+                    && retained.authorization_id == claims.authorization_id
+                    && retained.dpop_jkt == dpop_jkt
+                    && (retained.authorization_id.is_none()
+                        || retained.mtls_x5t_s256 == mtls_x5t_s256) =>
             {
                 retained.proof_origin
             }
@@ -506,6 +510,8 @@ impl ServerCredentialIssuerOperations {
             }
         };
         let access = CredentialAccess {
+            authorization_id: claims.authorization_id,
+            mtls_x5t_s256,
             proof_origin,
             token_id,
             tenant_id,

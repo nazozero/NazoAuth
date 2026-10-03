@@ -53,16 +53,16 @@ fn refresh_token_has_stable_sender_constraint(token: &TokenRow) -> bool {
 }
 
 fn refresh_token_scopes(
-    original_scopes: &[String],
+    original_scopes: Vec<String>,
     requested_scope: Option<&str>,
 ) -> Result<Vec<String>, ()> {
     let Some(requested) = requested_scope.map(parse_scope) else {
-        return Ok(original_scopes.to_vec());
+        return Ok(original_scopes);
     };
     if requested.is_empty() {
-        return Ok(original_scopes.to_vec());
+        return Ok(original_scopes);
     }
-    if is_subset(&requested, original_scopes) {
+    if is_subset(&requested, &original_scopes) {
         Ok(requested)
     } else {
         Err(())
@@ -288,7 +288,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let scopes = match refresh_token_scopes(&original_scopes, form.scope.as_deref()) {
+    let scopes = match refresh_token_scopes(original_scopes, form.scope.as_deref()) {
         Ok(scopes) => scopes,
         Err(()) => {
             return Err(OAuthEndpointError::token(
@@ -336,7 +336,7 @@ pub async fn token_refresh_with_service(
         },
         None => refresh_token_policy(client, &token),
     };
-    let refresh_id_token_sid = Some(authentication_context.id_token_sid.clone());
+    let refresh_id_token_sid = Some(authentication_context.id_token_sid);
     let refresh_authority = token.authority();
     issue_token_response(
         issuance,
@@ -353,15 +353,15 @@ pub async fn token_refresh_with_service(
             audiences,
             // A refreshed ID Token omits the original nonce; the immutable
             // source contract also strips this first-response-only value.
-            nonce: authentication_context.nonce.clone(),
+            nonce: authentication_context.nonce,
             auth_time: Some(authentication_context.auth_time),
-            amr: authentication_context.amr.clone(),
-            oidc_sid: authentication_context.oidc_sid.clone(),
-            acr: authentication_context.acr.clone(),
-            userinfo_claims: authentication_context.userinfo_claims.clone(),
-            userinfo_claim_requests: authentication_context.userinfo_claim_requests.clone(),
-            id_token_claims: authentication_context.id_token_claims.clone(),
-            id_token_claim_requests: authentication_context.id_token_claim_requests.clone(),
+            amr: authentication_context.amr,
+            oidc_sid: authentication_context.oidc_sid,
+            acr: authentication_context.acr,
+            userinfo_claims: authentication_context.userinfo_claims,
+            userinfo_claim_requests: authentication_context.userinfo_claim_requests,
+            id_token_claims: authentication_context.id_token_claims,
+            id_token_claim_requests: authentication_context.id_token_claim_requests,
             refresh_id_token_sid,
             include_refresh: true,
             refresh_token_policy,

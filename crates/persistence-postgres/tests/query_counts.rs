@@ -400,6 +400,7 @@ fn new_refresh_token(
 async fn refresh_issuance(token: RefreshFixture) -> CommitTokenIssuance {
     let issuance_id = Uuid::now_v7();
     CommitTokenIssuance {
+        authorization_id: None,
         native_sso_source: None,
         principal_state: nazo_auth::TokenPrincipalState {
             client_epoch: 0,
@@ -1344,6 +1345,8 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     // Fixture rows go through the production upsert/store on the instrumented
     // pool; the measurement baseline is taken after they complete.
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
@@ -1361,6 +1364,7 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     let ready_at = Utc::now() + Duration::seconds(1);
     let transaction_hash = format!("qc-deferred-{}", Uuid::now_v7());
     let deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: transaction_hash.clone(),
         access: access.clone(),
@@ -1382,9 +1386,11 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     )
     .await;
 
-    let claim = result
-        .expect("claim should succeed")
-        .expect("a ready deferred transaction must be claimable");
+    let nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) =
+        result.expect("claim should succeed")
+    else {
+        panic!("the accepting owner must classify the ready fixture as Claimed");
+    };
     assert_eq!(claim.credential.id, deferred.id);
     assert_eq!(claim.claim_id, "claim-1");
     // 1 data statement: UPDATE openid4vci_deferred_transactions SET claim_id,
@@ -1518,6 +1524,8 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
 
     let token_hash = format!("qc-access-hash-{}", Uuid::now_v7());
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
@@ -1576,6 +1584,8 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     );
 
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),

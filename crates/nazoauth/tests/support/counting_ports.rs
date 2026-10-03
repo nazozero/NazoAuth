@@ -233,6 +233,16 @@ impl TokenRepositoryPort for CountingTokenRepository {
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
         self.inner.revoke_token(input)
     }
+
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: nazo_auth::TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, usize> {
+        self.inner
+            .revoke_token_with_audit(input, client_public_id, source_ip_hash)
+    }
 }
 
 /// Delegating `AuthorizationRepositoryPort` that counts the client-data reads

@@ -206,7 +206,9 @@ async fn mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier() {
                 .unwrap();
             verified_tx.send(proof).unwrap();
             resume_rx.await.unwrap();
-            a_service.disable(&a_account, &proof).await
+            a_service
+                .disable(&a_account, &proof, "fixture-source-hash".to_owned())
+                .await
         });
         let body = std::panic::AssertUnwindSafe(async {
             let old_proof = tokio::time::timeout(Duration::from_secs(5), verified_rx)
@@ -233,7 +235,11 @@ async fn mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier() {
                 .unwrap()
                 .unwrap();
             b_service
-                .disable(&admitted_account, &b_proof)
+                .disable(
+                    &admitted_account,
+                    &b_proof,
+                    "fixture-source-hash".to_owned(),
+                )
                 .await
                 .unwrap();
             let (g2, _) = install_generation(&pool, &repository, tenant, user, STEP + 3).await;
@@ -250,7 +256,11 @@ async fn mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier() {
             assert_eq!(snapshot(&pool, tenant, user).await, before);
             assert_eq!(
                 b_service
-                    .disable(&admitted_account, &old_proof)
+                    .disable(
+                        &admitted_account,
+                        &old_proof,
+                        "fixture-source-hash".to_owned()
+                    )
                     .await
                     .unwrap_err()
                     .kind(),
@@ -326,8 +336,11 @@ async fn mfa_clear_generation_lock_orders_formal_g2_install_after_commit() {
         .unwrap();
     let clear_service = service.clone();
     let clear_account = admitted.clone();
-    let mut clear =
-        tokio::spawn(async move { clear_service.disable(&clear_account, &proof).await });
+    let mut clear = tokio::spawn(async move {
+        clear_service
+            .disable(&clear_account, &proof, "fixture-source-hash".to_owned())
+            .await
+    });
     let mut install = None;
     let body = std::panic::AssertUnwindSafe(async {
         let clear_pid = wait_clear_pid(&pool, key).await;
@@ -350,7 +363,7 @@ async fn mfa_clear_generation_lock_orders_formal_g2_install_after_commit() {
         assert_ne!(g1, g2);
         remember(&repository, tenant, user, g2).await;
         let before = assert_full_generation(&pool, &repository, tenant, user, g2).await;
-        assert_eq!(service.disable(&admitted, &proof).await.unwrap_err().kind(), MfaServiceErrorKind::InvalidCode);
+        assert_eq!(service.disable(&admitted, &proof, "fixture-source-hash".to_owned()).await.unwrap_err().kind(), MfaServiceErrorKind::InvalidCode);
         assert_eq!(assert_full_generation(&pool, &repository, tenant, user, g2).await, before);
     }).catch_unwind().await;
     let _ = blocker.batch_execute("ROLLBACK").await;
@@ -397,7 +410,10 @@ async fn mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_f
     let mut connection = get_conn(&pool).await.unwrap();
     connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture clear failure'; END $$; CREATE TRIGGER {name} BEFORE UPDATE ON users FOR EACH ROW WHEN (OLD.id='{}'::uuid AND OLD.mfa_enabled AND NOT NEW.mfa_enabled) EXECUTE FUNCTION {name}();", user.as_uuid())).await.unwrap();
     let body = std::panic::AssertUnwindSafe(async {
-        let error = service.disable(&admitted, &proof).await.unwrap_err();
+        let error = service
+            .disable(&admitted, &proof, "fixture-source-hash".to_owned())
+            .await
+            .unwrap_err();
         assert_eq!(error.kind(), MfaServiceErrorKind::Repository);
         assert_eq!(
             assert_full_generation(&pool, &repository, tenant, user, generation).await,
@@ -573,6 +589,34 @@ impl MfaRepositoryPort for UnknownMfaClearAck {
         })
     }
 
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: Uuid,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            let cleared = MfaRepositoryPort::clear_mfa_state_if_current_with_required_audit(
+                &self.inner,
+                tenant_id,
+                user_id,
+                credential_id,
+                source_ip_hash,
+            )
+            .await?;
+            if cleared
+                && self
+                    .lose_ack
+                    .swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
+                Err(RepositoryError::Unavailable)
+            } else {
+                Ok(cleared)
+            }
+        })
+    }
+
     fn remember_device(
         &self,
         tenant_id: TenantId,
@@ -622,12 +666,22 @@ async fn mfa_clear_committed_unknown_retry_cannot_clear_formal_g2() {
                 }),
                 Arc::new(FixtureHasher),
             );
-            let error = lost_ack.disable(&admitted, &proof).await.unwrap_err();
+            let error = lost_ack
+                .disable(&admitted, &proof, "fixture-source-hash".to_owned())
+                .await
+                .unwrap_err();
             assert_eq!(error.kind(), MfaServiceErrorKind::Repository);
             assert_eq!(
                 error.repository_error(),
                 Some(&RepositoryError::Unavailable)
             );
+            let ledger = disable_ledger(&pool, tenant, user, g1).await;
+            assert_eq!(
+                ledger.as_array().unwrap().len(),
+                1,
+                "the committed unknown effect must retain exactly one canonical outcome"
+            );
+            assert_eq!(ledger[0]["source_ip_hash"], "fixture-source-hash");
             let cleared = snapshot(&pool, tenant, user).await;
             assert!(cleared["credential"].is_null());
             assert_eq!(cleared["enabled"], false);
@@ -639,7 +693,7 @@ async fn mfa_clear_committed_unknown_retry_cannot_clear_formal_g2() {
             let before = assert_full_generation(&pool, &repository, tenant, user, g2).await;
             assert_eq!(
                 lost_ack
-                    .disable(&admitted, &proof)
+                    .disable(&admitted, &proof, "fixture-source-hash".to_owned())
                     .await
                     .unwrap_err()
                     .kind(),
@@ -648,6 +702,11 @@ async fn mfa_clear_committed_unknown_retry_cannot_clear_formal_g2() {
             assert_eq!(
                 assert_full_generation(&pool, &repository, tenant, user, g2).await,
                 before
+            );
+            assert_eq!(
+                disable_ledger(&pool, tenant, user, g1).await,
+                ledger,
+                "a retired proof retry cannot append a second success outcome"
             );
             assert!(
                 repository
@@ -663,4 +722,79 @@ async fn mfa_clear_committed_unknown_retry_cannot_clear_formal_g2() {
     if let Err(error) = body {
         std::panic::resume_unwind(error);
     }
+}
+
+async fn disable_ledger(
+    pool: &nazo_postgres::DbPool,
+    tenant: TenantContext,
+    user: UserId,
+    generation: Uuid,
+) -> serde_json::Value {
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query("SELECT COALESCE(jsonb_agg(payload ORDER BY event_id),'[]'::jsonb) AS value FROM security_audit_events WHERE event_type='mfa_disabled' AND payload->>'tenant_id'=$1 AND payload->>'user_id'=$2 AND payload->>'credential_id'=$3")
+        .bind::<Text, _>(tenant.tenant_id.as_uuid().to_string())
+        .bind::<Text, _>(user.as_uuid().to_string())
+        .bind::<Text, _>(generation.to_string())
+        .get_result::<Snapshot>(&mut connection).await.unwrap().value
+}
+
+#[tokio::test]
+async fn mfa_disable_required_ledger_failure_rolls_back_current_generation_and_dependents() {
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
+    let repository = mfa_repository(pool.clone());
+    let (generation, _) = install_generation(&pool, &repository, tenant, user, STEP).await;
+    remember(&repository, tenant, user, generation).await;
+    let admitted = account(&pool, tenant, user).await;
+    let service = service(&repository);
+    let proof = service
+        .verify_factor(&admitted, &totp(STEP + 1), (STEP + 1) * 30)
+        .await
+        .unwrap()
+        .unwrap();
+    let before = assert_full_generation(&pool, &repository, tenant, user, generation).await;
+    let name = format!("mfa_required_failure_{}", Uuid::now_v7().simple());
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture required ledger failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type='mfa_disabled' AND NEW.payload->>'user_id'='{}' AND NEW.payload->>'credential_id'='{generation}') EXECUTE FUNCTION {name}();", user.as_uuid())).await.unwrap();
+    let body = std::panic::AssertUnwindSafe(async {
+        let error = service.disable(&admitted, &proof, "fixture-source-hash".to_owned()).await.unwrap_err();
+        assert_eq!(error.kind(), MfaServiceErrorKind::Repository);
+        assert_eq!(assert_full_generation(&pool, &repository, tenant, user, generation).await, before,
+            "ledger append failure rolls back the exact encrypted generation, backup rows, remembered devices and enabled flag");
+        assert_eq!(disable_ledger(&pool, tenant, user, generation).await, json!([]));
+    }).catch_unwind().await;
+    let trigger_cleanup = connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON security_audit_events; DROP FUNCTION {name}();"
+        ))
+        .await;
+    drop(connection);
+    if let Err(error) = body {
+        cleanup(&pool, user).await;
+        std::panic::resume_unwind(error);
+    }
+    trigger_cleanup.expect("fixture-owned ledger trigger removed");
+    // The consumed proof identifies this still-current generation. No second
+    // factor is consumed just to retry after a known SQL rollback.
+    service
+        .disable(&admitted, &proof, "fixture-source-hash".to_owned())
+        .await
+        .unwrap();
+    let after = snapshot(&pool, tenant, user).await;
+    assert!(after["credential"].is_null());
+    assert_eq!(after["enabled"], false);
+    assert_eq!(after["backups"], json!([]));
+    assert_eq!(after["remembered"], json!([]));
+    let ledger = disable_ledger(&pool, tenant, user, generation).await;
+    assert_eq!(ledger.as_array().unwrap().len(), 1);
+    assert_eq!(
+        ledger[0]["schema_version"],
+        nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION
+    );
+    assert_eq!(ledger[0]["event_category"], "authentication");
+    assert_eq!(ledger[0]["outcome"], "success");
+    assert_eq!(ledger[0]["source_ip_hash"], "fixture-source-hash");
+    assert!(ledger[0].get("secret").is_none());
+    cleanup(&pool, user).await;
 }

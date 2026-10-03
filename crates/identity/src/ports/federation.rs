@@ -21,6 +21,38 @@ pub struct FederationLink {
     pub last_login_at: Option<DateTime<Utc>>,
 }
 
+/// Display metadata scoped to one tenant and user; contains no provider claims.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FederationLinkSummary {
+    pub id: Uuid,
+    pub tenant_id: TenantId,
+    pub user_id: UserId,
+    pub provider_type: String,
+    pub provider_id: String,
+    pub subject: String,
+    pub email: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_login_at: Option<DateTime<Utc>>,
+}
+
+impl From<FederationLink> for FederationLinkSummary {
+    fn from(row: FederationLink) -> Self {
+        Self {
+            id: row.id,
+            tenant_id: row.tenant_id,
+            user_id: row.user_id,
+            provider_type: row.provider_type,
+            provider_id: row.provider_id,
+            subject: row.subject,
+            email: row.email,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            last_login_at: row.last_login_at,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct NewFederationLink {
     pub tenant_id: TenantId,
@@ -56,6 +88,18 @@ pub trait FederationLinkRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> RepositoryFuture<'_, Vec<FederationLink>>;
+
+    fn list_summaries(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Vec<FederationLinkSummary>> {
+        Box::pin(async move {
+            self.list(tenant_id, user_id)
+                .await
+                .map(|rows| rows.into_iter().map(FederationLinkSummary::from).collect())
+        })
+    }
 
     fn delete(
         &self,

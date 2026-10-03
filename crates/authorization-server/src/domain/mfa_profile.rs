@@ -443,20 +443,28 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             if !account.account.mfa_enabled {
                 return Ok(false);
             }
+            self.audit
+                .ensure_transactional_ready()
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "required MFA audit readiness failed");
+                    MfaProfileError::new(MfaProfileErrorKind::AuditUnavailable)
+                })?;
             self.reserve_mfa_attempt(&command.context, &account).await?;
             let proof = self
                 .verify_reserved_factor(&command.context, &account, &command.code)
                 .await?;
-            self.mfa.disable(&account, &proof).await.map_err(|error| {
-                tracing::warn!(?error, "failed to disable MFA");
-                if error.kind() == MfaServiceErrorKind::InvalidCode {
-                    map_core_error(error)
-                } else {
-                    MfaProfileError::new(MfaProfileErrorKind::DisableFailed)
-                }
-            })?;
-            self.record_required("mfa_disabled", self.mfa_fields(&account, &command.context))
-                .await?;
+            self.mfa
+                .disable(&account, &proof, blake3_hex(&command.context.source_ip))
+                .await
+                .map_err(|error| {
+                    tracing::warn!(?error, "failed to disable MFA");
+                    if error.kind() == MfaServiceErrorKind::InvalidCode {
+                        map_core_error(error)
+                    } else {
+                        MfaProfileError::new(MfaProfileErrorKind::DisableFailed)
+                    }
+                })?;
             tracing::info!(user_id = %account.id(), "MFA disabled");
             Ok(true)
         })

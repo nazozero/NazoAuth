@@ -171,20 +171,30 @@ async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_at
             .is_none()
     );
 
-    assert!(
-        repository
-            .upsert_managed_dataset(ManagedCredentialDatasetWrite {
-                tenant_id,
-                actor_user_id: admin_id,
-                subject_id,
-                credential_configuration_id: "pid",
-                claims: &claims,
-                valid_from: None,
-                valid_until: None,
-            })
-            .await
-            .unwrap()
-    );
+    let committed_view = nazo_persistence::Openid4vciDatasetStore::upsert_managed_dataset(
+        &repository,
+        nazo_persistence::ManagedCredentialDatasetWrite {
+            tenant_id,
+            actor_user_id: admin_id,
+            subject_id,
+            credential_configuration_id: "pid".to_owned(),
+            claims: claims.clone(),
+            valid_from: None,
+            valid_until: None,
+        },
+    )
+    .await
+    .unwrap()
+    .expect("owned write returns its committed view");
+    let durable_view = repository
+        .managed_dataset(tenant_id, subject_id, "pid")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(committed_view.claims, claims);
+    assert_eq!(committed_view.updated_at, durable_view.updated_at);
+    assert_eq!(committed_view.valid_from, durable_view.valid_from);
+    assert_eq!(committed_view.valid_until, durable_view.valid_until);
     assert_eq!(
         repository
             .managed_dataset(tenant_id, subject_id, "pid")
@@ -230,6 +240,11 @@ async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_at
             .is_none(),
         "future-valid datasets must not be available to issuance"
     );
+    assert_eq!(
+        committed_view.valid_from, None,
+        "the committed response is not replaced by a later mutation"
+    );
+    assert_eq!(committed_view.claims, claims);
     assert!(
         repository
             .managed_dataset(tenant_id, subject_id, "pid")
@@ -625,6 +640,8 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     );
 
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id,
@@ -682,7 +699,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
                 id: "pid".to_owned(),
                 format: CredentialFormat::SdJwtVc,
                 multiple: false,
-                meta: None,
+                meta: Some(serde_json::json!({})),
                 claims: None,
                 claim_sets: None,
                 trusted_authorities: None,
@@ -1116,6 +1133,8 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id,
@@ -1251,6 +1270,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .unwrap()
     );
     let response = StoredCredentialResponse {
+        selection: None,
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"issuance-request").to_hex().to_string(),
@@ -1261,6 +1281,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         expires_at: now + Duration::minutes(5),
     };
     let handle = NotificationHandle {
+        selection: None,
         notification_id: format!("notification-{}", Uuid::now_v7()),
         token_id: access.token_id,
         expires_at: now + Duration::minutes(5),
@@ -1316,6 +1337,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
 
     let deferred_ready_at = Utc::now() + Duration::seconds(1);
     let deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"deferred-transaction").to_hex().to_string(),
         access: access.clone(),
@@ -1433,6 +1455,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
 
     let reclaim_deferred_ready_at = Utc::now() + Duration::seconds(1);
     let reclaim_deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"deferred-reclaim-transaction")
             .to_hex()
@@ -1527,6 +1550,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
     );
     let atomic_deferred_ready_at = Utc::now() + Duration::seconds(1);
     let atomic_deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"atomic-deferred-transaction")
             .to_hex()
@@ -1540,6 +1564,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         expires_at: atomic_deferred_ready_at + Duration::minutes(5),
     };
     let atomic_response = StoredCredentialResponse {
+        selection: None,
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"atomic-request").to_hex().to_string(),
@@ -1660,6 +1685,8 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
     let now = Utc::now();
     let access = CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id,
@@ -1992,6 +2019,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap()
     );
     let notification_handle = NotificationHandle {
+        selection: None,
         notification_id: format!("notification-boundary-{}", Uuid::now_v7()),
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2035,6 +2063,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap()
     );
     let response = StoredCredentialResponse {
+        selection: None,
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"boundary-response").to_hex().to_string(),
@@ -2045,6 +2074,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: Utc::now() + Duration::minutes(10),
     };
     let response_handle = NotificationHandle {
+        selection: None,
         notification_id: format!("response-boundary-{}", Uuid::now_v7()),
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2149,6 +2179,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
 
     let failure_handle = NotificationHandle {
+        selection: None,
         notification_id: format!("failure-notification-{}", Uuid::now_v7()),
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2177,6 +2208,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap()
     );
     let deleted_handle = NotificationHandle {
+        selection: None,
         notification_id: format!("deleted-notification-{}", Uuid::now_v7()),
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2198,6 +2230,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap()
     );
     let expired_handle = NotificationHandle {
+        selection: None,
         notification_id: format!("expired-notification-{}", Uuid::now_v7()),
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2222,6 +2255,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     // Exercise every deferred transition, including all transaction rollback paths.
     let deferred_ready_at = Utc::now() + Duration::seconds(10);
     let deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-deferred").to_hex().to_string(),
         access: access.clone(),
@@ -2291,6 +2325,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
 
     let lease_deferred_ready_at = Utc::now() + Duration::seconds(10);
     let lease_deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-deferred-lease")
             .to_hex()
@@ -2380,6 +2415,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap()
     );
     let atomic_deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-atomic-deferred")
             .to_hex()
@@ -2439,6 +2475,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap()
     );
     let atomic_response = StoredCredentialResponse {
+        selection: None,
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"boundary-atomic-response")
@@ -2451,6 +2488,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: Utc::now() + Duration::minutes(10),
     };
     let atomic_response_deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-atomic-response-deferred")
             .to_hex()
@@ -2505,6 +2543,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
 
     let response_deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-deferred-response")
             .to_hex()
@@ -2522,6 +2561,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         ..response_deferred
     };
     let deferred_response = StoredCredentialResponse {
+        selection: None,
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"boundary-deferred-response-body")
@@ -2553,6 +2593,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
 
     let notification_deferred = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-deferred-notification")
             .to_hex()
@@ -2583,6 +2624,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     )
     .unwrap();
     let deferred_handle = NotificationHandle {
+        selection: None,
         notification_id: format!("deferred-notification-{}", Uuid::now_v7()),
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2613,6 +2655,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
 
     let deferred_response_notification = DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-deferred-notification-response")
             .to_hex()
@@ -2646,11 +2689,13 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     )
     .unwrap();
     let deferred_response_handle = NotificationHandle {
+        selection: None,
         notification_id: format!("deferred-response-{}", Uuid::now_v7()),
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
     };
     let final_response = StoredCredentialResponse {
+        selection: None,
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"boundary-final-response")
@@ -2738,6 +2783,8 @@ fn openid4vc_access_fixture(
     expires_in: Duration,
 ) -> CredentialAccess {
     CredentialAccess {
+        authorization_id: None,
+        mtls_x5t_s256: None,
         proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id,
@@ -2761,6 +2808,7 @@ fn openid4vc_deferred_fixture(
         .expect("claim base must fit the timestamp range");
     let ready_at = base + ready_in;
     DeferredCredential {
+        selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(format!("{tag}-{}", Uuid::now_v7()).as_bytes())
             .to_hex()
@@ -4896,6 +4944,7 @@ async fn notification_identical_concurrent_retries_preserve_first_event_and_occu
     issuer.upsert_access(&token_hash, &access).await.unwrap();
     let now = Utc::now();
     let handle = NotificationHandle {
+        selection: None,
         notification_id: Uuid::now_v7().to_string(),
         token_id: access.token_id,
         expires_at: now + Duration::minutes(5),
@@ -5115,4 +5164,564 @@ async fn deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transact
         DeferredClaimOutcome::Invalid
     );
     delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn refreshed_access_continues_only_its_original_credential_intent_after_source_expiry() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "vci-refresh-lineage").await;
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x66_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    async fn mark_fixture_deferred_ready(
+        pool: &nazo_postgres::DbPool,
+        credential: &mut DeferredCredential,
+    ) {
+        // Persist through the real adapter with a valid future readiness time,
+        // then model preparation which has already elapsed. Preserve its exact
+        // expiry and both production timestamp constraints.
+        credential.ready_at = Utc::now() - Duration::seconds(1);
+        let mut connection = get_conn(pool).await.unwrap();
+        assert_eq!(
+            sql_query("UPDATE openid4vci_deferred_transactions SET ready_at=$3, created_at=LEAST(created_at,$3 - interval '1 second') WHERE id=$1 AND token_id=$2")
+                .bind::<SqlUuid, _>(credential.id)
+                .bind::<SqlUuid, _>(credential.access.token_id)
+                .bind::<diesel::sql_types::Timestamptz, _>(credential.ready_at)
+                .execute(&mut connection)
+                .await
+                .expect("exact deferred fixture must retain created <= ready < expiry"),
+            1,
+        );
+    }
+    async fn expire_fixture_access(pool: &nazo_postgres::DbPool, tenant_id: Uuid, token_id: Uuid) {
+        // An expired row must still represent a valid issuance history. The
+        // production CHECK requires expiry after creation, including fixtures.
+        let expires_at = Utc::now() - Duration::seconds(1);
+        let mut connection = get_conn(pool).await.unwrap();
+        assert_eq!(
+            sql_query("UPDATE openid4vci_access_grants SET expires_at=$3, created_at=LEAST(created_at,$3 - interval '1 second') WHERE tenant_id=$1 AND token_id=$2")
+                .bind::<SqlUuid, _>(tenant_id)
+                .bind::<SqlUuid, _>(token_id)
+                .bind::<diesel::sql_types::Timestamptz, _>(expires_at)
+                .execute(&mut connection)
+                .await
+                .expect("exact access fixture must retain created < expiry while expired now"),
+            1,
+        );
+    }
+    let mut original = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "vci-refresh-lineage-wallet",
+        Duration::minutes(10),
+    );
+    original.authorization_id = Some(Uuid::now_v7());
+    original.mtls_x5t_s256 = Some("original-certificate".to_owned());
+    let identifier = nazo_openid4vci::CredentialIdentifier("original-pid-instance".to_owned());
+    original.credential_identifiers = vec![identifier.clone()];
+    let selection = nazo_openid4vci::CredentialSelection {
+        configuration_id: "pid".to_owned(),
+        credential_identifier: Some(identifier),
+    };
+    let source_hash = blake3::hash(original.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&source_hash, &original).await.unwrap();
+    let mut deferred = openid4vc_deferred_fixture(
+        &original,
+        "vci-refresh-lineage",
+        Duration::minutes(1),
+        Duration::minutes(10),
+    );
+    deferred.selection = Some(selection.clone());
+    deferred.expires_at = original.expires_at;
+    let pending = StoredCredentialResponse {
+        selection: Some(selection.clone()),
+        issuance_id: Uuid::now_v7(),
+        token_id: original.token_id,
+        request_digest: blake3::hash(b"original-credential-request")
+            .to_hex()
+            .to_string(),
+        body: br#"{"transaction_id":"original-transaction","interval":5}"#.to_vec(),
+        encoding: CredentialResponseEncoding::Json,
+        status: 202,
+        dpop_nonce: None,
+        expires_at: deferred.expires_at,
+    };
+    issuer
+        .store_deferred_with_response(&deferred, &pending, Utc::now())
+        .await
+        .unwrap();
+    mark_fixture_deferred_ready(&pool, &mut deferred).await;
+    let mut current = original.clone();
+    current.token_id = Uuid::now_v7();
+    let current_hash = blake3::hash(current.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&current_hash, &current).await.unwrap();
+    expire_fixture_access(&pool, tenant_id, original.token_id).await;
+
+    for rejection in [
+        "different-authorization",
+        "removed-configuration",
+        "different-instance",
+        "sender",
+        "expired",
+    ] {
+        let mut wrong = current.clone();
+        wrong.token_id = Uuid::now_v7();
+        match rejection {
+            "different-authorization" => wrong.authorization_id = Some(Uuid::now_v7()),
+            "removed-configuration" => wrong.configuration_ids = vec!["other".to_owned()],
+            "different-instance" => {
+                wrong.credential_identifiers = vec![nazo_openid4vci::CredentialIdentifier(
+                    "another-pid-instance".to_owned(),
+                )];
+            }
+            "sender" => wrong.mtls_x5t_s256 = Some("different-certificate".to_owned()),
+            "expired" => {}
+            _ => unreachable!(),
+        }
+        let hash = blake3::hash(wrong.token_id.as_bytes()).to_hex().to_string();
+        issuer.upsert_access(&hash, &wrong).await.unwrap();
+        if rejection == "expired" {
+            expire_fixture_access(&pool, tenant_id, wrong.token_id).await;
+        }
+        assert!(
+            issuer
+                .find_response(
+                    pending.issuance_id,
+                    wrong.token_id,
+                    &pending.request_digest,
+                    Utc::now()
+                )
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(matches!(
+            issuer
+                .claim_ready_deferred(
+                    &deferred.transaction_hash,
+                    wrong.token_id,
+                    rejection,
+                    Utc::now()
+                )
+                .await
+                .unwrap(),
+            nazo_openid4vci::DeferredClaimOutcome::Invalid
+        ));
+    }
+    assert!(matches!(
+        issuer
+            .claim_ready_deferred(
+                &deferred.transaction_hash,
+                original.token_id,
+                "expired-source",
+                Utc::now()
+            )
+            .await
+            .unwrap(),
+        nazo_openid4vci::DeferredClaimOutcome::Invalid
+    ));
+    let replay = issuer
+        .find_response(
+            pending.issuance_id,
+            current.token_id,
+            &pending.request_digest,
+            Utc::now(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        replay == pending,
+        "refresh must retain the exact pending response and transaction"
+    );
+    let claim = issuer
+        .claim_ready_deferred(
+            &deferred.transaction_hash,
+            current.token_id,
+            "current-holder",
+            Utc::now(),
+        )
+        .await
+        .unwrap();
+    let nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) = claim else {
+        panic!("the same authorization and original selector must retain its intent");
+    };
+    assert_eq!(claim.credential.access.token_id, original.token_id);
+    assert!(claim.credential.access.expires_at < Utc::now());
+    assert!(claim.credential.payload_ciphertext == deferred.payload_ciphertext);
+    assert!(claim.credential.holder_bindings == deferred.holder_bindings);
+    assert_eq!(claim.credential.selection, Some(selection.clone()));
+    assert_eq!(claim.credential.expires_at, deferred.expires_at);
+    assert!(
+        !issuer
+            .release_deferred(
+                &deferred.transaction_hash,
+                original.token_id,
+                "current-holder",
+                Utc::now()
+            )
+            .await
+            .unwrap()
+    );
+
+    let notification_id = Uuid::now_v7().to_string();
+    let handle = NotificationHandle {
+        selection: Some(selection.clone()),
+        notification_id: notification_id.clone(),
+        token_id: current.token_id,
+        expires_at: deferred.expires_at,
+    };
+    let issued = StoredCredentialResponse {
+        selection: Some(selection.clone()),
+        issuance_id: Uuid::now_v7(),
+        token_id: current.token_id,
+        request_digest: blake3::hash(b"original-deferred-poll").to_hex().to_string(),
+        body: br#"{"credentials":[{"credential":"original-signed-credential"}]}"#.to_vec(),
+        encoding: CredentialResponseEncoding::Json,
+        status: 200,
+        dpop_nonce: None,
+        expires_at: deferred.expires_at,
+    };
+    assert!(
+        issuer
+            .finalize_deferred_with_notification_and_response(
+                &deferred.transaction_hash,
+                current.token_id,
+                "current-holder",
+                &handle,
+                &issued,
+                Utc::now()
+            )
+            .await
+            .unwrap()
+    );
+    let mut successor = current.clone();
+    successor.token_id = Uuid::now_v7();
+    let successor_hash = blake3::hash(successor.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer
+        .upsert_access(&successor_hash, &successor)
+        .await
+        .unwrap();
+    let final_replay = issuer
+        .find_response(
+            issued.issuance_id,
+            successor.token_id,
+            &issued.request_digest,
+            Utc::now(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(final_replay == issued);
+    let first = IssuanceNotification {
+        notification_id,
+        token_id: successor.token_id,
+        event: NotificationEvent::CredentialAccepted,
+        description: Some("accepted".to_owned()),
+        occurred_at: Utc::now(),
+    };
+    assert!(issuer.record_notification(&first).await.unwrap());
+    let mut retry = first.clone();
+    retry.occurred_at += Duration::seconds(1);
+    assert!(issuer.record_notification(&retry).await.unwrap());
+    retry.event = NotificationEvent::CredentialDeleted;
+    assert!(!issuer.record_notification(&retry).await.unwrap());
+
+    for missing in ["selector", "reference"] {
+        let mut legacy_access = successor.clone();
+        legacy_access.token_id = Uuid::now_v7();
+        if missing == "reference" {
+            legacy_access.authorization_id = None;
+        }
+        let hash = blake3::hash(legacy_access.token_id.as_bytes())
+            .to_hex()
+            .to_string();
+        issuer.upsert_access(&hash, &legacy_access).await.unwrap();
+        let mut legacy = openid4vc_deferred_fixture(
+            &legacy_access,
+            missing,
+            Duration::minutes(1),
+            Duration::minutes(5),
+        );
+        if missing == "reference" {
+            legacy.selection = Some(selection.clone());
+        }
+        legacy.expires_at = Utc::now() + Duration::minutes(5);
+        issuer.store_deferred(&legacy).await.unwrap();
+        mark_fixture_deferred_ready(&pool, &mut legacy).await;
+        assert!(matches!(
+            issuer
+                .claim_ready_deferred(
+                    &legacy.transaction_hash,
+                    successor.token_id,
+                    "wrong-legacy-owner",
+                    Utc::now()
+                )
+                .await
+                .unwrap(),
+            nazo_openid4vci::DeferredClaimOutcome::Invalid
+        ));
+        assert!(matches!(
+            issuer
+                .claim_ready_deferred(
+                    &legacy.transaction_hash,
+                    legacy_access.token_id,
+                    "exact-legacy-owner",
+                    Utc::now()
+                )
+                .await
+                .unwrap(),
+            nazo_openid4vci::DeferredClaimOutcome::Claimed(_)
+        ));
+        assert!(
+            issuer
+                .release_deferred(
+                    &legacy.transaction_hash,
+                    legacy_access.token_id,
+                    "exact-legacy-owner",
+                    Utc::now()
+                )
+                .await
+                .unwrap()
+        );
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE openid4vci_access_grants SET revoked_at = NOW() WHERE token_id = $1")
+        .bind::<SqlUuid, _>(successor.token_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    assert!(
+        issuer
+            .find_response(
+                issued.issuance_id,
+                successor.token_id,
+                &issued.request_digest,
+                Utc::now()
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(!issuer.record_notification(&first).await.unwrap());
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn presentation_completion_rechecks_owner_clock_after_pool_and_record_waits() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&url).await.unwrap();
+    let pool = create_pool(&url, 4).unwrap();
+    let tenant = Uuid::now_v7();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("INSERT INTO tenants (id, slug, display_name, status) VALUES ($1,$2,'completion clock fixture','active')")
+        .bind::<SqlUuid, _>(tenant).bind::<Text, _>(format!("completion-clock-{tenant}"))
+        .execute(&mut connection).await.unwrap();
+    drop(connection);
+    let repo = Openid4vpRepository::new(pool.clone(), tenant, [19; 32]);
+    let admitted = Utc::now() - Duration::minutes(1);
+    let mut ids = Vec::new();
+    for scenario in ["already-expired", "pool-wait", "record-wait", "live"] {
+        let id = Uuid::now_v7();
+        ids.push(id);
+        let state = format!("completion-clock-{id}");
+        let transaction = PresentationTransaction {
+            id,
+            client_id_prefix: ClientIdPrefix::RedirectUri,
+            request_method: RequestMethod::UrlQuery,
+            response_mode: ResponseMode::DirectPost,
+            wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
+            request: serde_json::from_value(serde_json::json!({
+                "client_id":"redirect_uri:https://verifier.example/response",
+                "response_type":"vp_token", "response_mode":"direct_post",
+                "response_uri":"https://verifier.example/response", "nonce":"nonce", "state":state,
+                "dcql_query":{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{}}]}
+            }))
+            .unwrap(),
+            request_object: None,
+            request_uri: None,
+            openid4vc_trust_policy_binding_id: None,
+            openid4vc_trust_policy_resource_id: None,
+            openid4vc_trust_policy_digest: None,
+            response_encryption_private_key: Some(vec![7; 32]),
+            created_at: admitted - Duration::minutes(10),
+            expires_at: admitted + Duration::minutes(5),
+        };
+        let normalized = nazo_operator_protocol::Openid4vpNormalizedCreateRequest {
+            wallet_authorization_endpoint: transaction.wallet_authorization_endpoint.clone(),
+            dcql_query: serde_json::to_value(&transaction.request.dcql_query).unwrap(),
+            haip: false,
+            client_id_prefix: "redirect_uri".to_owned(),
+            request_method: "url_query".to_owned(),
+            response_mode: "direct_post".to_owned(),
+            transaction_data: None,
+            openid4vc_trust_policy_resource_id: None,
+            openid4vc_trust_policy_digest: None,
+        };
+        let (canonical, digest) =
+            nazo_operator_protocol::canonical_openid4vp_normalized_create_request(&normalized)
+                .unwrap();
+        let jti = Uuid::now_v7().to_string();
+        repo.create(
+            &transaction,
+            nazo_openid4vp::PresentationCreateIdempotency {
+                request_jti: &jti,
+                request_sha256: &digest,
+                canonical_request: &canonical,
+            },
+        )
+        .await
+        .unwrap();
+        let state_hash = blake3::hash(state.as_bytes()).to_hex().to_string();
+        let result = PresentationResult {
+            transaction_id: id,
+            credentials: Vec::new(),
+            completed_at: admitted,
+        };
+        let accepted = match scenario {
+            "already-expired" => {
+                let mut connection = get_conn(&pool).await.unwrap();
+                sql_query("UPDATE openid4vp_transactions SET expires_at = clock_timestamp() - interval '1 second' WHERE id=$1 AND tenant_id=$2")
+                    .bind::<SqlUuid, _>(id).bind::<SqlUuid, _>(tenant).execute(&mut connection).await.unwrap();
+                drop(connection);
+                repo.complete(id, &state_hash, &result, admitted - Duration::minutes(1))
+                    .await
+                    .unwrap()
+            }
+            "pool-wait" => {
+                let one = create_pool(&url, 1).unwrap();
+                let mut held = get_conn(&one).await.unwrap();
+                let waiting_repo = Openid4vpRepository::new(one, tenant, [19; 32]);
+                let mut completion = tokio::spawn(async move {
+                    waiting_repo
+                        .complete(id, &state_hash, &result, admitted)
+                        .await
+                });
+                assert!(
+                    tokio::time::timeout(std::time::Duration::from_millis(50), &mut completion)
+                        .await
+                        .is_err()
+                );
+                sql_query("UPDATE openid4vp_transactions SET expires_at = clock_timestamp() - interval '1 second' WHERE id=$1 AND tenant_id=$2")
+                    .bind::<SqlUuid, _>(id).bind::<SqlUuid, _>(tenant).execute(&mut held).await.unwrap();
+                drop(held);
+                tokio::time::timeout(std::time::Duration::from_secs(5), completion)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap()
+            }
+            "record-wait" => {
+                let mut held = get_conn(&pool).await.unwrap();
+                // Shorten the existing lifetime before taking the blocking lock.
+                sql_query("UPDATE openid4vp_transactions SET expires_at = clock_timestamp() + interval '2 seconds' WHERE id=$1 AND tenant_id=$2")
+                    .bind::<SqlUuid, _>(id).bind::<SqlUuid, _>(tenant).execute(&mut held).await.unwrap();
+                held.batch_execute("BEGIN").await.unwrap();
+                sql_query(
+                    "SELECT id FROM openid4vp_transactions WHERE id=$1 AND tenant_id=$2 FOR UPDATE",
+                )
+                .bind::<SqlUuid, _>(id)
+                .bind::<SqlUuid, _>(tenant)
+                .execute(&mut held)
+                .await
+                .unwrap();
+                let waiting_repo = repo.clone();
+                let blocker = sql_query("SELECT pg_backend_pid()::bigint AS count")
+                    .get_result::<CountRow>(&mut held)
+                    .await
+                    .unwrap()
+                    .count;
+                let completion = tokio::spawn(async move {
+                    waiting_repo
+                        .complete(id, &state_hash, &result, admitted)
+                        .await
+                });
+                let mut observer = get_conn(&pool).await.unwrap();
+                let wait_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+                let blocked = loop {
+                    let waiting = sql_query("SELECT COUNT(*) AS count FROM pg_stat_activity WHERE $1::integer = ANY(pg_blocking_pids(pid))")
+                        .bind::<BigInt, _>(blocker).get_result::<CountRow>(&mut observer).await.unwrap();
+                    if waiting.count > 0 {
+                        break true;
+                    }
+                    if tokio::time::Instant::now() >= wait_deadline {
+                        break false;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                };
+                drop(observer);
+                // Leave the row unchanged while the real database deadline passes.
+                // A caller/statement-start clock cannot pass this final gate.
+                tokio::time::sleep(std::time::Duration::from_millis(2200)).await;
+                held.batch_execute("COMMIT").await.unwrap();
+                drop(held);
+                let accepted = tokio::time::timeout(std::time::Duration::from_secs(5), completion)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap();
+                assert!(
+                    blocked,
+                    "fixture must observe the actual database record-lock wait"
+                );
+                accepted
+            }
+            _ => {
+                assert!(
+                    repo.complete(id, &state_hash, &result, admitted)
+                        .await
+                        .unwrap()
+                );
+                assert!(
+                    !repo
+                        .complete(id, &state_hash, &result, admitted)
+                        .await
+                        .unwrap(),
+                    "complete remains one-winner"
+                );
+                true
+            }
+        };
+        assert_eq!(accepted, scenario == "live");
+        let mut connection = get_conn(&pool).await.unwrap();
+        let preserved = sql_query("SELECT COUNT(*) AS count FROM openid4vp_transactions WHERE id=$1 AND tenant_id=$2 AND completed_at IS NULL AND result_ciphertext IS NULL AND ephemeral_private_key_ciphertext IS NOT NULL")
+            .bind::<SqlUuid, _>(id).bind::<SqlUuid, _>(tenant).get_result::<CountRow>(&mut connection).await.unwrap();
+        assert_eq!(
+            preserved.count,
+            i64::from(scenario != "live"),
+            "denied completion must preserve result absence and its response key"
+        );
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    for id in ids {
+        sql_query("DELETE FROM openid4vp_transactions WHERE id=$1 AND tenant_id=$2")
+            .bind::<SqlUuid, _>(id)
+            .bind::<SqlUuid, _>(tenant)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    }
+    sql_query("DELETE FROM tenants WHERE id=$1")
+        .bind::<SqlUuid, _>(tenant)
+        .execute(&mut connection)
+        .await
+        .unwrap();
 }

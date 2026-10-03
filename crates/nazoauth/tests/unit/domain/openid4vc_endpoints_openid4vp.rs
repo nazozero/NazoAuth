@@ -222,7 +222,7 @@ fn valid_dcql() -> DcqlQuery {
             id: "pid".to_owned(),
             format: CredentialFormat::SdJwtVc,
             multiple: false,
-            meta: None,
+            meta: Some(json!({})),
             claims: None,
             claim_sets: None,
             trusted_authorities: None,
@@ -450,7 +450,7 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
     // current domain serializer. Existing JTI records must remain retryable.
     let legacy = nazo_operator_protocol::Openid4vpNormalizedCreateRequest {
         wallet_authorization_endpoint: url_query_input.wallet_authorization_endpoint.clone(),
-        dcql_query: json!({"credentials": [{"id": "pid", "format": "dc+sd-jwt"}]}),
+        dcql_query: json!({"credentials": [{"id": "pid", "format": "dc+sd-jwt", "meta": {}}]}),
         haip: false,
         client_id_prefix: "redirect_uri".to_owned(),
         request_method: "url_query".to_owned(),
@@ -868,4 +868,29 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
         .execute(&mut connection)
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn typed_presentation_create_rejects_empty_sets_and_malformed_metadata_before_storage() {
+    let enabled = operations(invalid_pool(), true).await;
+    for query in [
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{}}],"credential_sets":[]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":"required-type"}}]}),
+        json!({"credentials":[{"id":"pid","format":"mso_mdoc","meta":{"doctype_value":["required-doctype"]}}]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":17}]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt"}]}),
+    ] {
+        let mut request = create_input(
+            Some("url_query"),
+            Some("direct_post"),
+            Some("redirect_uri"),
+            false,
+        );
+        request.dcql_query = serde_json::from_value(query).unwrap();
+        let error = enabled.create(request).await.unwrap_err();
+        assert_eq!(
+            (error.status, error.error, error.description),
+            (400, "invalid_request", "DCQL query is invalid.")
+        );
+    }
 }

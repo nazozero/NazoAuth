@@ -125,7 +125,7 @@ impl AdminAccessRequestStore for UnknownApproval {
         id: Uuid,
         actor: nazo_identity::UserId,
         prepared: &'a nazo_auth::PreparedClientRegistration,
-    ) -> RepositoryFuture<'a, nazo_auth::ApprovedClient> {
+    ) -> RepositoryFuture<'a, nazo_persistence::AdminAccessRequestApproval> {
         Box::pin(async move {
             let _committed = self.inner.approve(tenant, id, actor, prepared).await?;
             self.commits.fetch_add(1, Ordering::AcqRel);
@@ -138,7 +138,7 @@ impl AdminAccessRequestStore for UnknownApproval {
         id: Uuid,
         actor: nazo_identity::UserId,
         note: String,
-    ) -> RepositoryFuture<'_, ()> {
+    ) -> RepositoryFuture<'_, nazo_identity::AccessRequest> {
         self.inner.reject(tenant, id, actor, note)
     }
 }

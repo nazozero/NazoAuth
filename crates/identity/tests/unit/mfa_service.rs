@@ -122,6 +122,17 @@ impl MfaRepositoryPort for ConfirmRepository {
         Box::pin(async move { Ok(current == TotpVerificationOutcome::Accepted(credential_id)) })
     }
 
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        tenant_id: crate::TenantId,
+        user_id: UserId,
+        credential_id: Uuid,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        assert_eq!(source_ip_hash, "fixture-source-hash");
+        self.clear_mfa_state_if_current(tenant_id, user_id, credential_id)
+    }
+
     fn remember_device(
         &self,
         _tenant_id: crate::TenantId,
@@ -222,7 +233,7 @@ async fn disable_reuses_verified_generation_without_consuming_another_factor() {
         };
         assert_eq!(
             service
-                .disable(&account(), &stale)
+                .disable(&account(), &stale, "fixture-source-hash".to_owned())
                 .await
                 .unwrap_err()
                 .kind(),
@@ -235,6 +246,7 @@ async fn disable_reuses_verified_generation_without_consuming_another_factor() {
                     method,
                     credential_id: current,
                 },
+                "fixture-source-hash".to_owned(),
             )
             .await
             .expect("the current generation can be cleared with either consumed factor");

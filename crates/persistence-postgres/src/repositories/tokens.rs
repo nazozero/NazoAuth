@@ -341,6 +341,18 @@ impl TokenRepository {
         raw_token: &str,
         access_token: Option<&nazo_auth::AccessTokenRevocation>,
     ) -> Result<usize, RepositoryError> {
+        self.revoke_for_client_with_audit(tenant_id, client_id, raw_token, access_token, None)
+            .await
+    }
+
+    pub(crate) async fn revoke_for_client_with_audit(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        raw_token: &str,
+        access_token: Option<&nazo_auth::AccessTokenRevocation>,
+        audit_context: Option<(&str, &str)>,
+    ) -> Result<usize, RepositoryError> {
         // The revocation fact covers the token's full verifier acceptance
         // window; plain input conversion happens before a connection or
         // transaction is acquired.
@@ -359,19 +371,26 @@ impl TokenRepository {
                     revoked_at: Utc::now(),
                     expires_at: deadline,
                 });
-        let mut connection = self.connection().await?;
-        connection
+        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let result = guard
+            .connection()
             .transaction::<usize, diesel::result::Error, _>(async |connection| {
-                let family_id = refresh_family_id_for_digest(
-                    connection,
-                    tenant_id,
-                    client_id,
-                    raw_token_blake3.as_bytes(),
-                )
-                .await?;
-                if let Some(family_id) = family_id {
+                // A verified access token remains access-only authority, with
+                // zero refresh-member count; do not reinterpret its bytes as RT.
+                let family_id = if access_token.is_none() {
+                    refresh_family_id_for_digest(
+                        connection,
+                        tenant_id,
+                        client_id,
+                        raw_token_blake3.as_bytes(),
+                    )
+                    .await?
+                } else {
+                    None
+                };
+                let updated = if let Some(family_id) = family_id {
                     lock_refresh_family(connection, family_id).await?;
-                    return diesel::update(
+                    diesel::update(
                         oauth_refresh_families::table
                             .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
                             .filter(oauth_refresh_families::client_id.eq(client_id))
@@ -380,15 +399,37 @@ impl TokenRepository {
                     )
                     .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
                     .execute(connection)
-                    .await;
+                    .await?
+                } else {
+                    if let Some(new_revocation) = new_revocation {
+                        upsert_access_token_revocations(connection, &[new_revocation]).await?;
+                    }
+                    0
+                };
+                if let Some((client_public_id, source_ip_hash)) = audit_context {
+                    let event = SecurityAuditEvent {
+                        event_id: Uuid::now_v7(),
+                        event_type: "token_revoked".to_owned(),
+                        event_category: "token_lifecycle".to_owned(),
+                        payload: serde_json::json!({
+                            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                            "event_category": "token_lifecycle", "tenant_id": tenant_id,
+                            "client_id": client_public_id,
+                            "token_hash": raw_token_blake3.to_hex().to_string(),
+                            "updated": updated, "source_ip_hash": source_ip_hash,
+                        }),
+                        occurred_at: Utc::now(),
+                    };
+                    append_fresh_security_audit_on_connection(connection, &event).await?;
                 }
-                if let Some(new_revocation) = new_revocation {
-                    upsert_access_token_revocations(connection, &[new_revocation]).await?;
-                }
-                Ok(0)
+                Ok(updated)
             })
             .await
-            .map_err(map_error)
+            .map_err(map_error);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {

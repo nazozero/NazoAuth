@@ -407,7 +407,10 @@ fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
         1
     );
     assert_eq!(fixture.ports.stored_codes.lock().unwrap().len(), 1);
-    assert!(fixture.ports.stored_par.lock().unwrap().is_empty());
+    assert!(
+        !fixture.ports.stored_par.lock().unwrap().is_empty(),
+        "original TTL remains; durable PAR fence still permits one code"
+    );
 }
 
 fn ready_prompt_none_fixture(

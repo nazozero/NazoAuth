@@ -451,7 +451,7 @@ The tenant reconciler owns at most one transition future per module. A retained 
 
 The shared Actix extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.
 
-MFA verification retains the confirmed TOTP credential row UUID as the generation proof. Remembered-device insertion takes a key-share lock on that exact row; backup-code regeneration takes an update lock on it after hashing. A retired generation cannot publish a remember cookie, replace a new generation’s codes, or disable a new enrollment. Disabling carries the already consumed factor proof to `clear_mfa_state_if_current`; the adapter atomically checks that exact confirmed generation before clearing its dependent state, without consuming a second factor. Clearing MFA uses READ COMMITTED and orders writes TOTP → backup codes → remembered devices → user; enrollment confirmation follows the same order. An unavailable clear ACK
+MFA verification retains the confirmed TOTP credential row UUID as the generation proof. Remembered-device insertion takes a key-share lock on that exact row; backup-code regeneration takes an update lock on it after hashing. A retired generation cannot publish a remember cookie, replace a new generation’s codes, or disable a new enrollment. Disabling carries the already consumed factor proof and source-IP hash to `clear_mfa_state_if_current_with_required_audit`; the adapter atomically checks that exact confirmed generation before clearing its dependent state, without consuming a second factor. Clearing MFA uses READ COMMITTED and orders writes TOTP → backup codes → remembered devices → user; enrollment confirmation follows the same order. An unavailable clear ACK
 can follow a committed effect; it must not be interpreted as proof that the old
 generation remains active. Retrying that consumed proof after a formal new
 generation is installed returns stale-proof rejection and preserves all of the
@@ -490,3 +490,34 @@ exact Valkey publication; the original producer retains that publication attempt
 and its original TTL. Committed wrong-owner/material checks and exact one-time
 consumption still apply. The live requester/publisher barrier regression checks
 the stage is retained, publication succeeds and only one secret is disclosed.
+
+## HTTP Signature Body Evidence
+
+`nazo-http-signatures::BodyDigest` owns a validated or generated field value and
+borrows the exact immutable body for its lifetime. Request verification and
+response preparation may reuse it only for the same slice and field value, after
+the ordinary unique-header checks. Evidence does not authorize a request or
+replace signature coverage, cryptographic verification, sender binding, time or
+replay checks. A changed body or field rejects reuse. Received response
+verification always checks its actual body without supplied evidence.
+
+The Actix FAPI endpoint keeps one request-local digest result for its captured
+immutable body, including a failed result, and uses one generated digest for its
+outgoing response. Error response linkage preserves the existing omission of an
+invalid request digest. This removes repeated body hashes on the normal path;
+it is a source-level operation count, not a measured latency or throughput claim.
+
+
+MFA disable uses a purpose-specific identity port which accepts the exact
+confirmed generation and commits its dependent deletes, active-account update,
+and canonical Required `mfa_disabled` event together. The application preserves
+the dynamic audit readiness check before consuming the factor and does not
+append the outcome after the effect. The adapter retains the established lock
+order and discards its physical connection on error or cancellation; successful
+results follow the transaction ACK. A missing required capability fails closed
+before any clear. The ordinary repository clear remains available for fixture
+setup/cleanup and is not the profile operation's accepting contract. Real PG
+fixture source checks append-failure rollback and a committed-but-unknown
+response retaining one canonical event while an old proof cannot clear a formal
+new enrollment; these are source additions pending execution, not ACK-loss or
+failover qualification.

@@ -261,6 +261,11 @@ async fn mtls_trust_lifecycle_is_owned_two_person_current_and_revocable() {
         .unwrap()
         .contains("TEST")
     );
+    assert_eq!(approved.id, self_review.id);
+    assert_eq!(approved.created_at, self_review.created_at);
+    assert_eq!(approved.admin_note.as_deref(), Some("verified out of band"));
+    assert!(approved.resolved_at.is_some());
+    assert!(approved.revoked_at.is_none());
     let revoked = repository
         .revoke(
             tenant.tenant_id,
@@ -274,6 +279,16 @@ async fn mtls_trust_lifecycle_is_owned_two_person_current_and_revocable() {
         MtlsTrustAnchorStatus::from_code(revoked.status),
         Some(MtlsTrustAnchorStatus::Revoked)
     );
+    assert_eq!(revoked.id, approved.id);
+    assert_eq!(revoked.created_at, approved.created_at);
+    assert_eq!(revoked.resolved_at, approved.resolved_at);
+    assert_eq!(revoked.admin_note.as_deref(), Some("certificate retired"));
+    assert!(revoked.revoked_at.is_some());
+    assert_eq!(
+        MtlsTrustAnchorStatus::from_code(approved.status),
+        Some(MtlsTrustAnchorStatus::Approved)
+    );
+    assert_eq!(approved.admin_note.as_deref(), Some("verified out of band"));
     assert!(
         repository
             .active_bundle(tenant.tenant_id, None)
