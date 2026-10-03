@@ -4303,22 +4303,20 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
             claim_now,
         ),
     );
-    let claim_a = claim_payload(claim_a.expect("claimant a must not error"));
-    let claim_b = claim_payload(claim_b.expect("claimant b must not error"));
-    let winners = [&claim_a, &claim_b]
-        .iter()
-        .filter(|claim| claim.is_some())
-        .count();
-    assert_eq!(
-        winners, 1,
-        "exactly one concurrent claimant must win the lease"
-    );
-    if let Some(claim) = &claim_a {
-        assert_eq!(claim.claim_id, "df03-a");
-    }
-    if let Some(claim) = &claim_b {
-        assert_eq!(claim.claim_id, "df03-b");
-    }
+    use nazo_openid4vci::DeferredClaimOutcome::{Busy, Claimed};
+    let claim_a = claim_a.expect("claimant a must not error");
+    let claim_b = claim_b.expect("claimant b must not error");
+    let (winner, loser_retry_at, expected_claim_id) = match (&claim_a, &claim_b) {
+        (Claimed(winner), Busy { retry_at }) => (winner, retry_at, "df03-a"),
+        (Busy { retry_at }, Claimed(winner)) => (winner, retry_at, "df03-b"),
+        _ => panic!("concurrent claims must yield exactly one Claimed and one Busy"),
+    };
+    assert_eq!(winner.claim_id, expected_claim_id);
+    assert_eq!(winner.credential.id, deferred.id);
+    let lease = deferred_lease_row(&pool, deferred.id).await;
+    assert_eq!(lease.claim_id.as_deref(), Some(expected_claim_id));
+    assert_eq!(lease.claim_expires_at, Some(*loser_retry_at));
+    assert_eq!(*loser_retry_at, claim_now + Duration::minutes(5));
 
     // The lease expires five minutes after claim_now; a later clock lets the
     // losing claimant (or any retry) reclaim without sleeping.
