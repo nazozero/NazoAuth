@@ -8,6 +8,12 @@ container orchestration, Release/OCI verification, task issuance and receipt
 verification, controller audit state, backup lifecycle, recovery, diagnostics,
 the administrator-provisioning client, and controller self-update/rollback.
 
+The signed `keys-list` and `keys-validate` operations diagnose one existing
+authoritative key generation. They validate its sealed public/private material
+without creating missing keys, advancing rotation, or resealing wrapping keys.
+Missing or invalid generations fail; initialization and maintenance remain
+explicit mutation/startup responsibilities.
+
 `crates/operator-protocol` remains only in this repository. NazoAuthCtl pins a
 released package version by server tag. Tagged server Releases additionally
 publish that exact package with provenance so later controller dependency

@@ -323,7 +323,7 @@ async fn managed_generation_is_idempotent() {
     let manager = database_manager(repository, Uuid::now_v7()).await;
     let profile = managed_profile("tenant.example");
 
-    let first_kid =
+    let (first_kid, first_revision, first_chain) =
         generate_local_with_database_manager(&manager, Some(&profile), managed_options())
             .await
             .expect("managed generation");
@@ -333,9 +333,14 @@ async fn managed_generation_is_idempotent() {
         .expect("managed state");
     let first_material = first_state.material.expect("managed material");
     assert_eq!(first_kid, first_material.public.signing_kid);
+    assert_eq!(first_revision, first_state.revision.to_string());
+    assert_eq!(
+        first_chain.as_deref(),
+        Some(first_material.public.certificate_chain_pem.as_str())
+    );
     assert_complete_managed_material(&first_material);
 
-    let second_kid =
+    let (second_kid, second_revision, second_chain) =
         generate_local_with_database_manager(&manager, Some(&profile), managed_options())
             .await
             .expect("idempotent managed generation");
@@ -345,6 +350,8 @@ async fn managed_generation_is_idempotent() {
         .expect("reloaded managed state");
     let second_material = second_state.material.expect("retained managed material");
     assert_eq!(second_kid, first_kid);
+    assert_eq!(second_revision, first_revision);
+    assert_eq!(second_chain, first_chain);
     assert_eq!(second_state.revision, first_state.revision);
     assert_same_material(&first_material, &second_material);
 }
@@ -379,8 +386,63 @@ async fn concurrent_managed_initialization_converges_on_one_complete_generation(
         .await
         .expect("concurrent managed state");
     let material = state.material.expect("complete concurrent material");
-    assert_eq!(material.public.signing_kid, first_kid);
+    assert_eq!(material.public.signing_kid, first_kid.0);
+    assert_eq!(state.revision.to_string(), first_kid.1);
+    assert_eq!(
+        Some(material.public.certificate_chain_pem.clone()),
+        first_kid.2
+    );
     assert_complete_managed_material(&material);
+}
+
+#[tokio::test]
+async fn operator_generation_result_stays_on_its_applied_generation_after_concurrent_rotation() {
+    let config = mdoc_database_config(&temporary_directory("generation-result-race"));
+    let binding = tenant_binding("https://tenant.example");
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let persistence = MemoryOperatorPersistence {
+        repository: repository.clone(),
+    };
+    let barrier = repository.pause_next_openid4vc_commit();
+    let purposes = ["credential".to_owned(), "presentation_request".to_owned()];
+    let (generated, observed) = tokio::join!(
+        super::super::operator_generate_local_database_for_tenant(
+            &config,
+            &binding,
+            &persistence,
+            "ES256",
+            &purposes,
+        ),
+        async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                barrier.applied.notified(),
+            )
+            .await
+            .expect("generation reached the applied CAS barrier");
+            let rotator =
+                database_manager(repository.clone(), binding.tenant.tenant_id.as_uuid()).await;
+            let first = rotator.database_openid4vc_state().await.unwrap();
+            rotate_managed_material(&rotator, &managed_profile("tenant.example"))
+                .await
+                .unwrap();
+            let second = rotator.database_openid4vc_state().await.unwrap();
+            barrier.release.notify_one();
+            (first, second)
+        },
+    );
+    let (kid, revision, chain) = generated.expect("generation result");
+    let (first, second) = observed;
+    let first_material = first.material.unwrap();
+    let second_material = second.material.unwrap();
+    assert!(second.revision > first.revision);
+    assert_ne!(
+        first_material.public.signing_kid,
+        second_material.public.signing_kid
+    );
+    assert_eq!(kid, first_material.public.signing_kid);
+    assert_eq!(revision, first.revision.to_string());
+    assert_eq!(chain, Some(first_material.public.certificate_chain_pem));
 }
 
 #[tokio::test]

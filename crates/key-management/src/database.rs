@@ -69,6 +69,16 @@ pub(crate) async fn refresh(
         maintain_payload(payload, settings)
     })
     .await
+    .map(|(loaded, _)| loaded)
+}
+
+pub(crate) async fn inspect(
+    binding: &DatabaseKeysetBinding,
+) -> anyhow::Result<(LoadedKeyset, Vec<KeyRecord>, i64)> {
+    let record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
+    Ok((loaded, records(&payload)?, record.revision))
 }
 
 pub(crate) async fn list(
@@ -103,10 +113,10 @@ pub(crate) async fn register_local(
     settings: &KeySettings,
     binding: &DatabaseKeysetBinding,
     registration: LocalKeyRegistration,
-) -> anyhow::Result<(String, LoadedKeyset)> {
+) -> anyhow::Result<(String, LoadedKeyset, i64)> {
     validate_local_registration(&registration)?;
     let mut registered_kid = None;
-    let loaded = update(binding, settings, false, |payload| {
+    let (loaded, revision) = update(binding, settings, false, |payload| {
         let keys = payload
             .get_mut("keys")
             .and_then(Value::as_array_mut)
@@ -157,6 +167,7 @@ pub(crate) async fn register_local(
     Ok((
         registered_kid.ok_or_else(|| anyhow!("local key registration did not select a key"))?,
         loaded,
+        revision,
     ))
 }
 
@@ -177,7 +188,7 @@ pub(crate) async fn register_external(
         }
         keys.push(json!({"kid":registration.kid,"alg":algorithm,"backend":"external-command","key_ref":registration.key_ref,"public_jwk":registration.public_jwk,"created_at":timestamp(Utc::now()),"retire_at":null}));
         Ok(true)
-    }).await
+    }).await.map(|(loaded, _)| loaded)
 }
 
 pub(crate) async fn openid4vc_state(
@@ -203,7 +214,7 @@ pub(crate) async fn commit_openid4vc(
     expected_revision: i64,
     material: Openid4vcMaterial,
     new_private_key_pem: Option<String>,
-) -> anyhow::Result<LoadedKeyset> {
+) -> anyhow::Result<(LoadedKeyset, Openid4vcState)> {
     let record = require_record(binding).await?;
     if record.revision != expected_revision {
         anyhow::bail!("OpenID4VC keyset revision conflict");
@@ -259,7 +270,7 @@ pub(crate) async fn commit_openid4vc(
     }
     payload["openid4vc"] = serde_json::to_value(material)?;
     // Validate the entire candidate before the sole externally visible write.
-    let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
+    load_payload(binding.external_signer.as_ref(), &payload)?;
     let revision = record
         .revision
         .checked_add(1)
@@ -270,7 +281,21 @@ pub(crate) async fn commit_openid4vc(
         .compare_and_swap(expected_revision, candidate)
         .await?
     {
-        SigningKeysetCompareAndSwapResult::Applied(_) => Ok(loaded),
+        SigningKeysetCompareAndSwapResult::Applied(record) => {
+            // The applied receipt owns this exact generation even if another
+            // writer has already committed a newer one before acknowledgement.
+            let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+            let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
+            let state = Openid4vcState {
+                revision: record.revision,
+                material: payload
+                    .get("openid4vc")
+                    .cloned()
+                    .map(serde_json::from_value)
+                    .transpose()?,
+            };
+            Ok((loaded, state))
+        }
         SigningKeysetCompareAndSwapResult::Conflict(_) => {
             anyhow::bail!("OpenID4VC keyset revision conflict")
         }
@@ -348,7 +373,7 @@ async fn update<F>(
     _settings: &KeySettings,
     reseal_if_current_key_changed: bool,
     mut mutation: F,
-) -> anyhow::Result<LoadedKeyset>
+) -> anyhow::Result<(LoadedKeyset, i64)>
 where
     F: FnMut(&mut Value) -> anyhow::Result<bool>,
 {
@@ -359,7 +384,8 @@ where
             && (!reseal_if_current_key_changed
                 || record.wrapping_key_id == binding.wrapping_keys.current_id())
         {
-            return load_payload(binding.external_signer.as_ref(), &payload);
+            return load_payload(binding.external_signer.as_ref(), &payload)
+                .map(|loaded| (loaded, record.revision));
         }
         let revision = record
             .revision
@@ -378,7 +404,8 @@ where
                     binding.tenant_id,
                     &binding.wrapping_keys,
                     &record,
-                );
+                )
+                .map(|loaded| (loaded, record.revision));
             }
             SigningKeysetCompareAndSwapResult::Conflict(winner) => record = winner,
         }

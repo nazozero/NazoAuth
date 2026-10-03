@@ -455,19 +455,24 @@ pub(super) async fn generate_local_with_database_manager(
     manager: &KeyManager,
     profile: Option<&Openid4vcCertificateProfile>,
     options: GenerateLocalKeyOptions,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, String, Option<String>)> {
     let Some(profile) = profile else {
-        return manager
-            .database_register_local(nazo_key_management::LocalKeyRegistration {
+        let (kid, revision) = manager
+            .database_register_local_with_revision(nazo_key_management::LocalKeyRegistration {
                 algorithm: options.alg,
                 purposes: options.purposes,
             })
-            .await;
+            .await?;
+        return Ok((kid, revision, None));
     };
     let state = manager.database_openid4vc_state().await?;
     if let Some(material) = state.material {
         validate_managed_profile(&material, profile)?;
-        return Ok(material.public.signing_kid);
+        return Ok((
+            material.public.signing_kid,
+            state.revision.to_string(),
+            Some(material.public.certificate_chain_pem),
+        ));
     }
     if manager
         .snapshot()
@@ -488,12 +493,20 @@ pub(super) async fn generate_local_with_database_manager(
     }
     let signing_key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
     let material = build_managed_material(&signing_key_pem, profile, None)?;
-    let kid = material.public.signing_kid.clone();
     match manager
         .database_commit_openid4vc(state.revision, material, Some(signing_key_pem))
         .await
     {
-        Ok(()) => Ok(kid),
+        Ok(committed) => {
+            let material = committed
+                .material
+                .context("committed OpenID4VC generation has no material")?;
+            Ok((
+                material.public.signing_kid,
+                committed.revision.to_string(),
+                Some(material.public.certificate_chain_pem),
+            ))
+        }
         Err(error) => {
             // Concurrent bootstrap may already have committed a complete generation.
             let winner = manager.database_openid4vc_state().await?;
@@ -502,7 +515,11 @@ pub(super) async fn generate_local_with_database_manager(
             {
                 validate_managed_profile(&material, profile)?;
                 manager.refresh().await?;
-                return Ok(material.public.signing_kid);
+                return Ok((
+                    material.public.signing_kid,
+                    winner.revision.to_string(),
+                    Some(material.public.certificate_chain_pem),
+                ));
             }
             Err(error)
         }
