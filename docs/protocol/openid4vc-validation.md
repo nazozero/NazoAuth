@@ -1,11 +1,24 @@
 # OpenID4VC validation boundaries
 
 The issuer uses [OpenID4VCI 1.0 Final Appendices D and F](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-proof-types).
-JWT proofs require a scalar Credential Issuer audience; a supplied issuer must
-be a string matching the credential authorization's client. Anonymous
-pre-authorized provenance is not yet represented in that proof-validation
-contract, so the anonymous flow's mandatory omission of `iss` remains an open
-conformance item. A placeholder client identifier is not provenance evidence.
+JWT proofs require a scalar Credential Issuer audience. The credential
+authorization retains explicit registered-client, anonymous pre-authorized or
+legacy-unspecified proof provenance. A registered client may omit `iss`; if
+present, it must be a string matching that client. Anonymous and legacy-unspecified
+proofs omit `iss`. A placeholder client identifier is not provenance evidence,
+including when a real registered client happens to use that same identifier.
+Anonymous attestations use the issuer's global attestation trust, not a policy
+accidentally attached to a registered client with the placeholder name.
+
+The additive proof-origin migration preserves old rows as legacy-unspecified.
+Their callers omit the optional issuer claim or restart issuance with a new
+token. An epoch-less token without a retained live credential authorization is
+rejected instead of guessing its origin. Epoch-bound ordinary access tokens can
+establish their registered-client projection; pre-authorized issuance persists
+the verified origin before returning the token. Projection refreshes preserve
+that immutable origin. Drain old VCI consumers during the rollout; an old binary
+does not acquire these validation guarantees merely by sharing the new schema.
+The guarded down migration refuses to lose retained anonymous provenance.
 
 An embedded key attestation must attest the actual JWT signing key even when
 attestation is optional. Its algorithm must be in the selected configuration's
@@ -51,3 +64,27 @@ Deferred readiness/lease classification, stable authorization identity across
 refresh, notification retry idempotency, authenticated certificate AKI matching,
 individual invalid-presentation filtering and DCQL extensions remain separate
 open findings. They are not closed by these wire/proof changes.
+
+Credential and deferred requests that select response encryption must themselves
+use the issuer's advertised request encryption. Plain requests with that parameter
+are rejected before nonce consumption or deferred claim; a real JWE live regression
+uses the advertised issuer request key, gets HTTP-202 semantics, and replays the
+same persisted encrypted outcome. This check closes the previously permissive
+wire contract rather than treating a plaintext encrypted-response request as a
+Final-conformant happy path.
+
+Profile validation also runs on retained create replay, request-object retrieval
+and response transactions. An unexpired pre-upgrade transaction that explicitly
+waives holder binding is rejected instead of republishing an unsupported request
+object; it remains subject to the existing short TTL. Callers start a new supported
+request. The live fixture commits/publishes a supported request, confirms that a
+new waiver is not stored, and uses the real signing/store owners to inject an old
+unsupported transaction whose GET, replay and response are rejected.
+
+Proof-origin fixtures sign the whole outer proof (including a valid EdDSA outer
+with an ES256 embedded attestation), distinguish anonymous grants from registered
+clients sharing the placeholder name, and preserve immutable provenance through
+the real PostgreSQL projection. The migration fixture copies the deployed table
+inside a rollback-owned schema, applies the actual up/down SQL and verifies legacy
+classification plus the anonymous downgrade guard. The expiration regression
+supplies the correct nonce and omits only the embedded expiration claim.

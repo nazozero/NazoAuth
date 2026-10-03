@@ -818,14 +818,29 @@ async fn credential_endpoint_preserves_dpop_nonce_challenge_error() {
 
 #[actix_web::test]
 async fn credential_success_returns_next_dpop_nonce_for_json_and_jwt_responses() {
-    use nazo_openid4vci::application::CredentialResponseStatus::{Issued, Deferred};
+    use nazo_openid4vci::application::CredentialResponseStatus::{Deferred, Issued};
     for (response_body, content_type, status) in [
         (immediate_response(), "application/json", Issued),
-        (CredentialResponseBody::Jwt("encrypted.credential.response".to_owned()), "application/jwt", Issued),
-        (CredentialResponseBody::Json(nazo_openid4vci::CredentialResponse {
-            credentials:None, transaction_id:Some("pending".to_owned()), notification_id:None, interval:Some(5),
-        }), "application/json", Deferred),
-        (CredentialResponseBody::Jwt("opaque.encrypted.deferred.response".to_owned()), "application/jwt", Deferred),
+        (
+            CredentialResponseBody::Jwt("encrypted.credential.response".to_owned()),
+            "application/jwt",
+            Issued,
+        ),
+        (
+            CredentialResponseBody::Json(nazo_openid4vci::CredentialResponse {
+                credentials: None,
+                transaction_id: Some("pending".to_owned()),
+                notification_id: None,
+                interval: Some(5),
+            }),
+            "application/json",
+            Deferred,
+        ),
+        (
+            CredentialResponseBody::Jwt("opaque.encrypted.deferred.response".to_owned()),
+            "application/jwt",
+            Deferred,
+        ),
     ] {
         let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
             Arc::new(SuccessfulIssuer {

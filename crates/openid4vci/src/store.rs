@@ -46,8 +46,30 @@ pub struct StoredCredentialOffer {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Provenance retained by the credential authorization owner, never inferred
+/// from a placeholder client identifier. Legacy data has no such evidence.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialProofOrigin {
+    RegisteredClient,
+    AnonymousPreAuthorized,
+    #[default]
+    LegacyUnspecified,
+}
+
+impl CredentialProofOrigin {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RegisteredClient => "registered_client",
+            Self::AnonymousPreAuthorized => "anonymous_pre_authorized",
+            Self::LegacyUnspecified => "legacy_unspecified",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CredentialAccess {
+    pub proof_origin: CredentialProofOrigin,
     pub token_id: Uuid,
     pub tenant_id: Uuid,
     pub subject_id: Uuid,

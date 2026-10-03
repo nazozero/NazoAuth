@@ -340,6 +340,8 @@ target is:
   state model, policy model, and negative tests exist.
 
 OpenID4VC wire/proof validation details and remaining profile limits are tracked
-in [validation boundaries](openid4vc-validation.md). In particular, anonymous
-pre-authorized proof provenance and stable deferred authorization across refresh
-remain open; the current verifier rejects explicit holder-binding waivers.
+in [validation boundaries](openid4vc-validation.md). Credential authorizations
+retain registered, anonymous pre-authorized or legacy-unspecified proof origin;
+legacy callers omit `iss` or restart issuance. Stable deferred authorization across
+refresh remains open. New and retained presentation requests reject explicit
+holder-binding waivers. These source changes still require exact-SHA verification.

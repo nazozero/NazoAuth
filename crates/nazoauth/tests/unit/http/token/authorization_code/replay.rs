@@ -331,8 +331,13 @@ async fn token_authorization_code_replay_reads_back_committed_issuance_evidence(
 
     let code = format!("code-{}", Uuid::now_v7());
     let access_token_jti = format!("access-jti-{}", Uuid::now_v7());
-    let grant_key =
-        legacy_authorization_code_redemption_key(&blake3_hex(&code), &form_for_code(&code), None, None, None);
+    let grant_key = legacy_authorization_code_redemption_key(
+        &blake3_hex(&code),
+        &form_for_code(&code),
+        None,
+        None,
+        None,
+    );
     fixture
         .insert_single_use_issuance(&client, &grant_key, &access_token_jti, Some(family_id))
         .await;

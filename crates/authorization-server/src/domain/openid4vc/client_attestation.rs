@@ -168,7 +168,9 @@ impl Openid4vcClientAttestationValidator {
             .ok_or_else(|| anyhow::anyhow!("client attestation proof iat is missing"))?;
         let replay_window = nazo_auth::ClientAttestationProofWindow::from_verified_issued_at(iat)
             .filter(|window| window.accepts(now))
-            .ok_or_else(|| anyhow::anyhow!("client attestation proof iat is outside the replay window"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("client attestation proof iat is outside the replay window")
+            })?;
         Ok(ValidatedClientAttestation {
             client_id: client_id.to_owned(),
             client_instance_key_thumbprint,

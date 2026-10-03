@@ -1344,6 +1344,7 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     // Fixture rows go through the production upsert/store on the instrumented
     // pool; the measurement baseline is taken after they complete.
     let access = CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
         subject_id: seed.user_id,
@@ -1517,6 +1518,7 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
 
     let token_hash = format!("qc-access-hash-{}", Uuid::now_v7());
     let access = CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
         subject_id: seed.user_id,
@@ -1574,6 +1576,7 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     );
 
     let access = CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
         subject_id: seed.user_id,
@@ -1629,6 +1632,7 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
             &format!("qc-access-hash-{}", Uuid::now_v7()),
             &CredentialAccess {
                 token_id: Uuid::now_v7(),
+                proof_origin: nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized,
                 ..access.clone()
             },
             None,

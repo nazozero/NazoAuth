@@ -390,6 +390,7 @@ impl ProofValidatorPort for FixedProofs {
         &'a self,
         _: &'a Proofs,
         _: &'a str,
+        _: nazo_openid4vci::CredentialProofOrigin,
         _: &'a str,
         _: &'a str,
         _: &'a ProofTypeMetadata,
@@ -449,6 +450,7 @@ impl ProofValidatorPort for ErrorProofs {
         &'a self,
         _: &'a Proofs,
         _: &'a str,
+        _: nazo_openid4vci::CredentialProofOrigin,
         _: &'a str,
         _: &'a str,
         _: &'a ProofTypeMetadata,
@@ -510,6 +512,7 @@ fn fixture(
     };
     (
         CredentialAccess {
+            proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             token_id: Uuid::now_v7(),
             tenant_id: Uuid::now_v7(),
             subject_id: Uuid::now_v7(),
@@ -1529,6 +1532,7 @@ async fn doctype_is_used_when_vct_is_absent() {
 async fn persist_pre_authorized_access_forwards_arguments_and_errors() {
     let store = Arc::new(RecordingStore::default());
     let access = CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         subject_id: Uuid::now_v7(),

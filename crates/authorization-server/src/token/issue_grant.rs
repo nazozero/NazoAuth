@@ -674,9 +674,13 @@ pub async fn issue_token_response(
                     .await
                 {
                     Ok(Some(redemption))
-                        if redemption.authorization_code_holder.as_ref().is_some_and(|expected| {
-                            crate::token::authorization_code::holder_matches_original(expected, holder)
-                        }) =>
+                        if redemption.authorization_code_holder.as_ref().is_some_and(
+                            |expected| {
+                                crate::token::authorization_code::holder_matches_original(
+                                    expected, holder,
+                                )
+                            },
+                        ) =>
                     {
                         if let Err(error) = revoke_issued_authorization_code_tokens(
                             token_service,

@@ -11,9 +11,9 @@ pub(crate) mod client_auth_keys;
 #[allow(unused_imports)]
 pub(crate) use client_auth_keys::CountingJwksResolver;
 
+mod attestation_replay;
 #[path = "counting_ports.rs"]
 pub(crate) mod counting_ports;
-mod attestation_replay;
 pub(crate) use attestation_replay::UnknownAttestationAck;
 #[allow(unused_imports)]
 pub(crate) use counting_ports::{CountingAuthorizationRepository, CountingTokenRepository};
