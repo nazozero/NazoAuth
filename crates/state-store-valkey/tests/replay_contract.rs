@@ -497,14 +497,27 @@ async fn client_attestation_expired_marker_cannot_be_reinserted_by_slow_node() {
             .await
             .unwrap()
     );
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while replay_owner_time(&inspector).await < window.expires_at() {
+    let key = nazo_valkey::test_support::client_attestation_replay_storage_key(&client, &jti);
+    let mut last_sample = None;
+    let expiry = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let owner_seconds = replay_owner_time(&inspector).await;
+            let pttl_ms = inspector.pttl::<i64, _>(&key).await.unwrap();
+            last_sample = Some((owner_seconds, pttl_ms));
+            // TIME can reach the deadline while EXAT still has PTTL=0 at
+            // the physical millisecond boundary. Observe owner expiry too.
+            if owner_seconds >= window.expires_at() && pttl_ms == -2 {
+                break;
+            }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
-    .await
-    .expect("owner reaches the real marker expiry");
-    let key = nazo_valkey::test_support::client_attestation_replay_storage_key(&client, &jti);
+    .await;
+    assert!(
+        expiry.is_ok(),
+        "owner marker expiry timed out: deadline={}, last_sample={last_sample:?}",
+        window.expires_at()
+    );
     assert!(
         inspector
             .get::<Option<String>, _>(&key)
