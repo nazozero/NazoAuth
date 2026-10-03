@@ -732,6 +732,7 @@ fn deferred_fixture(now: DateTime<Utc>) -> DeferredCredential {
         id: Uuid::now_v7(),
         transaction_hash: "tx-hash".to_owned(),
         access: CredentialAccess {
+            proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             token_id: Uuid::now_v7(),
             tenant_id: Uuid::now_v7(),
             subject_id: Uuid::now_v7(),
@@ -1120,6 +1121,7 @@ fn pre_authorized_persist_forwards_arguments_and_errors() {
     let now = Utc::now();
     let store = TransitionStore::default();
     let access = CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         subject_id: Uuid::now_v7(),

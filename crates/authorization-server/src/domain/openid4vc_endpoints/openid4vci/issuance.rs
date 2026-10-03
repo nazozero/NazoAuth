@@ -17,7 +17,12 @@ impl ServerCredentialIssuerOperations {
                     "Credential issuer is not accepting new requests.",
                 ));
             }
+            let encrypted_request = matches!(&body, CredentialRequestBody::Jwt(_));
             let request = request_json(&self.request_encryption, body)?;
+            validate_response_encryption_transport(
+                encrypted_request,
+                request.credential_response_encryption.as_ref(),
+            )?;
             let access = self.access(&context).await?;
             let request_digest = issuance_request_digest(
                 "credential",
@@ -117,7 +122,11 @@ impl ServerCredentialIssuerOperations {
                 let _ = self.service.rollback_pending(&pending, Utc::now()).await;
                 return Err(map_issuance_error(error));
             }
-            Ok(CredentialEndpointResponse { body, status, dpop_nonce })
+            Ok(CredentialEndpointResponse {
+                body,
+                status,
+                dpop_nonce,
+            })
         })
     }
 
@@ -137,7 +146,12 @@ impl ServerCredentialIssuerOperations {
                     "Credential issuer is unavailable.",
                 ));
             }
+            let encrypted_request = matches!(&body, CredentialRequestBody::Jwt(_));
             let request = request_json(&self.request_encryption, body)?;
+            validate_response_encryption_transport(
+                encrypted_request,
+                request.credential_response_encryption.as_ref(),
+            )?;
             let access = self.access(&context).await?;
             let request_digest = issuance_request_digest(
                 "deferred",

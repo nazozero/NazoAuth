@@ -573,9 +573,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 ),
             };
             let authorization_code_holder = match &input.mode {
-                TokenIssuanceMode::AuthorizationCode { holder, .. } => Some(
-                    serde_json::to_value(holder).map_err(|_| TokenPortError::CorruptData)?,
-                ),
+                TokenIssuanceMode::AuthorizationCode { holder, .. } => {
+                    Some(serde_json::to_value(holder).map_err(|_| TokenPortError::CorruptData)?)
+                }
                 _ => None,
             };
             // Pure preparation before the connection checkout: contract
@@ -778,16 +778,22 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     oauth_token_issuances::refresh_token_family_id,
                     oauth_token_issuances::authorization_code_holder,
                 ))
-                .first::<(String, DateTime<Utc>, Option<Uuid>, Option<serde_json::Value>)>(
-                    &mut self.connection().await.map_err(map_repository_error)?,
-                )
+                .first::<(
+                    String,
+                    DateTime<Utc>,
+                    Option<Uuid>,
+                    Option<serde_json::Value>,
+                )>(&mut self.connection().await.map_err(map_repository_error)?)
                 .await
                 .optional()
                 .map_err(map_diesel_error)?;
             row.map(
                 |(access_token_jti, access_token_expires_at, refresh_token_family_id, holder)| {
                     let authorization_code_holder = holder
-                        .map(|value| nazo_auth::AuthorizationCodeHolderEvidence::from_persisted(value).ok_or(TokenPortError::CorruptData))
+                        .map(|value| {
+                            nazo_auth::AuthorizationCodeHolderEvidence::from_persisted(value)
+                                .ok_or(TokenPortError::CorruptData)
+                        })
                         .transpose()
                         .map_err(|_| TokenPortError::CorruptData)?;
                     if authorization_code_holder

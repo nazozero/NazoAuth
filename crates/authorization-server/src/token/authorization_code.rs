@@ -170,10 +170,16 @@ struct FreshCodeHolderFacts {
 }
 
 impl FreshCodeHolderFacts {
-    fn requirements(&self, mtls_binding: Option<&str>) -> Option<nazo_auth::AuthorizationCodeHolderEvidence> {
+    fn requirements(
+        &self,
+        mtls_binding: Option<&str>,
+    ) -> Option<nazo_auth::AuthorizationCodeHolderEvidence> {
         nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
-            self.client_authentication, self.pkce_s256.clone(), self.dpop_jkt.clone(),
-            mtls_binding.map(ToOwned::to_owned), self.client_attestation_jkt.clone(),
+            self.client_authentication,
+            self.pkce_s256.clone(),
+            self.dpop_jkt.clone(),
+            mtls_binding.map(ToOwned::to_owned),
+            self.client_attestation_jkt.clone(),
         )
     }
 
@@ -184,10 +190,16 @@ impl FreshCodeHolderFacts {
             self.client_authentication,
             expected.pkce_s256().and(self.pkce_s256.clone()),
             expected.dpop_jkt().and(self.dpop_jkt.clone()),
-            expected.mtls_x5t_s256().and(self.certificate_thumbprint.clone()),
-            expected.client_attestation_jkt().and(self.client_attestation_jkt.clone()),
+            expected
+                .mtls_x5t_s256()
+                .and(self.certificate_thumbprint.clone()),
+            expected
+                .client_attestation_jkt()
+                .and(self.client_attestation_jkt.clone()),
         );
-        candidate.as_ref().is_some_and(|candidate| holder_matches_original(expected, candidate))
+        candidate
+            .as_ref()
+            .is_some_and(|candidate| holder_matches_original(expected, candidate))
     }
 }
 
@@ -196,15 +208,20 @@ pub(super) fn holder_matches_original(
     candidate: &nazo_auth::AuthorizationCodeHolderEvidence,
 ) -> bool {
     fn matches(expected: Option<&str>, candidate: Option<&str>) -> bool {
-        expected.is_none_or(|expected| candidate.is_some_and(|candidate| {
-            constant_time_eq(expected.as_bytes(), candidate.as_bytes())
-        }))
+        expected.is_none_or(|expected| {
+            candidate.is_some_and(|candidate| {
+                constant_time_eq(expected.as_bytes(), candidate.as_bytes())
+            })
+        })
     }
     (!expected.authenticated_client() || candidate.authenticated_client())
         && matches(expected.pkce_s256(), candidate.pkce_s256())
         && matches(expected.dpop_jkt(), candidate.dpop_jkt())
         && matches(expected.mtls_x5t_s256(), candidate.mtls_x5t_s256())
-        && matches(expected.client_attestation_jkt(), candidate.client_attestation_jkt())
+        && matches(
+            expected.client_attestation_jkt(),
+            candidate.client_attestation_jkt(),
+        )
 }
 
 /// A durable code receipt is the consumption authority. A fresh request may
@@ -431,7 +448,9 @@ pub async fn token_authorization_code_with_service(
     }
     // Expired cache contents are evidence hints, not issuance eligibility.
     // Their original receipt must still be considered after fresh holder auth.
-    let expired_pending = expected_payload.as_ref().is_some_and(|payload| payload.expires_at <= Utc::now());
+    let expired_pending = expected_payload
+        .as_ref()
+        .is_some_and(|payload| payload.expires_at <= Utc::now());
     let expected_payload = expected_payload.filter(|_| !expired_pending);
     // Pure parameter validation runs before any sender proof, client
     // assertion, or state transition so that an erroneous redemption never
@@ -476,12 +495,23 @@ pub async fn token_authorization_code_with_service(
     let mtls_x5t_s256 = sender.mtls_x5t_s256;
     let code_identity = authorization_code_identity(&code_hash);
     let holder = FreshCodeHolderFacts {
-        client_authentication: if client.client_type == "confidential" && client.token_endpoint_auth_method != "none" {
+        client_authentication: if client.client_type == "confidential"
+            && client.token_endpoint_auth_method != "none"
+        {
             nazo_auth::AuthorizationCodeClientAuthentication::Authenticated
-        } else { nazo_auth::AuthorizationCodeClientAuthentication::Public },
-        pkce_s256: form.code_verifier.as_deref().filter(|verifier| is_valid_pkce_value(verifier)).map(pkce_s256),
+        } else {
+            nazo_auth::AuthorizationCodeClientAuthentication::Public
+        },
+        pkce_s256: form
+            .code_verifier
+            .as_deref()
+            .filter(|verifier| is_valid_pkce_value(verifier))
+            .map(pkce_s256),
         dpop_jkt: dpop_jkt.clone(),
-        certificate_thumbprint: facts.certificate.as_ref().and_then(|certificate| certificate.thumbprint.clone()),
+        certificate_thumbprint: facts
+            .certificate
+            .as_ref()
+            .and_then(|certificate| certificate.thumbprint.clone()),
         client_attestation_jkt: client_attestation_jkt.map(ToOwned::to_owned),
     };
     let issuance_holder = holder.requirements(mtls_x5t_s256.as_deref());
@@ -507,13 +537,21 @@ pub async fn token_authorization_code_with_service(
     }
     // An expired Pending is never consumed or issued anew. It may still be a
     // replay of a committed code whose token/family are live.
-    if expired_pending || expected_payload
-        .as_ref()
-        .is_some_and(|payload| payload.expires_at <= Utc::now())
+    if expired_pending
+        || expected_payload
+            .as_ref()
+            .is_some_and(|payload| payload.expires_at <= Utc::now())
     {
         if let Some(redemption) = committed_single_use_redemption(
-            token_service, client, &code_identity, &legacy_key, &holder, mtls_x5t_s256.as_deref(),
-        ).await? {
+            token_service,
+            client,
+            &code_identity,
+            &legacy_key,
+            &holder,
+            mtls_x5t_s256.as_deref(),
+        )
+        .await?
+        {
             revoke_replayed_redemption(token_service, client, &redemption).await?;
         }
         return Err(OAuthEndpointError::token(
@@ -641,8 +679,15 @@ pub async fn token_authorization_code_with_service(
     let payload = *payload;
     if payload.expires_at <= Utc::now() {
         if let Some(redemption) = committed_single_use_redemption(
-            token_service, client, &code_identity, &legacy_key, &holder, mtls_x5t_s256.as_deref(),
-        ).await? {
+            token_service,
+            client,
+            &code_identity,
+            &legacy_key,
+            &holder,
+            mtls_x5t_s256.as_deref(),
+        )
+        .await?
+        {
             revoke_replayed_redemption(token_service, client, &redemption).await?;
         }
         mark_failed_authorization_code(

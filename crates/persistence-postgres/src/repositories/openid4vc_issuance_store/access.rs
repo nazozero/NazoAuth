@@ -16,8 +16,8 @@ pub(super) async fn access_upsert_on_connection(
         // writing a new row version; a real change still updates the same four
         // columns, and the four identity conditions keep their original role.
         "INSERT INTO openid4vci_access_grants \
-         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at) \
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) \
+         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at,proof_origin) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) \
          ON CONFLICT (token_hash) DO UPDATE SET \
            credential_configuration_ids = EXCLUDED.credential_configuration_ids, \
            credential_identifiers = EXCLUDED.credential_identifiers, \
@@ -45,6 +45,7 @@ pub(super) async fn access_upsert_on_connection(
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.dpop_jkt.as_deref())
     .bind::<sql_types::Timestamptz, _>(access.expires_at)
+    .bind::<sql_types::Text, _>(access.proof_origin.as_str())
     .execute(connection)
     .await?;
     Ok(())
@@ -94,8 +95,8 @@ async fn access_persist_registered_on_connection(
          ), \
          upserted AS ( \
             INSERT INTO openid4vci_access_grants \
-            (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at) \
-            SELECT $3,$4,$5,$6,$7,$8,$9,$10,$11 FROM active_client \
+            (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at,proof_origin) \
+            SELECT $3,$4,$5,$6,$7,$8,$9,$10,$11,$12 FROM active_client \
             ON CONFLICT (token_hash) DO UPDATE SET \
               credential_configuration_ids = EXCLUDED.credential_configuration_ids, \
               credential_identifiers = EXCLUDED.credential_identifiers, \
@@ -127,6 +128,7 @@ async fn access_persist_registered_on_connection(
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.dpop_jkt.as_deref())
     .bind::<sql_types::Timestamptz, _>(access.expires_at)
+    .bind::<sql_types::Text, _>(access.proof_origin.as_str())
     .get_result::<PersistOutcomeRow>(connection)
     .await
 }
@@ -157,6 +159,14 @@ impl Openid4vciRepository {
             if let Some(client_id) = registered_client_id
                 && client_id != access.client_id
             {
+                return Err(CredentialStoreError::InvalidTransition);
+            }
+            let expected_origin = if registered_client_id.is_some() {
+                nazo_openid4vci::CredentialProofOrigin::RegisteredClient
+            } else {
+                nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized
+            };
+            if access.proof_origin != expected_origin {
                 return Err(CredentialStoreError::InvalidTransition);
             }
             let mut connection = get_conn(&self.pool)
@@ -205,7 +215,7 @@ impl Openid4vciRepository {
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let row = sql_query(
                 "SELECT token_id, tenant_id, subject_id, client_id, credential_configuration_ids, \
-                 credential_identifiers, dpop_jkt, expires_at FROM openid4vci_access_grants \
+                 credential_identifiers, dpop_jkt, expires_at, proof_origin FROM openid4vci_access_grants \
                  WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2",
             )
             .bind::<sql_types::Text, _>(token_hash)

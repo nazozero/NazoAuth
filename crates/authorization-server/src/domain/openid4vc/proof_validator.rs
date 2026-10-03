@@ -6,7 +6,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use chrono::{Duration, Utc};
 use nazo_crypto::jwt::{Algorithm, Validation, decode, decode_header};
 use nazo_digital_credentials::decode_compact_jwt;
-use nazo_openid4vci::{ProofError, ProofValidatorPort, Proofs, ValidatedProof};
+use nazo_openid4vci::{CredentialProofOrigin, ProofError, ProofValidatorPort, Proofs, ValidatedProof};
 use nazo_operator_protocol::Openid4vcTrustPolicy;
 use nazo_persistence::{ClientTrustPolicy, Openid4vcTrustPolicyStore};
 use serde::Deserialize;
@@ -77,12 +77,18 @@ impl ProofValidatorPort for Openid4vcProofValidator {
         &'a self,
         proofs: &'a Proofs,
         client_id: &'a str,
+        origin: CredentialProofOrigin,
         expected_audience: &'a str,
         expected_nonce: &'a str,
         metadata: &'a nazo_openid4vci::ProofTypeMetadata,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ValidatedProof>, ProofError>> + Send + 'a>> {
         Box::pin(async move {
-            let trust_jwks = self.effective_key_attestation_jwks(client_id).await?;
+            let trust_jwks = match origin {
+                CredentialProofOrigin::AnonymousPreAuthorized => self.key_attestation_jwks.clone(),
+                CredentialProofOrigin::RegisteredClient | CredentialProofOrigin::LegacyUnspecified => {
+                    self.effective_key_attestation_jwks(client_id).await?
+                }
+            };
             if proofs.0.len() != 1 {
                 return Err(ProofError::UnsupportedType);
             }
@@ -104,9 +110,12 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                     .get("attested_keys")
                     .and_then(Value::as_array)
                     .ok_or(ProofError::InvalidKeyAttestation)?;
-                return Ok(keys.iter().map(|key| ValidatedProof {
-                    holder_binding: json!({"jwk": key}),
-                }).collect());
+                return Ok(keys
+                    .iter()
+                    .map(|key| ValidatedProof {
+                        holder_binding: json!({"jwk": key}),
+                    })
+                    .collect());
             }
             let jwt_proofs = proofs.0.get("jwt").ok_or(ProofError::UnsupportedType)?;
             if jwt_proofs.is_empty() {
@@ -146,7 +155,8 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                 let compact =
                     decode_compact_jwt(encoded).map_err(|_| ProofError::InvalidSignature)?;
                 if compact.claims.get("iss").is_some_and(|issuer| {
-                    issuer.as_str() != Some(client_id)
+                    origin != CredentialProofOrigin::RegisteredClient
+                        || issuer.as_str() != Some(client_id)
                 }) {
                     return Err(ProofError::InvalidSignature);
                 }
@@ -199,9 +209,10 @@ impl Openid4vcProofValidator {
     ) -> Result<Value, ProofError> {
         let compact = decode_compact_jwt(encoded).map_err(|_| ProofError::InvalidKeyAttestation)?;
         if compact.header.typ.as_deref() != Some("key-attestation+jwt")
-            || !metadata.proof_signing_alg_values_supported.iter().any(|algorithm| {
-                algorithm == &compact.header.alg
-            })
+            || !metadata
+                .proof_signing_alg_values_supported
+                .iter()
+                .any(|algorithm| algorithm == &compact.header.alg)
         {
             return Err(ProofError::InvalidKeyAttestation);
         }

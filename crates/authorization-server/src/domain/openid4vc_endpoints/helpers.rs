@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nazo_openid4vci::application::{
-    CredentialEndpointResponse, CredentialHttpError, CredentialResponseBody, CredentialResponseStatus,
+    CredentialEndpointResponse, CredentialHttpError, CredentialResponseBody,
+    CredentialResponseStatus,
 };
 use nazo_openid4vci::{
     CredentialAccess, CredentialConfiguration, CredentialError, CredentialRequest,
@@ -223,7 +224,13 @@ pub(super) fn response_from_record(
     let status = match response.status {
         200 => CredentialResponseStatus::Issued,
         202 => CredentialResponseStatus::Deferred,
-        _ => return Err(vci_error(503, "server_error", "Stored credential response status is invalid.")),
+        _ => {
+            return Err(vci_error(
+                503,
+                "server_error",
+                "Stored credential response status is invalid.",
+            ));
+        }
     };
     let body = match response.encoding {
         CredentialResponseEncoding::Json => serde_json::from_slice(&response.body)
@@ -289,14 +296,18 @@ pub(super) const fn vci_error(
         dpop_nonce: None,
     }
 }
-pub(super) fn map_presentation_error(error: nazo_openid4vp::PresentationServiceError) -> nazo_openid4vp::application::PresentationHttpError {
+pub(super) fn map_presentation_error(
+    error: nazo_openid4vp::PresentationServiceError,
+) -> nazo_openid4vp::application::PresentationHttpError {
     match error {
         nazo_openid4vp::PresentationServiceError::Store(_) => vp_error(
-            503, "server_error", "Presentation completion state is unavailable.",
+            503,
+            "server_error",
+            "Presentation completion state is unavailable.",
         ),
-        nazo_openid4vp::PresentationServiceError::Presentation(_) => vp_error(
-            400, "invalid_request", "Presentation verification failed.",
-        ),
+        nazo_openid4vp::PresentationServiceError::Presentation(_) => {
+            vp_error(400, "invalid_request", "Presentation verification failed.")
+        }
     }
 }
 

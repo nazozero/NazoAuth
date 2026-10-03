@@ -128,9 +128,16 @@ async fn token_with_port_repositories(
         &state.valkey_connection(),
     ));
     token_with_port_repositories_and_state(
-        state, token_repository, authorization_repository, authorization_state,
-        resolver, openid4vc, req, body,
-    ).await
+        state,
+        token_repository,
+        authorization_repository,
+        authorization_state,
+        resolver,
+        openid4vc,
+        req,
+        body,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]

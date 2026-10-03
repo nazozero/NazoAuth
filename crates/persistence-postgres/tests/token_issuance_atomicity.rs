@@ -1126,9 +1126,12 @@ async fn authorization_code_identity_fences_concurrent_holders_and_refresh_famil
             );
             let holder = nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
                 nazo_auth::AuthorizationCodeClientAuthentication::Authenticated,
-                Some("original-verified-pkce".to_owned()), Some(format!("validated-key-{index}")),
-                None, None,
-            ).unwrap();
+                Some("original-verified-pkce".to_owned()),
+                Some(format!("validated-key-{index}")),
+                None,
+                None,
+            )
+            .unwrap();
             let mut input = issuance(
                 &ids,
                 tenant_id,
@@ -1189,7 +1192,10 @@ async fn authorization_code_identity_fences_concurrent_holders_and_refresh_famil
         .get_result::<CountRow>(&mut connection)
         .await
         .unwrap();
-        assert_eq!(count.count, 1, "a losing holder must not create another {table} row");
+        assert_eq!(
+            count.count, 1,
+            "a losing holder must not create another {table} row"
+        );
     }
     let audits = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type='token_issued' AND payload->>'client_id'=$1",
@@ -1207,7 +1213,9 @@ async fn authorization_code_receipt_migration_preserves_legacy_and_rejects_old_w
     let Some(database_url) = database_url() else {
         return;
     };
-    nazo_postgres::run_pending_migrations(&database_url).await.unwrap();
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     let schema = format!("code_receipt_{}", Uuid::now_v7().simple());
     // This transaction owns the whole copied schema. Public tables are read
@@ -1238,7 +1246,8 @@ async fn authorization_code_receipt_migration_preserves_legacy_and_rejects_old_w
         .await
         .unwrap();
     let up = include_str!("../../../migrations/20261003000100_authorization_code_identity/up.sql");
-    let down = include_str!("../../../migrations/20261003000100_authorization_code_identity/down.sql");
+    let down =
+        include_str!("../../../migrations/20261003000100_authorization_code_identity/down.sql");
     connection.batch_execute(up).await.unwrap();
     #[derive(QueryableByName)]
     struct LegacyReceipt {
@@ -1256,13 +1265,23 @@ async fn authorization_code_receipt_migration_preserves_legacy_and_rejects_old_w
         .unwrap();
     assert_eq!(legacy.single_use_key_blake3, legacy_digest.as_bytes());
     assert_eq!(legacy.receipt_contract_version, 0);
-    assert!(legacy.authorization_code_holder.is_none(), "never guess a legacy code or proof mask");
-    connection.batch_execute("SAVEPOINT legacy_writer").await.unwrap();
+    assert!(
+        legacy.authorization_code_holder.is_none(),
+        "never guess a legacy code or proof mask"
+    );
+    connection
+        .batch_execute("SAVEPOINT legacy_writer")
+        .await
+        .unwrap();
     let old_writer = sql_query(legacy_insert)
         .bind::<sql_types::Uuid, _>(Uuid::now_v7())
         .bind::<sql_types::Uuid, _>(tenant)
         .bind::<sql_types::Uuid, _>(client)
-        .bind::<sql_types::Binary, _>(blake3::hash(b"second-old-request-key").as_bytes().as_slice())
+        .bind::<sql_types::Binary, _>(
+            blake3::hash(b"second-old-request-key")
+                .as_bytes()
+                .as_slice(),
+        )
         .bind::<sql_types::Text, _>("forbidden-old-writer-jti")
         .execute(&mut connection)
         .await;
@@ -1273,7 +1292,10 @@ async fn authorization_code_receipt_migration_preserves_legacy_and_rejects_old_w
             _
         ))
     ));
-    connection.batch_execute("ROLLBACK TO SAVEPOINT legacy_writer").await.unwrap();
+    connection
+        .batch_execute("ROLLBACK TO SAVEPOINT legacy_writer")
+        .await
+        .unwrap();
     let current_id = Uuid::now_v7();
     sql_query("INSERT INTO oauth_token_issuances (issuance_id,tenant_id,client_id,single_use_key_blake3,access_token_jti,access_token_expires_at,retain_until,receipt_contract_version) VALUES ($1,$2,$3,$4,'current-jti',clock_timestamp()+interval '5 minutes',clock_timestamp()+interval '1 hour',2)")
         .bind::<sql_types::Uuid, _>(current_id)
@@ -1283,9 +1305,18 @@ async fn authorization_code_receipt_migration_preserves_legacy_and_rejects_old_w
         .execute(&mut connection)
         .await
         .unwrap();
-    connection.batch_execute("SAVEPOINT rollback_guard").await.unwrap();
-    assert!(connection.batch_execute(down).await.is_err(), "a live v2 fence blocks schema rollback");
-    connection.batch_execute("ROLLBACK TO SAVEPOINT rollback_guard").await.unwrap();
+    connection
+        .batch_execute("SAVEPOINT rollback_guard")
+        .await
+        .unwrap();
+    assert!(
+        connection.batch_execute(down).await.is_err(),
+        "a live v2 fence blocks schema rollback"
+    );
+    connection
+        .batch_execute("ROLLBACK TO SAVEPOINT rollback_guard")
+        .await
+        .unwrap();
     let rows = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances")
         .get_result::<CountRow>(&mut connection)
         .await

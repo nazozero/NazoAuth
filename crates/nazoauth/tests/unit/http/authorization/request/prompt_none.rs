@@ -215,7 +215,8 @@ impl AuthorizationStateStorePort for PromptNoneStore {
         jti: &'a str,
         window: nazo_auth::ClientAttestationProofWindow,
     ) -> AuthorizationFuture<'a, bool> {
-        self.live.consume_client_attestation_proof(client_id, jti, window)
+        self.live
+            .consume_client_attestation_proof(client_id, jti, window)
     }
 
     fn consume_private_key_jwt<'a>(

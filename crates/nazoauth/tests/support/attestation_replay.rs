@@ -3,7 +3,10 @@
 //! acknowledgement is hidden from the application.
 
 use nazo_auth::*;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 pub(crate) struct UnknownAttestationAck {
     inner: Arc<dyn AuthorizationStateStorePort>,
@@ -12,12 +15,14 @@ pub(crate) struct UnknownAttestationAck {
 
 impl UnknownAttestationAck {
     pub(crate) fn new(inner: Arc<dyn AuthorizationStateStorePort>) -> Self {
-        Self { inner, lose_ack: AtomicBool::new(true) }
+        Self {
+            inner,
+            lose_ack: AtomicBool::new(true),
+        }
     }
 }
 
 impl AuthorizationStateStorePort for UnknownAttestationAck {
-
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
@@ -31,7 +36,9 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         request_uri: &'a str,
         expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
-        self.inner.as_ref().compare_and_delete_par(request_uri, expected)
+        self.inner
+            .as_ref()
+            .compare_and_delete_par(request_uri, expected)
     }
 
     fn store_par<'a>(
@@ -40,7 +47,9 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         payload: &'a PushedAuthorizationRequest,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()> {
-        self.inner.as_ref().store_par(request_uri, payload, ttl_seconds)
+        self.inner
+            .as_ref()
+            .store_par(request_uri, payload, ttl_seconds)
     }
 
     fn load_consent<'a>(
@@ -62,7 +71,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         request_id: &'a str,
         expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .compare_and_delete_consent(request_id, expected)
     }
 
@@ -72,7 +82,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         expected_consent: &'a str,
         pushed_request: Option<(&'a str, &'a str)>,
     ) -> DecisionMaterialDiscardFuture<'a> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .discard_decision_material(request_id, expected_consent, pushed_request)
     }
 
@@ -82,7 +93,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         payload: &'a ConsentPayload,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .store_consent(request_id, payload, ttl_seconds)
     }
 
@@ -92,7 +104,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         state: &'a AuthorizationCodeState,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .store_authorization_code(code_hash, state, ttl_seconds)
     }
 
@@ -110,7 +123,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         started_at: i64,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .store_reauth_nonce(nonce, started_at, ttl_seconds)
     }
 
@@ -130,7 +144,10 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         window: nazo_auth::ClientAttestationProofWindow,
     ) -> AuthorizationFuture<'a, bool> {
         Box::pin(async move {
-            let accepted = self.inner.consume_client_attestation_proof(client_id, jti, window).await?;
+            let accepted = self
+                .inner
+                .consume_client_attestation_proof(client_id, jti, window)
+                .await?;
             if accepted && self.lose_ack.swap(false, Ordering::SeqCst) {
                 Err(AuthorizationPortError::Unavailable)
             } else {
@@ -145,7 +162,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .consume_private_key_jwt(client_id, jti, ttl_seconds)
     }
 
@@ -155,7 +173,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .consume_jwt_bearer(client_id, jti, ttl_seconds)
     }
 
@@ -165,7 +184,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .consume_ciba_request_object(client_id, jti, ttl_seconds)
     }
 
@@ -175,7 +195,9 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool> {
-        self.inner.as_ref().consume_dpop(thumbprint, jti, ttl_seconds)
+        self.inner
+            .as_ref()
+            .consume_dpop(thumbprint, jti, ttl_seconds)
     }
 
     fn issue_dpop_nonce<'a>(
@@ -196,7 +218,8 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         subject: &'a str,
         window_seconds: u64,
     ) -> AuthorizationFuture<'a, u64> {
-        self.inner.as_ref()
+        self.inner
+            .as_ref()
             .increment_rate(dimension, subject, window_seconds)
     }
 }

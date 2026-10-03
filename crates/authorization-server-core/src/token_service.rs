@@ -208,8 +208,12 @@ impl AuthorizationCodeHolderEvidence {
     ) -> Option<Self> {
         let value = Self {
             version: 1,
-            authenticated_client: client_authentication == AuthorizationCodeClientAuthentication::Authenticated,
-            pkce_s256, dpop_jkt, mtls_x5t_s256, client_attestation_jkt,
+            authenticated_client: client_authentication
+                == AuthorizationCodeClientAuthentication::Authenticated,
+            pkce_s256,
+            dpop_jkt,
+            mtls_x5t_s256,
+            client_attestation_jkt,
         };
         value.is_well_formed().then_some(value)
     }
@@ -219,29 +223,55 @@ impl AuthorizationCodeHolderEvidence {
     #[must_use]
     pub fn from_persisted(value: serde_json::Value) -> Option<Self> {
         let stored: StoredAuthorizationCodeHolderEvidence = serde_json::from_value(value).ok()?;
-        if stored.version != 1 { return None; }
+        if stored.version != 1 {
+            return None;
+        }
         Self::from_verified_requirements(
-            if stored.authenticated_client { AuthorizationCodeClientAuthentication::Authenticated } else { AuthorizationCodeClientAuthentication::Public },
-            stored.pkce_s256, stored.dpop_jkt, stored.mtls_x5t_s256, stored.client_attestation_jkt,
+            if stored.authenticated_client {
+                AuthorizationCodeClientAuthentication::Authenticated
+            } else {
+                AuthorizationCodeClientAuthentication::Public
+            },
+            stored.pkce_s256,
+            stored.dpop_jkt,
+            stored.mtls_x5t_s256,
+            stored.client_attestation_jkt,
         )
     }
 
     #[must_use]
-    pub fn authenticated_client(&self) -> bool { self.authenticated_client }
+    pub fn authenticated_client(&self) -> bool {
+        self.authenticated_client
+    }
     #[must_use]
-    pub fn pkce_s256(&self) -> Option<&str> { self.pkce_s256.as_deref() }
+    pub fn pkce_s256(&self) -> Option<&str> {
+        self.pkce_s256.as_deref()
+    }
     #[must_use]
-    pub fn dpop_jkt(&self) -> Option<&str> { self.dpop_jkt.as_deref() }
+    pub fn dpop_jkt(&self) -> Option<&str> {
+        self.dpop_jkt.as_deref()
+    }
     #[must_use]
-    pub fn mtls_x5t_s256(&self) -> Option<&str> { self.mtls_x5t_s256.as_deref() }
+    pub fn mtls_x5t_s256(&self) -> Option<&str> {
+        self.mtls_x5t_s256.as_deref()
+    }
     #[must_use]
-    pub fn client_attestation_jkt(&self) -> Option<&str> { self.client_attestation_jkt.as_deref() }
+    pub fn client_attestation_jkt(&self) -> Option<&str> {
+        self.client_attestation_jkt.as_deref()
+    }
 
     #[must_use]
     pub fn is_well_formed(&self) -> bool {
-        let proofs = [&self.pkce_s256, &self.dpop_jkt, &self.mtls_x5t_s256, &self.client_attestation_jkt];
+        let proofs = [
+            &self.pkce_s256,
+            &self.dpop_jkt,
+            &self.mtls_x5t_s256,
+            &self.client_attestation_jkt,
+        ];
         self.version == 1
-            && proofs.iter().all(|proof| proof.as_ref().is_none_or(|value| !value.is_empty()))
+            && proofs
+                .iter()
+                .all(|proof| proof.as_ref().is_none_or(|value| !value.is_empty()))
             && (self.authenticated_client || proofs.iter().any(|proof| proof.is_some()))
             && !(self.dpop_jkt.is_some() && self.mtls_x5t_s256.is_some())
     }

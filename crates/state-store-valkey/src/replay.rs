@@ -182,7 +182,10 @@ impl ReplayStore {
             &self.connection,
             CLIENT_ATTESTATION_PROOF_SCRIPT,
             vec![keys::client_attestation_replay(client_id, jti)],
-            vec![window.not_before().to_string(), window.expires_at().to_string()],
+            vec![
+                window.not_before().to_string(),
+                window.expires_at().to_string(),
+            ],
         )
         .await?;
         match reply.as_str() {

@@ -25,9 +25,9 @@ use nazo_oauth_server::token::authorization_code::AuthorizationCodeConsumption;
 use nazo_oauth_server::token::authorization_code::AuthorizationCodeIssueInput;
 use nazo_oauth_server::token::authorization_code::authorization_code_client_mismatch_response;
 use nazo_oauth_server::token::authorization_code::authorization_code_dpop_error_response;
-use nazo_oauth_server::token::authorization_code::legacy_authorization_code_redemption_key;
 use nazo_oauth_server::token::authorization_code::authorization_code_mtls_holder_error_response;
 use nazo_oauth_server::token::authorization_code::begin_authorization_code_consumption_with_service;
+use nazo_oauth_server::token::authorization_code::legacy_authorization_code_redemption_key;
 use nazo_oauth_server::token::authorization_code::load_pending_authorization_code_payload_with_service;
 use nazo_oauth_server::token::authorization_code::redirect_uri_matches_authorization_request;
 use nazo_oauth_server::token::authorization_code::refresh_token_dpop_binding;
@@ -86,12 +86,12 @@ use nazo_postgres::{create_pool, get_conn};
 
 #[path = "authorization_code/admission.rs"]
 mod admission;
+#[path = "authorization_code/identity.rs"]
+mod identity;
 #[path = "authorization_code/issuance.rs"]
 mod issuance;
 #[path = "authorization_code/replay.rs"]
 mod replay;
-#[path = "authorization_code/identity.rs"]
-mod identity;
 #[path = "authorization_code/sender_constraints.rs"]
 mod sender_constraints;
 
@@ -127,7 +127,8 @@ pub(crate) async fn token_authorization_code(
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
     let service = test_token_service(state);
-    token_authorization_code_using_service(state, req, client, form, client_assertion, &service).await
+    token_authorization_code_using_service(state, req, client, form, client_assertion, &service)
+        .await
 }
 
 async fn token_authorization_code_using_service(

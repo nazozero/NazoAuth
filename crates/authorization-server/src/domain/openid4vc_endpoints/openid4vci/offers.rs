@@ -164,6 +164,11 @@ impl ServerCredentialIssuerOperations {
                 .persist_pre_authorized_access(
                     &blake3_hex(&issued.token),
                     &CredentialAccess {
+                        proof_origin: if request.client_id.is_some() {
+                            nazo_openid4vci::CredentialProofOrigin::RegisteredClient
+                        } else {
+                            nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized
+                        },
                         token_id,
                         tenant_id: authorization.tenant_id,
                         subject_id: authorization.subject_id,

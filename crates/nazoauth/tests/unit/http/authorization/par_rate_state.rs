@@ -108,7 +108,9 @@ impl AuthorizationStateStorePort for AllowParRateState {
         jti: &'a str,
         window: nazo_auth::ClientAttestationProofWindow,
     ) -> AuthorizationFuture<'a, bool> {
-        self.0.as_ref().consume_client_attestation_proof(client_id, jti, window)
+        self.0
+            .as_ref()
+            .consume_client_attestation_proof(client_id, jti, window)
     }
 
     fn consume_private_key_jwt<'a>(

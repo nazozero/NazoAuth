@@ -625,6 +625,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     );
 
     let access = CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id,
         subject_id,
@@ -1115,6 +1116,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let access = CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id,
         subject_id,
@@ -1644,6 +1646,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
     let now = Utc::now();
     let access = CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id,
         subject_id,
@@ -2707,6 +2710,7 @@ fn openid4vc_access_fixture(
     expires_in: Duration,
 ) -> CredentialAccess {
     CredentialAccess {
+        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         token_id: Uuid::now_v7(),
         tenant_id,
         subject_id,
@@ -2844,6 +2848,8 @@ struct PersistedAccessGrantRow {
     subject_id: Uuid,
     #[diesel(sql_type = Text)]
     client_id: String,
+    #[diesel(sql_type = Text)]
+    proof_origin: String,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     credential_configuration_ids: serde_json::Value,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
@@ -2866,7 +2872,7 @@ async fn persisted_access_grant(
     sql_query(
         "SELECT token_id, token_hash, tenant_id, subject_id, client_id, \
                 credential_configuration_ids, credential_identifiers, dpop_jkt, \
-                expires_at, revoked_at, xmin::text AS xmin \
+                expires_at, revoked_at, proof_origin, xmin::text AS xmin \
          FROM openid4vci_access_grants WHERE token_hash = $1",
     )
     .bind::<Text, _>(token_hash)
@@ -2883,6 +2889,7 @@ fn assert_persisted_access_grant(
 ) {
     assert_eq!(row.token_id, access.token_id, "token_id must stay stable");
     assert_eq!(row.token_hash, token_hash);
+    assert_eq!(row.proof_origin, access.proof_origin.as_str());
     assert_eq!(
         row.tenant_id, access.tenant_id,
         "tenant_id must stay stable"
@@ -3229,12 +3236,13 @@ async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
 
     // The production anonymous fallback (offers.rs) resolves to the literal
     // "pre-authorized-wallet" client id with no registered client at all.
-    let anonymous = openid4vc_access_fixture(
+    let mut anonymous = openid4vc_access_fixture(
         tenant_id,
         subject_id,
         "pre-authorized-wallet",
         Duration::minutes(10),
     );
+    anonymous.proof_origin = nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized;
     let anonymous_hash = blake3::hash(anonymous.token_id.as_bytes())
         .to_hex()
         .to_string();
@@ -3246,6 +3254,14 @@ async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
         .await
         .expect("the anonymous grant must persist");
     assert_persisted_access_grant(&anonymous_row, &anonymous_hash, &anonymous);
+    assert_eq!(issuer.resolve_access(&anonymous_hash,Utc::now()).await.unwrap().unwrap().proof_origin,
+        nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized);
+    let mut attempted_projection=anonymous.clone();
+    attempted_projection.proof_origin=nazo_openid4vci::CredentialProofOrigin::RegisteredClient;
+    issuer.upsert_access(&anonymous_hash,&attempted_projection).await.unwrap();
+    assert_eq!(issuer.resolve_access(&anonymous_hash,Utc::now()).await.unwrap().unwrap().proof_origin,
+        nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized,
+        "an ordinary projection sync cannot replace retained anonymous provenance");
 
     // A grant whose access.client_id names an *inactive* registered client
     // still succeeds with registered_client_id = None, proving no lookup ran.
@@ -3265,6 +3281,7 @@ async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
         Duration::minutes(10),
     );
     impersonating.token_id = Uuid::now_v7();
+    impersonating.proof_origin = nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized;
     let impersonating_hash = blake3::hash(impersonating.token_id.as_bytes())
         .to_hex()
         .to_string();
@@ -3665,6 +3682,7 @@ async fn access_upsert_conflict_with_a_different_identity_is_a_noop() {
         (
             "token_id",
             CredentialAccess {
+                proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                 token_id: Uuid::now_v7(),
                 ..access.clone()
             },
@@ -3672,6 +3690,7 @@ async fn access_upsert_conflict_with_a_different_identity_is_a_noop() {
         (
             "tenant_id",
             CredentialAccess {
+                proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                 tenant_id: Uuid::now_v7(),
                 ..access.clone()
             },
@@ -3679,6 +3698,7 @@ async fn access_upsert_conflict_with_a_different_identity_is_a_noop() {
         (
             "subject_id",
             CredentialAccess {
+                proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                 subject_id: Uuid::now_v7(),
                 ..access.clone()
             },
@@ -3686,6 +3706,7 @@ async fn access_upsert_conflict_with_a_different_identity_is_a_noop() {
         (
             "client_id",
             CredentialAccess {
+                proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
                 client_id: format!("openid4vc-up03-other-{}", Uuid::now_v7().simple()),
                 ..access.clone()
             },
@@ -3807,6 +3828,7 @@ async fn anonymous_pre_authorized_persist_writes_the_upsert_row_shape() {
         "openid4vc-up05-wallet",
         Duration::minutes(10),
     );
+    via_upsert.proof_origin = nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized;
     via_upsert
         .credential_identifiers
         .push(nazo_openid4vci::CredentialIdentifier("pid-1".to_owned()));
@@ -4687,4 +4709,90 @@ async fn pre_authorized_verification_rechecks_snapshot_expiry_and_busy_result() 
         drop(connection);
         delete_openid4vc_subject_and_client(&pool, offer.subject_id.unwrap(), None).await;
     }
+}
+
+#[tokio::test]
+async fn credential_proof_origin_migration_preserves_legacy_and_guards_anonymous_rollback() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url).await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let schema = format!("credential_origin_{}", Uuid::now_v7().simple());
+    // Exercise the actual migration against a copy of its deployed table.
+    // The transaction owns all fixture objects; public rows are never written.
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema}, public; \
+             CREATE TABLE openid4vci_access_grants (LIKE public.openid4vci_access_grants INCLUDING ALL); \
+             ALTER TABLE openid4vci_access_grants DROP CONSTRAINT ck_openid4vci_proof_origin, \
+             DROP COLUMN proof_origin;"
+        ))
+        .await
+        .unwrap();
+    let legacy_id = Uuid::now_v7();
+    let insert = "INSERT INTO openid4vci_access_grants \
+        (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,expires_at) \
+        VALUES ($1,$2,$3,$4,'historical-client','[\"pid\"]','[]',clock_timestamp()+interval '5 minutes')";
+    sql_query(insert)
+        .bind::<SqlUuid, _>(legacy_id)
+        .bind::<Text, _>(blake3::hash(legacy_id.as_bytes()).to_hex().to_string())
+        .bind::<SqlUuid, _>(Uuid::now_v7())
+        .bind::<SqlUuid, _>(Uuid::now_v7())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let up = include_str!("../../../migrations/20261003000200_credential_proof_origin/up.sql");
+    let down = include_str!("../../../migrations/20261003000200_credential_proof_origin/down.sql");
+    connection.batch_execute(up).await.unwrap();
+    #[derive(QueryableByName)]
+    struct Origin {
+        #[diesel(sql_type = Text)]
+        proof_origin: String,
+    }
+    let legacy = sql_query("SELECT proof_origin FROM openid4vci_access_grants WHERE token_id=$1")
+        .bind::<SqlUuid, _>(legacy_id)
+        .get_result::<Origin>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(legacy.proof_origin, "legacy_unspecified");
+    let anonymous_id = Uuid::now_v7();
+    sql_query(insert)
+        .bind::<SqlUuid, _>(anonymous_id)
+        .bind::<Text, _>(blake3::hash(anonymous_id.as_bytes()).to_hex().to_string())
+        .bind::<SqlUuid, _>(Uuid::now_v7())
+        .bind::<SqlUuid, _>(Uuid::now_v7())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("UPDATE openid4vci_access_grants SET proof_origin='anonymous_pre_authorized' WHERE token_id=$1")
+        .bind::<SqlUuid, _>(anonymous_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    connection.batch_execute("SAVEPOINT rollback_guard").await.unwrap();
+    assert!(
+        connection.batch_execute(down).await.is_err(),
+        "rollback cannot discard retained anonymous authorization provenance"
+    );
+    connection.batch_execute("ROLLBACK TO SAVEPOINT rollback_guard").await.unwrap();
+    let rows = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants")
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(rows.count, 2);
+    sql_query("DELETE FROM openid4vci_access_grants WHERE token_id=$1")
+        .bind::<SqlUuid, _>(anonymous_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    connection.batch_execute(down).await.unwrap();
+    connection.batch_execute(up).await.unwrap();
+    let legacy = sql_query("SELECT proof_origin FROM openid4vci_access_grants WHERE token_id=$1")
+        .bind::<SqlUuid, _>(legacy_id)
+        .get_result::<Origin>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(legacy.proof_origin, "legacy_unspecified");
+    connection.batch_execute("ROLLBACK").await.unwrap();
 }

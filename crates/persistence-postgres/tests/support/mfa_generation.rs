@@ -4,8 +4,8 @@
 use super::*;
 use diesel_async::SimpleAsyncConnection;
 use futures_util::FutureExt as _;
-use nazo_identity::{MfaService, MfaServiceErrorKind, PublicAccount, TotpConfirmationOutcome};
 use nazo_identity::ports::{MfaHashError, MfaHashFuture, MfaSecretHashPort};
+use nazo_identity::{MfaService, MfaServiceErrorKind, PublicAccount, TotpConfirmationOutcome};
 use std::{sync::Arc, time::Duration};
 
 const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
@@ -17,17 +17,26 @@ struct FixtureHasher;
 impl MfaSecretHashPort for FixtureHasher {
     fn hash_secrets(&self, secrets: Vec<String>) -> MfaHashFuture<'_, Vec<EncodedSecretHash>> {
         Box::pin(async move {
-            secrets.into_iter().map(|secret| {
-                let hash = nazo_crypto::password::hash_argon2id(secret.as_bytes(), 64, 1, 1)
-                    .map_err(|_| MfaHashError::Failed)?;
-                EncodedSecretHash::new(hash).map_err(|_| MfaHashError::Failed)
-            }).collect()
+            secrets
+                .into_iter()
+                .map(|secret| {
+                    let hash = nazo_crypto::password::hash_argon2id(secret.as_bytes(), 64, 1, 1)
+                        .map_err(|_| MfaHashError::Failed)?;
+                    EncodedSecretHash::new(hash).map_err(|_| MfaHashError::Failed)
+                })
+                .collect()
         })
     }
 
-    fn find_matching_secret(&self, secret: String, candidates: Vec<EncodedSecretHash>) -> MfaHashFuture<'_, Option<usize>> {
+    fn find_matching_secret(
+        &self,
+        secret: String,
+        candidates: Vec<EncodedSecretHash>,
+    ) -> MfaHashFuture<'_, Option<usize>> {
         Box::pin(async move {
-            Ok(candidates.iter().position(|hash| nazo_crypto::password::verify_argon2_phc(hash.as_str(), secret.as_bytes())))
+            Ok(candidates.iter().position(|hash| {
+                nazo_crypto::password::verify_argon2_phc(hash.as_str(), secret.as_bytes())
+            }))
         })
     }
 }
@@ -36,8 +45,16 @@ fn service(repository: &MfaRepository) -> MfaService {
     MfaService::new(Arc::new(repository.clone()), Arc::new(FixtureHasher))
 }
 
-async fn account(pool: &nazo_postgres::DbPool, tenant: TenantContext, user: UserId) -> PublicAccount {
-    UserRepository::new(pool.clone()).public_account_by_id(tenant.tenant_id, user).await.unwrap().unwrap()
+async fn account(
+    pool: &nazo_postgres::DbPool,
+    tenant: TenantContext,
+    user: UserId,
+) -> PublicAccount {
+    UserRepository::new(pool.clone())
+        .public_account_by_id(tenant.tenant_id, user)
+        .await
+        .unwrap()
+        .unwrap()
 }
 
 fn totp(step: i64) -> String {
@@ -50,7 +67,11 @@ struct Snapshot {
     value: serde_json::Value,
 }
 
-async fn snapshot(pool: &nazo_postgres::DbPool, tenant: TenantContext, user: UserId) -> serde_json::Value {
+async fn snapshot(
+    pool: &nazo_postgres::DbPool,
+    tenant: TenantContext,
+    user: UserId,
+) -> serde_json::Value {
     let mut connection = get_conn(pool).await.unwrap();
     sql_query("SELECT jsonb_build_object( \
         'credential',(SELECT to_jsonb(t) FROM user_totp_credentials t WHERE tenant_id=$1 AND user_id=$2), \
@@ -62,14 +83,33 @@ async fn snapshot(pool: &nazo_postgres::DbPool, tenant: TenantContext, user: Use
         .get_result::<Snapshot>(&mut connection).await.unwrap().value
 }
 
-async fn install_generation(pool: &nazo_postgres::DbPool, repository: &MfaRepository, tenant: TenantContext, user: UserId, step: i64) -> (Uuid, String) {
-    repository.begin_totp_enrollment(tenant.tenant_id, user, SECRET.to_owned(), "formal fixture".to_owned()).await.unwrap();
+async fn install_generation(
+    pool: &nazo_postgres::DbPool,
+    repository: &MfaRepository,
+    tenant: TenantContext,
+    user: UserId,
+    step: i64,
+) -> (Uuid, String) {
+    repository
+        .begin_totp_enrollment(
+            tenant.tenant_id,
+            user,
+            SECRET.to_owned(),
+            "formal fixture".to_owned(),
+        )
+        .await
+        .unwrap();
     let account = account(pool, tenant, user).await;
     let service = service(repository);
     let code = totp(step);
     let now = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
-    let prepared = service.prepare_totp_confirmation(&account, &code, now).await.unwrap();
-    let TotpConfirmationOutcome::Accepted { backup_codes } = service.confirm_totp(&account, prepared, now).await.unwrap() else {
+    let prepared = service
+        .prepare_totp_confirmation(&account, &code, now)
+        .await
+        .unwrap();
+    let TotpConfirmationOutcome::Accepted { backup_codes } =
+        service.confirm_totp(&account, prepared, now).await.unwrap()
+    else {
         panic!("formal confirmation must install a credential and backups");
     };
     let installed = snapshot(pool, tenant, user).await;
@@ -78,28 +118,73 @@ async fn install_generation(pool: &nazo_postgres::DbPool, repository: &MfaReposi
     assert_eq!(installed["credential"]["secret_key_id"], "test-current");
     assert!(!installed["credential"]["secret_ciphertext"].is_null());
     assert_eq!(installed["credential"]["last_used_step"], step);
-    assert_eq!(installed["backups"].as_array().unwrap().len(), nazo_identity::mfa::MFA_BACKUP_CODE_COUNT);
-    (Uuid::parse_str(installed["credential"]["id"].as_str().unwrap()).unwrap(), backup_codes[0].clone())
+    assert_eq!(
+        installed["backups"].as_array().unwrap().len(),
+        nazo_identity::mfa::MFA_BACKUP_CODE_COUNT
+    );
+    (
+        Uuid::parse_str(installed["credential"]["id"].as_str().unwrap()).unwrap(),
+        backup_codes[0].clone(),
+    )
 }
 
-async fn remember(repository: &MfaRepository, tenant: TenantContext, user: UserId, generation: Uuid) {
-    assert!(repository.remember_device(tenant.tenant_id, user, generation, "a".repeat(64), None, chrono::Utc::now() + chrono::Duration::hours(1)).await.unwrap());
+async fn remember(
+    repository: &MfaRepository,
+    tenant: TenantContext,
+    user: UserId,
+    generation: Uuid,
+) {
+    assert!(
+        repository
+            .remember_device(
+                tenant.tenant_id,
+                user,
+                generation,
+                blake3::hash(generation.as_bytes()).to_hex().to_string(),
+                None,
+                chrono::Utc::now() + chrono::Duration::hours(1)
+            )
+            .await
+            .unwrap()
+    );
 }
 
-async fn assert_full_generation(pool: &nazo_postgres::DbPool, repository: &MfaRepository, tenant: TenantContext, user: UserId, generation: Uuid) -> serde_json::Value {
+async fn assert_full_generation(
+    pool: &nazo_postgres::DbPool,
+    repository: &MfaRepository,
+    tenant: TenantContext,
+    user: UserId,
+    generation: Uuid,
+) -> serde_json::Value {
     let actual = snapshot(pool, tenant, user).await;
     assert_eq!(actual["credential"]["id"], generation.to_string());
     assert_eq!(actual["enabled"], true);
-    assert_eq!(actual["backups"].as_array().unwrap().len(), nazo_identity::mfa::MFA_BACKUP_CODE_COUNT);
+    assert_eq!(
+        actual["backups"].as_array().unwrap().len(),
+        nazo_identity::mfa::MFA_BACKUP_CODE_COUNT
+    );
     assert_eq!(actual["remembered"].as_array().unwrap().len(), 1);
     assert!(account(pool, tenant, user).await.account.mfa_enabled);
-    assert!(repository.remembered_device_valid(tenant.tenant_id, user, &"a".repeat(64), None, chrono::Utc::now()).await.unwrap());
+    assert!(
+        repository
+            .remembered_device_valid(
+                tenant.tenant_id,
+                user,
+                &blake3::hash(generation.as_bytes()).to_hex().to_string(),
+                None,
+                chrono::Utc::now()
+            )
+            .await
+            .unwrap()
+    );
     actual
 }
 
 #[tokio::test]
 async fn mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier() {
-    let Some((pool, tenant, user)) = database_fixture().await else { return; };
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
     let repository = mfa_repository(pool.clone());
     for backup_factor in [false, true] {
         let (g1, backup) = install_generation(&pool, &repository, tenant, user, STEP).await;
@@ -108,33 +193,82 @@ async fn mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier() {
         let a_account = admitted_account.clone();
         let (verified_tx, verified_rx) = tokio::sync::oneshot::channel();
         let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
-        let factor = if backup_factor { backup } else { totp(STEP + 1) };
+        let factor = if backup_factor {
+            backup
+        } else {
+            totp(STEP + 1)
+        };
         let mut a = tokio::spawn(async move {
-            let proof = a_service.verify_factor(&a_account, &factor, (STEP + 1) * 30).await.unwrap().unwrap();
+            let proof = a_service
+                .verify_factor(&a_account, &factor, (STEP + 1) * 30)
+                .await
+                .unwrap()
+                .unwrap();
             verified_tx.send(proof).unwrap();
             resume_rx.await.unwrap();
             a_service.disable(&a_account, &proof).await
         });
         let body = std::panic::AssertUnwindSafe(async {
-            let old_proof = tokio::time::timeout(Duration::from_secs(5), verified_rx).await.unwrap().unwrap();
-            assert_eq!(old_proof.method(), if backup_factor { nazo_identity::mfa::MfaVerificationMethod::BackupCode } else { nazo_identity::mfa::MfaVerificationMethod::Totp });
-            assert_eq!(snapshot(&pool, tenant, user).await["credential"]["id"], g1.to_string());
+            let old_proof = tokio::time::timeout(Duration::from_secs(5), verified_rx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                old_proof.method(),
+                if backup_factor {
+                    nazo_identity::mfa::MfaVerificationMethod::BackupCode
+                } else {
+                    nazo_identity::mfa::MfaVerificationMethod::Totp
+                }
+            );
+            assert_eq!(
+                snapshot(&pool, tenant, user).await["credential"]["id"],
+                g1.to_string()
+            );
             // B independently authenticates using the current generation.
             let b_service = service(&repository);
-            let b_proof = b_service.verify_factor(&admitted_account, &totp(STEP + 2), (STEP + 2) * 30).await.unwrap().unwrap();
-            b_service.disable(&admitted_account, &b_proof).await.unwrap();
+            let b_proof = b_service
+                .verify_factor(&admitted_account, &totp(STEP + 2), (STEP + 2) * 30)
+                .await
+                .unwrap()
+                .unwrap();
+            b_service
+                .disable(&admitted_account, &b_proof)
+                .await
+                .unwrap();
             let (g2, _) = install_generation(&pool, &repository, tenant, user, STEP + 3).await;
             assert_ne!(g1, g2);
             remember(&repository, tenant, user, g2).await;
             let before = assert_full_generation(&pool, &repository, tenant, user, g2).await;
             resume_tx.send(()).unwrap();
-            let error = tokio::time::timeout(Duration::from_secs(5), &mut a).await.unwrap().unwrap().unwrap_err();
+            let error = tokio::time::timeout(Duration::from_secs(5), &mut a)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap_err();
             assert_eq!(error.kind(), MfaServiceErrorKind::InvalidCode);
             assert_eq!(snapshot(&pool, tenant, user).await, before);
-            assert_eq!(b_service.disable(&admitted_account, &old_proof).await.unwrap_err().kind(), MfaServiceErrorKind::InvalidCode);
-            assert_eq!(assert_full_generation(&pool, &repository, tenant, user, g2).await, before);
-            assert!(repository.clear_mfa_state_if_current(tenant.tenant_id, user, g2).await.unwrap());
-        }).catch_unwind().await;
+            assert_eq!(
+                b_service
+                    .disable(&admitted_account, &old_proof)
+                    .await
+                    .unwrap_err()
+                    .kind(),
+                MfaServiceErrorKind::InvalidCode
+            );
+            assert_eq!(
+                assert_full_generation(&pool, &repository, tenant, user, g2).await,
+                before
+            );
+            assert!(
+                repository
+                    .clear_mfa_state_if_current(tenant.tenant_id, user, g2)
+                    .await
+                    .unwrap()
+            );
+        })
+        .catch_unwind()
+        .await;
         if !a.is_finished() {
             a.abort();
             let _ = tokio::time::timeout(Duration::from_secs(1), &mut a).await;
@@ -167,20 +301,30 @@ async fn wait_clear_pid(pool: &nazo_postgres::DbPool, key: i64) -> i32 {
 
 #[tokio::test]
 async fn mfa_clear_generation_lock_orders_formal_g2_install_after_commit() {
-    let Some((pool, tenant, user)) = database_fixture().await else { return; };
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
     let repository = mfa_repository(pool.clone());
     let (g1, _) = install_generation(&pool, &repository, tenant, user, STEP).await;
     remember(&repository, tenant, user, g1).await;
     let admitted = account(&pool, tenant, user).await;
     let service = service(&repository);
-    let proof = service.verify_factor(&admitted, &totp(STEP + 1), (STEP + 1) * 30).await.unwrap().unwrap();
+    let proof = service
+        .verify_factor(&admitted, &totp(STEP + 1), (STEP + 1) * 30)
+        .await
+        .unwrap()
+        .unwrap();
     let name = format!("mfa_clear_barrier_{}", Uuid::now_v7().simple());
     let key = i64::from(rand::random::<u32>() & 0x7fff_ffff);
     let mut blocker = get_conn(&pool).await.unwrap();
-    blocker.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({key}); RETURN OLD; END $$; CREATE TRIGGER {name} BEFORE DELETE ON user_mfa_backup_codes FOR EACH ROW WHEN (OLD.user_id='{}'::uuid) EXECUTE FUNCTION {name}(); BEGIN; SELECT pg_advisory_xact_lock({key});", user.as_uuid())).await.unwrap();
+    blocker.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({key}); RETURN OLD; END $$; CREATE TRIGGER {name} BEFORE DELETE ON user_mfa_backup_codes FOR EACH ROW WHEN (OLD.user_id='{}'::uuid) EXECUTE FUNCTION {name}();", user.as_uuid())).await.unwrap();
+    // Commit the trigger before opening the blocker transaction so the
+    // independent clear connection can see it and rollback cannot remove it.
+    blocker.batch_execute(&format!("BEGIN; SELECT pg_advisory_xact_lock({key});")).await.unwrap();
     let clear_service = service.clone();
     let clear_account = admitted.clone();
-    let mut clear = tokio::spawn(async move { clear_service.disable(&clear_account, &proof).await });
+    let mut clear =
+        tokio::spawn(async move { clear_service.disable(&clear_account, &proof).await });
     let mut install = None;
     let body = std::panic::AssertUnwindSafe(async {
         let clear_pid = wait_clear_pid(&pool, key).await;
@@ -207,23 +351,44 @@ async fn mfa_clear_generation_lock_orders_formal_g2_install_after_commit() {
         assert_eq!(assert_full_generation(&pool, &repository, tenant, user, g2).await, before);
     }).catch_unwind().await;
     let _ = blocker.batch_execute("ROLLBACK").await;
-    if !clear.is_finished() { clear.abort(); let _ = tokio::time::timeout(Duration::from_secs(1), &mut clear).await; }
-    if let Some(handle) = install.as_mut() { if !handle.is_finished() { handle.abort(); let _ = tokio::time::timeout(Duration::from_secs(1), handle).await; } }
-    blocker.batch_execute(&format!("DROP TRIGGER {name} ON user_mfa_backup_codes; DROP FUNCTION {name}();")).await.unwrap();
+    if !clear.is_finished() {
+        clear.abort();
+        let _ = tokio::time::timeout(Duration::from_secs(1), &mut clear).await;
+    }
+    if let Some(handle) = install.as_mut() {
+        if !handle.is_finished() {
+            handle.abort();
+            let _ = tokio::time::timeout(Duration::from_secs(1), handle).await;
+        }
+    }
+    let fixture_cleanup = blocker
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON user_mfa_backup_codes; DROP FUNCTION {name}();"
+        ))
+        .await;
     drop(blocker);
     cleanup(&pool, user).await;
-    if let Err(error) = body { std::panic::resume_unwind(error); }
+    if let Err(error) = body {
+        std::panic::resume_unwind(error);
+    }
+    fixture_cleanup.expect("owned barrier trigger and function are removed");
 }
 
 #[tokio::test]
 async fn mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_field() {
-    let Some((pool, tenant, user)) = database_fixture().await else { return; };
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
     let repository = mfa_repository(pool.clone());
     let (generation, _) = install_generation(&pool, &repository, tenant, user, STEP).await;
     remember(&repository, tenant, user, generation).await;
     let admitted = account(&pool, tenant, user).await;
     let service = service(&repository);
-    let proof = service.verify_factor(&admitted, &totp(STEP + 1), (STEP + 1) * 30).await.unwrap().unwrap();
+    let proof = service
+        .verify_factor(&admitted, &totp(STEP + 1), (STEP + 1) * 30)
+        .await
+        .unwrap()
+        .unwrap();
     let before = assert_full_generation(&pool, &repository, tenant, user, generation).await;
     let name = format!("mfa_clear_failure_{}", Uuid::now_v7().simple());
     let mut connection = get_conn(&pool).await.unwrap();
@@ -231,17 +396,30 @@ async fn mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_f
     let body = std::panic::AssertUnwindSafe(async {
         let error = service.disable(&admitted, &proof).await.unwrap_err();
         assert_eq!(error.kind(), MfaServiceErrorKind::Repository);
-        assert_eq!(assert_full_generation(&pool, &repository, tenant, user, generation).await, before);
-    }).catch_unwind().await;
-    connection.batch_execute(&format!("DROP TRIGGER {name} ON users; DROP FUNCTION {name}();")).await.unwrap();
+        assert_eq!(
+            assert_full_generation(&pool, &repository, tenant, user, generation).await,
+            before
+        );
+    })
+    .catch_unwind()
+    .await;
+    connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON users; DROP FUNCTION {name}();"
+        ))
+        .await
+        .unwrap();
     drop(connection);
     cleanup(&pool, user).await;
-    if let Err(error) = body { std::panic::resume_unwind(error); }
+    if let Err(error) = body {
+        std::panic::resume_unwind(error);
+    }
 }
 
-
 use chrono::{DateTime, Utc};
-use nazo_identity::ports::{BackupCodeCandidate, RepositoryFuture, TotpCredential, TotpEnrollment, TotpVerificationOutcome};
+use nazo_identity::ports::{
+    BackupCodeCandidate, RepositoryFuture, TotpCredential, TotpEnrollment, TotpVerificationOutcome,
+};
 
 struct UnknownMfaClearAck {
     inner: MfaRepository,
@@ -275,7 +453,14 @@ impl MfaRepositoryPort for UnknownMfaClearAck {
         timestamp: i64,
         hashes: Vec<EncodedSecretHash>,
     ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
-        MfaRepositoryPort::verify_and_confirm_totp(&self.inner, tenant_id, user_id, code, timestamp, hashes)
+        MfaRepositoryPort::verify_and_confirm_totp(
+            &self.inner,
+            tenant_id,
+            user_id,
+            code,
+            timestamp,
+            hashes,
+        )
     }
 
     fn record_invalid_totp_attempt(
@@ -327,7 +512,12 @@ impl MfaRepositoryPort for UnknownMfaClearAck {
         user_id: UserId,
         candidate_id: Uuid,
     ) -> RepositoryFuture<'_, Option<Uuid>> {
-        MfaRepositoryPort::consume_backup_code_candidate(&self.inner, tenant_id, user_id, candidate_id)
+        MfaRepositoryPort::consume_backup_code_candidate(
+            &self.inner,
+            tenant_id,
+            user_id,
+            candidate_id,
+        )
     }
 
     fn record_invalid_backup_code_attempt(
@@ -345,7 +535,13 @@ impl MfaRepositoryPort for UnknownMfaClearAck {
         credential_id: Uuid,
         hashes: Vec<EncodedSecretHash>,
     ) -> RepositoryFuture<'a, bool> {
-        MfaRepositoryPort::replace_backup_code_hashes(&self.inner, tenant_id, user_id, credential_id, hashes)
+        MfaRepositoryPort::replace_backup_code_hashes(
+            &self.inner,
+            tenant_id,
+            user_id,
+            credential_id,
+            hashes,
+        )
     }
 
     fn clear_mfa_state_if_current<'a>(
@@ -355,8 +551,18 @@ impl MfaRepositoryPort for UnknownMfaClearAck {
         credential_id: Uuid,
     ) -> RepositoryFuture<'a, bool> {
         Box::pin(async move {
-            let cleared = MfaRepositoryPort::clear_mfa_state_if_current(&self.inner, tenant_id, user_id, credential_id).await?;
-            if cleared && self.lose_ack.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            let cleared = MfaRepositoryPort::clear_mfa_state_if_current(
+                &self.inner,
+                tenant_id,
+                user_id,
+                credential_id,
+            )
+            .await?;
+            if cleared
+                && self
+                    .lose_ack
+                    .swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
                 Err(RepositoryError::Unavailable)
             } else {
                 Ok(cleared)
@@ -373,29 +579,52 @@ impl MfaRepositoryPort for UnknownMfaClearAck {
         user_agent_hash: Option<String>,
         expires_at: DateTime<Utc>,
     ) -> RepositoryFuture<'_, bool> {
-        MfaRepositoryPort::remember_device(&self.inner, tenant_id, user_id, credential_id, token_hash, user_agent_hash, expires_at)
+        MfaRepositoryPort::remember_device(
+            &self.inner,
+            tenant_id,
+            user_id,
+            credential_id,
+            token_hash,
+            user_agent_hash,
+            expires_at,
+        )
     }
 }
 
 #[tokio::test]
 async fn mfa_clear_committed_unknown_retry_cannot_clear_formal_g2() {
-    let Some((pool, tenant, user)) = database_fixture().await else { return; };
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
     let repository = mfa_repository(pool.clone());
     let body = std::panic::AssertUnwindSafe(async {
         for backup_factor in [false, true] {
             let (g1, backup) = install_generation(&pool, &repository, tenant, user, STEP).await;
             remember(&repository, tenant, user, g1).await;
             let admitted = account(&pool, tenant, user).await;
-            let factor = if backup_factor { backup } else { totp(STEP + 1) };
-            let proof = service(&repository).verify_factor(&admitted, &factor, (STEP + 1) * 30).await.unwrap().unwrap();
+            let factor = if backup_factor {
+                backup
+            } else {
+                totp(STEP + 1)
+            };
+            let proof = service(&repository)
+                .verify_factor(&admitted, &factor, (STEP + 1) * 30)
+                .await
+                .unwrap()
+                .unwrap();
             let lost_ack = MfaService::new(
                 Arc::new(UnknownMfaClearAck {
-                    inner: repository.clone(), lose_ack: std::sync::atomic::AtomicBool::new(true),
-                }), Arc::new(FixtureHasher),
+                    inner: repository.clone(),
+                    lose_ack: std::sync::atomic::AtomicBool::new(true),
+                }),
+                Arc::new(FixtureHasher),
             );
             let error = lost_ack.disable(&admitted, &proof).await.unwrap_err();
             assert_eq!(error.kind(), MfaServiceErrorKind::Repository);
-            assert_eq!(error.repository_error(), Some(&RepositoryError::Unavailable));
+            assert_eq!(
+                error.repository_error(),
+                Some(&RepositoryError::Unavailable)
+            );
             let cleared = snapshot(&pool, tenant, user).await;
             assert!(cleared["credential"].is_null());
             assert_eq!(cleared["enabled"], false);
@@ -405,11 +634,30 @@ async fn mfa_clear_committed_unknown_retry_cannot_clear_formal_g2() {
             assert_ne!(g1, g2);
             remember(&repository, tenant, user, g2).await;
             let before = assert_full_generation(&pool, &repository, tenant, user, g2).await;
-            assert_eq!(lost_ack.disable(&admitted, &proof).await.unwrap_err().kind(), MfaServiceErrorKind::InvalidCode);
-            assert_eq!(assert_full_generation(&pool, &repository, tenant, user, g2).await, before);
-            assert!(repository.clear_mfa_state_if_current(tenant.tenant_id, user, g2).await.unwrap());
+            assert_eq!(
+                lost_ack
+                    .disable(&admitted, &proof)
+                    .await
+                    .unwrap_err()
+                    .kind(),
+                MfaServiceErrorKind::InvalidCode
+            );
+            assert_eq!(
+                assert_full_generation(&pool, &repository, tenant, user, g2).await,
+                before
+            );
+            assert!(
+                repository
+                    .clear_mfa_state_if_current(tenant.tenant_id, user, g2)
+                    .await
+                    .unwrap()
+            );
         }
-    }).catch_unwind().await;
+    })
+    .catch_unwind()
+    .await;
     cleanup(&pool, user).await;
-    if let Err(error) = body { std::panic::resume_unwind(error); }
+    if let Err(error) = body {
+        std::panic::resume_unwind(error);
+    }
 }

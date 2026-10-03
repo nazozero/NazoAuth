@@ -441,10 +441,18 @@ fn client_attestation_one_second_node_difference_does_not_change_owner_window() 
         Algorithm::ES256,
         None,
     );
-    let fast = validator.validate(&attestation, &proof, "https://issuer.example", now + 1).unwrap();
-    assert!(validator.validate(&attestation, &proof, "https://issuer.example", now).is_err());
+    let fast = validator
+        .validate(&attestation, &proof, "https://issuer.example", now + 1)
+        .unwrap();
+    assert!(
+        validator
+            .validate(&attestation, &proof, "https://issuer.example", now)
+            .is_err()
+    );
     let end = fast.replay_window.expires_at();
-    let slow = validator.validate(&attestation, &proof, "https://issuer.example", end - 1).unwrap();
+    let slow = validator
+        .validate(&attestation, &proof, "https://issuer.example", end - 1)
+        .unwrap();
     assert_eq!(fast.replay_window, slow.replay_window);
     assert!(slow.replay_window.accepts(end - 1));
     assert!(!slow.replay_window.accepts(end));

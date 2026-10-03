@@ -275,6 +275,8 @@ pub(super) struct AccessRow {
     pub(super) subject_id: Uuid,
     #[diesel(sql_type = sql_types::Text)]
     pub(super) client_id: String,
+    #[diesel(sql_type = sql_types::Text)]
+    pub(super) proof_origin: String,
     #[diesel(sql_type = sql_types::Jsonb)]
     pub(super) credential_configuration_ids: serde_json::Value,
     #[diesel(sql_type = sql_types::Jsonb)]
@@ -340,6 +342,8 @@ pub(super) struct DeferredClaimRow {
     access_subject_id: Uuid,
     #[diesel(sql_type = sql_types::Text)]
     access_client_id: String,
+    #[diesel(sql_type = sql_types::Text)]
+    access_proof_origin: String,
     #[diesel(sql_type = sql_types::Jsonb)]
     access_configuration_ids: serde_json::Value,
     #[diesel(sql_type = sql_types::Jsonb)]
@@ -369,6 +373,7 @@ impl DeferredClaimRow {
                 tenant_id: self.access_tenant_id,
                 subject_id: self.access_subject_id,
                 client_id: self.access_client_id,
+                proof_origin: self.access_proof_origin,
                 credential_configuration_ids: self.access_configuration_ids,
                 credential_identifiers: self.access_credential_identifiers,
                 dpop_jkt: self.access_dpop_jkt,
@@ -446,6 +451,8 @@ impl TryFrom<AccessRow> for CredentialAccess {
             tenant_id: row.tenant_id,
             subject_id: row.subject_id,
             client_id: row.client_id,
+            proof_origin: serde_json::from_value(serde_json::Value::String(row.proof_origin))
+                .map_err(decode_error)?,
             configuration_ids: serde_json::from_value(row.credential_configuration_ids)
                 .map_err(decode_error)?,
             credential_identifiers: serde_json::from_value(row.credential_identifiers)

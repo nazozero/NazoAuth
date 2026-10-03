@@ -55,28 +55,45 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         .nonce(None)
         .await
         .expect("live deferred credential nonce should be issued");
-    let wallet = nazo_digital_credentials::EphemeralEncryptionKey::derive(&[0x67;32], b"live-wallet-response").unwrap();
+    let wallet = nazo_digital_credentials::EphemeralEncryptionKey::derive(
+        &[0x67; 32],
+        b"live-wallet-response",
+    )
+    .unwrap();
     let mut jwk = wallet.public_jwk();
     jwk["alg"] = json!("ECDH-ES");
     let mut request = jwt_credential_request("unit-live-deferred", &fixture.issuer.issuer, &nonce);
     request.credential_response_encryption = Some(nazo_openid4vci::CredentialResponseEncryption {
-        jwk, enc:"A256GCM".to_owned(), zip:Some("DEF".to_owned()),
+        jwk,
+        enc: "A256GCM".to_owned(),
+        zip: Some("DEF".to_owned()),
     });
     let mut context = request_context();
     context.bearer_token = access.access_token;
+    let plain_error=fixture.issuer.credential(context.clone(),CredentialRequestBody::Json(request.clone()))
+        .await.expect_err("response encryption is only accepted in encrypted requests");
+    assert_eq!((plain_error.status,plain_error.error),(400,"invalid_encryption_parameters"));
+    let metadata=fixture.issuer.metadata().await.unwrap();
+    let issuer_request_jwk=&metadata.credential_request_encryption.as_ref().unwrap().jwks.as_ref().unwrap()["keys"][0];
+    let encrypted_request=nazo_digital_credentials::encrypt_ecdh_es(&serde_json::to_vec(&request).unwrap(),issuer_request_jwk,Some("application/json")).unwrap();
     let pending = fixture
         .issuer
-        .credential(context.clone(), CredentialRequestBody::Json(request.clone()))
+        .credential(context.clone(), CredentialRequestBody::Jwt(encrypted_request.clone()))
         .await
         .expect("live deferred credential should return a transaction");
     assert_eq!(pending.status, nazo_openid4vci::application::CredentialResponseStatus::Deferred);
-    let replay = fixture.issuer.credential(context.clone(), CredentialRequestBody::Json(request))
+    let replay = fixture.issuer.credential(context.clone(), CredentialRequestBody::Jwt(encrypted_request))
         .await.expect("initial encrypted response is replayed from durable storage");
     assert_eq!(replay, pending);
-    let CredentialResponseBody::Jwt(encoded) = pending.body else { panic!("expected encrypted deferred response"); };
-    let decoded: CredentialResponse = serde_json::from_slice(&wallet.decrypt(&encoded).unwrap()).unwrap();
+    let CredentialResponseBody::Jwt(encoded) = pending.body else {
+        panic!("expected encrypted deferred response");
+    };
+    let decoded: CredentialResponse =
+        serde_json::from_slice(&wallet.decrypt(&encoded).unwrap()).unwrap();
     assert!(decoded.credentials.is_none());
-    let transaction_id = decoded.transaction_id.expect("encrypted response retains transaction id");
+    let transaction_id = decoded
+        .transaction_id
+        .expect("encrypted response retains transaction id");
 
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let deferred_request = DeferredCredentialRequest {
@@ -95,7 +112,10 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         )
         .await
         .expect("live deferred credential should be released");
-    assert_eq!(response.status, nazo_openid4vci::application::CredentialResponseStatus::Issued);
+    assert_eq!(
+        response.status,
+        nazo_openid4vci::application::CredentialResponseStatus::Issued
+    );
     let notification_id = match &response.body {
         CredentialResponseBody::Json(body) => body
             .notification_id

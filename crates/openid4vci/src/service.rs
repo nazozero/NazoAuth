@@ -442,6 +442,7 @@ where
                 .validate(
                     proofs,
                     &access.client_id,
+                    access.proof_origin,
                     &self.issuer,
                     expected_nonce,
                     proof_metadata,

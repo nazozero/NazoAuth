@@ -352,7 +352,12 @@ impl AuthorizationStateStorePort for Ports {
     ) -> AuthorizationFuture<'a, bool> {
         self.record("assertion_replay");
         Box::pin(async {
-            *self.assertion_replay.lock().unwrap().as_ref().expect("replay must be configured")
+            *self
+                .assertion_replay
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("replay must be configured")
         })
     }
 

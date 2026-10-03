@@ -319,6 +319,7 @@ impl Openid4vciRepository {
                                access.tenant_id AS access_tenant_id, \
                                access.subject_id AS access_subject_id, \
                                access.client_id AS access_client_id, \
+                               access.proof_origin AS access_proof_origin, \
                                access.credential_configuration_ids AS access_configuration_ids, \
                                access.credential_identifiers AS access_credential_identifiers, \
                                access.dpop_jkt AS access_dpop_jkt, \
