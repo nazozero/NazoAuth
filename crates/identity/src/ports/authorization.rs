@@ -48,13 +48,40 @@ pub trait AccessRequestRepositoryPort: Send + Sync {
         request_id: Uuid,
         approved_client_id: Uuid,
         client_id: &'a str,
+        secret_binding: Option<&'a str>,
     ) -> RepositoryFuture<'a, bool>;
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// One immutable producer attempt and its original disclosure deadline.
+#[derive(Clone, PartialEq)]
+pub struct DeliveryStage {
+    pub attempt_id: Uuid,
+    pub expires_at: DateTime<Utc>,
+    pub secret_binding: Option<String>,
+    pub value: Value,
+}
+
+/// A snapshot whose opaque version must be compared by every mutation.
+#[derive(Clone, PartialEq)]
 pub struct DeliveryRecord {
     pub value: Value,
     pub opaque_version: String,
+    pub attempt_id: Uuid,
+    pub expires_at: DateTime<Utc>,
+    pub secret_binding: Option<String>,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum DeliveryStageResult {
+    Created(DeliveryRecord),
+    Existing,
+    Expired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeliveryPublish {
+    Published,
+    MissingOrChanged,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,13 +91,23 @@ pub enum DeliveryConsume {
 }
 
 pub trait DeliveryStorePort: Send + Sync {
-    fn store<'a>(
+    /// Create only if absent; an existing attempt is never replaced.
+    fn stage<'a>(
         &'a self,
         user_id: UserId,
         token: &'a str,
-        payload: &'a Value,
-        ttl_seconds: u64,
-    ) -> RepositoryFuture<'a, ()>;
+        stage: DeliveryStage,
+    ) -> RepositoryFuture<'a, DeliveryStageResult>;
+
+    /// Publish only this exact, still-live unpublished stage. Preserve expiry;
+    /// Missing, changed, consumed and expired records must never be recreated.
+    fn publish<'a>(
+        &'a self,
+        user_id: UserId,
+        token: &'a str,
+        expected: &'a DeliveryRecord,
+        approved_client_id: Uuid,
+    ) -> RepositoryFuture<'a, DeliveryPublish>;
 
     fn load<'a>(
         &'a self,
@@ -83,7 +120,14 @@ pub trait DeliveryStorePort: Send + Sync {
         lookups: &'a [(UserId, &'a str)],
     ) -> RepositoryFuture<'a, Vec<Option<DeliveryRecord>>>;
 
-    fn delete<'a>(&'a self, user_id: UserId, token: &'a str) -> RepositoryFuture<'a, ()>;
+    /// Retire the exact snapshot only. Producers may retire only their own
+    /// unpublished stage after a known non-commit; unknown outcomes retain it.
+    fn retire<'a>(
+        &'a self,
+        user_id: UserId,
+        token: &'a str,
+        expected: &'a DeliveryRecord,
+    ) -> RepositoryFuture<'a, bool>;
 
     fn consume<'a>(
         &'a self,
@@ -97,14 +141,24 @@ impl<T> DeliveryStorePort for Arc<T>
 where
     T: DeliveryStorePort + ?Sized,
 {
-    fn store<'a>(
+    fn stage<'a>(
         &'a self,
         user_id: UserId,
         token: &'a str,
-        payload: &'a Value,
-        ttl_seconds: u64,
-    ) -> RepositoryFuture<'a, ()> {
-        self.as_ref().store(user_id, token, payload, ttl_seconds)
+        stage: DeliveryStage,
+    ) -> RepositoryFuture<'a, DeliveryStageResult> {
+        self.as_ref().stage(user_id, token, stage)
+    }
+
+    fn publish<'a>(
+        &'a self,
+        user_id: UserId,
+        token: &'a str,
+        expected: &'a DeliveryRecord,
+        approved_client_id: Uuid,
+    ) -> RepositoryFuture<'a, DeliveryPublish> {
+        self.as_ref()
+            .publish(user_id, token, expected, approved_client_id)
     }
 
     fn load<'a>(
@@ -122,8 +176,13 @@ where
         self.as_ref().load_many(lookups)
     }
 
-    fn delete<'a>(&'a self, user_id: UserId, token: &'a str) -> RepositoryFuture<'a, ()> {
-        self.as_ref().delete(user_id, token)
+    fn retire<'a>(
+        &'a self,
+        user_id: UserId,
+        token: &'a str,
+        expected: &'a DeliveryRecord,
+    ) -> RepositoryFuture<'a, bool> {
+        self.as_ref().retire(user_id, token, expected)
     }
 
     fn consume<'a>(

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
-    OptionalExtension, PgTextExpressionMethods, QueryDsl,
+    OptionalExtension, PgExpressionMethods, PgTextExpressionMethods, QueryDsl,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{ApprovedClient, PreparedClientRegistration};
@@ -257,6 +257,7 @@ impl AccessRequestRepository {
         request_id: Uuid,
         approved_client_id: Uuid,
         client_id: &str,
+        secret_binding: Option<&str>,
     ) -> Result<bool, RepositoryError> {
         let mut connection = self.connection().await?;
         // The request-id primary key and the joined client's unique id cap a
@@ -276,7 +277,8 @@ impl AccessRequestRepository {
                 .filter(client_access_requests::approved_client_id.eq(Some(approved_client_id)))
                 .filter(oauth_clients::id.eq(approved_client_id))
                 .filter(oauth_clients::client_id.eq(client_id))
-                .filter(oauth_clients::is_active.eq(true)),
+                .filter(oauth_clients::is_active.eq(true))
+                .filter(oauth_clients::client_secret_hash.is_not_distinct_from(secret_binding)),
         ))
         .get_result::<bool>(&mut connection)
         .await
@@ -444,6 +446,7 @@ impl nazo_identity::ports::AccessRequestRepositoryPort for AccessRequestReposito
         request_id: Uuid,
         approved_client_id: Uuid,
         client_id: &'a str,
+        secret_binding: Option<&'a str>,
     ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
         Box::pin(async move {
             AccessRequestRepository::approved_delivery_matches(
@@ -453,6 +456,7 @@ impl nazo_identity::ports::AccessRequestRepositoryPort for AccessRequestReposito
                 request_id,
                 approved_client_id,
                 client_id,
+                secret_binding,
             )
             .await
         })
@@ -460,6 +464,29 @@ impl nazo_identity::ports::AccessRequestRepositoryPort for AccessRequestReposito
 }
 
 impl nazo_persistence::AdminAccessRequestStore for AccessRequestRepository {
+    fn approved_delivery_matches<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        request_id: Uuid,
+        approved_client_id: Uuid,
+        client_id: &'a str,
+        secret_binding: Option<&'a str>,
+    ) -> futures_util::future::BoxFuture<'a, Result<bool, RepositoryError>> {
+        Box::pin(async move {
+            AccessRequestRepository::approved_delivery_matches(
+                self,
+                tenant_id,
+                user_id,
+                request_id,
+                approved_client_id,
+                client_id,
+                secret_binding,
+            )
+            .await
+        })
+    }
+
     fn page<'a>(
         &'a self,
         tenant_id: TenantId,
