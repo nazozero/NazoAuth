@@ -95,10 +95,20 @@ async fn authorization_code_unknown_commit_keeps_one_identity_and_requires_fresh
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "server_error");
     assert!(body.get("access_token").is_none() && body.get("refresh_token").is_none());
-    assert!(matches!(
-        fixture.code_state(&code).await,
-        AuthorizationCodeState::Failed { .. }
-    ));
+    // A lost durable commit acknowledgement leaves the original in-flight
+    // cache entry under its existing TTL. The receipt owns replay authority.
+    let AuthorizationCodeState::Consuming {
+        payload: retained_payload,
+        consuming_at,
+    } = fixture.code_state(&code).await
+    else {
+        panic!("unknown commit must preserve the original in-flight code state");
+    };
+    assert!(
+        serde_json::to_value(&retained_payload).unwrap() == serde_json::to_value(&payload).unwrap(),
+        "unknown commit must retain the exact original code payload"
+    );
+    assert!(consuming_at < payload.expires_at);
     let identity = authorization_code_identity(&blake3_hex(&code));
     let receipt = repository
         .single_use_redemption(client.tenant_id, client.id, &identity)
