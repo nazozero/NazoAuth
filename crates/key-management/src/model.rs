@@ -385,6 +385,23 @@ impl From<Openid4vcPublicMaterial> for Openid4vcMaterial {
     }
 }
 
+/// One issuer's private certificate bundle and fresh revocation facts for CRL issuance.
+/// Unrelated JWT and request-object private keys are not prepared by this read.
+pub struct MdocCrlMaterial {
+    pub issuer_private_material: String,
+    pub revocation_snapshot: nazo_digital_credentials::CertificateRevocationSnapshot,
+}
+
+impl fmt::Debug for MdocCrlMaterial {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MdocCrlMaterial")
+            .field("issuer_private_material", &"<redacted>")
+            .field("revocation_snapshot", &self.revocation_snapshot)
+            .finish()
+    }
+}
+
 /// The latest persisted OpenID4VC material and the enclosing keyset revision.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Openid4vcState {
@@ -755,6 +772,16 @@ impl KeyManager {
     /// request handling uses the generation-pinned projection instead.
     pub async fn database_openid4vc_state(&self) -> anyhow::Result<Openid4vcState> {
         crate::database::openid4vc_state(&self.inner.database, &self.inner.settings).await
+    }
+
+    /// Read one fresh authoritative generation for the selected CRL issuer.
+    /// Sealing, tenant/revision/public binding and revocation structure remain
+    /// validated; the caller owns selected certificate/profile validation.
+    pub async fn database_mdoc_crl_material(
+        &self,
+        issuer_id: &str,
+    ) -> anyhow::Result<Option<MdocCrlMaterial>> {
+        crate::database::mdoc_crl_material(&self.inner.database, issuer_id).await
     }
 
     /// Atomically commit OpenID4VC public and private material as one keyset

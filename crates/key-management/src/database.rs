@@ -208,6 +208,45 @@ pub(crate) async fn openid4vc_state(
     })
 }
 
+pub(crate) async fn mdoc_crl_material(
+    binding: &DatabaseKeysetBinding,
+    issuer_id: &str,
+) -> anyhow::Result<Option<crate::model::MdocCrlMaterial>> {
+    let record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
+        anyhow::bail!("database keyset has unsupported schema version");
+    }
+    let Some(material) = payload.get("openid4vc") else {
+        return Ok(None);
+    };
+    let issuers = material
+        .get("iaca_private_materials")
+        .and_then(Value::as_object)
+        .context("managed mdoc material has no IACA private map")?;
+    let Some(private) = issuers.get(issuer_id) else {
+        return Ok(None);
+    };
+    let issuer_private_material = private
+        .as_str()
+        .context("managed IACA private material is not PEM text")?
+        .to_owned();
+    let snapshot: nazo_digital_credentials::CertificateRevocationSnapshot = serde_json::from_value(
+        material
+            .pointer("/public/revocation_snapshot")
+            .filter(|value| !value.is_null())
+            .context("mdoc authority has no revocation state")?
+            .clone(),
+    )?;
+    snapshot
+        .validate_structure()
+        .map_err(|error| anyhow!("invalid managed revocation state: {error}"))?;
+    Ok(Some(crate::model::MdocCrlMaterial {
+        issuer_private_material,
+        revocation_snapshot: snapshot,
+    }))
+}
+
 pub(crate) async fn commit_openid4vc(
     settings: &KeySettings,
     binding: &DatabaseKeysetBinding,

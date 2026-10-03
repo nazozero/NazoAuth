@@ -62,6 +62,11 @@ pub fn sign_crl(
 ) -> crate::Result<Vec<u8>> {
     let issuer_key =
         rcgen::KeyPair::from_pem(issuer_key_pem).map_err(|_| CryptoError::InvalidKey)?;
+    let (_, certificate) = x509_parser::parse_x509_certificate(issuer_certificate_der)
+        .map_err(|_| CryptoError::InvalidInput)?;
+    if issuer_key.public_key_raw() != certificate.public_key().subject_public_key.data.as_ref() {
+        return Err(CryptoError::InvalidKey);
+    }
     let issuer = rcgen::Issuer::from_ca_cert_der(&issuer_certificate_der.into(), issuer_key)
         .map_err(|_| CryptoError::InvalidInput)?;
     Ok(params

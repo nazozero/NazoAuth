@@ -1303,3 +1303,34 @@ mod certificate {
         ));
     }
 }
+
+#[test]
+fn crl_signer_rejects_certificate_private_key_mismatch() {
+    use nazo_crypto::certificate as certs;
+    let key = certs::generate_p256_private_key_pem().unwrap();
+    let other = certs::generate_p256_private_key_pem().unwrap();
+    let mut params = certs::CertificateParams::new(Vec::<String>::new()).unwrap();
+    params.is_ca = certs::IsCa::Ca(certs::BasicConstraints::Unconstrained);
+    params.key_usages = vec![
+        certs::KeyUsagePurpose::KeyCertSign,
+        certs::KeyUsagePurpose::CrlSign,
+    ];
+    let certificate = certs::self_signed(params, &key).unwrap();
+    let now = rcgen::date_time_ymd(2026, 10, 3);
+    let crl = || certs::CertificateRevocationListParams {
+        this_update: now,
+        next_update: rcgen::date_time_ymd(2026, 10, 4),
+        crl_number: certs::SerialNumber::from(1_u64),
+        issuing_distribution_point: None,
+        revoked_certs: vec![],
+        key_identifier_method: certs::KeyIdMethod::PreSpecified(vec![7; 20]),
+    };
+    assert!(matches!(
+        certs::sign_crl(crl(), &certificate, &other),
+        Err(nazo_crypto::CryptoError::InvalidKey)
+    ));
+    let der = certs::sign_crl(crl(), &certificate, &key).unwrap();
+    let (_, parsed) = x509_parser::parse_x509_crl(&der).unwrap();
+    let (_, ca) = x509_parser::parse_x509_certificate(&certificate).unwrap();
+    parsed.verify_signature(ca.public_key()).unwrap();
+}

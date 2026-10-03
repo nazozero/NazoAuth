@@ -14,6 +14,20 @@ without creating missing keys, advancing rotation, or resealing wrapping keys.
 Missing or invalid generations fail; initialization and maintenance remain
 explicit mutation/startup responsibilities.
 
+The command entry retains first-admission registry, signature, deployment and
+configuration checks. An existing accepted journal remains bound to the exact
+operation id/request hash and owns its original authorization snapshot; receipt
+recovery introduces no additional command surface or caller-authentication bypass.
+Stored resource outcomes contain only revision, public identities/mappings and
+manifest digest, never passwords, client secrets or private key material.
+
+Accepted tenant-resource operations recover their exact, validated database
+outcome before loading current tenant configuration or mutation capabilities.
+A committed outcome remains recoverable after a later tenant disable or config
+loss. A missing outcome retains the active-tenant admission gate; only Apply
+loads change-set payloads and registration/key preparation. Enumerate and Revoke
+use the same atomic state, audit and outcome owner without those capabilities.
+
 `crates/operator-protocol` remains only in this repository. NazoAuthCtl pins a
 released package version by server tag. Tagged server Releases additionally
 publish that exact package with provenance so later controller dependency

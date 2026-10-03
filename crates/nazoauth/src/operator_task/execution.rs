@@ -210,7 +210,7 @@ pub(super) async fn execute_inner(
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Enumerate,
                 tenant_id,
-                Vec::new(),
+                &[],
                 selectors,
                 context,
                 persistence,
@@ -224,12 +224,11 @@ pub(super) async fn execute_inner(
             tenant_id,
             resources,
         } => {
-            let prepared = prepare_apply_change_set(resources)?;
             let persistence = require_persistence(persistence)?;
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Apply,
                 tenant_id,
-                prepared,
+                resources,
                 &[],
                 context,
                 persistence,
@@ -243,19 +242,11 @@ pub(super) async fn execute_inner(
             tenant_id,
             resources,
         } => {
-            let prepared = resources
-                .iter()
-                .cloned()
-                .map(|identity| PreparedTenantResource {
-                    identity,
-                    payload: None,
-                })
-                .collect();
             let persistence = require_persistence(persistence)?;
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Revoke,
                 tenant_id,
-                prepared,
+                resources,
                 &[],
                 context,
                 persistence,
@@ -597,28 +588,68 @@ pub(super) fn map_owned_persistence_error(error: anyhow::Error) -> SideEffectErr
 async fn run_tenant_resource_operation(
     operation: TenantResourceAction,
     tenant_id: &str,
-    resources: Vec<PreparedTenantResource>,
+    resources: &[TenantResourceIdentity],
     selectors: &[TenantResourceSelector],
     context: &ExecutionContext<'_>,
     persistence: &dyn OperatorPersistence,
 ) -> Result<ControlTenantResourceOutcome, SideEffectError> {
-    let binding = active_tenant_binding(persistence, tenant_id).await?;
-    let composed = crate::tenant_resource_preparation::control_plane_resources(
-        persistence.admin_clients(),
-        &binding,
-        persistence.signing_key_repository(binding.tenant.tenant_id.as_uuid()),
-    )
-    .await
-    .map_err(|error| {
-        SideEffectError::Retryable(
-            error.context("tenant-resource registration policy bridge is unavailable"),
+    // The command entry has already admitted this request, or recovered its
+    // exact accepted-journal authorization snapshot. Receipt recovery is not
+    // an alternate caller-authentication path and returns only public outcome data.
+    let parsed_tenant = parse_control_tenant_id(tenant_id)?;
+    let operation_id = Uuid::parse_str(context.operation_id)
+        .map_err(|error| SideEffectError::Terminal(error.into()))?;
+    if let Some(outcome) = persistence
+        .tenant_resource_control_outcome(
+            parsed_tenant,
+            context.deployment_id,
+            operation_id,
+            context.request_hash,
+            operation,
         )
-    })?;
-    let executor = persistence.tenant_resource_executor(
-        composed.tenant,
-        composed.data_encryption_key,
-        composed.preparation,
-    );
+        .await
+        .map_err(map_engine_error)?
+    {
+        return Ok(outcome);
+    }
+    // A missing receipt still requires fresh active-tenant admission.
+    let binding = active_tenant_binding(persistence, tenant_id).await?;
+    let (resources, executor) = match operation {
+        TenantResourceAction::Apply => {
+            let resources = prepare_apply_change_set(resources)?;
+            let composed = crate::tenant_resource_preparation::control_plane_resources(
+                persistence.admin_clients(),
+                &binding,
+                persistence.signing_key_repository(binding.tenant.tenant_id.as_uuid()),
+            )
+            .await
+            .map_err(|error| {
+                SideEffectError::Retryable(
+                    error.context("tenant-resource registration policy bridge is unavailable"),
+                )
+            })?;
+            let executor = persistence.tenant_resource_executor(
+                composed.tenant,
+                composed.data_encryption_key,
+                Some(composed.preparation),
+            );
+            (resources, executor)
+        }
+        TenantResourceAction::Enumerate | TenantResourceAction::Revoke => {
+            let resources = resources
+                .iter()
+                .cloned()
+                .map(|identity| PreparedTenantResource {
+                    identity,
+                    payload: None,
+                })
+                .collect();
+            (
+                resources,
+                persistence.tenant_resource_executor(binding.tenant, None, None),
+            )
+        }
+    };
     let actor = serde_json::json!({
         "kind": "controller",
         "controller_id": context.controller_id,
