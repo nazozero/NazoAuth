@@ -483,3 +483,10 @@ binding. It publishes only the exact existing stage and preserves its original
 expiry. Missing, changed, consumed or expired stages cannot be recreated by a
 late publisher or recovery. Consumption retains current approval matching and
 the exact version take. Storage metadata is never part of the disclosed payload.
+
+An access-delivery consumer that sees an unpublished stage returns an invalid
+delivery response without retiring the stage. PostgreSQL approval can precede
+exact Valkey publication; the original producer retains that publication attempt
+and its original TTL. Committed wrong-owner/material checks and exact one-time
+consumption still apply. The live requester/publisher barrier regression checks
+the stage is retained, publication succeeds and only one secret is disclosed.

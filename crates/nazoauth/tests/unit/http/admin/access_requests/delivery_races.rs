@@ -186,6 +186,15 @@ async fn approve_with(
 
 #[actix_web::test]
 async fn recovery_claim_before_original_publish_resumes_discloses_secret_at_most_once() {
+    verify_requester_publish_race(true).await;
+}
+
+#[actix_web::test]
+async fn requester_read_of_staged_delivery_preserves_original_publish_and_one_disclosure() {
+    verify_requester_publish_race(false).await;
+}
+
+async fn verify_requester_publish_race(recover_before_release: bool) {
     let fixture = LiveAdminAccessRequestFixture::new()
         .await
         .expect("real PG/Valkey fixture required");
@@ -233,6 +242,19 @@ async fn recovery_claim_before_original_publish_resumes_discloses_secret_at_most
             .await
             .unwrap()
             .unwrap();
+        assert_eq!(staged.value["delivery_state"], "staged");
+        let early = profile_delivery_from_state(
+            fixture.state.clone(),
+            fixture.admin_post_request(&user_sid, "delivery-user-csrf", "/profile/access-delivery"),
+            Json(crate::http::profile::delivery::AccessDeliveryRequest { request_id:id }),
+        ).await;
+        assert_eq!(early.status(), StatusCode::NOT_FOUND);
+        assert!(DeliveryStorePort::load(inner.as_ref(), user, &token).await.unwrap() == Some(staged.clone()),
+            "a consumer cannot retire the producer's unpublished stage");
+        if !recover_before_release {
+            gate.release.wait().await;
+            return token;
+        }
         let recovered = invoke_admin_approve_access_request(
             fixture.state.clone(),
             fixture.admin_post_request(
@@ -277,8 +299,29 @@ async fn recovery_claim_before_original_publish_resumes_discloses_secret_at_most
         token
     };
     let (original, token) = tokio::join!(original, recovery_and_claim);
-    assert_eq!(original.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(original.status(), if recover_before_release {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    });
     let user = nazo_identity::UserId::new(applicant.id).unwrap();
+    if !recover_before_release {
+        let committed = DeliveryStorePort::load(inner.as_ref(), user, &token).await.unwrap().unwrap();
+        assert_eq!(committed.value["delivery_state"], "committed");
+        let mut disclosures=0;
+        for _ in 0..2 {
+            let response = profile_delivery_from_state(fixture.state.clone(),
+                fixture.admin_post_request(&user_sid,"delivery-user-csrf","/profile/access-delivery"),
+                Json(crate::http::profile::delivery::AccessDeliveryRequest { request_id:id }),
+            ).await;
+            let (status,body)=json_body(response).await;
+            if status == StatusCode::OK {
+                assert!(body["client_secret"] == committed.value["client_secret"]);
+                disclosures+=1;
+            } else { assert_eq!(status, StatusCode::NOT_FOUND); }
+        }
+        assert_eq!(disclosures,1);
+    }
     let store = Arc::new(nazo_valkey::DeliveryStore::new(
         &fixture.state.valkey_connection(),
     ));

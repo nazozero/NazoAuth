@@ -576,10 +576,12 @@ where
             .map_err(DeliveryReadError::DeliveryStore)?
             .ok_or(DeliveryReadError::Invalid)?;
         let Some(claim) = delivery_claim(&stored.value) else {
-            let _ = self
-                .deliveries
-                .retire(account.user_id(), &token, &stored)
-                .await;
+            // A requester can arrive after PG approval but before exact
+            // publication. Only the producer owns that unpublished stage;
+            // leave it retryable under its original TTL.
+            if stored.value.get("delivery_state").and_then(Value::as_str) == Some("committed") {
+                let _ = self.deliveries.retire(account.user_id(), &token, &stored).await;
+            }
             return Err(DeliveryReadError::Invalid);
         };
         if claim.request_id != request_id
