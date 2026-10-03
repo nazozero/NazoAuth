@@ -6,9 +6,8 @@ use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
     CredentialAccess, CredentialAuthorization, CredentialResponseEncoding, CredentialStoreError,
-    CredentialStoreFuture, CredentialStorePort, DeferredCredential,
-    IssuanceNotification, NonceRecord, NotificationHandle, StoredCredentialOffer,
-    StoredCredentialResponse,
+    CredentialStoreFuture, CredentialStorePort, DeferredCredential, IssuanceNotification,
+    NonceRecord, NotificationHandle, StoredCredentialOffer, StoredCredentialResponse,
 };
 use uuid::Uuid;
 
@@ -195,8 +194,10 @@ impl CredentialStorePort for Openid4vciRepository {
         token_id: Uuid,
         claim_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>>
-    {
+    ) -> CredentialStoreFuture<
+        'a,
+        Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
+    > {
         self.deferred_claim_ready(transaction_hash, token_id, claim_id, now)
     }
 

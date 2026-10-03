@@ -1327,32 +1327,36 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         expires_at: deferred_ready_at + Duration::minutes(5),
     };
     issuer.store_deferred(&deferred).await.unwrap();
-    let first_claim = claim_payload(issuer
-        .claim_ready_deferred(
-            &deferred.transaction_hash,
-            access.token_id,
-            "deferred-a",
-            deferred_ready_at,
-        )
-        .await
-        .unwrap())
-        .unwrap();
+    let first_claim = claim_payload(
+        issuer
+            .claim_ready_deferred(
+                &deferred.transaction_hash,
+                access.token_id,
+                "deferred-a",
+                deferred_ready_at,
+            )
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(first_claim.claim_id, "deferred-a");
     assert_eq!(
         first_claim.credential.payload_ciphertext,
         b"deferred-payload"
     );
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &deferred.transaction_hash,
-                access.token_id,
-                "deferred-b",
-                deferred_ready_at,
-            )
-            .await
-            .unwrap())
-            .is_none()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &deferred.transaction_hash,
+                    access.token_id,
+                    "deferred-b",
+                    deferred_ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_none()
     );
     assert!(
         issuer
@@ -1366,16 +1370,18 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .unwrap()
     );
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &deferred.transaction_hash,
-                access.token_id,
-                "deferred-b",
-                deferred_ready_at,
-            )
-            .await
-            .unwrap())
-            .is_some()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &deferred.transaction_hash,
+                    access.token_id,
+                    "deferred-b",
+                    deferred_ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_some()
     );
     assert!(
         !issuer
@@ -1411,16 +1417,18 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .unwrap()
     );
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &deferred.transaction_hash,
-                access.token_id,
-                "deferred-replay",
-                deferred_ready_at,
-            )
-            .await
-            .unwrap())
-            .is_none()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &deferred.transaction_hash,
+                    access.token_id,
+                    "deferred-replay",
+                    deferred_ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_none()
     );
 
     let reclaim_deferred_ready_at = Utc::now() + Duration::seconds(1);
@@ -1439,29 +1447,33 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
     };
     issuer.store_deferred(&reclaim_deferred).await.unwrap();
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &reclaim_deferred.transaction_hash,
-                access.token_id,
-                "expired-deferred-a",
-                reclaim_deferred_ready_at,
-            )
-            .await
-            .unwrap())
-            .is_some()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &reclaim_deferred.transaction_hash,
+                    access.token_id,
+                    "expired-deferred-a",
+                    reclaim_deferred_ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_some()
     );
     let reclaim_deferred_now = reclaim_deferred_ready_at + Duration::minutes(6);
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &reclaim_deferred.transaction_hash,
-                access.token_id,
-                "expired-deferred-b",
-                reclaim_deferred_now,
-            )
-            .await
-            .unwrap())
-            .is_some(),
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &reclaim_deferred.transaction_hash,
+                    access.token_id,
+                    "expired-deferred-b",
+                    reclaim_deferred_now,
+                )
+                .await
+                .unwrap()
+        )
+        .is_some(),
         "a deferred lease must be reclaimable after claim_expires_at without sleeping"
     );
     assert!(
@@ -1567,16 +1579,18 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .body,
         atomic_response.body
     );
-    let atomic_claim = claim_payload(issuer
-        .claim_ready_deferred(
-            &atomic_deferred.transaction_hash,
-            access.token_id,
-            "atomic-deferred-claim",
-            atomic_deferred_ready_at,
-        )
-        .await
-        .unwrap())
-        .unwrap();
+    let atomic_claim = claim_payload(
+        issuer
+            .claim_ready_deferred(
+                &atomic_deferred.transaction_hash,
+                access.token_id,
+                "atomic-deferred-claim",
+                atomic_deferred_ready_at,
+            )
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(
         atomic_claim.credential.payload_ciphertext,
         b"atomic-payload"
@@ -2220,27 +2234,31 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     };
     issuer.store_deferred(&deferred).await.unwrap();
     assert!(
-        claim_payload(issuer
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &deferred.transaction_hash,
+                    access.token_id,
+                    "not-ready",
+                    Utc::now(),
+                )
+                .await
+                .unwrap()
+        )
+        .is_none()
+    );
+    let consumed_deferred = claim_payload(
+        issuer
             .claim_ready_deferred(
                 &deferred.transaction_hash,
                 access.token_id,
-                "not-ready",
-                Utc::now(),
+                "boundary-owner",
+                deferred_ready_at,
             )
             .await
-            .unwrap())
-            .is_none()
-    );
-    let consumed_deferred = claim_payload(issuer
-        .claim_ready_deferred(
-            &deferred.transaction_hash,
-            access.token_id,
-            "boundary-owner",
-            deferred_ready_at,
-        )
-        .await
-        .unwrap())
-        .unwrap();
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(
         consumed_deferred.credential.payload_ciphertext,
         deferred.payload_ciphertext
@@ -2257,16 +2275,18 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap()
     );
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &deferred.transaction_hash,
-                access.token_id,
-                "boundary-replay",
-                deferred_ready_at,
-            )
-            .await
-            .unwrap())
-            .is_none()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &deferred.transaction_hash,
+                    access.token_id,
+                    "boundary-replay",
+                    deferred_ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_none()
     );
 
     let lease_deferred_ready_at = Utc::now() + Duration::seconds(10);
@@ -2284,16 +2304,18 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: lease_deferred_ready_at + Duration::minutes(10),
     };
     issuer.store_deferred(&lease_deferred).await.unwrap();
-    let lease_claim = claim_payload(issuer
-        .claim_ready_deferred(
-            &lease_deferred.transaction_hash,
-            access.token_id,
-            "lease-owner",
-            lease_deferred_ready_at,
-        )
-        .await
-        .unwrap())
-        .unwrap();
+    let lease_claim = claim_payload(
+        issuer
+            .claim_ready_deferred(
+                &lease_deferred.transaction_hash,
+                access.token_id,
+                "lease-owner",
+                lease_deferred_ready_at,
+            )
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(lease_claim.claim_id, "lease-owner");
     assert!(
         issuer
@@ -2307,16 +2329,18 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap()
     );
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &lease_deferred.transaction_hash,
-                access.token_id,
-                "lease-owner-2",
-                lease_deferred_ready_at,
-            )
-            .await
-            .unwrap())
-            .is_some()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &lease_deferred.transaction_hash,
+                    access.token_id,
+                    "lease-owner-2",
+                    lease_deferred_ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_some()
     );
     assert!(
         issuer
@@ -2546,16 +2570,18 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         ..notification_deferred
     };
     issuer.store_deferred(&notification_deferred).await.unwrap();
-    claim_payload(issuer
-        .claim_ready_deferred(
-            &notification_deferred.transaction_hash,
-            access.token_id,
-            "notification-deferred-owner",
-            notification_deferred.ready_at,
-        )
-        .await
-        .unwrap())
-        .unwrap();
+    claim_payload(
+        issuer
+            .claim_ready_deferred(
+                &notification_deferred.transaction_hash,
+                access.token_id,
+                "notification-deferred-owner",
+                notification_deferred.ready_at,
+            )
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     let deferred_handle = NotificationHandle {
         notification_id: format!("deferred-notification-{}", Uuid::now_v7()),
         token_id: access.token_id,
@@ -2607,16 +2633,18 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         .store_deferred(&deferred_response_notification)
         .await
         .unwrap();
-    claim_payload(issuer
-        .claim_ready_deferred(
-            &deferred_response_notification.transaction_hash,
-            access.token_id,
-            "deferred-response-owner",
-            deferred_response_notification.ready_at,
-        )
-        .await
-        .unwrap())
-        .unwrap();
+    claim_payload(
+        issuer
+            .claim_ready_deferred(
+                &deferred_response_notification.transaction_hash,
+                access.token_id,
+                "deferred-response-owner",
+                deferred_response_notification.ready_at,
+            )
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     let deferred_response_handle = NotificationHandle {
         notification_id: format!("deferred-response-{}", Uuid::now_v7()),
         token_id: access.token_id,
@@ -4032,16 +4060,18 @@ async fn deferred_claim_returns_joined_domain_state_and_writes_the_lease() {
     issuer.store_deferred(&deferred).await.unwrap();
 
     let claim_now = deferred.ready_at;
-    let claim = claim_payload(issuer
-        .claim_ready_deferred(
-            &deferred.transaction_hash,
-            access.token_id,
-            "df01-claim",
-            claim_now,
-        )
-        .await
-        .unwrap())
-        .expect("a ready deferred transaction must be claimable");
+    let claim = claim_payload(
+        issuer
+            .claim_ready_deferred(
+                &deferred.transaction_hash,
+                access.token_id,
+                "df01-claim",
+                claim_now,
+            )
+            .await
+            .unwrap(),
+    )
+    .expect("a ready deferred transaction must be claimable");
     assert_eq!(claim.claim_id, "df01-claim");
     assert_eq!(
         claim.credential, deferred,
@@ -4093,16 +4123,18 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
 
     // Unknown transaction hash.
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                blake3::hash(b"openid4vc-df02-missing").to_hex().as_ref(),
-                access.token_id,
-                "missing",
-                Utc::now(),
-            )
-            .await
-            .unwrap())
-            .is_none()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    blake3::hash(b"openid4vc-df02-missing").to_hex().as_ref(),
+                    access.token_id,
+                    "missing",
+                    Utc::now(),
+                )
+                .await
+                .unwrap()
+        )
+        .is_none()
     );
 
     // ready_at still in the future.
@@ -4114,16 +4146,18 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
     );
     issuer.store_deferred(&unready).await.unwrap();
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &unready.transaction_hash,
-                access.token_id,
-                "early",
-                Utc::now()
-            )
-            .await
-            .unwrap())
-            .is_none(),
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &unready.transaction_hash,
+                    access.token_id,
+                    "early",
+                    Utc::now()
+                )
+                .await
+                .unwrap()
+        )
+        .is_none(),
         "a not-yet-ready deferred must not be claimable"
     );
     let lease = deferred_lease_row(&pool, unready.id).await;
@@ -4139,16 +4173,18 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
     );
     issuer.store_deferred(&expired).await.unwrap();
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &expired.transaction_hash,
-                access.token_id,
-                "late",
-                expired.expires_at + Duration::seconds(1),
-            )
-            .await
-            .unwrap())
-            .is_none(),
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &expired.transaction_hash,
+                    access.token_id,
+                    "late",
+                    expired.expires_at + Duration::seconds(1),
+                )
+                .await
+                .unwrap()
+        )
+        .is_none(),
         "an expired deferred must not be claimable"
     );
     let lease = deferred_lease_row(&pool, expired.id).await;
@@ -4164,28 +4200,32 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
     );
     issuer.store_deferred(&leased).await.unwrap();
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &leased.transaction_hash,
-                access.token_id,
-                "first-owner",
-                leased.ready_at,
-            )
-            .await
-            .unwrap())
-            .is_some()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &leased.transaction_hash,
+                    access.token_id,
+                    "first-owner",
+                    leased.ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_some()
     );
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &leased.transaction_hash,
-                access.token_id,
-                "second-owner",
-                leased.ready_at + Duration::minutes(1),
-            )
-            .await
-            .unwrap())
-            .is_none(),
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &leased.transaction_hash,
+                    access.token_id,
+                    "second-owner",
+                    leased.ready_at + Duration::minutes(1),
+                )
+                .await
+                .unwrap()
+        )
+        .is_none(),
         "a live lease must reject a competing claimant"
     );
     let lease = deferred_lease_row(&pool, leased.id).await;
@@ -4200,16 +4240,18 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
     );
     issuer.store_deferred(&consumed).await.unwrap();
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &consumed.transaction_hash,
-                access.token_id,
-                "consumer",
-                consumed.ready_at,
-            )
-            .await
-            .unwrap())
-            .is_some()
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &consumed.transaction_hash,
+                    access.token_id,
+                    "consumer",
+                    consumed.ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_some()
     );
     assert!(
         issuer
@@ -4223,16 +4265,18 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
             .unwrap()
     );
     assert!(
-        claim_payload(issuer
-            .claim_ready_deferred(
-                &consumed.transaction_hash,
-                access.token_id,
-                "replay",
-                consumed.ready_at,
-            )
-            .await
-            .unwrap())
-            .is_none(),
+        claim_payload(
+            issuer
+                .claim_ready_deferred(
+                    &consumed.transaction_hash,
+                    access.token_id,
+                    "replay",
+                    consumed.ready_at,
+                )
+                .await
+                .unwrap()
+        )
+        .is_none(),
         "a consumed deferred must not be claimable"
     );
     let lease = deferred_lease_row(&pool, consumed.id).await;
@@ -4321,16 +4365,18 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
     // The lease expires five minutes after claim_now; a later clock lets the
     // losing claimant (or any retry) reclaim without sleeping.
     let reclaim_now = claim_now + Duration::minutes(6);
-    let reclaim = claim_payload(issuer
-        .claim_ready_deferred(
-            &deferred.transaction_hash,
-            access.token_id,
-            "df03-reclaim",
-            reclaim_now,
-        )
-        .await
-        .unwrap())
-        .expect("an expired lease must be reclaimable");
+    let reclaim = claim_payload(
+        issuer
+            .claim_ready_deferred(
+                &deferred.transaction_hash,
+                access.token_id,
+                "df03-reclaim",
+                reclaim_now,
+            )
+            .await
+            .unwrap(),
+    )
+    .expect("an expired lease must be reclaimable");
     assert_eq!(reclaim.claim_id, "df03-reclaim");
     let lease = deferred_lease_row(&pool, deferred.id).await;
     assert_eq!(lease.claim_id.as_deref(), Some("df03-reclaim"));
@@ -4507,16 +4553,18 @@ async fn deferred_claim_supports_grants_without_dpop_binding() {
     );
     issuer.store_deferred(&deferred).await.unwrap();
 
-    let claim = claim_payload(issuer
-        .claim_ready_deferred(
-            &deferred.transaction_hash,
-            access.token_id,
-            "df06-claim",
-            deferred.ready_at,
-        )
-        .await
-        .unwrap())
-        .expect("a NULL dpop_jkt grant must not block the deferred claim");
+    let claim = claim_payload(
+        issuer
+            .claim_ready_deferred(
+                &deferred.transaction_hash,
+                access.token_id,
+                "df06-claim",
+                deferred.ready_at,
+            )
+            .await
+            .unwrap(),
+    )
+    .expect("a NULL dpop_jkt grant must not block the deferred claim");
     assert!(claim.credential.access.dpop_jkt.is_none());
     assert_eq!(claim.credential.access, access);
 
@@ -4825,17 +4873,26 @@ async fn notification_identical_concurrent_retries_preserve_first_event_and_occu
     let Some(database_url) = database_url() else {
         return;
     };
-    nazo_postgres::run_pending_migrations(&database_url).await.unwrap();
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "notification-retry").await;
     let issuer = Openid4vciRepository::new(
-        pool.clone(), [0x73; 32], std::sync::Arc::new(password::BlockingSecretVerifier),
+        pool.clone(),
+        [0x73; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let access = openid4vc_access_fixture(
-        tenant_id, subject_id, "notification-retry-wallet", Duration::minutes(10),
+        tenant_id,
+        subject_id,
+        "notification-retry-wallet",
+        Duration::minutes(10),
     );
-    let token_hash = blake3::hash(access.token_id.as_bytes()).to_hex().to_string();
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
     issuer.upsert_access(&token_hash, &access).await.unwrap();
     let now = Utc::now();
     let handle = NotificationHandle {
@@ -4856,9 +4913,13 @@ async fn notification_identical_concurrent_retries_preserve_first_event_and_occu
         ..first.clone()
     };
     let (a, b) = tokio::join!(
-        issuer.record_notification(&first), issuer.record_notification(&concurrent),
+        issuer.record_notification(&first),
+        issuer.record_notification(&concurrent),
     );
-    assert!(a.unwrap() && b.unwrap(), "both identical concurrent deliveries are accepted");
+    assert!(
+        a.unwrap() && b.unwrap(),
+        "both identical concurrent deliveries are accepted"
+    );
     #[derive(QueryableByName, Debug, PartialEq)]
     struct RecordedNotification {
         #[diesel(sql_type = Text)]
@@ -4873,19 +4934,42 @@ async fn notification_identical_concurrent_retries_preserve_first_event_and_occu
     let before = sql_query(select)
         .bind::<Text, _>(&handle.notification_id)
         .bind::<SqlUuid, _>(access.token_id)
-        .get_result::<RecordedNotification>(&mut connection).await.unwrap();
+        .get_result::<RecordedNotification>(&mut connection)
+        .await
+        .unwrap();
     drop(connection);
     assert_eq!(before.event, "credential_accepted");
     assert_eq!(before.description, first.description);
-    assert!(issuer.record_notification(&IssuanceNotification {
-        occurred_at: now + Duration::seconds(1), ..first.clone()
-    }).await.unwrap());
+    assert!(
+        issuer
+            .record_notification(&IssuanceNotification {
+                occurred_at: now + Duration::seconds(1),
+                ..first.clone()
+            })
+            .await
+            .unwrap()
+    );
     for rejected in [
-        IssuanceNotification { event: NotificationEvent::CredentialDeleted, ..first.clone() },
-        IssuanceNotification { description: None, ..first.clone() },
-        IssuanceNotification { description: Some("changed".to_owned()), ..first.clone() },
-        IssuanceNotification { token_id: Uuid::now_v7(), ..first.clone() },
-        IssuanceNotification { occurred_at: handle.expires_at, ..first },
+        IssuanceNotification {
+            event: NotificationEvent::CredentialDeleted,
+            ..first.clone()
+        },
+        IssuanceNotification {
+            description: None,
+            ..first.clone()
+        },
+        IssuanceNotification {
+            description: Some("changed".to_owned()),
+            ..first.clone()
+        },
+        IssuanceNotification {
+            token_id: Uuid::now_v7(),
+            ..first.clone()
+        },
+        IssuanceNotification {
+            occurred_at: handle.expires_at,
+            ..first
+        },
     ] {
         assert!(!issuer.record_notification(&rejected).await.unwrap());
     }
@@ -4893,8 +4977,13 @@ async fn notification_identical_concurrent_retries_preserve_first_event_and_occu
     let after = sql_query(select)
         .bind::<Text, _>(&handle.notification_id)
         .bind::<SqlUuid, _>(access.token_id)
-        .get_result::<RecordedNotification>(&mut connection).await.unwrap();
-    assert_eq!(after, before, "retries and conflicts do not alter the retained first outcome");
+        .get_result::<RecordedNotification>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(
+        after, before,
+        "retries and conflicts do not alter the retained first outcome"
+    );
     drop(connection);
     delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
 }
@@ -4916,52 +5005,114 @@ async fn deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transact
     let Some(database_url) = database_url() else {
         return;
     };
-    nazo_postgres::run_pending_migrations(&database_url).await.unwrap();
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
     let pool = create_pool(&database_url, 4).unwrap();
     let (tenant_id, ..) = openid4vc_boundary_ids();
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "deferred-outcomes").await;
     let issuer = Openid4vciRepository::new(
-        pool.clone(), [0x74; 32], std::sync::Arc::new(password::BlockingSecretVerifier),
+        pool.clone(),
+        [0x74; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let access = openid4vc_access_fixture(
-        tenant_id, subject_id, "deferred-outcomes-wallet", Duration::minutes(10),
+        tenant_id,
+        subject_id,
+        "deferred-outcomes-wallet",
+        Duration::minutes(10),
     );
-    let token_hash = blake3::hash(access.token_id.as_bytes()).to_hex().to_string();
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
     issuer.upsert_access(&token_hash, &access).await.unwrap();
     let deferred = openid4vc_deferred_fixture(
-        &access, "deferred-outcomes", Duration::seconds(30), Duration::minutes(5),
+        &access,
+        "deferred-outcomes",
+        Duration::seconds(30),
+        Duration::minutes(5),
     );
     issuer.store_deferred(&deferred).await.unwrap();
     let early = deferred.ready_at - Duration::seconds(1);
-    let pending = issuer.claim_ready_deferred(
-        &deferred.transaction_hash, access.token_id, "early", early,
-    ).await.unwrap();
-    assert_eq!(pending, DeferredClaimOutcome::Pending { retry_at: deferred.ready_at });
+    let pending = issuer
+        .claim_ready_deferred(&deferred.transaction_hash, access.token_id, "early", early)
+        .await
+        .unwrap();
+    assert_eq!(
+        pending,
+        DeferredClaimOutcome::Pending {
+            retry_at: deferred.ready_at
+        }
+    );
     let untouched = deferred_lease_row(&pool, deferred.id).await;
-    assert!(untouched.claim_id.is_none() && untouched.claim_expires_at.is_none() && untouched.consumed_at.is_none());
-    let owned = issuer.claim_ready_deferred(
-        &deferred.transaction_hash, access.token_id, "owner", deferred.ready_at,
-    ).await.unwrap();
+    assert!(
+        untouched.claim_id.is_none()
+            && untouched.claim_expires_at.is_none()
+            && untouched.consumed_at.is_none()
+    );
+    let owned = issuer
+        .claim_ready_deferred(
+            &deferred.transaction_hash,
+            access.token_id,
+            "owner",
+            deferred.ready_at,
+        )
+        .await
+        .unwrap();
     assert!(matches!(owned, DeferredClaimOutcome::Claimed(ref claim)
         if claim.credential == deferred && claim.claim_id == "owner"));
     let before = deferred_lease_row(&pool, deferred.id).await;
-    let busy = issuer.claim_ready_deferred(
-        &deferred.transaction_hash, access.token_id, "contender", deferred.ready_at,
-    ).await.unwrap();
-    assert_eq!(busy, DeferredClaimOutcome::Busy { retry_at: before.claim_expires_at.unwrap() });
-    let wrong_owner = issuer.claim_ready_deferred(
-        &deferred.transaction_hash, Uuid::now_v7(), "wrong-owner", deferred.ready_at,
-    ).await.unwrap();
+    let busy = issuer
+        .claim_ready_deferred(
+            &deferred.transaction_hash,
+            access.token_id,
+            "contender",
+            deferred.ready_at,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        busy,
+        DeferredClaimOutcome::Busy {
+            retry_at: before.claim_expires_at.unwrap()
+        }
+    );
+    let wrong_owner = issuer
+        .claim_ready_deferred(
+            &deferred.transaction_hash,
+            Uuid::now_v7(),
+            "wrong-owner",
+            deferred.ready_at,
+        )
+        .await
+        .unwrap();
     assert_eq!(wrong_owner, DeferredClaimOutcome::Invalid);
     let after = deferred_lease_row(&pool, deferred.id).await;
     assert_eq!(after.claim_id, before.claim_id);
     assert_eq!(after.claim_expires_at, before.claim_expires_at);
     assert_eq!(after.consumed_at, before.consumed_at);
-    assert!(issuer.finalize_deferred(
-        &deferred.transaction_hash, access.token_id, "owner", deferred.ready_at,
-    ).await.unwrap());
-    assert_eq!(issuer.claim_ready_deferred(
-        &deferred.transaction_hash, access.token_id, "used", deferred.ready_at,
-    ).await.unwrap(), DeferredClaimOutcome::Invalid);
+    assert!(
+        issuer
+            .finalize_deferred(
+                &deferred.transaction_hash,
+                access.token_id,
+                "owner",
+                deferred.ready_at,
+            )
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        issuer
+            .claim_ready_deferred(
+                &deferred.transaction_hash,
+                access.token_id,
+                "used",
+                deferred.ready_at,
+            )
+            .await
+            .unwrap(),
+        DeferredClaimOutcome::Invalid
+    );
     delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
 }
