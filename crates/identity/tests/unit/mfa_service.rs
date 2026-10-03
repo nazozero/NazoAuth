@@ -203,7 +203,6 @@ fn account() -> PublicAccount {
     }
 }
 
-
 #[tokio::test]
 async fn disable_reuses_verified_generation_without_consuming_another_factor() {
     let current = Uuid::now_v7();
@@ -213,13 +212,20 @@ async fn disable_reuses_verified_generation_without_consuming_another_factor() {
         ))),
         Arc::new(UnusedHasher),
     );
-    for method in [MfaVerificationMethod::Totp, MfaVerificationMethod::BackupCode] {
+    for method in [
+        MfaVerificationMethod::Totp,
+        MfaVerificationMethod::BackupCode,
+    ] {
         let stale = MfaVerificationProof {
             method,
             credential_id: Uuid::now_v7(),
         };
         assert_eq!(
-            service.disable(&account(), &stale).await.unwrap_err().kind(),
+            service
+                .disable(&account(), &stale)
+                .await
+                .unwrap_err()
+                .kind(),
             MfaServiceErrorKind::InvalidCode,
         );
         service
