@@ -99,6 +99,13 @@ impl ModuleStateRepository for PersistenceRuntimeModuleRepository {
             .await
     }
 
+    async fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> Result<(), Self::Error> {
+        self.store.record_instance_observation(observation).await
+    }
+
     async fn validate_revision(
         &self,
         module_id: ModuleId,

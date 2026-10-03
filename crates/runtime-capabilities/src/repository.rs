@@ -75,6 +75,14 @@ pub struct InstanceStateMutation {
     pub stale_event: ModuleEventRecord,
 }
 
+/// An observation of discarded work, with no desired or instance-state write.
+/// The event must be StaleTransitionDiscarded and its observed actual state
+/// (including absence) must be unchanged. Storage rejects transition events here.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstanceStateObservation {
+    pub event: ModuleEventRecord,
+}
+
 /// Typed before/after value for module audit events.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModuleEventState {
@@ -173,6 +181,13 @@ pub trait ModuleStateRepository: Send + Sync {
         required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> impl Future<Output = Result<CasOutcome<InstanceStateRecord>, Self::Error>> + Send;
+
+    /// Append only the observation event. Never insert, update or delete
+    /// desired/instance state, even if the observed revision is still current.
+    fn record_instance_observation(
+        &self,
+        observation: InstanceStateObservation,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Validates the bound revision against durable desired state.
     fn validate_revision(

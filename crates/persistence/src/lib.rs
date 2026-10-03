@@ -336,6 +336,13 @@ pub trait RuntimeModuleStore: Send + Sync {
         >,
     >;
 
+    /// Append a state-preserving stale-work observation; this never mutates
+    /// desired or instance state and rejects transition events.
+    fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> BoxFuture<'_, Result<(), RepositoryError>>;
+
     fn validate_revision(
         &self,
         module_id: nazo_runtime_modules::ModuleId,

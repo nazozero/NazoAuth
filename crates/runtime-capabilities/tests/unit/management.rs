@@ -371,6 +371,19 @@ impl ModuleStateRepository for TestRepository {
         Ok(CasOutcome::Applied(next))
     }
 
+    async fn record_instance_observation(
+        &self,
+        observation: crate::InstanceStateObservation,
+    ) -> Result<(), Self::Error> {
+        assert_eq!(
+            observation.event.event_type,
+            crate::ModuleEventType::StaleTransitionDiscarded
+        );
+        assert_eq!(observation.event.before, observation.event.after);
+        self.state.lock().unwrap().events.push(observation.event);
+        Ok(())
+    }
+
     async fn validate_revision(
         &self,
         module_id: ModuleId,

@@ -456,6 +456,19 @@ impl ModuleStateRepository for InMemoryRepository {
         Ok(CasOutcome::Applied(change.next))
     }
 
+    async fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> Result<(), Self::Error> {
+        assert_eq!(
+            observation.event.event_type,
+            ModuleEventType::StaleTransitionDiscarded
+        );
+        assert_eq!(observation.event.before, observation.event.after);
+        self.state.lock().unwrap().events.push(observation.event);
+        Ok(())
+    }
+
     async fn validate_revision(
         &self,
         module_id: ModuleId,

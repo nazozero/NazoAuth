@@ -26,8 +26,8 @@ pub use reconcile::{
 pub use registry::RuntimeModuleRegistry;
 pub use repository::{
     CasOutcome, DesiredRevisionGuard, DesiredStateChange, DesiredStateRecord, InstanceStateChange,
-    InstanceStateMutation, InstanceStateRecord, ModuleEventPage, ModuleEventRecord,
-    ModuleEventState, ModuleReconcileState, ModuleStateRepository,
+    InstanceStateMutation, InstanceStateObservation, InstanceStateRecord, ModuleEventPage,
+    ModuleEventRecord, ModuleEventState, ModuleReconcileState, ModuleStateRepository,
 };
 pub use snapshot::{ActiveModuleSnapshot, SnapshotStore};
 pub use transition::{ModuleRevision, StaleTransition, TransitionGuard};
