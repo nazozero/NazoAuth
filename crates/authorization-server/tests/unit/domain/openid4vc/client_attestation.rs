@@ -133,7 +133,7 @@ fn client_attestation_draft_07_accepts_optional_time_claims_and_binds_instance_k
         client_instance_key_thumbprint(&instance_jwk).expect("instance JWK thumbprint")
     );
     assert_eq!(validated.replay_id, "fresh-proof");
-    assert_eq!(validated.replay_ttl_seconds, 300);
+    assert_eq!(validated.replay_ttl_seconds, 301);
 }
 
 #[test]
@@ -383,4 +383,50 @@ fn client_attestation_validate_for_client_uses_static_trust_when_client_is_unbou
             .expect("static trust fallback should validate");
         assert_eq!(validated.client_id, "wallet-client");
     });
+}
+
+
+#[test]
+fn client_attestation_replay_marker_outlives_every_accepted_iat_second() {
+    let (validator, attestation, _, _, instance_key, now) = valid_client_attestation_fixture();
+    for (offset, expected_ttl) in [(-300, 1), (-299, 2), (0, 301), (60, 361)] {
+        let proof = signed_client_attestation_jwt(
+            &json!({
+                "iss": "wallet-client",
+                "aud": "https://issuer.example",
+                "iat": now + offset,
+                "jti": "window-boundary-proof",
+            }),
+            &instance_key,
+            "oauth-client-attestation-pop+jwt",
+            Algorithm::ES256,
+            None,
+        );
+        let accepted = validator
+            .validate(&attestation, &proof, "https://issuer.example", now)
+            .expect("accepted iat boundary");
+        assert_eq!(accepted.replay_ttl_seconds, expected_ttl);
+        let marker_expires_at = now + accepted.replay_ttl_seconds as i64;
+        assert!(
+            validator
+                .validate(
+                    &attestation,
+                    &proof,
+                    "https://issuer.example",
+                    marker_expires_at - 1,
+                )
+                .is_ok()
+        );
+        assert!(
+            validator
+                .validate(
+                    &attestation,
+                    &proof,
+                    "https://issuer.example",
+                    marker_expires_at,
+                )
+                .is_err(),
+            "the same proof must be expired when its replay marker can disappear"
+        );
+    }
 }

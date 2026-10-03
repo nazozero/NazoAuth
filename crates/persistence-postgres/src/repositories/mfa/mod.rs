@@ -37,11 +37,12 @@ impl MfaRepository {
         Self { pool, totp_keys }
     }
 
-    pub async fn clear_mfa_state(
+    pub async fn clear_mfa_state_if_current(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> Result<(), RepositoryError> {
+        credential_id: uuid::Uuid,
+    ) -> Result<bool, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
@@ -49,13 +50,18 @@ impl MfaRepository {
             .build_transaction()
             .read_committed()
             .run::<_, diesel::result::Error, _>(async move |connection| {
-                diesel::delete(
+                let cleared = diesel::delete(
                     user_totp_credentials::table
                         .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
-                        .filter(user_totp_credentials::user_id.eq(user_id.as_uuid())),
+                        .filter(user_totp_credentials::user_id.eq(user_id.as_uuid()))
+                        .filter(user_totp_credentials::id.eq(credential_id))
+                        .filter(user_totp_credentials::confirmed_at.is_not_null()),
                 )
                 .execute(connection)
                 .await?;
+                if cleared == 0 {
+                    return Ok(false);
+                }
                 diesel::delete(
                     user_mfa_backup_codes::table
                         .filter(user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()))
@@ -78,7 +84,7 @@ impl MfaRepository {
                 .set((users::mfa_enabled.eq(false), users::updated_at.eq(now)))
                 .execute(connection)
                 .await?;
-                Ok(())
+                Ok(true)
             })
             .await
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))

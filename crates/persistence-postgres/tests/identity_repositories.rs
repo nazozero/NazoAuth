@@ -1251,7 +1251,11 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     );
 
     trait_repository
-        .clear_mfa_state(tenant.tenant_id, user_id)
+        .clear_mfa_state_if_current(
+            tenant.tenant_id,
+            user_id,
+            fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
+        )
         .await
         .unwrap();
     assert!(
@@ -3351,10 +3355,12 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
             .await
             .unwrap()
     );
-    repository
-        .clear_mfa_state(tenant.tenant_id, user_id)
-        .await
-        .unwrap();
+    assert!(
+        repository
+            .clear_mfa_state_if_current(tenant.tenant_id, user_id, old)
+            .await
+            .unwrap()
+    );
     assert!(
         !repository
             .remember_device(
@@ -3385,6 +3391,17 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
         .backup_code_candidates(tenant.tenant_id, user_id)
         .await
         .unwrap();
+    assert!(
+        !repository
+            .clear_mfa_state_if_current(tenant.tenant_id, user_id, old)
+            .await
+            .unwrap(),
+        "a disable admitted under G1 must leave a reenrolled G2 intact"
+    );
+    assert_eq!(
+        fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
+        new
+    );
     assert!(
         !repository
             .remember_device(
@@ -3545,7 +3562,7 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
     let clear_repository = repository.clone();
     let clear = tokio::spawn(async move {
         clear_repository
-            .clear_mfa_state(tenant.tenant_id, user_id)
+            .clear_mfa_state_if_current(tenant.tenant_id, user_id, generation)
             .await
     });
     tokio::time::timeout(std::time::Duration::from_secs(5),async {
