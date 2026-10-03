@@ -831,6 +831,7 @@ async fn seed_codes(
         let code = format!("{}.{}", Uuid::now_v7().simple(), Uuid::now_v7().simple());
         let state = AuthorizationCodeState::Pending {
             payload: CodePayload {
+                redemption_contract_version: nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION,
                 code_id: Uuid::now_v7().to_string(),
                 user_id,
                 client_id: client_id.to_owned(),

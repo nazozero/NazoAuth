@@ -256,6 +256,15 @@ principal locks, epoch checks and first-binding collision check remain mandatory
 Public subjects require no binding lookup; non-OIDC issuance retains its narrow
 principal snapshot without reading a profile.
 
+Authorization-code issuance uses a separate typed mode with one stable code
+identity and independent versioned holder evidence. PostgreSQL commits its fence,
+refresh family and Required audit together. Cache Busy, Failed, Missing or Consumed
+states never authorize a new identity or revocation by themselves. A fresh replay
+must meet the original possession requirements retained by the durable receipt;
+dependency errors fail closed. Historical exact-request receipts are lookup-only.
+Payload versioning and a new-write schema constraint require a coordinated upgrade;
+see [authorization-code redemption](../protocol/authorization-code-redemption.md).
+
 Device and CIBA SingleUse identities depend only on the immutable device code
 or `auth_req_id`; tenant and client fences remain PostgreSQL-owned. Sender
 proofs are still validated and constrain the issued tokens, but cannot create

@@ -624,14 +624,14 @@ pub async fn issue_token_response(
         }
         body["device_secret"] = json!(native_sso.device_secret);
     }
-    // The authorization-code branch needs the verified grant key and the
-    // access-token JTI once more after the commit consumes them.
-    let redemption_binding = match &mode {
-        TokenIssuanceMode::SingleUse { grant_key, .. }
-            if issue.authorization_code_hash.is_some() =>
-        {
-            Some(grant_key.clone())
-        }
+    // The stable fence and holder are independent; a conflict proves code
+    // consumption, but only matching possession permits replay revocation.
+    let code_redemption = match &mode {
+        TokenIssuanceMode::AuthorizationCode {
+            code_identity,
+            holder,
+            ..
+        } => Some((code_identity.clone(), holder.clone())),
         _ => None,
     };
     match token_service
@@ -666,15 +666,18 @@ pub async fn issue_token_response(
             });
         }
         Ok(CommitTokenIssuanceResult::AlreadyUsed) => {
-            // The fence rejected the insert because this exact redemption
-            // already committed; the state store may have lost the entry, so
-            // revoke through the committed issuance row like a replay.
-            if let Some(grant_key) = redemption_binding.as_deref() {
+            // A different valid request representation still finds this code
+            // fence. A different holder cannot use that fact as a revocation oracle.
+            if let Some((grant_key, holder)) = code_redemption.as_ref() {
                 match token_service
                     .single_use_redemption(client.tenant_id, client.id, grant_key)
                     .await
                 {
-                    Ok(Some(redemption)) => {
+                    Ok(Some(redemption))
+                        if redemption.authorization_code_holder.as_ref().is_some_and(|expected| {
+                            crate::token::authorization_code::holder_matches_original(expected, holder)
+                        }) =>
+                    {
                         if let Err(error) = revoke_issued_authorization_code_tokens(
                             token_service,
                             client,
@@ -699,6 +702,7 @@ pub async fn issue_token_response(
                             false,
                         ));
                     }
+                    Ok(Some(_)) => {}
                     Ok(None) => {
                         tracing::warn!(
                             issuance_id = %issuance_id,

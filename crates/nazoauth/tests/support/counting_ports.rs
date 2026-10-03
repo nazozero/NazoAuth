@@ -4,8 +4,8 @@
 //! request — a separate evidence category from the SQL-level counters in
 //! `persistence-postgres`'s `query_counter` support.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRepositoryPort, ClientAuthenticationSnapshot,
@@ -25,6 +25,8 @@ pub(crate) struct CountingTokenRepository {
     pub(crate) userinfo_snapshot_calls: Arc<AtomicUsize>,
     pub(crate) principal_snapshot_calls: Arc<AtomicUsize>,
     fail_owner_lookups: bool,
+    lose_next_commit_ack: Arc<AtomicBool>,
+    code_commit_keys: Arc<Mutex<Vec<String>>>,
 }
 
 impl CountingTokenRepository {
@@ -36,6 +38,8 @@ impl CountingTokenRepository {
             userinfo_snapshot_calls: Arc::new(AtomicUsize::new(0)),
             principal_snapshot_calls: Arc::new(AtomicUsize::new(0)),
             fail_owner_lookups: false,
+            lose_next_commit_ack: Arc::new(AtomicBool::new(false)),
+            code_commit_keys: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -47,6 +51,18 @@ impl CountingTokenRepository {
             fail_owner_lookups: true,
             ..Self::new(inner)
         }
+    }
+
+    /// Let the real adapter commit its effect, then hide exactly one ACK.
+    pub(crate) fn with_lost_commit_ack(inner: Arc<dyn TokenRepositoryPort>) -> Self {
+        Self {
+            lose_next_commit_ack: Arc::new(AtomicBool::new(true)),
+            ..Self::new(inner)
+        }
+    }
+
+    pub(crate) fn code_commit_keys(&self) -> Vec<String> {
+        self.code_commit_keys.lock().unwrap().clone()
     }
 
     pub(crate) fn active_subject_claims_count(&self) -> usize {
@@ -90,7 +106,22 @@ impl TokenRepositoryPort for CountingTokenRepository {
         &'a self,
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
-        self.inner.commit_token_issuance(input)
+        if let nazo_auth::TokenIssuanceMode::AuthorizationCode { code_identity, .. } = &input.mode {
+            self.code_commit_keys
+                .lock()
+                .unwrap()
+                .push(code_identity.clone());
+        }
+        Box::pin(async move {
+            let result = self.inner.commit_token_issuance(input).await?;
+            if result == CommitTokenIssuanceResult::Committed
+                && self.lose_next_commit_ack.swap(false, Ordering::SeqCst)
+            {
+                Err(nazo_auth::TokenPortError::Unavailable)
+            } else {
+                Ok(result)
+            }
+        })
     }
 
     fn single_use_redemption<'a>(

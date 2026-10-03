@@ -4199,7 +4199,7 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
 
-    let grant_key = format!("authorization_code:{}", Uuid::now_v7());
+    let grant_key = format!("authorization_code:v2:{}", Uuid::now_v7());
     let token = refresh_token_fixture(
         &fixture,
         tenant_id,
@@ -4209,9 +4209,18 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
     );
     let family_id = token.family_id;
     let mut input = refresh_issuance(token).await;
-    input.mode = TokenIssuanceMode::SingleUse {
-        grant_key: grant_key.clone(),
+    let holder = nazo_auth::AuthorizationCodeHolderEvidence {
+        version: 1,
+        authenticated_client: true,
+        pkce_s256: None,
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        client_attestation_jkt: None,
+    };
+    input.mode = TokenIssuanceMode::AuthorizationCode {
+        code_identity: grant_key.clone(),
         grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+        holder: holder.clone(),
     };
     assert_eq!(
         repository
@@ -4226,6 +4235,7 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
         .await
         .unwrap()
         .expect("committed single-use grant must return replay evidence");
+    assert_eq!(redemption.authorization_code_holder, Some(holder));
     assert_eq!(redemption.access_token_jti, input.access_token_jti);
     assert_eq!(redemption.refresh_token_family_id, Some(family_id));
     assert_eq!(

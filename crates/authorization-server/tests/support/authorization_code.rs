@@ -10,6 +10,7 @@ pub(super) const VALID_CODE_VERIFIER: &str =
 pub(super) fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
     let now = Utc::now();
     CodePayload {
+        redemption_contract_version: nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION,
         code_id: "code-1".to_owned(),
         user_id: Uuid::now_v7(),
         client_id: "client-1".to_owned(),

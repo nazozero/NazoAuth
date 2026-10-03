@@ -73,7 +73,7 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
     let code = format!("code-{}", Uuid::now_v7());
     let marker = ConsumedAuthorizationCode {
         client_id: client.id,
-        redemption_binding: Some(authorization_code_grant_key(
+        redemption_binding: Some(legacy_authorization_code_redemption_key(
             &blake3_hex(&code),
             &form_for_code(&code),
             None,
@@ -84,6 +84,16 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
         access_token_expires_at: Utc::now().timestamp() + 300,
         refresh_token_family_id: Some(family_id),
     };
+    // A cached marker alone is no longer authority to revoke. Retain the
+    // historical exact-request receipt to exercise the bounded legacy path.
+    fixture
+        .insert_single_use_issuance(
+            &client,
+            marker.redemption_binding.as_deref().unwrap(),
+            &marker.access_token_jti,
+            Some(family_id),
+        )
+        .await;
     fixture
         .store_code_state(
             &code,
@@ -176,7 +186,7 @@ async fn token_authorization_code_replay_fails_closed_when_token_revocation_erro
             &AuthorizationCodeState::Consumed {
                 marker: ConsumedAuthorizationCode {
                     client_id: client.id,
-                    redemption_binding: Some(authorization_code_grant_key(
+                    redemption_binding: Some(legacy_authorization_code_redemption_key(
                         &blake3_hex(&code),
                         &form_for_code(&code),
                         None,
@@ -322,7 +332,7 @@ async fn token_authorization_code_replay_reads_back_committed_issuance_evidence(
     let code = format!("code-{}", Uuid::now_v7());
     let access_token_jti = format!("access-jti-{}", Uuid::now_v7());
     let grant_key =
-        authorization_code_grant_key(&blake3_hex(&code), &form_for_code(&code), None, None, None);
+        legacy_authorization_code_redemption_key(&blake3_hex(&code), &form_for_code(&code), None, None, None);
     fixture
         .insert_single_use_issuance(&client, &grant_key, &access_token_jti, Some(family_id))
         .await;
@@ -429,7 +439,11 @@ async fn committed_authorization_code_replays_revoke_with_retained_and_expired_c
         let response =
             token_authorization_code(&fixture.state, &req, &client, &divergent, None).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(fixture.access_token_revocation_count(&client, jti).await, 0);
+        assert_eq!(
+            fixture.access_token_revocation_count(&client, jti).await,
+            1,
+            "scope representation does not change the original holder identity"
+        );
         let response =
             token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None)
                 .await;
@@ -438,7 +452,7 @@ async fn committed_authorization_code_replays_revoke_with_retained_and_expired_c
         assert_eq!(
             fixture.access_token_revocation_count(&client, jti).await,
             1,
-            "an exact replay must synchronously revoke through the durable receipt"
+            "a matching holder replay synchronously revokes through the durable receipt"
         );
     }
 }

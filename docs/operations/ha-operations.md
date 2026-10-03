@@ -259,6 +259,16 @@ After new issuance starts, application rollback to an epoch-unaware release is
 not supported. Database downgrade is explicitly refused by the principal-state
 migration. This changes no standalone offline-verifier revocation guarantee.
 
+## Authorization-code identity cutover
+
+Migration `20261003000100_authorization_code_identity` requires closed ingress,
+drained and isolated old issuers, and expiration/invalidation of old pending codes
+under a new transient-state epoch. Historical receipts remain lookup-only; the
+new constraint rejects old single-use writers rather than allowing mixed identity
+schemes. A down migration cannot remove live version-two fences. Follow the full
+[upgrade and rollback contract](../protocol/authorization-code-redemption.md#coordinated-upgrade)
+before reopening ingress; an isolated old primary must stay isolated.
+
 ## Authorization-decision ownership cutover
 
 Do not mix old cache-consumption authority and new durable-decision authority

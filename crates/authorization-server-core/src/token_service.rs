@@ -89,6 +89,13 @@ pub enum TokenIssuanceMode {
         grant_key: String,
         grant_expires_at: DateTime<Utc>,
     },
+    /// The fence identifies the code, never a request representation. Holder
+    /// evidence is independent and only authorizes replay revocation.
+    AuthorizationCode {
+        code_identity: String,
+        grant_expires_at: DateTime<Utc>,
+        holder: AuthorizationCodeHolderEvidence,
+    },
 }
 
 /// Public, non-sensitive fields projected into a `token_issued` audit event.
@@ -155,12 +162,46 @@ pub enum CommitTokenIssuanceResult {
     RotationConflict,
 }
 
-/// Durable replay evidence read back through the single-use grant fence.
-/// Present only for committed single-use redemptions; the lookup key itself
-/// is the redemption binding, so a returned row already proves the replay
-/// carries the exact same proofs as the original redemption.
+/// Versioned, typed proof requirements retained independently of a code fence.
+/// Values come only from validated client/PKCE/sender/attestation evidence.
+/// Missing optional fields mean that proof was not bound by the original
+/// issuance; an extra valid proof on a replay does not change its identity.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorizationCodeHolderEvidence {
+    pub version: u8,
+    pub authenticated_client: bool,
+    pub pkce_s256: Option<String>,
+    pub dpop_jkt: Option<String>,
+    pub mtls_x5t_s256: Option<String>,
+    pub client_attestation_jkt: Option<String>,
+}
+
+impl AuthorizationCodeHolderEvidence {
+    #[must_use]
+    pub fn is_well_formed(&self) -> bool {
+        let proofs = [
+            &self.pkce_s256,
+            &self.dpop_jkt,
+            &self.mtls_x5t_s256,
+            &self.client_attestation_jkt,
+        ];
+        self.version == 1
+            && proofs
+                .iter()
+                .all(|proof| proof.as_ref().is_none_or(|value| !value.is_empty()))
+            && (self.authenticated_client || proofs.iter().any(|proof| proof.is_some()))
+            && !(self.dpop_jkt.is_some() && self.mtls_x5t_s256.is_some())
+    }
+}
+
+/// Durable consumption and replay evidence. Code-identity lookup alone never
+/// proves possession: the caller must compare the independent holder evidence.
+/// Legacy receipts have no code holder evidence and retain their original
+/// exact-request lookup policy; they are never backfilled with a guessed code.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SingleUseRedemption {
+    pub authorization_code_holder: Option<AuthorizationCodeHolderEvidence>,
     pub access_token_jti: String,
     pub access_token_expires_at: DateTime<Utc>,
     pub refresh_token_family_id: Option<Uuid>,
@@ -332,10 +373,11 @@ pub trait TokenRepositoryPort: Send + Sync {
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult>;
 
-    /// Reads the committed issuance row behind a single-use grant fence.
-    /// `grant_key` is the verified redemption binding; a returned row proves
-    /// the original redemption used the same proofs, so callers may revoke
-    /// the recorded tokens without a second binding comparison.
+    /// Reads committed evidence under its tenant/client consumption fence.
+    /// For an authorization code, lookup proves consumption only; callers must
+    /// match the independent original holder requirements against freshly
+    /// validated proofs before revoking. Legacy exact-request keys remain a
+    /// lookup-only compatibility contract, never a new consumption identity.
     fn single_use_redemption<'a>(
         &'a self,
         tenant_id: Uuid,
