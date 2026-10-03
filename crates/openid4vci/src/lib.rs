@@ -36,7 +36,7 @@ pub use service::{
 pub use store::{
     AuthorizationOfferPort, CredentialAccess, CredentialAuthorization, CredentialProofOrigin, CredentialResponseEncoding,
     CredentialStoreError, CredentialStoreFuture, CredentialStorePort, DeferredCredential,
-    DeferredCredentialClaim, IssuanceNotification, NonceRecord, NotificationHandle,
+    DeferredClaimOutcome, DeferredCredentialClaim, IssuanceNotification, NonceRecord, NotificationHandle,
     StoredCredentialOffer, StoredCredentialResponse,
 };
 

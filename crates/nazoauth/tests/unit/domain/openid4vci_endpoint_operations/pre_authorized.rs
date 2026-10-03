@@ -214,7 +214,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         token_id: Uuid,
         claim_id: &'a str,
         now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
+    ) -> CredentialStoreFuture<'a, Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>>
     {
         self.inner
             .claim_ready_deferred(transaction_hash, token_id, claim_id, now)
@@ -454,7 +454,7 @@ async fn live_immediate_offer_pre_authorized_credential_replay_and_notification(
         error,
         400,
         "invalid_notification_id",
-        "Notification identifier is invalid or already terminal.",
+        "Notification identifier is invalid or conflicts with the recorded event.",
     );
     fixture.cleanup().await;
 }

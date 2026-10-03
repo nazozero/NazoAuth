@@ -40,6 +40,8 @@ struct DeferredState {
 struct NotificationState {
     handle: NotificationHandle,
     event: Option<NotificationEvent>,
+    description: Option<String>,
+    occurred_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Default)]
@@ -144,6 +146,8 @@ impl TransitionStore {
             NotificationState {
                 handle: handle.clone(),
                 event: None,
+                description: None,
+                occurred_at: None,
             },
         );
         Ok(())
@@ -542,7 +546,7 @@ impl CredentialStorePort for TransitionStore {
         token_id: Uuid,
         claim_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
+    ) -> CredentialStoreFuture<'a, Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>>
     {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap();
@@ -550,23 +554,25 @@ impl CredentialStorePort for TransitionStore {
                 .deferred
                 .get_mut(&(transaction_hash.to_owned(), token_id))
             else {
-                return Ok(None);
+                return Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid);
             };
-            if deferred.consumed_at.is_some()
-                || deferred.credential.ready_at > now
-                || deferred.credential.expires_at <= now
-                || deferred
-                    .claim_expires_at
-                    .is_some_and(|expires_at| expires_at > now)
-            {
-                return Ok(None);
+            if deferred.consumed_at.is_some() || deferred.credential.expires_at <= now {
+                return Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid);
+            }
+            if deferred.credential.ready_at > now {
+                return Ok(nazo_openid4vci::DeferredClaimOutcome::Pending {
+                    retry_at: deferred.credential.ready_at,
+                });
+            }
+            if let Some(retry_at) = deferred.claim_expires_at.filter(|expires_at| *expires_at > now) {
+                return Ok(nazo_openid4vci::DeferredClaimOutcome::Busy { retry_at });
             }
             deferred.claim_id = Some(claim_id.to_owned());
             deferred.claim_expires_at = Some(now + nonce_claim_ttl());
-            Ok(Some(DeferredCredentialClaim {
+            Ok(nazo_openid4vci::DeferredClaimOutcome::Claimed(Box::new(DeferredCredentialClaim {
                 credential: deferred.credential.clone(),
                 claim_id: claim_id.to_owned(),
-            }))
+            })))
         })
     }
 
@@ -702,10 +708,15 @@ impl CredentialStorePort for TransitionStore {
             let Some(stored) = state.notifications.get_mut(&key) else {
                 return Ok(false);
             };
-            if stored.event.is_some() || stored.handle.expires_at <= notification.occurred_at {
+            if stored.handle.expires_at <= notification.occurred_at {
                 return Ok(false);
             }
+            if let Some(event) = &stored.event {
+                return Ok(event == &notification.event && stored.description == notification.description);
+            }
             stored.event = Some(notification.event.clone());
+            stored.description = notification.description.clone();
+            stored.occurred_at = Some(notification.occurred_at);
             Ok(true)
         })
     }
@@ -834,34 +845,34 @@ fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
     block_on(store.store_deferred(&deferred)).unwrap();
 
     assert!(
-        block_on(store.claim_ready_deferred(&tx_hash, token_id, "claim-a", now))
-            .unwrap()
+        claim_payload(block_on(store.claim_ready_deferred(&tx_hash, token_id, "claim-a", now))
+            .unwrap())
             .is_none()
     );
     let ready_at = deferred.ready_at;
     assert!(
-        block_on(store.claim_ready_deferred(&tx_hash, token_id, "claim-a", ready_at))
-            .unwrap()
+        claim_payload(block_on(store.claim_ready_deferred(&tx_hash, token_id, "claim-a", ready_at))
+            .unwrap())
             .is_some()
     );
     assert!(
-        block_on(store.claim_ready_deferred(
+        claim_payload(block_on(store.claim_ready_deferred(
             &tx_hash,
             token_id,
             "claim-b",
             ready_at + Duration::minutes(1),
         ))
-        .unwrap()
+        .unwrap())
         .is_none()
     );
     assert!(
-        block_on(store.claim_ready_deferred(
+        claim_payload(block_on(store.claim_ready_deferred(
             &tx_hash,
             token_id,
             "claim-b",
             ready_at + nonce_claim_ttl(),
         ))
-        .unwrap()
+        .unwrap())
         .is_some()
     );
     assert!(
@@ -1053,7 +1064,7 @@ fn response_identity_conflict_is_keyed_by_token_and_digest_across_issuances() {
 }
 
 #[test]
-fn notification_event_is_single_use_and_expires_with_the_handle() {
+fn notification_retains_one_event_accepts_identical_retries_and_expires_with_the_handle() {
     let now = Utc::now();
     let store = TransitionStore::default();
     let token_id = Uuid::now_v7();
@@ -1071,7 +1082,18 @@ fn notification_event_is_single_use_and_expires_with_the_handle() {
         occurred_at: now,
     };
     assert!(block_on(store.record_notification(&notification)).unwrap());
-    assert!(!block_on(store.record_notification(&notification)).unwrap());
+    assert!(block_on(store.record_notification(&notification)).unwrap());
+    assert!(!block_on(store.record_notification(&IssuanceNotification {
+        event: NotificationEvent::CredentialDeleted,
+        ..notification.clone()
+    })).unwrap());
+    assert!(!block_on(store.record_notification(&IssuanceNotification {
+        description: Some("different description".to_owned()),
+        ..notification.clone()
+    })).unwrap());
+    let recorded = store.state.lock().unwrap().notifications
+        .get(&(notification.notification_id.clone(), token_id)).unwrap().occurred_at;
+    assert_eq!(recorded, Some(now));
     assert!(
         !block_on(store.record_notification(&IssuanceNotification {
             occurred_at: now + Duration::minutes(2),
@@ -1165,4 +1187,15 @@ fn pre_authorized_persist_forwards_arguments_and_errors() {
         shared.state.lock().unwrap().pre_authorized_persists.len(),
         3
     );
+}
+
+// Existing assertions project only the claim payload. Explicit typed-outcome
+// regressions additionally check Pending/Busy/Invalid and unchanged owner state.
+fn claim_payload(
+    outcome: nazo_openid4vci::DeferredClaimOutcome,
+) -> Option<nazo_openid4vci::DeferredCredentialClaim> {
+    match outcome {
+        nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) => Some(*claim),
+        _ => None,
+    }
 }

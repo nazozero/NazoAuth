@@ -95,7 +95,12 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         .transaction_id
         .expect("encrypted response retains transaction id");
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let transaction_hash = nazo_oauth_server::crypto::blake3_hex(&transaction_id);
+    let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
+    assert_eq!(sql_query("UPDATE openid4vci_deferred_transactions SET ready_at=clock_timestamp()+interval '60 seconds' WHERE transaction_hash=$1 AND token_id IN (SELECT token_id FROM openid4vci_access_grants WHERE subject_id=$2)")
+        .bind::<Text, _>(&transaction_hash).bind::<SqlUuid, _>(fixture.subject_id)
+        .execute(&mut connection).await.unwrap(), 1);
+    drop(connection);
     let deferred_request = DeferredCredentialRequest {
         transaction_id,
         credential_response_encryption: None,
@@ -104,6 +109,43 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         request_url: "/openid4vci/deferred_credential".to_owned(),
         ..context
     };
+    let mut waiting_request = deferred_request.clone();
+    waiting_request.credential_response_encryption = request.credential_response_encryption.clone();
+    let waiting_jwe = nazo_digital_credentials::encrypt_ecdh_es(
+        &serde_json::to_vec(&waiting_request).unwrap(), issuer_request_jwk, Some("application/json"),
+    ).unwrap();
+    let waiting = fixture.issuer.deferred(
+        deferred_context.clone(), CredentialRequestBody::Jwt(waiting_jwe),
+    ).await.expect("a valid unready transaction remains pending");
+    assert_eq!(waiting.status, nazo_openid4vci::application::CredentialResponseStatus::Deferred);
+    let CredentialResponseBody::Jwt(waiting_body) = waiting.body else {
+        panic!("this poll selects encrypted response parameters");
+    };
+    let waiting_body: CredentialResponse = serde_json::from_slice(&wallet.decrypt(&waiting_body).unwrap()).unwrap();
+    assert_eq!(waiting_body.transaction_id.as_deref(), Some(deferred_request.transaction_id.as_str()));
+    assert!(waiting_body.credentials.is_none() && waiting_body.interval.is_some_and(|interval| interval > 0));
+
+    // A task-owned existing lease exercises Busy without running a second signer.
+    let blocker = Uuid::now_v7().to_string();
+    let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
+    assert_eq!(sql_query("UPDATE openid4vci_deferred_transactions SET ready_at=clock_timestamp(), claim_id=$3, claim_expires_at=clock_timestamp()+interval '60 seconds' WHERE transaction_hash=$1 AND token_id IN (SELECT token_id FROM openid4vci_access_grants WHERE subject_id=$2)")
+        .bind::<Text, _>(&transaction_hash).bind::<SqlUuid, _>(fixture.subject_id).bind::<Text, _>(&blocker)
+        .execute(&mut connection).await.unwrap(), 1);
+    drop(connection);
+    let busy = fixture.issuer.deferred(
+        deferred_context.clone(), CredentialRequestBody::Json(deferred_request.clone()),
+    ).await.expect("a valid leased transaction remains pending");
+    assert_eq!(busy.status, nazo_openid4vci::application::CredentialResponseStatus::Deferred);
+    let CredentialResponseBody::Json(busy_body) = busy.body else { panic!("this poll requests JSON"); };
+    assert_eq!(busy_body.transaction_id.as_deref(), Some(deferred_request.transaction_id.as_str()));
+    assert!(busy_body.credentials.is_none() && busy_body.interval.is_some_and(|interval| interval > 0));
+    let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
+    assert_eq!(sql_query("UPDATE openid4vci_deferred_transactions SET claim_id=NULL, claim_expires_at=NULL WHERE transaction_hash=$1 AND claim_id=$3 AND token_id IN (SELECT token_id FROM openid4vci_access_grants WHERE subject_id=$2)")
+        .bind::<Text, _>(&transaction_hash).bind::<SqlUuid, _>(fixture.subject_id).bind::<Text, _>(&blocker)
+        .execute(&mut connection).await.unwrap(), 1);
+    drop(connection);
+    // This exact JSON poll previously returned Busy/202. It must now issue,
+    // proving waiting results were not cached as the final response.
     let response = fixture
         .issuer
         .deferred(
@@ -143,20 +185,27 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
     assert_eq!(replay.body, response.body);
     assert_eq!(replay.dpop_nonce, response.dpop_nonce);
 
-    fixture
-        .issuer
-        .notify(
-            CredentialRequestContext {
-                request_url: "/openid4vci/notification".to_owned(),
-                ..deferred_context
-            },
-            NotificationRequest {
-                notification_id,
-                event: nazo_openid4vci::NotificationEvent::CredentialAccepted,
-                event_description: Some("live deferred completed".to_owned()),
-            },
-        )
-        .await
-        .expect("live deferred notification should be recorded");
+    let notification_context = CredentialRequestContext {
+        request_url: "/openid4vci/notification".to_owned(),
+        ..deferred_context
+    };
+    let notification = NotificationRequest {
+        notification_id,
+        event: nazo_openid4vci::NotificationEvent::CredentialAccepted,
+        event_description: Some("live deferred completed".to_owned()),
+    };
+    for _ in 0..2 {
+        fixture
+            .issuer
+            .notify(notification_context.clone(), notification.clone())
+            .await
+            .expect("identical live notification retries retain success");
+    }
+    let conflicting = NotificationRequest {
+        event: nazo_openid4vci::NotificationEvent::CredentialDeleted,
+        ..notification
+    };
+    let error = fixture.issuer.notify(notification_context, conflicting).await.unwrap_err();
+    assert_eq!((error.status, error.error), (400, "invalid_notification_id"));
     fixture.cleanup().await;
 }

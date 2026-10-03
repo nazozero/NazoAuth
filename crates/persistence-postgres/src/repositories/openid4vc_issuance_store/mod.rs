@@ -6,7 +6,7 @@ use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
     CredentialAccess, CredentialAuthorization, CredentialResponseEncoding, CredentialStoreError,
-    CredentialStoreFuture, CredentialStorePort, DeferredCredential, DeferredCredentialClaim,
+    CredentialStoreFuture, CredentialStorePort, DeferredCredential,
     IssuanceNotification, NonceRecord, NotificationHandle, StoredCredentialOffer,
     StoredCredentialResponse,
 };
@@ -195,7 +195,7 @@ impl CredentialStorePort for Openid4vciRepository {
         token_id: Uuid,
         claim_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
+    ) -> CredentialStoreFuture<'a, Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>>
     {
         self.deferred_claim_ready(transaction_hash, token_id, claim_id, now)
     }
@@ -316,6 +316,10 @@ pub(super) struct DeferredRow {
 /// and the access columns stay non-optional.
 #[derive(QueryableByName)]
 pub(super) struct DeferredClaimRow {
+    #[diesel(sql_type = sql_types::Text)]
+    claim_outcome: String,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+    retry_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = sql_types::Uuid)]
     deferred_id: Uuid,
     #[diesel(sql_type = sql_types::Text)]
