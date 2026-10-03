@@ -280,7 +280,7 @@ impl Openid4vciRepository {
         token_id: Uuid,
         claim_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
+    ) -> CredentialStoreFuture<'a, Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>>
     {
         Box::pin(async move {
             let claim_expires_at = now + chrono::Duration::minutes(5);
@@ -289,41 +289,53 @@ impl Openid4vciRepository {
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             connection
-                .transaction::<Option<DeferredCredentialClaim>, diesel::result::Error, _>(
+                .transaction::<nazo_openid4vci::DeferredClaimOutcome, diesel::result::Error, _>(
                     async move |connection| {
-                        // The NOT NULL deferred.token_id -> access_grants.token_id
-                        // FK with ON DELETE CASCADE plus the access primary key
-                        // guarantee at most one access row per claimed deferred
-                        // row, so the FROM join needs no LEFT JOIN and no
-                        // orphan branch.
+                        // Lock and classify the same owned live row in one SQL
+                        // statement. Only the Claimed branch acquires a lease.
                         let row = sql_query(
-                            "UPDATE openid4vci_deferred_transactions AS deferred \
-                             SET claim_id = $3, claim_expires_at = $4 \
-                             FROM openid4vci_access_grants AS access \
-                             WHERE deferred.transaction_hash = $1 AND deferred.token_id = $2 \
-                               AND deferred.consumed_at IS NULL \
-                               AND deferred.ready_at <= $5 AND deferred.expires_at > $5 \
-                               AND (deferred.claim_id IS NULL OR deferred.claim_expires_at <= $5) \
-                               AND access.token_id = deferred.token_id \
-                             RETURNING \
-                               deferred.id AS deferred_id, \
-                               deferred.transaction_hash AS deferred_transaction_hash, \
-                               deferred.token_id AS deferred_token_id, \
-                               deferred.credential_configuration_id AS deferred_configuration_id, \
-                               deferred.credential_format AS deferred_format, \
-                               deferred.holder_bindings AS deferred_holder_bindings, \
-                               deferred.payload_ciphertext AS deferred_payload_ciphertext, \
-                               deferred.ready_at AS deferred_ready_at, \
-                               deferred.expires_at AS deferred_expires_at, \
-                               access.token_id AS access_token_id, \
-                               access.tenant_id AS access_tenant_id, \
-                               access.subject_id AS access_subject_id, \
-                               access.client_id AS access_client_id, \
-                               access.proof_origin AS access_proof_origin, \
-                               access.credential_configuration_ids AS access_configuration_ids, \
-                               access.credential_identifiers AS access_credential_identifiers, \
-                               access.dpop_jkt AS access_dpop_jkt, \
-                               access.expires_at AS access_expires_at",
+                            "WITH observed AS MATERIALIZED ( \
+                               SELECT deferred.id AS deferred_id, \
+                                      deferred.transaction_hash AS deferred_transaction_hash, \
+                                      deferred.token_id AS deferred_token_id, \
+                                      deferred.credential_configuration_id AS deferred_configuration_id, \
+                                      deferred.credential_format AS deferred_format, \
+                                      deferred.holder_bindings AS deferred_holder_bindings, \
+                                      deferred.payload_ciphertext AS deferred_payload_ciphertext, \
+                                      deferred.ready_at AS deferred_ready_at, \
+                                      deferred.expires_at AS deferred_expires_at, \
+                                      deferred.claim_id AS observed_claim_id, \
+                                      deferred.claim_expires_at AS observed_claim_expires_at, \
+                                      access.token_id AS access_token_id, \
+                                      access.tenant_id AS access_tenant_id, \
+                                      access.subject_id AS access_subject_id, \
+                                      access.client_id AS access_client_id, \
+                                      access.proof_origin AS access_proof_origin, \
+                                      access.credential_configuration_ids AS access_configuration_ids, \
+                                      access.credential_identifiers AS access_credential_identifiers, \
+                                      access.dpop_jkt AS access_dpop_jkt, \
+                                      access.expires_at AS access_expires_at \
+                               FROM openid4vci_deferred_transactions AS deferred \
+                               JOIN openid4vci_access_grants AS access ON access.token_id = deferred.token_id \
+                               WHERE deferred.transaction_hash = $1 AND deferred.token_id = $2 \
+                                 AND deferred.consumed_at IS NULL AND deferred.expires_at > $5 \
+                                 AND access.revoked_at IS NULL AND access.expires_at > $5 \
+                               FOR UPDATE OF deferred, access \
+                             ), claimed AS ( \
+                               UPDATE openid4vci_deferred_transactions AS target \
+                               SET claim_id = $3, claim_expires_at = $4 FROM observed \
+                               WHERE target.id = observed.deferred_id AND observed.deferred_ready_at <= $5 \
+                                 AND (observed.observed_claim_id IS NULL OR observed.observed_claim_expires_at <= $5) \
+                               RETURNING target.id \
+                             ) \
+                             SELECT observed.*, \
+                               CASE WHEN EXISTS (SELECT 1 FROM claimed) THEN 'claimed' \
+                                    WHEN deferred_ready_at > $5 THEN 'pending' \
+                                    WHEN observed_claim_id IS NOT NULL AND observed_claim_expires_at > $5 THEN 'busy' \
+                                    ELSE 'inconsistent' END AS claim_outcome, \
+                               CASE WHEN deferred_ready_at > $5 THEN deferred_ready_at \
+                                    ELSE observed_claim_expires_at END AS retry_at \
+                             FROM observed"
                         )
                         .bind::<sql_types::Text, _>(transaction_hash)
                         .bind::<sql_types::Uuid, _>(token_id)
@@ -334,8 +346,21 @@ impl Openid4vciRepository {
                         .await
                         .optional()?;
                         let Some(row) = row else {
-                            return Ok(None);
+                            return Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid);
                         };
+                        if row.claim_outcome == "pending" || row.claim_outcome == "busy" {
+                            let retry_at = row.retry_at.ok_or_else(|| {
+                                diesel::result::Error::DeserializationError(Box::new(std::io::Error::other("deferred retry time is missing")))
+                            })?;
+                            return Ok(if row.claim_outcome == "pending" {
+                                nazo_openid4vci::DeferredClaimOutcome::Pending { retry_at }
+                            } else {
+                                nazo_openid4vci::DeferredClaimOutcome::Busy { retry_at }
+                            });
+                        }
+                        if row.claim_outcome != "claimed" {
+                            return Err(diesel::result::Error::DeserializationError(Box::new(std::io::Error::other("deferred claim outcome is inconsistent"))));
+                        }
                         let (deferred_row, access_row) = row.into_parts();
                         let mut deferred = deferred_row.into_domain(access_row.try_into()?)?;
                         deferred.payload_ciphertext = unprotect_payload(
@@ -343,10 +368,10 @@ impl Openid4vciRepository {
                             deferred.id,
                             &deferred.payload_ciphertext,
                         )?;
-                        Ok(Some(DeferredCredentialClaim {
+                        Ok(nazo_openid4vci::DeferredClaimOutcome::Claimed(Box::new(DeferredCredentialClaim {
                             credential: deferred,
                             claim_id: claim_id_owned,
-                        }))
+                        })))
                     },
                 )
                 .await

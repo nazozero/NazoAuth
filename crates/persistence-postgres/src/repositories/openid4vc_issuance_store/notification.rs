@@ -369,8 +369,9 @@ impl Openid4vciRepository {
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let changed = sql_query(
                 "UPDATE openid4vci_notifications \
-                 SET event = $3, description = $4, occurred_at = $5 \
-                 WHERE notification_id = $1 AND token_id = $2 AND event IS NULL AND expires_at > $5",
+                 SET event = $3, description = $4, occurred_at = COALESCE(occurred_at, $5) \
+                 WHERE notification_id = $1 AND token_id = $2 AND expires_at > $5 \
+                   AND (event IS NULL OR (event = $3 AND description IS NOT DISTINCT FROM $4))",
             )
             .bind::<sql_types::Text, _>(&notification.notification_id)
             .bind::<sql_types::Uuid, _>(notification.token_id)

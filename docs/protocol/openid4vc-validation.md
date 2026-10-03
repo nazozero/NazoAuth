@@ -60,8 +60,8 @@ These source tests require designated CNB execution at an exact SHA before
 acceptance. No conformance/certification or failover result follows from source
 inspection alone.
 
-Deferred readiness/lease classification, stable authorization identity across
-refresh, notification retry idempotency, authenticated certificate AKI matching,
+Stable authorization identity across
+refresh, authenticated certificate AKI matching,
 individual invalid-presentation filtering and DCQL extensions remain separate
 open findings. They are not closed by these wire/proof changes.
 
@@ -88,3 +88,21 @@ the real PostgreSQL projection. The migration fixture copies the deployed table
 inside a rollback-owned schema, applies the actual up/down SQL and verifies legacy
 classification plus the anonymous downgrade guard. The expiration regression
 supplies the correct nonce and omits only the embedded expiration claim.
+
+The notification store accepts identical event/description retries for the same
+live authorization and handle, including simultaneous requests, while retaining
+the first occurrence time. A changed event or description, wrong authorization or
+expired handle is rejected. The single atomic PostgreSQL update owns this decision;
+retry success does not publish a second terminal outcome. Real PostgreSQL fixtures
+cover concurrent duplicates and unchanged stored data; the live deferred endpoint
+fixture retries the notification and rejects a conflicting terminal event.
+
+Deferred claim classification is owned by one atomic PostgreSQL statement that
+locks the same live transaction and authorization. Claimed alone confers signing
+authority. Pending and Busy return HTTP202 with the original transaction identifier
+and a positive retry interval, honoring each poll's response encryption parameters;
+invalid/consumed/expired/wrong-owner transactions retain the protocol error. Waiting
+polls are not cached as final issuance outcomes. Real PostgreSQL fixtures preserve
+the active lease on Busy/wrong-owner attempts. The live fixture exercises encrypted
+Pending, plain Busy, the same poll after readiness and final exact response replay.
+Its controlled readiness/lease fields affect only fixture-owned rows.

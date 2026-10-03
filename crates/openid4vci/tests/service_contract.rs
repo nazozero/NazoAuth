@@ -12,7 +12,7 @@ use nazo_openid4vci::{
     CredentialAccess, CredentialConfiguration, CredentialDatasetPort, CredentialError,
     CredentialIdentifier, CredentialIssuance, CredentialIssuanceError, CredentialIssuerService,
     CredentialRequest, CredentialStoreError, CredentialStoreFuture, CredentialStorePort,
-    DeferredCredential, DeferredCredentialClaim, IssuanceCommit, IssuanceDisposition,
+    DeferredCredential,  IssuanceCommit, IssuanceDisposition,
     IssuanceIdentity, IssuanceNotification, NonceRecord, NotificationHandle, ProofError,
     ProofTypeMetadata, ProofValidatorPort, Proofs, StoredCredentialOffer, StoredCredentialResponse,
     ValidatedProof,
@@ -302,9 +302,9 @@ impl CredentialStorePort for RecordingStore {
         _: Uuid,
         _: &'a str,
         _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
+    ) -> CredentialStoreFuture<'a, Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>>
     {
-        Box::pin(async { Ok(None) })
+        Box::pin(async { Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid) })
     }
     fn finalize_deferred<'a>(
         &'a self,

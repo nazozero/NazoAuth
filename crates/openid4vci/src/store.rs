@@ -106,6 +106,16 @@ pub struct DeferredCredentialClaim {
     pub claim_id: String,
 }
 
+/// A single owner-classified deferred claim attempt. Pending and Busy retain
+/// the same live transaction and never confer signing authority.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeferredClaimOutcome {
+    Claimed(Box<DeferredCredentialClaim>),
+    Pending { retry_at: DateTime<Utc> },
+    Busy { retry_at: DateTime<Utc> },
+    Invalid,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IssuanceNotification {
     pub notification_id: String,
@@ -288,7 +298,7 @@ pub trait CredentialStorePort: Send + Sync {
         token_id: Uuid,
         claim_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>;
+    ) -> CredentialStoreFuture<'a, Result<DeferredClaimOutcome, CredentialStoreError>>;
 
     fn finalize_deferred<'a>(
         &'a self,
@@ -328,6 +338,9 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
+    /// Accept one retained terminal event. An identical event/description retry
+    /// succeeds without replacing the first occurrence time; conflicting, expired
+    /// or wrong-owner notifications are rejected atomically by the store owner.
     fn record_notification<'a>(
         &'a self,
         notification: &'a IssuanceNotification,

@@ -11,7 +11,7 @@ use nazo_openid4vci::application::{
 use nazo_openid4vci::{
     CredentialAccess, CredentialAuthorization, CredentialConfiguration, CredentialRequest,
     CredentialStoreError, CredentialStoreFuture, CredentialStorePort, DeferredCredential,
-    DeferredCredentialClaim, DeferredCredentialRequest, IssuanceNotification, NonceRecord,
+    DeferredCredentialRequest, IssuanceNotification, NonceRecord,
     NotificationHandle, NotificationRequest, StoredCredentialOffer, StoredCredentialResponse,
 };
 

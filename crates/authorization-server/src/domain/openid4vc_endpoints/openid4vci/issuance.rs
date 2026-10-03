@@ -177,25 +177,45 @@ impl ServerCredentialIssuerOperations {
             let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
             let transaction_hash = blake3_hex(&request.transaction_id);
             let claim_id = Uuid::now_v7().to_string();
-            let deferred = self
+            let outcome = self
                 .store
                 .claim_ready_deferred(&transaction_hash, access.token_id, &claim_id, Utc::now())
                 .await
                 .map_err(|_| {
-                    vci_error(
-                        503,
-                        "server_error",
-                        "Deferred credential state is unavailable.",
-                    )
-                })?
-                .ok_or_else(|| {
-                    vci_error(
+                    vci_error(503, "server_error", "Deferred credential state is unavailable.")
+                })?;
+            let deferred = match outcome {
+                nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) => claim.credential,
+                nazo_openid4vci::DeferredClaimOutcome::Pending { retry_at }
+                | nazo_openid4vci::DeferredClaimOutcome::Busy { retry_at } => {
+                    let interval = u64::try_from((retry_at - Utc::now()).num_seconds())
+                        .unwrap_or(0)
+                        .saturating_add(1);
+                    let body = finish_response(
+                        CredentialResponse {
+                            credentials: None,
+                            transaction_id: Some(request.transaction_id.clone()),
+                            notification_id: None,
+                            interval: Some(interval),
+                        },
+                        request.credential_response_encryption.as_ref(),
+                    )?;
+                    // A waiting poll is not the final durable response. Caching
+                    // it under the request digest would prevent later issuance.
+                    return Ok(CredentialEndpointResponse {
+                        body,
+                        status: CredentialResponseStatus::Deferred,
+                        dpop_nonce,
+                    });
+                }
+                nazo_openid4vci::DeferredClaimOutcome::Invalid => {
+                    return Err(vci_error(
                         400,
                         "invalid_transaction_id",
-                        "Deferred credential transaction is invalid or not ready.",
-                    )
-                })?
-                .credential;
+                        "Deferred credential transaction is invalid.",
+                    ));
+                }
+            };
             let result = async {
                 let payload: DeferredPayload = serde_json::from_slice(&deferred.payload_ciphertext)
                     .map_err(|_| {
@@ -352,7 +372,7 @@ impl ServerCredentialIssuerOperations {
                 return Err(vci_error(
                     400,
                     "invalid_notification_id",
-                    "Notification identifier is invalid or already terminal.",
+                    "Notification identifier is invalid or conflicts with the recorded event.",
                 ));
             }
             Ok(CredentialEndpointResponse {

@@ -204,7 +204,7 @@ where
         now: DateTime<Utc>,
     ) -> crate::CredentialStoreFuture<
         'a,
-        Result<Option<crate::DeferredCredentialClaim>, crate::CredentialStoreError>,
+        Result<crate::DeferredClaimOutcome, crate::CredentialStoreError>,
     > {
         self.as_ref()
             .claim_ready_deferred(transaction_hash, token_id, claim_id, now)
