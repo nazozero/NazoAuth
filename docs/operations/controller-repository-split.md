@@ -27,6 +27,9 @@ A committed outcome remains recoverable after a later tenant disable or config
 loss. A missing outcome retains the active-tenant admission gate; only Apply
 loads change-set payloads and registration/key preparation. Enumerate and Revoke
 use the same atomic state, audit and outcome owner without those capabilities.
+Single-target key and resource operations read only their authoritative active
+tenant binding, including active realm and organization ownership checks;
+directory Describe continues to return the complete coherent snapshot.
 
 `crates/operator-protocol` remains only in this repository. NazoAuthCtl pins a
 released package version by server tag. Tagged server Releases additionally

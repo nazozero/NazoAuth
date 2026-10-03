@@ -186,6 +186,16 @@ impl TenantDirectoryStore for RecordingDirectory {
             });
         Box::pin(async move { result })
     }
+
+    fn find_active_binding(
+        &self,
+        _: nazo_identity::TenantId,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<Option<TenantDirectoryBinding>, nazo_identity::ports::RepositoryError>,
+    > {
+        panic!("runtime refresh must use the coherent complete directory")
+    }
 }
 
 struct RecordingBuilder {

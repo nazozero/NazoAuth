@@ -1050,3 +1050,57 @@ async fn stale_observation_is_state_preserving_with_current_or_superseded_revisi
     );
     clear_module(&database_url, "token_exchange").await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revision_validation_is_tenant_scoped_and_tracks_authoritative_changes() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    clear_module(&database_url, "native_sso").await;
+    let pool = create_pool(&database_url, 2).unwrap();
+    let repository = RuntimeModuleRepository::new(pool.clone());
+    let missing = RuntimeModuleRepository::for_tenant(pool, Uuid::now_v7());
+    assert!(
+        !missing
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(1))
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(1))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(2))
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        repository
+            .compare_and_set_desired(DesiredStateChange {
+                expected_revision: Some(ModuleRevision::new(1)),
+                next: desired(ModuleId::NativeSso, DesiredMode::Disabled, 2),
+            })
+            .await
+            .unwrap(),
+        CasOutcome::Applied(_)
+    ));
+    assert!(
+        !repository
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(1))
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(2))
+            .await
+            .unwrap()
+    );
+}

@@ -167,6 +167,45 @@ impl TenantDirectoryRepository {
         load_active_on_connection(&mut connection).await
     }
 
+    /// Reads only the requested active boundary using the same statement
+    /// snapshot and binding decoder as the complete directory read.
+    pub async fn find_active_binding(
+        &self,
+        tenant_id: TenantId,
+    ) -> Result<Option<TenantDirectoryBinding>, RepositoryError> {
+        let mut connection = get_conn(&self.pool)
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let rows = sql_query(
+            "SELECT directory.revision,
+                    active.tenant_id, active.realm_id, active.organization_id,
+                    active.issuer, active.external_host, active.runtime_revision
+             FROM tenant_runtime_directory_state AS directory
+             LEFT JOIN (
+                 SELECT binding.tenant_id, binding.realm_id, binding.organization_id,
+                        binding.issuer, binding.external_host, binding.runtime_revision
+                 FROM tenant_runtime_bindings AS binding
+                 JOIN tenants AS tenant
+                   ON tenant.id = binding.tenant_id AND tenant.status = 'active'
+                 JOIN realms AS realm
+                   ON realm.id = binding.realm_id
+                  AND realm.tenant_id = binding.tenant_id
+                  AND realm.status = 'active'
+                 JOIN organizations AS organization
+                   ON organization.id = binding.organization_id
+                  AND organization.tenant_id = binding.tenant_id
+                  AND organization.status = 'active'
+                 WHERE binding.tenant_id = $1
+             ) AS active ON TRUE
+             WHERE directory.singleton",
+        )
+        .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
+        .load::<TenantDirectoryRow>(&mut connection)
+        .await
+        .map_err(map_query_error)?;
+        Ok(directory_snapshot(rows)?.tenants.into_iter().next())
+    }
+
     /// Initializes the authoritative directory exactly once after migrations.
     /// A directory with any history is never rewritten from process config.
     pub async fn initialize(
@@ -265,6 +304,16 @@ impl TenantDirectoryStore for TenantDirectoryRepository {
         &self,
     ) -> futures_util::future::BoxFuture<'_, Result<TenantDirectorySnapshot, RepositoryError>> {
         Box::pin(async move { TenantDirectoryRepository::load_active(self).await })
+    }
+
+    fn find_active_binding(
+        &self,
+        tenant_id: TenantId,
+    ) -> futures_util::future::BoxFuture<'_, Result<Option<TenantDirectoryBinding>, RepositoryError>>
+    {
+        Box::pin(
+            async move { TenantDirectoryRepository::find_active_binding(self, tenant_id).await },
+        )
     }
 }
 

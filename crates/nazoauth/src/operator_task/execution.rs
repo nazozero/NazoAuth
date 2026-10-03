@@ -675,15 +675,11 @@ async fn active_tenant_binding(
     tenant_id: &str,
 ) -> Result<nazo_identity::TenantDirectoryBinding, SideEffectError> {
     let tenant_id = parse_control_tenant_id(tenant_id)?;
-    let snapshot = persistence
+    persistence
         .tenant_directory()
-        .load_active()
+        .find_active_binding(tenant_id)
         .await
-        .map_err(map_tenant_directory_read_error)?;
-    snapshot
-        .tenants
-        .into_iter()
-        .find(|binding| binding.tenant.tenant_id == tenant_id)
+        .map_err(map_tenant_directory_read_error)?
         .ok_or_else(|| {
             SideEffectError::Terminal(anyhow::anyhow!(
                 "operation requires an active tenant binding"

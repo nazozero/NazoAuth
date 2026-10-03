@@ -572,3 +572,82 @@ async fn limited_runtime_role_cannot_write_the_revision_state() {
     drop(connection);
     assert_eq!(current_revision(&repository).await, 1);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_active_binding_requires_each_boundary_and_never_returns_a_peer() {
+    let Some(IsolatedDirectory { pool, repository }) = isolated_directory().await else {
+        return;
+    };
+    let (_, target) = provisioning_request(0, "target", "target.example");
+    let (_, peer) = provisioning_request(0, "peer", "peer.example");
+    let revision = repository
+        .provision_tenant_binding(0, target.clone())
+        .await
+        .unwrap();
+    repository
+        .provision_tenant_binding(revision, peer.clone())
+        .await
+        .unwrap();
+    let requested = target.binding.tenant.tenant_id;
+    let read = || repository.find_active_binding(requested);
+    assert_eq!(read().await.unwrap(), Some(target.binding.clone()));
+    assert_eq!(
+        repository
+            .find_active_binding(peer.binding.tenant.tenant_id)
+            .await
+            .unwrap(),
+        Some(peer.binding.clone())
+    );
+    assert!(
+        repository
+            .find_active_binding(TenantId::new(Uuid::now_v7()).unwrap())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    for (table, id) in [
+        ("tenants", target.tenant.id.as_uuid()),
+        ("realms", target.realm.id.as_uuid()),
+        ("organizations", target.organization.id.as_uuid()),
+    ] {
+        let mut connection = pool.get().await.unwrap();
+        sql_query(format!(
+            "UPDATE {table} SET status = 'suspended' WHERE id = $1"
+        ))
+        .bind::<sql_types::Uuid, _>(id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        drop(connection);
+        assert!(
+            read().await.unwrap().is_none(),
+            "inactive {table} must fail closed"
+        );
+        assert_eq!(
+            repository
+                .find_active_binding(peer.binding.tenant.tenant_id)
+                .await
+                .unwrap(),
+            Some(peer.binding.clone())
+        );
+        let mut connection = pool.get().await.unwrap();
+        sql_query(format!(
+            "UPDATE {table} SET status = 'active' WHERE id = $1"
+        ))
+        .bind::<sql_types::Uuid, _>(id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        drop(connection);
+        assert_eq!(read().await.unwrap(), Some(target.binding.clone()));
+    }
+    repository
+        .remove_tenant_binding(repository.current_revision().await.unwrap(), requested)
+        .await
+        .unwrap();
+    assert!(read().await.unwrap().is_none());
+    assert_eq!(
+        repository.load_active().await.unwrap().tenants,
+        vec![peer.binding]
+    );
+}

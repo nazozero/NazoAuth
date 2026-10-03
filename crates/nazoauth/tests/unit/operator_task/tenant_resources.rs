@@ -50,9 +50,24 @@ impl nazo_persistence::TenantDirectoryStore for Directory {
     fn load_active(
         &self,
     ) -> BoxFuture<'_, Result<TenantDirectorySnapshot, nazo_identity::ports::RepositoryError>> {
-        Box::pin(async {
+        panic!("one-target operator must not load the complete directory")
+    }
+
+    fn find_active_binding(
+        &self,
+        tenant_id: TenantId,
+    ) -> BoxFuture<'_, Result<Option<TenantDirectoryBinding>, nazo_identity::ports::RepositoryError>>
+    {
+        Box::pin(async move {
             self.reads.fetch_add(1, Ordering::Relaxed);
-            Ok(self.snapshot.lock().unwrap().clone())
+            Ok(self
+                .snapshot
+                .lock()
+                .unwrap()
+                .tenants
+                .iter()
+                .find(|binding| binding.tenant.tenant_id == tenant_id)
+                .cloned())
         })
     }
 }
