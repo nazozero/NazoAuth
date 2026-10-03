@@ -252,7 +252,8 @@ fn anonymous_credential_proof_origin_ignores_same_named_registered_client_trust(
             &'a self,
             tenant_id: uuid::Uuid,
             client_id: &'a str,
-        ) -> futures_util::future::BoxFuture<'a, Result<ClientTrustPolicy, RepositoryError>> {
+        ) -> futures_util::future::BoxFuture<'a, Result<ClientTrustPolicy, RepositoryError>>
+        {
             assert_eq!(tenant_id, self.tenant_id);
             assert_eq!(client_id, "pre-authorized-wallet");
             self.lookups.fetch_add(1, Ordering::SeqCst);
