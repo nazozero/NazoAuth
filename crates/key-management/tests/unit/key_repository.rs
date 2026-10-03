@@ -151,6 +151,61 @@ async fn database_diagnostics_reject_missing_keys_without_initializing_them() {
 }
 
 #[tokio::test]
+async fn database_diagnostics_reject_invalid_creation_times_without_writing() {
+    let inner = Arc::new(MemorySigningKeyRepository::default());
+    let tenant = Uuid::now_v7();
+    let ring = SigningKeyWrappingKeyRing::new("current", [0x62; 32], None).unwrap();
+    KeyManager::load_or_create_database(
+        KeySettings {
+            rotation_interval: chrono::Duration::days(90),
+            prepublish_window: chrono::Duration::days(1),
+            verification_grace: chrono::Duration::minutes(10),
+        },
+        None,
+        tenant,
+        inner.clone(),
+        ring.clone(),
+    )
+    .await
+    .unwrap();
+    let valid = decrypted_payload(&inner, tenant, &ring);
+    let active = valid["active_kid"].as_str().unwrap().to_owned();
+    let repository = Arc::new(DiagnosticRepository {
+        inner: inner.clone(),
+        writes: AtomicUsize::new(0),
+    });
+
+    for created_at in [None, Some(serde_json::json!("bad")), Some(serde_json::json!(7))] {
+        let mut payload = valid.clone();
+        let entry = payload["keys"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["kid"].as_str() == Some(active.as_str()))
+            .unwrap();
+        match created_at {
+            Some(value) => entry["created_at"] = value,
+            None => {
+                entry.as_object_mut().unwrap().remove("created_at");
+            }
+        }
+        // Authenticate the malformed payload; this is not an AEAD failure.
+        replace_payload(&inner, tenant, &ring, payload);
+        let before = inner.snapshot().unwrap();
+        let error = KeyManager::inspect_database(None, tenant, repository.clone(), ring.clone())
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("created_at"));
+        let after = inner.snapshot().unwrap();
+        assert_eq!(after.revision, before.revision);
+        assert!(after.public_metadata == before.public_metadata);
+        assert!(after.encrypted_private_material == before.encrypted_private_material);
+        assert_eq!(after.wrapping_key_id, before.wrapping_key_id);
+        assert_eq!(repository.writes.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
 async fn database_diagnostics_leave_due_old_wrapping_generation_unchanged_and_reject_tampering() {
     let settings = KeySettings {
         rotation_interval: chrono::Duration::days(90),

@@ -769,6 +769,8 @@ fn load_payload(
         if !kids.insert(kid.clone()) {
             anyhow::bail!("keyset contains duplicate kid {kid}");
         }
+        // Diagnostics validate lifecycle metadata without advancing maintenance.
+        let _ = key_entry_created_at(entry)?;
         let algorithm = key_entry_algorithm(entry)?;
         let purposes = key_entry_purposes(entry)?.unwrap_or_else(|| {
             if kid == active_kid {
