@@ -406,6 +406,14 @@ pub trait TenantDirectoryStore: Send + Sync {
     fn load_active(
         &self,
     ) -> BoxFuture<'_, Result<nazo_identity::TenantDirectorySnapshot, RepositoryError>>;
+
+    /// Read one authoritative active binding. Missing bindings and inactive or
+    /// cross-tenant tenant/realm/organization placements must not be returned.
+    /// This is a fresh storage read, independent of the process directory cache.
+    fn find_active_binding(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+    ) -> BoxFuture<'_, Result<Option<nazo_identity::TenantDirectoryBinding>, RepositoryError>>;
 }
 
 #[derive(Clone)]
