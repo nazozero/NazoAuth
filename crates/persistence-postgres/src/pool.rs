@@ -53,7 +53,9 @@ impl DiscardOnDrop {
     }
 
     pub(crate) fn return_to_pool(mut self) {
-        if let Some(connection) = self.0.as_mut() { crate::perf_diagnostic::confirmed_return(connection); }
+        if let Some(connection) = self.0.as_mut() {
+            crate::perf_diagnostic::confirmed_return(connection);
+        }
         let _ = self.0.take();
     }
 }
@@ -139,7 +141,8 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
             .await
             .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
         let pid = client.process_id();
-        let mut established = AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+        let mut established =
+            AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
         crate::perf_diagnostic::attach(&mut established, pid);
         return Ok(established);
     }
@@ -168,7 +171,8 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
         .await
         .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
     let pid = client.process_id();
-    let mut established = AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+    let mut established =
+        AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
     crate::perf_diagnostic::attach(&mut established, pid);
     Ok(established)
 }
