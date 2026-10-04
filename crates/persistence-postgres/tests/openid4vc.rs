@@ -2152,7 +2152,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
 
     let selector_response = StoredCredentialResponse {
         issuance_id: Uuid::now_v7(),
-        request_digest: blake3::hash(b"corrupt-response-selector").to_hex().to_string(),
+        request_digest: blake3::hash(b"corrupt-response-selector")
+            .to_hex()
+            .to_string(),
         ..response.clone()
     };
     let selector_handle = NotificationHandle {
@@ -2173,7 +2175,10 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             )
             .await
     };
-    assert_eq!(selector_lookup().await.unwrap().unwrap().body, response.body);
+    assert_eq!(
+        selector_lookup().await.unwrap().unwrap().body,
+        response.body
+    );
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query(
         "UPDATE openid4vci_issuance_responses SET credential_selection = $2 WHERE issuance_id = $1",
@@ -2198,7 +2203,10 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     .await
     .unwrap();
     drop(connection);
-    assert_eq!(selector_lookup().await.unwrap().unwrap().body, response.body);
+    assert_eq!(
+        selector_lookup().await.unwrap().unwrap().body,
+        response.body
+    );
 
     let corrupt_response = StoredCredentialResponse {
         issuance_id: Uuid::now_v7(),
