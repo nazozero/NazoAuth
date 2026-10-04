@@ -614,7 +614,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
         );
     }
     assert!(
-        !hidden.lose_ack.load(Ordering::SeqCst),
+        !AtomicBool::load(&hidden.lose_ack, Ordering::SeqCst),
         "test must reach a real accepting commit"
     );
     let rotations = sessions.rotations.lock().unwrap().clone();

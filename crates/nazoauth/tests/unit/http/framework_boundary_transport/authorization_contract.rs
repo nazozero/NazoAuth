@@ -49,7 +49,8 @@ async fn client(
     .expect("prepare real registration");
     let secret = prepared
         .issued_secret
-        .clone()
+        .as_ref()
+        .cloned()
         .expect("confidential client secret");
     let client = nazo_auth::insert_prepared_client(
         &nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
