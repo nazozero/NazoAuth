@@ -140,14 +140,21 @@ impl Instrumentation for ConnectionTiming {
     }
 }
 
-pub(crate) async fn backend_pid(client: &tokio_postgres::Client) -> u32 {
+pub(crate) async fn backend_pid(connection: &mut AsyncPgConnection) -> u32 {
+    use diesel_async::RunQueryDsl as _;
+
     if writer().is_none() {
         return 0;
     }
-    client
-        .query_one("SELECT pg_backend_pid()", &[])
+    #[derive(diesel::QueryableByName)]
+    struct BackendPid {
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        pid: i32,
+    }
+    diesel::sql_query("SELECT pg_backend_pid() AS pid")
+        .get_result::<BackendPid>(connection)
         .await
-        .map(|row| row.get::<_, i32>(0) as u32)
+        .map(|row| row.pid as u32)
         .unwrap_or(0)
 }
 

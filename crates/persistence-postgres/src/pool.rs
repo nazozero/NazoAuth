@@ -140,9 +140,9 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
             .connect(tokio_postgres::NoTls)
             .await
             .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
-        let pid = crate::perf_diagnostic::backend_pid(&client).await;
         let mut established =
             AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+        let pid = crate::perf_diagnostic::backend_pid(&mut established).await;
         crate::perf_diagnostic::attach(&mut established, pid);
         return Ok(established);
     }
@@ -170,9 +170,9 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
         .connect(tls)
         .await
         .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
-    let pid = crate::perf_diagnostic::backend_pid(&client).await;
     let mut established =
         AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+    let pid = crate::perf_diagnostic::backend_pid(&mut established).await;
     crate::perf_diagnostic::attach(&mut established, pid);
     Ok(established)
 }

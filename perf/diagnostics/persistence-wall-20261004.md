@@ -8,7 +8,7 @@ file `/tmp/nazo-pg-timing.jsonl`; SQL, binds, URLs, keys and errors are never
 formatted. Buffer losses have explicit `buffer_dropped` records.
 
 Only diagnostic connection setup adds one `SELECT pg_backend_pid()` to associate
-the actual server PID before measurement; a zero PID makes the trace invalid.
+the actual server PID before measurement, after Diesel starts the connection driver; a zero PID makes the trace invalid.
 
 Events measure Diesel query/COMMIT callback wall time, gaps between SQL within
 one checkout, pool acquisition, confirmed DiscardOnDrop connection hold, and
