@@ -7,8 +7,8 @@ use nazo_identity::{
 };
 use uuid::Uuid;
 
-use crate::{DbPool, get_conn};
 use crate::pool::DiscardOnDrop;
+use crate::{DbPool, get_conn};
 
 const MAX_ACTIVE_TRUST_ANCHORS_PER_CLIENT: i64 = 8;
 const MAX_ACTIVE_TRUST_ANCHORS_PER_TENANT: i64 = 128;
@@ -135,7 +135,9 @@ enum TrustMutationError {
 }
 
 impl From<diesel::result::Error> for TrustMutationError {
-    fn from(error: diesel::result::Error) -> Self { Self::Database(error) }
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Database(error)
+    }
 }
 
 impl TrustMutationError {
@@ -157,7 +159,8 @@ async fn append_admin_trust_outcome(
     crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(
         connection,
         &nazo_persistence::SecurityAuditEvent {
-            event_id: Uuid::now_v7(), event_type: event_type.to_owned(),
+            event_id: Uuid::now_v7(),
+            event_type: event_type.to_owned(),
             event_category: "trust_lifecycle".to_owned(),
             payload: serde_json::json!({
                 "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
@@ -167,7 +170,8 @@ async fn append_admin_trust_outcome(
             }),
             occurred_at: Utc::now(),
         },
-    ).await
+    )
+    .await
 }
 
 const REQUEST_PROJECTION: &str = "
@@ -395,7 +399,8 @@ impl MtlsTrustAnchorRepository {
         note: Option<String>,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
         let mut guard = DiscardOnDrop(Some(self.connection().await?));
-        let result = guard.connection()
+        let result = guard
+            .connection()
             .transaction::<MtlsTrustAnchorRequest, TrustMutationError, _>(async |connection| {
                 acquire_tenant_trust_lock(connection, tenant_id).await?;
                 // Sample admission time after the current actor, request and
@@ -409,16 +414,20 @@ impl MtlsTrustAnchorRepository {
                        AND a.is_active = TRUE AND a.role = 'admin' AND a.admin_level > 0
                        AND ($4 <> 1 OR c.is_active = TRUE)
                      FOR UPDATE OF r FOR SHARE OF a, c",
-                ).bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
-                 .bind::<sql_types::Uuid, _>(id)
-                 .bind::<sql_types::Uuid, _>(actor.as_uuid())
-                 .bind::<sql_types::SmallInt, _>(status.code())
-                 .load::<IdRow>(connection).await?;
+                )
+                .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
+                .bind::<sql_types::Uuid, _>(id)
+                .bind::<sql_types::Uuid, _>(actor.as_uuid())
+                .bind::<sql_types::SmallInt, _>(status.code())
+                .load::<IdRow>(connection)
+                .await?;
                 if locked.len() != 1 || locked.pop().map(|row| row.id) != Some(id) {
                     return Err(TrustMutationError::Projection(RepositoryError::Conflict));
                 }
                 let observed_at = sql_query("SELECT clock_timestamp() AS observed_at")
-                    .get_result::<TrustAcceptanceTime>(connection).await?.observed_at;
+                    .get_result::<TrustAcceptanceTime>(connection)
+                    .await?
+                    .observed_at;
                 let updated = sql_query(format!(
                     "WITH updated AS (
              UPDATE oauth_client_mtls_trust_anchor_requests
@@ -484,15 +493,27 @@ impl MtlsTrustAnchorRepository {
                 .bind::<sql_types::Timestamptz, _>(observed_at)
                 .load::<RequestRow>(connection)
                 .await?;
-                let view = committed_request_view(updated).map_err(TrustMutationError::Projection)?;
-                append_admin_trust_outcome(connection, tenant_id, id, actor,
-                    if status == MtlsTrustAnchorStatus::Approved { "mtls_trust_anchor_approved" }
-                    else { "mtls_trust_anchor_rejected" }).await?;
+                let view =
+                    committed_request_view(updated).map_err(TrustMutationError::Projection)?;
+                append_admin_trust_outcome(
+                    connection,
+                    tenant_id,
+                    id,
+                    actor,
+                    if status == MtlsTrustAnchorStatus::Approved {
+                        "mtls_trust_anchor_approved"
+                    } else {
+                        "mtls_trust_anchor_rejected"
+                    },
+                )
+                .await?;
                 Ok(view)
             })
             .await
             .map_err(TrustMutationError::into_repository);
-        if result.is_ok() { guard.return_to_pool(); }
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
         result
     }
 
@@ -504,7 +525,8 @@ impl MtlsTrustAnchorRepository {
         note: String,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
         let mut guard = DiscardOnDrop(Some(self.connection().await?));
-        let result = guard.connection()
+        let result = guard
+            .connection()
             .transaction::<MtlsTrustAnchorRequest, TrustMutationError, _>(async |connection| {
                 acquire_tenant_trust_lock(connection, tenant_id).await?;
                 let updated = sql_query(format!(
@@ -540,14 +562,23 @@ impl MtlsTrustAnchorRepository {
                 .bind::<sql_types::Text, _>(note)
                 .load::<RequestRow>(connection)
                 .await?;
-                let view = committed_request_view(updated).map_err(TrustMutationError::Projection)?;
-                append_admin_trust_outcome(connection, tenant_id, id, actor,
-                    "mtls_trust_anchor_revoked").await?;
+                let view =
+                    committed_request_view(updated).map_err(TrustMutationError::Projection)?;
+                append_admin_trust_outcome(
+                    connection,
+                    tenant_id,
+                    id,
+                    actor,
+                    "mtls_trust_anchor_revoked",
+                )
+                .await?;
                 Ok(view)
             })
             .await
             .map_err(TrustMutationError::into_repository);
-        if result.is_ok() { guard.return_to_pool(); }
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
         result
     }
 

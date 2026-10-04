@@ -353,9 +353,7 @@ impl<'request> CapturedHeader<'request> {
         if values.next().is_some() {
             return Self::Invalid;
         }
-        value
-            .to_str()
-            .map_or(Self::Invalid, Self::Unique)
+        value.to_str().map_or(Self::Invalid, Self::Unique)
     }
 
     fn unique(&self) -> Result<Option<&str>, ()> {
@@ -438,11 +436,7 @@ impl<'body> CapturedRequest<'body> {
     }
 
     fn verification_headers(&self) -> Result<Vec<(&str, &str)>, ()> {
-        let mut headers = self
-            .safe_headers
-            .iter()
-            .copied()
-            .collect::<Vec<_>>();
+        let mut headers = self.safe_headers.iter().copied().collect::<Vec<_>>();
         for (name, captured) in [
             ("authorization", &self.authorization),
             ("dpop", &self.dpop),

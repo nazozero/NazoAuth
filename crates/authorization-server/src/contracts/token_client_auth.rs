@@ -1,4 +1,6 @@
-use nazo_auth::{PresentedClientCredentials, PresentedClientCredentialsView, TokenClientAuthPresentation};
+use nazo_auth::{
+    PresentedClientCredentials, PresentedClientCredentialsView, TokenClientAuthPresentation,
+};
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum BasicAuthorizationCredentials {
@@ -142,7 +144,11 @@ impl TokenClientAuthTransportFacts {
                 method: "private_key_jwt",
             };
         }
-        if let BasicAuthorizationCredentials::Present { client_id, client_secret } = &self.basic {
+        if let BasicAuthorizationCredentials::Present {
+            client_id,
+            client_secret,
+        } = &self.basic
+        {
             return PresentedClientCredentialsView {
                 client_id: Some(client_id),
                 client_secret: Some(client_secret),
@@ -151,22 +157,32 @@ impl TokenClientAuthTransportFacts {
             };
         }
         match self.form_client_id.as_deref() {
-            Some(client_id) if self.form_client_secret.is_some() => PresentedClientCredentialsView {
-                client_id: Some(client_id),
-                client_secret: self.form_client_secret.as_deref(),
-                client_assertion: None,
-                method: "client_secret_post",
-            },
-            Some(client_id) if mtls_client_id == Some(client_id) => PresentedClientCredentialsView {
-                client_id: Some(client_id), client_secret: None, client_assertion: None,
-                method: "tls_client_auth",
-            },
+            Some(client_id) if self.form_client_secret.is_some() => {
+                PresentedClientCredentialsView {
+                    client_id: Some(client_id),
+                    client_secret: self.form_client_secret.as_deref(),
+                    client_assertion: None,
+                    method: "client_secret_post",
+                }
+            }
+            Some(client_id) if mtls_client_id == Some(client_id) => {
+                PresentedClientCredentialsView {
+                    client_id: Some(client_id),
+                    client_secret: None,
+                    client_assertion: None,
+                    method: "tls_client_auth",
+                }
+            }
             Some(client_id) => PresentedClientCredentialsView {
-                client_id: Some(client_id), client_secret: None, client_assertion: None,
+                client_id: Some(client_id),
+                client_secret: None,
+                client_assertion: None,
                 method: "none",
             },
             None if mtls_client_id.is_some() => PresentedClientCredentialsView {
-                client_id: mtls_client_id, client_secret: None, client_assertion: None,
+                client_id: mtls_client_id,
+                client_secret: None,
+                client_assertion: None,
                 method: "tls_client_auth",
             },
             None => PresentedClientCredentialsView::default(),
@@ -180,7 +196,8 @@ impl TokenClientAuthTransportFacts {
         assertion_client_id: Option<String>,
         mtls_client_id: Option<String>,
     ) -> PresentedClientCredentials {
-        self.credential_view(assertion_client_id.as_deref(), mtls_client_id.as_deref()).into_owned()
+        self.credential_view(assertion_client_id.as_deref(), mtls_client_id.as_deref())
+            .into_owned()
     }
 }
 

@@ -31,7 +31,9 @@ pub(crate) async fn admin_create_client(
     ) {
         return csrf_error();
     }
-    let admin = match require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req).await {
+    let admin = match require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req)
+        .await
+    {
         Ok(admin) => admin,
         Err(response) => return response,
     };
@@ -40,7 +42,10 @@ pub(crate) async fn admin_create_client(
     }
 
     let source_ip_hash = blake3_hex(&client_ip_with_config(&req, config.client_ip()));
-    match service.create_with_required_audit(payload, admin.id(), &source_ip_hash).await {
+    match service
+        .create_with_required_audit(payload, admin.id(), &source_ip_hash)
+        .await
+    {
         Ok(created) => {
             let mut body = client_json(&created.client);
             if let Some(secret) = created.issued_secret.as_deref() {

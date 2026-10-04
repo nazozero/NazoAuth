@@ -51,17 +51,23 @@ impl Drop for SuppliedClientSecret {
 pub struct PendingClientSecret(Option<String>);
 
 impl From<Option<String>> for PendingClientSecret {
-    fn from(value: Option<String>) -> Self { Self(value) }
+    fn from(value: Option<String>) -> Self {
+        Self(value)
+    }
 }
 
 impl std::ops::Deref for PendingClientSecret {
     type Target = Option<String>;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl PendingClientSecret {
     /// Call only after the accepting persistence owner acknowledges commit.
-    pub fn take_after_commit(&mut self) -> Option<String> { self.0.take() }
+    pub fn take_after_commit(&mut self) -> Option<String> {
+        self.0.take()
+    }
 }
 
 impl std::fmt::Debug for PendingClientSecret {
@@ -71,7 +77,9 @@ impl std::fmt::Debug for PendingClientSecret {
 }
 
 impl Drop for PendingClientSecret {
-    fn drop(&mut self) { wipe_secret_string(&mut self.0); }
+    fn drop(&mut self) {
+        wipe_secret_string(&mut self.0);
+    }
 }
 
 /// Owned creation input shared by administrative and dynamic registration.

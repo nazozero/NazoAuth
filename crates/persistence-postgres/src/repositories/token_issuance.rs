@@ -859,12 +859,16 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         retry_started_at: DateTime<Utc>,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         Box::pin(async move {
-            self.tokens.refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
-                .await.map_err(map_repository_error)
-                .map(|snapshot| snapshot.map(|snapshot| nazo_auth::RefreshTokenSnapshot {
-                    presented: snapshot.presented,
-                    successor: snapshot.successor.map_err(map_repository_error),
-                }))
+            self.tokens
+                .refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
+                .await
+                .map_err(map_repository_error)
+                .map(|snapshot| {
+                    snapshot.map(|snapshot| nazo_auth::RefreshTokenSnapshot {
+                        presented: snapshot.presented,
+                        successor: snapshot.successor.map_err(map_repository_error),
+                    })
+                })
         })
     }
 

@@ -201,11 +201,11 @@ impl TokenEndpointHandles {
             auth_facts.credential_view(assertion_client_id.as_deref(), form_mtls_client_id);
         if attestation_headers.is_some() {
             credentials = ClientCredentials {
-            client_id: attestation_client_id.as_deref(),
-            client_secret: None,
-            client_assertion: None,
-            method: "attest_jwt_client_auth",
-        };
+                client_id: attestation_client_id.as_deref(),
+                client_secret: None,
+                client_assertion: None,
+                method: "attest_jwt_client_auth",
+            };
         }
         let Some(client_id) = credentials.client_id else {
             if !has_client_auth_material {

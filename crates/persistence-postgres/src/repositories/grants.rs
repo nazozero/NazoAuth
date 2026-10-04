@@ -449,7 +449,9 @@ impl From<diesel::result::Error> for GrantRevokeTransactionError {
 impl From<GrantRevokeTransactionError> for AdminGrantRevokeError {
     fn from(error: GrantRevokeTransactionError) -> Self {
         match error {
-            GrantRevokeTransactionError::ActorUnavailable => Self::Revoke(AuthorizationPortError::Unavailable),
+            GrantRevokeTransactionError::ActorUnavailable => {
+                Self::Revoke(AuthorizationPortError::Unavailable)
+            }
             GrantRevokeTransactionError::ClientNotFound => Self::ClientNotFound,
             GrantRevokeTransactionError::ClientLookup(error) => {
                 Self::ClientLookup(map_authorization_error(error))

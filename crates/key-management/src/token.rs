@@ -232,9 +232,9 @@ impl KeyManager {
         validation.validate_aud = false;
         validation.validate_exp = false;
         validation.set_issuer(&[issuer]);
-        let data = nazo_crypto::jwt::decode::<LogoutHintClaims>(
-            token, &key.prepared.key, &validation,
-        ).ok()?;
+        let data =
+            nazo_crypto::jwt::decode::<LogoutHintClaims>(token, &key.prepared.key, &validation)
+                .ok()?;
         Some((data.claims.hint, data.claims.exp))
     }
 }

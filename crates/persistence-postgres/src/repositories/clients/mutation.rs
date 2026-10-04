@@ -4,8 +4,8 @@ use nazo_auth::OAuthClient;
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
-use crate::schema::{oauth_clients, oauth_refresh_families, user_client_grants, users};
 use crate::rows::identity::PrincipalRow;
+use crate::schema::{oauth_clients, oauth_refresh_families, user_client_grants, users};
 
 use super::base::OAuthClientRepository;
 use super::{OAuthClientRecord, map_error};
@@ -13,7 +13,10 @@ use super::{OAuthClientRecord, map_error};
 /// Purpose-specific audit input for the existing client insertion owner.
 enum ClientInsertAudit<'a> {
     Dynamic(&'a str),
-    Admin { actor_id: Uuid, source_ip_hash: &'a str },
+    Admin {
+        actor_id: Uuid,
+        source_ip_hash: &'a str,
+    },
 }
 
 enum MetadataUpdateError {
@@ -59,8 +62,13 @@ impl OAuthClientRepository {
         registration_access_token_blake3: Option<&str>,
         source_ip_hash: Option<&str>,
     ) -> Result<OAuthClient, RepositoryError> {
-        self.insert_owned(client, client_secret_hash, registration_access_token_blake3,
-                          source_ip_hash.map(ClientInsertAudit::Dynamic)).await
+        self.insert_owned(
+            client,
+            client_secret_hash,
+            registration_access_token_blake3,
+            source_ip_hash.map(ClientInsertAudit::Dynamic),
+        )
+        .await
     }
 
     pub(super) async fn insert_admin_with_required_audit(
@@ -71,8 +79,16 @@ impl OAuthClientRepository {
         actor_id: Uuid,
         source_ip_hash: &str,
     ) -> Result<OAuthClient, RepositoryError> {
-        self.insert_owned(client, client_secret_hash, registration_access_token_blake3,
-                          Some(ClientInsertAudit::Admin { actor_id, source_ip_hash })).await
+        self.insert_owned(
+            client,
+            client_secret_hash,
+            registration_access_token_blake3,
+            Some(ClientInsertAudit::Admin {
+                actor_id,
+                source_ip_hash,
+            }),
+        )
+        .await
     }
 
     async fn insert_owned(
@@ -99,17 +115,29 @@ impl OAuthClientRepository {
                 match audit {
                     Some(ClientInsertAudit::Dynamic(source_ip_hash)) => {
                         append_dynamic_registration_audit(
-                            connection, "dynamic_client_registered", &client, source_ip_hash,
-                        ).await?;
+                            connection,
+                            "dynamic_client_registered",
+                            &client,
+                            source_ip_hash,
+                        )
+                        .await?;
                     }
-                    Some(ClientInsertAudit::Admin { actor_id, source_ip_hash }) => {
+                    Some(ClientInsertAudit::Admin {
+                        actor_id,
+                        source_ip_hash,
+                    }) => {
                         // New client authority precedes user authority in the
                         // existing client -> user lock order. Invalid actors roll
                         // back the tentative insert and its secret hash.
                         authorize_admin_client_actor(connection, &client, actor_id).await?;
                         append_admin_client_audit(
-                            connection, "client_created", &client, actor_id, source_ip_hash,
-                        ).await?;
+                            connection,
+                            "client_created",
+                            &client,
+                            actor_id,
+                            source_ip_hash,
+                        )
+                        .await?;
                     }
                     None => {}
                 }
@@ -275,7 +303,8 @@ impl OAuthClientRepository {
         actor_id: Uuid,
         source_ip_hash: &str,
     ) -> Result<OAuthClient, RepositoryError> {
-        self.update_metadata_owned(expected, client, Some((actor_id, source_ip_hash))).await
+        self.update_metadata_owned(expected, client, Some((actor_id, source_ip_hash)))
+            .await
     }
 
     async fn update_metadata_owned(
@@ -320,11 +349,17 @@ impl OAuthClientRepository {
                     authorize_admin_client_actor(connection, &current, actor_id).await?;
                 }
                 let written = Self::replace_on_connection(connection, client, None)
-                    .await.map_err(MetadataUpdateError::Repository)?;
+                    .await
+                    .map_err(MetadataUpdateError::Repository)?;
                 if let Some((actor_id, source_ip_hash)) = audit {
                     append_admin_client_audit(
-                        connection, "client_updated", &written, actor_id, source_ip_hash,
-                    ).await?;
+                        connection,
+                        "client_updated",
+                        &written,
+                        actor_id,
+                        source_ip_hash,
+                    )
+                    .await?;
                 }
                 Ok(written)
             })
@@ -1069,18 +1104,28 @@ async fn authorize_admin_client_actor(
         .filter(users::tenant_id.eq(client.tenant_id))
         .filter(users::realm_id.eq(client.realm_id))
         .filter(users::organization_id.eq(client.organization_id))
-        .select(PrincipalRow::as_select()).for_update()
-        .load::<PrincipalRow>(connection).await?;
-    let allowed = rows.into_iter()
+        .select(PrincipalRow::as_select())
+        .for_update()
+        .load::<PrincipalRow>(connection)
+        .await?;
+    let allowed = rows
+        .into_iter()
         .map(crate::convert::identity::principal_row)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| MetadataUpdateError::Repository(RepositoryError::Consistency(error.0)))?
-        .into_iter().any(|principal| principal.active
-            && principal.admin_level().is_some_and(|level| level > 0));
-    if allowed { Ok(()) } else {
-        Err(MetadataUpdateError::Repository(RepositoryError::Consistency(
-            "admin client actor is no longer authorized in the current client context".to_owned(),
-        )))
+        .into_iter()
+        .any(|principal| {
+            principal.active && principal.admin_level().is_some_and(|level| level > 0)
+        });
+    if allowed {
+        Ok(())
+    } else {
+        Err(MetadataUpdateError::Repository(
+            RepositoryError::Consistency(
+                "admin client actor is no longer authorized in the current client context"
+                    .to_owned(),
+            ),
+        ))
     }
 }
 
@@ -1092,7 +1137,8 @@ async fn append_admin_client_audit(
     source_ip_hash: &str,
 ) -> Result<(), diesel::result::Error> {
     let event = nazo_persistence::SecurityAuditEvent {
-        event_id: Uuid::now_v7(), event_type: event_type.to_owned(),
+        event_id: Uuid::now_v7(),
+        event_type: event_type.to_owned(),
         event_category: "client_lifecycle".to_owned(),
         payload: serde_json::json!({
             "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
@@ -1106,5 +1152,6 @@ async fn append_admin_client_audit(
         }),
         occurred_at: chrono::Utc::now(),
     };
-    crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(connection, &event).await
+    crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(connection, &event)
+        .await
 }

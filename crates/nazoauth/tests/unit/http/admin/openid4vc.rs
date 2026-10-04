@@ -382,11 +382,13 @@ impl LiveOpenid4vcAdminFixture {
         let users: Arc<dyn nazo_persistence::Openid4vcSubjectStore> = Arc::new(
             nazo_postgres::UserRepository::new(self.state.diesel_db.clone()),
         );
-        let datasets: Arc<dyn nazo_persistence::Openid4vciDatasetStore> =
-            dataset_store.unwrap_or_else(|| Arc::new(nazo_postgres::Openid4vciDatasetRepository::new(
-                self.state.diesel_db.clone(),
-                [0x51; 32],
-            )));
+        let datasets: Arc<dyn nazo_persistence::Openid4vciDatasetStore> = dataset_store
+            .unwrap_or_else(|| {
+                Arc::new(nazo_postgres::Openid4vciDatasetRepository::new(
+                    self.state.diesel_db.clone(),
+                    [0x51; 32],
+                ))
+            });
         let operations = ServerCredentialIssuerOperations::new(
             store,
             users,

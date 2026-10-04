@@ -442,9 +442,18 @@ pub(crate) async fn insert_slot_on_connection(
     one_written_slot(rows)
 }
 
-fn one_written_slot(mut rows: Vec<SlotRow>) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    if rows.len()!=1 { return Err(transport(anyhow::anyhow!("slot mutation returned an invalid authority row count"))); }
-    rows.pop().expect("one fully received slot row").try_into().map_err(transport)
+fn one_written_slot(
+    mut rows: Vec<SlotRow>,
+) -> Result<StoredControllerSlot, ControllerRegistryError> {
+    if rows.len() != 1 {
+        return Err(transport(anyhow::anyhow!(
+            "slot mutation returned an invalid authority row count"
+        )));
+    }
+    rows.pop()
+        .expect("one fully received slot row")
+        .try_into()
+        .map_err(transport)
 }
 
 fn map_slot_conflict(error: QueryError) -> ControllerRegistryError {

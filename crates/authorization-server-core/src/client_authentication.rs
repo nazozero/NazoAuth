@@ -88,7 +88,9 @@ impl<'a> From<&'a PresentedClientCredentials> for PresentedClientCredentialsView
 }
 
 impl<'a> From<&PresentedClientCredentialsView<'a>> for PresentedClientCredentialsView<'a> {
-    fn from(value: &PresentedClientCredentialsView<'a>) -> Self { *value }
+    fn from(value: &PresentedClientCredentialsView<'a>) -> Self {
+        *value
+    }
 }
 
 impl PresentedClientCredentialsView<'_> {
@@ -105,11 +107,16 @@ impl PresentedClientCredentialsView<'_> {
 
 impl std::fmt::Debug for PresentedClientCredentialsView<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("PresentedClientCredentialsView")
+        formatter
+            .debug_struct("PresentedClientCredentialsView")
             .field("client_id", &self.client_id)
             .field("client_secret", &self.client_secret.map(|_| "[REDACTED]"))
-            .field("client_assertion", &self.client_assertion.map(|_| "[REDACTED]"))
-            .field("method", &self.method).finish()
+            .field(
+                "client_assertion",
+                &self.client_assertion.map(|_| "[REDACTED]"),
+            )
+            .field("method", &self.method)
+            .finish()
     }
 }
 

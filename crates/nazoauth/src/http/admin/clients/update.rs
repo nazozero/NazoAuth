@@ -32,7 +32,9 @@ pub(crate) async fn admin_patch_client(
     ) {
         return csrf_error();
     }
-    let admin = match require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req).await {
+    let admin = match require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req)
+        .await
+    {
         Ok(admin) => admin,
         Err(response) => return response,
     };
@@ -40,10 +42,11 @@ pub(crate) async fn admin_patch_client(
         return response;
     }
     let source_ip_hash = blake3_hex(&client_ip_with_config(&req, config.client_ip()));
-    match service.update_with_required_audit(&client_id, payload, admin.id(), &source_ip_hash).await {
-        Ok(client) => {
-            json_response(client_json(&client))
-        }
+    match service
+        .update_with_required_audit(&client_id, payload, admin.id(), &source_ip_hash)
+        .await
+    {
+        Ok(client) => json_response(client_json(&client)),
         Err(AdminClientError::NotFound) => {
             oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.")
         }

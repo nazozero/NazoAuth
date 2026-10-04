@@ -5,8 +5,8 @@ use nazo_openid4vci::CredentialStoreError;
 use rand::Rng;
 use uuid::Uuid;
 
-use crate::{DbPool, get_conn};
 use crate::pool::DiscardOnDrop;
+use crate::{DbPool, get_conn};
 #[derive(Clone)]
 pub struct Openid4vciDatasetRepository {
     pool: DbPool,
@@ -273,13 +273,23 @@ impl Openid4vciDatasetRepository {
         write: ManagedCredentialDatasetWrite<'_>,
     ) -> Result<Option<ManagedCredentialDataset>, CredentialStoreError> {
         let ManagedCredentialDatasetWrite {
-            tenant_id, actor_user_id, subject_id, credential_configuration_id,
-            claims, valid_from, valid_until,
+            tenant_id,
+            actor_user_id,
+            subject_id,
+            credential_configuration_id,
+            claims,
+            valid_from,
+            valid_until,
         } = write;
         let claims_ciphertext = protect_dataset_claims(
-            &self.data_key, tenant_id, subject_id, credential_configuration_id, claims,
+            &self.data_key,
+            tenant_id,
+            subject_id,
+            credential_configuration_id,
+            claims,
         )?;
-        let connection = get_conn(&self.pool).await
+        let connection = get_conn(&self.pool)
+            .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
         let mut guard = DiscardOnDrop(Some(connection));
         let result = guard.connection()
@@ -365,15 +375,21 @@ impl Openid4vciDatasetRepository {
                     "openid4vci_credential_dataset_updated").await?;
                 Ok(Some(view))
             }).await.map_err(|_| CredentialStoreError::Unavailable);
-        if result.is_ok() { guard.return_to_pool(); }
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
         result
     }
 
     pub async fn delete_managed_dataset(
-        &self, tenant_id: Uuid, actor_user_id: Uuid, subject_id: Uuid,
+        &self,
+        tenant_id: Uuid,
+        actor_user_id: Uuid,
+        subject_id: Uuid,
         credential_configuration_id: &str,
     ) -> Result<bool, CredentialStoreError> {
-        let connection = get_conn(&self.pool).await
+        let connection = get_conn(&self.pool)
+            .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
         let mut guard = DiscardOnDrop(Some(connection));
         let result = guard.connection()
@@ -430,10 +446,11 @@ impl Openid4vciDatasetRepository {
                     "openid4vci_credential_dataset_deleted").await?;
                 Ok(true)
             }).await.map_err(|_| CredentialStoreError::Unavailable);
-        if result.is_ok() { guard.return_to_pool(); }
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
         result
     }
-
 }
 
 #[derive(QueryableByName)]
@@ -477,28 +494,57 @@ struct ManagedDatasetEffect {
 
 impl ManagedDatasetMutationRow {
     fn validated_effect(
-        &self, tenant_id: Uuid, actor_user_id: Uuid, subject_id: Uuid,
-        credential_configuration_id: &str, action: i16,
+        &self,
+        tenant_id: Uuid,
+        actor_user_id: Uuid,
+        subject_id: Uuid,
+        credential_configuration_id: &str,
+        action: i16,
     ) -> Result<Option<ManagedDatasetEffect>, diesel::result::Error> {
-        let counts = (self.expected_effects, self.effect_count, self.source_event_count);
-        if counts == (0, 0, 0) && self.tenant_id.is_none() && self.subject_id.is_none()
-            && self.credential_configuration_id.is_none() && self.actor_user_id.is_none()
-            && self.source.is_none() && self.claims_ciphertext.is_none()
-            && self.valid_from.is_none() && self.valid_until.is_none() && self.updated_at.is_none()
-            && self.source_event_action.is_none() && self.source_event_source.is_none()
-        { return Ok(None); }
-        if counts != (1, 1, 1) || self.tenant_id != Some(tenant_id)
-            || self.subject_id != Some(subject_id) || self.actor_user_id != Some(actor_user_id)
+        let counts = (
+            self.expected_effects,
+            self.effect_count,
+            self.source_event_count,
+        );
+        if counts == (0, 0, 0)
+            && self.tenant_id.is_none()
+            && self.subject_id.is_none()
+            && self.credential_configuration_id.is_none()
+            && self.actor_user_id.is_none()
+            && self.source.is_none()
+            && self.claims_ciphertext.is_none()
+            && self.valid_from.is_none()
+            && self.valid_until.is_none()
+            && self.updated_at.is_none()
+            && self.source_event_action.is_none()
+            && self.source_event_source.is_none()
+        {
+            return Ok(None);
+        }
+        if counts != (1, 1, 1)
+            || self.tenant_id != Some(tenant_id)
+            || self.subject_id != Some(subject_id)
+            || self.actor_user_id != Some(actor_user_id)
             || self.credential_configuration_id.as_deref() != Some(credential_configuration_id)
             || self.source.as_deref() != Some("admin-session")
             || self.source_event_action != Some(action)
             || self.source_event_source.as_deref() != Some("admin-session")
-        { return Err(diesel::result::Error::RollbackTransaction); }
+        {
+            return Err(diesel::result::Error::RollbackTransaction);
+        }
         Ok(Some(ManagedDatasetEffect {
-            tenant_id: self.tenant_id.ok_or(diesel::result::Error::RollbackTransaction)?,
-            actor_user_id: self.actor_user_id.ok_or(diesel::result::Error::RollbackTransaction)?,
-            subject_id: self.subject_id.ok_or(diesel::result::Error::RollbackTransaction)?,
-            credential_configuration_id: self.credential_configuration_id.clone()
+            tenant_id: self
+                .tenant_id
+                .ok_or(diesel::result::Error::RollbackTransaction)?,
+            actor_user_id: self
+                .actor_user_id
+                .ok_or(diesel::result::Error::RollbackTransaction)?,
+            subject_id: self
+                .subject_id
+                .ok_or(diesel::result::Error::RollbackTransaction)?,
+            credential_configuration_id: self
+                .credential_configuration_id
+                .clone()
                 .ok_or(diesel::result::Error::RollbackTransaction)?,
         }))
     }
@@ -512,7 +558,8 @@ async fn append_managed_dataset_outcome(
     crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(
         connection,
         &nazo_persistence::SecurityAuditEvent {
-            event_id: Uuid::now_v7(), event_type: event_type.to_owned(),
+            event_id: Uuid::now_v7(),
+            event_type: event_type.to_owned(),
             event_category: "credential_lifecycle".to_owned(),
             payload: serde_json::json!({
                 "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
@@ -523,7 +570,8 @@ async fn append_managed_dataset_outcome(
             }),
             occurred_at: Utc::now(),
         },
-    ).await
+    )
+    .await
 }
 
 impl nazo_persistence::Openid4vciDatasetStore for Openid4vciDatasetRepository {
@@ -594,10 +642,14 @@ impl nazo_persistence::Openid4vciDatasetStore for Openid4vciDatasetRepository {
                 },
             )
             .await?;
-            Ok(committed.map(|view| nazo_persistence::ManagedCredentialDataset {
-                claims: view.claims, valid_from: view.valid_from,
-                valid_until: view.valid_until, updated_at: view.updated_at,
-            }))
+            Ok(
+                committed.map(|view| nazo_persistence::ManagedCredentialDataset {
+                    claims: view.claims,
+                    valid_from: view.valid_from,
+                    valid_until: view.valid_until,
+                    updated_at: view.updated_at,
+                }),
+            )
         })
     }
 

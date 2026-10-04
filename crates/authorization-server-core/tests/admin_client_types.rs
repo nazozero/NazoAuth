@@ -409,10 +409,16 @@ fn prepared_write_moves_registration_and_holds_undisclosed_secret() {
     let registration_allocation = prepared.registration.redirect_uris.as_ptr();
     let tenant = prepared.tenant;
     let mut write = prepared.into_write();
-    assert_eq!(write.client.registration.redirect_uris.as_ptr(), registration_allocation);
+    assert_eq!(
+        write.client.registration.redirect_uris.as_ptr(),
+        registration_allocation
+    );
     assert_eq!(write.client.tenant_id, tenant.tenant_id.as_uuid());
     assert_eq!(write.issued_secret.as_deref(), Some("issued-secret"));
     assert!(!format!("{:?}", write.issued_secret).contains("issued-secret"));
-    assert_eq!(write.issued_secret.take_after_commit().as_deref(), Some("issued-secret"));
+    assert_eq!(
+        write.issued_secret.take_after_commit().as_deref(),
+        Some("issued-secret")
+    );
     assert!(write.issued_secret.is_none());
 }

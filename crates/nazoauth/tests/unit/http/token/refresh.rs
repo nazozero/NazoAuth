@@ -1423,7 +1423,8 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
     let state = live_trusted_proxy_refresh_state(AuthorizationServerProfile::Fapi2Security)
         .expect("candidate-error ordering test requires an isolated migrated DATABASE_URL");
     let certificate = crate::test_support::rfc9440_certificate_fixture("refresh-candidate-error");
-    let mismatch = crate::test_support::rfc9440_certificate_fixture("refresh-candidate-wrong-holder");
+    let mismatch =
+        crate::test_support::rfc9440_certificate_fixture("refresh-candidate-wrong-holder");
     assert_ne!(certificate.thumbprint, mismatch.thumbprint);
     let mut client = client_row();
     client.require_dpop_bound_tokens = false;

@@ -121,7 +121,8 @@ impl ServerTokenManagementOperations {
         } else {
             None
         };
-        let credentials = client_auth.credential_view(assertion_client_id.as_deref(), mtls_client_id);
+        let credentials =
+            client_auth.credential_view(assertion_client_id.as_deref(), mtls_client_id);
         let Some(client_id) = credentials.client_id else {
             return Err(TokenManagementError::InvalidClient {
                 basic_challenge: has_basic,

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
-    SelectableHelper, sql_query, sql_types,
+    ExpressionMethods, OptionalExtension, QueryDsl, QueryableByName, SelectableHelper, sql_query,
+    sql_types,
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
@@ -184,7 +184,10 @@ impl TokenRepository {
             .map_err(map_error)?;
         drop(connection);
         presentation
-            .map(|row| row.into_presentation(None).map(|snapshot| snapshot.presented))
+            .map(|row| {
+                row.into_presentation(None)
+                    .map(|snapshot| snapshot.presented)
+            })
             .transpose()
             .map_err(map_error)
     }
@@ -199,12 +202,13 @@ impl TokenRepository {
         let digest = blake3::hash(raw_token.as_bytes());
         let mut connection = self.connection().await?;
         let row = lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes())
-            .await.map_err(map_error)?;
+            .await
+            .map_err(map_error)?;
         drop(connection);
         row.map(|row| row.into_presentation(Some((client_id, retry_started_at))))
-            .transpose().map_err(map_error)
+            .transpose()
+            .map_err(map_error)
     }
-
 
     /// Apply a refresh-token mutation inside a caller-owned transaction.
     ///
@@ -751,14 +755,28 @@ impl RefreshPresentationRow {
         self,
         retry: Option<(Uuid, DateTime<Utc>)>,
     ) -> diesel::QueryResult<RefreshPresentation> {
-        let contract = require_contract(self.contract.map(|contract| RefreshContractRow { contract }))?;
+        let contract = require_contract(
+            self.contract
+                .map(|contract| RefreshContractRow { contract }),
+        )?;
         let (presented, successor) = match (
-            self.spent_digest, self.spent_member_id, self.spent_at,
-            self.spent_expires_at, self.successor_member_id,
+            self.spent_digest,
+            self.spent_member_id,
+            self.spent_at,
+            self.spent_expires_at,
+            self.successor_member_id,
         ) {
-            (None, None, None, None, None) =>
-                (token_from_current(self.family, contract).map_err(deserialization_error)?, Ok(None)),
-            (Some(refresh_token_blake3), Some(member_id), Some(spent_at), Some(expires_at), Some(successor_member_id)) => {
+            (None, None, None, None, None) => (
+                token_from_current(self.family, contract).map_err(deserialization_error)?,
+                Ok(None),
+            ),
+            (
+                Some(refresh_token_blake3),
+                Some(member_id),
+                Some(spent_at),
+                Some(expires_at),
+                Some(successor_member_id),
+            ) => {
                 let eligible = retry.is_some_and(|(client_id, now)| {
                     let elapsed = now.signed_duration_since(spent_at);
                     self.family.client_id == client_id
@@ -774,18 +792,32 @@ impl RefreshPresentationRow {
                 // are returned only after the application authenticates the holder.
                 let successor = if eligible {
                     token_from_current(self.family.clone(), contract.clone()).map(Some)
-                } else { Ok(None) };
+                } else {
+                    Ok(None)
+                };
                 let presented = token_from_spent(
-                    SpentRefreshTokenRow { refresh_token_blake3, member_id, spent_at, expires_at },
-                    self.family, contract,
-                ).map_err(deserialization_error)?;
+                    SpentRefreshTokenRow {
+                        refresh_token_blake3,
+                        member_id,
+                        spent_at,
+                        expires_at,
+                    },
+                    self.family,
+                    contract,
+                )
+                .map_err(deserialization_error)?;
                 (presented, successor)
             }
-            _ => return Err(diesel::result::Error::DeserializationError(
-                "refresh presentation has incomplete spent proof".into(),
-            )),
+            _ => {
+                return Err(diesel::result::Error::DeserializationError(
+                    "refresh presentation has incomplete spent proof".into(),
+                ));
+            }
         };
-        Ok(RefreshPresentation { presented, successor })
+        Ok(RefreshPresentation {
+            presented,
+            successor,
+        })
     }
 }
 

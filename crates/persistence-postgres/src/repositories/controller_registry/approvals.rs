@@ -94,7 +94,9 @@ impl std::fmt::Display for IdentityApprovalError {
 impl std::error::Error for IdentityApprovalError {}
 
 impl From<diesel::result::Error> for IdentityApprovalError {
-    fn from(error: diesel::result::Error) -> Self { approval_transport(error) }
+    fn from(error: diesel::result::Error) -> Self {
+        approval_transport(error)
+    }
 }
 
 fn approval_transport<E>(error: E) -> IdentityApprovalError
@@ -106,13 +108,20 @@ where
 
 #[derive(QueryableByName)]
 struct IssuedApprovalRow {
-    #[diesel(sql_type = DieselUuid)] approval_id: Uuid,
-    #[diesel(sql_type = Varchar)] deployment_id: String,
-    #[diesel(sql_type = Varchar)] action: String,
-    #[diesel(sql_type = Varchar)] action_sha256: String,
-    #[diesel(sql_type = DieselUuid)] admin_user_id: Uuid,
-    #[diesel(sql_type = Varchar)] token_hash: String,
-    #[diesel(sql_type = Timestamptz)] expires_at: DateTime<Utc>,
+    #[diesel(sql_type = DieselUuid)]
+    approval_id: Uuid,
+    #[diesel(sql_type = Varchar)]
+    deployment_id: String,
+    #[diesel(sql_type = Varchar)]
+    action: String,
+    #[diesel(sql_type = Varchar)]
+    action_sha256: String,
+    #[diesel(sql_type = DieselUuid)]
+    admin_user_id: Uuid,
+    #[diesel(sql_type = Varchar)]
+    token_hash: String,
+    #[diesel(sql_type = Timestamptz)]
+    expires_at: DateTime<Utc>,
 }
 
 #[derive(QueryableByName)]
@@ -208,7 +217,15 @@ impl ControllerRegistryRepository {
         admin_user_id: Uuid,
         now: DateTime<Utc>,
     ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
-        self.issue_identity_approval_owned(deployment_id,action,action_sha256,admin_user_id,now,None).await
+        self.issue_identity_approval_owned(
+            deployment_id,
+            action,
+            action_sha256,
+            admin_user_id,
+            now,
+            None,
+        )
+        .await
     }
 
     pub(crate) async fn issue_identity_approval_owned(
@@ -238,7 +255,9 @@ impl ControllerRegistryRepository {
         let token_hash = approval_token_digest(&token);
         let approval_id = Uuid::now_v7();
         let expires_at = now + Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS);
-        let mut guard = crate::pool::DiscardOnDrop(Some(get_conn(&self.pool).await.map_err(approval_transport)?));
+        let mut guard = crate::pool::DiscardOnDrop(Some(
+            get_conn(&self.pool).await.map_err(approval_transport)?,
+        ));
         let result = guard.connection().transaction::<_, IdentityApprovalError, _>(async move |connection| {
             if let Some(audit) = &audit {
                 if audit.actor_user_id != admin_user_id { return Err(approval_transport(anyhow::anyhow!("approval actor mismatch"))); }
@@ -280,7 +299,9 @@ impl ControllerRegistryRepository {
         }
         Ok(issued)
         }).await;
-        if result.is_ok() { guard.return_to_pool(); }
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
         result
     }
 }

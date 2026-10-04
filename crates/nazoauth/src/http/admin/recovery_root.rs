@@ -5,9 +5,7 @@
 //! 在同一个数据库事务内原子完成。明文审批令牌只在签发响应中出现一次，
 //! 永不写入日志或审计载荷；任何载荷都不存在可携带 Recovery Secret 的字段。
 
-use crate::http::admin::{
-    require_transactional_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
     require_admin_with_recent_mfa_or_forbidden_with_handles,
@@ -17,9 +15,9 @@ use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies, json_response, oauth_error};
 use nazo_oauth_server::crypto::blake3_hex;
-use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_persistence::control_plane::AdminIdentityAudit;
 use nazo_persistence::control_plane::{IdentityApprovalError, RecoveryRotationError};
 use std::collections::HashMap;
@@ -108,7 +106,15 @@ pub(crate) async fn admin_recovery_root_approval(
         return response;
     }
     match recovery
-        .issue_rotation_approval_with_required_audit(AdminIdentityAudit {tenant:admin.tenant(),actor_user_id:admin.id(),source_ip_hash:blake3_hex(&client_ip_with_config(&req,&client_ip_config))}, &body, Utc::now())
+        .issue_rotation_approval_with_required_audit(
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+            &body,
+            Utc::now(),
+        )
         .await
     {
         Ok(issued) => {
@@ -153,22 +159,29 @@ pub(crate) async fn admin_recovery_root_rotate(
         kid: body.kid.clone(),
     };
     match recovery
-        .commit_rotation_with_required_audit(&body.approval_token, &change, Utc::now(),AdminIdentityAudit {tenant:admin.tenant(),actor_user_id:admin.id(),source_ip_hash:blake3_hex(&client_ip_with_config(&req,&client_ip_config))})
+        .commit_rotation_with_required_audit(
+            &body.approval_token,
+            &change,
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+        )
         .await
     {
-        Ok(root) => {
-            json_response(serde_json::json!({
-                "recovery_root": {
-                    "deployment_id": root.deployment_id,
-                    "recovery_kid": root.recovery_kid,
-                    "kdf": root.kdf,
-                    "generation": root.generation,
-                    "created_at": root.created_at.to_rfc3339(),
-                    "updated_at": root.updated_at.to_rfc3339(),
-                },
-                "previous_generation_invalid": true,
-            }))
-        }
+        Ok(root) => json_response(serde_json::json!({
+            "recovery_root": {
+                "deployment_id": root.deployment_id,
+                "recovery_kid": root.recovery_kid,
+                "kdf": root.kdf,
+                "generation": root.generation,
+                "created_at": root.created_at.to_rfc3339(),
+                "updated_at": root.updated_at.to_rfc3339(),
+            },
+            "previous_generation_invalid": true,
+        })),
         Err(error) => service_error_response(error),
     }
 }
