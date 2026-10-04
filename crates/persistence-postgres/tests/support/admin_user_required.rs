@@ -2,6 +2,7 @@
 use super::*;
 use diesel_async::SimpleAsyncConnection;
 use futures_util::FutureExt as _;
+use nazo_identity::PublicAccount;
 use nazo_identity::ports::{
     AdminUserRepositoryPort, NewUser, PasswordHashInput, RegistrationAccountRepositoryPort,
     RepositoryFuture, UserPage,
