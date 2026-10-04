@@ -10,6 +10,7 @@ nazo-openid4vci.workspace = true
 nazo-oauth-server.workspace = true
 http.workspace = true
 actix-web = { workspace = true, features = ["cookies"] }
+actix-rt.workspace = true
 actix-cors.workspace = true
 base64.workspace = true
 blake3.workspace = true
