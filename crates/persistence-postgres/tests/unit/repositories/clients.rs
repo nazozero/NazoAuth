@@ -94,91 +94,32 @@ async fn oauth_client_record_queryable_by_name_rejects_malformed_rows() {
     );
 }
 
-/// DC-04b: `into_domain` is the post-statement validation stage — a row can
-/// decode cleanly into `OAuthClientRecord` yet still be rejected by the
-/// domain conversion (here: a JSONB array column holding non-strings passes
-/// the table CHECK and the `Value` decode, but fails `string_array`). Through
-/// `replace_registration` itself this state is unreachable — the statement
-/// rewrites every validated column from an already-domain `OAuthClient` — so
-/// the boundary is exercised at the record level and confirmed by inspection
-/// in the companion source test below.
-#[tokio::test]
-async fn oauth_client_record_into_domain_validates_json_columns_after_decode() {
-    let Some(url) = dc04_database_url() else {
-        return;
-    };
-    let mut connection = diesel_async::AsyncPgConnection::establish(&url)
-        .await
-        .unwrap();
-    let client_id = Uuid::now_v7();
-    insert_dc04_client(&mut connection, client_id).await;
-    sql_query("UPDATE oauth_clients SET scopes = '[1, \"openid\"]'::jsonb WHERE id = $1")
-        .bind::<sql_types::Uuid, _>(client_id)
-        .execute(&mut connection)
-        .await
-        .unwrap();
-
-    // Stage one (mirrors the RETURNING decode) still succeeds.
-    let record = sql_query("SELECT * FROM oauth_clients WHERE id = $1")
-        .bind::<sql_types::Uuid, _>(client_id)
-        .get_result::<OAuthClientRecord>(&mut connection)
-        .await
-        .expect("a JSONB array of non-strings still decodes into the record");
-    // Stage two (post-commit) fails closed on the domain-invalid column.
-    let error = record.into_domain().unwrap_err();
-    assert!(
-        matches!(error, RepositoryError::Unexpected(ref message) if message.contains("scopes")),
-        "into_domain must reject a non-string array column, got {error:?}"
-    );
-    delete_dc04_client(&mut connection, client_id).await;
-}
-
-/// DC-04b: `replace_registration` runs exactly one `UPDATE ... RETURNING`
-/// statement — a single statement is already atomic, so no transaction wraps
-/// it — and converts the decoded record to the domain client only after the
-/// statement resolves, so a conversion error can neither resurrect a rejected
-/// update nor hide a committed one.
+/// DC-04b: one UPDATE RETURNING is drained and validated inside the shared
+/// Required-audit transaction. Domain conversion failure rolls back the update;
+/// the domain client is returned only after the full transaction acknowledgement.
 #[test]
-fn replace_registration_converts_the_record_after_commit() {
+fn replace_registration_validates_the_record_before_audited_commit() {
     let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/repositories/clients/mutation.rs"
-    ))
-    .expect("client mutation source is readable");
-    let body = source
-        .split("pub async fn replace_registration(")
-        .nth(1)
+        env!("CARGO_MANIFEST_DIR"), "/src/repositories/clients/mutation.rs"
+    )).expect("client mutation source is readable");
+    let body = source.split("pub async fn replace_registration(").nth(1)
         .and_then(|source| source.split("pub async fn rotate_credentials(").next())
         .expect("replace_registration remains present");
-
-    assert!(
-        !body.contains(".transaction"),
-        "a single UPDATE ... RETURNING needs no explicit transaction"
-    );
-    let statement = body
-        .find("UPDATE oauth_clients SET")
-        .expect("the single update statement is present");
-    let domain = body
-        .rfind("record.into_domain()")
-        .expect("the returned record converts to the domain client");
-    assert!(
-        statement < domain,
-        "into_domain must run after the statement returns, not before"
-    );
-    assert!(
-        body.contains("RETURNING") && body.contains("get_result::<OAuthClientRecord>"),
-        "the statement decodes the returned row into the record type"
-    );
-    let metadata = body
-        .find("serde_json::json!")
-        .expect("metadata is serialized before the statement runs");
-    let acquire = body
-        .find("self.connection().await?")
-        .expect("the connection is acquired for the statement");
-    assert!(
-        metadata < acquire && acquire < statement,
-        "metadata is constructed before the pooled connection is acquired"
-    );
+    let transaction = body.find(".transaction::<OAuthClient").expect("atomic owner remains present");
+    let statement = body.find("UPDATE oauth_clients SET").expect("single update remains present");
+    assert_eq!(body.matches("UPDATE oauth_clients SET").count(), 1);
+    let drain = body.find(".load::<OAuthClientRecord>").expect("RETURNING is fully drained");
+    let domain = body.find(".into_domain()").expect("returned record is validated");
+    let audit = body.find("append_dynamic_registration_audit")
+        .expect("audited update retains the Required owner");
+    assert!(transaction < statement && statement < drain && drain < domain && domain < audit);
+    assert!(body.contains("RETURNING") && body.contains("records.len() != 1"));
+    let metadata = body.find("serde_json::json!").expect("metadata serialization remains present");
+    let acquire = body.find("self.connection().await?").expect("single connection is acquired");
+    assert!(metadata < acquire && acquire < transaction);
+    assert_eq!(body.matches("self.connection().await?").count(), 1);
+    assert!(body.contains("if result.is_ok()") && body.contains("guard.return_to_pool()"),
+        "failed acknowledgements must discard the guarded connection");
 }
 
 use diesel::{sql_query, sql_types};

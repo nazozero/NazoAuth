@@ -141,6 +141,16 @@ issuance UUID before signing the access token. Equal grant contents and refresh
 contract hashes never identify the same authorization. Fresh token exchange and
 anonymous pre-authorized grants choose independent roots.
 
+A projection write succeeds only when PostgreSQL acknowledges its write or a
+fresh locked read proves the exact existing projection. An identical retry leaves
+the row version unchanged; rejected identity, lineage, provenance or sender
+bindings return `InvalidTransition`. Registered retries also recheck the active
+client under a row lock. Writes use one statement; no-write retries require a
+second statement because a conflicting insert may commit after the first
+statement's snapshot. Explicitly corrupt stored ciphertext and response metadata
+return `InvalidTransition`; connection, query and commit failures remain
+`Unavailable`. Neither result publishes credential data after failed validation.
+
 Storage retains every access-token row, immutable authorization/proof provenance
 and the signed sender binding. Deferred intents, exact response records and
 notification handles retain the original configuration and optional exact

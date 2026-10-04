@@ -659,7 +659,7 @@ struct CountRow {
     count: i64,
 }
 
-async fn decision_fact_count(fixture: &PromptNoneFixture, uri: &str) -> i64 {
+pub(super) async fn decision_fact_count(fixture: &PromptNoneFixture, uri: &str) -> i64 {
     let mut connection = get_conn(&fixture.live.state.diesel_db).await.unwrap();
     sql_query(
         "SELECT count(*) AS count FROM security_audit_events \

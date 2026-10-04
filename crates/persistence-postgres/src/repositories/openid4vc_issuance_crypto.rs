@@ -23,10 +23,34 @@ pub(super) fn unprotect_payload(
 ) -> Result<Vec<u8>, diesel::result::Error> {
     let (nonce, ciphertext) = protected
         .split_at_checked(12)
-        .ok_or(diesel::result::Error::RollbackTransaction)?;
+        .ok_or_else(corrupt_stored_credential)?;
     let nonce: &[u8; 12] = nonce
         .try_into()
-        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+        .map_err(|_| corrupt_stored_credential())?;
     nazo_crypto::aead::decrypt(key, nonce, transaction_id.as_bytes(), ciphertext)
-        .map_err(|_| diesel::result::Error::RollbackTransaction)
+        .map_err(|_| corrupt_stored_credential())
+}
+
+
+#[derive(Debug)]
+struct CorruptStoredCredential;
+
+impl std::fmt::Display for CorruptStoredCredential {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("stored credential data is invalid")
+    }
+}
+
+impl std::error::Error for CorruptStoredCredential {}
+
+pub(super) fn corrupt_stored_credential() -> diesel::result::Error {
+    diesel::result::Error::DeserializationError(Box::new(CorruptStoredCredential))
+}
+
+pub(super) fn map_stored_credential_error(error: diesel::result::Error) -> CredentialStoreError {
+    match error {
+        diesel::result::Error::DeserializationError(cause)
+            if cause.is::<CorruptStoredCredential>() => CredentialStoreError::InvalidTransition,
+        _ => CredentialStoreError::Unavailable,
+    }
 }

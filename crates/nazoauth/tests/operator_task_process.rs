@@ -47,7 +47,7 @@ struct ExistsRow {
 async fn isolated_registry(
     case: &str,
 ) -> Option<(String, nazo_postgres::ControllerRegistryRepository)> {
-    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 16] = [
+    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 19] = [
         "20260805000100",
         "20260905000100",
         "20260909000100",
@@ -66,6 +66,10 @@ async fn isolated_registry(
         "20261001000400",
         // Public refresh-family cutover and trigger run once per database.
         "20261001000500",
+        "20261002000300",
+        // Fixed public Required approval and observation owners run once.
+        "20261003000400",
+        "20261003000500",
     ];
 
     let base = std::env::var("NAZO_TEST_DATABASE_URL")

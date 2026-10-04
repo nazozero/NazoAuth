@@ -3220,8 +3220,8 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
         .expect("gate transaction should begin");
     sql_query(
         "INSERT INTO openid4vci_access_grants \
-         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at) \
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at,proof_origin,authorization_id,mtls_x5t_s256) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
     )
     .bind::<SqlUuid, _>(access.token_id)
     .bind::<Text, _>(&token_hash)
@@ -3232,6 +3232,9 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
     .bind::<diesel::sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
     .bind::<diesel::sql_types::Nullable<Text>, _>(access.dpop_jkt.as_deref())
     .bind::<diesel::sql_types::Timestamptz, _>(access.expires_at - Duration::minutes(5))
+    .bind::<Text, _>(access.proof_origin.as_str())
+    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(access.authorization_id)
+    .bind::<diesel::sql_types::Nullable<Text>, _>(access.mtls_x5t_s256.as_deref())
     .execute(&mut gate)
     .await
     .expect("gate grant row should insert uncommitted");
@@ -3391,10 +3394,8 @@ async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
     );
     let mut attempted_projection = anonymous.clone();
     attempted_projection.proof_origin = nazo_openid4vci::CredentialProofOrigin::RegisteredClient;
-    issuer
-        .upsert_access(&anonymous_hash, &attempted_projection)
-        .await
-        .unwrap();
+    assert_eq!(issuer.upsert_access(&anonymous_hash, &attempted_projection).await,
+        Err(CredentialStoreError::InvalidTransition));
     assert_eq!(
         issuer
             .resolve_access(&anonymous_hash, Utc::now())
@@ -3788,9 +3789,8 @@ async fn access_upsert_updates_each_mutable_projection_column() {
 }
 
 // UP-03: an upsert that loses the token_hash conflict but mismatches any
-// persisted identity column is a no-op that still reports success — the
-// discarded candidate row is never visible and its foreign keys are never
-// checked.
+// persisted identity column is rejected without writing. A rejected candidate
+// must not be acknowledged as an identical retry; its foreign keys are never checked.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn access_upsert_conflict_with_a_different_identity_is_a_noop() {
     let Some(database_url) = database_url() else {
@@ -3856,10 +3856,8 @@ async fn access_upsert_conflict_with_a_different_identity_is_a_noop() {
         ),
     ];
     for (field, flipped) in flips {
-        issuer
-            .upsert_access(&token_hash, &flipped)
-            .await
-            .unwrap_or_else(|error| panic!("a {field} flip must still report success: {error}"));
+        assert_eq!(issuer.upsert_access(&token_hash, &flipped).await,
+            Err(CredentialStoreError::InvalidTransition), "a {field} flip must be rejected");
         let row = persisted_access_grant(&pool, &token_hash)
             .await
             .expect("the original grant row must remain");
@@ -6039,4 +6037,66 @@ async fn deferred_reverse_grant_pairs_wait_on_the_sorted_first_lock_and_both_com
             DeferredClaimOutcome::Claimed(_)
         ));
     }
+}
+
+
+// A persistence receipt must distinguish immutable-binding rejection from an
+// exact no-write retry on both registered and anonymous pre-authorized paths.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn credential_persistence_rejects_binding_conflicts_and_accepts_exact_retries() {
+    let Some(database_url) = database_url() else { return; };
+    nazo_postgres::run_pending_migrations(&database_url).await.unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-receipt").await;
+    let client_id = format!("openid4vc-receipt-{}", Uuid::now_v7().simple());
+    let client_uuid = insert_openid4vc_client(&pool, &client_id).await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x68_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier));
+    for (origin, registered) in [
+        (nazo_openid4vci::CredentialProofOrigin::RegisteredClient, Some(client_id.as_str())),
+        (nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized, None),
+    ] {
+        let mut access = openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+        access.proof_origin = origin;
+        access.authorization_id = Some(Uuid::now_v7());
+        access.mtls_x5t_s256 = Some("receipt-certificate".to_owned());
+        let hash = blake3::hash(access.token_id.as_bytes()).to_hex().to_string();
+        issuer.persist_pre_authorized_access(&hash, &access, registered).await.unwrap();
+        let before = persisted_access_grant(&pool, &hash).await.unwrap();
+        issuer.persist_pre_authorized_access(&hash, &access, registered).await
+            .expect("an exact retry must succeed without rewriting the row");
+        assert_eq!(persisted_access_grant(&pool, &hash).await.unwrap().xmin, before.xmin);
+        let mut wrong_lineage = access.clone();
+        wrong_lineage.authorization_id = Some(Uuid::now_v7());
+        let mut wrong_sender = access.clone();
+        wrong_sender.mtls_x5t_s256 = Some("other-certificate".to_owned());
+        let mut wrong_origin = access.clone();
+        wrong_origin.proof_origin = nazo_openid4vci::CredentialProofOrigin::LegacyUnspecified;
+        for wrong in [wrong_lineage, wrong_sender, wrong_origin] {
+            assert_eq!(issuer.upsert_access(&hash, &wrong).await,
+                Err(CredentialStoreError::InvalidTransition));
+            assert_eq!(issuer.persist_pre_authorized_access(&hash, &wrong, registered).await,
+                Err(CredentialStoreError::InvalidTransition));
+            let after = persisted_access_grant(&pool, &hash).await.unwrap();
+            assert_eq!(after.xmin, before.xmin, "rejected binding must not write");
+            assert_persisted_access_grant(&after, &hash, &access);
+        }
+    }
+    // The active-client CTE alone cannot acknowledge a provenance-conflicting
+    // existing row, including a legacy row from before provenance migration.
+    let mut legacy = openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+    legacy.proof_origin = nazo_openid4vci::CredentialProofOrigin::LegacyUnspecified;
+    let hash = blake3::hash(legacy.token_id.as_bytes()).to_hex().to_string();
+    issuer.upsert_access(&hash, &legacy).await.unwrap();
+    let before = persisted_access_grant(&pool, &hash).await.unwrap();
+    let mut candidate = legacy.clone();
+    candidate.proof_origin = nazo_openid4vci::CredentialProofOrigin::RegisteredClient;
+    candidate.expires_at += Duration::minutes(5);
+    assert_eq!(issuer.persist_pre_authorized_access(&hash, &candidate, Some(&client_id)).await,
+        Err(CredentialStoreError::InvalidTransition));
+    let after = persisted_access_grant(&pool, &hash).await.unwrap();
+    assert_eq!(after.xmin, before.xmin);
+    assert_persisted_access_grant(&after, &hash, &legacy);
+    delete_openid4vc_subject_and_client(&pool, subject_id, Some(client_uuid)).await;
 }
