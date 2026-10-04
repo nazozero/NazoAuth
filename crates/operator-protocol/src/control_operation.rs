@@ -1179,12 +1179,22 @@ pub fn verify_control_operation_signature(
     validate_controller_kid(expected_kid).map_err(|_| ProtocolError::Header)?;
     let (protected, payload, signature) = control_operation_segments(compact)?;
     verify_control_operation_header(protected, expected_kid)?;
-    let payload_bytes = URL_SAFE_NO_PAD.decode(payload).map_err(|_| ProtocolError::Base64)?;
-    let operation: ControlOperation = serde_json::from_slice(&payload_bytes).map_err(|_| ProtocolError::Json)?;
+    let payload_bytes = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| ProtocolError::Base64)?;
+    let operation: ControlOperation =
+        serde_json::from_slice(&payload_bytes).map_err(|_| ProtocolError::Json)?;
     ensure_control_operation_kid(&operation, expected_kid)?;
     validate_control_operation(&operation)?;
     let canonical = canonical_control_operation_bytes(&operation)?;
-    verify_control_operation_payload(protected, payload, signature, &payload_bytes, &canonical, key)?;
+    verify_control_operation_payload(
+        protected,
+        payload,
+        signature,
+        &payload_bytes,
+        &canonical,
+        key,
+    )?;
     Ok(operation)
 }
 
@@ -1202,26 +1212,55 @@ pub struct PresentedControlOperation<'a> {
 
 impl<'a> PresentedControlOperation<'a> {
     pub fn parse(compact: &'a str) -> Result<Self, ProtocolError> {
-        if compact.len() > MAX_COMPACT_JWS_BYTES { return Err(ProtocolError::TooLarge); }
+        if compact.len() > MAX_COMPACT_JWS_BYTES {
+            return Err(ProtocolError::TooLarge);
+        }
         let (protected, payload, signature) = control_operation_segments(compact)?;
-        let payload_bytes = URL_SAFE_NO_PAD.decode(payload).map_err(|_| ProtocolError::Base64)?;
-        if payload_bytes.len() > MAX_CONTROL_OPERATION_BYTES { return Err(ProtocolError::TooLarge); }
-        let operation: ControlOperation = serde_json::from_slice(&payload_bytes).map_err(|_| ProtocolError::Json)?;
+        let payload_bytes = URL_SAFE_NO_PAD
+            .decode(payload)
+            .map_err(|_| ProtocolError::Base64)?;
+        if payload_bytes.len() > MAX_CONTROL_OPERATION_BYTES {
+            return Err(ProtocolError::TooLarge);
+        }
+        let operation: ControlOperation =
+            serde_json::from_slice(&payload_bytes).map_err(|_| ProtocolError::Json)?;
         validate_control_operation(&operation)?;
         let canonical = canonical_control_operation_bytes(&operation)?;
-        Ok(Self { protected, payload, signature, payload_bytes, operation, canonical })
+        Ok(Self {
+            protected,
+            payload,
+            signature,
+            payload_bytes,
+            operation,
+            canonical,
+        })
     }
 
     /// Lookup/replay facts only. The operation remains untrusted until verification.
-    pub fn operation(&self) -> &ControlOperation { &self.operation }
+    pub fn operation(&self) -> &ControlOperation {
+        &self.operation
+    }
 
-    pub fn request_hash(&self) -> String { lower_hex_sha256(&self.canonical) }
+    pub fn request_hash(&self) -> String {
+        lower_hex_sha256(&self.canonical)
+    }
 
-    pub fn verify(self, expected_kid: &str, key: &VerifyingKey) -> Result<ControlOperation, ProtocolError> {
+    pub fn verify(
+        self,
+        expected_kid: &str,
+        key: &VerifyingKey,
+    ) -> Result<ControlOperation, ProtocolError> {
         validate_controller_kid(expected_kid).map_err(|_| ProtocolError::Header)?;
         verify_control_operation_header(self.protected, expected_kid)?;
         ensure_control_operation_kid(&self.operation, expected_kid)?;
-        verify_control_operation_payload(self.protected, self.payload, self.signature, &self.payload_bytes, &self.canonical, key)?;
+        verify_control_operation_payload(
+            self.protected,
+            self.payload,
+            self.signature,
+            &self.payload_bytes,
+            &self.canonical,
+            key,
+        )?;
         Ok(self.operation)
     }
 }
@@ -1229,40 +1268,73 @@ impl<'a> PresentedControlOperation<'a> {
 // Each public entry checks the size before parsing; this helper owns segmentation.
 fn control_operation_segments(compact: &str) -> Result<(&str, &str, &str), ProtocolError> {
     let mut segments = compact.split('.');
-    match (segments.next(), segments.next(), segments.next(), segments.next()) {
+    match (
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+    ) {
         (Some(protected), Some(payload), Some(signature), None)
-            if !protected.is_empty() && !payload.is_empty() && !signature.is_empty() => Ok((protected, payload, signature)),
+            if !protected.is_empty() && !payload.is_empty() && !signature.is_empty() =>
+        {
+            Ok((protected, payload, signature))
+        }
         _ => Err(ProtocolError::SegmentCount),
     }
 }
 
-fn verify_control_operation_header(protected: &str, expected_kid: &str) -> Result<(), ProtocolError> {
-    let header_bytes = URL_SAFE_NO_PAD.decode(protected).map_err(|_| ProtocolError::Base64)?;
-    let header: ProtectedHeader = serde_json::from_slice(&header_bytes).map_err(|_| ProtocolError::Header)?;
-    if header.alg != FixedAlgorithm::EdDSA || header.typ != CONTROL_OPERATION_JWS_TYPE || header.kid != expected_kid {
+fn verify_control_operation_header(
+    protected: &str,
+    expected_kid: &str,
+) -> Result<(), ProtocolError> {
+    let header_bytes = URL_SAFE_NO_PAD
+        .decode(protected)
+        .map_err(|_| ProtocolError::Base64)?;
+    let header: ProtectedHeader =
+        serde_json::from_slice(&header_bytes).map_err(|_| ProtocolError::Header)?;
+    if header.alg != FixedAlgorithm::EdDSA
+        || header.typ != CONTROL_OPERATION_JWS_TYPE
+        || header.kid != expected_kid
+    {
         return Err(ProtocolError::Header);
     }
     Ok(())
 }
 
-fn ensure_control_operation_kid(operation: &ControlOperation, expected_kid: &str) -> Result<(), ProtocolError> {
+fn ensure_control_operation_kid(
+    operation: &ControlOperation,
+    expected_kid: &str,
+) -> Result<(), ProtocolError> {
     if operation.kid != expected_kid {
-        return Err(ProtocolError::Policy("envelope kid does not match the controller key id claim"));
+        return Err(ProtocolError::Policy(
+            "envelope kid does not match the controller key id claim",
+        ));
     }
     Ok(())
 }
 
 fn verify_control_operation_payload(
-    protected: &str, payload: &str, signature: &str,
-    payload_bytes: &[u8], canonical: &[u8], key: &VerifyingKey,
+    protected: &str,
+    payload: &str,
+    signature: &str,
+    payload_bytes: &[u8],
+    canonical: &[u8],
+    key: &VerifyingKey,
 ) -> Result<(), ProtocolError> {
     if !constant_time_eq(payload_bytes, canonical) {
-        return Err(ProtocolError::Policy("control operation payload is not canonically encoded"));
+        return Err(ProtocolError::Policy(
+            "control operation payload is not canonically encoded",
+        ));
     }
-    let signature_bytes = URL_SAFE_NO_PAD.decode(signature).map_err(|_| ProtocolError::Base64)?;
+    let signature_bytes = URL_SAFE_NO_PAD
+        .decode(signature)
+        .map_err(|_| ProtocolError::Base64)?;
     // Verify the original compact segments, never a reconstructed payload.
-    key.verify(format!("{protected}.{payload}").as_bytes(), &signature_bytes)
-        .map_err(|_| ProtocolError::Signature)
+    key.verify(
+        format!("{protected}.{payload}").as_bytes(),
+        &signature_bytes,
+    )
+    .map_err(|_| ProtocolError::Signature)
 }
 
 /// Constant-time byte-slice equality for secret-adjacent values (config

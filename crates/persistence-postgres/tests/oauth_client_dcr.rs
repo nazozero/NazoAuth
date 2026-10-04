@@ -615,10 +615,13 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         registration_access_token_blake3: Some(initial_token.clone()),
     };
 
-    let inserted =
-        DynamicRegistrationClientStore::insert(&repository, prepared.clone(), "fixture-source-ip-hash")
-            .await
-            .unwrap();
+    let inserted = DynamicRegistrationClientStore::insert(
+        &repository,
+        prepared.clone(),
+        "fixture-source-ip-hash",
+    )
+    .await
+    .unwrap();
     assert_eq!(inserted.client_id, template.client_id);
     assert_eq!(inserted.tenant_id, tenant.tenant_id.as_uuid());
     assert!(
@@ -864,9 +867,13 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
     };
 
     assert_eq!(
-        DynamicRegistrationClientStore::insert(&repository, prepared.clone(), "fixture-source-ip-hash",)
-            .await
-            .unwrap_err(),
+        DynamicRegistrationClientStore::insert(
+            &repository,
+            prepared.clone(),
+            "fixture-source-ip-hash",
+        )
+        .await
+        .unwrap_err(),
         DynamicRegistrationDependencyError::Unavailable
     );
     assert_eq!(
@@ -1387,9 +1394,12 @@ async fn dcr_required_event_failure_rolls_back_each_owned_effect() {
         template.client_id
     );
     sql_query(&hook_sql).execute(&mut connection).await.unwrap();
-    let failed_insert =
-        DynamicRegistrationClientStore::insert(&repository, prepared.clone(), "fixture-source-ip-hash")
-            .await;
+    let failed_insert = DynamicRegistrationClientStore::insert(
+        &repository,
+        prepared.clone(),
+        "fixture-source-ip-hash",
+    )
+    .await;
     sql_query(format!("DROP TRIGGER {hook} ON security_audit_events"))
         .execute(&mut connection)
         .await
@@ -1403,10 +1413,13 @@ async fn dcr_required_event_failure_rolls_back_each_owned_effect() {
             .is_none(),
         "required append failure must roll back the INSERT"
     );
-    let inserted =
-        DynamicRegistrationClientStore::insert(&repository, prepared.clone(), "fixture-source-ip-hash")
-            .await
-            .unwrap();
+    let inserted = DynamicRegistrationClientStore::insert(
+        &repository,
+        prepared.clone(),
+        "fixture-source-ip-hash",
+    )
+    .await
+    .unwrap();
     let before = client_credential_state(&pool, inserted.id).await;
     let mut candidate = inserted.clone();
     candidate.client_name = "Must not survive failed evidence".to_owned();

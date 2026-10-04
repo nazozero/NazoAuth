@@ -45,9 +45,7 @@ use std::{
 use anyhow::{Context as _, bail};
 use chrono::Utc;
 use fs2::FileExt as _;
-use nazo_operator_protocol::{
-    ControlOperation, MAX_COMPACT_JWS_BYTES,
-};
+use nazo_operator_protocol::{ControlOperation, MAX_COMPACT_JWS_BYTES};
 
 mod admission;
 mod control_journal;
@@ -234,7 +232,9 @@ async fn execute_compact(
     // It checks header/key binding, canonical equality and the real signature
     // over the original compact segments without parsing/hash work again.
     let verified = reject(
-        presented.verify(&admitted.kid, &admitted.verifying_key).map_err(anyhow::Error::new),
+        presented
+            .verify(&admitted.kid, &admitted.verifying_key)
+            .map_err(anyhow::Error::new),
         RejectionClass::Authorization,
     )?;
 

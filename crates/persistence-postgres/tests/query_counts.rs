@@ -1026,15 +1026,24 @@ async fn rf06_lost_response_successor_is_single_read() {
     let snapshots = TokenIssuanceRepository::new(pool.clone());
     let retry_started_at = Utc::now();
     for (raw, expected_member, expected_successor) in [
-        (&child_raw, child_id, None), (&parent_raw, parent_id, Some(child_id)),
+        (&child_raw, child_id, None),
+        (&parent_raw, parent_id, Some(child_id)),
     ] {
-        let (result, delta, acquires) = measure(&counter,
+        let (result, delta, acquires) = measure(
+            &counter,
             snapshots.refresh_token_snapshot(tenant_id, raw, seed.client.id, retry_started_at),
-        ).await;
+        )
+        .await;
         let snapshot = result.unwrap().expect("presentation exists");
         assert_eq!(snapshot.presented.id, expected_member);
-        assert_eq!(snapshot.presented.token_blake3, *blake3::hash(raw.as_bytes()).as_bytes());
-        assert_eq!(snapshot.successor.unwrap().map(|token| token.id), expected_successor);
+        assert_eq!(
+            snapshot.presented.token_blake3,
+            *blake3::hash(raw.as_bytes()).as_bytes()
+        );
+        assert_eq!(
+            snapshot.successor.unwrap().map(|token| token.id),
+            expected_successor
+        );
         assert_eq!(delta.data_queries, 1);
         assert_eq!(acquires, 1);
         assert_no_transaction(delta);
@@ -1045,9 +1054,11 @@ async fn rf06_lost_response_successor_is_single_read() {
         (seed.client.id, revoked_at - Duration::seconds(1)),
         (seed.client.id, revoked_at + Duration::seconds(61)),
     ] {
-        let (result, delta, acquires) = measure(&counter,
+        let (result, delta, acquires) = measure(
+            &counter,
             snapshots.refresh_token_snapshot(tenant_id, &parent_raw, client_id, at),
-        ).await;
+        )
+        .await;
         let snapshot = result.unwrap().expect("original presentation still exists");
         assert_eq!(snapshot.presented.id, parent_id);
         assert!(snapshot.successor.unwrap().is_none());
@@ -1134,11 +1145,14 @@ async fn rf06_lost_response_successor_is_single_read() {
     }
 
     for (lookup_tenant, raw) in [
-        (Uuid::now_v7(), parent_raw.as_str()), (tenant_id, "unknown-r05-token"),
+        (Uuid::now_v7(), parent_raw.as_str()),
+        (tenant_id, "unknown-r05-token"),
     ] {
-        let (result, delta, acquires) = measure(&counter,
+        let (result, delta, acquires) = measure(
+            &counter,
             snapshots.refresh_token_snapshot(lookup_tenant, raw, seed.client.id, retry_started_at),
-        ).await;
+        )
+        .await;
         assert!(result.unwrap().is_none());
         assert_eq!(delta.data_queries, 1);
         assert_eq!(acquires, 1);
@@ -1213,9 +1227,11 @@ async fn rf06_lost_response_successor_is_single_read() {
         .bind::<sql_types::Binary, _>(blake3::hash(parent_raw.as_bytes()).as_bytes().as_slice())
         .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Uuid, _>(family_id)
         .execute(&mut connection).await.unwrap();
-    let (result, delta, acquires) = measure(&counter,
+    let (result, delta, acquires) = measure(
+        &counter,
         snapshots.refresh_token_snapshot(tenant_id, &parent_raw, seed.client.id, retry_started_at),
-    ).await;
+    )
+    .await;
     let snapshot = result.unwrap().expect("current presentation has priority");
     assert_eq!(snapshot.presented.id, child_id);
     assert!(snapshot.successor.unwrap().is_none());
@@ -1227,12 +1243,19 @@ async fn rf06_lost_response_successor_is_single_read() {
         .bind::<sql_types::Binary, _>(blake3::hash(child_raw.as_bytes()).as_bytes().as_slice())
         .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Uuid, _>(family_id)
         .execute(&mut connection).await.unwrap();
-    let (result, delta, acquires) = measure(&counter,
+    let (result, delta, acquires) = measure(
+        &counter,
         snapshots.refresh_token_snapshot(tenant_id, &parent_raw, seed.client.id, retry_started_at),
-    ).await;
-    let snapshot = result.unwrap().expect("unbound spent presentation remains observable");
+    )
+    .await;
+    let snapshot = result
+        .unwrap()
+        .expect("unbound spent presentation remains observable");
     assert_eq!(snapshot.presented.id, parent_id);
-    assert!(snapshot.successor.unwrap().is_none(), "unbound holder cannot recover a successor");
+    assert!(
+        snapshot.successor.unwrap().is_none(),
+        "unbound holder cannot recover a successor"
+    );
     assert_eq!(delta.data_queries, 1);
     assert_eq!(acquires, 1);
     assert_no_transaction(delta);

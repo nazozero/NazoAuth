@@ -248,7 +248,12 @@ pub async fn authenticate_client_with_dependencies<'credential>(
         }
         ClientAuthenticationRequirement::MutualTls { .. } => {
             let Some(certificate) = request.client_certificate.as_ref() else {
-                log_client_auth_rejection(request, client, &credentials, "missing_mtls_certificate");
+                log_client_auth_rejection(
+                    request,
+                    client,
+                    &credentials,
+                    "missing_mtls_certificate",
+                );
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
             if client.token_endpoint_auth_method == "self_signed_tls_client_auth" {

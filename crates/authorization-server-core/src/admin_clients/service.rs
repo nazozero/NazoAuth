@@ -64,11 +64,15 @@ where
         request: CreateClientRequest,
     ) -> Result<CreatedClient, AdminClientError> {
         let mut prepared = self.prepare_registration(request).await?.into_write();
-        let client = self.repository.insert(
-            &prepared.client,
-            prepared.client_secret_hash.as_deref(),
-            prepared.registration_access_token_blake3.as_deref(),
-        ).await.map_err(AdminClientError::Write)?;
+        let client = self
+            .repository
+            .insert(
+                &prepared.client,
+                prepared.client_secret_hash.as_deref(),
+                prepared.registration_access_token_blake3.as_deref(),
+            )
+            .await
+            .map_err(AdminClientError::Write)?;
         validate_inserted_context(&prepared.client, &client)?;
         let issued_secret = prepared.issued_secret.take_after_commit();
         Ok(CreatedClient {
@@ -87,15 +91,22 @@ where
     ) -> Result<CreatedClient, AdminClientError> {
         let mut prepared = self.prepare_registration(request).await?.into_write();
         let client = &prepared.client;
-        let inserted = self.repository.insert_with_required_audit(
-            client,
-            prepared.client_secret_hash.as_deref(),
-            prepared.registration_access_token_blake3.as_deref(),
-            actor_id,
-            source_ip_hash,
-        ).await.map_err(AdminClientError::Write)?;
+        let inserted = self
+            .repository
+            .insert_with_required_audit(
+                client,
+                prepared.client_secret_hash.as_deref(),
+                prepared.registration_access_token_blake3.as_deref(),
+                actor_id,
+                source_ip_hash,
+            )
+            .await
+            .map_err(AdminClientError::Write)?;
         validate_inserted_context(client, &inserted)?;
-        Ok(CreatedClient { client: inserted, issued_secret: prepared.issued_secret.take_after_commit() })
+        Ok(CreatedClient {
+            client: inserted,
+            issued_secret: prepared.issued_secret.take_after_commit(),
+        })
     }
 
     /// Validate and prepare a registration for a caller that owns a wider transaction boundary.
@@ -135,9 +146,10 @@ where
         source_ip_hash: &str,
     ) -> Result<OAuthClient, AdminClientError> {
         let (expected, updated) = self.prepare_update(client_id, request).await?;
-        self.repository.update_with_required_audit(
-            &expected, &updated, actor_id, source_ip_hash,
-        ).await.map_err(AdminClientError::Write)
+        self.repository
+            .update_with_required_audit(&expected, &updated, actor_id, source_ip_hash)
+            .await
+            .map_err(AdminClientError::Write)
     }
 
     async fn prepare_update(
@@ -187,7 +199,10 @@ fn prepared_client(prepared: &PreparedClientRegistration) -> OAuthClient {
     }
 }
 
-fn validate_inserted_context(client: &OAuthClient, inserted: &OAuthClient) -> Result<(), AdminClientError> {
+fn validate_inserted_context(
+    client: &OAuthClient,
+    inserted: &OAuthClient,
+) -> Result<(), AdminClientError> {
     if inserted.tenant_id != client.tenant_id
         || inserted.realm_id != client.realm_id
         || inserted.organization_id != client.organization_id

@@ -127,7 +127,12 @@ pub async fn token_refresh_with_service(
         ));
     };
     let token = match token_service
-        .refresh_token_snapshot(client.tenant_id, refresh_token, client.id, request_started_at)
+        .refresh_token_snapshot(
+            client.tenant_id,
+            refresh_token,
+            client.id,
+            request_started_at,
+        )
         .await
     {
         Ok(value) => value,

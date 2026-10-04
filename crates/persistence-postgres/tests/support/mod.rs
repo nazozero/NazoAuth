@@ -69,8 +69,7 @@ pub async fn run_isolated_application_migrations(database_url: &str) {
     );
 
     assert!(
-        PUBLIC_SECURITY_AUDIT_MIGRATIONS[17]
-            .contains("ALTER TABLE public.client_access_requests")
+        PUBLIC_SECURITY_AUDIT_MIGRATIONS[17].contains("ALTER TABLE public.client_access_requests")
             && PUBLIC_SECURITY_AUDIT_MIGRATIONS[18]
                 .contains("CREATE OR REPLACE FUNCTION public.nazo_observe_security_audit_anchor"),
         "public Required approval and observation migrations must run only in the real database ledger"

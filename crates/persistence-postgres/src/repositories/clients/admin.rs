@@ -69,9 +69,14 @@ impl AdminClientRepositoryPort for OAuthClientRepository {
     ) -> AdminClientFuture<'a, OAuthClient> {
         Box::pin(async move {
             self.insert_admin_with_required_audit(
-                client, client_secret_hash, registration_access_token_blake3,
-                actor_id, source_ip_hash,
-            ).await.map_err(map_admin_client_error)
+                client,
+                client_secret_hash,
+                registration_access_token_blake3,
+                actor_id,
+                source_ip_hash,
+            )
+            .await
+            .map_err(map_admin_client_error)
         })
     }
 
@@ -84,7 +89,8 @@ impl AdminClientRepositoryPort for OAuthClientRepository {
     ) -> AdminClientFuture<'a, OAuthClient> {
         Box::pin(async move {
             self.update_admin_with_required_audit(expected, client, actor_id, source_ip_hash)
-                .await.map_err(map_admin_client_error)
+                .await
+                .map_err(map_admin_client_error)
         })
     }
 }

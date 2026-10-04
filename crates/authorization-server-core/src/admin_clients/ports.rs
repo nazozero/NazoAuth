@@ -144,8 +144,11 @@ where
         source_ip_hash: &'a str,
     ) -> AdminClientFuture<'a, OAuthClient> {
         self.as_ref().insert_with_required_audit(
-            client, client_secret_hash, registration_access_token_blake3,
-            actor_id, source_ip_hash,
+            client,
+            client_secret_hash,
+            registration_access_token_blake3,
+            actor_id,
+            source_ip_hash,
         )
     }
 
@@ -156,7 +159,8 @@ where
         actor_id: Uuid,
         source_ip_hash: &'a str,
     ) -> AdminClientFuture<'a, OAuthClient> {
-        self.as_ref().update_with_required_audit(expected, client, actor_id, source_ip_hash)
+        self.as_ref()
+            .update_with_required_audit(expected, client, actor_id, source_ip_hash)
     }
 }
 

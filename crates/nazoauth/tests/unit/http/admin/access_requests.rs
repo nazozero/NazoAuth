@@ -1697,7 +1697,9 @@ async fn reject_access_request_projection_failure_rolls_back_pending_state_and_r
     let state = fixture.access_request_state(request_id).await;
     let client_count = fixture.client_count().await;
     let audit_count = {
-        let mut connection = get_conn(&fixture.state.diesel_db).await.expect("audit check connection");
+        let mut connection = get_conn(&fixture.state.diesel_db)
+            .await
+            .expect("audit check connection");
         sql_query("SELECT COUNT(*)::bigint AS count FROM public.security_audit_events WHERE event_type='admin_access_request_rejected' AND payload->>'request_id'=$1")
             .bind::<Text, _>(request_id.to_string())
             .get_result::<CountRow>(&mut connection).await.expect("canonical rejection count").count
@@ -1712,8 +1714,14 @@ async fn reject_access_request_projection_failure_rolls_back_pending_state_and_r
     assert_eq!(state.status, AccessRequestStatus::Pending.code());
     assert!(state.admin_note.is_none());
     assert!(state.approved_client_id.is_none());
-    assert_eq!(client_count, 0, "projection failure creates no client effect");
-    assert_eq!(audit_count, 0, "projection failure commits no canonical rejection");
+    assert_eq!(
+        client_count, 0,
+        "projection failure creates no client effect"
+    );
+    assert_eq!(
+        audit_count, 0,
+        "projection failure commits no canonical rejection"
+    );
     assert!(body.get("client_secret").is_none());
 }
 

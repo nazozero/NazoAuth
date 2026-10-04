@@ -8,9 +8,7 @@ use crate::controller_registry::{
     ControllerKeyWarning, ControllerRegistryService, ControllerRegistryServiceError,
     IdentityChange, RevokeRequest, RotateRequest, SlotChangeRequest, expiry_warning,
 };
-use crate::http::admin::{
-    require_transactional_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
     require_admin_with_recent_mfa_or_forbidden_with_handles,
@@ -19,9 +17,9 @@ use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies, json_response, oauth_error};
 use nazo_oauth_server::crypto::blake3_hex;
-use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_persistence::control_plane::AdminIdentityAudit;
 use nazo_persistence::control_plane::{
     ControllerIdentityAction, ControllerSlotStatus, IdentityApprovalError,
@@ -246,7 +244,15 @@ pub(crate) async fn admin_controller_approval(
         Err(response) => return response,
     };
     match registry
-        .issue_approval_with_required_audit(AdminIdentityAudit {tenant:admin.tenant(),actor_user_id:admin.id(),source_ip_hash:blake3_hex(&client_ip_with_config(&req,&client_ip_config))}, &change, Utc::now())
+        .issue_approval_with_required_audit(
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+            &change,
+            Utc::now(),
+        )
         .await
     {
         Ok(issued) => {
@@ -334,7 +340,17 @@ pub(crate) async fn admin_controller_slot_commit(
         Err(response) => return response,
     };
     match registry
-        .commit_creation_with_required_audit(&body.approval_token, action, &body.request(), Utc::now(),AdminIdentityAudit {tenant:admin.tenant(),actor_user_id:admin.id(),source_ip_hash:blake3_hex(&client_ip_with_config(&req,&client_ip_config))})
+        .commit_creation_with_required_audit(
+            &body.approval_token,
+            action,
+            &body.request(),
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+        )
         .await
     {
         Ok(slot) => slot_response(&slot),
@@ -385,7 +401,16 @@ pub(crate) async fn admin_controller_slot_rotate(
         return response;
     }
     match registry
-        .commit_rotation_with_required_audit(&body.approval_token, &body.request(), Utc::now(),AdminIdentityAudit {tenant:admin.tenant(),actor_user_id:admin.id(),source_ip_hash:blake3_hex(&client_ip_with_config(&req,&client_ip_config))})
+        .commit_rotation_with_required_audit(
+            &body.approval_token,
+            &body.request(),
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+        )
         .await
     {
         Ok(slot) => slot_response(&slot),
@@ -430,7 +455,16 @@ pub(crate) async fn admin_controller_slot_revoke(
         return response;
     }
     match registry
-        .commit_revocation_with_required_audit(&body.approval_token, &body.request(), Utc::now(),AdminIdentityAudit {tenant:admin.tenant(),actor_user_id:admin.id(),source_ip_hash:blake3_hex(&client_ip_with_config(&req,&client_ip_config))})
+        .commit_revocation_with_required_audit(
+            &body.approval_token,
+            &body.request(),
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+        )
         .await
     {
         Ok(slot) => slot_response(&slot),

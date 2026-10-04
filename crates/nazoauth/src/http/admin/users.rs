@@ -244,20 +244,22 @@ pub(crate) async fn admin_create_user(
     }
     let source_ip_hash = blake3_hex(&client_ip_with_config(&req, &client_ip_config));
     match accounts
-        .create_user_with_required_audit(NewUser {
-            tenant: admin.tenant(),
-            username: format!("user_{}", Uuid::now_v7()),
-            email,
-            password_hash,
-            email_verified: true,
-        }, admin.user_id(), source_ip_hash)
+        .create_user_with_required_audit(
+            NewUser {
+                tenant: admin.tenant(),
+                username: format!("user_{}", Uuid::now_v7()),
+                email,
+                password_hash,
+                email_verified: true,
+            },
+            admin.user_id(),
+            source_ip_hash,
+        )
         .await
     {
-        Ok(account) => {
-            HttpResponse::Created()
-                .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-                .json(admin_user_json(account))
-        }
+        Ok(account) => HttpResponse::Created()
+            .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+            .json(admin_user_json(account)),
         Err(nazo_identity::ports::RepositoryError::Conflict) => {
             oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.")
         }
