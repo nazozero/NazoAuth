@@ -53,6 +53,7 @@ impl DiscardOnDrop {
     }
 
     pub(crate) fn return_to_pool(mut self) {
+        if let Some(connection) = self.0.as_mut() { crate::perf_diagnostic::confirmed_return(connection); }
         let _ = self.0.take();
     }
 }
@@ -137,7 +138,10 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
             .connect(tokio_postgres::NoTls)
             .await
             .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
-        return AsyncPgConnection::try_from_client_and_connection(client, connection).await;
+        let pid = client.process_id();
+        let mut established = AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+        crate::perf_diagnostic::attach(&mut established, pid);
+        return Ok(established);
     }
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
@@ -163,7 +167,10 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
         .connect(tls)
         .await
         .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
-    AsyncPgConnection::try_from_client_and_connection(client, connection).await
+    let pid = client.process_id();
+    let mut established = AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+    crate::perf_diagnostic::attach(&mut established, pid);
+    Ok(established)
 }
 
 pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
@@ -175,7 +182,9 @@ pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
     let _ = DB_POOL_WAIT_NANOS_MAX.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
         (wait_nanos > current).then_some(wait_nanos)
     });
-    Ok(connection?)
+    let mut connection = connection?;
+    crate::perf_diagnostic::checkout(&mut connection, started.elapsed());
+    Ok(connection)
 }
 
 /// Performs a real database round trip used by readiness probes.

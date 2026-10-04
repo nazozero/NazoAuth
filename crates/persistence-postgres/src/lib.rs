@@ -14,6 +14,7 @@
 
 mod convert;
 mod pool;
+mod perf_diagnostic;
 mod repositories;
 pub(crate) mod rows;
 pub(crate) mod schema;
