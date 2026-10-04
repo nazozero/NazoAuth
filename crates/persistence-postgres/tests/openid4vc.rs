@@ -2150,6 +2150,56 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         "replaying the issuance response must not create a second notification"
     );
 
+    let selector_response = StoredCredentialResponse {
+        issuance_id: Uuid::now_v7(),
+        request_digest: blake3::hash(b"corrupt-response-selector").to_hex().to_string(),
+        ..response.clone()
+    };
+    let selector_handle = NotificationHandle {
+        notification_id: format!("corrupt-response-selector-{}", Uuid::now_v7()),
+        ..response_handle.clone()
+    };
+    issuer
+        .store_response_with_notification(&selector_handle, &selector_response, Utc::now())
+        .await
+        .unwrap();
+    let selector_lookup = async || {
+        issuer
+            .find_response(
+                selector_response.issuance_id,
+                selector_response.token_id,
+                &selector_response.request_digest,
+                Utc::now(),
+            )
+            .await
+    };
+    assert_eq!(selector_lookup().await.unwrap().unwrap().body, response.body);
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_issuance_responses SET credential_selection = $2 WHERE issuance_id = $1",
+    )
+    .bind::<SqlUuid, _>(selector_response.issuance_id)
+    .bind::<diesel::sql_types::Jsonb, _>(serde_json::json!({"configuration_id": 1}))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    assert_eq!(
+        selector_lookup().await,
+        Err(CredentialStoreError::InvalidTransition),
+        "valid ciphertext with a non-string stored selector must fail closed as corruption"
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_issuance_responses SET credential_selection = NULL WHERE issuance_id = $1",
+    )
+    .bind::<SqlUuid, _>(selector_response.issuance_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    assert_eq!(selector_lookup().await.unwrap().unwrap().body, response.body);
+
     let corrupt_response = StoredCredentialResponse {
         issuance_id: Uuid::now_v7(),
         request_digest: blake3::hash(b"corrupt-response").to_hex().to_string(),
@@ -4625,7 +4675,7 @@ async fn corrupt_deferred_payload_rolls_back_the_claim_lease() {
                 deferred.ready_at,
             )
             .await,
-        Err(CredentialStoreError::Unavailable),
+        Err(CredentialStoreError::InvalidTransition),
         "a corrupt payload must fail the whole claim"
     );
     let lease = deferred_lease_row(&pool, deferred.id).await;

@@ -49,7 +49,11 @@ impl Openid4vciRepository {
                         let Some(row) = row else {
                             return Ok(None);
                         };
-                        let selection = decode_selection(row.credential_selection)?;
+                        // This is a local decode of stored response metadata. Only
+                        // its known corruption gets the typed cause; database and
+                        // transaction errors retain the unavailable classification.
+                        let selection = decode_selection(row.credential_selection)
+                            .map_err(|_| corrupt_stored_credential())?;
                         if !access_authorizes_continuation(
                             connection,
                             row.token_id,
