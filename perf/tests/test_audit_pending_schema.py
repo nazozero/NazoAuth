@@ -21,6 +21,8 @@ sampler = importlib.util.module_from_spec(spec)
 with mock.patch.dict(sys.modules, {
     "psycopg": types.SimpleNamespace(connect=mock.Mock()),
     "redis": types.SimpleNamespace(Redis=mock.Mock()),
+    "redis.backoff": types.SimpleNamespace(NoBackoff=mock.Mock()),
+    "redis.retry": types.SimpleNamespace(Retry=mock.Mock()),
 }):
     spec.loader.exec_module(sampler)
 
