@@ -8,6 +8,7 @@ use nazo_openid4vci::{
 use uuid::Uuid;
 
 use super::super::Openid4vciRepository;
+use super::super::crypto::map_stored_credential_error;
 use super::{
     DeferredLeaseReceipt, DeferredLockedProjectionRow, LockedContinuationGrant,
     NewIssuanceResponse, decode_error, decode_selection, insert_issuance_response, protect_payload,
@@ -449,7 +450,7 @@ impl Openid4vciRepository {
             if result.is_ok() {
                 guarded.return_to_pool();
             }
-            result.map_err(|_| CredentialStoreError::Unavailable)
+            result.map_err(map_stored_credential_error)
         })
     }
 

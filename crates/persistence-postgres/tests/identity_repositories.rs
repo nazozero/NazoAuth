@@ -2032,7 +2032,7 @@ fn totp_enrollment_orders_cross_store_changes_for_safe_recovery() {
         .find(".rotate(")
         .expect("session and CSRF must rotate atomically before enabling MFA");
     let postgres_confirmation = confirmation
-        .find(".confirm_totp(")
+        .find(".confirm_totp_with_required_audit(")
         .expect("PostgreSQL confirmation must reverify under row lock");
     let failed_rotation_discard = confirmation
         .find(".discard_unpublished_rotation(")

@@ -8,6 +8,7 @@ use nazo_openid4vci::{
 use uuid::Uuid;
 
 use super::super::Openid4vciRepository;
+use super::super::crypto::{corrupt_stored_credential, map_stored_credential_error};
 use super::access::access_authorizes_continuation;
 use super::decode_selection;
 use super::{
@@ -60,9 +61,7 @@ impl Openid4vciRepository {
                         {
                             return Ok(None);
                         }
-                        let invalid = || diesel::result::Error::DeserializationError(
-                            Box::new(std::io::Error::other("stored credential response is invalid")),
-                        );
+                        let invalid = corrupt_stored_credential;
                         let encoding = match row.encoding.as_str() {
                             "json" => CredentialResponseEncoding::Json,
                             "jwt" => CredentialResponseEncoding::Jwt,
@@ -86,7 +85,7 @@ impl Openid4vciRepository {
                     },
                 )
                 .await
-                .map_err(|_| CredentialStoreError::Unavailable)
+                .map_err(map_stored_credential_error)
         })
     }
 

@@ -1,27 +1,27 @@
 use super::*;
 
 async fn signed_access_token(
-    issuer: &IssuerFixture,
+    fixture: &LiveEndpointFixture,
     subject_id: Uuid,
     dpop_jkt: Option<&str>,
 ) -> String {
-    signed_access_token_with_binding(issuer, subject_id, dpop_jkt, None, Value::Array(Vec::new()))
+    signed_access_token_with_binding(fixture, subject_id, dpop_jkt, None, Value::Array(Vec::new()))
         .await
 }
 
 async fn signed_mtls_access_token(
-    issuer: &IssuerFixture,
+    fixture: &LiveEndpointFixture,
     subject_id: Uuid,
     configuration_id: &str,
     mtls_x5t_s256: &str,
 ) -> String {
     signed_access_token_with_binding(
-        issuer,
+        fixture,
         subject_id,
         None,
         Some(mtls_x5t_s256),
         json!([openid4vci_authorization_detail(
-            &issuer.issuer,
+            &fixture.issuer.issuer,
             configuration_id
         )]),
     )
@@ -29,26 +29,26 @@ async fn signed_mtls_access_token(
 }
 
 async fn signed_access_token_with_binding(
-    issuer: &IssuerFixture,
+    fixture: &LiveEndpointFixture,
     subject_id: Uuid,
     dpop_jkt: Option<&str>,
     mtls_x5t_s256: Option<&str>,
     authorization_details: Value,
 ) -> String {
     let subject = subject_id.to_string();
-    issuer
+    fixture.issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
             authorization_id: None,
-            client_epoch: None,
+            client_epoch: Some(0),
             user_epoch: None,
-            issuer: &issuer.issuer,
-            tenant_id: issuer.tenant_id,
+            issuer: &fixture.issuer.issuer,
+            tenant_id: fixture.issuer.tenant_id,
             subject: &subject,
             user_id: Some(subject_id),
             subject_type: "user",
-            client_id: "unit-client",
-            audiences: std::slice::from_ref(&issuer.issuer),
+            client_id: &fixture.wallet_client_id,
+            audiences: std::slice::from_ref(&fixture.issuer.issuer),
             scopes: &[],
             authorization_details: &authorization_details,
             userinfo_claims: &[],
@@ -111,7 +111,7 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
     );
 
     let bound_token = signed_access_token(
-        &fixture.issuer,
+        &fixture,
         fixture.subject_id,
         Some("unit-dpop-thumbprint"),
     )
@@ -143,7 +143,7 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
         .expect_err("a malformed DPoP proof must be rejected");
     assert_error(error, 401, "invalid_dpop_proof", "DPoP proof is invalid.");
 
-    let unbound_token = signed_access_token(&fixture.issuer, fixture.subject_id, None).await;
+    let unbound_token = signed_access_token(&fixture, fixture.subject_id, None).await;
     let error = fixture
         .issuer
         .access(&CredentialRequestContext {
@@ -162,7 +162,7 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
     );
 
     let mtls_token = signed_mtls_access_token(
-        &fixture.issuer,
+        &fixture,
         fixture.subject_id,
         "unit-live-dpop-access",
         "unit-mtls",
@@ -220,6 +220,7 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
         .await
         .expect("pairwise fixture database connection");
     let client_row = Uuid::now_v7();
+    let client_id = format!("pairwise-{client_row}");
     sql_query(
         "INSERT INTO oauth_clients (\
             id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,\
@@ -238,7 +239,7 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
     .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
     .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
     .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
-    .bind::<Text, _>(format!("pairwise-{client_row}"))
+    .bind::<Text, _>(&client_id)
     .execute(&mut connection)
     .await
     .expect("pairwise fixture client insert");
@@ -249,14 +250,14 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
             authorization_id: None,
-            client_epoch: None,
+            client_epoch: Some(0),
             user_epoch: None,
             issuer: &fixture.issuer.issuer,
             tenant_id: fixture.issuer.tenant_id,
             subject: &pairwise_sub,
             user_id: None,
             subject_type: "user",
-            client_id: "pairwise-client",
+            client_id: &client_id,
             audiences: std::slice::from_ref(&fixture.issuer.issuer),
             scopes: &[],
             authorization_details: &json!([openid4vci_authorization_detail(
@@ -469,7 +470,7 @@ async fn live_access_rejects_missing_and_inactive_uuid_subjects() {
     // and must fail closed with the inactive-subject mapping.
     let missing_subject = Uuid::now_v7();
     let missing_token = signed_access_token_with_binding(
-        &fixture.issuer,
+        &fixture,
         missing_subject,
         None,
         None,
@@ -491,9 +492,24 @@ async fn live_access_rejects_missing_and_inactive_uuid_subjects() {
         "Access token subject is inactive.",
     );
 
+    let subject = fixture.subject_id.to_string();
+    let missing_provenance = fixture.issuer.token_service.sign_access_token(nazo_auth::AccessTokenSignInput {
+        authorization_id: None, client_epoch: None, user_epoch: None,
+        issuer: &fixture.issuer.issuer, tenant_id: fixture.issuer.tenant_id,
+        subject: &subject, user_id: Some(fixture.subject_id), subject_type: "user",
+        client_id: &fixture.wallet_client_id, audiences: std::slice::from_ref(&fixture.issuer.issuer),
+        scopes: &[], authorization_details: &authorization_details,
+        userinfo_claims: &[], userinfo_claim_requests: &[], ttl_seconds: 300,
+        dpop_jkt: None, mtls_x5t_s256: None, actor: None,
+    }).await.expect("legacy-shaped negative token signs").token;
+    let error = fixture.issuer.access(&CredentialRequestContext {
+        bearer_token: missing_provenance, ..request_context()
+    }).await.expect_err("a registered name alone cannot prove credential provenance");
+    assert_error(error, 401, "invalid_token", "Credential authorization provenance is missing.");
+
     // The active subject resolves before deactivation.
     let subject_token = signed_access_token_with_binding(
-        &fixture.issuer,
+        &fixture,
         fixture.subject_id,
         None,
         None,
@@ -566,7 +582,7 @@ async fn live_access_fails_closed_when_subject_state_is_unavailable() {
     };
 
     // UUID branch: the direct active-subject read fails -> 503 subject state.
-    let subject_token = signed_access_token(&fixture.issuer, fixture.subject_id, None).await;
+    let subject_token = signed_access_token(&fixture, fixture.subject_id, None).await;
     let error = fixture
         .issuer
         .access(&CredentialRequestContext {

@@ -570,8 +570,8 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
     )
     .await;
 
-    // The issuance fact stays narrow: eight core columns plus the nullable
-    // family reference required to revoke an authorization-code replay.
+    // The narrow issuance facts also retain the epoch guard, receipt contract
+    // version and exact authorization-code holder required for safe replay.
     assert_eq!(
         issuance_column_names(&mut connection).await,
         vec![
@@ -585,8 +585,10 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
             "retain_until",
             "refresh_token_family_id",
             "principal_epoch_bound",
+            "receipt_contract_version",
+            "authorization_code_holder",
         ],
-        "oauth_token_issuances must carry only the simplified facts and replay family reference"
+        "oauth_token_issuances must retain the simplified facts and exact replay authority"
     );
 
     // TOK-01/TOK-11: the same inbound Idempotency-Key on two requests yields

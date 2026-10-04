@@ -13,8 +13,8 @@ pub(super) async fn access_upsert_on_connection(
     connection: &mut AsyncPgConnection,
     token_hash: &str,
     access: &CredentialAccess,
-) -> Result<(), diesel::result::Error> {
-    sql_query(
+) -> Result<bool, diesel::result::Error> {
+    let affected = sql_query(
         // The IS DISTINCT FROM guard keeps an identical projection sync from
         // writing a new row version. Lineage/provenance and known sender binding
         // remain immutable. A legacy row may acquire its own verified JWT's
@@ -64,7 +64,15 @@ pub(super) async fn access_upsert_on_connection(
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.mtls_x5t_s256.as_deref())
     .execute(connection)
     .await?;
-    Ok(())
+    if affected == 1 {
+        return Ok(true);
+    }
+    // A zero-row conditional upsert may mean an identical retry or a rejected
+    // immutable binding. A fresh locked read also sees a concurrent insert that
+    // was invisible to the upsert's original statement snapshot.
+    Ok(access_verify_on_connection(connection, token_hash, access, None)
+        .await?
+        .grant_accepted)
 }
 
 /// A racing identical insert can surface a unique violation on the `token_id`
@@ -76,7 +84,7 @@ async fn access_upsert_with_conflict_retry(
     connection: &mut AsyncPgConnection,
     token_hash: &str,
     access: &CredentialAccess,
-) -> Result<(), diesel::result::Error> {
+) -> Result<bool, diesel::result::Error> {
     match access_upsert_on_connection(connection, token_hash, access).await {
         Err(error) if is_unique_violation(&error) => {
             access_upsert_on_connection(connection, token_hash, access).await
@@ -140,8 +148,10 @@ async fn access_persist_registered_on_connection(
                    EXCLUDED.dpop_jkt, \
                    EXCLUDED.mtls_x5t_s256, \
                    EXCLUDED.expires_at) \
+             RETURNING token_id \
          ) \
-         SELECT EXISTS (SELECT 1 FROM active_client) AS client_active",
+         SELECT EXISTS (SELECT 1 FROM active_client) AS client_active, \
+                 EXISTS (SELECT 1 FROM upserted) AS grant_accepted",
     )
     .bind::<sql_types::Uuid, _>(access.tenant_id)
     .bind::<sql_types::Text, _>(client_id)
@@ -161,6 +171,54 @@ async fn access_persist_registered_on_connection(
     .await
 }
 
+
+/// Verify a no-write retry against current, locked facts. The registered path
+/// takes the client lock before the grant lock and checks both in this statement;
+/// neither an active client alone nor an old snapshot proves persistence.
+async fn access_verify_on_connection(
+    connection: &mut AsyncPgConnection,
+    token_hash: &str,
+    access: &CredentialAccess,
+    registered_client_id: Option<&str>,
+) -> Result<PersistOutcomeRow, diesel::result::Error> {
+    sql_query(
+        "WITH active_client AS MATERIALIZED ( \
+           SELECT 1 FROM oauth_clients \
+           WHERE tenant_id = $3 AND client_id = $13 AND is_active = TRUE FOR SHARE \
+         ), matching_grant AS MATERIALIZED ( \
+           SELECT 1 FROM openid4vci_access_grants \
+           WHERE token_hash = $2 AND token_id = $1 AND tenant_id = $3 \
+             AND subject_id = $4 AND client_id = $5 \
+             AND credential_configuration_ids = $6 AND credential_identifiers = $7 \
+             AND dpop_jkt IS NOT DISTINCT FROM $8 AND expires_at = $9 \
+             AND proof_origin = $10 AND authorization_id IS NOT DISTINCT FROM $11 \
+             AND mtls_x5t_s256 IS NOT DISTINCT FROM $12 \
+             AND ($13::text IS NULL OR EXISTS (SELECT 1 FROM active_client)) \
+           FOR SHARE \
+         ) SELECT ($13::text IS NULL OR EXISTS (SELECT 1 FROM active_client)) AS client_active, \
+                  EXISTS (SELECT 1 FROM matching_grant) AS grant_accepted",
+    )
+    .bind::<sql_types::Uuid, _>(access.token_id)
+    .bind::<sql_types::Text, _>(token_hash)
+    .bind::<sql_types::Uuid, _>(access.tenant_id)
+    .bind::<sql_types::Uuid, _>(access.subject_id)
+    .bind::<sql_types::Text, _>(&access.client_id)
+    .bind::<sql_types::Jsonb, _>(serde_json::json!(access.configuration_ids))
+    .bind::<sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
+    .bind::<sql_types::Nullable<sql_types::Text>, _>(access.dpop_jkt.as_deref())
+    .bind::<sql_types::Timestamptz, _>(access.expires_at)
+    .bind::<sql_types::Text, _>(access.proof_origin.as_str())
+    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(access.authorization_id)
+    .bind::<sql_types::Nullable<sql_types::Text>, _>(access.mtls_x5t_s256.as_deref())
+    .bind::<sql_types::Nullable<sql_types::Text>, _>(registered_client_id)
+    .get_result::<PersistOutcomeRow>(connection)
+    .await
+}
+
+fn require_accepted(accepted: bool) -> Result<(), CredentialStoreError> {
+    if accepted { Ok(()) } else { Err(CredentialStoreError::InvalidTransition) }
+}
+
 impl Openid4vciRepository {
     pub(super) fn access_upsert<'a>(
         &'a self,
@@ -174,6 +232,7 @@ impl Openid4vciRepository {
             access_upsert_with_conflict_retry(&mut connection, token_hash, access)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)
+                .and_then(require_accepted)
         })
     }
 
@@ -203,7 +262,8 @@ impl Openid4vciRepository {
             let Some(client_id) = registered_client_id else {
                 return access_upsert_with_conflict_retry(&mut connection, token_hash, access)
                     .await
-                    .map_err(|_| CredentialStoreError::Unavailable);
+                    .map_err(|_| CredentialStoreError::Unavailable)
+                    .and_then(require_accepted);
             };
             let outcome = match access_persist_registered_on_connection(
                 &mut connection,
@@ -225,10 +285,17 @@ impl Openid4vciRepository {
                 result => result,
             }
             .map_err(|_| CredentialStoreError::Unavailable)?;
+            let outcome = if outcome.client_active && !outcome.grant_accepted {
+                access_verify_on_connection(&mut connection, token_hash, access, Some(client_id))
+                    .await
+                    .map_err(|_| CredentialStoreError::Unavailable)?
+            } else {
+                outcome
+            };
             if !outcome.client_active {
                 return Err(CredentialStoreError::ClientInactive);
             }
-            Ok(())
+            require_accepted(outcome.grant_accepted)
         })
     }
 
@@ -263,6 +330,8 @@ impl Openid4vciRepository {
 struct PersistOutcomeRow {
     #[diesel(sql_type = sql_types::Bool)]
     client_active: bool,
+    #[diesel(sql_type = sql_types::Bool)]
+    grant_accepted: bool,
 }
 
 /// Lock the retained source and the live current grant before consulting the

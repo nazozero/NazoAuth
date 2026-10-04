@@ -541,9 +541,8 @@ async fn cleanup_seed(database_url: &str, tenant: TenantContext, seed: &Seed) {
 // RV-09: token revocation
 // ---------------------------------------------------------------------------
 
-/// The mixed repository API preserves raw refresh priority even when the
-/// caller supplies an access-token JTI. Verified access-only requests use
-/// `revoke_issued_tokens` instead (covered below).
+/// A verified access token is access-only authority: its bytes are never
+/// reinterpreted as a refresh token. The JTI retention upsert is one statement.
 #[tokio::test]
 async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
     let _serial = SERIAL.lock().await;
@@ -571,12 +570,7 @@ async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
     let (result, delta, acquires) = measure(&counter, repository.revoke_token(input)).await;
 
     assert_eq!(result.expect("revocation succeeds"), 0);
-    // 3 data statements: the digest probe on oauth_refresh_families misses,
-    // the spent-proof probe on oauth_refresh_spent_tokens also misses (a spent
-    // token still names its family for revocation), then the single
-    // INSERT .. ON CONFLICT DO UPDATE upsert into access_token_revocations.
-    // The JTI write is one statement, not an insert-then-select pair.
-    assert_eq!(delta.data_queries, 3);
+    assert_eq!(delta.data_queries, 1, "verified access authority never probes refresh families");
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1, "one pooled checkout for the whole revocation");
@@ -586,8 +580,8 @@ async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
 
 /// RV-09 (refresh-family path): revoking a presented refresh token is family
 /// lookup + `pg_advisory_xact_lock` + one UPDATE — 3 data statements in one
-/// transaction on one pooled connection. The attached access-token JTI is
-/// never upserted once the family matches.
+/// transaction on one pooled connection. A verified access-token input cannot
+/// borrow refresh-family authority even when its bytes collide with that family.
 #[tokio::test]
 async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
     let _serial = SERIAL.lock().await;
@@ -619,14 +613,27 @@ async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
     let (pool, counter) = instrumented_pool(&database_url).await;
     let repository = TokenIssuanceRepository::new(pool);
 
-    let input = TokenRevocation {
-        tenant_id: tenant.tenant_id.as_uuid(),
-        client_id: seed.client.id,
+    let access_input = TokenRevocation {
+        tenant_id: tenant.tenant_id.as_uuid(), client_id: seed.client.id,
         raw_token: &raw_token,
         access_token: Some(AccessTokenRevocation {
             jti: format!("qc-associated-jti-{}", Uuid::now_v7()),
             expires_at: Utc::now() + Duration::minutes(5),
         }),
+    };
+    let (result, access_delta, access_acquires) = measure(&counter, repository.revoke_token(access_input)).await;
+    assert_eq!(result.expect("verified access revocation succeeds"), 0);
+    assert_eq!(access_delta.data_queries, 1);
+    assert_eq!(access_delta.begins, 1);
+    assert_eq!(access_delta.commits, 1);
+    assert_eq!(access_acquires, 1);
+    assert_clean(access_delta);
+    assert!(repository.refresh_family_active(tenant.tenant_id.as_uuid(), family_id, seed.user_id)
+        .await.expect("refresh family state remains readable"),
+        "verified access authority must leave the colliding refresh family active");
+    let input = TokenRevocation {
+        tenant_id: tenant.tenant_id.as_uuid(), client_id: seed.client.id,
+        raw_token: &raw_token, access_token: None,
     };
     let (result, delta, acquires) = measure(&counter, repository.revoke_token(input)).await;
 
@@ -1457,8 +1464,8 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
 // ---------------------------------------------------------------------------
 
 /// DC-01: `replace_registration` is a single `UPDATE .. WHERE
-/// registration_access_token_blake3 = expected RETURNING *` with no wrapping
-/// transaction — the previous UPDATE + SELECT pair is gone.
+/// registration_access_token_blake3 = expected RETURNING *` inside the shared
+/// atomic audited owner — the previous UPDATE + SELECT pair is gone.
 #[tokio::test]
 async fn dc01_replace_registration_is_single_update_returning() {
     let _serial = SERIAL.lock().await;
@@ -1486,12 +1493,10 @@ async fn dc01_replace_registration_is_single_update_returning() {
 
     let replaced = result.expect("replace_registration should succeed");
     assert_eq!(replaced.id, seed.client.id);
-    // 1 data statement: UPDATE oauth_clients SET (metadata columns) WHERE
-    // id = ? AND registration_access_token_blake3 = ? RETURNING *. The old
-    // implementation followed the UPDATE with a second SELECT; the single
-    // statement needs no transaction wrapper.
+    // The single data query is drained and domain-validated before COMMIT.
     assert_eq!(delta.data_queries, 1);
-    assert_no_transaction(delta);
+    assert_eq!(delta.begins, 1);
+    assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1);
     assert_clean(delta);
     cleanup_seed(&database_url, tenant, &seed).await;
@@ -1810,12 +1815,13 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     assert_eq!(acquires, 0);
     assert_clean(delta);
 
+    let registered_hash = format!("qc-access-hash-{}", Uuid::now_v7());
     // Registered path: 1 data statement — WITH active_client (FOR SHARE) +
     // conditional upsert + outcome probe in a single CTE.
     let (result, delta, acquires) = measure(
         &counter,
         issuer.persist_pre_authorized_access(
-            &format!("qc-access-hash-{}", Uuid::now_v7()),
+            &registered_hash,
             &access,
             Some(seed.client.client_id.as_str()),
         ),
@@ -1823,6 +1829,16 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     .await;
     result.expect("active-client pre-authorized persist must succeed");
     assert_eq!(delta.data_queries, 1);
+    assert_no_transaction(delta);
+    assert_eq!(acquires, 1);
+    assert_clean(delta);
+
+    // No-write retry: the conditional upsert plus a fresh locked exact-fact
+    // verification. It retains one checkout and never rewrites an identical row.
+    let (result, delta, acquires) = measure(&counter,
+        issuer.persist_pre_authorized_access(&registered_hash, &access, Some(seed.client.client_id.as_str()))).await;
+    result.expect("an exact registered retry must succeed");
+    assert_eq!(delta.data_queries, 2);
     assert_no_transaction(delta);
     assert_eq!(acquires, 1);
     assert_clean(delta);
