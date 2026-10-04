@@ -1786,7 +1786,7 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
     let issuer = Openid4vciRepository::new(
-        pool,
+        pool.clone(),
         [0x53_u8; 32],
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
@@ -1880,6 +1880,120 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     assert_no_transaction(delta);
     assert_eq!(acquires, 1);
     assert_clean(delta);
+
+    // Opt-in bounded measurement uses this same production owner and existing
+    // instrumentation. All ordinary VF-01 assertions above always execute.
+    // This is a single-writer owner-call boundary, not HTTP or capacity evidence.
+    if std::env::var_os("NAZO_VCI_OWNER_MEASUREMENT").is_some() {
+        const SAMPLES: usize = 100;
+        #[derive(diesel::QueryableByName, Debug, PartialEq, Eq)]
+        struct RowVersion {
+            #[diesel(sql_type = sql_types::Uuid)]
+            token_id: Uuid,
+            #[diesel(sql_type = sql_types::Text)]
+            row_version: String,
+        }
+        async fn row_versions(pool: &DbPool, subject_id: Uuid) -> Vec<RowVersion> {
+            let mut connection = get_conn(pool).await.expect("version checkout succeeds");
+            sql_query("SELECT token_id, xmin::text AS row_version FROM openid4vci_access_grants WHERE subject_id = $1 ORDER BY token_id")
+                .bind::<sql_types::Uuid, _>(subject_id)
+                .load(&mut connection)
+                .await
+                .expect("version read succeeds")
+        }
+        #[derive(diesel::QueryableByName, serde::Serialize)]
+        struct Durability {
+            #[diesel(sql_type = sql_types::Text)]
+            fsync: String,
+            #[diesel(sql_type = sql_types::Text)]
+            synchronous_commit: String,
+            #[diesel(sql_type = sql_types::Text)]
+            full_page_writes: String,
+            #[diesel(sql_type = sql_types::Text)]
+            server_version: String,
+        }
+        let durability = {
+            let mut connection = get_conn(&pool).await.expect("settings checkout succeeds");
+            sql_query("SELECT current_setting('fsync') AS fsync, current_setting('synchronous_commit') AS synchronous_commit, current_setting('full_page_writes') AS full_page_writes, current_setting('server_version') AS server_version")
+                .get_result::<Durability>(&mut connection)
+                .await
+                .expect("durability settings are readable")
+        };
+        assert_eq!(durability.fsync, "on");
+        assert_eq!(durability.synchronous_commit, "on");
+        assert_eq!(durability.full_page_writes, "on");
+        let baseline = row_versions(&pool, seed.user_id).await;
+        let requests = (0..SAMPLES).map(|_| {
+            let access = CredentialAccess { token_id: Uuid::now_v7(), ..access.clone() };
+            (blake3_hex(&access.token_id.to_string()), access)
+        }).collect::<Vec<_>>();
+        let mut phases = Vec::new();
+        for (phase_index, phase) in ["fresh_registered_write", "exact_no_write_retry", "immutable_sender_rejection"].into_iter().enumerate() {
+            let versions_before = row_versions(&pool, seed.user_id).await;
+            let mut samples_ns = Vec::with_capacity(SAMPLES);
+            let mut queries = QuerySnapshot::default();
+            let mut checkouts = 0;
+            let mut accepted = 0;
+            let mut rejected = 0;
+            let phase_started = std::time::Instant::now();
+            for (hash, access) in &requests {
+                let attempted = if phase_index == 2 {
+                    CredentialAccess { dpop_jkt: Some("A".repeat(43)), ..access.clone() }
+                } else { access.clone() };
+                let started = std::time::Instant::now();
+                let (result, delta, acquires) = measure(&counter, issuer.persist_pre_authorized_access(hash, &attempted, Some(seed.client.client_id.as_str()))).await;
+                samples_ns.push(u64::try_from(started.elapsed().as_nanos()).expect("bounded duration fits u64"));
+                if phase_index == 2 {
+                    assert_eq!(result, Err(CredentialStoreError::InvalidTransition));
+                    rejected += 1;
+                } else {
+                    result.expect("the complete owner call is accepted");
+                    accepted += 1;
+                }
+                assert_eq!(delta.data_queries, if phase_index == 0 { 1 } else { 2 });
+                assert_eq!(acquires, 1);
+                assert_no_transaction(delta);
+                assert_clean(delta);
+                queries = queries.checked_add(delta);
+                checkouts += acquires;
+            }
+            let phase_seconds = phase_started.elapsed().as_secs_f64();
+            let versions_after = row_versions(&pool, seed.user_id).await;
+            if phase_index == 0 {
+                assert_eq!(versions_after.len(), baseline.len() + SAMPLES);
+            } else {
+                assert_eq!(versions_after, versions_before, "retry/rejection may not rewrite any grant row version");
+            }
+            assert_eq!(samples_ns.len(), SAMPLES);
+            assert_eq!(accepted + rejected, SAMPLES);
+            let mut ordered = samples_ns.clone();
+            ordered.sort_unstable();
+            phases.push(json!({
+                "scenario": phase, "planned_calls": SAMPLES, "completed_calls": SAMPLES,
+                "accepted": accepted, "expected_invalid_transition": rejected,
+                "unexpected_errors": 0, "unstarted_calls": 0,
+                "complete_call_samples_ns": samples_ns, "phase_wall_seconds": phase_seconds,
+                "completed_calls_per_second": SAMPLES as f64 / phase_seconds,
+                "complete_call_p50_ms": ordered[49] as f64 / 1_000_000.0,
+                "complete_call_p95_ms": ordered[94] as f64 / 1_000_000.0,
+                "complete_call_p99_ms": ordered[98] as f64 / 1_000_000.0,
+                "data_statements": queries.data_queries, "failed_statements": queries.failed_queries,
+                "pool_checkouts": checkouts, "explicit_begins": queries.begins,
+                "explicit_commits": queries.commits, "rollbacks": queries.rollbacks,
+                "new_grant_rows": if phase_index == 0 { SAMPLES } else { 0 },
+                "unchanged_existing_row_versions": phase_index != 0,
+                "row_version_writes": if phase_index == 0 { SAMPLES } else { 0 }
+            }));
+        }
+        println!("NAZO_VCI_OWNER_METRICS {}", json!({
+            "recipe": "vf01-owner-serial-3x100-v1", "sample_count_per_phase": SAMPLES,
+            "percentile_method": "empirical nearest rank: sorted100 indices49/94/98",
+            "boundary": "complete instrumented production repository call; one pooled connection; single writer; includes QueryCounter snapshot overhead; excludes HTTP/signature/proof processing and fixture/version-read setup",
+            "drop_boundary": "unstarted_calls is planned minus completed in this closed-loop recipe; no fixed-arrival-rate dropped_iterations claim",
+            "write_boundary": "row_version_writes tracks inserted/new xmin versions; unchanged xmin does not assert zero WAL or physical writes",
+            "durability": durability, "phases": phases
+        }));
+    }
 
     cleanup_seed(&database_url, tenant, &seed).await;
 }
