@@ -266,7 +266,7 @@ impl CredentialStorePort for Openid4vciRepository {
     }
 }
 
-#[derive(QueryableByName)]
+#[derive(QueryableByName, serde::Deserialize)]
 pub(super) struct AccessRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
     pub(super) authorization_id: Option<Uuid>,
@@ -318,94 +318,37 @@ pub(super) struct DeferredRow {
     pub(super) expires_at: DateTime<Utc>,
 }
 
-/// Joined claim row produced by the single `UPDATE deferred ... FROM access
-/// ... RETURNING` statement. The deferred->access `token_id` foreign key is
-/// `NOT NULL` with `ON DELETE CASCADE` and `access_grants.token_id` is the
-/// primary key, so every claimed deferred row joins exactly one access row
-/// and the access columns stay non-optional.
+/// Complete read-only projection from ordered grant locks followed by the
+/// deferred owner lock. All grant facts come from the locked stream.
 #[derive(QueryableByName)]
-pub(super) struct DeferredClaimRow {
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    deferred_authorization_id: Option<Uuid>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
-    deferred_credential_selection: Option<serde_json::Value>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    access_authorization_id: Option<Uuid>,
+pub(super) struct DeferredLockedProjectionRow {
+    #[diesel(embed)]
+    pub(super) deferred: DeferredRow,
+    #[diesel(sql_type = sql_types::Jsonb)]
+    pub(super) grants: serde_json::Value,
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    pub(super) owner_now: DateTime<Utc>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
-    access_mtls_x5t_s256: Option<String>,
-    #[diesel(sql_type = sql_types::Text)]
-    claim_outcome: String,
+    pub(super) observed_claim_id: Option<String>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    retry_at: Option<DateTime<Utc>>,
-    #[diesel(sql_type = sql_types::Uuid)]
-    deferred_id: Uuid,
-    #[diesel(sql_type = sql_types::Text)]
-    deferred_transaction_hash: String,
-    #[diesel(sql_type = sql_types::Uuid)]
-    deferred_token_id: Uuid,
-    #[diesel(sql_type = sql_types::Text)]
-    deferred_configuration_id: String,
-    #[diesel(sql_type = sql_types::Text)]
-    deferred_format: String,
-    #[diesel(sql_type = sql_types::Jsonb)]
-    deferred_holder_bindings: serde_json::Value,
-    #[diesel(sql_type = sql_types::Binary)]
-    deferred_payload_ciphertext: Vec<u8>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    deferred_ready_at: DateTime<Utc>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    deferred_expires_at: DateTime<Utc>,
-    #[diesel(sql_type = sql_types::Uuid)]
-    access_token_id: Uuid,
-    #[diesel(sql_type = sql_types::Uuid)]
-    access_tenant_id: Uuid,
-    #[diesel(sql_type = sql_types::Uuid)]
-    access_subject_id: Uuid,
-    #[diesel(sql_type = sql_types::Text)]
-    access_client_id: String,
-    #[diesel(sql_type = sql_types::Text)]
-    access_proof_origin: String,
-    #[diesel(sql_type = sql_types::Jsonb)]
-    access_configuration_ids: serde_json::Value,
-    #[diesel(sql_type = sql_types::Jsonb)]
-    access_credential_identifiers: serde_json::Value,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
-    access_dpop_jkt: Option<String>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    access_expires_at: DateTime<Utc>,
+    pub(super) observed_claim_expires_at: Option<DateTime<Utc>>,
 }
 
-impl DeferredClaimRow {
-    pub(super) fn into_parts(self) -> (DeferredRow, AccessRow) {
-        (
-            DeferredRow {
-                authorization_id: self.deferred_authorization_id,
-                credential_selection: self.deferred_credential_selection,
-                id: self.deferred_id,
-                transaction_hash: self.deferred_transaction_hash,
-                token_id: self.deferred_token_id,
-                credential_configuration_id: self.deferred_configuration_id,
-                credential_format: self.deferred_format,
-                holder_bindings: self.deferred_holder_bindings,
-                payload_ciphertext: self.deferred_payload_ciphertext,
-                ready_at: self.deferred_ready_at,
-                expires_at: self.deferred_expires_at,
-            },
-            AccessRow {
-                authorization_id: self.access_authorization_id,
-                mtls_x5t_s256: self.access_mtls_x5t_s256,
-                token_id: self.access_token_id,
-                tenant_id: self.access_tenant_id,
-                subject_id: self.access_subject_id,
-                client_id: self.access_client_id,
-                proof_origin: self.access_proof_origin,
-                credential_configuration_ids: self.access_configuration_ids,
-                credential_identifiers: self.access_credential_identifiers,
-                dpop_jkt: self.access_dpop_jkt,
-                expires_at: self.access_expires_at,
-            },
-        )
-    }
+#[derive(serde::Deserialize)]
+pub(super) struct LockedContinuationGrant {
+    #[serde(flatten)]
+    pub(super) access: AccessRow,
+    pub(super) revoked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(QueryableByName)]
+pub(super) struct DeferredLeaseReceipt {
+    #[diesel(sql_type = sql_types::Uuid)]
+    pub(super) id: Uuid,
+    #[diesel(sql_type = sql_types::Text)]
+    pub(super) claim_id: String,
+    #[diesel(sql_type = sql_types::Uuid)]
+    pub(super) claim_token_id: Uuid,
 }
 
 #[derive(QueryableByName)]
@@ -535,14 +478,4 @@ pub(super) fn decode_selection(
     value: Option<serde_json::Value>,
 ) -> Result<Option<nazo_openid4vci::CredentialSelection>, diesel::result::Error> {
     serde_json::from_value(value.unwrap_or(serde_json::Value::Null)).map_err(decode_error)
-}
-
-#[derive(QueryableByName)]
-pub(super) struct DeferredIdentityRow {
-    #[diesel(sql_type = sql_types::Uuid)]
-    pub(super) token_id: Uuid,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
-    pub(super) credential_selection: Option<serde_json::Value>,
-    #[diesel(sql_type = sql_types::Text)]
-    pub(super) credential_configuration_id: String,
 }

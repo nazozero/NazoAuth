@@ -6,7 +6,7 @@ use uuid::Uuid;
 /// current generation. The immutable contract payload lives in
 /// `RefreshContractRow`; rotated generations only leave `SpentRefreshTokenRow`
 /// proofs.
-#[derive(Debug, diesel::Queryable, diesel::QueryableByName, diesel::Selectable)]
+#[derive(Clone, Debug, diesel::Queryable, diesel::QueryableByName, diesel::Selectable)]
 #[diesel(table_name = crate::schema::oauth_refresh_families)]
 pub(crate) struct RefreshFamilyRow {
     #[diesel(sql_type = diesel::sql_types::Uuid)]

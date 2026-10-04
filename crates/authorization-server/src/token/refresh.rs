@@ -127,7 +127,7 @@ pub async fn token_refresh_with_service(
         ));
     };
     let token = match token_service
-        .refresh_token(client.tenant_id, refresh_token)
+        .refresh_token_snapshot(client.tenant_id, refresh_token, client.id, request_started_at)
         .await
     {
         Ok(value) => value,
@@ -141,7 +141,7 @@ pub async fn token_refresh_with_service(
             ));
         }
     };
-    let Some(mut token) = token else {
+    let Some(snapshot) = token else {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
@@ -149,6 +149,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     };
+    let mut token = snapshot.presented;
     if token.client_id != client.id || token.expires_at <= Utc::now() {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
@@ -250,10 +251,7 @@ pub async fn token_refresh_with_service(
     if token.revoked_at.is_some() {
         let original_id = token.id;
         let original_blake3 = token.token_blake3;
-        match token_service
-            .inspect_lost_refresh_successor(&token, client.id, request_started_at)
-            .await
-        {
+        match snapshot.successor {
             Ok(Some(successor)) => token = successor,
             Ok(None) => {}
             Err(error) => {

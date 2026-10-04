@@ -436,6 +436,8 @@ strictly constrained.
 - A different active administrator approves or rejects the request. Rejection
   and revocation require bounded reasons; every state change is recorded in the
   same database transaction.
+Approval samples database time once after acquiring the tenant serialization lock and current administrator, request and client row locks. Certificate validity and current-anchor quotas use this mutation admission time. This does not promise that the COMMIT ACK arrives before certificate expiry.
+
 - A client may have at most 8 current anchors and 4 pending requests; one user
   may have 16 pending requests per tenant; and a tenant may have at most 128
   distinct current anchors. Creation and approval are serialized per tenant.

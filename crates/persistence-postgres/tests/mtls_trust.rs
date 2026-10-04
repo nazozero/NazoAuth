@@ -10,6 +10,9 @@ use nazo_identity::{
 use nazo_postgres::{MtlsTrustAnchorRepository, create_pool, get_conn, run_pending_migrations};
 use uuid::Uuid;
 
+#[path = "support/mtls_trust_required.rs"]
+mod mtls_trust_required;
+
 #[derive(QueryableByName)]
 struct TrustEventRow {
     #[diesel(sql_type = SmallInt)]

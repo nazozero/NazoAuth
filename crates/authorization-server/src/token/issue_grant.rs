@@ -549,29 +549,28 @@ pub async fn issue_token_response(
         body["id_token"] = json!(id_token);
     }
     let mut refresh_token_to_commit = None;
-    if will_issue_refresh {
-        if let Some((family, rotated_from, lost_response_retry)) = refresh_family {
-            let refresh = PendingRefreshToken {
-                raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
-                member_id: Uuid::now_v7(),
-                family,
-                rotated_from,
-                lost_response_retry,
-                issued_at: now,
-                expires_at: now + Duration::seconds(context.config.refresh_token_ttl_seconds),
-            };
-            let id_token_sid_for_refresh_persistence =
-                persisted_id_token_sid(&issue, issued_id_token_sid.as_deref());
-            let refresh_token = prepare_refresh_token(
-                client,
-                &issue,
-                &refresh,
-                id_token_sid_for_refresh_persistence.map(ToOwned::to_owned),
-            );
-            body["refresh_token"] = json!(refresh.raw);
-            refresh_token_family_id = Some(refresh.family);
-            refresh_token_to_commit = Some(refresh_token);
-        }
+    if will_issue_refresh && let Some((family, rotated_from, lost_response_retry)) = refresh_family
+    {
+        let refresh = PendingRefreshToken {
+            raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
+            member_id: Uuid::now_v7(),
+            family,
+            rotated_from,
+            lost_response_retry,
+            issued_at: now,
+            expires_at: now + Duration::seconds(context.config.refresh_token_ttl_seconds),
+        };
+        let id_token_sid_for_refresh_persistence =
+            persisted_id_token_sid(&issue, issued_id_token_sid.as_deref());
+        let refresh_token = prepare_refresh_token(
+            client,
+            &issue,
+            &refresh,
+            id_token_sid_for_refresh_persistence.map(ToOwned::to_owned),
+        );
+        body["refresh_token"] = json!(refresh.raw);
+        refresh_token_family_id = Some(refresh.family);
+        refresh_token_to_commit = Some(refresh_token);
     }
     let refresh_commit = if let Some(authority) = issue.refresh_authority.take() {
         Some(nazo_auth::RefreshTokenCommit::UseExisting {

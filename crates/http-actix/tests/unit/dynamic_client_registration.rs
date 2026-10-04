@@ -67,7 +67,7 @@ impl FakeStore {
 impl DynamicRegistrationClientStore for FakeStore {
     fn insert<'a>(
         &'a self,
-        prepared: &'a PreparedClientRegistration,
+        prepared: PreparedClientRegistration,
         _source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient> {
         let inserted = OAuthClient {
@@ -75,7 +75,7 @@ impl DynamicRegistrationClientStore for FakeStore {
             tenant_id: prepared.tenant.tenant_id.as_uuid(),
             realm_id: prepared.tenant.realm_id.as_uuid(),
             organization_id: prepared.tenant.organization_id.as_uuid(),
-            registration: prepared.registration.clone(),
+            registration: prepared.registration,
             require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
             is_active: true,
         };

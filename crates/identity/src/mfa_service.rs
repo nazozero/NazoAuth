@@ -186,17 +186,53 @@ impl MfaService {
         prepared: PreparedTotpConfirmation,
         now: i64,
     ) -> Result<TotpConfirmationOutcome, MfaServiceError> {
-        let outcome = self
-            .repository
-            .verify_and_confirm_totp(
-                account.tenant().tenant_id,
-                account.user_id(),
-                &prepared.code,
-                now,
-                prepared.hashes,
-            )
+        self.confirm_totp_owned(account, prepared, now, None).await
+    }
+
+    pub async fn confirm_totp_with_required_audit(
+        &self,
+        account: &PublicAccount,
+        prepared: PreparedTotpConfirmation,
+        now: i64,
+        source_ip_hash: String,
+    ) -> Result<TotpConfirmationOutcome, MfaServiceError> {
+        self.confirm_totp_owned(account, prepared, now, Some(source_ip_hash))
             .await
-            .map_err(MfaServiceError::repository)?;
+    }
+
+    async fn confirm_totp_owned(
+        &self,
+        account: &PublicAccount,
+        prepared: PreparedTotpConfirmation,
+        now: i64,
+        source_ip_hash: Option<String>,
+    ) -> Result<TotpConfirmationOutcome, MfaServiceError> {
+        let outcome = match source_ip_hash {
+            Some(source_ip_hash) => {
+                self.repository
+                    .verify_and_confirm_totp_with_required_audit(
+                        account.tenant().tenant_id,
+                        account.user_id(),
+                        &prepared.code,
+                        now,
+                        prepared.hashes,
+                        source_ip_hash,
+                    )
+                    .await
+            }
+            None => {
+                self.repository
+                    .verify_and_confirm_totp(
+                        account.tenant().tenant_id,
+                        account.user_id(),
+                        &prepared.code,
+                        now,
+                        prepared.hashes,
+                    )
+                    .await
+            }
+        }
+        .map_err(MfaServiceError::repository)?;
         Ok(match outcome {
             TotpVerificationOutcome::Accepted(_) => TotpConfirmationOutcome::Accepted {
                 backup_codes: prepared.backup_codes,
@@ -234,22 +270,56 @@ impl MfaService {
         account: &PublicAccount,
         proof: &MfaVerificationProof,
     ) -> Result<Vec<String>, MfaServiceError> {
+        self.regenerate_backup_codes_owned(account, proof, None)
+            .await
+    }
+
+    pub async fn regenerate_backup_codes_with_required_audit(
+        &self,
+        account: &PublicAccount,
+        proof: &MfaVerificationProof,
+        source_ip_hash: String,
+    ) -> Result<Vec<String>, MfaServiceError> {
+        self.regenerate_backup_codes_owned(account, proof, Some(source_ip_hash))
+            .await
+    }
+
+    async fn regenerate_backup_codes_owned(
+        &self,
+        account: &PublicAccount,
+        proof: &MfaVerificationProof,
+        source_ip_hash: Option<String>,
+    ) -> Result<Vec<String>, MfaServiceError> {
         let (codes, normalized) = generate_backup_codes();
         let hashes = self
             .hasher
             .hash_secrets(normalized)
             .await
             .map_err(mfa_hash_error)?;
-        let replaced = self
-            .repository
-            .replace_backup_code_hashes(
-                account.tenant().tenant_id,
-                account.user_id(),
-                proof.credential_id,
-                hashes,
-            )
-            .await
-            .map_err(MfaServiceError::repository)?;
+        let replaced = match source_ip_hash {
+            Some(source_ip_hash) => {
+                self.repository
+                    .replace_backup_code_hashes_with_required_audit(
+                        account.tenant().tenant_id,
+                        account.user_id(),
+                        proof.credential_id,
+                        hashes,
+                        source_ip_hash,
+                    )
+                    .await
+            }
+            None => {
+                self.repository
+                    .replace_backup_code_hashes(
+                        account.tenant().tenant_id,
+                        account.user_id(),
+                        proof.credential_id,
+                        hashes,
+                    )
+                    .await
+            }
+        }
+        .map_err(MfaServiceError::repository)?;
         if !replaced {
             return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
         }

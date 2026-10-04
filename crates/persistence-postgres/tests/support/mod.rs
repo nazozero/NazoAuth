@@ -5,7 +5,7 @@ use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
 
-const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 17] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 19] = [
     "20260805000100",
     "20260905000100",
     "20260909000100",
@@ -24,8 +24,11 @@ const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 17] = [
     // Public refresh-family cutover and trigger run once per database.
     "20261001000500",
     "20261002000300",
+    // These owners are fixed to public, independent of fixture search_path.
+    "20261003000400",
+    "20261003000500",
 ];
-const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 17] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 19] = [
     include_str!("../../../../migrations/20260805000100_security_audit_ledger/up.sql"),
     include_str!("../../../../migrations/20260905000100_shared_audit_anchor_state/up.sql"),
     include_str!("../../../../migrations/20260909000100_exporter_owned_audit_chain/up.sql"),
@@ -47,6 +50,8 @@ const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 17] = [
     ),
     include_str!("../../../../migrations/20261001000500_refresh_replay_retention/up.sql"),
     include_str!("../../../../migrations/20261002000300_audit_reachable_role_privileges/up.sql"),
+    include_str!("../../../../migrations/20261003000400_access_request_required_outcomes/up.sql"),
+    include_str!("../../../../migrations/20261003000500_audit_observation_freshness/up.sql"),
 ];
 
 pub fn schema_database_url(base: &str, schema: &str) -> String {
@@ -61,6 +66,14 @@ pub async fn run_isolated_application_migrations(database_url: &str) {
             && PUBLIC_SECURITY_AUDIT_MIGRATIONS[1]
                 .contains("ALTER TABLE public.security_audit_chain_state"),
         "the isolated-schema fixture must be reviewed if the public audit boundary changes"
+    );
+
+    assert!(
+        PUBLIC_SECURITY_AUDIT_MIGRATIONS[17]
+            .contains("ALTER TABLE public.client_access_requests")
+            && PUBLIC_SECURITY_AUDIT_MIGRATIONS[18]
+                .contains("CREATE OR REPLACE FUNCTION public.nazo_observe_security_audit_anchor"),
+        "public Required approval and observation migrations must run only in the real database ledger"
     );
 
     let mut connection = AsyncPgConnection::establish(database_url)

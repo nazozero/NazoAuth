@@ -46,7 +46,7 @@ use anyhow::{Context as _, bail};
 use chrono::Utc;
 use fs2::FileExt as _;
 use nazo_operator_protocol::{
-    ControlOperation, MAX_COMPACT_JWS_BYTES, verify_control_operation_signature,
+    ControlOperation, MAX_COMPACT_JWS_BYTES,
 };
 
 mod admission;
@@ -186,11 +186,8 @@ async fn execute_compact(
 ) -> anyhow::Result<()> {
     // (1) Parse schema/size/closed enum before any authority is consulted.
     let presented = reject(admission::present(compact), RejectionClass::Request)?;
-    let request_hash = reject(
-        nazo_operator_protocol::control_operation_request_hash(&presented)
-            .map_err(anyhow::Error::new),
-        RejectionClass::Request,
-    )?;
+    let request_hash = presented.request_hash();
+    let operation = presented.operation();
 
     // Resume-first: an accepted journal record owns authorization for this
     // exact canonical request (same id + same hash implies byte-equal
@@ -198,12 +195,12 @@ async fn execute_compact(
     // signature check, or key lifecycle evaluation (05 §5).  A different hash
     // under the same id is the permanent OPERATION_ID_CONFLICT.
     let snapshot =
-        control_journal::accepted_snapshot(state_directory, &presented.operation_id, &request_hash)
+        control_journal::accepted_snapshot(state_directory, &operation.operation_id, &request_hash)
             .map_err(map_journal_error)?;
     if let Some(snapshot) = snapshot {
         return journaled_execution(
             state_directory,
-            &presented,
+            operation,
             &request_hash,
             &snapshot,
             persistence,
@@ -216,8 +213,8 @@ async fn execute_compact(
     let repository = persistence.controller_registry();
     let admitted = match admission::admit_controller(
         repository.as_ref(),
-        &presented.deployment_id,
-        &presented.kid,
+        &operation.deployment_id,
+        &operation.kid,
         Utc::now(),
     )
     .await
@@ -233,13 +230,11 @@ async fn execute_compact(
         }
     };
 
-    // (3) Signature over the canonical bytes through the single frozen
-    // verifier API; it re-validates header, encoding, envelope policy, and
-    // key binding.  The verified operation replaces the pre-parsed one from
-    // here on, so there is no parse/verify TOCTOU gap.
+    // (3) Consume the immutable presentation through the protocol verifier.
+    // It checks header/key binding, canonical equality and the real signature
+    // over the original compact segments without parsing/hash work again.
     let verified = reject(
-        verify_control_operation_signature(compact, &admitted.kid, &admitted.verifying_key)
-            .map_err(anyhow::Error::new),
+        presented.verify(&admitted.kid, &admitted.verifying_key).map_err(anyhow::Error::new),
         RejectionClass::Authorization,
     )?;
 

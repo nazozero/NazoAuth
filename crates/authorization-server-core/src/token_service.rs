@@ -50,6 +50,14 @@ impl std::fmt::Display for TokenPortError {
 
 impl std::error::Error for TokenPortError {}
 
+/// One request-local presentation read. The optional direct successor is only
+/// a signing candidate; its dependency error is inspected after authenticating
+/// the original holder. The final locked commit revalidates all source facts.
+pub struct RefreshTokenSnapshot {
+    pub presented: RefreshToken,
+    pub successor: Result<Option<RefreshToken>, TokenPortError>,
+}
+
 #[derive(Clone, Debug)]
 pub enum AuthorizationCodeBeginResult {
     Consuming(CodePayload),
@@ -484,6 +492,18 @@ pub trait TokenRepositoryPort: Send + Sync {
         raw_token: &'a str,
     ) -> TokenFuture<'a, Option<RefreshToken>>;
 
+    /// Read current-or-spent presentation and its direct successor candidate
+    /// from one storage snapshot. Unsupported adapters fail before issuance.
+    fn refresh_token_snapshot<'a>(
+        &'a self,
+        _tenant_id: Uuid,
+        _raw_token: &'a str,
+        _client_id: Uuid,
+        _retry_started_at: DateTime<Utc>,
+    ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>> {
+        Box::pin(async { Err(TokenPortError::Unavailable) })
+    }
+
     fn inspect_lost_response_successor<'a>(
         &'a self,
         token: &'a RefreshToken,
@@ -715,6 +735,18 @@ where
         raw_token: &str,
     ) -> Result<Option<RefreshToken>, TokenPortError> {
         self.repository.refresh_token(tenant_id, raw_token).await
+    }
+
+    pub async fn refresh_token_snapshot(
+        &self,
+        tenant_id: Uuid,
+        raw_token: &str,
+        client_id: Uuid,
+        retry_started_at: DateTime<Utc>,
+    ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
+        self.repository
+            .refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
+            .await
     }
 
     pub async fn userinfo_snapshot(

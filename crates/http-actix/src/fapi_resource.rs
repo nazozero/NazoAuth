@@ -338,14 +338,14 @@ fn invalid_dpop_response_with_status(status: StatusCode, description: &str) -> H
 }
 
 #[derive(Clone, Debug)]
-enum CapturedHeader {
+enum CapturedHeader<'request> {
     Missing,
-    Unique(String),
+    Unique(&'request str),
     Invalid,
 }
 
-impl CapturedHeader {
-    fn capture(request: &HttpRequest, name: &str) -> Self {
+impl<'request> CapturedHeader<'request> {
+    fn capture(request: &'request HttpRequest, name: &str) -> Self {
         let mut values = request.headers().get_all(name);
         let Some(value) = values.next() else {
             return Self::Missing;
@@ -355,7 +355,7 @@ impl CapturedHeader {
         }
         value
             .to_str()
-            .map_or(Self::Invalid, |value| Self::Unique(value.to_owned()))
+            .map_or(Self::Invalid, Self::Unique)
     }
 
     fn unique(&self) -> Result<Option<&str>, ()> {
@@ -368,21 +368,21 @@ impl CapturedHeader {
 }
 
 struct CapturedRequest<'body> {
-    method: String,
+    method: &'body str,
     target_uri: String,
     body: &'body [u8],
     digest: OnceLock<Option<BodyDigest<'body>>>,
-    authorization: CapturedHeader,
-    dpop: CapturedHeader,
-    content_digest: CapturedHeader,
-    signature_input: CapturedHeader,
-    signature: CapturedHeader,
-    safe_headers: Vec<(String, String)>,
+    authorization: CapturedHeader<'body>,
+    dpop: CapturedHeader<'body>,
+    content_digest: CapturedHeader<'body>,
+    signature_input: CapturedHeader<'body>,
+    signature: CapturedHeader<'body>,
+    safe_headers: Vec<(&'body str, &'body str)>,
     captured_at: i64,
 }
 
 impl<'body> CapturedRequest<'body> {
-    fn capture(issuer: &str, request: &HttpRequest, body: &'body Bytes) -> Self {
+    fn capture(issuer: &str, request: &'body HttpRequest, body: &'body Bytes) -> Self {
         let target_uri = endpoint_uri(
             issuer,
             request
@@ -395,11 +395,12 @@ impl<'body> CapturedRequest<'body> {
             .headers()
             .keys()
             .filter_map(|name| {
-                let name = name.as_str().to_ascii_lowercase();
-                if matches!(name.as_str(), "signature" | "signature-input") {
+                // HeaderName is already normalized to lowercase by the HTTP adapter.
+                let name = name.as_str();
+                if matches!(name, "signature" | "signature-input") {
                     return None;
                 }
-                let mut values = request.headers().get_all(name.as_str());
+                let mut values = request.headers().get_all(name);
                 let value = values.next()?;
                 if values.next().is_some() {
                     return None;
@@ -408,11 +409,11 @@ impl<'body> CapturedRequest<'body> {
                 if value.chars().any(char::is_control) {
                     return None;
                 }
-                Some((name, value.to_owned()))
+                Some((name, value))
             })
             .collect();
         Self {
-            method: request.method().as_str().to_owned(),
+            method: request.method().as_str(),
             target_uri,
             body: body.as_ref(),
             digest: OnceLock::new(),
@@ -440,7 +441,7 @@ impl<'body> CapturedRequest<'body> {
         let mut headers = self
             .safe_headers
             .iter()
-            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .copied()
             .collect::<Vec<_>>();
         for (name, captured) in [
             ("authorization", &self.authorization),
@@ -524,8 +525,8 @@ async fn sign_response(
     let mut request_headers = original
         .safe_headers
         .iter()
-        .filter(|(name, _)| name != "content-digest")
-        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .copied()
+        .filter(|(name, _)| *name != "content-digest")
         .collect::<Vec<_>>();
     if let Some(digest) = request_digest {
         request_headers.push(("content-digest", digest.field_value()));

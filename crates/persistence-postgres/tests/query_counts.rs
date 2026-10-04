@@ -1021,7 +1021,131 @@ async fn rf06_lost_response_successor_is_single_read() {
     }
 
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let repository = TokenRepository::new(pool);
+    let repository = TokenRepository::new(pool.clone());
+    // R05: the production port reads presentation and candidate together.
+    let snapshots = TokenIssuanceRepository::new(pool.clone());
+    let retry_started_at = Utc::now();
+    for (raw, expected_member, expected_successor) in [
+        (&child_raw, child_id, None), (&parent_raw, parent_id, Some(child_id)),
+    ] {
+        let (result, delta, acquires) = measure(&counter,
+            snapshots.refresh_token_snapshot(tenant_id, raw, seed.client.id, retry_started_at),
+        ).await;
+        let snapshot = result.unwrap().expect("presentation exists");
+        assert_eq!(snapshot.presented.id, expected_member);
+        assert_eq!(snapshot.presented.token_blake3, *blake3::hash(raw.as_bytes()).as_bytes());
+        assert_eq!(snapshot.successor.unwrap().map(|token| token.id), expected_successor);
+        assert_eq!(delta.data_queries, 1);
+        assert_eq!(acquires, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+    for (client_id, at) in [
+        (Uuid::now_v7(), retry_started_at),
+        (seed.client.id, revoked_at - Duration::seconds(1)),
+        (seed.client.id, revoked_at + Duration::seconds(61)),
+    ] {
+        let (result, delta, acquires) = measure(&counter,
+            snapshots.refresh_token_snapshot(tenant_id, &parent_raw, client_id, at),
+        ).await;
+        let snapshot = result.unwrap().expect("original presentation still exists");
+        assert_eq!(snapshot.presented.id, parent_id);
+        assert!(snapshot.successor.unwrap().is_none());
+        assert_eq!(delta.data_queries, 1);
+        assert_eq!(acquires, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+    // R05 snapshot recovery includes both endpoints of the 0..=60s window.
+    // Read the persisted timestamp so PostgreSQL microsecond precision cannot
+    // turn an exact endpoint into a sub-microsecond before/after presentation.
+    let parent_digest = *blake3::hash(parent_raw.as_bytes()).as_bytes();
+    let child_digest = *blake3::hash(child_raw.as_bytes()).as_bytes();
+    let persisted_spent_at = {
+        #[derive(diesel::QueryableByName)]
+        struct SpentTimestamp {
+            #[diesel(sql_type = sql_types::Timestamptz)]
+            spent_at: DateTime<Utc>,
+        }
+
+        let mut connection = connect(&database_url).await;
+        sql_query(
+            "SELECT spent_at FROM oauth_refresh_spent_tokens \
+             WHERE tenant_id = $1 AND refresh_token_blake3 = $2",
+        )
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Binary, _>(parent_digest.as_slice())
+        .get_result::<SpentTimestamp>(&mut connection)
+        .await
+        .expect("the seeded predecessor must have a persisted spent edge")
+        .spent_at
+    };
+    for (case, elapsed, expect_successor) in [
+        ("0s", Duration::zero(), true),
+        ("60s", Duration::seconds(60), true),
+        (
+            "60s + 1ms",
+            Duration::seconds(60) + Duration::milliseconds(1),
+            false,
+        ),
+        ("-1ms", Duration::milliseconds(-1), false),
+    ] {
+        let (result, delta, acquires) = measure(
+            &counter,
+            snapshots.refresh_token_snapshot(
+                tenant_id,
+                &parent_raw,
+                seed.client.id,
+                persisted_spent_at + elapsed,
+            ),
+        )
+        .await;
+        let snapshot = result
+            .expect("the boundary snapshot read should succeed")
+            .expect("the original spent presentation must remain observable");
+        assert_eq!(snapshot.presented.id, parent_id, "{case}");
+        assert_eq!(snapshot.presented.token_blake3, parent_digest, "{case}");
+        assert_eq!(snapshot.presented.token_family_id, family_id, "{case}");
+        assert_eq!(snapshot.presented.client_id, seed.client.id, "{case}");
+        assert_eq!(
+            snapshot.presented.revoked_at,
+            Some(persisted_spent_at),
+            "{case}"
+        );
+        let successor = snapshot
+            .successor
+            .expect("the intact candidate projection should not fail");
+        if expect_successor {
+            let successor = successor.expect("both retry-window endpoints recover the child");
+            assert_eq!(successor.id, child_id, "{case}");
+            assert_eq!(successor.token_blake3, child_digest, "{case}");
+            assert_eq!(successor.token_family_id, family_id, "{case}");
+            assert_eq!(successor.client_id, seed.client.id, "{case}");
+        } else {
+            assert!(
+                successor.is_none(),
+                "{case}: outside the inclusive retry window"
+            );
+        }
+        assert_eq!(delta.data_queries, 1, "{case}");
+        assert_eq!(acquires, 1, "{case}");
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+
+    for (lookup_tenant, raw) in [
+        (Uuid::now_v7(), parent_raw.as_str()), (tenant_id, "unknown-r05-token"),
+    ] {
+        let (result, delta, acquires) = measure(&counter,
+            snapshots.refresh_token_snapshot(lookup_tenant, raw, seed.client.id, retry_started_at),
+        ).await;
+        assert!(result.unwrap().is_none());
+        assert_eq!(delta.data_queries, 1);
+        assert_eq!(acquires, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+
     let parent = RefreshToken {
         id: parent_id,
         token_blake3: *blake3::hash(parent_raw.as_bytes()).as_bytes(),
@@ -1081,6 +1205,39 @@ async fn rf06_lost_response_successor_is_single_read() {
         "sender-binding rejection precedes pool acquisition"
     );
     assert_clean(delta);
+
+    // Current digest identity wins even if another presentation also has a
+    // spent proof with those bytes. Restore the actual digest before cleanup.
+    let mut connection = connect(&database_url).await;
+    sql_query("UPDATE oauth_refresh_families SET current_token_blake3 = $1 WHERE tenant_id = $2 AND token_family_id = $3")
+        .bind::<sql_types::Binary, _>(blake3::hash(parent_raw.as_bytes()).as_bytes().as_slice())
+        .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Uuid, _>(family_id)
+        .execute(&mut connection).await.unwrap();
+    let (result, delta, acquires) = measure(&counter,
+        snapshots.refresh_token_snapshot(tenant_id, &parent_raw, seed.client.id, retry_started_at),
+    ).await;
+    let snapshot = result.unwrap().expect("current presentation has priority");
+    assert_eq!(snapshot.presented.id, child_id);
+    assert!(snapshot.successor.unwrap().is_none());
+    assert_eq!(delta.data_queries, 1);
+    assert_eq!(acquires, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+    sql_query("UPDATE oauth_refresh_families SET current_token_blake3 = $1, dpop_jkt = NULL WHERE tenant_id = $2 AND token_family_id = $3")
+        .bind::<sql_types::Binary, _>(blake3::hash(child_raw.as_bytes()).as_bytes().as_slice())
+        .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Uuid, _>(family_id)
+        .execute(&mut connection).await.unwrap();
+    let (result, delta, acquires) = measure(&counter,
+        snapshots.refresh_token_snapshot(tenant_id, &parent_raw, seed.client.id, retry_started_at),
+    ).await;
+    let snapshot = result.unwrap().expect("unbound spent presentation remains observable");
+    assert_eq!(snapshot.presented.id, parent_id);
+    assert!(snapshot.successor.unwrap().is_none(), "unbound holder cannot recover a successor");
+    assert_eq!(delta.data_queries, 1);
+    assert_eq!(acquires, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+    drop(connection);
 
     cleanup_seed(&database_url, tenant, &seed).await;
 }
@@ -1321,11 +1478,11 @@ async fn dc01_replace_registration_is_single_update_returning() {
 // DF-01: deferred claim ready
 // ---------------------------------------------------------------------------
 
-/// DF-01: `claim_ready_deferred` claims a ready transaction with one
-/// `UPDATE .. WHERE <claim predicates> RETURNING (deferred, access)` inside a
-/// single transaction — the post-update SELECT was removed.
+/// DF-01: one complete locked projection, then one authorized lease UPDATE.
+/// V02's retained authorization/current-grant decision runs once between them;
+/// there is no separate unlocked intent SELECT or tentative lease on denial.
 #[tokio::test]
-async fn df01_deferred_claim_ready_is_single_update_returning() {
+async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -1337,7 +1494,7 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
     let issuer = Openid4vciRepository::new(
-        pool,
+        pool.clone(),
         [0x51_u8; 32],
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
@@ -1379,6 +1536,19 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
         .store_deferred(&deferred)
         .await
         .expect("deferred transaction should persist");
+    // Persist a valid future schedule, then model preparation already elapsed.
+    // Fixture statements complete before the measured production call.
+    let mut fixture = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_deferred_transactions \
+        SET ready_at=clock_timestamp()-INTERVAL '1 second', \
+            created_at=LEAST(created_at,clock_timestamp()-INTERVAL '2 seconds') WHERE id=$1",
+    )
+    .bind::<sql_types::Uuid, _>(deferred.id)
+    .execute(&mut fixture)
+    .await
+    .unwrap();
+    drop(fixture);
 
     let (result, delta, acquires) = measure(
         &counter,
@@ -1393,11 +1563,11 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     };
     assert_eq!(claim.credential.id, deferred.id);
     assert_eq!(claim.claim_id, "claim-1");
-    // 1 data statement: UPDATE openid4vci_deferred_transactions SET claim_id,
-    // claim_expires_at FROM openid4vci_access_grants .. WHERE ready/consumable
-    // predicates RETURNING the deferred row joined to its access grant. The
-    // old code ran UPDATE then SELECT.
-    assert_eq!(delta.data_queries, 1);
+    // Historical 3-vs-1 failure is preserved in remediation evidence. The
+    // accepted V02 contract costs two statements: locked facts + authorized
+    // lease. The independent intent SELECT was removed, rather than allowing
+    // an unauthorized tentative write to retain the old one-query budget.
+    assert_eq!(delta.data_queries, 2);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1);

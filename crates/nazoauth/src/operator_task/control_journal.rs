@@ -637,19 +637,25 @@ pub(crate) fn begin_execution(
     }
 }
 
-/// Persist the terminal result.  Callers must treat this function's return
-/// as the only permission to report success: once it returns, the result is
-/// durable and response-loss recovery can serve it verbatim.
-pub(crate) fn complete(
-    state_directory: &Path,
+// Private result owner prepared once before the final publication failpoint.
+struct PreparedJournalResult {
     result: ControlResult,
+    stdout: Vec<u8>,
+}
+
+impl PreparedJournalResult {
+    fn new(result: ControlResult) -> Result<Self, JournalFlowError> {
+        // encode_control_result validates schema/policy and the wire ceiling.
+        let stdout = encode_control_result(&result).map_err(transport)?;
+        Ok(Self { result, stdout })
+    }
+}
+
+fn persist_completed_result(
+    state_directory: &Path,
+    prepared: PreparedJournalResult,
 ) -> Result<JournaledOutcome, JournalFlowError> {
-    validate_control_result(&result).map_err(transport)?;
-    // A completed journal record must always be representable on the only
-    // ControlResult wire channel. Check its byte ceiling before publishing
-    // terminal state so response-loss recovery can never strand an
-    // unreportable completion.
-    let stdout = encode_control_result(&result).map_err(transport)?;
+    let PreparedJournalResult { result, stdout } = prepared;
     ensure_file_safe_identifier(&result.operation_id)?;
     ensure_request_hash_shape(&result.request_hash)?;
     let path = record_path(
@@ -948,10 +954,10 @@ where
         completed_at: Some(Utc::now().timestamp()),
         result: data,
     };
-    validate_control_result(&result).map_err(transport)?;
+    let result = PreparedJournalResult::new(result)?;
     pause("control-journal-before-result");
 
-    let outcome = complete(state_directory, result)?;
+    let outcome = persist_completed_result(state_directory, result)?;
     pause("control-journal-after-result");
     Ok(outcome)
 }

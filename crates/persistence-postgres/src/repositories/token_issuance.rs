@@ -851,6 +851,23 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
+    fn refresh_token_snapshot<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+        client_id: Uuid,
+        retry_started_at: DateTime<Utc>,
+    ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
+        Box::pin(async move {
+            self.tokens.refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
+                .await.map_err(map_repository_error)
+                .map(|snapshot| snapshot.map(|snapshot| nazo_auth::RefreshTokenSnapshot {
+                    presented: snapshot.presented,
+                    successor: snapshot.successor.map_err(map_repository_error),
+                }))
+        })
+    }
+
     fn inspect_lost_response_successor<'a>(
         &'a self,
         token: &'a RefreshToken,

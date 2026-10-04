@@ -1,6 +1,7 @@
 use super::{MfaAuditError, MfaRepository, mfa_event};
 use crate::{
-    get_conn, repositories::audit::insert_identity_security_event, schema::user_mfa_backup_codes,
+    get_conn, pool::DiscardOnDrop, repositories::audit::insert_identity_security_event,
+    schema::user_mfa_backup_codes,
 };
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -116,11 +117,43 @@ impl MfaRepository {
         credential_id: uuid::Uuid,
         hashes: Vec<String>,
     ) -> Result<bool, RepositoryError> {
+        self.replace_backup_code_hashes_owned(tenant_id, user_id, credential_id, hashes, None)
+            .await
+    }
+
+    pub async fn replace_backup_code_hashes_with_required_audit(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: uuid::Uuid,
+        hashes: Vec<String>,
+        source_ip_hash: String,
+    ) -> Result<bool, RepositoryError> {
+        self.replace_backup_code_hashes_owned(
+            tenant_id,
+            user_id,
+            credential_id,
+            hashes,
+            Some(source_ip_hash),
+        )
+        .await
+    }
+
+    async fn replace_backup_code_hashes_owned(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: uuid::Uuid,
+        hashes: Vec<String>,
+        source_ip_hash: Option<String>,
+    ) -> Result<bool, RepositoryError> {
         validate_backup_hash_count(&hashes)?;
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
+        let mut guard = DiscardOnDrop(Some(connection));
+        let result = guard
+            .connection()
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
                 let generation = crate::schema::user_totp_credentials::table
                     .filter(crate::schema::user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
@@ -158,10 +191,40 @@ impl MfaRepository {
                         .execute(connection)
                         .await?;
                 }
+                if let Some(source_ip_hash) = source_ip_hash {
+                    // Preserve generation -> dependent -> self-principal lock
+                    // order, matching confirmation and disable accepting owners.
+                    let active = crate::schema::users::table
+                        .find(user_id.as_uuid())
+                        .filter(crate::schema::users::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(crate::schema::users::is_active.eq(true))
+                        .filter(crate::schema::users::mfa_enabled.eq(true))
+                        .for_update()
+                        .select(crate::schema::users::id)
+                        .first::<uuid::Uuid>(connection)
+                        .await
+                        .optional()?;
+                    if active.is_none() {
+                        return Err(diesel::result::Error::RollbackTransaction);
+                    }
+                    super::append_required_mfa_outcome(
+                        connection,
+                        tenant_id,
+                        user_id,
+                        credential_id,
+                        "mfa_backup_codes_regenerated",
+                        source_ip_hash,
+                    )
+                    .await?;
+                }
                 Ok(true)
             })
             .await
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()));
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 }
 

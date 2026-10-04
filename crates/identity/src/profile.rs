@@ -599,7 +599,7 @@ where
         }
         match self
             .requests
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 account.tenant().tenant_id,
                 account.user_id(),
                 claim.request_id,

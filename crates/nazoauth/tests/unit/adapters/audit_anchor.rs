@@ -1934,3 +1934,129 @@ async fn signed_receipt_valid_json_whitespace_at_cap_succeeds_and_cap_plus_one_n
         server.await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn required_ten_second_freshness_stays_ready_across_five_second_idle_pg_polls() {
+    use diesel_async::SimpleAsyncConnection;
+
+    let database_url = std::env::var("NAZO_AUDIT_TEST_DATABASE_URL").ok();
+    if database_url.is_none() && std::env::var_os("CI").is_some() {
+        panic!("CI idle observation test requires NAZO_AUDIT_TEST_DATABASE_URL");
+    }
+    let Some(database_url) = database_url else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = nazo_postgres::create_pool(database_url, 2).unwrap();
+    let repository = AuditLedgerRepository::new(pool.clone());
+    let initial = repository.anchor_health().await.unwrap();
+    assert!(
+        !initial.pending_exists && initial.batch.is_none(),
+        "idle fixture must have no undelivered events"
+    );
+    let mut config = iteration_config(Url::parse("http://127.0.0.1:1/").unwrap());
+    config.preflight.freshness = Duration::from_secs(10);
+    config.preflight.deployment_id = "test-deployment".to_owned();
+    config.poll_interval = Duration::from_secs(5);
+    let client = test_client();
+    let mut last_anchored = None;
+    let mut last_blocked = None;
+    if initial.last_exported_sequence.is_none() {
+        assert_eq!(initial.head_sequence, 0);
+        // Establish the real empty-ledger checkpoint through a signed receiver
+        // receipt once. Subsequent idle polls must require no receiver request.
+        let expectation = genesis_expectation(&config.preflight.deployment_id, &initial.head_hash);
+        let receipt = signed_receipt(
+            "accepted",
+            "genesis",
+            &config.preflight.deployment_id,
+            0,
+            0,
+            0,
+            expectation.last_hash,
+            expectation.batch_digest,
+            None,
+            false,
+            &test_signing_key(),
+        );
+        let (endpoint, server) = local_anchor_endpoint_with_body(200, receipt).await;
+        config.endpoint = endpoint;
+        assert_eq!(
+            run_iteration(
+                &repository,
+                &client,
+                &config,
+                &mut last_anchored,
+                &mut last_blocked
+            )
+            .await,
+            IterationOutcome::Poll(Duration::from_secs(5))
+        );
+        server.await.unwrap();
+        config.endpoint = Url::parse("http://127.0.0.1:1/").unwrap();
+    } else {
+        config.preflight.deployment_id = initial.deployment_id.unwrap();
+    }
+    config.preflight.validate().unwrap();
+    let acknowledged = repository.anchor_health().await.unwrap();
+    let preflight = AuditAnchorPreflight::new(config.preflight.clone()).unwrap();
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    for _elapsed in [5, 10, 15] {
+        // Advancing the stored age by one poll reproduces t5/t10/t15 without
+        // wall-clock sleeps. The former throttle accumulated all three ages.
+        connection
+            .batch_execute(
+                "UPDATE public.security_audit_chain_state \
+            SET anchor_observed_at = anchor_observed_at - INTERVAL '5 seconds' \
+            WHERE singleton IS TRUE",
+            )
+            .await
+            .unwrap();
+        let before = repository.anchor_health().await.unwrap();
+        assert_eq!(
+            run_iteration(
+                &repository,
+                &client,
+                &config,
+                &mut last_anchored,
+                &mut last_blocked
+            )
+            .await,
+            IterationOutcome::Poll(Duration::from_secs(5))
+        );
+        let observed = repository.anchor_health().await.unwrap();
+        assert!(observed.observed_at > before.observed_at);
+        preflight
+            .ensure_fresh(&observed)
+            .expect("healthy idle worker remains ready");
+        assert!(!observed.pending_exists && observed.batch.is_none());
+        assert_eq!(observed.head_sequence, acknowledged.head_sequence);
+        assert_eq!(
+            observed.last_exported_sequence,
+            acknowledged.last_exported_sequence
+        );
+        assert_eq!(observed.last_exported_hash, acknowledged.last_exported_hash);
+        assert_eq!(
+            observed.last_exported_at, acknowledged.last_exported_at,
+            "idle polls add no receiver acknowledgement"
+        );
+    }
+    let current = repository.anchor_health().await.unwrap();
+    assert!(
+        repository
+            .observe_anchor("wrong-idle-deployment")
+            .await
+            .is_err()
+    );
+    assert_eq!(repository.anchor_health().await.unwrap(), current);
+    let mut wrong = config.preflight;
+    wrong.deployment_id = "wrong-idle-deployment".to_owned();
+    assert!(
+        AuditAnchorPreflight::new(wrong)
+            .unwrap()
+            .ensure_fresh(&current)
+            .is_err()
+    );
+}

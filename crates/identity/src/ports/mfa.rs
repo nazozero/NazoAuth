@@ -154,6 +154,22 @@ pub trait MfaRepositoryPort: Send + Sync {
         hashes: Vec<EncodedSecretHash>,
     ) -> RepositoryFuture<'a, TotpVerificationOutcome>;
 
+    /// Confirm the pending generation, install its backup hashes and append
+    /// canonical `mfa_totp_enabled` in one accepting transaction. Recheck the
+    /// current active self principal before ACK; unknown never authorizes codes.
+    /// A repository without this capability fails before any mutation.
+    fn verify_and_confirm_totp_with_required_audit<'a>(
+        &'a self,
+        _tenant_id: TenantId,
+        _user_id: UserId,
+        _code: &'a str,
+        _timestamp: i64,
+        _hashes: Vec<EncodedSecretHash>,
+        _source_ip_hash: String,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
+
     fn record_invalid_totp_attempt(
         &self,
         tenant_id: TenantId,
@@ -207,6 +223,20 @@ pub trait MfaRepositoryPort: Send + Sync {
         credential_id: Uuid,
         hashes: Vec<EncodedSecretHash>,
     ) -> RepositoryFuture<'a, bool>;
+
+    /// Replace only the proved current generation's backup hashes and append
+    /// canonical `mfa_backup_codes_regenerated` in the same accepting commit.
+    /// Lock/recheck the active self principal; release codes only after ACK.
+    fn replace_backup_code_hashes_with_required_audit<'a>(
+        &'a self,
+        _tenant_id: TenantId,
+        _user_id: UserId,
+        _credential_id: Uuid,
+        _hashes: Vec<EncodedSecretHash>,
+        _source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
 
     /// Clear all MFA state only if the confirmed generation is still current.
     /// A retired proof returns false without modifying any MFA state. Checking

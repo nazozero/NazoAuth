@@ -3,7 +3,7 @@ use super::*;
 use crate::http::authorization::test_support::TestAuthorizationDependencies;
 use crate::test_support::valkey::valkey_del;
 use diesel::sql_query;
-use diesel_async::RunQueryDsl;
+use diesel_async::{RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRateDimension, AuthorizationRepositoryPort,
     AuthorizationStateSnapshot, AuthorizationStateStorePort, ConsentPayload, OAuthClient,
@@ -284,8 +284,7 @@ async fn exec_sql(state: &TestInfrastructure, sql: &str) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
-    sql_query(sql)
-        .execute(&mut conn)
+    conn.batch_execute(sql)
         .await
         .expect("schema mutation should succeed");
 }

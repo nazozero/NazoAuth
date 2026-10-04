@@ -46,8 +46,27 @@ pub(crate) async fn token_refresh(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    let service = ServerTokenService::new(
+    token_refresh_with_repository(
+        state,
+        req,
+        client,
+        form,
+        client_assertion,
         crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+    )
+    .await
+}
+
+async fn token_refresh_with_repository(
+    state: &TestInfrastructure,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+    repository: Arc<dyn nazo_auth::TokenRepositoryPort>,
+) -> HttpResponse {
+    let service = ServerTokenService::new(
+        repository,
         std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
             &state.valkey_connection(),
         )),
@@ -1397,6 +1416,155 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
         .expect("the newly issued family member should remain active");
     assert_eq!(active.rotated_from_id, Some(successor.id));
     assert_eq!(active.refresh_token_blake3, blake3_hex(returned_refresh));
+}
+
+#[actix_web::test]
+async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority() {
+    let state = live_trusted_proxy_refresh_state(AuthorizationServerProfile::Fapi2Security)
+        .expect("candidate-error ordering test requires an isolated migrated DATABASE_URL");
+    let certificate = crate::test_support::rfc9440_certificate_fixture("refresh-candidate-error");
+    let mismatch = crate::test_support::rfc9440_certificate_fixture("refresh-candidate-wrong-holder");
+    assert_ne!(certificate.thumbprint, mismatch.thumbprint);
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    insert_refresh_client(&state, &client).await;
+    let family_id = Uuid::now_v7();
+    let suffix = Uuid::now_v7();
+
+    let mut original = token_row_for_client(&state, &client);
+    original.token_family_id = family_id;
+    original.scopes = json!(["accounts", "offline_access"]);
+    original.subject = client.client_id.clone();
+    original.user_id = None;
+    original.dpop_jkt = None;
+    original.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
+    original.revoked_at = Some(Utc::now() - Duration::seconds(2));
+    let original_raw = format!("refresh-candidate-original-{suffix}");
+    let mut child = token_row_for_client(&state, &client);
+    child.token_family_id = family_id;
+    child.scopes = original.scopes.clone();
+    child.subject = original.subject.clone();
+    child.user_id = None;
+    child.dpop_jkt = None;
+    child.mtls_x5t_s256 = original.mtls_x5t_s256.clone();
+    child.authentication_context = original.authentication_context.clone();
+    let child_raw = format!("refresh-candidate-child-{suffix}");
+    insert_refresh_token_row(
+        &state,
+        &child_raw,
+        &child,
+        Some(spent_edge(&original, &original_raw)),
+        None,
+    )
+    .await;
+
+    // Read full persisted facts, not a second implementation of retry policy.
+    async fn durable_retry_state(
+        state: &TestInfrastructure,
+        tenant_id: Uuid,
+        family_id: Uuid,
+    ) -> Value {
+        #[derive(QueryableByName)]
+        struct DurableState {
+            #[diesel(sql_type = Jsonb)]
+            snapshot: Value,
+        }
+
+        let mut conn = get_conn(&state.diesel_db).await.unwrap();
+        sql_query(
+            r#"
+            SELECT jsonb_build_object(
+                'family', (
+                    SELECT to_jsonb(f) FROM oauth_refresh_families AS f
+                    WHERE f.tenant_id = $1 AND f.token_family_id = $2
+                ),
+                'spent', (
+                    SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s.member_id), '[]'::jsonb)
+                    FROM oauth_refresh_spent_tokens AS s
+                    WHERE s.tenant_id = $1 AND s.token_family_id = $2
+                ),
+                'issuances', (
+                    SELECT COALESCE(jsonb_agg(to_jsonb(i) ORDER BY i.issuance_id), '[]'::jsonb)
+                    FROM oauth_token_issuances AS i
+                    WHERE i.tenant_id = $1 AND i.refresh_token_family_id = $2
+                )
+            ) AS snapshot
+            "#,
+        )
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(family_id)
+        .get_result::<DurableState>(&mut conn)
+        .await
+        .expect("durable retry facts should load")
+        .snapshot
+    }
+
+    let before = durable_retry_state(&state, client.tenant_id, family_id).await;
+    assert_eq!(before["family"]["current_member_id"], json!(child.id));
+    assert!(before["family"]["revoked_at"].is_null());
+    assert!(before["family"]["reuse_detected_at"].is_null());
+    assert_eq!(before["spent"].as_array().unwrap().len(), 1);
+    assert_eq!(before["issuances"], json!([]));
+    let repository = Arc::new(
+        crate::test_support::CountingTokenRepository::with_failing_refresh_candidate_projection(
+            crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+        ),
+    );
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(original_raw);
+    let missing_proof = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    for (index, (request, expected_status, expected_error, expected_description)) in [
+        (
+            missing_proof,
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh_token requires mTLS proof of possession.",
+        ),
+        (
+            mtls_refresh_request(&mismatch),
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh_token requires mTLS proof of possession.",
+        ),
+        (
+            mtls_refresh_request(&certificate),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "refresh_token 复用处理失败.",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (status, body) = response_json(
+            token_refresh_with_repository(
+                &state,
+                &request,
+                &client,
+                &form,
+                None,
+                repository.clone(),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, expected_status, "unexpected response: {body}");
+        assert_eq!(body["error"], expected_error);
+        assert_eq!(body["error_description"], expected_description);
+        for token_field in ["access_token", "refresh_token", "id_token"] {
+            assert!(body.get(token_field).is_none(), "{token_field}: {body}");
+        }
+        assert_eq!(repository.refresh_snapshot_count(), index + 1);
+        assert_eq!(repository.refresh_candidate_error_count(), index + 1);
+        assert_eq!(repository.commit_count(), 0, "no issuance or reuse commit");
+        assert_eq!(
+            durable_retry_state(&state, client.tenant_id, family_id).await,
+            before,
+            "proof/candidate failures must preserve family, spent proofs and issuances"
+        );
+    }
 }
 
 #[actix_web::test]

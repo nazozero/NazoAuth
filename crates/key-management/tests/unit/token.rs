@@ -197,3 +197,218 @@ async fn decode_rejects_a_header_algorithm_outside_the_keys_prepared_algorithm()
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn logout_hint_prepared_key_preserves_signature_issuer_type_and_expired_policy() {
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+    let issuer = "https://issuer.example";
+    for typ in [Some("JWT"), None, Some("at+jwt")] {
+        let mut header = nazo_crypto::jwt::Header::new(jsonwebtoken::Algorithm::EdDSA);
+        header.typ = typ.map(str::to_owned);
+        let expiry = chrono::Utc::now().timestamp() - 600;
+        let token = manager.encode_jwt(nazo_auth::SigningPurpose::IdToken, &header,
+            &json!({"iss": issuer, "sub": "subject", "aud": ["client"], "sid": "session", "exp": expiry}),
+        ).await.unwrap();
+        let decoded = manager.decode_id_token_hint(issuer, &token);
+        if typ == Some("at+jwt") { assert!(decoded.is_none()); continue; }
+        let (claims, expires_at) = decoded.expect("expired signed hint remains a policy input");
+        assert_eq!(claims.sub, "subject");
+        assert_eq!(claims.aud, json!(["client"]));
+        assert_eq!(claims.sid.as_deref(), Some("session"));
+        assert_eq!(expires_at, expiry);
+        assert!(manager.decode_id_token_hint("https://wrong-issuer.example", &token).is_none());
+        let mut tampered = token.as_bytes().to_vec();
+        let signature = token.rfind('.').unwrap() + 1;
+        tampered[signature] = if tampered[signature] == b'A' { b'B' } else { b'A' };
+        assert!(manager.decode_id_token_hint(issuer, std::str::from_utf8(&tampered).unwrap()).is_none());
+        let replacement = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+        assert!(replacement.decode_id_token_hint(issuer, &token).is_none());
+    }
+}
+
+#[tokio::test]
+async fn logout_hint_prepared_key_still_observes_retirement_and_algorithm() {
+    for drift in ["algorithm", "retirement"] {
+        let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+        let token = manager.sign_id_token(IdTokenSignInput {
+            issuer: "https://issuer.example", subject: "subject", client_id: "client",
+            nonce: None, auth_time: None, amr: &[], sid: Some("session"), acr: None,
+            extra_claims: None, ttl_seconds: 300, signing_algorithm: None,
+        }).await.unwrap();
+        // Take exclusive ownership of the old test generation, without exposing
+        // a production constructor or manufacturing private lifecycle fields.
+        let replacement = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+        let generation = manager.inner.generation.swap(replacement.inner.generation.load_full());
+        let mut generation = match std::sync::Arc::try_unwrap(generation) {
+            Ok(generation) => generation,
+            Err(_) => panic!("completed signing released its generation"),
+        };
+        let snapshot = std::sync::Arc::make_mut(&mut generation.snapshot);
+        if drift == "algorithm" {
+            snapshot.verification_keys[0].prepared.algorithm = jsonwebtoken::Algorithm::RS256;
+        } else {
+            snapshot.verification_keys[0].retire_at = Some(chrono::Utc::now() - chrono::Duration::seconds(1));
+        }
+        manager.inner.generation.store(std::sync::Arc::new(generation));
+        assert!(manager.decode_id_token_hint("https://issuer.example", &token).is_none());
+    }
+}
+
+// Test-only reference to the former logout decoder's flat claim representation.
+// Rebuild the verification key from admitted fixture JWK components rather than
+// reusing the new typed/prepared-key path. Fixture key admission is unchanged.
+#[derive(serde::Deserialize)]
+struct OriginalLogoutHintClaims {
+    sub: String,
+    aud: serde_json::Value,
+    #[serde(default)]
+    sid: Option<String>,
+    exp: i64,
+}
+
+fn original_logout_hint_decoder(
+    manager: &KeyManager,
+    issuer: &str,
+    token: &str,
+) -> Option<(nazo_auth::IdTokenHintClaims, i64)> {
+    use nazo_crypto::jwt::{Algorithm, VerificationKey};
+
+    let header = nazo_crypto::jwt::decode_header(token).ok()?;
+    if header.typ.as_deref().is_some_and(|typ| typ != "JWT")
+        || crate::signing_algorithm_name(header.alg).is_none()
+    {
+        return None;
+    }
+    let snapshot = manager.snapshot();
+    let key = snapshot.verification_key(header.kid.as_deref()?)?;
+    if key.public_jwk["alg"].as_str()? != crate::signing_algorithm_name(header.alg)? {
+        return None;
+    }
+    let jwk = &key.public_jwk;
+    let decoding_key = match header.alg {
+        Algorithm::EdDSA => VerificationKey::from_ed_components(jwk["x"].as_str()?).ok()?,
+        Algorithm::RS256 | Algorithm::PS256 => {
+            VerificationKey::from_rsa_components(jwk["n"].as_str()?, jwk["e"].as_str()?).ok()?
+        }
+        Algorithm::ES256 => {
+            VerificationKey::from_ec_components(jwk["x"].as_str()?, jwk["y"].as_str()?).ok()?
+        }
+        _ => return None,
+    };
+    let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
+    validation.validate_aud = false;
+    validation.validate_exp = false;
+    validation.set_issuer(&[issuer]);
+    let claims = nazo_crypto::jwt::decode::<OriginalLogoutHintClaims>(
+        token, &decoding_key, &validation,
+    ).ok()?.claims;
+    Some((nazo_auth::IdTokenHintClaims {
+        sub: claims.sub, aud: claims.aud, sid: claims.sid,
+    }, claims.exp))
+}
+
+async fn sign_raw_logout_hint_fixture(
+    manager: &KeyManager,
+    header: &serde_json::Value,
+    payload: &[u8],
+) -> String {
+    let signing_input = format!("{}.{}",
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(header).unwrap()),
+        URL_SAFE_NO_PAD.encode(payload),
+    );
+    // The actual purpose-scoped signer signs the malformed header/payload bytes.
+    // Rejection therefore cannot be explained by a deliberately stale signature.
+    let signature = nazo_auth::Signer::sign(manager, nazo_auth::SignRequest {
+        purpose: nazo_auth::SigningPurpose::IdToken,
+        algorithm: "EdDSA",
+        signing_input: signing_input.as_bytes(),
+    }).await.unwrap();
+    format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature.as_bytes()))
+}
+
+#[tokio::test]
+async fn logout_hint_malformed_claims_and_kid_match_original_decoder() {
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+    let issuer = "https://issuer.example";
+    let valid = json!({"iss": issuer, "sub": "subject", "aud": ["client"], "sid": "session", "exp": 1000});
+    let header = nazo_crypto::jwt::Header::new(jsonwebtoken::Algorithm::EdDSA);
+    for (case, field, replacement) in [
+        ("missing sub", "sub", None),
+        ("null sub", "sub", Some(json!(null))),
+        ("numeric sub", "sub", Some(json!(7))),
+        ("missing aud", "aud", None),
+        ("missing exp", "exp", None),
+        ("null exp", "exp", Some(json!(null))),
+        ("string exp", "exp", Some(json!("1000"))),
+        ("fractional exp", "exp", Some(json!(1000.5))),
+        ("numeric sid", "sid", Some(json!(7))),
+    ] {
+        let mut claims = valid.clone();
+        let object = claims.as_object_mut().unwrap();
+        match replacement {
+            Some(value) => { object.insert(field.to_owned(), value); }
+            None => { object.remove(field); }
+        }
+        let token = manager.encode_jwt(nazo_auth::SigningPurpose::IdToken, &header, &claims).await.unwrap();
+        let original = original_logout_hint_decoder(&manager, issuer, &token);
+        assert!(original.is_none(), "original decoder must reject {case}");
+        assert_eq!(manager.decode_id_token_hint(issuer, &token), original, "{case}");
+    }
+    // Preserve optional SID and arbitrary audience representation semantics:
+    // the logout policy, rather than this decoder, selects an audience/session.
+    for claims in [
+        json!({"iss": issuer, "sub": "subject", "aud": "client", "exp": 1000}),
+        json!({"iss": issuer, "sub": "subject", "aud": ["client"], "sid": null, "exp": 1000}),
+        json!({"iss": issuer, "sub": "subject", "aud": null, "exp": 1000}),
+    ] {
+        let token = manager.encode_jwt(nazo_auth::SigningPurpose::IdToken, &header, &claims).await.unwrap();
+        assert_eq!(manager.decode_id_token_hint(issuer, &token), original_logout_hint_decoder(&manager, issuer, &token));
+    }
+    let valid_payload = serde_json::to_vec(&valid).unwrap();
+    for kid in [None, Some(json!(null)), Some(json!(42)), Some(json!("")), Some(json!("unknown-kid"))] {
+        let mut header = json!({"alg": "EdDSA", "typ": "JWT"});
+        if let Some(kid) = kid { header["kid"] = kid; }
+        let token = sign_raw_logout_hint_fixture(&manager, &header, &valid_payload).await;
+        assert!(original_logout_hint_decoder(&manager, issuer, &token).is_none());
+        assert!(manager.decode_id_token_hint(issuer, &token).is_none());
+    }
+    let header = json!({"alg": "EdDSA", "typ": "JWT", "kid": manager.snapshot().active_kid.clone()});
+    for payload in [
+        br#"{"iss":"https://issuer.example","sub":"first","sub":"second","aud":"client","exp":1000}"#.as_slice(),
+        br#"{"iss":"https://issuer.example","sub":"subject","aud":"client","exp":1000,"exp":1001}"#.as_slice(),
+        br#"{"iss":"https://issuer.example","sub": "#.as_slice(),
+    ] {
+        let token = sign_raw_logout_hint_fixture(&manager, &header, payload).await;
+        let original = original_logout_hint_decoder(&manager, issuer, &token);
+        assert!(original.is_none(), "original flat schema rejects malformed or duplicate claims");
+        assert_eq!(manager.decode_id_token_hint(issuer, &token), original);
+    }
+}
+
+#[tokio::test]
+async fn logout_hint_supported_algorithms_match_original_claim_and_expiry_semantics() {
+    for algorithm in [jsonwebtoken::Algorithm::RS256, jsonwebtoken::Algorithm::ES256, jsonwebtoken::Algorithm::PS256] {
+        let manager = KeyManager::for_test(algorithm);
+        let issuer = "https://issuer.example";
+        let header = nazo_crypto::jwt::Header::new(algorithm);
+        let claims = json!({"iss": issuer, "sub": "subject", "aud": ["client"], "sid": "session", "exp": 1000});
+        let token = manager.encode_jwt(nazo_auth::SigningPurpose::IdToken, &header, &claims).await.unwrap();
+        let parsed_header = nazo_crypto::jwt::decode_header(&token).unwrap();
+        assert_eq!(parsed_header.alg, algorithm);
+        let snapshot = manager.snapshot();
+        assert_eq!(parsed_header.kid.as_deref(), Some(snapshot.active_kid.as_str()));
+        let original = original_logout_hint_decoder(&manager, issuer, &token).expect("original decoder accepts this supported algorithm and expired hint");
+        assert_eq!(original.0.sub, "subject");
+        assert_eq!(original.0.aud, json!(["client"]));
+        assert_eq!(original.0.sid.as_deref(), Some("session"));
+        assert_eq!(original.1, 1000);
+        assert_eq!(manager.decode_id_token_hint(issuer, &token), Some(original));
+        assert!(manager.decode_id_token_hint("https://wrong-issuer.example", &token).is_none());
+        let signature_start = token.rfind('.').unwrap() + 1;
+        let mut tampered = token.into_bytes();
+        tampered[signature_start] = if tampered[signature_start] == b'A' { b'B' } else { b'A' };
+        let tampered = std::str::from_utf8(&tampered).unwrap();
+        assert!(original_logout_hint_decoder(&manager, issuer, tampered).is_none());
+        assert!(manager.decode_id_token_hint(issuer, tampered).is_none());
+    }
+}

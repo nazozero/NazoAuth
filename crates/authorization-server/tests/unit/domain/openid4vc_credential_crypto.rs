@@ -1892,12 +1892,23 @@ fn resign_sd_fixture(
             .unwrap(),
     )
     .unwrap();
+    resign_sd_fixture_with_claims(presentation, certs, x5c, nonce, &claims)
+}
+
+fn resign_sd_fixture_with_claims(
+    presentation: &PresentedCredential,
+    certs: &CertificateFixture,
+    x5c: Vec<String>,
+    nonce: &str,
+    claims: &Value,
+) -> PresentedCredential {
+    let parts = presentation.encoded.split('~').collect::<Vec<_>>();
     let mut issuer_header = Header::new(Algorithm::ES256);
     issuer_header.typ = Some("dc+sd-jwt".to_owned());
     issuer_header.x5c = Some(x5c);
     let jwt = encode(
         &issuer_header,
-        &claims,
+        claims,
         &EncodingKey::from_ec_der(&certs.leaf_key.serialize_der()),
     )
     .unwrap();
@@ -2150,5 +2161,117 @@ fn signed_revoked_optional_nonce_is_fatal_and_stale_snapshot_is_unavailable() {
             );
             assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 0);
         }
+    })
+}
+
+#[test]
+fn signed_issuer_time_policy_cannot_hide_optional_holder_nonce() {
+    futures_executor::block_on(async {
+        let (crypto, accepted, _, certs) = sd_presentation_fixture();
+        install_service_trust_fixture(&crypto, &certs, certs.ca_pem.clone(), None);
+        let encoded_claims = accepted
+            .encoded
+            .split('~')
+            .next()
+            .unwrap()
+            .split('.')
+            .nth(1)
+            .unwrap();
+        let original: Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded_claims).unwrap()).unwrap();
+        let transaction = signed_sd_transaction(&accepted);
+        for expiration in [
+            Some(json!((Utc::now() - Duration::seconds(120)).timestamp())),
+            None,
+            Some(json!("invalid-time")),
+        ] {
+            let mut claims = original.clone();
+            match expiration {
+                Some(expiration) => {
+                    claims["exp"] = expiration;
+                }
+                None => {
+                    claims.as_object_mut().unwrap().remove("exp");
+                }
+            }
+            for (nonce, fatal) in [
+                (accepted.expected_nonce.as_str(), false),
+                ("another-transaction", true),
+            ] {
+                let optional = resign_sd_fixture_with_claims(
+                    &accepted,
+                    &certs,
+                    vec![STANDARD.encode(&certs.leaf_der)],
+                    nonce,
+                    &claims,
+                );
+                assert_eq!(
+                    crypto.verify_sd_jwt(&optional),
+                    Err(if fatal {
+                        CredentialTrustError::InvalidNonce
+                    } else {
+                        CredentialTrustError::InvalidSignature
+                    })
+                );
+                let sink = PresentationCompletionSink::default();
+                let result = nazo_openid4vp::PresentationService::new(sink.clone(), crypto.clone())
+                    .verify_response(
+                        &transaction,
+                        &nazo_openid4vp::AuthorizationResponse {
+                            vp_token: Some(json!({"first": [accepted.encoded], "optional": [optional.encoded]})),
+                            state: Some("state".to_owned()), error: None, error_description: None,
+                        }, &[], Utc::now(),
+                    ).await;
+                if fatal {
+                    assert_eq!(
+                        result.unwrap_err(),
+                        nazo_openid4vp::PresentationServiceError::Presentation(
+                            nazo_openid4vp::PresentationError::UntrustedPresentation,
+                        )
+                    );
+                    assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+                } else {
+                    assert_eq!(
+                        result.unwrap().credentials.len(),
+                        1,
+                        "invalid issuer time still excludes the optional credential"
+                    );
+                    assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+                }
+                // An attacker-signed KB still cannot authenticate its nonce,
+                // even when issuer time is independently invalid.
+                let parts = optional.encoded.split('~').collect::<Vec<_>>();
+                let (_, attacker_key) = es256_jwk(72);
+                let mut header = Header::new(Algorithm::ES256);
+                header.typ = Some("kb+jwt".to_owned());
+                let sd_input = format!("{}~{}~", parts[0], parts[1]);
+                let kb = encode(&header, &json!({
+                    "nonce": "another-transaction", "aud": accepted.expected_audience,
+                    "iat": Utc::now().timestamp(),
+                    "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(sd_input.as_bytes())),
+                }), &attacker_key).unwrap();
+                let untrusted = PresentedCredential {
+                    encoded: format!("{sd_input}{kb}"),
+                    ..optional
+                };
+                assert_eq!(
+                    crypto.verify_sd_jwt(&untrusted),
+                    Err(CredentialTrustError::InvalidHolderBinding)
+                );
+            }
+        }
+        let mut fractional = original;
+        fractional["exp"] = json!(Utc::now().timestamp() as f64 + 300.25);
+        let fractional = resign_sd_fixture_with_claims(
+            &accepted,
+            &certs,
+            vec![STANDARD.encode(&certs.leaf_der)],
+            &accepted.expected_nonce,
+            &fractional,
+        );
+        assert!(
+            crypto.verify_sd_jwt(&fractional).is_ok(),
+            "retain the pinned NumericDate fractional-time acceptance"
+        );
     })
 }

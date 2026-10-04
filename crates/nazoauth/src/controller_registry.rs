@@ -412,19 +412,31 @@ impl ControllerRegistryService {
         change: &IdentityChange,
         now: DateTime<Utc>,
     ) -> Result<IssuedApprovalView, ControllerRegistryServiceError> {
+        self.issue_approval_owned(actor_admin_user_id,change,now,None).await
+    }
+
+    pub async fn issue_approval_with_required_audit(
+        &self,
+        audit: nazo_persistence::control_plane::AdminIdentityAudit,
+        change: &IdentityChange,
+        now: DateTime<Utc>,
+    ) -> Result<IssuedApprovalView, ControllerRegistryServiceError> {
+        self.issue_approval_owned(audit.actor_user_id,change,now,Some(audit)).await
+    }
+
+    async fn issue_approval_owned(
+        &self,
+        actor_admin_user_id: Uuid,
+        change: &IdentityChange,
+        now: DateTime<Utc>,
+        audit: Option<nazo_persistence::control_plane::AdminIdentityAudit>,
+    ) -> Result<IssuedApprovalView, ControllerRegistryServiceError> {
         self.ensure_local_deployment(change.deployment_id())?;
         change.validate()?;
-        let issued: IssuedIdentityApproval = self
-            .repository
-            .issue_identity_approval(
-                change.deployment_id(),
-                change.action(),
-                &change.action_sha256(),
-                actor_admin_user_id,
-                now,
-            )
-            .await
-            .map_err(ControllerRegistryServiceError::approval_transport)?;
+        let issued: IssuedIdentityApproval = if let Some(audit)=audit {
+            self.repository.issue_identity_approval_with_required_audit(nazo_persistence::control_plane::IdentityApprovalCommand {deployment_id:change.deployment_id().to_owned(),action:change.action(),action_sha256:change.action_sha256(),now},audit).await
+        } else { self.repository.issue_identity_approval(change.deployment_id(),change.action(),&change.action_sha256(),actor_admin_user_id,now).await }
+        .map_err(ControllerRegistryServiceError::approval_transport)?;
         Ok(IssuedApprovalView {
             token: issued.token,
             action: issued.action,
@@ -441,6 +453,28 @@ impl ControllerRegistryService {
         action: ControllerIdentityAction,
         request: &SlotChangeRequest,
         now: DateTime<Utc>,
+    ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
+        self.commit_creation_owned(approval_token,action,request,now,None).await
+    }
+
+    pub async fn commit_creation_with_required_audit(
+        &self,
+        approval_token: &str,
+        action: ControllerIdentityAction,
+        request: &SlotChangeRequest,
+        now: DateTime<Utc>,
+        audit: nazo_persistence::control_plane::AdminIdentityAudit,
+    ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
+        self.commit_creation_owned(approval_token,action,request,now,Some(audit)).await
+    }
+
+    async fn commit_creation_owned(
+        &self,
+        approval_token: &str,
+        action: ControllerIdentityAction,
+        request: &SlotChangeRequest,
+        now: DateTime<Utc>,
+        audit: Option<nazo_persistence::control_plane::AdminIdentityAudit>,
     ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         if !matches!(
@@ -480,17 +514,8 @@ impl ControllerRegistryService {
             }
             _ => None,
         };
-        let committed = self
-            .repository
-            .commit_slot_creation(
-                approval_token,
-                action,
-                &change.action_sha256(),
-                slot,
-                initial_root,
-                now,
-            )
-            .await?;
+        let committed=if let Some(audit)=audit { self.repository.commit_slot_creation_with_required_audit(nazo_persistence::control_plane::SlotCreationCommand {approval_token:approval_token.to_owned(),action,action_sha256:change.action_sha256(),slot,initial_root,now},audit).await }
+        else { self.repository.commit_slot_creation(approval_token,action,&change.action_sha256(),slot,initial_root,now).await }?;
         Ok(committed)
     }
 
@@ -500,6 +525,26 @@ impl ControllerRegistryService {
         approval_token: &str,
         request: &RotateRequest,
         now: DateTime<Utc>,
+    ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
+        self.commit_rotation_owned(approval_token,request,now,None).await
+    }
+
+    pub async fn commit_rotation_with_required_audit(
+        &self,
+        approval_token: &str,
+        request: &RotateRequest,
+        now: DateTime<Utc>,
+        audit: nazo_persistence::control_plane::AdminIdentityAudit,
+    ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
+        self.commit_rotation_owned(approval_token,request,now,Some(audit)).await
+    }
+
+    async fn commit_rotation_owned(
+        &self,
+        approval_token: &str,
+        request: &RotateRequest,
+        now: DateTime<Utc>,
+        audit: Option<nazo_persistence::control_plane::AdminIdentityAudit>,
     ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         let change = IdentityChange::Rotate(request.clone());
@@ -511,16 +556,8 @@ impl ControllerRegistryService {
             kid: request.kid.clone(),
             public_key: decode_public_key(&request.public_key)?,
         };
-        let committed = self
-            .repository
-            .commit_slot_rotation(
-                approval_token,
-                &request.deployment_id,
-                &change.action_sha256(),
-                rotation,
-                now,
-            )
-            .await?;
+        let committed=if let Some(audit)=audit { self.repository.commit_slot_rotation_with_required_audit(nazo_persistence::control_plane::SlotRotationCommand {approval_token:approval_token.to_owned(),deployment_id:request.deployment_id.clone(),action_sha256:change.action_sha256(),rotation,now},audit).await }
+        else { self.repository.commit_slot_rotation(approval_token,&request.deployment_id,&change.action_sha256(),rotation,now).await }?;
         Ok(committed)
     }
 
@@ -531,19 +568,31 @@ impl ControllerRegistryService {
         request: &RevokeRequest,
         now: DateTime<Utc>,
     ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
+        self.commit_revocation_owned(approval_token,request,now,None).await
+    }
+
+    pub async fn commit_revocation_with_required_audit(
+        &self,
+        approval_token: &str,
+        request: &RevokeRequest,
+        now: DateTime<Utc>,
+        audit: nazo_persistence::control_plane::AdminIdentityAudit,
+    ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
+        self.commit_revocation_owned(approval_token,request,now,Some(audit)).await
+    }
+
+    async fn commit_revocation_owned(
+        &self,
+        approval_token: &str,
+        request: &RevokeRequest,
+        now: DateTime<Utc>,
+        audit: Option<nazo_persistence::control_plane::AdminIdentityAudit>,
+    ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         let change = IdentityChange::Revoke(request.clone());
         change.validate()?;
-        let committed = self
-            .repository
-            .commit_slot_revocation(
-                approval_token,
-                &request.deployment_id,
-                &change.action_sha256(),
-                &request.controller_id,
-                now,
-            )
-            .await?;
+        let committed=if let Some(audit)=audit { self.repository.commit_slot_revocation_with_required_audit(nazo_persistence::control_plane::SlotRevocationCommand {approval_token:approval_token.to_owned(),deployment_id:request.deployment_id.clone(),action_sha256:change.action_sha256(),controller_id:request.controller_id.clone(),now},audit).await }
+        else { self.repository.commit_slot_revocation(approval_token,&request.deployment_id,&change.action_sha256(),&request.controller_id,now).await }?;
         Ok(committed)
     }
 

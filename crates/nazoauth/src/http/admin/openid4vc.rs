@@ -17,14 +17,12 @@ use nazo_http_actix::{
 use nazo_openid4vci::application::CredentialHttpError;
 use uuid::Uuid;
 
-use crate::http::admin::persist_required_audit_or_unavailable;
-use crate::http::admin::require_durable_audit_or_unavailable;
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::AdminSessionHandles;
 use crate::http::sessions::require_admin_or_forbidden_with_handles;
 use crate::http::sessions::require_admin_with_recent_mfa_or_forbidden_with_handles;
 use nazo_oauth_server::domain::openid4vc_endpoints::CredentialDatasetAdminService;
 use nazo_oauth_server::domain::openid4vc_endpoints::PutCredentialDatasetRequest;
-use nazo_oauth_server::ports::audit::audit_fields;
 
 pub(crate) async fn admin_put_credential_dataset(
     sessions: Data<AdminSessionHandles>,
@@ -42,7 +40,7 @@ pub(crate) async fn admin_put_credential_dataset(
             Err(response) => return response,
         };
     let (subject_id, configuration_id) = path.into_inner();
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     match endpoint
@@ -55,24 +53,7 @@ pub(crate) async fn admin_put_credential_dataset(
         )
         .await
     {
-        Ok(dataset) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "openid4vci_credential_dataset_updated",
-                audit_fields(&[
-                    ("admin_user_id", serde_json::json!(admin.id())),
-                    ("subject_id", serde_json::json!(subject_id)),
-                    (
-                        "credential_configuration_id",
-                        serde_json::json!(configuration_id),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
-            json_response_no_store(dataset)
-        }
+        Ok(dataset) => json_response_no_store(dataset),
         Err(error) => dataset_error(error),
     }
 }
@@ -116,7 +97,7 @@ pub(crate) async fn admin_delete_credential_dataset(
             Err(response) => return response,
         };
     let (subject_id, configuration_id) = path.into_inner();
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     match endpoint
@@ -128,24 +109,7 @@ pub(crate) async fn admin_delete_credential_dataset(
         )
         .await
     {
-        Ok(()) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "openid4vci_credential_dataset_deleted",
-                audit_fields(&[
-                    ("admin_user_id", serde_json::json!(admin.id())),
-                    ("subject_id", serde_json::json!(subject_id)),
-                    (
-                        "credential_configuration_id",
-                        serde_json::json!(configuration_id),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
-            empty_response_no_store(StatusCode::NO_CONTENT)
-        }
+        Ok(()) => empty_response_no_store(StatusCode::NO_CONTENT),
         Err(error) => dataset_error(error),
     }
 }

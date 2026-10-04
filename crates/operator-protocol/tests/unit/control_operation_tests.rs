@@ -916,3 +916,27 @@ fn tenant_key_generation_is_tenant_bound_and_returns_public_material_only() {
         ))
     ));
 }
+
+#[test]
+fn prepared_control_operation_verifies_original_segments_and_reuses_canonical_hash() {
+    let key = controller_key();
+    let operation = operation();
+    let compact = crate::sign_control_operation(&operation, &key).unwrap();
+    let prepared = crate::PresentedControlOperation::parse(&compact).unwrap();
+    assert_eq!(prepared.request_hash(), crate::control_operation_request_hash(&operation).unwrap());
+    assert_eq!(prepared.operation(), &operation);
+    assert_eq!(prepared.verify(&operation.kid, &key.verifying_key()).unwrap(), operation);
+    let wrong_key = SigningKey::from_bytes(&[24; 32]);
+    assert!(matches!(
+        crate::PresentedControlOperation::parse(&compact).unwrap().verify(&operation.kid, &wrong_key.verifying_key()),
+        Err(ProtocolError::Signature)
+    ));
+    let protected = compact.split('.').next().unwrap();
+    let pretty = serde_json::to_vec_pretty(&payload_of(&compact)).unwrap();
+    let signing_input = format!("{protected}.{}", URL_SAFE_NO_PAD.encode(&pretty));
+    let noncanonical = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(key.sign(signing_input.as_bytes())));
+    let prepared = crate::PresentedControlOperation::parse(&noncanonical).unwrap();
+    assert_eq!(prepared.request_hash(), crate::control_operation_request_hash(&operation).unwrap());
+    assert!(matches!(prepared.verify(&operation.kid, &key.verifying_key()), Err(ProtocolError::Policy("control operation payload is not canonically encoded"))));
+    assert!(matches!(verify_control_operation_signature("a.b.c", "invalid", &key.verifying_key()), Err(ProtocolError::Header)));
+}

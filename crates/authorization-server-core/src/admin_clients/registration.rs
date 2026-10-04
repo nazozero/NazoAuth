@@ -54,6 +54,8 @@ where
     S: SectorIdentifierResolverPort + ?Sized,
     C: AdminClientCryptoPort + ?Sized,
 {
+    // Guard before any validation or await, including rejected preparation.
+    let issued_secret = super::PendingClientSecret::from(issued_secret);
     request
         .security_policy
         .validate()

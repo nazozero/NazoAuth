@@ -374,6 +374,7 @@ diesel::table! {
         admin_note -> Nullable<Varchar>,
         resolved_by_user_id -> Nullable<Uuid>,
         approved_client_id -> Nullable<Uuid>,
+        required_approval_event_id -> Nullable<Uuid>,
         resolved_at -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,

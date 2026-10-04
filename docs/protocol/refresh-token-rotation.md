@@ -35,6 +35,18 @@ OIDC Core section 12.2 separately preserves the original ID-token issuer,
 subject, audience and authentication time. Resource audiences are not the OIDC
 client audience. NazoAuth also retains its original claim-request contract.
 
+## Presentation Snapshot
+
+Refresh admission reads the current member, or the spent presentation and its
+direct-successor candidate, in one PostgreSQL statement and one pool checkout.
+Current matches take precedence. A missing referenced contract remains a
+consistency failure, rather than being treated as an unknown token. The original
+presentation remains the holder-authentication input; only after that proof may
+the application use the candidate or report its projection failure. This read is
+request-local evidence. The locked commit below still checks the original spent
+edge, expected current member and digest, owner, sender constraints, expiry and
+family state. A later rotation or invalidation can reject the candidate.
+
 ## Commit-Owned Source Authority
 
 Grants which neither create nor redeem a refresh token (client credentials,

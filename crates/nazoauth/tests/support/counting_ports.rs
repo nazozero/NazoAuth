@@ -1,7 +1,9 @@
 //! Protocol-layer call spies that delegate every port method to the real
 //! PostgreSQL-backed implementation while counting selected reads. They exist
 //! so HTTP/application tests can prove how many times a port method runs per
-//! request — a separate evidence category from the SQL-level counters in
+//! request. Explicit fault variants also count commits and can replace only
+//! a successful candidate projection — a separate evidence category from
+//! the SQL-level counters in
 //! `persistence-postgres`'s `query_counter` support.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -24,6 +26,10 @@ pub(crate) struct CountingTokenRepository {
     pub(crate) owner_lookup_calls: Arc<AtomicUsize>,
     pub(crate) userinfo_snapshot_calls: Arc<AtomicUsize>,
     pub(crate) principal_snapshot_calls: Arc<AtomicUsize>,
+    refresh_snapshot_calls: Arc<AtomicUsize>,
+    refresh_candidate_errors: Arc<AtomicUsize>,
+    commit_calls: Arc<AtomicUsize>,
+    fail_refresh_candidate_projection: bool,
     fail_owner_lookups: bool,
     lose_next_commit_ack: Arc<AtomicBool>,
     code_commit_keys: Arc<Mutex<Vec<String>>>,
@@ -37,6 +43,10 @@ impl CountingTokenRepository {
             owner_lookup_calls: Arc::new(AtomicUsize::new(0)),
             userinfo_snapshot_calls: Arc::new(AtomicUsize::new(0)),
             principal_snapshot_calls: Arc::new(AtomicUsize::new(0)),
+            refresh_snapshot_calls: Arc::new(AtomicUsize::new(0)),
+            refresh_candidate_errors: Arc::new(AtomicUsize::new(0)),
+            commit_calls: Arc::new(AtomicUsize::new(0)),
+            fail_refresh_candidate_projection: false,
             fail_owner_lookups: false,
             lose_next_commit_ack: Arc::new(AtomicBool::new(false)),
             code_commit_keys: Arc::new(Mutex::new(Vec::new())),
@@ -59,6 +69,30 @@ impl CountingTokenRepository {
             lose_next_commit_ack: Arc::new(AtomicBool::new(true)),
             ..Self::new(inner)
         }
+    }
+
+    /// Read the real presentation and eligible child first, then replace only
+    /// its projection result. Outer checkout/SQL failures are never fabricated
+    /// or converted into this candidate-only error.
+    pub(crate) fn with_failing_refresh_candidate_projection(
+        inner: Arc<dyn TokenRepositoryPort>,
+    ) -> Self {
+        Self {
+            fail_refresh_candidate_projection: true,
+            ..Self::new(inner)
+        }
+    }
+
+    pub(crate) fn refresh_snapshot_count(&self) -> usize {
+        self.refresh_snapshot_calls.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn refresh_candidate_error_count(&self) -> usize {
+        self.refresh_candidate_errors.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn commit_count(&self) -> usize {
+        self.commit_calls.load(Ordering::SeqCst)
     }
 
     pub(crate) fn code_commit_keys(&self) -> Vec<String> {
@@ -106,6 +140,7 @@ impl TokenRepositoryPort for CountingTokenRepository {
         &'a self,
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
+        self.commit_calls.fetch_add(1, Ordering::SeqCst);
         if let nazo_auth::TokenIssuanceMode::AuthorizationCode { code_identity, .. } = &input.mode {
             self.code_commit_keys
                 .lock()
@@ -149,6 +184,38 @@ impl TokenRepositoryPort for CountingTokenRepository {
         raw_token: &'a str,
     ) -> TokenFuture<'a, Option<RefreshToken>> {
         self.inner.refresh_token(tenant_id, raw_token)
+    }
+
+    fn refresh_token_snapshot<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+        client_id: Uuid,
+        retry_started_at: chrono::DateTime<chrono::Utc>,
+    ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
+        self.refresh_snapshot_calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            let mut result = self
+                .inner
+                .refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
+                .await?;
+            if self.fail_refresh_candidate_projection {
+                let snapshot = result
+                    .as_mut()
+                    .expect("candidate-error fixture requires a real presentation");
+                assert!(
+                    snapshot.presented.revoked_at.is_some(),
+                    "candidate-error fixture requires a spent original"
+                );
+                assert!(
+                    matches!(&snapshot.successor, Ok(Some(_))),
+                    "candidate-error fixture requires a real eligible direct successor"
+                );
+                snapshot.successor = Err(nazo_auth::TokenPortError::CorruptData);
+                self.refresh_candidate_errors.fetch_add(1, Ordering::SeqCst);
+            }
+            Ok(result)
+        })
     }
 
     fn inspect_lost_response_successor<'a>(

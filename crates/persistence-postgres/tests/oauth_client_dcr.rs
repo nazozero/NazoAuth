@@ -610,13 +610,13 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         tenant,
         registration: template.registration.clone(),
         require_mtls_bound_tokens: template.require_mtls_bound_tokens,
-        issued_secret: None,
+        issued_secret: None.into(),
         client_secret_hash: Some(initial_secret_hash.to_owned()),
         registration_access_token_blake3: Some(initial_token.clone()),
     };
 
     let inserted =
-        DynamicRegistrationClientStore::insert(&repository, &prepared, "fixture-source-ip-hash")
+        DynamicRegistrationClientStore::insert(&repository, prepared.clone(), "fixture-source-ip-hash")
             .await
             .unwrap();
     assert_eq!(inserted.client_id, template.client_id);
@@ -858,13 +858,13 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
         tenant,
         registration: template.registration.clone(),
         require_mtls_bound_tokens: template.require_mtls_bound_tokens,
-        issued_secret: None,
+        issued_secret: None.into(),
         client_secret_hash: Some("client-secret-v1:unavailable-salt:unavailable-digest".to_owned()),
         registration_access_token_blake3: Some(initial_token.clone()),
     };
 
     assert_eq!(
-        DynamicRegistrationClientStore::insert(&repository, &prepared, "fixture-source-ip-hash",)
+        DynamicRegistrationClientStore::insert(&repository, prepared.clone(), "fixture-source-ip-hash",)
             .await
             .unwrap_err(),
         DynamicRegistrationDependencyError::Unavailable
@@ -1374,7 +1374,7 @@ async fn dcr_required_event_failure_rolls_back_each_owned_effect() {
         tenant,
         registration: template.registration.clone(),
         require_mtls_bound_tokens: template.require_mtls_bound_tokens,
-        issued_secret: None,
+        issued_secret: None.into(),
         client_secret_hash: Some("client-secret-v1:atomic-salt:atomic-digest".to_owned()),
         registration_access_token_blake3: Some(token_hash.clone()),
     };
@@ -1388,7 +1388,7 @@ async fn dcr_required_event_failure_rolls_back_each_owned_effect() {
     );
     sql_query(&hook_sql).execute(&mut connection).await.unwrap();
     let failed_insert =
-        DynamicRegistrationClientStore::insert(&repository, &prepared, "fixture-source-ip-hash")
+        DynamicRegistrationClientStore::insert(&repository, prepared.clone(), "fixture-source-ip-hash")
             .await;
     sql_query(format!("DROP TRIGGER {hook} ON security_audit_events"))
         .execute(&mut connection)
@@ -1404,7 +1404,7 @@ async fn dcr_required_event_failure_rolls_back_each_owned_effect() {
         "required append failure must roll back the INSERT"
     );
     let inserted =
-        DynamicRegistrationClientStore::insert(&repository, &prepared, "fixture-source-ip-hash")
+        DynamicRegistrationClientStore::insert(&repository, prepared.clone(), "fixture-source-ip-hash")
             .await
             .unwrap();
     let before = client_credential_state(&pool, inserted.id).await;
@@ -1507,3 +1507,6 @@ async fn dcr_required_event_failure_rolls_back_each_owned_effect() {
         .await
         .unwrap();
 }
+
+#[path = "support/admin_client_required.rs"]
+mod admin_client_required;

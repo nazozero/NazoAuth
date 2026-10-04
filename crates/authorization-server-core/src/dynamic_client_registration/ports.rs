@@ -23,7 +23,7 @@ pub enum DynamicRegistrationDependencyError {
 pub trait DynamicRegistrationClientStore: Send + Sync {
     fn insert<'a>(
         &'a self,
-        prepared: &'a PreparedClientRegistration,
+        prepared: PreparedClientRegistration,
         source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient>;
 

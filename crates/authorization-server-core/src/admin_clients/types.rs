@@ -45,12 +45,50 @@ impl Drop for SuppliedClientSecret {
     }
 }
 
+/// Owns an undisclosed registration secret across asynchronous writes. Moving
+/// this field does not release its plaintext; failure or cancellation wipes it.
+#[derive(Clone, Default)]
+pub struct PendingClientSecret(Option<String>);
+
+impl From<Option<String>> for PendingClientSecret {
+    fn from(value: Option<String>) -> Self { Self(value) }
+}
+
+impl std::ops::Deref for PendingClientSecret {
+    type Target = Option<String>;
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+impl PendingClientSecret {
+    /// Call only after the accepting persistence owner acknowledges commit.
+    pub fn take_after_commit(&mut self) -> Option<String> { self.0.take() }
+}
+
+impl std::fmt::Debug for PendingClientSecret {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("[REDACTED]")
+    }
+}
+
+impl Drop for PendingClientSecret {
+    fn drop(&mut self) { wipe_secret_string(&mut self.0); }
+}
+
+/// Owned creation input shared by administrative and dynamic registration.
+/// The registration moves once; its undisclosed secret retains a separate Drop owner.
+pub struct PreparedClientWrite {
+    pub client: OAuthClient,
+    pub issued_secret: PendingClientSecret,
+    pub client_secret_hash: Option<String>,
+    pub registration_access_token_blake3: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct PreparedClientRegistration {
     pub tenant: TenantContext,
     pub registration: ValidatedClientRegistration,
     pub require_mtls_bound_tokens: bool,
-    pub issued_secret: Option<String>,
+    pub issued_secret: PendingClientSecret,
     pub client_secret_hash: Option<String>,
     pub registration_access_token_blake3: Option<String>,
 }
@@ -81,9 +119,22 @@ impl std::fmt::Debug for PreparedClientRegistration {
     }
 }
 
-impl Drop for PreparedClientRegistration {
-    fn drop(&mut self) {
-        wipe_secret_string(&mut self.issued_secret);
+impl PreparedClientRegistration {
+    pub fn into_write(self) -> PreparedClientWrite {
+        PreparedClientWrite {
+            client: OAuthClient {
+                id: uuid::Uuid::now_v7(),
+                tenant_id: self.tenant.tenant_id.as_uuid(),
+                realm_id: self.tenant.realm_id.as_uuid(),
+                organization_id: self.tenant.organization_id.as_uuid(),
+                registration: self.registration,
+                require_mtls_bound_tokens: self.require_mtls_bound_tokens,
+                is_active: true,
+            },
+            issued_secret: self.issued_secret,
+            client_secret_hash: self.client_secret_hash,
+            registration_access_token_blake3: self.registration_access_token_blake3,
+        }
     }
 }
 

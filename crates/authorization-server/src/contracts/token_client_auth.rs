@@ -1,4 +1,4 @@
-use nazo_auth::{PresentedClientCredentials, TokenClientAuthPresentation};
+use nazo_auth::{PresentedClientCredentials, PresentedClientCredentialsView, TokenClientAuthPresentation};
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum BasicAuthorizationCredentials {
@@ -120,68 +120,70 @@ impl TokenClientAuthTransportFacts {
         self.client_assertion_type.as_deref()
     }
 
-    /// Applies the fixed credential-source precedence after the caller has resolved lookup-only
-    /// hints. Registered client policy still decides whether the selected method is permitted.
+    /// Applies the fixed credential-source precedence to a borrowed request view.
+    /// Registered client policy still decides whether the method is permitted.
+    #[must_use]
+    pub fn credential_view<'a>(
+        &'a self,
+        assertion_client_id: Option<&'a str>,
+        mtls_client_id: Option<&'a str>,
+    ) -> PresentedClientCredentialsView<'a> {
+        if matches!(self.basic, BasicAuthorizationCredentials::Malformed) {
+            return PresentedClientCredentialsView {
+                method: "client_secret_basic",
+                ..PresentedClientCredentialsView::default()
+            };
+        }
+        if self.client_assertion_type.is_some() || self.client_assertion.is_some() {
+            return PresentedClientCredentialsView {
+                client_id: assertion_client_id,
+                client_secret: None,
+                client_assertion: self.client_assertion.as_deref(),
+                method: "private_key_jwt",
+            };
+        }
+        if let BasicAuthorizationCredentials::Present { client_id, client_secret } = &self.basic {
+            return PresentedClientCredentialsView {
+                client_id: Some(client_id),
+                client_secret: Some(client_secret),
+                client_assertion: None,
+                method: "client_secret_basic",
+            };
+        }
+        match self.form_client_id.as_deref() {
+            Some(client_id) if self.form_client_secret.is_some() => PresentedClientCredentialsView {
+                client_id: Some(client_id),
+                client_secret: self.form_client_secret.as_deref(),
+                client_assertion: None,
+                method: "client_secret_post",
+            },
+            Some(client_id) if mtls_client_id == Some(client_id) => PresentedClientCredentialsView {
+                client_id: Some(client_id), client_secret: None, client_assertion: None,
+                method: "tls_client_auth",
+            },
+            Some(client_id) => PresentedClientCredentialsView {
+                client_id: Some(client_id), client_secret: None, client_assertion: None,
+                method: "none",
+            },
+            None if mtls_client_id.is_some() => PresentedClientCredentialsView {
+                client_id: mtls_client_id, client_secret: None, client_assertion: None,
+                method: "tls_client_auth",
+            },
+            None => PresentedClientCredentialsView::default(),
+        }
+    }
+
+    /// PAR/CIBA prepared commands own credentials after their transport facts return.
     #[must_use]
     pub fn presented_credentials(
         &self,
         assertion_client_id: Option<String>,
         mtls_client_id: Option<String>,
     ) -> PresentedClientCredentials {
-        if matches!(self.basic, BasicAuthorizationCredentials::Malformed) {
-            return PresentedClientCredentials {
-                method: "client_secret_basic".to_owned(),
-                ..PresentedClientCredentials::default()
-            };
-        }
-        if self.client_assertion_type.is_some() || self.client_assertion.is_some() {
-            return PresentedClientCredentials {
-                client_id: assertion_client_id,
-                client_secret: None,
-                client_assertion: self.client_assertion.clone(),
-                method: "private_key_jwt".to_owned(),
-            };
-        }
-        if let BasicAuthorizationCredentials::Present {
-            client_id,
-            client_secret,
-        } = &self.basic
-        {
-            return PresentedClientCredentials {
-                client_id: Some(client_id.clone()),
-                client_secret: Some(client_secret.clone()),
-                client_assertion: None,
-                method: "client_secret_basic".to_owned(),
-            };
-        }
-        match self.form_client_id.as_ref() {
-            Some(client_id) if self.form_client_secret.is_some() => PresentedClientCredentials {
-                client_id: Some(client_id.clone()),
-                client_secret: self.form_client_secret.clone(),
-                client_assertion: None,
-                method: "client_secret_post".to_owned(),
-            },
-            Some(client_id) if mtls_client_id.as_deref() == Some(client_id) => {
-                PresentedClientCredentials {
-                    client_id: Some(client_id.clone()),
-                    client_secret: None,
-                    client_assertion: None,
-                    method: "tls_client_auth".to_owned(),
-                }
-            }
-            Some(client_id) => PresentedClientCredentials {
-                client_id: Some(client_id.clone()),
-                client_secret: None,
-                client_assertion: None,
-                method: "none".to_owned(),
-            },
-            None if mtls_client_id.is_some() => PresentedClientCredentials {
-                client_id: mtls_client_id,
-                client_secret: None,
-                client_assertion: None,
-                method: "tls_client_auth".to_owned(),
-            },
-            None => PresentedClientCredentials::default(),
-        }
+        self.credential_view(assertion_client_id.as_deref(), mtls_client_id.as_deref()).into_owned()
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/contracts/token_client_auth.rs"]
+mod tests;

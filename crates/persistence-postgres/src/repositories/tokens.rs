@@ -184,17 +184,27 @@ impl TokenRepository {
             .map_err(map_error)?;
         drop(connection);
         presentation
-            .map(|(spent, family, contract)| {
-                let contract = require_contract(contract)?;
-                match spent {
-                    Some(spent) => token_from_spent(spent, family, contract),
-                    None => token_from_current(family, contract),
-                }
-                .map_err(deserialization_error)
-            })
+            .map(|row| row.into_presentation(None).map(|snapshot| snapshot.presented))
             .transpose()
             .map_err(map_error)
     }
+
+    pub(super) async fn refresh_token_snapshot(
+        &self,
+        tenant_id: Uuid,
+        raw_token: &str,
+        client_id: Uuid,
+        retry_started_at: DateTime<Utc>,
+    ) -> Result<Option<RefreshPresentation>, RepositoryError> {
+        let digest = blake3::hash(raw_token.as_bytes());
+        let mut connection = self.connection().await?;
+        let row = lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes())
+            .await.map_err(map_error)?;
+        drop(connection);
+        row.map(|row| row.into_presentation(Some((client_id, retry_started_at))))
+            .transpose().map_err(map_error)
+    }
+
 
     /// Apply a refresh-token mutation inside a caller-owned transaction.
     ///
@@ -675,80 +685,108 @@ fn require_contract(row: Option<RefreshContractRow>) -> diesel::QueryResult<Refr
     parse_contract(row.contract).map_err(deserialization_error)
 }
 
-/// Presentation lookup: the current member by digest, else a spent proof.
-/// Each branch reads its family and contract in one statement; the contract
-/// join is a LEFT JOIN so a missing referenced contract still surfaces as a
-/// consistency error instead of silently turning the presentation into
-/// "token not found". A spent proof without a live family row is unreachable
-/// (the foreign key cascades), so a missing family means the proof row is
-/// gone as well.
+/// Current presentation takes precedence over a spent proof in the same
+/// statement snapshot. LEFT JOIN keeps missing contracts observable. Family
+/// facts and the direct successor edge come from this statement, never a second
+/// pool checkout; no lock or authorization is implied by this read.
 async fn lookup_refresh_token(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     digest: &[u8],
-) -> diesel::QueryResult<
-    Option<(
-        Option<SpentRefreshTokenRow>,
-        RefreshFamilyRow,
-        Option<RefreshContractRow>,
-    )>,
-> {
-    if let Some((family, contract_row)) = oauth_refresh_families::table
-        .left_join(
-            oauth_refresh_contracts::table.on(oauth_refresh_contracts::tenant_id
-                .eq(oauth_refresh_families::tenant_id)
-                .and(
-                    oauth_refresh_contracts::contract_blake3
-                        .eq(oauth_refresh_families::contract_blake3),
-                )),
-        )
-        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-        .filter(oauth_refresh_families::current_token_blake3.eq(digest))
-        .select((
-            RefreshFamilyRow::as_select(),
-            Option::<RefreshContractRow>::as_select(),
-        ))
-        .first::<(RefreshFamilyRow, Option<RefreshContractRow>)>(connection)
-        .await
-        .optional()?
-    {
-        return Ok(Some((None, family, contract_row)));
+) -> diesel::QueryResult<Option<RefreshPresentationRow>> {
+    sql_query(
+        "WITH presentation AS ( \
+             SELECT tenant_id, token_family_id, 0 AS priority, \
+                    NULL::bytea AS spent_digest, NULL::uuid AS spent_member_id, \
+                    NULL::timestamptz AS spent_at, NULL::timestamptz AS spent_expires_at, \
+                    NULL::uuid AS successor_member_id \
+             FROM oauth_refresh_families \
+             WHERE tenant_id = $1 AND current_token_blake3 = $2 \
+             UNION ALL \
+             SELECT tenant_id, token_family_id, 1, refresh_token_blake3, member_id, \
+                    spent_at, expires_at, successor_member_id \
+             FROM oauth_refresh_spent_tokens \
+             WHERE tenant_id = $1 AND refresh_token_blake3 = $2 \
+         ), selected AS (SELECT * FROM presentation ORDER BY priority LIMIT 1) \
+         SELECT f.*, c.contract, p.spent_digest, p.spent_member_id, \
+                p.spent_at, p.spent_expires_at, p.successor_member_id \
+         FROM selected AS p \
+         JOIN oauth_refresh_families AS f \
+           ON f.tenant_id = p.tenant_id AND f.token_family_id = p.token_family_id \
+         LEFT JOIN oauth_refresh_contracts AS c \
+           ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Binary, _>(digest)
+    .get_result::<RefreshPresentationRow>(connection)
+    .await
+    .optional()
+}
+
+#[derive(diesel::QueryableByName)]
+struct RefreshPresentationRow {
+    #[diesel(embed)]
+    family: RefreshFamilyRow,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    contract: Option<Value>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Binary>)]
+    spent_digest: Option<Vec<u8>>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
+    spent_member_id: Option<Uuid>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+    spent_at: Option<DateTime<Utc>>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+    spent_expires_at: Option<DateTime<Utc>>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
+    successor_member_id: Option<Uuid>,
+}
+
+pub(super) struct RefreshPresentation {
+    pub(super) presented: RefreshToken,
+    pub(super) successor: Result<Option<RefreshToken>, RepositoryError>,
+}
+
+impl RefreshPresentationRow {
+    fn into_presentation(
+        self,
+        retry: Option<(Uuid, DateTime<Utc>)>,
+    ) -> diesel::QueryResult<RefreshPresentation> {
+        let contract = require_contract(self.contract.map(|contract| RefreshContractRow { contract }))?;
+        let (presented, successor) = match (
+            self.spent_digest, self.spent_member_id, self.spent_at,
+            self.spent_expires_at, self.successor_member_id,
+        ) {
+            (None, None, None, None, None) =>
+                (token_from_current(self.family, contract).map_err(deserialization_error)?, Ok(None)),
+            (Some(refresh_token_blake3), Some(member_id), Some(spent_at), Some(expires_at), Some(successor_member_id)) => {
+                let eligible = retry.is_some_and(|(client_id, now)| {
+                    let elapsed = now.signed_duration_since(spent_at);
+                    self.family.client_id == client_id
+                        && (self.family.dpop_jkt.is_some() || self.family.mtls_x5t_s256.is_some())
+                        && self.family.current_member_id == successor_member_id
+                        && self.family.revoked_at.is_none()
+                        && self.family.reuse_detected_at.is_none()
+                        && self.family.current_expires_at > now
+                        && elapsed >= Duration::zero()
+                        && elapsed <= Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS)
+                });
+                // Preserve dependency-error ordering: candidate projection errors
+                // are returned only after the application authenticates the holder.
+                let successor = if eligible {
+                    token_from_current(self.family.clone(), contract.clone()).map(Some)
+                } else { Ok(None) };
+                let presented = token_from_spent(
+                    SpentRefreshTokenRow { refresh_token_blake3, member_id, spent_at, expires_at },
+                    self.family, contract,
+                ).map_err(deserialization_error)?;
+                (presented, successor)
+            }
+            _ => return Err(diesel::result::Error::DeserializationError(
+                "refresh presentation has incomplete spent proof".into(),
+            )),
+        };
+        Ok(RefreshPresentation { presented, successor })
     }
-    if let Some((spent, family, contract_row)) = oauth_refresh_spent_tokens::table
-        .inner_join(
-            oauth_refresh_families::table.on(oauth_refresh_families::tenant_id
-                .eq(oauth_refresh_spent_tokens::tenant_id)
-                .and(
-                    oauth_refresh_families::token_family_id
-                        .eq(oauth_refresh_spent_tokens::token_family_id),
-                )),
-        )
-        .left_join(
-            oauth_refresh_contracts::table.on(oauth_refresh_contracts::tenant_id
-                .eq(oauth_refresh_families::tenant_id)
-                .and(
-                    oauth_refresh_contracts::contract_blake3
-                        .eq(oauth_refresh_families::contract_blake3),
-                )),
-        )
-        .filter(oauth_refresh_spent_tokens::tenant_id.eq(tenant_id))
-        .filter(oauth_refresh_spent_tokens::refresh_token_blake3.eq(digest))
-        .select((
-            SpentRefreshTokenRow::as_select(),
-            RefreshFamilyRow::as_select(),
-            Option::<RefreshContractRow>::as_select(),
-        ))
-        .first::<(
-            SpentRefreshTokenRow,
-            RefreshFamilyRow,
-            Option<RefreshContractRow>,
-        )>(connection)
-        .await
-        .optional()?
-    {
-        return Ok(Some((Some(spent), family, contract_row)));
-    }
-    Ok(None)
 }
 
 struct LockedRefreshFamily {

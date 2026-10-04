@@ -114,7 +114,7 @@ impl DynamicRegistrationApplication {
             .map_err(registration_error)?;
         let response_types = prepared.response_types.clone();
         let registration_access_token = self.security.registration_tokens.random_token();
-        let prepared_insert = match self
+        let mut prepared_insert = match self
             .prepare_insert(prepared, &registration_access_token, None)
             .await
         {
@@ -124,7 +124,8 @@ impl DynamicRegistrationApplication {
             }
             Err(_) => return Err(server_error("Dynamic client registration failed.")),
         };
-        let issued_secret = prepared_insert.issued_secret.clone();
+        // Transfer the Drop owner, not plaintext, across readiness and commit.
+        let mut issued_secret = std::mem::take(&mut prepared_insert.issued_secret);
         self.request_guard
             .ensure_mutation_ready()
             .await
@@ -132,14 +133,14 @@ impl DynamicRegistrationApplication {
         let source_ip_hash = blake3_hex(source_ip);
         let client = self
             .clients
-            .insert(&prepared_insert, &source_ip_hash)
+            .insert(prepared_insert, &source_ip_hash)
             .await
             .map_err(|_| server_error("Dynamic client registration failed."))?;
         Ok(DynamicRegistrationResult::Created(
             DynamicRegistrationResponse {
                 client,
                 response_types,
-                issued_secret,
+                issued_secret: issued_secret.take_after_commit(),
                 issuer: self.config.issuer.clone(),
                 registration_access_token,
             },
@@ -197,7 +198,7 @@ impl DynamicRegistrationApplication {
             .map_err(registration_error)?;
         let response_types = registration.response_types.clone();
         let registration_access_token = self.security.registration_tokens.random_token();
-        let prepared = match self
+        let mut prepared = match self
             .prepare_insert(
                 registration,
                 &registration_access_token,
@@ -211,8 +212,7 @@ impl DynamicRegistrationApplication {
             }
             Err(_) => return Err(server_error("Client configuration update failed.")),
         };
-        let issued_secret = prepared.issued_secret.clone();
-        let mut registration = prepared.registration.clone();
+        let mut registration = prepared.registration;
         registration.security_policy = current.security_policy.clone();
         let updated = OAuthClient {
             id: current.id,
@@ -251,7 +251,7 @@ impl DynamicRegistrationApplication {
             DynamicRegistrationResponse {
                 client,
                 response_types,
-                issued_secret,
+                issued_secret: prepared.issued_secret.take_after_commit(),
                 issuer: self.config.issuer.clone(),
                 registration_access_token,
             },

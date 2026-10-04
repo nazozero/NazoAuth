@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
-    OptionalExtension, PgExpressionMethods, PgTextExpressionMethods, QueryDsl,
+    OptionalExtension, PgExpressionMethods, PgTextExpressionMethods, QueryDsl, SelectableHelper,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{ApprovedClient, PreparedClientRegistration};
@@ -14,6 +14,8 @@ use uuid::Uuid;
 
 use crate::{
     DbPool, get_conn,
+    pool::DiscardOnDrop,
+    rows::identity::PrincipalRow,
     schema::{client_access_requests, oauth_clients, users},
 };
 
@@ -304,6 +306,52 @@ impl AccessRequestRepository {
         .map_err(map_error)
     }
 
+    pub async fn approved_delivery_with_required_audit_matches(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        request_id: Uuid,
+        approved_client_id: Uuid,
+        client_id: &str,
+        secret_binding: Option<&str>,
+    ) -> Result<bool, RepositoryError> {
+        #[derive(diesel::QueryableByName)]
+        struct Evidence {
+            #[diesel(sql_type = diesel::sql_types::Bool)]
+            matched: bool,
+        }
+        let mut connection = self.connection().await?;
+        // Runtime receives only this exact business predicate, never SELECT
+        // on canonical audit tables or a caller-selected event identifier.
+        diesel::sql_query("SELECT public.nazo_access_request_required_approval_matches($1,$2,$3,$4,$5,$6) AS matched")
+            .bind::<diesel::sql_types::Uuid, _>(tenant_id.as_uuid())
+            .bind::<diesel::sql_types::Uuid, _>(user_id.as_uuid())
+            .bind::<diesel::sql_types::Uuid, _>(request_id)
+            .bind::<diesel::sql_types::Uuid, _>(approved_client_id)
+            .bind::<diesel::sql_types::Text, _>(client_id)
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(secret_binding)
+            .get_result::<Evidence>(&mut connection).await
+            .map(|evidence| evidence.matched).map_err(map_error)
+    }
+
+    pub async fn approve_with_required_audit(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        client: &PreparedClientRegistration,
+        source_ip_hash: String,
+    ) -> Result<nazo_persistence::AdminAccessRequestApproval, RepositoryError> {
+        self.approve_owned(
+            tenant,
+            request_id,
+            actor_user_id,
+            client,
+            Some(source_ip_hash),
+        )
+        .await
+    }
+
     pub async fn approve(
         &self,
         tenant: nazo_identity::TenantContext,
@@ -323,13 +371,25 @@ impl AccessRequestRepository {
         actor_user_id: UserId,
         client: &PreparedClientRegistration,
     ) -> Result<nazo_persistence::AdminAccessRequestApproval, RepositoryError> {
+        self.approve_owned(tenant, request_id, actor_user_id, client, None)
+            .await
+    }
+
+    async fn approve_owned(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        client: &PreparedClientRegistration,
+        source_ip_hash: Option<String>,
+    ) -> Result<nazo_persistence::AdminAccessRequestApproval, RepositoryError> {
         if client.tenant != tenant {
             return Err(RepositoryError::Consistency(
                 "prepared client tenant does not match the approving administrator".to_owned(),
             ));
         }
-        let mut connection = self.connection().await?;
-        connection
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let result = guard.connection()
             .transaction::<nazo_persistence::AdminAccessRequestApproval, ApprovalError, _>(
                 async |connection| {
                     let pending = client_access_requests::table
@@ -347,6 +407,9 @@ impl AccessRequestRepository {
                     let Some(request_user_id) = pending else {
                         return Err(ApprovalError::Repository(RepositoryError::AlreadyProcessed));
                     };
+                    if source_ip_hash.is_some() {
+                        authorize_access_request_actor(connection, tenant, actor_user_id, request_user_id, true).await?;
+                    } else {
                     for user_id in [request_user_id, actor_user_id.as_uuid()] {
                         let consistent = users::table
                             .find(user_id)
@@ -365,7 +428,28 @@ impl AccessRequestRepository {
                             )));
                         }
                     }
+                    }
                     let approved = insert_client(connection, tenant, client).await?;
+                    let required_event_id = if let Some(source_ip_hash) = &source_ip_hash {
+                        let event_id = Uuid::now_v7();
+                        crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(
+                            connection,
+                            &nazo_persistence::SecurityAuditEvent {
+                                event_id, event_type: "client_created".to_owned(),
+                                event_category: "client_lifecycle".to_owned(),
+                                payload: json!({
+                                    "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                                    "event_category": "client_lifecycle", "tenant_id": tenant.tenant_id.as_uuid(),
+                                    "request_id": request_id, "request_user_id": request_user_id,
+                                    "admin_user_id": actor_user_id.as_uuid(),
+                                    "approved_client_id": approved.id, "client_id": approved.client_id,
+                                    "outcome": "success", "source_ip_hash": source_ip_hash,
+                                }),
+                                occurred_at: Utc::now(),
+                            },
+                        ).await?;
+                        Some(event_id)
+                    } else { None };
                     let updated = diesel::update(
                         client_access_requests::table
                             .filter(
@@ -381,6 +465,7 @@ impl AccessRequestRepository {
                         client_access_requests::status.eq(AccessRequestStatus::Approved.code()),
                         client_access_requests::resolved_by_user_id.eq(actor_user_id.as_uuid()),
                         client_access_requests::approved_client_id.eq(approved.id),
+                        client_access_requests::required_approval_event_id.eq(required_event_id),
                         client_access_requests::resolved_at.eq(diesel::dsl::now),
                         client_access_requests::updated_at.eq(diesel::dsl::now),
                     ))
@@ -404,7 +489,28 @@ impl AccessRequestRepository {
                 },
             )
             .await
-            .map_err(ApprovalError::into_repository)
+            .map_err(ApprovalError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
+    }
+
+    pub async fn reject_with_required_audit(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        admin_note: String,
+    ) -> Result<AccessRequest, RepositoryError> {
+        self.reject_owned(
+            tenant.tenant_id,
+            request_id,
+            actor_user_id,
+            admin_note,
+            Some(tenant),
+        )
+        .await
     }
 
     pub async fn reject(
@@ -426,9 +532,32 @@ impl AccessRequestRepository {
         actor_user_id: UserId,
         admin_note: String,
     ) -> Result<AccessRequest, RepositoryError> {
-        let mut connection = self.connection().await?;
-        connection
+        self.reject_owned(tenant_id, request_id, actor_user_id, admin_note, None)
+            .await
+    }
+
+    async fn reject_owned(
+        &self,
+        tenant_id: TenantId,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        admin_note: String,
+        required_tenant: Option<nazo_identity::TenantContext>,
+    ) -> Result<AccessRequest, RepositoryError> {
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let result = guard.connection()
             .transaction::<AccessRequest, ApprovalError, _>(async move |connection| {
+                if let Some(tenant) = required_tenant {
+                    let requester = client_access_requests::table
+                        .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(client_access_requests::id.eq(request_id))
+                        .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code()))
+                        .select(client_access_requests::user_id).for_update()
+                        .first::<Uuid>(connection).await.optional()?.ok_or(RepositoryError::Conflict)?;
+                    // Rejection need not activate an inactive applicant. The
+                    // current active administrator remains the accepting actor.
+                    authorize_access_request_actor(connection, tenant, actor_user_id, requester, false).await?;
+                }
                 let updated = diesel::update(
                     client_access_requests::table
                         .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
@@ -451,16 +580,30 @@ impl AccessRequestRepository {
                 if updated.len() != 1 {
                     return Err(ApprovalError::Repository(RepositoryError::Conflict));
                 }
-                AccessRequest::try_from(
-                    updated
-                        .into_iter()
-                        .next()
-                        .expect("one committed request row"),
-                )
-                .map_err(ApprovalError::Repository)
-            })
-            .await
-            .map_err(ApprovalError::into_repository)
+                let request = AccessRequest::try_from(
+                    updated.into_iter().next().expect("one committed request row"),
+                ).map_err(ApprovalError::Repository)?;
+                if required_tenant.is_some() {
+                    crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(
+                        connection,
+                        &nazo_persistence::SecurityAuditEvent {
+                            event_id: Uuid::now_v7(), event_type: "admin_access_request_rejected".to_owned(),
+                            event_category: "administration".to_owned(),
+                            payload: json!({
+                                "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                                "event_category": "administration", "tenant_id": tenant_id.as_uuid(),
+                                "request_id": request_id, "request_user_id": request.user_id.as_uuid(),
+                                "admin_user_id": actor_user_id.as_uuid(), "outcome": "success",
+                            }), occurred_at: Utc::now(),
+                        },
+                    ).await?;
+                }
+                Ok(request)
+            }).await.map_err(ApprovalError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
     pub async fn cancel_pending(
@@ -494,7 +637,69 @@ impl AccessRequestRepository {
     }
 }
 
+async fn authorize_access_request_actor(
+    connection: &mut diesel_async::AsyncPgConnection,
+    tenant: nazo_identity::TenantContext,
+    actor_user_id: UserId,
+    requester: Uuid,
+    require_active_requester: bool,
+) -> Result<(), RepositoryError> {
+    let principals = users::table
+        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+        .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
+        .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
+        .filter(users::id.eq_any([actor_user_id.as_uuid(), requester]))
+        .order(users::id.asc())
+        .select(PrincipalRow::as_select())
+        .for_update()
+        .load::<PrincipalRow>(connection)
+        .await
+        .map_err(map_error)?
+        .into_iter()
+        .map(crate::convert::identity::principal_row)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| RepositoryError::Consistency(error.0))?;
+    let actor_allowed = principals.iter().any(|principal| {
+        principal.user_id == actor_user_id
+            && principal.active
+            && principal.admin_level().is_some_and(|level| level > 0)
+    });
+    let requester_allowed = principals.iter().any(|principal| {
+        principal.user_id.as_uuid() == requester && (!require_active_requester || principal.active)
+    });
+    if actor_allowed && requester_allowed {
+        Ok(())
+    } else {
+        Err(RepositoryError::Consistency(
+            "access-request actor or requester is no longer authorized in this context".to_owned(),
+        ))
+    }
+}
+
 impl nazo_identity::ports::AccessRequestRepositoryPort for AccessRequestRepository {
+    fn approved_delivery_with_required_audit_matches<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        request_id: Uuid,
+        approved_client_id: Uuid,
+        client_id: &'a str,
+        secret_binding: Option<&'a str>,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            AccessRequestRepository::approved_delivery_with_required_audit_matches(
+                self,
+                tenant_id,
+                user_id,
+                request_id,
+                approved_client_id,
+                client_id,
+                secret_binding,
+            )
+            .await
+        })
+    }
+
     fn list_for_user(
         &self,
         tenant_id: TenantId,
@@ -537,6 +742,72 @@ impl nazo_identity::ports::AccessRequestRepositoryPort for AccessRequestReposito
 }
 
 impl nazo_persistence::AdminAccessRequestStore for AccessRequestRepository {
+    fn approved_delivery_with_required_audit_matches<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        request_id: Uuid,
+        approved_client_id: Uuid,
+        client_id: &'a str,
+        secret_binding: Option<&'a str>,
+    ) -> futures_util::future::BoxFuture<'a, Result<bool, RepositoryError>> {
+        Box::pin(async move {
+            AccessRequestRepository::approved_delivery_with_required_audit_matches(
+                self,
+                tenant_id,
+                user_id,
+                request_id,
+                approved_client_id,
+                client_id,
+                secret_binding,
+            )
+            .await
+        })
+    }
+
+    fn approve_with_required_audit<'a>(
+        &'a self,
+        tenant: nazo_identity::TenantContext,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        client: &'a PreparedClientRegistration,
+        source_ip_hash: String,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<nazo_persistence::AdminAccessRequestApproval, RepositoryError>,
+    > {
+        Box::pin(async move {
+            AccessRequestRepository::approve_with_required_audit(
+                self,
+                tenant,
+                request_id,
+                actor_user_id,
+                client,
+                source_ip_hash,
+            )
+            .await
+        })
+    }
+
+    fn reject_with_required_audit(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        admin_note: String,
+    ) -> futures_util::future::BoxFuture<'_, Result<AccessRequest, RepositoryError>> {
+        Box::pin(async move {
+            AccessRequestRepository::reject_with_required_audit(
+                self,
+                tenant,
+                request_id,
+                actor_user_id,
+                admin_note,
+            )
+            .await
+        })
+    }
+
     fn approved_delivery_matches<'a>(
         &'a self,
         tenant_id: TenantId,

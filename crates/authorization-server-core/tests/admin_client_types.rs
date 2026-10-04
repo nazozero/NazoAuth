@@ -114,7 +114,7 @@ fn prepared() -> PreparedClientRegistration {
         tenant: TenantContext::default(),
         registration: registration(),
         require_mtls_bound_tokens: true,
-        issued_secret: Some("issued-secret".to_owned()),
+        issued_secret: Some("issued-secret".to_owned()).into(),
         client_secret_hash: Some("hashed-secret".to_owned()),
         registration_access_token_blake3: Some("registration-token-digest".to_owned()),
     }
@@ -401,4 +401,18 @@ fn admin_create_and_patch_keep_ciba_user_code_disabled_without_stored_state() {
             assert!(!patched.unwrap().backchannel_user_code_parameter);
         }
     }
+}
+
+#[test]
+fn prepared_write_moves_registration_and_holds_undisclosed_secret() {
+    let prepared = prepared();
+    let registration_allocation = prepared.registration.redirect_uris.as_ptr();
+    let tenant = prepared.tenant;
+    let mut write = prepared.into_write();
+    assert_eq!(write.client.registration.redirect_uris.as_ptr(), registration_allocation);
+    assert_eq!(write.client.tenant_id, tenant.tenant_id.as_uuid());
+    assert_eq!(write.issued_secret.as_deref(), Some("issued-secret"));
+    assert!(!format!("{:?}", write.issued_secret).contains("issued-secret"));
+    assert_eq!(write.issued_secret.take_after_commit().as_deref(), Some("issued-secret"));
+    assert!(write.issued_secret.is_none());
 }

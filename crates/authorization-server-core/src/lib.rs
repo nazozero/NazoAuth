@@ -42,7 +42,7 @@ mod uri_policy;
 pub use admin_clients::{
     AdminClientCryptoPort, AdminClientError, AdminClientFuture, AdminClientPolicy,
     AdminClientPortError, AdminClientRepositoryPort, AdminClientService, CreateClientRequest,
-    CreatedClient, PatchClientRequest, PreparedClientRegistration, SectorIdentifierFuture,
+    CreatedClient, PatchClientRequest, PendingClientSecret, PreparedClientRegistration, PreparedClientWrite, SectorIdentifierFuture,
     SectorIdentifierResolverPort, SuppliedClientSecret, insert_prepared_client,
     prepare_client_patch, prepare_client_registration,
 };
@@ -115,7 +115,7 @@ pub use client_assertion::{
 pub use client_attestation::ClientAttestationProofWindow;
 pub use client_authentication::{
     ClientAuthenticationContext, ClientAuthenticationMethod, ClientAuthenticationPolicyError,
-    ClientAuthenticationRequirement, PresentedClientCredentials, client_authentication_requirement,
+    ClientAuthenticationRequirement, PresentedClientCredentials, PresentedClientCredentialsView, client_authentication_requirement,
 };
 pub use client_jwe_policy::{
     ClientJweKeyManagement, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
@@ -224,7 +224,7 @@ pub use token_service::{
     IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, NativeSsoSourceFence,
     PreparedTokenSubject, SingleUseRedemption, TokenFuture, TokenInspection, TokenIssuanceMode,
     TokenIssuedAuditFields, TokenPortError, TokenPrincipalState, TokenRepositoryPort,
-    TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort, UserinfoSnapshot,
+    RefreshTokenSnapshot, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort, UserinfoSnapshot,
     UserinfoSubjectRef, validate_sender_constraint,
 };
 pub use transaction::{

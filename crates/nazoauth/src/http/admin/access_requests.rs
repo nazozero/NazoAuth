@@ -1,8 +1,6 @@
 //! 管理端客户端接入申请接口。
 use super::clients::ServerAdminClientService;
-use crate::http::admin::{
-    persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
     require_admin_with_recent_mfa_or_forbidden_with_handles,
@@ -23,7 +21,6 @@ use nazo_identity::ports::{
 };
 use nazo_oauth_server::crypto::access_delivery_token;
 use nazo_oauth_server::crypto::{blake3_hex, client_secret_matches_digest};
-use nazo_oauth_server::ports::audit::audit_fields;
 use nazo_persistence::AdminAccessRequestStore;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -181,6 +178,9 @@ pub(crate) async fn admin_approve_access_request(
     {
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Pending => row,
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Approved => {
+            if let Err(response) = require_transactional_audit_or_unavailable().await {
+                return response;
+            }
             match resume_staged_client_delivery(
                 repository.get_ref(),
                 delivery_store.get_ref(),
@@ -218,7 +218,7 @@ pub(crate) async fn admin_approve_access_request(
         Ok(prepared) => prepared,
         Err(error) => return client_preparation_error_response(error),
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let token = access_delivery_token(&config.client_secret_pepper, request_user_id, request_id);
@@ -282,11 +282,12 @@ pub(crate) async fn admin_approve_access_request(
     };
 
     let approval = repository
-        .approve(
+        .approve_with_required_audit(
             admin.principal.tenant,
             request_id,
             admin.user_id(),
             &prepared,
+            blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
         )
         .await;
     let approved = match approval {
@@ -331,22 +332,6 @@ pub(crate) async fn admin_approve_access_request(
                 "客户端凭据交付激活失败.",
             );
         }
-    }
-    if let Err(response) = persist_required_audit_or_unavailable(
-        "client_created",
-        audit_fields(&[
-            ("client_id", json!(client.client_id)),
-            ("request_id", json!(request_id)),
-            ("admin_user_id", json!(admin.id())),
-            (
-                "source_ip_hash",
-                json!(blake3_hex(&client_ip_with_config(&req, &client_ip_config))),
-            ),
-        ]),
-    )
-    .await
-    {
-        return response;
     }
     json_response(access_request_json(approved.request))
 }
@@ -393,7 +378,7 @@ async fn resume_staged_client_delivery(
     };
     if !secret_matches
         || !repository
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 request.tenant_id,
                 user,
                 request.id,
@@ -439,12 +424,12 @@ pub(crate) async fn admin_reject_access_request(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let updated = match repository
-        .reject(
-            admin.principal.tenant.tenant_id,
+        .reject_with_required_audit(
+            admin.principal.tenant,
             request_id,
             admin.user_id(),
             payload.admin_note,
@@ -465,17 +450,6 @@ pub(crate) async fn admin_reject_access_request(
     let Some(updated) = updated else {
         return access_request_already_rejected_response();
     };
-    if let Err(response) = persist_required_audit_or_unavailable(
-        "admin_access_request_rejected",
-        audit_fields(&[
-            ("request_id", json!(request_id)),
-            ("admin_user_id", json!(admin.id())),
-        ]),
-    )
-    .await
-    {
-        return response;
-    }
     json_response(access_request_json(updated))
 }
 

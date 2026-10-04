@@ -1,6 +1,7 @@
 use super::{MfaAuditError, MfaRepository, map_mfa_error, mfa_event};
 use crate::{
     get_conn,
+    pool::DiscardOnDrop,
     repositories::audit::insert_identity_security_event,
     schema::{user_mfa_backup_codes, user_totp_credentials, users},
 };
@@ -181,15 +182,50 @@ impl MfaRepository {
         timestamp: i64,
         hashes: Vec<String>,
     ) -> Result<TotpVerificationOutcome, RepositoryError> {
+        self.verify_and_confirm_totp_owned(tenant_id, user_id, code, timestamp, hashes, None)
+            .await
+    }
+
+    pub async fn verify_and_confirm_totp_with_required_audit(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &str,
+        timestamp: i64,
+        hashes: Vec<String>,
+        source_ip_hash: String,
+    ) -> Result<TotpVerificationOutcome, RepositoryError> {
+        self.verify_and_confirm_totp_owned(
+            tenant_id,
+            user_id,
+            code,
+            timestamp,
+            hashes,
+            Some(source_ip_hash),
+        )
+        .await
+    }
+
+    async fn verify_and_confirm_totp_owned(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &str,
+        timestamp: i64,
+        hashes: Vec<String>,
+        source_ip_hash: Option<String>,
+    ) -> Result<TotpVerificationOutcome, RepositoryError> {
         if hashes.len() != MFA_BACKUP_CODE_COUNT {
             return Err(RepositoryError::Conflict);
         }
         self.require_totp_keys()?;
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
+        let mut guard = DiscardOnDrop(Some(connection));
         let totp_keys = self.totp_keys.clone();
-        connection
+        let result = guard
+            .connection()
             .transaction::<TotpVerificationOutcome, MfaAuditError, _>(async move |connection| {
                 let credential = user_totp_credentials::table
                     .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
@@ -273,10 +309,11 @@ impl MfaRepository {
                         .execute(connection)
                         .await?;
                 }
-                diesel::update(
+                let activated = diesel::update(
                     users::table
                         .find(user_id.as_uuid())
-                        .filter(users::tenant_id.eq(tenant_id.as_uuid())),
+                        .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(users::is_active.eq(true)),
                 )
                 .set((users::mfa_enabled.eq(true), users::updated_at.eq(now)))
                 .execute(connection)
@@ -293,10 +330,30 @@ impl MfaRepository {
                 )
                 .await
                 .map_err(MfaAuditError::Repository)?;
+                if activated != 1 {
+                    return Err(MfaAuditError::Diesel(
+                        diesel::result::Error::RollbackTransaction,
+                    ));
+                }
+                if let Some(source_ip_hash) = source_ip_hash {
+                    super::append_required_mfa_outcome(
+                        connection,
+                        tenant_id,
+                        user_id,
+                        credential_id,
+                        "mfa_totp_enabled",
+                        source_ip_hash,
+                    )
+                    .await?;
+                }
                 Ok(TotpVerificationOutcome::Accepted(credential_id))
             })
             .await
-            .map_err(MfaAuditError::into_repository)
+            .map_err(MfaAuditError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
     pub async fn record_invalid_totp_attempt(
         &self,

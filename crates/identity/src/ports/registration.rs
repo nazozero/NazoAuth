@@ -12,6 +12,18 @@ pub trait RegistrationAccountRepositoryPort: Send + Sync {
     ) -> RepositoryFuture<'a, Option<PublicAccount>>;
 
     fn create_user(&self, user: NewUser) -> RepositoryFuture<'_, PublicAccount>;
+
+    /// Administrative creation rechecks the current active actor in the new
+    /// user's exact context and commits canonical Required evidence with the
+    /// returned account. Unsupported adapters fail before any bare mutation.
+    fn create_user_with_required_audit(
+        &self,
+        _user: NewUser,
+        _actor_id: crate::UserId,
+        _source_ip_hash: String,
+    ) -> RepositoryFuture<'_, PublicAccount> {
+        Box::pin(async { Err(super::RepositoryError::Unavailable) })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

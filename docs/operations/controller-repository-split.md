@@ -94,9 +94,14 @@ HTTP presenters consume those results without acquiring another connection for
 a display reread. Requester email is selected by the write statement under the
 same tenant scope. A subsequent mutation does not replace the returned snapshot.
 Existing current-state delivery verification and staged-attempt recovery remain
-separate authority checks. The required HTTP outcome audit step is still separate;
-this response-view change does not close its effect/outcome crash window.
-Current-candidate PostgreSQL and real HTTP regression execution remains pending.
+separate authority checks. The earlier response-view change left the Required
+HTTP outcome audit step separate. Current candidate access-request and
+administrative mTLS commands append their canonical Required outcome inside the
+business owner and present only its accepted commit result. Administrative
+controller identity and proactive recovery-root commands follow that same ACK
+boundary through purpose ports; signed break-glass and offline controller
+recovery retain their independent contracts. New combined-source PostgreSQL and
+real HTTP regression execution remains pending.
 
 Ordinary admin client PATCH carries its original semantic metadata snapshot
 through preparation, including external sector-document retrieval. The adapter

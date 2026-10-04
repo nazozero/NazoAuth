@@ -200,3 +200,31 @@ pub(super) fn map_mfa_error(error: diesel::result::Error) -> RepositoryError {
 #[cfg(test)]
 #[path = "../../../tests/unit/repositories/mfa.rs"]
 mod tests;
+
+/// Canonical successful MFA mutation outcome on the existing accepting owner.
+async fn append_required_mfa_outcome(
+    connection: &mut diesel_async::AsyncPgConnection,
+    tenant_id: TenantId,
+    user_id: UserId,
+    credential_id: uuid::Uuid,
+    event_type: &'static str,
+    source_ip_hash: String,
+) -> Result<(), diesel::result::Error> {
+    crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(
+        connection,
+        &nazo_persistence::SecurityAuditEvent {
+            event_id: uuid::Uuid::now_v7(),
+            event_type: event_type.to_owned(),
+            event_category: "authentication".to_owned(),
+            payload: serde_json::json!({
+                "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                "event_category": "authentication", "tenant_id": tenant_id.as_uuid(),
+                "user_id": user_id.as_uuid(), "actor_id": user_id.as_uuid(),
+                "target_user_id": user_id.as_uuid(), "credential_id": credential_id,
+                "outcome": "success", "source_ip_hash": source_ip_hash,
+            }),
+            occurred_at: chrono::Utc::now(),
+        },
+    )
+    .await
+}
