@@ -436,7 +436,7 @@ impl<'body> CapturedRequest<'body> {
     }
 
     fn verification_headers(&self) -> Result<Vec<(&str, &str)>, ()> {
-        let mut headers = self.safe_headers.iter().copied().collect::<Vec<_>>();
+        let mut headers = self.safe_headers.to_vec();
         for (name, captured) in [
             ("authorization", &self.authorization),
             ("dpop", &self.dpop),
@@ -460,7 +460,7 @@ impl<'body> CapturedRequest<'body> {
         }
         parse_request_for_verification_with_digest(
             RequestInput {
-                method: &self.method,
+                method: self.method,
                 target_uri: &self.target_uri,
                 headers: &headers,
                 body: self.body,
@@ -540,7 +540,7 @@ async fn sign_response(
         },
         OriginalRequest {
             input: RequestInput {
-                method: &original.method,
+                method: original.method,
                 target_uri: &original.target_uri,
                 headers: &request_headers,
                 body: request_digest.map_or(b"", |_| original.body),

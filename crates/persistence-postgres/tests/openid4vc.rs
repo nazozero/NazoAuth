@@ -5805,7 +5805,7 @@ async fn deferred_locked_projection_rechecks_waited_facts_and_discards_cancelled
             let mut current = original.clone();
             current.token_id = Uuid::now_v7();
             for grant in [&original, &current] {
-                issuer.upsert_access(&blake3::hash(grant.token_id.as_bytes()).to_hex().to_string(), grant)
+                issuer.upsert_access(blake3::hash(grant.token_id.as_bytes()).to_hex().as_ref(), grant)
                     .await.unwrap();
             }
             let mut deferred = openid4vc_deferred_fixture(&original, case,
@@ -5939,9 +5939,9 @@ async fn deferred_reverse_grant_pairs_wait_on_the_sorted_first_lock_and_both_com
     for access in [&a, &b] {
         issuer
             .upsert_access(
-                &blake3::hash(access.token_id.as_bytes())
+                blake3::hash(access.token_id.as_bytes())
                     .to_hex()
-                    .to_string(),
+                    .as_ref(),
                 access,
             )
             .await

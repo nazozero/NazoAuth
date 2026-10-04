@@ -428,5 +428,5 @@ async fn admin_client_required_ports_have_no_bare_repository_fallback() {
             .await,
         Err(AdminClientPortError::Unavailable)
     ));
-    assert_eq!(repo.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(AtomicUsize::load(&repo.calls, Ordering::SeqCst), 0);
 }
