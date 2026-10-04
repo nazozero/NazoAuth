@@ -2,7 +2,7 @@
 
 FROM docker.io/library/rust:1.98.1-slim@sha256:f47a8de237dcbb0b0ce1099901e60a89728e3d51f24e664b40e947171538ade7 AS build-base
 
-ENV RUSTUP_TOOLCHAIN=1.98.0
+ENV RUSTUP_TOOLCHAIN=1.98.1
 
 WORKDIR /app
 

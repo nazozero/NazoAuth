@@ -116,7 +116,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1 # 1.98.0
+      - uses: dtolnay/rust-toolchain@c6590455eca8e79d081430ebfe2074192ae90290 # 1.98.1
         with:
           components: rustfmt, clippy
 

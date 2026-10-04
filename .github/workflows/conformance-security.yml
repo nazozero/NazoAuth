@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1 # 1.98.0
+      - uses: dtolnay/rust-toolchain@c6590455eca8e79d081430ebfe2074192ae90290 # 1.98.1
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
       - name: Install pinned Rust supply-chain tools

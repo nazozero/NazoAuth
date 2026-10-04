@@ -3217,6 +3217,7 @@ dependencies = [
  "actix-cors",
  "actix-files",
  "actix-multipart",
+ "actix-rt",
  "actix-tls",
  "actix-web",
  "anyhow",
