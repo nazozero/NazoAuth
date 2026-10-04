@@ -189,7 +189,9 @@ async fn hidden_committed_dataset_ack_is_503_with_durable_effect_and_required_ev
         assert_eq!(evidence(&fixture, subject.id).await, after_delete);
     });
     let result = futures_util::FutureExt::catch_unwind(body).await;
-    fixture.cleanup().await;
+    // This shared fixture has no per-test cleanup API. Unique users/dataset
+    // identities and retained Required evidence belong to the isolated task DB;
+    // the task owner tears that database down after the regression stages.
     if let Err(error) = result {
         std::panic::resume_unwind(error);
     }
