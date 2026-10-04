@@ -1,5 +1,4 @@
 use super::*;
-use nazo_openid4vci::CredentialStorePort as _;
 
 async fn signed_access_token(
     fixture: &LiveEndpointFixture,
@@ -112,7 +111,7 @@ async fn signed_policy_access_token(
                 credential_identifiers: Vec::new(),
                 dpop_jkt: dpop_jkt.map(str::to_owned),
                 mtls_x5t_s256: mtls_x5t_s256.map(str::to_owned),
-                expires_at: issued.expires_at,
+                expires_at: chrono::DateTime::from_timestamp(issued.expires_at, 0).unwrap(),
                 proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             },
         )
@@ -377,7 +376,7 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
             credential_identifiers: Vec::new(),
             dpop_jkt: None,
             mtls_x5t_s256: None,
-            expires_at: issued.expires_at,
+            expires_at: chrono::DateTime::from_timestamp(issued.expires_at, 0).unwrap(),
             proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         },
     )
