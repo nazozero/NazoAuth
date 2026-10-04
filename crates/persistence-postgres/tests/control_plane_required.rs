@@ -923,7 +923,10 @@ async fn required_control_plane_hidden_real_commits_withhold_tokens_and_receipts
             .generation,
         2
     );
-    assert_eq!(AtomicUsize::load(hidden.commits.as_ref(), Ordering::SeqCst), 6);
+    assert_eq!(
+        AtomicUsize::load(hidden.commits.as_ref(), Ordering::SeqCst),
+        6
+    );
     assert_eq!(
         snapshot(&f).await["canonical"].as_array().unwrap().len(),
         10

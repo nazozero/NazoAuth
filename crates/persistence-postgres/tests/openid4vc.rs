@@ -5939,9 +5939,7 @@ async fn deferred_reverse_grant_pairs_wait_on_the_sorted_first_lock_and_both_com
     for access in [&a, &b] {
         issuer
             .upsert_access(
-                blake3::hash(access.token_id.as_bytes())
-                    .to_hex()
-                    .as_ref(),
+                blake3::hash(access.token_id.as_bytes()).to_hex().as_ref(),
                 access,
             )
             .await

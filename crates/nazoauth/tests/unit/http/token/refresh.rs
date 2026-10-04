@@ -52,7 +52,9 @@ pub(crate) async fn token_refresh(
         client,
         form,
         client_assertion,
-        Arc::new(crate::test_support::token_issuance_repository(state.diesel_db.clone())),
+        Arc::new(crate::test_support::token_issuance_repository(
+            state.diesel_db.clone(),
+        )),
     )
     .await
 }
@@ -1508,7 +1510,9 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
     assert_eq!(before["issuances"], json!([]));
     let repository = Arc::new(
         crate::test_support::CountingTokenRepository::with_failing_refresh_candidate_projection(
-            Arc::new(crate::test_support::token_issuance_repository(state.diesel_db.clone())),
+            Arc::new(crate::test_support::token_issuance_repository(
+                state.diesel_db.clone(),
+            )),
         ),
     );
     let mut form = refresh_form_without_token();
