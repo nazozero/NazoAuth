@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 nazo-crypto = { path = "../crates/crypto", features = ["ed25519"] }
-libfuzzer-sys = "0.4"
+libfuzzer-sys = "0.4.13"
 nazo-operator-protocol = { path = "../crates/operator-protocol" }
 
 [[bin]]

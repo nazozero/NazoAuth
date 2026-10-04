@@ -14,6 +14,8 @@ from typing import Any
 
 import psycopg
 import redis
+from redis.backoff import ExponentialWithJitterBackoff
+from redis.retry import Retry
 from blake3 import blake3
 from argon2 import PasswordHasher
 from cryptography import x509
@@ -456,7 +458,16 @@ def seed_logged_in_sessions(
     state_prefix = (
         f"nazo:state:v1:{deployment_id}:{state_epoch}:tenant:{TENANT_ID}:"
     )
-    client = redis.Redis.from_url(valkey_url, decode_responses=True)
+    client = redis.Redis.from_url(
+        valkey_url,
+        decode_responses=True,
+        protocol=2,
+        socket_timeout=None,
+        socket_connect_timeout=None,
+        socket_keepalive=False,
+        max_connections=2**31,
+        retry=Retry(ExponentialWithJitterBackoff(base=1, cap=10), retries=3),
+    )
     now = int(datetime.now(UTC).timestamp())
     sessions: list[dict[str, str]] = []
     for user in users:

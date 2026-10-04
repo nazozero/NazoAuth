@@ -35,7 +35,7 @@ jobs:
             --no-tags origin \
             refs/heads/main:refs/remotes/origin/main
           python3 scripts/check_release_ci.py
-      - uses: dtolnay/rust-toolchain@c6590455eca8e79d081430ebfe2074192ae90290 # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
       - name: Validate immutable release input
         shell: bash
         run: |
@@ -72,7 +72,7 @@ jobs:
         run: python3 -m unittest tests.unit.test_release_attestation tests.unit.test_release_governance
           tests.unit.test_release_ci tests.unit.test_release_oci
       - name: Install pinned Rust supply-chain tools
-        uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2.87.19
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: |
             cargo-deny@0.20.2
@@ -102,7 +102,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@c6590455eca8e79d081430ebfe2074192ae90290 # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
       - name: Package the unique operator protocol source
         shell: bash
         run: |
@@ -175,7 +175,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@c6590455eca8e79d081430ebfe2074192ae90290 # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -376,7 +376,7 @@ jobs:
               --cap-drop ALL \
               --security-opt no-new-privileges \
               -v "$layout:/image:ro" \
-              docker.io/aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 image \
+              docker.io/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa image \
                 --format table \
                 --exit-code 1 \
                 --severity CRITICAL,HIGH \
@@ -575,7 +575,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
-          cosign-release: v3.0.6
+          cosign-release: v3.1.3
       - name: Sign the published OCI index by digest
         shell: bash
         run: cosign sign --yes ghcr.io/nazozero/nazoauth@${{ needs.container-image.outputs.index_digest }}

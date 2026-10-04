@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-FROM docker.io/library/rust:1.98.1-slim@sha256:f47a8de237dcbb0b0ce1099901e60a89728e3d51f24e664b40e947171538ade7 AS build-base
+FROM docker.io/library/rust:1.99.0-slim@sha256:01dd4f9c24801cfc8ba9cf8a5dd6dcca451cd17d1ae73574edc22591de6e6816 AS build-base
 
-ENV RUSTUP_TOOLCHAIN=1.98.1
+ENV RUSTUP_TOOLCHAIN=1.99.0
 
 WORKDIR /app
 
@@ -71,7 +71,7 @@ FROM runtime AS development-runtime
 
 COPY --from=product-builder /app/.env.yaml.example /app/.env.yaml
 
-FROM docker.io/library/postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 AS compose-postgres
+FROM docker.io/library/postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722 AS compose-postgres
 
 COPY --chmod=0555 deploy/compose/initialize-postgres.sh /docker-entrypoint-initdb.d/initialize-nazoauth-runtime.sh
 
