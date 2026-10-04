@@ -42,8 +42,15 @@ async fn signed_access_token_with_binding(
     mtls_x5t_s256: Option<&str>,
     authorization_details: Value,
 ) -> String {
-    signed_policy_access_token(fixture, subject_id, dpop_jkt, mtls_x5t_s256,
-        authorization_details, true).await
+    signed_policy_access_token(
+        fixture,
+        subject_id,
+        dpop_jkt,
+        mtls_x5t_s256,
+        authorization_details,
+        true,
+    )
+    .await
 }
 
 async fn signed_policy_access_token(
@@ -55,28 +62,61 @@ async fn signed_policy_access_token(
     retain_provenance: bool,
 ) -> String {
     let subject = subject_id.to_string();
-    let issued = fixture.issuer.token_service.sign_access_token(nazo_auth::AccessTokenSignInput {
-        authorization_id: None, client_epoch: None, user_epoch: None,
-        issuer: &fixture.issuer.issuer, tenant_id: fixture.issuer.tenant_id,
-        subject: &subject, user_id: Some(subject_id), subject_type: "user",
-        client_id: &fixture.wallet_client_id,
-        audiences: std::slice::from_ref(&fixture.issuer.issuer), scopes: &[],
-        authorization_details: &authorization_details,
-        userinfo_claims: &[], userinfo_claim_requests: &[], ttl_seconds: 300,
-        dpop_jkt, mtls_x5t_s256, actor: None,
-    }).await.expect("test key manager should sign the access token");
-    let configuration_ids = authorization_details.as_array().into_iter().flatten()
-        .filter_map(|detail| detail.get("credential_configuration_id").and_then(Value::as_str).map(str::to_owned))
+    let issued = fixture
+        .issuer
+        .token_service
+        .sign_access_token(nazo_auth::AccessTokenSignInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
+            issuer: &fixture.issuer.issuer,
+            tenant_id: fixture.issuer.tenant_id,
+            subject: &subject,
+            user_id: Some(subject_id),
+            subject_type: "user",
+            client_id: &fixture.wallet_client_id,
+            audiences: std::slice::from_ref(&fixture.issuer.issuer),
+            scopes: &[],
+            authorization_details: &authorization_details,
+            userinfo_claims: &[],
+            userinfo_claim_requests: &[],
+            ttl_seconds: 300,
+            dpop_jkt,
+            mtls_x5t_s256,
+            actor: None,
+        })
+        .await
+        .expect("test key manager should sign the access token");
+    let configuration_ids = authorization_details
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|detail| {
+            detail
+                .get("credential_configuration_id")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
         .collect::<Vec<_>>();
     if retain_provenance && !configuration_ids.is_empty() {
-        retain_policy_credential_access(fixture, &issued.token, nazo_openid4vci::CredentialAccess {
-            token_id: Uuid::parse_str(&issued.jti).unwrap(), authorization_id: None,
-            tenant_id: fixture.issuer.tenant_id, subject_id,
-            client_id: fixture.wallet_client_id.clone(), configuration_ids,
-            credential_identifiers: Vec::new(), dpop_jkt: dpop_jkt.map(str::to_owned),
-            mtls_x5t_s256: mtls_x5t_s256.map(str::to_owned), expires_at: issued.expires_at,
-            proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
-        }).await;
+        retain_policy_credential_access(
+            fixture,
+            &issued.token,
+            nazo_openid4vci::CredentialAccess {
+                token_id: Uuid::parse_str(&issued.jti).unwrap(),
+                authorization_id: None,
+                tenant_id: fixture.issuer.tenant_id,
+                subject_id,
+                client_id: fixture.wallet_client_id.clone(),
+                configuration_ids,
+                credential_identifiers: Vec::new(),
+                dpop_jkt: dpop_jkt.map(str::to_owned),
+                mtls_x5t_s256: mtls_x5t_s256.map(str::to_owned),
+                expires_at: issued.expires_at,
+                proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
+            },
+        )
+        .await;
     }
     issued.token
 }
@@ -86,10 +126,18 @@ async fn retain_policy_credential_access(
     token: &str,
     access: nazo_openid4vci::CredentialAccess,
 ) {
-    let repository = nazo_postgres::Openid4vciRepository::new(fixture.pool.clone(), [0x51; 32],
-        Arc::new(crate::bootstrap::LoginPasswordVerifier));
-    repository.persist_pre_authorized_access(&blake3::hash(token.as_bytes()).to_hex().to_string(),
-        &access, Some(&access.client_id)).await
+    let repository = nazo_postgres::Openid4vciRepository::new(
+        fixture.pool.clone(),
+        [0x51; 32],
+        Arc::new(crate::bootstrap::LoginPasswordVerifier),
+    );
+    repository
+        .persist_pre_authorized_access(
+            &blake3::hash(token.as_bytes()).to_hex().to_string(),
+            &access,
+            Some(&access.client_id),
+        )
+        .await
         .expect("the real registered owner retains the exact signed credential provenance");
 }
 
@@ -316,13 +364,24 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
     .expect("pairwise issuance ownership insert");
     drop(connection);
 
-    retain_policy_credential_access(&fixture, &issued.token, nazo_openid4vci::CredentialAccess {
-        token_id: Uuid::parse_str(&issued.jti).unwrap(), authorization_id: None,
-        tenant_id: fixture.issuer.tenant_id, subject_id: fixture.subject_id,
-        client_id: client_id.clone(), configuration_ids: vec!["unit-live-pairwise-access".to_owned()],
-        credential_identifiers: Vec::new(), dpop_jkt: None, mtls_x5t_s256: None,
-        expires_at: issued.expires_at, proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
-    }).await;
+    retain_policy_credential_access(
+        &fixture,
+        &issued.token,
+        nazo_openid4vci::CredentialAccess {
+            token_id: Uuid::parse_str(&issued.jti).unwrap(),
+            authorization_id: None,
+            tenant_id: fixture.issuer.tenant_id,
+            subject_id: fixture.subject_id,
+            client_id: client_id.clone(),
+            configuration_ids: vec!["unit-live-pairwise-access".to_owned()],
+            credential_identifiers: Vec::new(),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            expires_at: issued.expires_at,
+            proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
+        },
+    )
+    .await;
 
     // Success proves the pairwise subject resolved through the issuance
     // ownership JOIN (id-only narrow query); without the ownership row this
