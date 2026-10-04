@@ -134,6 +134,7 @@ impl UserRepository {
             .await
             .optional()
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+        drop(connection);
         snapshot
             .map(|(row, epoch, bound_user)| {
                 let claims = identity::active_subject_claims(row)
