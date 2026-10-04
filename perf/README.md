@@ -3,7 +3,9 @@
 This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
-Python tooling uses Python 3.14.8 and hash-pinned requirements. Redis clients
+Python benchmark tooling uses Python 3.14.8. The runner recipe pins exact
+package versions; coverage and E2E environments use the separate hash locks
+under `requirements/`. Redis clients
 explicitly use RESP2, the existing socket/connection settings, and zero retries,
 preserving the original `from_url` connection-pool behavior on redis-py 8.
 Valkey failures remain observable to the seed, ledger, runner and sampler.
