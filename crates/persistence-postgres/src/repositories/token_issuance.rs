@@ -608,9 +608,10 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             // cancels the operation; DiscardOnDrop still discards an unconfirmed
             // transaction's physical connection.
             let pool = self.pool.clone();
+            let bridge = crate::perf_diagnostic::Bridge::new();
             let mut operation = tokio::task::JoinSet::new();
             operation.spawn_on(
-                async move {
+                bridge.clone().run(async move {
                     let mut guard = DiscardOnDrop(Some(
                         get_conn(&pool)
                             .await
@@ -760,17 +761,19 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                         }
                         Err(CommitTransactionError::Diesel(error)) => Err(map_diesel_error(error)),
                     }
-                },
+                }),
                 &self.pool.runtime,
             );
-            operation
+            let result = operation
                 .join_next()
                 .await
                 .expect("issuance transaction task was registered")
                 .map_err(|error| {
                     tracing::warn!(%error, "token issuance runtime ended before completion");
                     TokenPortError::Unavailable
-                })?
+                })?;
+            bridge.resumed();
+            result
         })
     }
     fn single_use_redemption<'a>(

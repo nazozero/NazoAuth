@@ -52,9 +52,10 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
             // the request aborts the task and discards its unconfirmed connection.
             // An already-sent implicit statement may still commit on the server;
             // cancellation is an unknown outcome, not a confirmed rollback.
+            let bridge = crate::perf_diagnostic::Bridge::new();
             let mut operation = tokio::task::JoinSet::new();
             operation.spawn_on(
-                async move {
+                bridge.clone().run(async move {
                     let mut guard = DiscardOnDrop(Some(
                         get_conn(&pool)
                             .await
@@ -138,14 +139,16 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                         guard.return_to_pool();
                     }
                     result.map_err(|_| AuthorizationPortError::Unexpected)
-                },
+                }),
                 &self.pool.runtime,
             );
-            operation
+            let result = operation
                 .join_next()
                 .await
                 .expect("authorization decision task was registered")
-                .map_err(|_| AuthorizationPortError::Unavailable)?
+                .map_err(|_| AuthorizationPortError::Unavailable)?;
+            bridge.resumed();
+            result
         })
     }
 
