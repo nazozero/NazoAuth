@@ -2149,22 +2149,24 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     assert!(admin.contains("RepositoryError::AlreadyProcessed"));
     assert!(
         admin
-            .find(".store(")
+            .find(".stage(")
             .expect("focused delivery storage must stage the payload")
-            < admin.find(".approve(").unwrap(),
+            < admin.find(".approve_with_required_audit(").unwrap(),
         "delivery must fail closed before the PostgreSQL approval transaction"
     );
     assert!(admin.contains("\"delivery_state\": \"staged\""));
     assert!(
-        admin.find(".approve(").unwrap()
+        admin.find(".approve_with_required_audit(").unwrap()
             < admin
-                .find("committed_delivery_payload")
+                .find(".publish(")
                 .expect("approval must activate delivery only after commit")
     );
     assert!(delivery.contains("service.claim_delivery(&user, payload.request_id)"));
-    assert!(identity_profile.contains("approved_delivery_matches"));
+    assert!(identity_profile.contains("approved_delivery_with_required_audit_matches"));
     assert!(
-        identity_profile.find("approved_delivery_matches").unwrap()
+        identity_profile
+            .find("approved_delivery_with_required_audit_matches")
+            .unwrap()
             < identity_profile
                 .find(".consume(")
                 .expect("focused delivery storage must consume atomically"),
@@ -3739,3 +3741,6 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
 
 #[path = "support/mfa_generation.rs"]
 mod mfa_generation;
+
+#[path = "support/admin_user_required.rs"]
+mod admin_user_required;

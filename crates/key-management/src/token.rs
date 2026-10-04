@@ -208,6 +208,44 @@ impl TokenSignerPort for KeyManager {
     }
 }
 
+/// Cryptographic verification for RP logout hints uses the currently
+/// published generation's prepared public key. Expiry is intentionally returned
+/// to the logout policy, which independently requires a current/recent session.
+impl KeyManager {
+    pub fn decode_id_token_hint(
+        &self,
+        issuer: &str,
+        token: &str,
+    ) -> Option<(nazo_auth::IdTokenHintClaims, i64)> {
+        let header = nazo_crypto::jwt::decode_header(token).ok()?;
+        if header.typ.as_deref().is_some_and(|typ| typ != "JWT")
+            || crate::signing_algorithm_name(header.alg).is_none()
+        {
+            return None;
+        }
+        let snapshot = self.snapshot();
+        let key = snapshot.verification_key(header.kid.as_deref()?)?;
+        if key.prepared.algorithm != header.alg {
+            return None;
+        }
+        let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
+        validation.validate_aud = false;
+        validation.validate_exp = false;
+        validation.set_issuer(&[issuer]);
+        let data = nazo_crypto::jwt::decode::<LogoutHintClaims>(
+            token, &key.prepared.key, &validation,
+        ).ok()?;
+        Some((data.claims.hint, data.claims.exp))
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct LogoutHintClaims {
+    #[serde(flatten)]
+    hint: nazo_auth::IdTokenHintClaims,
+    exp: i64,
+}
+
 #[cfg(test)]
 #[path = "../tests/unit/token.rs"]
 mod tests;

@@ -521,3 +521,107 @@ fixture source checks append-failure rollback and a committed-but-unknown
 response retaining one canonical event while an old proof cannot clear a formal
 new enrollment; these are source additions pending execution, not ACK-loss or
 failover qualification.
+
+
+Access-request approval and rejection use neutral purpose ports whose default
+is Unavailable before any effect. The PG owner locks Pending and the current
+tenant/realm/organization principals, checks the active administrator, commits
+the client/request change and canonical Required outcome together, and returns
+the committed view only after the full ACK. Its connection is discarded on
+error/cancellation. Approval records the canonical event UUID on the business
+row in the same transaction; the reference holds no copied payload or secret.
+Historical approvals without that reference cannot activate a staged delivery.
+The precise recovery predicate is a restricted SECURITY DEFINER boolean API
+joining that exact reference, tenant/requester/request/client, approver, active
+client and secret generation. Runtime audit-table reads remain forbidden.
+Normal publication follows the Required transaction ACK. An Unknown response
+retains the same stage and original expiry; recovery checks the same owner and
+does not create another client, secret or audit event. Valkey stage/publish is
+an independent recovery contract, not a transaction shared with PostgreSQL.
+Dynamic audit-health preflight remains on initial decisions and recovery.
+The applicant's one-time consumption uses the same Required evidence predicate;
+historical Approved rows alone do not authorize secret disclosure there either.
+Real PG append-failure rollback, runtime-privilege and committed-Unknown
+fixtures are source additions pending exact-candidate execution.
+
+MFA confirmation and backup-code regeneration use purpose-specific Required
+repository capabilities. Their existing PostgreSQL owner locks the pending or
+proved generation, preserves dependent-state lock order, and rechecks the active
+self principal before appending the canonical successful outcome in that same
+commit. Backup codes and a newly rotated session cookie are disclosed only after
+the owner's full acknowledgement. Error or unknown completion retains no public
+rotation receipt and discards the unpublished session; the owner connection is
+physically discarded on cancellation or unconfirmed transaction completion.
+Legacy bare methods remain explicit fixture/setup capabilities and are never a
+fallback from the Required production profile path. Attempt audit records retain
+their existing purpose; they do not replace the committed mutation outcome.
+
+管理员客户端创建和更新由专用 Required 端口进入现有 PostgreSQL insert/CAS owner。owner 在客户端 authority 后锁定同 tenant/realm/organization 的当前管理员事实，并将 `client_created`/`client_updated` canonical outcome 与实际返回的客户端行一起提交；写入、审计或最终 ACK 失败不返回成功视图和一次性客户端 secret。不支持该 capability 的适配器在变更前返回 unavailable，不回退到 bare setup 端口。DCR 继续使用同一 insert body 和其原有 dynamic registration outcome；管理路径不在效果提交后另写 Required 审计。
+
+管理员用户创建和 patch 通过专用 Required capability 进入现有用户创建/层级修改 owner，使用同一 tenant/realm/organization 的当前 actor/target 事实。创建共享完整返回行的 insert body；patch 保持排序行锁与 `authorize_admin_update` 的唯一层级权限策略、既有拒绝结果和租户内 identity event。成功和 no-op 的 `admin_user_created`/`admin_user_updated` canonical outcome 基于实际返回账户，在同一事务最终 ACK 后才允许 HTTP 成功视图；canonical 写失败同时回滚账户和 identity event，Unknown 不返回账户 receipt。无该 capability 的适配器不回退 bare setup 方法。
+
+Administrative controller approval, slot create/rotate/revoke, and proactive recovery-root approval/rotation use explicit Required purpose commands. Existing validation and mutation owners remain authoritative: current active administrator in the exact tenant/realm/organization is locked through canonical outcome and commit ACK; returned slot/root rows supply the outcome. Approval issuance drains its actual returned binding before publishing a token. Creation keeps its initial root atomic; rotation/revocation preserve exact single-use approval binding and existing deployment locks. Errors or cancellation discard the accepting connection. Unsupported purpose capabilities fail without bare mutation. HTTP performs transactional readiness and presents only the accepted owner result. Signed break-glass challenges, allocation proofs and independent offline recovery retain their existing authority and do not acquire an admin requirement. New real PostgreSQL rollback, current-actor, hidden actual committed ACK and cancellation fixtures require independent execution; hidden ACK is not evidence of physical network loss.
+
+
+### Request-local refresh and logout verification projections
+
+Refresh presentation lookup uses one typed PostgreSQL statement snapshot for
+current-or-spent identity, immutable contract and optional direct successor.
+Holder verification uses the original presentation; successor projection errors
+are considered after that verification. Final token issuance still owns its
+principal and family locks, expected member/digest, original spent edge, expiry,
+sender bindings, canonical audit and commit ACK.
+
+The RP logout-hint verifier uses prepared verification material from the current
+KeyManager generation, checks its algorithm and retirement, and returns typed
+subject/audience/SID plus the original expiry. The logout application and core
+still apply issuer, client audience and current/recent session policy. No JWT
+backend parsing semantics or public metadata cache has changed. JWKS construction
+moves its already prepared public Value array into the document; signing-key
+private-member stripping and the separate encryption-key projection remain.
+
+These R05/R10 changes and their new source fixtures require exact-candidate CNB
+format, compile and regression validation before acceptance.
+
+### Registration and request representation ownership
+
+Prepared registration now separates its undisclosed secret into a Drop owner.
+Administrative create and DCR consume the validated registration into their
+actual write input. DCR replacement and tenant-resource preparation move the
+registration too. Readiness rejection, persistence failure and cancellation keep
+the secret guarded; administrative/DCR response plaintext is taken only after
+the accepting write acknowledges commit. The borrowed setup helper retains its
+metadata copy because its caller keeps the input. Explicit creation transactions
+still own the complete returned projection, Required outcome and commit ACK.
+
+Token dispatch and token-management authentication select a borrowed credential
+view over live framework-neutral request facts. Source precedence and malformed
+Basic scheme presence remain facts, and registered client policy and proof keep
+authority. PAR/CIBA prepared commands retain their owning credential copy because
+they execute after the transport preparation call returns. HTTP message-signature
+capture borrows unique request header values and normalized names while the outer
+handler holds the request and body; no request extension guard crosses a port.
+The signature-fields command and response header map still own data required by
+their independent consumers. Remote JWKS still copies its shared cached document
+into the owning mutable client registration DTO; changing only the resolver port
+would move that copy into the consumer. Current account and tenant-trust decisions
+remain fresh authority reads, and Bytes/DER Arc clones remain shared storage.
+
+Operator presentation holds private immutable original compact segments, decoded
+operation and canonical bytes. Request hashing and the later admitted-key signature
+verification use that same presentation; signature verification checks the original
+signed segments and canonical equality before consuming it into the operation.
+Independent public verifier policy and error order remain checked. Journal result
+wire preparation validates once before terminal publication and its failpoint;
+the terminal journal binding is checked separately. Independent journal checkpoint
+helpers reread/recover durable state and keep safe-file checks and fsynced phases;
+they do not share a guaranteed lock-held API lifetime. Terminal publication still
+precedes stdout, and a recovered result remains validated on the public wire path.
+
+Refresh issuance retains its source consistency guard because TokenIssue fields
+remain publicly mutable, including signer claims, narrowed scope/audience and
+nested SID/binding state. The original authentication context survives successor
+replacement. Final family/member/expiry locks and actual persisted contract
+content remain authoritative; a content-reference key does not authenticate an
+otherwise mutable payload. These ownership reductions require exact-candidate
+format, compiler, lint and regression validation before acceptance.

@@ -17,7 +17,7 @@ struct CasRegistrationStore {
 impl nazo_http_actix::DynamicRegistrationClientStore for CasRegistrationStore {
     fn insert<'a>(
         &'a self,
-        prepared: &'a nazo_auth::PreparedClientRegistration,
+        prepared: nazo_auth::PreparedClientRegistration,
         _source_ip_hash: &'a str,
     ) -> nazo_http_actix::DynamicRegistrationFuture<'a, nazo_auth::OAuthClient> {
         let client = nazo_auth::OAuthClient {
@@ -25,13 +25,13 @@ impl nazo_http_actix::DynamicRegistrationClientStore for CasRegistrationStore {
             tenant_id: prepared.tenant.tenant_id.as_uuid(),
             realm_id: prepared.tenant.realm_id.as_uuid(),
             organization_id: prepared.tenant.organization_id.as_uuid(),
-            registration: prepared.registration.clone(),
+            registration: prepared.registration,
             require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
             is_active: true,
         };
         *self.state.lock().unwrap() = (
             Some(client.clone()),
-            prepared.registration_access_token_blake3.clone(),
+            prepared.registration_access_token_blake3,
         );
         self.calls.lock().unwrap().push("insert");
         Box::pin(async move { Ok(client) })

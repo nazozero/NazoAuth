@@ -250,3 +250,28 @@ tenant trust, client identity, token binding, and keepalive revocation checks
 retain their existing owners. Sharing DER is not caching a trust or authorization
 result. Existing real-certificate and live tenant-anchor tests are retained;
 candidate formatting, compilation and execution remain pending.
+
+
+## Administrative credential datasets and mTLS trust outcomes
+
+The dataset put/delete and mTLS approve/reject/revoke repository owners append
+their existing `credential_lifecycle` and `trust_lifecycle` Required events on
+the accepting business connection. The source event and exact mutation effect
+must agree before one fresh canonical outcome is appended. A real no-op emits
+no accepting outcome; cardinality, projection or decode failure rolls back.
+Dataset responses are decoded from the actual returned encrypted row before
+COMMIT, and successful HTTP views require a confirmed ACK. Readiness preflight
+does not write a separate intent, and HTTP does not append a second outcome.
+Payloads contain effect identity and outcome metadata, never claims, ciphertext,
+certificate PEM, private keys, client secrets or free-form review notes.
+
+
+## Current administrator in the grant revocation owner
+
+Grant revocation keeps the existing target-scope admission at its caller. Its
+accepting repository transaction locks the admitted actor by identity and checks
+the current active administrator role and positive level once, before effects,
+holding that row until ACK. Actor home tenant is recorded separately from the
+affected tenant; the current-role gate does not create a new cross-tenant
+permission rule or require home/target equality. Missing or stale administrator
+state returns unavailable without revocation counts, effects or a fresh outcome.

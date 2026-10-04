@@ -440,12 +440,12 @@ use nazo_identity::ports::{
     BackupCodeCandidate, RepositoryFuture, TotpCredential, TotpEnrollment, TotpVerificationOutcome,
 };
 
-struct UnknownMfaClearAck {
+struct UnknownMfaCommitAck {
     inner: MfaRepository,
     lose_ack: std::sync::atomic::AtomicBool,
 }
 
-impl MfaRepositoryPort for UnknownMfaClearAck {
+impl MfaRepositoryPort for UnknownMfaCommitAck {
     fn totp_enrollment<'a>(
         &'a self,
         tenant_id: TenantId,
@@ -480,6 +480,38 @@ impl MfaRepositoryPort for UnknownMfaClearAck {
             timestamp,
             hashes,
         )
+    }
+
+    fn verify_and_confirm_totp_with_required_audit<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &'a str,
+        timestamp: i64,
+        hashes: Vec<EncodedSecretHash>,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
+        Box::pin(async move {
+            let outcome = MfaRepositoryPort::verify_and_confirm_totp_with_required_audit(
+                &self.inner,
+                tenant_id,
+                user_id,
+                code,
+                timestamp,
+                hashes,
+                source_ip_hash,
+            )
+            .await?;
+            if matches!(outcome, TotpVerificationOutcome::Accepted(_))
+                && self
+                    .lose_ack
+                    .swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
+                Err(RepositoryError::Unavailable)
+            } else {
+                Ok(outcome)
+            }
+        })
     }
 
     fn record_invalid_totp_attempt(
@@ -561,6 +593,36 @@ impl MfaRepositoryPort for UnknownMfaClearAck {
             credential_id,
             hashes,
         )
+    }
+
+    fn replace_backup_code_hashes_with_required_audit<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: Uuid,
+        hashes: Vec<EncodedSecretHash>,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            let replaced = MfaRepositoryPort::replace_backup_code_hashes_with_required_audit(
+                &self.inner,
+                tenant_id,
+                user_id,
+                credential_id,
+                hashes,
+                source_ip_hash,
+            )
+            .await?;
+            if replaced
+                && self
+                    .lose_ack
+                    .swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
+                Err(RepositoryError::Unavailable)
+            } else {
+                Ok(replaced)
+            }
+        })
     }
 
     fn clear_mfa_state_if_current<'a>(
@@ -660,7 +722,7 @@ async fn mfa_clear_committed_unknown_retry_cannot_clear_formal_g2() {
                 .unwrap()
                 .unwrap();
             let lost_ack = MfaService::new(
-                Arc::new(UnknownMfaClearAck {
+                Arc::new(UnknownMfaCommitAck {
                     inner: repository.clone(),
                     lose_ack: std::sync::atomic::AtomicBool::new(true),
                 }),
@@ -797,4 +859,408 @@ async fn mfa_disable_required_ledger_failure_rolls_back_current_generation_and_d
     assert_eq!(ledger[0]["source_ip_hash"], "fixture-source-hash");
     assert!(ledger[0].get("secret").is_none());
     cleanup(&pool, user).await;
+}
+
+async fn required_mutation_ledger(
+    pool: &nazo_postgres::DbPool,
+    tenant: TenantContext,
+    user: UserId,
+    generation: Uuid,
+    event: &str,
+) -> serde_json::Value {
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query(
+        "SELECT COALESCE(jsonb_agg(payload ORDER BY event_id),'[]'::jsonb) AS value \
+        FROM security_audit_events WHERE event_type=$1 AND payload->>'tenant_id'=$2 \
+          AND payload->>'user_id'=$3 AND payload->>'credential_id'=$4",
+    )
+    .bind::<Text, _>(event)
+    .bind::<Text, _>(tenant.tenant_id.as_uuid().to_string())
+    .bind::<Text, _>(user.as_uuid().to_string())
+    .bind::<Text, _>(generation.to_string())
+    .get_result::<Snapshot>(&mut connection)
+    .await
+    .unwrap()
+    .value
+}
+
+fn assert_required_mutation(
+    event: &serde_json::Value,
+    tenant: TenantContext,
+    user: UserId,
+    generation: Uuid,
+) {
+    assert_eq!(event.as_array().unwrap().len(), 1);
+    assert_eq!(
+        event[0]["schema_version"],
+        nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION
+    );
+    assert_eq!(event[0]["event_category"], "authentication");
+    assert_eq!(
+        event[0]["tenant_id"],
+        tenant.tenant_id.as_uuid().to_string()
+    );
+    assert_eq!(event[0]["actor_id"], user.as_uuid().to_string());
+    assert_eq!(event[0]["target_user_id"], user.as_uuid().to_string());
+    assert_eq!(event[0]["credential_id"], generation.to_string());
+    assert_eq!(event[0]["source_ip_hash"], "fixture-source-hash");
+    assert_eq!(event[0]["outcome"], "success");
+    for secret in ["secret", "code", "backup_codes", "hashes", "cookie"] {
+        assert!(event[0].get(secret).is_none());
+    }
+}
+
+#[tokio::test]
+async fn mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_code_disclosure() {
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
+    let repository = mfa_repository(pool.clone());
+    repository
+        .begin_totp_enrollment(
+            tenant.tenant_id,
+            user,
+            SECRET.to_owned(),
+            "required fixture".to_owned(),
+        )
+        .await
+        .unwrap();
+    let admitted = account(&pool, tenant, user).await;
+    let service = service(&repository);
+    let before = snapshot(&pool, tenant, user).await;
+    let generation = Uuid::parse_str(before["credential"]["id"].as_str().unwrap()).unwrap();
+    let name = format!("mfa_confirm_required_failure_{}", Uuid::now_v7().simple());
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture confirmation ledger failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type='mfa_totp_enabled' AND NEW.payload->>'user_id'='{}') EXECUTE FUNCTION {name}();",user.as_uuid())).await.unwrap();
+    let rollback=std::panic::AssertUnwindSafe(async {
+        let prepared=service.prepare_totp_confirmation(&admitted,&totp(STEP),STEP*30).await.unwrap();
+        let error=service.confirm_totp_with_required_audit(&admitted,prepared,STEP*30,"fixture-source-hash".to_owned()).await.unwrap_err();
+        assert_eq!(error.kind(),MfaServiceErrorKind::Repository);
+        assert_eq!(snapshot(&pool,tenant,user).await,before,
+            "canonical failure rolls back pending ciphertext, confirmation, step, backups and enabled flag");
+        assert_eq!(required_mutation_ledger(&pool,tenant,user,generation,"mfa_totp_enabled").await,json!([]));
+    }).catch_unwind().await;
+    let removed = connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON security_audit_events; DROP FUNCTION {name}();"
+        ))
+        .await;
+    if let Err(panic) = rollback {
+        drop(connection);
+        cleanup(&pool, user).await;
+        std::panic::resume_unwind(panic);
+    }
+    removed.unwrap();
+    let actor_check = std::panic::AssertUnwindSafe(async {
+        let prepared = service
+            .prepare_totp_confirmation(&admitted, &totp(STEP), STEP * 30)
+            .await
+            .unwrap();
+        sql_query("UPDATE users SET is_active=FALSE WHERE tenant_id=$1 AND id=$2")
+            .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+            .bind::<SqlUuid, _>(user.as_uuid())
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        assert!(
+            service
+                .confirm_totp_with_required_audit(
+                    &admitted,
+                    prepared,
+                    STEP * 30,
+                    "fixture-source-hash".to_owned()
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(snapshot(&pool, tenant, user).await, before);
+        assert_eq!(
+            required_mutation_ledger(&pool, tenant, user, generation, "mfa_totp_enabled").await,
+            json!([])
+        );
+        sql_query("UPDATE users SET is_active=TRUE WHERE tenant_id=$1 AND id=$2")
+            .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+            .bind::<SqlUuid, _>(user.as_uuid())
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        let prepared = service
+            .prepare_totp_confirmation(&admitted, &totp(STEP), STEP * 30)
+            .await
+            .unwrap();
+        let TotpConfirmationOutcome::Accepted { backup_codes } = service
+            .confirm_totp_with_required_audit(
+                &admitted,
+                prepared,
+                STEP * 30,
+                "fixture-source-hash".to_owned(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("active current owner must accept confirmation");
+        };
+        assert_eq!(
+            backup_codes.len(),
+            nazo_identity::mfa::MFA_BACKUP_CODE_COUNT
+        );
+        assert_required_mutation(
+            &required_mutation_ledger(&pool, tenant, user, generation, "mfa_totp_enabled").await,
+            tenant,
+            user,
+            generation,
+        );
+    })
+    .catch_unwind()
+    .await;
+    drop(connection);
+    cleanup(&pool, user).await;
+    if let Err(panic) = actor_check {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[tokio::test]
+async fn mfa_regeneration_required_ledger_and_inactive_actor_preserve_exact_old_backups() {
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
+    let repository = mfa_repository(pool.clone());
+    let (generation, _) = install_generation(&pool, &repository, tenant, user, STEP).await;
+    remember(&repository, tenant, user, generation).await;
+    let admitted = account(&pool, tenant, user).await;
+    let service = service(&repository);
+    let proof = service
+        .verify_factor(&admitted, &totp(STEP + 1), (STEP + 1) * 30)
+        .await
+        .unwrap()
+        .unwrap();
+    let before = snapshot(&pool, tenant, user).await;
+    let name = format!("mfa_regen_required_failure_{}", Uuid::now_v7().simple());
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture regeneration ledger failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type='mfa_backup_codes_regenerated' AND NEW.payload->>'user_id'='{}') EXECUTE FUNCTION {name}();",user.as_uuid())).await.unwrap();
+    let rollback = std::panic::AssertUnwindSafe(async {
+        let error = service
+            .regenerate_backup_codes_with_required_audit(
+                &admitted,
+                &proof,
+                "fixture-source-hash".to_owned(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), MfaServiceErrorKind::Repository);
+        assert_eq!(
+            snapshot(&pool, tenant, user).await,
+            before,
+            "all old backup rows and current generation/dependents survive Required failure"
+        );
+        assert_eq!(
+            required_mutation_ledger(
+                &pool,
+                tenant,
+                user,
+                generation,
+                "mfa_backup_codes_regenerated"
+            )
+            .await,
+            json!([])
+        );
+    })
+    .catch_unwind()
+    .await;
+    let removed = connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON security_audit_events; DROP FUNCTION {name}();"
+        ))
+        .await;
+    if let Err(panic) = rollback {
+        drop(connection);
+        cleanup(&pool, user).await;
+        std::panic::resume_unwind(panic);
+    }
+    removed.unwrap();
+    let actor_check = std::panic::AssertUnwindSafe(async {
+        sql_query("UPDATE users SET is_active=FALSE WHERE tenant_id=$1 AND id=$2")
+            .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+            .bind::<SqlUuid, _>(user.as_uuid())
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        assert!(
+            service
+                .regenerate_backup_codes_with_required_audit(
+                    &admitted,
+                    &proof,
+                    "fixture-source-hash".to_owned()
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(snapshot(&pool, tenant, user).await, before);
+        assert_eq!(
+            required_mutation_ledger(
+                &pool,
+                tenant,
+                user,
+                generation,
+                "mfa_backup_codes_regenerated"
+            )
+            .await,
+            json!([])
+        );
+        sql_query("UPDATE users SET is_active=TRUE WHERE tenant_id=$1 AND id=$2")
+            .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+            .bind::<SqlUuid, _>(user.as_uuid())
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        let codes = service
+            .regenerate_backup_codes_with_required_audit(
+                &admitted,
+                &proof,
+                "fixture-source-hash".to_owned(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(codes.len(), nazo_identity::mfa::MFA_BACKUP_CODE_COUNT);
+        assert_ne!(
+            snapshot(&pool, tenant, user).await["backups"],
+            before["backups"]
+        );
+        assert_required_mutation(
+            &required_mutation_ledger(
+                &pool,
+                tenant,
+                user,
+                generation,
+                "mfa_backup_codes_regenerated",
+            )
+            .await,
+            tenant,
+            user,
+            generation,
+        );
+    })
+    .catch_unwind()
+    .await;
+    drop(connection);
+    cleanup(&pool, user).await;
+    if let Err(panic) = actor_check {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[tokio::test]
+async fn mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes() {
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
+    let repository = mfa_repository(pool.clone());
+    let body = std::panic::AssertUnwindSafe(async {
+        repository
+            .begin_totp_enrollment(
+                tenant.tenant_id,
+                user,
+                SECRET.to_owned(),
+                "unknown fixture".to_owned(),
+            )
+            .await
+            .unwrap();
+        let admitted = account(&pool, tenant, user).await;
+        let real = service(&repository);
+        let before = snapshot(&pool, tenant, user).await;
+        let generation = Uuid::parse_str(before["credential"]["id"].as_str().unwrap()).unwrap();
+        let hidden = MfaService::new(
+            Arc::new(UnknownMfaCommitAck {
+                inner: repository.clone(),
+                lose_ack: std::sync::atomic::AtomicBool::new(true),
+            }),
+            Arc::new(FixtureHasher),
+        );
+        let prepared = real
+            .prepare_totp_confirmation(&admitted, &totp(STEP), STEP * 30)
+            .await
+            .unwrap();
+        let error = hidden
+            .confirm_totp_with_required_audit(
+                &admitted,
+                prepared,
+                STEP * 30,
+                "fixture-source-hash".to_owned(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.repository_error(),
+            Some(&RepositoryError::Unavailable)
+        );
+        let committed = snapshot(&pool, tenant, user).await;
+        assert_eq!(committed["enabled"], true);
+        assert_eq!(
+            committed["backups"].as_array().unwrap().len(),
+            nazo_identity::mfa::MFA_BACKUP_CODE_COUNT
+        );
+        let ledger =
+            required_mutation_ledger(&pool, tenant, user, generation, "mfa_totp_enabled").await;
+        assert_required_mutation(&ledger, tenant, user, generation);
+        assert_eq!(
+            real.prepare_totp_confirmation(&admitted, &totp(STEP), STEP * 30)
+                .await
+                .unwrap_err()
+                .kind(),
+            MfaServiceErrorKind::AlreadyEnabled
+        );
+        assert_eq!(
+            required_mutation_ledger(&pool, tenant, user, generation, "mfa_totp_enabled").await,
+            ledger
+        );
+        let admitted = account(&pool, tenant, user).await;
+        let proof = real
+            .verify_factor(&admitted, &totp(STEP + 1), (STEP + 1) * 30)
+            .await
+            .unwrap()
+            .unwrap();
+        let before = snapshot(&pool, tenant, user).await;
+        let hidden = MfaService::new(
+            Arc::new(UnknownMfaCommitAck {
+                inner: repository.clone(),
+                lose_ack: std::sync::atomic::AtomicBool::new(true),
+            }),
+            Arc::new(FixtureHasher),
+        );
+        let error = hidden
+            .regenerate_backup_codes_with_required_audit(
+                &admitted,
+                &proof,
+                "fixture-source-hash".to_owned(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.repository_error(),
+            Some(&RepositoryError::Unavailable)
+        );
+        let committed = snapshot(&pool, tenant, user).await;
+        assert_ne!(committed["backups"], before["backups"]);
+        assert_eq!(committed["credential"], before["credential"]);
+        assert_required_mutation(
+            &required_mutation_ledger(
+                &pool,
+                tenant,
+                user,
+                generation,
+                "mfa_backup_codes_regenerated",
+            )
+            .await,
+            tenant,
+            user,
+            generation,
+        );
+    })
+    .catch_unwind()
+    .await;
+    cleanup(&pool, user).await;
+    if let Err(panic) = body {
+        std::panic::resume_unwind(panic);
+    }
 }

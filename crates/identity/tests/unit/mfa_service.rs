@@ -252,3 +252,26 @@ async fn disable_reuses_verified_generation_without_consuming_another_factor() {
             .expect("the current generation can be cleared with either consumed factor");
     }
 }
+
+#[tokio::test]
+async fn required_confirmation_has_no_bare_repository_fallback_or_backup_code_disclosure() {
+    let service = MfaService::new(
+        Arc::new(ConfirmRepository(Mutex::new(
+            TotpVerificationOutcome::Accepted(Uuid::now_v7()),
+        ))),
+        Arc::new(UnusedHasher),
+    );
+    let prepared = PreparedTotpConfirmation {
+        code: "fixture".to_owned(),
+        backup_codes: vec!["must-remain-undisclosed".to_owned()],
+        hashes: Vec::new(),
+    };
+    let error = service
+        .confirm_totp_with_required_audit(&account(), prepared, 0, "fixture-source-hash".to_owned())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.repository_error(),
+        Some(&RepositoryError::Unavailable)
+    );
+}

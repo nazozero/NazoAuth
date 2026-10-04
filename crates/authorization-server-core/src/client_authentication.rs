@@ -66,6 +66,53 @@ impl std::fmt::Debug for PresentedClientCredentials {
     }
 }
 
+/// A selection borrowed from request facts or an already owned command.
+/// This contains presentation only; registered policy and proof still decide authority.
+#[derive(Clone, Copy, Default)]
+pub struct PresentedClientCredentialsView<'a> {
+    pub client_id: Option<&'a str>,
+    pub client_secret: Option<&'a str>,
+    pub client_assertion: Option<&'a str>,
+    pub method: &'a str,
+}
+
+impl<'a> From<&'a PresentedClientCredentials> for PresentedClientCredentialsView<'a> {
+    fn from(value: &'a PresentedClientCredentials) -> Self {
+        Self {
+            client_id: value.client_id.as_deref(),
+            client_secret: value.client_secret.as_deref(),
+            client_assertion: value.client_assertion.as_deref(),
+            method: &value.method,
+        }
+    }
+}
+
+impl<'a> From<&PresentedClientCredentialsView<'a>> for PresentedClientCredentialsView<'a> {
+    fn from(value: &PresentedClientCredentialsView<'a>) -> Self { *value }
+}
+
+impl PresentedClientCredentialsView<'_> {
+    /// Commands that outlive their request facts need one owning copy at that boundary.
+    pub fn into_owned(self) -> PresentedClientCredentials {
+        PresentedClientCredentials {
+            client_id: self.client_id.map(str::to_owned),
+            client_secret: self.client_secret.map(str::to_owned),
+            client_assertion: self.client_assertion.map(str::to_owned),
+            method: self.method.to_owned(),
+        }
+    }
+}
+
+impl std::fmt::Debug for PresentedClientCredentialsView<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("PresentedClientCredentialsView")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &self.client_secret.map(|_| "[REDACTED]"))
+            .field("client_assertion", &self.client_assertion.map(|_| "[REDACTED]"))
+            .field("method", &self.method).finish()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClientAuthenticationContext {
     ConfidentialOnly,
@@ -97,13 +144,14 @@ pub enum ClientAuthenticationRequirement<'a> {
 /// shape. Cryptographic and storage adapters execute only the returned operation.
 pub fn client_authentication_requirement<'a>(
     client: &OAuthClient,
-    credentials: &'a PresentedClientCredentials,
+    credentials: impl Into<PresentedClientCredentialsView<'a>>,
     context: ClientAuthenticationContext,
 ) -> Result<ClientAuthenticationRequirement<'a>, ClientAuthenticationPolicyError> {
-    if credentials.client_id.as_deref() != Some(client.client_id.as_str()) {
+    let credentials = credentials.into();
+    if credentials.client_id != Some(client.client_id.as_str()) {
         return Err(ClientAuthenticationPolicyError::InvalidClient);
     }
-    let presented_method = ClientAuthenticationMethod::try_from(credentials.method.as_str())?;
+    let presented_method = ClientAuthenticationMethod::try_from(credentials.method)?;
 
     match client.client_type.as_str() {
         "public" => {
@@ -144,7 +192,6 @@ pub fn client_authentication_requirement<'a>(
         | ClientAuthenticationMethod::ClientSecretPost => {
             let secret = credentials
                 .client_secret
-                .as_deref()
                 .filter(|secret| !secret.is_empty())
                 .ok_or(ClientAuthenticationPolicyError::InvalidClient)?;
             if credentials.client_assertion.is_some() {
@@ -158,7 +205,6 @@ pub fn client_authentication_requirement<'a>(
         ClientAuthenticationMethod::PrivateKeyJwt => {
             let assertion = credentials
                 .client_assertion
-                .as_deref()
                 .filter(|assertion| !assertion.is_empty())
                 .ok_or(ClientAuthenticationPolicyError::InvalidClient)?;
             if credentials.client_secret.is_some() {

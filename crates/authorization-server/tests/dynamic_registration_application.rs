@@ -127,7 +127,7 @@ struct Store(Mutex<StoreState>);
 impl DynamicRegistrationClientStore for Store {
     fn insert<'a>(
         &'a self,
-        prepared: &'a PreparedClientRegistration,
+        prepared: PreparedClientRegistration,
         _source_ip_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient> {
         Box::pin(async move {
@@ -136,14 +136,14 @@ impl DynamicRegistrationClientStore for Store {
                 tenant_id: prepared.tenant.tenant_id.as_uuid(),
                 realm_id: prepared.tenant.realm_id.as_uuid(),
                 organization_id: prepared.tenant.organization_id.as_uuid(),
-                registration: prepared.registration.clone(),
+                registration: prepared.registration,
                 require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
                 is_active: true,
             };
             let mut state = self.0.lock().unwrap();
             state.client = Some(client.clone());
-            state.token_hash = prepared.registration_access_token_blake3.clone().unwrap();
-            state.secret_hash = prepared.client_secret_hash.clone();
+            state.token_hash = prepared.registration_access_token_blake3.unwrap();
+            state.secret_hash = prepared.client_secret_hash;
             Ok(client)
         })
     }

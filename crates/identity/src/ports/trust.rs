@@ -9,7 +9,12 @@ use super::RepositoryFuture;
 
 /// Complete user/admin lifecycle for deployment mTLS trust anchors.
 /// Approval, rejection and revocation must enforce tenant ownership, actor
-/// authorization, limits and audit mutation atomically inside the adapter.
+/// authorization, limits, the source event and canonical Required outcome in
+/// the same adapter-owned transaction. Successful results require the entire
+/// returned projection and confirmed COMMIT ACK; failure or Unknown never
+/// exposes an accepting result. Approval checks certificate validity once at
+/// the mutation admission point after tenant, actor, request and client locks;
+/// this does not promise that the COMMIT ACK arrives before certificate expiry.
 pub trait MtlsTrustAnchorStore: Send + Sync {
     fn create_for_owned_client(
         &self,

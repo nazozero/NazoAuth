@@ -14,6 +14,15 @@ use nazo_operator_protocol::{
 
 use super::*;
 
+/// Persist the terminal result. Its return is the permission to report success:
+/// the result is durable and response-loss recovery can serve it verbatim.
+pub(crate) fn complete(
+    state_directory: &Path,
+    result: ControlResult,
+) -> Result<JournaledOutcome, JournalFlowError> {
+    persist_completed_result(state_directory, PreparedJournalResult::new(result)?)
+}
+
 fn temporary_directory() -> PathBuf {
     let path = std::env::temp_dir().join(format!(
         "nazauth-control-journal-test-{}",

@@ -52,6 +52,29 @@ impl MfaRepositoryPort for MfaRepository {
         })
     }
 
+    fn verify_and_confirm_totp_with_required_audit<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &'a str,
+        timestamp: i64,
+        hashes: Vec<EncodedSecretHash>,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
+        Box::pin(async move {
+            MfaRepository::verify_and_confirm_totp_with_required_audit(
+                self,
+                tenant_id,
+                user_id,
+                code,
+                timestamp,
+                hashes.into_iter().map(|h| h.as_str().to_owned()).collect(),
+                source_ip_hash,
+            )
+            .await
+        })
+    }
+
     fn record_invalid_totp_attempt(
         &self,
         tenant_id: TenantId,
@@ -142,6 +165,27 @@ impl MfaRepositoryPort for MfaRepository {
             .await
         })
     }
+    fn replace_backup_code_hashes_with_required_audit<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: uuid::Uuid,
+        hashes: Vec<EncodedSecretHash>,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            MfaRepository::replace_backup_code_hashes_with_required_audit(
+                self,
+                tenant_id,
+                user_id,
+                credential_id,
+                hashes.into_iter().map(|h| h.as_str().to_owned()).collect(),
+                source_ip_hash,
+            )
+            .await
+        })
+    }
+
     fn clear_mfa_state_if_current<'a>(
         &'a self,
         tenant_id: TenantId,

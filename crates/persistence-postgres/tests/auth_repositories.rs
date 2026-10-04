@@ -21,6 +21,9 @@ use uuid::Uuid;
 // claim-based cases so one test worker cannot consume the other's delivery.
 static BACKCHANNEL_CLAIM_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
+#[path = "support/admin_grant_required.rs"]
+mod admin_grant_required;
+
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
@@ -1533,6 +1536,7 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
         return;
     };
     let fixture = fixture(&database_url).await;
+    let admin_actor = admin_grant_required::seed_current_admin(&database_url).await;
     let repository = GrantRepository::new(create_pool(&database_url, 4).unwrap());
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     repository
@@ -1602,7 +1606,12 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
     )
     .await;
     let revoked = repository
-        .revoke_by_client_id(tenant_id, fixture.user_id, &fixture.client_public_id)
+        .revoke_by_client_id(
+            tenant_id,
+            fixture.user_id,
+            &fixture.client_public_id,
+            admin_actor,
+        )
         .await
         .expect("grant revocation should commit");
     assert_eq!(revoked.revoked_refresh_tokens, 1);
@@ -1615,6 +1624,7 @@ async fn grant_revoke_skips_already_revoked_family_lock() {
         return;
     };
     let fixture = fixture(&database_url).await;
+    let admin_actor = admin_grant_required::seed_current_admin(&database_url).await;
     let tenant_id = Uuid::from_u128(1);
     let family_id = Uuid::now_v7();
     let root_raw = format!("grant-revoke-tombstone-{}", Uuid::now_v7());
@@ -1664,7 +1674,7 @@ async fn grant_revoke_skips_already_revoked_family_lock() {
     let repository = GrantRepository::new(create_pool(&database_url, 1).unwrap());
     let mut revoke = tokio::spawn(async move {
         repository
-            .revoke_by_client_id(tenant_id, user_id, &client_public_id)
+            .revoke_by_client_id(tenant_id, user_id, &client_public_id, admin_actor)
             .await
     });
     let result = tokio::time::timeout(std::time::Duration::from_secs(3), &mut revoke).await;
@@ -1688,6 +1698,7 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
         return;
     };
     let fixture = fixture(&database_url).await;
+    let admin_actor = admin_grant_required::seed_current_admin(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let family_id = Uuid::now_v7();
     let original_raw = format!("grant-race-original-{}", Uuid::now_v7());
@@ -1764,7 +1775,7 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
     let client_public_id = fixture.client_public_id.clone();
     let revoke = tokio::spawn(async move {
         revoke_repository
-            .revoke_by_client_id(tenant_id, user_id, &client_public_id)
+            .revoke_by_client_id(tenant_id, user_id, &client_public_id, admin_actor)
             .await
     });
     wait_for_lock_wait(&mut coordinator, &revoke_application).await;

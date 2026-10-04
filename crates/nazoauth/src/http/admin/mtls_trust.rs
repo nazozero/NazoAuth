@@ -15,8 +15,7 @@ use std::fmt::Write as _;
 use uuid::Uuid;
 
 use crate::adapters::audit::audit_event_required;
-use crate::http::admin::persist_required_audit_or_unavailable;
-use crate::http::admin::require_durable_audit_or_unavailable;
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::AdminSessionHandles;
 use crate::http::sessions::require_admin_or_forbidden_with_handles;
 use crate::http::sessions::require_admin_with_recent_mfa_or_forbidden_with_handles;
@@ -143,7 +142,7 @@ async fn resolve(
         Ok(note) => note,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let result = if approve {
@@ -166,24 +165,7 @@ async fn resolve(
             .await
     };
     match result {
-        Ok(value) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                if approve {
-                    "mtls_trust_anchor_approved"
-                } else {
-                    "mtls_trust_anchor_rejected"
-                },
-                audit_fields(&[
-                    ("request_id", serde_json::json!(request_id)),
-                    ("admin_user_id", serde_json::json!(admin.id())),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
-            json_response_no_store(value)
-        }
+        Ok(value) => json_response_no_store(value),
         Err(nazo_identity::ports::RepositoryError::Conflict) => oauth_error(
             StatusCode::CONFLICT,
             "invalid_request",
@@ -248,7 +230,7 @@ pub(crate) async fn admin_revoke_mtls_trust_anchor(
             "撤销原因不能为空且不得超过 1000 字节.",
         );
     }
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     match service
@@ -260,20 +242,7 @@ pub(crate) async fn admin_revoke_mtls_trust_anchor(
         )
         .await
     {
-        Ok(value) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "mtls_trust_anchor_revoked",
-                audit_fields(&[
-                    ("request_id", serde_json::json!(request_id)),
-                    ("admin_user_id", serde_json::json!(admin.id())),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
-            json_response_no_store(value)
-        }
+        Ok(value) => json_response_no_store(value),
         Err(nazo_identity::ports::RepositoryError::Conflict) => oauth_error(
             StatusCode::CONFLICT,
             "invalid_request",

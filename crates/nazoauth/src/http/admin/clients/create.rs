@@ -1,8 +1,6 @@
 //! 管理端客户端创建端点。
 use super::{AdminClientConfig, ServerAdminClientService};
-use crate::http::admin::{
-    persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_with_recent_mfa_or_forbidden_with_handles,
 };
@@ -15,7 +13,6 @@ use nazo_http_actix::client_ip_with_config;
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response_status, oauth_error};
 use nazo_oauth_server::crypto::blake3_hex;
-use nazo_oauth_server::ports::audit::audit_fields;
 use serde_json::json;
 
 pub(crate) async fn admin_create_client(
@@ -34,31 +31,17 @@ pub(crate) async fn admin_create_client(
     ) {
         return csrf_error();
     }
-    if let Err(response) =
-        require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req).await
-    {
-        return response;
-    }
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    let admin = match require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
 
-    match service.create(payload).await {
+    let source_ip_hash = blake3_hex(&client_ip_with_config(&req, config.client_ip()));
+    match service.create_with_required_audit(payload, admin.id(), &source_ip_hash).await {
         Ok(created) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "client_created",
-                audit_fields(&[
-                    ("client_id", json!(created.client.client_id)),
-                    (
-                        "source_ip_hash",
-                        json!(blake3_hex(&client_ip_with_config(&req, config.client_ip()))),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
             let mut body = client_json(&created.client);
             if let Some(secret) = created.issued_secret.as_deref() {
                 body["client_secret"] = json!(secret);

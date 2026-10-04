@@ -71,7 +71,14 @@ metadata, including retained legacy results, does not satisfy an AKI condition.
 Individual invalid credentials or query mismatches are discarded before required
 credential-set alternatives are evaluated. Every supplied presentation is still
 verified even after a required alternative succeeds. An authenticated wrong or
-missing SD-JWT holder nonce rejects the whole response. mdoc binds the transaction
+missing SD-JWT holder nonce rejects the whole response. Issuer signature,
+algorithm, certificate path and issuer trust are authenticated once before that
+nonce decision; issuer expiration presence/type/time policy runs afterward,
+alongside the remaining individual-credential policies. Missing, malformed or
+expired issuer `exp` with the correct nonce is still excluded. Its authenticated
+wrong nonce cannot be hidden by that policy, revocation, audience, holder time,
+disclosure or query mismatch. The existing JWT NumericDate rounding and 60-second
+leeway remain. mdoc binds the transaction
 inside its signed SessionTranscript: a failed current-session device proof is
 also a whole-response failure because it cannot safely establish a nonce match.
 Verifier/revocation dependency unavailability remains HTTP 503 and is not filtered
@@ -240,3 +247,15 @@ network commit ACK reaches the caller before expiry. No extra deadline check is
 added at each await. Real PostgreSQL source regressions cover old caller time,
 pool acquisition wait, an unchanged locked row crossing its deadline, response
 key/result preservation, and one-winner success; they remain unexecuted here.
+
+Deferred claiming locks the original and current grant rows in token-ID order
+and consumes their complete projection before locking the retained intent.
+The PostgreSQL adapter then invokes the existing Rust continuation policy once,
+using a database clock sampled after those lock waits. Caller timestamps cannot
+advance readiness, hide current-grant or intent expiry, or reclaim a live lease.
+Denied, Pending and Busy results write no lease. An authorized ready claim uses
+a second data statement to recheck temporal expiry and install the five-minute
+lease; the response becomes Claimed only after full COMMIT acknowledgement.
+Cancellation or unknown transaction completion discards the physical pooled
+connection. The query contract is two statements, including authorization
+projection, with no separate intent lookup or tentative unauthorized lease.

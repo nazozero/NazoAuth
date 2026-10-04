@@ -90,6 +90,47 @@ struct UnknownApproval {
 }
 
 impl AdminAccessRequestStore for UnknownApproval {
+    fn approved_delivery_with_required_audit_matches<'a>(
+        &'a self,
+        tenant: nazo_identity::TenantId,
+        user: nazo_identity::UserId,
+        request: Uuid,
+        client: Uuid,
+        public_id: &'a str,
+        binding: Option<&'a str>,
+    ) -> RepositoryFuture<'a, bool> {
+        self.inner.approved_delivery_with_required_audit_matches(
+            tenant, user, request, client, public_id, binding,
+        )
+    }
+    fn approve_with_required_audit<'a>(
+        &'a self,
+        tenant: nazo_identity::TenantContext,
+        id: Uuid,
+        actor: nazo_identity::UserId,
+        prepared: &'a nazo_auth::PreparedClientRegistration,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, nazo_persistence::AdminAccessRequestApproval> {
+        Box::pin(async move {
+            let _committed = self
+                .inner
+                .approve_with_required_audit(tenant, id, actor, prepared, source_ip_hash)
+                .await?;
+            self.commits.fetch_add(1, Ordering::AcqRel);
+            Err(RepositoryError::Unavailable)
+        })
+    }
+    fn reject_with_required_audit(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        id: Uuid,
+        actor: nazo_identity::UserId,
+        note: String,
+    ) -> RepositoryFuture<'_, nazo_identity::AccessRequest> {
+        self.inner
+            .reject_with_required_audit(tenant, id, actor, note)
+    }
+
     fn approved_delivery_matches<'a>(
         &'a self,
         tenant: nazo_identity::TenantId,
@@ -409,6 +450,11 @@ async fn unknown_approval_ack_retains_original_stage_and_recovers_without_secret
         .unwrap()
         .unwrap();
     assert_eq!(row.status, AccessRequestStatus::Approved);
+    let audit_count = required_approval_audit_count(&fixture, id).await;
+    assert_eq!(
+        audit_count, 1,
+        "the real committed Unknown approval retains its canonical outcome"
+    );
     let response = invoke_admin_approve_access_request(
         fixture.state.clone(),
         fixture.admin_post_request(
@@ -433,6 +479,11 @@ async fn unknown_approval_ack_retains_original_stage_and_recovers_without_secret
         AtomicUsize::load(&repository.commits, Ordering::Acquire),
         1,
         "recovery must not approve or rotate again"
+    );
+    assert_eq!(
+        required_approval_audit_count(&fixture, id).await,
+        audit_count,
+        "recovery must not append a second success event"
     );
 }
 
@@ -666,4 +717,19 @@ async fn verified_recovery_rejects_wrong_client_secret_and_rotated_generation_wi
             .opaque_version,
         valid.opaque_version
     );
+}
+
+async fn required_approval_audit_count(
+    fixture: &LiveAdminAccessRequestFixture,
+    request: Uuid,
+) -> i64 {
+    #[derive(diesel::QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        count: i64,
+    }
+    let mut connection = get_conn(&fixture.state.diesel_db).await.unwrap();
+    sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type='client_created' AND payload->>'tenant_id'=$1 AND payload->>'request_id'=$2 AND payload->>'outcome'='success'")
+        .bind::<Text, _>(fixture.state.settings.tenant.context.tenant_id.as_uuid().to_string())
+        .bind::<Text, _>(request.to_string()).get_result::<Count>(&mut connection).await.unwrap().count
 }

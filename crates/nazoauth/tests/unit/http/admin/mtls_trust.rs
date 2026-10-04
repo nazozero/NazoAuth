@@ -10,6 +10,9 @@ use crate::http::sessions::test_support::admin_session_handles;
 use crate::settings::Settings;
 use crate::test_support::TestInfrastructure;
 
+#[path = "mtls_trust/required_unknown.rs"]
+mod required_unknown;
+
 fn unavailable_valkey_client() -> fred::prelude::Client {
     let mut builder = fred::prelude::Builder::from_config(
         fred::prelude::Config::from_url("redis://127.0.0.1:1")

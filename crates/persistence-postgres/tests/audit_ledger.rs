@@ -372,7 +372,7 @@ async fn anchor_heartbeat(connection: &mut AsyncPgConnection) -> AnchorHeartbeat
 }
 
 #[tokio::test]
-async fn recent_durable_ack_throttles_heartbeat_writes_without_acknowledging_backlog() {
+async fn each_successful_observation_refreshes_time_without_acknowledging_backlog() {
     let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -424,21 +424,25 @@ async fn recent_durable_ack_throttles_heartbeat_writes_without_acknowledging_bac
 
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     let after_ack = anchor_heartbeat(&mut connection).await;
+    let mut previous = after_ack;
     for _ in 0..3 {
         repository.observe_anchor("test-deployment").await.unwrap();
-        assert_eq!(anchor_heartbeat(&mut connection).await, after_ack);
+        let observed = anchor_heartbeat(&mut connection).await;
+        assert_ne!(observed.row_version, previous.row_version);
+        assert!(observed.observed_at >= previous.observed_at);
+        previous = observed;
     }
     assert!(matches!(
         repository.observe_anchor("other-deployment").await,
         Err(RepositoryError::Consistency(_))
     ));
-    assert_eq!(anchor_heartbeat(&mut connection).await, after_ack);
+    assert_eq!(anchor_heartbeat(&mut connection).await, previous);
 
-    // Advance only the fixture's observation age using the database clock;
-    // waiting thirty real seconds is unnecessary and would hide row rewrites.
+    // Simulate one five-second idle poll without sleeping. Successful
+    // observation must refresh even when age is below the former throttle.
     sql_query(
         "UPDATE public.security_audit_chain_state \
-         SET anchor_observed_at = CURRENT_TIMESTAMP - INTERVAL '31 seconds' \
+         SET anchor_observed_at = CURRENT_TIMESTAMP - INTERVAL '5 seconds' \
          WHERE singleton IS TRUE",
     )
     .execute(&mut connection)

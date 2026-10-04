@@ -109,7 +109,10 @@ pub(super) fn verify(
         &presentation.additional_trust_anchors,
     )?;
     let mut validation = Validation::new(header.alg);
-    validation.required_spec_claims = ["exp", "iss"].into_iter().map(str::to_owned).collect();
+    // Authenticate the issuer once, including its algorithm and trusted key.
+    // Issuer time policy cannot hide a subsequently authenticated holder nonce.
+    validation.required_spec_claims = ["iss"].into_iter().map(str::to_owned).collect();
+    validation.validate_exp = false;
     validation.validate_aud = false;
     let credential = decode::<Value>(credential_jwt, &key, &validation)
         .map_err(|_| CredentialTrustError::InvalidSignature)?
@@ -142,6 +145,26 @@ pub(super) fn verify(
     // nonce rejects the entire response, even when audience/time also fail.
     if binding.get("nonce").and_then(Value::as_str) != Some(&presentation.expected_nonce) {
         return Err(CredentialTrustError::InvalidNonce);
+    }
+    // Preserve the pinned JWT policy's required NumericDate, rounded fractional
+    // seconds and default leeway, but apply it only after nonce authentication.
+    // Missing/malformed/expired issuer exp remains an invalid credential.
+    let expiration = credential
+        .get("exp")
+        .and_then(|value| {
+            value.as_u64().or_else(|| {
+                value
+                    .as_f64()
+                    .filter(|value| {
+                        value.is_finite() && *value >= 0.0 && *value < (u64::MAX as f64)
+                    })
+                    .map(|value| value.round() as u64)
+            })
+        })
+        .ok_or(CredentialTrustError::InvalidSignature)?;
+    let now = Utc::now().timestamp() as u64;
+    if expiration < now.saturating_sub(validation.leeway) {
+        return Err(CredentialTrustError::InvalidSignature);
     }
     // A discardable revocation result cannot hide an authenticated nonce
     // mismatch in this same presentation. Issuer/path and holder signatures

@@ -8,7 +8,7 @@ use diesel::OptionalExtension;
 use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Nullable, Timestamptz, Uuid as DieselUuid, Varchar};
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use nazo_persistence::control_plane as contract;
@@ -93,11 +93,26 @@ impl std::fmt::Display for IdentityApprovalError {
 
 impl std::error::Error for IdentityApprovalError {}
 
+impl From<diesel::result::Error> for IdentityApprovalError {
+    fn from(error: diesel::result::Error) -> Self { approval_transport(error) }
+}
+
 fn approval_transport<E>(error: E) -> IdentityApprovalError
 where
     E: Into<anyhow::Error>,
 {
     IdentityApprovalError::Transport(error.into())
+}
+
+#[derive(QueryableByName)]
+struct IssuedApprovalRow {
+    #[diesel(sql_type = DieselUuid)] approval_id: Uuid,
+    #[diesel(sql_type = Varchar)] deployment_id: String,
+    #[diesel(sql_type = Varchar)] action: String,
+    #[diesel(sql_type = Varchar)] action_sha256: String,
+    #[diesel(sql_type = DieselUuid)] admin_user_id: Uuid,
+    #[diesel(sql_type = Varchar)] token_hash: String,
+    #[diesel(sql_type = Timestamptz)] expires_at: DateTime<Utc>,
 }
 
 #[derive(QueryableByName)]
@@ -193,6 +208,18 @@ impl ControllerRegistryRepository {
         admin_user_id: Uuid,
         now: DateTime<Utc>,
     ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
+        self.issue_identity_approval_owned(deployment_id,action,action_sha256,admin_user_id,now,None).await
+    }
+
+    pub(crate) async fn issue_identity_approval_owned(
+        &self,
+        deployment_id: &str,
+        action: ControllerIdentityAction,
+        action_sha256: &str,
+        admin_user_id: Uuid,
+        now: DateTime<Utc>,
+        audit: Option<contract::AdminIdentityAudit>,
+    ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
         if validate_deployment_id(deployment_id).is_err() {
             return Err(approval_transport(anyhow::anyhow!(
                 "approval deployment_id is invalid"
@@ -211,12 +238,19 @@ impl ControllerRegistryRepository {
         let token_hash = approval_token_digest(&token);
         let approval_id = Uuid::now_v7();
         let expires_at = now + Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS);
-        let mut connection = get_conn(&self.pool).await.map_err(approval_transport)?;
-        sql_query(
+        let mut guard = crate::pool::DiscardOnDrop(Some(get_conn(&self.pool).await.map_err(approval_transport)?));
+        let result = guard.connection().transaction::<_, IdentityApprovalError, _>(async move |connection| {
+            if let Some(audit) = &audit {
+                if audit.actor_user_id != admin_user_id { return Err(approval_transport(anyhow::anyhow!("approval actor mismatch"))); }
+                super::slots::lock_deployment_slots(connection,deployment_id).await.map_err(approval_transport)?;
+                super::required::authorize_actor(connection,audit).await.map_err(approval_transport)?;
+            }
+        let mut rows = sql_query(
             "INSERT INTO controller_identity_approvals
                 (approval_id, deployment_id, action, action_sha256,
                  admin_user_id, token_hash, expires_at, consumed_at, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8)
+             RETURNING approval_id,deployment_id,action,action_sha256,admin_user_id,expires_at,token_hash",
         )
         .bind::<DieselUuid, _>(approval_id)
         .bind::<Varchar, _>(deployment_id)
@@ -226,16 +260,28 @@ impl ControllerRegistryRepository {
         .bind::<Varchar, _>(&token_hash)
         .bind::<Timestamptz, _>(expires_at)
         .bind::<Timestamptz, _>(now)
-        .execute(&mut connection)
+        .load::<IssuedApprovalRow>(connection)
         .await
         .map_err(approval_transport)?;
-        Ok(IssuedIdentityApproval {
-            approval_id,
-            action,
-            action_sha256: action_sha256.to_owned(),
-            token,
-            expires_at,
-        })
+        if rows.len() != 1 { return Err(approval_transport(anyhow::anyhow!("approval insert returned an invalid authority row count"))); }
+        let row = rows.pop().expect("one fully received approval row");
+        if row.deployment_id != deployment_id || row.action != action.as_str()
+            || row.action_sha256 != action_sha256 || row.admin_user_id != admin_user_id
+            || row.token_hash != token_hash || row.expires_at != expires_at {
+            return Err(approval_transport(anyhow::anyhow!("approval insert changed its authority binding")));
+        }
+        let issued = IssuedIdentityApproval { approval_id:row.approval_id,action,action_sha256:row.action_sha256,token,expires_at:row.expires_at };
+        if let Some(audit) = &audit {
+            let event = if action == ControllerIdentityAction::RecoveryRootRotate { "controller_recovery_root_rotation_approved" } else { "controller_identity_approval_issued" };
+            super::required::append_outcome(connection,event,audit,serde_json::json!({
+                "approval_id":issued.approval_id,"deployment_id":row.deployment_id,
+                "action":issued.action.as_str(),"action_sha256":issued.action_sha256,"expires_at":issued.expires_at.to_rfc3339()
+            })).await.map_err(approval_transport)?;
+        }
+        Ok(issued)
+        }).await;
+        if result.is_ok() { guard.return_to_pool(); }
+        result
     }
 }
 

@@ -500,12 +500,16 @@ where
                 selection,
                 holder_bindings,
                 nonce_claim,
-                identity,
                 now,
             )
             .await;
         match result {
-            Ok(pending) => Ok(pending),
+            Ok((response, commit)) => Ok(PendingCredentialIssuance {
+                response,
+                commit,
+                issuance_id: identity.issuance_id,
+                request_digest: identity.request_digest,
+            }),
             Err(error) => {
                 if let Some(claim) = claim_for_rollback {
                     let _ = self
@@ -663,9 +667,8 @@ where
         selection: crate::CredentialSelection,
         holder_bindings: Vec<Value>,
         nonce_claim: Option<IssuanceClaim>,
-        identity: IssuanceIdentity,
         now: DateTime<Utc>,
-    ) -> Result<PendingCredentialIssuance, CredentialIssuanceError> {
+    ) -> Result<(CredentialResponse, IssuanceCommit), CredentialIssuanceError> {
         let dataset = self
             .datasets
             .dataset(access, &issuance.configuration_id)
@@ -709,20 +712,18 @@ where
                     token_id: access.token_id,
                     expires_at: access.continuation_expires_at(issuance.expires_at),
                 };
-                Ok(PendingCredentialIssuance {
-                    response: CredentialResponse {
+                Ok((
+                    CredentialResponse {
                         credentials: Some(credentials),
                         transaction_id: None,
                         notification_id: Some(notification_id),
                         interval: None,
                     },
-                    commit: IssuanceCommit::Immediate {
+                    IssuanceCommit::Immediate {
                         notification_handle,
                         nonce_claim,
                     },
-                    issuance_id: identity.issuance_id,
-                    request_digest: identity.request_digest,
-                })
+                ))
             }
             IssuanceDisposition::Deferred { ready_at } => {
                 let transaction_id = Uuid::now_v7().to_string();
@@ -745,20 +746,18 @@ where
                     ready_at,
                     expires_at: access.continuation_expires_at(issuance.expires_at),
                 };
-                Ok(PendingCredentialIssuance {
-                    response: CredentialResponse {
+                Ok((
+                    CredentialResponse {
                         credentials: None,
                         transaction_id: Some(transaction_id),
                         notification_id: None,
                         interval: Some(5),
                     },
-                    commit: IssuanceCommit::Deferred {
+                    IssuanceCommit::Deferred {
                         credential: Box::new(deferred),
                         nonce_claim,
                     },
-                    issuance_id: identity.issuance_id,
-                    request_digest: identity.request_digest,
-                })
+                ))
             }
         }
     }

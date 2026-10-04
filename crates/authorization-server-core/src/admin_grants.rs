@@ -57,7 +57,15 @@ impl std::error::Error for AdminGrantRevokeError {}
 /// Administrative grant persistence boundary.
 ///
 /// Implementations must resolve the logical client id and revoke its grants and
-/// refresh tokens in one atomic storage transaction.
+/// refresh tokens and persist the canonical Required `admin_grant_revoked`
+/// outcome in one atomic storage transaction. Only its confirmed commit may
+/// return revocation counts; unavailable includes an unknown commit result.
+/// The caller owns admission to the target management scope. The mutation owner
+/// must lock and recheck the admitted actor's current active administrator role
+/// and positive level once before effects, keeping that row through ACK. Actor
+/// home tenant and affected tenant are separate identities: requiring equality
+/// would discard a previously admitted control/global administrator. This port
+/// does not itself grant cross-tenant admission.
 pub trait AdminGrantRepositoryPort: Send + Sync {
     fn page(
         &self,
@@ -71,5 +79,6 @@ pub trait AdminGrantRepositoryPort: Send + Sync {
         tenant_id: Uuid,
         user_id: Uuid,
         client_id: &'a str,
+        admin_user_id: Uuid,
     ) -> AdminGrantRevokeFuture<'a>;
 }

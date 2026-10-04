@@ -1550,3 +1550,57 @@ async fn authentication_class_downgrade_rolls_back_when_required_audit_fails() {
     make_public(&mut connection, fixture.client_id).await;
     assert!(!state(&mut connection, source.token_family_id).await.family["revoked_at"].is_null());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit() {
+    let Some(url) = database_url() else { return };
+    for change in ["revoke", "expire", "rerotate", "spent-edge"] {
+        let fixture = fixture(&url).await;
+        let (original_raw, original) = issue_with_binding(&url, &fixture, Some("dpop")).await;
+        let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
+        let (first_rotation, child_raw) = rotation(&fixture, &original, &[A]);
+        assert_eq!(repository.commit_token_issuance(first_rotation).await.unwrap(), CommitTokenIssuanceResult::Committed);
+        let snapshot = repository.refresh_token_snapshot(tenant(), &original_raw, fixture.client_id, Utc::now())
+            .await.unwrap().expect("spent presentation exists");
+        assert_eq!(snapshot.presented.id, original.id);
+        let candidate = snapshot.successor.unwrap().expect("bound direct successor exists");
+        let child = lookup(&url, &child_raw).await;
+        assert_eq!(candidate, child);
+        let (mut retry, _) = rotation(&fixture, &candidate, &[A]);
+        if let Some(RefreshTokenCommit::UseExisting { rotation: Some(token), .. }) = retry.refresh_token.as_mut() {
+            token.lost_response_retry = Some(nazo_auth::LostResponseRetry {
+                original_id: original.id,
+                original_blake3: original.token_blake3,
+                retry_started_at: Utc::now(),
+            });
+        } else { panic!("rotation carries its existing authority"); }
+        let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+        match change {
+            "revoke" => { repository.revoke_token(nazo_auth::TokenRevocation {
+                tenant_id: tenant(), client_id: fixture.client_id, raw_token: &child_raw, access_token: None,
+            }).await.unwrap(); }
+            "expire" => {
+                sql_query("UPDATE oauth_refresh_families SET current_issued_at = CURRENT_TIMESTAMP - interval '2 seconds', current_expires_at = CURRENT_TIMESTAMP - interval '1 second' WHERE tenant_id = $1 AND token_family_id = $2")
+                    .bind::<sql_types::Uuid, _>(tenant()).bind::<sql_types::Uuid, _>(child.token_family_id)
+                    .execute(&mut connection).await.unwrap();
+            }
+            "rerotate" => {
+                let (next, _) = rotation(&fixture, &child, &[A]);
+                assert_eq!(repository.commit_token_issuance(next).await.unwrap(), CommitTokenIssuanceResult::Committed);
+            }
+            "spent-edge" => {
+                sql_query("UPDATE oauth_refresh_spent_tokens SET spent_at = CURRENT_TIMESTAMP - interval '61 seconds' WHERE tenant_id = $1 AND refresh_token_blake3 = $2")
+                    .bind::<sql_types::Uuid, _>(tenant()).bind::<sql_types::Binary, _>(original.token_blake3.as_slice())
+                    .execute(&mut connection).await.unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let expected = if matches!(change, "rerotate" | "spent-edge") {
+            CommitTokenIssuanceResult::RotationConflict
+        } else { CommitTokenIssuanceResult::RefreshGrantUnavailable };
+        assert_eq!(repository.commit_token_issuance(retry.clone()).await.unwrap(), expected);
+        let audit = sql_query("SELECT count(*) AS count FROM security_audit_events WHERE event_id = $1 AND event_type = 'token_issued'")
+            .bind::<sql_types::Uuid, _>(retry.issuance_id).get_result::<Count>(&mut connection).await.unwrap();
+        assert_eq!(audit.count, 0, "a stale candidate publishes no issuance success");
+    }
+}

@@ -7,21 +7,13 @@ use super::base::OAuthClientRepository;
 impl nazo_auth::DynamicRegistrationClientStore for OAuthClientRepository {
     fn insert<'a>(
         &'a self,
-        prepared: &'a nazo_auth::PreparedClientRegistration,
+        prepared: nazo_auth::PreparedClientRegistration,
         source_ip_hash: &'a str,
     ) -> nazo_auth::DynamicRegistrationFuture<'a, OAuthClient> {
         Box::pin(async move {
-            let client = OAuthClient {
-                id: Uuid::now_v7(),
-                tenant_id: prepared.tenant.tenant_id.as_uuid(),
-                realm_id: prepared.tenant.realm_id.as_uuid(),
-                organization_id: prepared.tenant.organization_id.as_uuid(),
-                registration: prepared.registration.clone(),
-                require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
-                is_active: true,
-            };
+            let prepared = prepared.into_write();
             self.insert_with_audit(
-                &client,
+                &prepared.client,
                 prepared.client_secret_hash.as_deref(),
                 prepared.registration_access_token_blake3.as_deref(),
                 Some(source_ip_hash),

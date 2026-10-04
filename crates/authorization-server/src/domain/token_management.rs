@@ -117,12 +117,12 @@ impl ServerTokenManagementOperations {
             && !presentation.form_client_secret
             && request.client_certificate.is_some()
         {
-            form.client_id.clone()
+            form.client_id.as_deref()
         } else {
             None
         };
-        let credentials = client_auth.presented_credentials(assertion_client_id, mtls_client_id);
-        let Some(client_id) = credentials.client_id.as_deref() else {
+        let credentials = client_auth.credential_view(assertion_client_id.as_deref(), mtls_client_id);
+        let Some(client_id) = credentials.client_id else {
             return Err(TokenManagementError::InvalidClient {
                 basic_challenge: has_basic,
             });
@@ -135,7 +135,7 @@ impl ServerTokenManagementOperations {
             Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
             Ok(None) => {
                 perform_dummy_client_secret_verification(
-                    &credentials,
+                    credentials,
                     &self.config.client_secret_pepper,
                 );
                 return Err(TokenManagementError::InvalidClient {
@@ -149,7 +149,7 @@ impl ServerTokenManagementOperations {
         };
         if !client.is_active {
             perform_dummy_client_secret_verification(
-                &credentials,
+                credentials,
                 &self.config.client_secret_pepper,
             );
             return Err(TokenManagementError::InvalidClient {
@@ -171,7 +171,7 @@ impl ServerTokenManagementOperations {
                     config,
                     &auth_request,
                     &mut client,
-                    &credentials,
+                    credentials,
                     secret_salt.as_deref(),
                 )
                 .await
@@ -182,7 +182,7 @@ impl ServerTokenManagementOperations {
                     config,
                     &auth_request,
                     &mut client,
-                    &credentials,
+                    credentials,
                     secret_salt.as_deref(),
                 )
                 .await

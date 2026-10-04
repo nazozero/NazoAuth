@@ -53,6 +53,21 @@ pub trait AdminClientRepositoryPort: Send + Sync {
         registration_access_token_blake3: Option<&'a str>,
     ) -> AdminClientFuture<'a, OAuthClient>;
 
+    /// Administrative creation accepts only a current active administrator in
+    /// the client context. Client insertion and canonical Required outcome share
+    /// one owner; a secret-bearing receipt requires the complete commit ACK.
+    /// Unsupported adapters fail before mutation and never call bare insert.
+    fn insert_with_required_audit<'a>(
+        &'a self,
+        _client: &'a OAuthClient,
+        _client_secret_hash: Option<&'a str>,
+        _registration_access_token_blake3: Option<&'a str>,
+        _actor_id: Uuid,
+        _source_ip_hash: &'a str,
+    ) -> AdminClientFuture<'a, OAuthClient> {
+        Box::pin(async { Err(AdminClientPortError::Unavailable) })
+    }
+
     /// A confidential-to-public authentication-class change must atomically
     /// invalidate every existing refresh family of this client. Issuance and
     /// mutation serialize on the same client authority before family state;
@@ -67,6 +82,18 @@ pub trait AdminClientRepositoryPort: Send + Sync {
         expected: &'a OAuthClient,
         client: &'a OAuthClient,
     ) -> AdminClientFuture<'a, OAuthClient>;
+
+    /// Retains the exact snapshot CAS and dependent invalidation contract of
+    /// update while holding current admin authority through canonical audit ACK.
+    fn update_with_required_audit<'a>(
+        &'a self,
+        _expected: &'a OAuthClient,
+        _client: &'a OAuthClient,
+        _actor_id: Uuid,
+        _source_ip_hash: &'a str,
+    ) -> AdminClientFuture<'a, OAuthClient> {
+        Box::pin(async { Err(AdminClientPortError::Unavailable) })
+    }
 }
 
 impl<T> AdminClientRepositoryPort for Arc<T>
@@ -106,6 +133,30 @@ where
         client: &'a OAuthClient,
     ) -> AdminClientFuture<'a, OAuthClient> {
         self.as_ref().update(expected, client)
+    }
+
+    fn insert_with_required_audit<'a>(
+        &'a self,
+        client: &'a OAuthClient,
+        client_secret_hash: Option<&'a str>,
+        registration_access_token_blake3: Option<&'a str>,
+        actor_id: Uuid,
+        source_ip_hash: &'a str,
+    ) -> AdminClientFuture<'a, OAuthClient> {
+        self.as_ref().insert_with_required_audit(
+            client, client_secret_hash, registration_access_token_blake3,
+            actor_id, source_ip_hash,
+        )
+    }
+
+    fn update_with_required_audit<'a>(
+        &'a self,
+        expected: &'a OAuthClient,
+        client: &'a OAuthClient,
+        actor_id: Uuid,
+        source_ip_hash: &'a str,
+    ) -> AdminClientFuture<'a, OAuthClient> {
+        self.as_ref().update_with_required_audit(expected, client, actor_id, source_ip_hash)
     }
 }
 

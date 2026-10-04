@@ -209,16 +209,12 @@ impl ServerMfaProfileOperations {
         ])
     }
 
-    async fn record_required(
-        &self,
-        event: &'static str,
-        fields: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<(), MfaProfileError> {
+    async fn ensure_required_ready(&self) -> Result<(), MfaProfileError> {
         self.audit
-            .record_required(event, fields)
+            .ensure_transactional_ready()
             .await
             .map_err(|error| {
-                tracing::warn!(%error, event, "required MFA audit append failed");
+                tracing::warn!(%error, "required MFA audit readiness failed");
                 MfaProfileError::new(MfaProfileErrorKind::AuditUnavailable)
             })
     }
@@ -244,6 +240,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
         Box::pin(async move {
             let account = self.current_account(&command.context, false).await?;
             self.enforce_rate_limit(&command.context).await?;
+            self.ensure_required_ready().await?;
             self.reserve_mfa_attempt(&command.context, &account).await?;
             let prepared = match self
                 .mfa
@@ -264,20 +261,16 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 .await?;
             let result = self
                 .mfa
-                .confirm_totp(&account, prepared, command.context.now)
+                .confirm_totp_with_required_audit(
+                    &account,
+                    prepared,
+                    command.context.now,
+                    blake3_hex(&command.context.source_ip),
+                )
                 .await;
             match result {
                 Ok(TotpConfirmationOutcome::Accepted { backup_codes }) => {
                     self.clear_mfa_attempts(&command.context, &account).await;
-                    self.record_required(
-                        "mfa_totp_enabled",
-                        self.mfa_fields(&account, &command.context),
-                    )
-                    .await
-                    .map_err(|mut error| {
-                        error.rotation = Some(rotation.clone());
-                        error
-                    })?;
                     tracing::info!(user_id = %account.id(), "MFA TOTP enabled");
                     Ok(MfaTotpConfirmation {
                         rotation,
@@ -402,6 +395,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             if !account.account.mfa_enabled {
                 return Err(MfaProfileError::new(MfaProfileErrorKind::MfaDisabled));
             }
+            self.ensure_required_ready().await?;
             self.reserve_mfa_attempt(&command.context, &account).await?;
             let method = self
                 .verify_reserved_factor(&command.context, &account, &command.code)
@@ -409,17 +403,16 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             let rotation = self
                 .rotate(&command.context, method.method(), false)
                 .await?;
-            match self.mfa.regenerate_backup_codes(&account, &method).await {
+            match self
+                .mfa
+                .regenerate_backup_codes_with_required_audit(
+                    &account,
+                    &method,
+                    blake3_hex(&command.context.source_ip),
+                )
+                .await
+            {
                 Ok(backup_codes) => {
-                    self.record_required(
-                        "mfa_backup_codes_regenerated",
-                        self.mfa_fields(&account, &command.context),
-                    )
-                    .await
-                    .map_err(|mut error| {
-                        error.rotation = Some(rotation.clone());
-                        error
-                    })?;
                     tracing::info!(user_id = %account.id(), "MFA backup codes regenerated");
                     Ok(MfaBackupCodesRegenerated {
                         rotation,
@@ -429,7 +422,8 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 Err(error) => {
                     tracing::warn!(?error, "failed to regenerate MFA backup codes");
                     let mut mapped = MfaProfileError::new(MfaProfileErrorKind::BackupCodesFailed);
-                    mapped.rotation = Some(rotation);
+                    self.discard_unpublished_rotation(&rotation).await;
+                    mapped.clear_session_cookies = true;
                     Err(mapped)
                 }
             }
@@ -443,13 +437,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             if !account.account.mfa_enabled {
                 return Ok(false);
             }
-            self.audit
-                .ensure_transactional_ready()
-                .await
-                .map_err(|error| {
-                    tracing::warn!(%error, "required MFA audit readiness failed");
-                    MfaProfileError::new(MfaProfileErrorKind::AuditUnavailable)
-                })?;
+            self.ensure_required_ready().await?;
             self.reserve_mfa_attempt(&command.context, &account).await?;
             let proof = self
                 .verify_reserved_factor(&command.context, &account, &command.code)

@@ -28,7 +28,7 @@ pub use nazo_persistence::control_plane::{
 
 use nazo_operator_protocol::{RecoveryProposal, RecoveryRootRotation};
 use nazo_persistence::control_plane::{
-    IssuedIdentityApproval, NewRecoveryChallenge, NewRecoveryRoot, RecoveredSlotCommit,
+    NewRecoveryChallenge, NewRecoveryRoot, RecoveredSlotCommit,
     RecoveryRootError, RecoveryRootPort, RecoveryRotationError, RecoverySubmission,
     StoredRecoveryRoot,
 };
@@ -161,17 +161,30 @@ impl RecoveryRootService {
         request: &RecoveryRootChangeRequest,
         now: DateTime<Utc>,
     ) -> Result<IssuedRotationApprovalView, RecoveryRootServiceError> {
+        self.issue_rotation_approval_owned(actor_admin_user_id,request,now,None).await
+    }
+
+    pub async fn issue_rotation_approval_with_required_audit(
+        &self,
+        audit: nazo_persistence::control_plane::AdminIdentityAudit,
+        request: &RecoveryRootChangeRequest,
+        now: DateTime<Utc>,
+    ) -> Result<IssuedRotationApprovalView, RecoveryRootServiceError> {
+        self.issue_rotation_approval_owned(audit.actor_user_id,request,now,Some(audit)).await
+    }
+
+    async fn issue_rotation_approval_owned(
+        &self,
+        actor_admin_user_id: Uuid,
+        request: &RecoveryRootChangeRequest,
+        now: DateTime<Utc>,
+        audit: Option<nazo_persistence::control_plane::AdminIdentityAudit>,
+    ) -> Result<IssuedRotationApprovalView, RecoveryRootServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         let rotation = validate_rotation_request(request)?;
-        let issued: IssuedIdentityApproval = self
-            .repository
-            .issue_rotation_approval(
-                &rotation.deployment_id,
-                &rotation.action_sha256(),
-                actor_admin_user_id,
-                now,
-            )
-            .await?;
+        let issued=if let Some(audit)=audit {
+            self.repository.issue_rotation_approval_with_required_audit(nazo_persistence::control_plane::RecoveryApprovalCommand{deployment_id:rotation.deployment_id.clone(),action_sha256:rotation.action_sha256(),now},audit).await
+        } else { self.repository.issue_rotation_approval(&rotation.deployment_id,&rotation.action_sha256(),actor_admin_user_id,now).await }?;
         Ok(IssuedRotationApprovalView {
             token: issued.token,
             action_sha256: issued.action_sha256,
@@ -186,22 +199,32 @@ impl RecoveryRootService {
         request: &RecoveryRootChangeRequest,
         now: DateTime<Utc>,
     ) -> Result<StoredRecoveryRoot, RecoveryRootServiceError> {
+        self.commit_rotation_owned(approval_token,request,now,None).await
+    }
+
+    pub async fn commit_rotation_with_required_audit(
+        &self,
+        approval_token: &str,
+        request: &RecoveryRootChangeRequest,
+        now: DateTime<Utc>,
+        audit: nazo_persistence::control_plane::AdminIdentityAudit,
+    ) -> Result<StoredRecoveryRoot, RecoveryRootServiceError> {
+        self.commit_rotation_owned(approval_token,request,now,Some(audit)).await
+    }
+
+    async fn commit_rotation_owned(
+        &self,
+        approval_token: &str,
+        request: &RecoveryRootChangeRequest,
+        now: DateTime<Utc>,
+        audit: Option<nazo_persistence::control_plane::AdminIdentityAudit>,
+    ) -> Result<StoredRecoveryRoot, RecoveryRootServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         let rotation = validate_rotation_request(request)?;
-        Ok(self
-            .repository
-            .commit_rotation(
-                approval_token,
-                &rotation.deployment_id,
-                &rotation.action_sha256(),
-                NewRecoveryRoot {
-                    deployment_id: rotation.deployment_id.clone(),
-                    kid: rotation.kid.clone(),
-                    public_key: rotation.public_key,
-                },
-                now,
-            )
-            .await?)
+        let root=NewRecoveryRoot{deployment_id:rotation.deployment_id.clone(),kid:rotation.kid.clone(),public_key:rotation.public_key};
+        Ok(if let Some(audit)=audit {
+            self.repository.commit_rotation_with_required_audit(nazo_persistence::control_plane::RecoveryRotationCommand{approval_token:approval_token.to_owned(),deployment_id:rotation.deployment_id.clone(),action_sha256:rotation.action_sha256(),root,now},audit).await
+        } else { self.repository.commit_rotation(approval_token,&rotation.deployment_id,&rotation.action_sha256(),root,now).await }?)
     }
 
     // -- D11: break-glass challenge/response ----------------------------------

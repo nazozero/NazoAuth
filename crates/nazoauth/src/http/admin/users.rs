@@ -1,8 +1,5 @@
 //! 管理端用户账户接口。
-use crate::http::admin::{
-    persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
-    require_transactional_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
     require_admin_with_recent_mfa_or_forbidden_with_handles,
@@ -21,7 +18,6 @@ use nazo_identity::{
     ports::{AdminUserRepositoryPort, NewUser, RegistrationAccountRepositoryPort, SecretHashPort},
 };
 use nazo_oauth_server::crypto::blake3_hex;
-use nazo_oauth_server::ports::audit::audit_fields;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -243,35 +239,21 @@ pub(crate) async fn admin_create_user(
             );
         }
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
+    let source_ip_hash = blake3_hex(&client_ip_with_config(&req, &client_ip_config));
     match accounts
-        .create_user(NewUser {
+        .create_user_with_required_audit(NewUser {
             tenant: admin.tenant(),
             username: format!("user_{}", Uuid::now_v7()),
             email,
             password_hash,
             email_verified: true,
-        })
+        }, admin.user_id(), source_ip_hash)
         .await
     {
         Ok(account) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "admin_user_created",
-                audit_fields(&[
-                    ("user_id", json!(account.id())),
-                    ("admin_user_id", json!(admin.id())),
-                    (
-                        "source_ip_hash",
-                        json!(blake3_hex(&client_ip_with_config(&req, &client_ip_config))),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
             HttpResponse::Created()
                 .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
                 .json(admin_user_json(account))
@@ -338,12 +320,13 @@ pub(crate) async fn admin_patch_user(
             );
         }
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
+    let source_ip_hash = blake3_hex(&client_ip_with_config(&req, &client_ip_config));
     let updated = match users
-        .update_authorized(
-            admin.tenant().tenant_id,
+        .update_authorized_with_required_audit(
+            admin.tenant(),
             actor_id,
             user_id,
             nazo_identity::ports::AdminUserUpdate {
@@ -351,6 +334,7 @@ pub(crate) async fn admin_patch_user(
                 admin_level: payload.admin_level,
                 active: payload.is_active,
             },
+            source_ip_hash,
         )
         .await
     {
@@ -373,21 +357,6 @@ pub(crate) async fn admin_patch_user(
     };
     match updated {
         nazo_identity::AdminUserUpdateOutcome::Updated(user) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "admin_user_updated",
-                audit_fields(&[
-                    ("user_id", json!(user.id())),
-                    ("admin_user_id", json!(admin.id())),
-                    (
-                        "source_ip_hash",
-                        json!(blake3_hex(&client_ip_with_config(&req, &client_ip_config))),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
             json_response(admin_user_json(*user))
         }
         nazo_identity::AdminUserUpdateOutcome::TargetNotFound => {

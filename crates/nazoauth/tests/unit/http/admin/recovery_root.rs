@@ -36,13 +36,14 @@ async fn recovery_root_handlers_commit_approval_rotation_and_registered_audit() 
             recovery_public_key: URL_SAFE_NO_PAD.encode(public_key),
             kid: URL_SAFE_NO_PAD.encode(Sha256::digest(public_key)),
         };
-        let (sessions, _, _) = admin_user_dependencies(&fixture.state);
+        let (sessions, _, client_ip_config) = admin_user_dependencies(&fixture.state);
         let response = crate::adapters::audit::REQUEST_TENANT
             .scope(
                 control,
                 admin_recovery_root_approval(
                     sessions,
                     recovery.clone(),
+                    client_ip_config,
                     fixture.admin_post_request(
                         &sid,
                         &csrf,
@@ -76,13 +77,14 @@ async fn recovery_root_handlers_commit_approval_rotation_and_registered_audit() 
         let pending=sql_query("SELECT COUNT(*)::bigint AS count FROM controller_identity_approvals WHERE deployment_id=$1 AND consumed_at IS NULL").bind::<Text,_>(&deployment).get_result::<Count>(&mut conn).await.unwrap();
         assert_eq!(pending.count, 1);
         drop(conn);
-        let (sessions, _, _) = admin_user_dependencies(&fixture.state);
+        let (sessions, _, client_ip_config) = admin_user_dependencies(&fixture.state);
         let response = crate::adapters::audit::REQUEST_TENANT
             .scope(
                 control,
                 admin_recovery_root_rotate(
                     sessions,
                     recovery.clone(),
+                    client_ip_config,
                     fixture.admin_post_request(
                         &sid,
                         &csrf,

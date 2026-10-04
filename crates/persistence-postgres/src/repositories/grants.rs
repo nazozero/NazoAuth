@@ -268,15 +268,33 @@ impl GrantRepository {
         tenant_id: Uuid,
         user_id: Uuid,
         client_id: &str,
+        admin_user_id: Uuid,
     ) -> Result<AdminGrantRevocation, AdminGrantRevokeError> {
-        let mut connection = get_conn(&self.pool).await.map_err(|_| {
+        let connection = get_conn(&self.pool).await.map_err(|_| {
             AdminGrantRevokeError::ClientLookup(AuthorizationPortError::Unavailable)
         })?;
-        connection
+        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let result = guard
+            .connection()
             .transaction::<AdminGrantRevocation, GrantRevokeTransactionError, _>(
                 async |connection| {
                     use diesel::OptionalExtension;
 
+                    // Target-scope admission is owned by the caller. Recheck
+                    // the admitted actor's current role once, independently of
+                    // the affected tenant, and hold it through this owner ACK.
+                    let (admin_user_id, actor_tenant_id) = users::table
+                        .filter(users::id.eq(admin_user_id))
+                        .filter(users::is_active.eq(true))
+                        .filter(users::role.eq("admin"))
+                        .filter(users::admin_level.gt(0))
+                        .select((users::id, users::tenant_id))
+                        .for_share()
+                        .first::<(Uuid, Uuid)>(connection)
+                        .await
+                        .optional()
+                        .map_err(GrantRevokeTransactionError::Revoke)?
+                        .ok_or(GrantRevokeTransactionError::ActorUnavailable)?;
                     let client_pk = oauth_clients::table
                         .filter(oauth_clients::tenant_id.eq(tenant_id))
                         .filter(oauth_clients::client_id.eq(client_id))
@@ -324,6 +342,32 @@ impl GrantRepository {
                     .execute(connection)
                     .await
                     .map_err(GrantRevokeTransactionError::Revoke)?;
+                    // The canonical Required outcome shares this business
+                    // transaction, including its exact actor, target and
+                    // effect counts. An append failure rolls every effect back.
+                    super::audit_ledger::append_fresh_security_audit_on_connection(
+                        connection,
+                        &nazo_persistence::SecurityAuditEvent {
+                            event_id: Uuid::now_v7(),
+                            event_type: "admin_grant_revoked".to_owned(),
+                            event_category: "administration".to_owned(),
+                            payload: serde_json::json!({
+                                "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                                "event_category": "administration",
+                                "tenant_id": tenant_id,
+                                "admin_user_id": admin_user_id,
+                                "actor_tenant_id": actor_tenant_id,
+                                "user_id": user_id,
+                                "outcome": "success",
+                                "client_id": client_id,
+                                "revoked_refresh_tokens": revoked_refresh_tokens,
+                                "removed_grants": removed_grants,
+                            }),
+                            occurred_at: Utc::now(),
+                        },
+                    )
+                    .await
+                    .map_err(GrantRevokeTransactionError::Revoke)?;
                     Ok(AdminGrantRevocation {
                         revoked_refresh_tokens,
                         removed_grants,
@@ -331,7 +375,11 @@ impl GrantRepository {
                 },
             )
             .await
-            .map_err(Into::into)
+            .map_err(Into::into);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
@@ -356,8 +404,12 @@ impl AdminGrantRepositoryPort for GrantRepository {
         tenant_id: Uuid,
         user_id: Uuid,
         client_id: &'a str,
+        admin_user_id: Uuid,
     ) -> nazo_auth::AdminGrantRevokeFuture<'a> {
-        Box::pin(async move { self.revoke_admin_grant(tenant_id, user_id, client_id).await })
+        Box::pin(async move {
+            self.revoke_admin_grant(tenant_id, user_id, client_id, admin_user_id)
+                .await
+        })
     }
 }
 
@@ -382,6 +434,7 @@ fn map_authorization_error(_error: diesel::result::Error) -> AuthorizationPortEr
 }
 
 enum GrantRevokeTransactionError {
+    ActorUnavailable,
     ClientNotFound,
     ClientLookup(diesel::result::Error),
     Revoke(diesel::result::Error),
@@ -396,6 +449,7 @@ impl From<diesel::result::Error> for GrantRevokeTransactionError {
 impl From<GrantRevokeTransactionError> for AdminGrantRevokeError {
     fn from(error: GrantRevokeTransactionError) -> Self {
         match error {
+            GrantRevokeTransactionError::ActorUnavailable => Self::Revoke(AuthorizationPortError::Unavailable),
             GrantRevokeTransactionError::ClientNotFound => Self::ClientNotFound,
             GrantRevokeTransactionError::ClientLookup(error) => {
                 Self::ClientLookup(map_authorization_error(error))

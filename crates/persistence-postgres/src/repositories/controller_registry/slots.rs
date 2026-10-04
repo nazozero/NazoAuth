@@ -420,7 +420,7 @@ pub(crate) async fn insert_slot_on_connection(
         ));
     };
     let controller_id = Uuid::now_v7().to_string();
-    sql_query(format!(
+    let rows = sql_query(format!(
         "INSERT INTO controller_registry_slots
             (deployment_id, controller_id, label, kid, public_key, slot_index,
              issued_at, expires_at, status, revoked_at, created_at, updated_at)
@@ -436,11 +436,15 @@ pub(crate) async fn insert_slot_on_connection(
     .bind::<SmallInt, _>(slot_index)
     .bind::<Timestamptz, _>(now)
     .bind::<Timestamptz, _>(now + Duration::seconds(CONTROLLER_KEY_TTL_SECONDS))
-    .get_result::<SlotRow>(connection)
+    .load::<SlotRow>(connection)
     .await
-    .map_err(map_slot_conflict)?
-    .try_into()
-    .map_err(transport)
+    .map_err(map_slot_conflict)?;
+    one_written_slot(rows)
+}
+
+fn one_written_slot(mut rows: Vec<SlotRow>) -> Result<StoredControllerSlot, ControllerRegistryError> {
+    if rows.len()!=1 { return Err(transport(anyhow::anyhow!("slot mutation returned an invalid authority row count"))); }
+    rows.pop().expect("one fully received slot row").try_into().map_err(transport)
 }
 
 fn map_slot_conflict(error: QueryError) -> ControllerRegistryError {
@@ -465,7 +469,7 @@ pub(super) async fn rotate_slot_on_connection(
     if current.status == ControllerSlotStatus::Revoked {
         return Err(ControllerRegistryError::AlreadyRevoked);
     }
-    sql_query(format!(
+    let rows = sql_query(format!(
         "UPDATE controller_registry_slots
          SET label = $3, kid = $4, public_key = $5,
              issued_at = $6, expires_at = $7,
@@ -481,11 +485,10 @@ pub(super) async fn rotate_slot_on_connection(
     .bind::<Binary, _>(&rotation.public_key[..])
     .bind::<Timestamptz, _>(now)
     .bind::<Timestamptz, _>(now + Duration::seconds(CONTROLLER_KEY_TTL_SECONDS))
-    .get_result::<SlotRow>(connection)
+    .load::<SlotRow>(connection)
     .await
-    .map_err(map_slot_conflict)?
-    .try_into()
-    .map_err(transport)
+    .map_err(map_slot_conflict)?;
+    one_written_slot(rows)
 }
 
 pub(super) async fn revoke_slot_on_connection(
@@ -499,7 +502,7 @@ pub(super) async fn revoke_slot_on_connection(
     if current.status == ControllerSlotStatus::Revoked {
         return Err(ControllerRegistryError::AlreadyRevoked);
     }
-    sql_query(format!(
+    let rows = sql_query(format!(
         "UPDATE controller_registry_slots
          SET status = 'revoked', revoked_at = $3, updated_at = $3
          WHERE deployment_id = $1 AND controller_id = $2
@@ -509,10 +512,9 @@ pub(super) async fn revoke_slot_on_connection(
     .bind::<Varchar, _>(deployment_id)
     .bind::<Varchar, _>(controller_id)
     .bind::<Timestamptz, _>(now)
-    .get_result::<SlotRow>(connection)
-    .await?
-    .try_into()
-    .map_err(transport)
+    .load::<SlotRow>(connection)
+    .await?;
+    one_written_slot(rows)
 }
 
 impl ControllerRegistryRepository {

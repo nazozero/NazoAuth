@@ -5,7 +5,7 @@ use crate::domain::client_policy::refresh_client_jwks;
 use crate::domain::rows::ClientRow;
 use crate::security::client_assertion::ClientAssertionError;
 use crate::security::client_assertion::verify_private_key_jwt_claims_for_issuer;
-use nazo_auth::PresentedClientCredentials as ClientCredentials;
+use nazo_auth::PresentedClientCredentialsView;
 use nazo_auth::ValidatedClientAssertion;
 
 use crate::contracts::token_client_auth::ClientCertificateFacts;
@@ -84,16 +84,17 @@ fn dummy_client_secret_salt(client_id: Option<&str>) -> String {
 
 /// Equalizes the CPU work for an unknown secret-authenticated client without touching storage.
 /// The result is deliberately consumed so release optimization cannot remove the calculation.
-pub fn perform_dummy_client_secret_verification(
-    credentials: &ClientCredentials,
+pub fn perform_dummy_client_secret_verification<'credential>(
+    credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     client_secret_pepper: &str,
 ) {
+    let credentials = credentials.into();
     if matches!(
-        credentials.method.as_str(),
+        credentials.method,
         "client_secret_basic" | "client_secret_post"
-    ) && let Some(secret) = credentials.client_secret.as_deref()
+    ) && let Some(secret) = credentials.client_secret
     {
-        let dummy_salt = dummy_client_secret_salt(credentials.client_id.as_deref());
+        let dummy_salt = dummy_client_secret_salt(credentials.client_id);
         drop(std::hint::black_box(client_secret_digest(
             secret,
             client_secret_pepper,
@@ -103,12 +104,12 @@ pub fn perform_dummy_client_secret_verification(
 }
 
 #[allow(dead_code)]
-pub async fn authenticate_introspection_client_with_dependencies(
+pub async fn authenticate_introspection_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
     request: &ClientAuthRequestFacts,
     client: &mut ClientRow,
-    credentials: &ClientCredentials,
+    credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     secret_salt: Option<&str>,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
@@ -137,12 +138,12 @@ pub async fn authenticate_introspection_client_with_dependencies(
 }
 
 #[allow(dead_code)]
-pub async fn authenticate_revocation_client_with_dependencies(
+pub async fn authenticate_revocation_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
     request: &ClientAuthRequestFacts,
     client: &mut ClientRow,
-    credentials: &ClientCredentials,
+    credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     secret_salt: Option<&str>,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
@@ -164,18 +165,19 @@ pub async fn authenticate_revocation_client_with_dependencies(
     .await
 }
 
-pub async fn authenticate_client_with_dependencies(
+pub async fn authenticate_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
     request: &ClientAuthRequestFacts,
     client: &mut ClientRow,
-    credentials: &ClientCredentials,
+    credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     context: ClientAuthenticationContext,
     secret_salt: Option<&str>,
 ) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
+    let credentials = credentials.into();
     let requirement =
         client_authentication_requirement(client, credentials, context).map_err(|error| {
-            log_client_auth_rejection(request, client, credentials, "policy");
+            log_client_auth_rejection(request, client, &credentials, "policy");
             match error {
                 ClientAuthenticationPolicyError::InvalidClient => {
                     TokenManagementClientAuthError::InvalidClient
@@ -214,7 +216,7 @@ pub async fn authenticate_client_with_dependencies(
                 log_client_auth_rejection(
                     request,
                     client,
-                    credentials,
+                    &credentials,
                     client_assertion_error_reason(&error),
                 );
                 token_management_client_assertion_error(error)
@@ -240,13 +242,13 @@ pub async fn authenticate_client_with_dependencies(
             if client_secret_auth_result(secret_match)? {
                 Ok(None)
             } else {
-                log_client_auth_rejection(request, client, credentials, "client_secret");
+                log_client_auth_rejection(request, client, &credentials, "client_secret");
                 Err(TokenManagementClientAuthError::InvalidClient)
             }
         }
         ClientAuthenticationRequirement::MutualTls { .. } => {
             let Some(certificate) = request.client_certificate.as_ref() else {
-                log_client_auth_rejection(request, client, credentials, "missing_mtls_certificate");
+                log_client_auth_rejection(request, client, &credentials, "missing_mtls_certificate");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
             if client.token_endpoint_auth_method == "self_signed_tls_client_auth" {
@@ -258,7 +260,7 @@ pub async fn authenticate_client_with_dependencies(
                     })?;
             }
             if !client_mtls_certificate_matches(client, certificate) {
-                log_client_auth_rejection(request, client, credentials, "mtls_certificate");
+                log_client_auth_rejection(request, client, &credentials, "mtls_certificate");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             }
             if client.token_endpoint_auth_method == "tls_client_auth"
@@ -273,7 +275,7 @@ pub async fn authenticate_client_with_dependencies(
                             TokenManagementClientAuthError::StoreUnavailable
                         })?;
                 if !crate::security::mtls::certificate_chain_trusted(certificate, &anchors) {
-                    log_client_auth_rejection(request, client, credentials, "mtls_trust");
+                    log_client_auth_rejection(request, client, &credentials, "mtls_trust");
                     return Err(TokenManagementClientAuthError::InvalidClient);
                 }
             }
@@ -302,7 +304,7 @@ fn client_assertion_error_reason(error: &ClientAssertionError) -> &'static str {
 fn log_client_auth_rejection(
     request: &ClientAuthRequestFacts,
     client: &ClientRow,
-    credentials: &ClientCredentials,
+    credentials: &PresentedClientCredentialsView<'_>,
     reason: &'static str,
 ) {
     tracing::warn!(

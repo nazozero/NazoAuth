@@ -88,11 +88,11 @@ impl TenantResourcePreparation for ServerTenantResourcePreparation {
                     tenant_id: tenant.tenant_id.as_uuid(),
                     realm_id: tenant.realm_id.as_uuid(),
                     organization_id: tenant.organization_id.as_uuid(),
-                    registration: prepared.registration.clone(),
+                    registration: prepared.registration,
                     require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
                     is_active: true,
                 },
-                client_secret_hash: prepared.client_secret_hash.clone(),
+                client_secret_hash: prepared.client_secret_hash,
             })
         })
     }

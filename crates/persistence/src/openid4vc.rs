@@ -57,13 +57,20 @@ pub trait Openid4vciDatasetStore: Send + Sync {
         credential_configuration_id: &'a str,
     ) -> BoxFuture<'a, Result<Option<ManagedCredentialDataset>, CredentialStoreError>>;
 
-    /// Return the view only after the encrypted write, audit record and
-    /// complete transaction acknowledgement succeed. None retains rejection.
+    /// Return the view only after the encrypted write, source event and
+    /// canonical Required outcome commit in one owner transaction. None
+    /// retains rejection without accepting outcome evidence. An unavailable
+    /// acknowledgement never returns a successful view. The returned claims
+    /// and validity are decoded from the actual effect projection before COMMIT.
+    /// Effect/source-event cardinality mismatch is unavailable and rolls back;
+    /// only an acknowledged absent/ineligible target is a no-op.
     fn upsert_managed_dataset(
         &self,
         write: ManagedCredentialDatasetWrite,
     ) -> BoxFuture<'_, Result<Option<ManagedCredentialDataset>, CredentialStoreError>>;
 
+    /// Delete and append the source event and canonical Required outcome in
+    /// one owner transaction. False is an acknowledged no-op without evidence.
     fn delete_managed_dataset<'a>(
         &'a self,
         tenant_id: Uuid,

@@ -1,7 +1,5 @@
 //! 管理端用户授权关系接口。
-use crate::http::admin::{
-    persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
     require_admin_with_recent_mfa_or_forbidden_with_handles,
@@ -13,7 +11,6 @@ use actix_web::{HttpRequest, HttpResponse};
 use nazo_auth::{AdminGrantRepositoryPort, AdminGrantRevokeError, AdminGrantView};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
-use nazo_oauth_server::ports::audit::audit_fields;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -109,7 +106,7 @@ pub(crate) async fn admin_revoke_grant(
             "user_id 格式无效.",
         );
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let revoked = match grants
@@ -117,6 +114,7 @@ pub(crate) async fn admin_revoke_grant(
             admin.tenant().tenant_id.as_uuid(),
             user_id,
             &payload.client_id,
+            admin.id(),
         )
         .await
     {
@@ -141,23 +139,6 @@ pub(crate) async fn admin_revoke_grant(
             );
         }
     };
-    if let Err(response) = persist_required_audit_or_unavailable(
-        "admin_grant_revoked",
-        audit_fields(&[
-            ("admin_user_id", json!(admin.id())),
-            ("user_id", json!(user_id)),
-            ("client_id", json!(payload.client_id)),
-            (
-                "revoked_refresh_tokens",
-                json!(revoked.revoked_refresh_tokens),
-            ),
-            ("removed_grants", json!(revoked.removed_grants)),
-        ]),
-    )
-    .await
-    {
-        return response;
-    }
     grant_revocation_response(revoked.revoked_refresh_tokens, revoked.removed_grants)
 }
 

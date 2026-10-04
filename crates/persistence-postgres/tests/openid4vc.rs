@@ -2,6 +2,9 @@ use argon2::{Argon2, PasswordHasher};
 #[path = "support/password.rs"]
 mod password;
 
+#[path = "support/managed_dataset_required.rs"]
+mod managed_dataset_required;
+
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
     OptionalExtension, QueryableByName, sql_query,
@@ -1336,7 +1339,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
     assert!(issuer.record_notification(&notification).await.unwrap());
 
     let deferred_ready_at = Utc::now() + Duration::seconds(1);
-    let deferred = DeferredCredential {
+    let mut deferred = DeferredCredential {
         selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"deferred-transaction").to_hex().to_string(),
@@ -1349,6 +1352,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         expires_at: deferred_ready_at + Duration::minutes(5),
     };
     issuer.store_deferred(&deferred).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut deferred).await;
     let first_claim = claim_payload(
         issuer
             .claim_ready_deferred(
@@ -1454,7 +1458,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
     );
 
     let reclaim_deferred_ready_at = Utc::now() + Duration::seconds(1);
-    let reclaim_deferred = DeferredCredential {
+    let mut reclaim_deferred = DeferredCredential {
         selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"deferred-reclaim-transaction")
@@ -1469,6 +1473,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         expires_at: reclaim_deferred_ready_at + Duration::minutes(30),
     };
     issuer.store_deferred(&reclaim_deferred).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut reclaim_deferred).await;
     assert!(
         claim_payload(
             issuer
@@ -1483,7 +1488,8 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         )
         .is_some()
     );
-    let reclaim_deferred_now = reclaim_deferred_ready_at + Duration::minutes(6);
+    expire_fixture_deferred_lease(&pool, reclaim_deferred.id).await;
+    let reclaim_deferred_now = Utc::now();
     assert!(
         claim_payload(
             issuer
@@ -1549,7 +1555,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .unwrap()
     );
     let atomic_deferred_ready_at = Utc::now() + Duration::seconds(1);
-    let atomic_deferred = DeferredCredential {
+    let mut atomic_deferred = DeferredCredential {
         selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"atomic-deferred-transaction")
@@ -1584,6 +1590,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         )
         .await
         .unwrap();
+    mark_fixture_deferred_ready(&pool, &mut atomic_deferred).await;
     assert!(
         !issuer
             .claim_nonce(&atomic_nonce_hash, "atomic-retry", atomic_now)
@@ -2254,7 +2261,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
 
     // Exercise every deferred transition, including all transaction rollback paths.
     let deferred_ready_at = Utc::now() + Duration::seconds(10);
-    let deferred = DeferredCredential {
+    let mut deferred = DeferredCredential {
         selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-deferred").to_hex().to_string(),
@@ -2281,6 +2288,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         )
         .is_none()
     );
+    mark_fixture_deferred_ready(&pool, &mut deferred).await;
     let consumed_deferred = claim_payload(
         issuer
             .claim_ready_deferred(
@@ -2324,7 +2332,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
 
     let lease_deferred_ready_at = Utc::now() + Duration::seconds(10);
-    let lease_deferred = DeferredCredential {
+    let mut lease_deferred = DeferredCredential {
         selection: None,
         id: Uuid::now_v7(),
         transaction_hash: blake3::hash(b"boundary-deferred-lease")
@@ -2339,6 +2347,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: lease_deferred_ready_at + Duration::minutes(10),
     };
     issuer.store_deferred(&lease_deferred).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut lease_deferred).await;
     let lease_claim = claim_payload(
         issuer
             .claim_ready_deferred(
@@ -2606,11 +2615,12 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
     };
-    let notification_deferred = DeferredCredential {
+    let mut notification_deferred = DeferredCredential {
         expires_at: notification_deferred.ready_at + Duration::minutes(10),
         ..notification_deferred
     };
     issuer.store_deferred(&notification_deferred).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut notification_deferred).await;
     claim_payload(
         issuer
             .claim_ready_deferred(
@@ -2668,7 +2678,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
     };
-    let deferred_response_notification = DeferredCredential {
+    let mut deferred_response_notification = DeferredCredential {
         expires_at: deferred_response_notification.ready_at + Duration::minutes(10),
         ..deferred_response_notification
     };
@@ -2676,6 +2686,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         .store_deferred(&deferred_response_notification)
         .await
         .unwrap();
+    mark_fixture_deferred_ready(&pool, &mut deferred_response_notification).await;
     claim_payload(
         issuer
             .claim_ready_deferred(
@@ -2821,6 +2832,45 @@ fn openid4vc_deferred_fixture(
         ready_at,
         expires_at: ready_at + lifetime,
     }
+}
+
+async fn mark_fixture_deferred_ready(
+    pool: &nazo_postgres::DbPool,
+    credential: &mut DeferredCredential,
+) {
+    // Persist through the real adapter with a valid future readiness time,
+    // then model preparation which has already elapsed. Preserve its exact
+    // expiry and both production timestamp constraints.
+    credential.ready_at =
+        DateTime::from_timestamp_micros((Utc::now() - Duration::seconds(1)).timestamp_micros())
+            .unwrap();
+    let mut connection = get_conn(pool).await.unwrap();
+    assert_eq!(
+        sql_query("UPDATE openid4vci_deferred_transactions SET ready_at=$3, created_at=LEAST(created_at,$3 - interval '1 second') WHERE id=$1 AND token_id=$2")
+            .bind::<SqlUuid, _>(credential.id)
+            .bind::<SqlUuid, _>(credential.access.token_id)
+            .bind::<diesel::sql_types::Timestamptz, _>(credential.ready_at)
+            .execute(&mut connection)
+            .await
+            .expect("exact deferred fixture must retain created <= ready < expiry"),
+        1,
+    );
+}
+
+async fn expire_fixture_deferred_lease(pool: &nazo_postgres::DbPool, id: Uuid) {
+    let mut connection = get_conn(pool).await.unwrap();
+    assert_eq!(
+        sql_query(
+            "UPDATE openid4vci_deferred_transactions \
+        SET claim_expires_at=clock_timestamp()-INTERVAL '1 second' \
+        WHERE id=$1 AND claim_id IS NOT NULL"
+        )
+        .bind::<SqlUuid, _>(id)
+        .execute(&mut connection)
+        .await
+        .unwrap(),
+        1
+    );
 }
 
 async fn insert_openid4vc_subject(
@@ -4066,8 +4116,8 @@ async fn concurrent_identical_access_upserts_are_noops() {
     delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
 }
 
-// DF-01: the claim returns the deferred and joined access domain data in one
-// statement and writes the lease.
+// DF-01: the read-only locked projection returns complete original/current
+// facts; a second statement writes only the authorized lease.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deferred_claim_returns_joined_domain_state_and_writes_the_lease() {
     let Some(database_url) = database_url() else {
@@ -4099,15 +4149,16 @@ async fn deferred_claim_returns_joined_domain_state_and_writes_the_lease() {
         .to_hex()
         .to_string();
     issuer.upsert_access(&token_hash, &access).await.unwrap();
-    let deferred = openid4vc_deferred_fixture(
+    let mut deferred = openid4vc_deferred_fixture(
         &access,
         "openid4vc-df01",
         Duration::seconds(1),
         Duration::minutes(30),
     );
     issuer.store_deferred(&deferred).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut deferred).await;
 
-    let claim_now = deferred.ready_at;
+    let claim_now = Utc::now();
     let claim = claim_payload(
         issuer
             .claim_ready_deferred(
@@ -4128,13 +4179,13 @@ async fn deferred_claim_returns_joined_domain_state_and_writes_the_lease() {
 
     let lease = deferred_lease_row(&pool, deferred.id).await;
     assert_eq!(lease.claim_id.as_deref(), Some("df01-claim"));
-    assert_eq!(
-        lease
-            .claim_expires_at
-            .expect("the lease must record its expiry")
-            .timestamp(),
-        (claim_now + Duration::minutes(5)).timestamp(),
-        "the claim lease is five minutes from the supplied clock"
+    let expires_at = lease
+        .claim_expires_at
+        .expect("the lease must record its expiry");
+    assert!(expires_at >= claim_now + Duration::minutes(5));
+    assert!(
+        expires_at <= Utc::now() + Duration::minutes(5),
+        "the lease starts from the accepting database clock"
     );
     assert!(lease.consumed_at.is_none());
 
@@ -4212,7 +4263,7 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
     assert!(lease.claim_id.is_none() && lease.claim_expires_at.is_none());
     assert!(lease.consumed_at.is_none());
 
-    // expires_at in the past relative to the supplied clock.
+    // The database owner must see actual expiry, independently of caller time.
     let expired = openid4vc_deferred_fixture(
         &access,
         "openid4vc-df02-expired",
@@ -4220,6 +4271,18 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
         Duration::seconds(10),
     );
     issuer.store_deferred(&expired).await.unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_deferred_transactions \
+        SET ready_at=clock_timestamp()-INTERVAL '2 seconds', \
+            expires_at=clock_timestamp()-INTERVAL '1 second', \
+            created_at=LEAST(created_at,clock_timestamp()-INTERVAL '3 seconds') WHERE id=$1",
+    )
+    .bind::<SqlUuid, _>(expired.id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
     assert!(
         claim_payload(
             issuer
@@ -4240,13 +4303,14 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
     assert!(lease.consumed_at.is_none());
 
     // Already claimed and still inside its lease.
-    let leased = openid4vc_deferred_fixture(
+    let mut leased = openid4vc_deferred_fixture(
         &access,
         "openid4vc-df02-leased",
         Duration::seconds(1),
         Duration::minutes(30),
     );
     issuer.store_deferred(&leased).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut leased).await;
     assert!(
         claim_payload(
             issuer
@@ -4280,13 +4344,14 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
     assert_eq!(lease.claim_id.as_deref(), Some("first-owner"));
 
     // Already consumed.
-    let consumed = openid4vc_deferred_fixture(
+    let mut consumed = openid4vc_deferred_fixture(
         &access,
         "openid4vc-df02-consumed",
         Duration::seconds(1),
         Duration::minutes(30),
     );
     issuer.store_deferred(&consumed).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut consumed).await;
     assert!(
         claim_payload(
             issuer
@@ -4362,15 +4427,16 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
         .to_hex()
         .to_string();
     issuer.upsert_access(&token_hash, &access).await.unwrap();
-    let deferred = openid4vc_deferred_fixture(
+    let mut deferred = openid4vc_deferred_fixture(
         &access,
         "openid4vc-df03",
         Duration::seconds(1),
         Duration::minutes(30),
     );
     issuer.store_deferred(&deferred).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut deferred).await;
 
-    let claim_now = deferred.ready_at;
+    let claim_now = Utc::now();
     let issuer_a = Openid4vciRepository::new(
         create_pool(&database_url, 1).unwrap(),
         [0x6e_u8; 32],
@@ -4408,11 +4474,13 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
     let lease = deferred_lease_row(&pool, deferred.id).await;
     assert_eq!(lease.claim_id.as_deref(), Some(expected_claim_id));
     assert_eq!(lease.claim_expires_at, Some(*loser_retry_at));
-    assert_eq!(*loser_retry_at, claim_now + Duration::minutes(5));
+    assert!(*loser_retry_at >= claim_now + Duration::minutes(5));
+    assert!(*loser_retry_at <= Utc::now() + Duration::minutes(5));
 
-    // The lease expires five minutes after claim_now; a later clock lets the
-    // losing claimant (or any retry) reclaim without sleeping.
-    let reclaim_now = claim_now + Duration::minutes(6);
+    // Expire the exact persisted lease rather than passing a future caller
+    // clock which cannot advance the accepting owner's time.
+    expire_fixture_deferred_lease(&pool, deferred.id).await;
+    let reclaim_now = Utc::now();
     let reclaim = claim_payload(
         issuer
             .claim_ready_deferred(
@@ -4497,8 +4565,8 @@ async fn deferred_access_join_is_guaranteed_by_the_schema() {
     drop(connection);
 }
 
-// DF-05: a corrupt payload fails the claim with an error, and the lease write
-// inside the same transaction is rolled back.
+// DF-05: a corrupt payload fails decoding before any lease write; the
+// adapter still confirms transaction completion or discards the connection.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn corrupt_deferred_payload_rolls_back_the_claim_lease() {
     let Some(database_url) = database_url() else {
@@ -4525,13 +4593,14 @@ async fn corrupt_deferred_payload_rolls_back_the_claim_lease() {
         .to_hex()
         .to_string();
     issuer.upsert_access(&token_hash, &access).await.unwrap();
-    let deferred = openid4vc_deferred_fixture(
+    let mut deferred = openid4vc_deferred_fixture(
         &access,
         "openid4vc-df05",
         Duration::seconds(1),
         Duration::minutes(30),
     );
     issuer.store_deferred(&deferred).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut deferred).await;
 
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query("UPDATE openid4vci_deferred_transactions SET payload_ciphertext = $2 WHERE id = $1")
@@ -4557,7 +4626,7 @@ async fn corrupt_deferred_payload_rolls_back_the_claim_lease() {
     let lease = deferred_lease_row(&pool, deferred.id).await;
     assert!(
         lease.claim_id.is_none() && lease.claim_expires_at.is_none(),
-        "the lease write must roll back with the failed decode"
+        "failed decode must leave the lease untouched"
     );
     assert!(lease.consumed_at.is_none());
 
@@ -4593,13 +4662,14 @@ async fn deferred_claim_supports_grants_without_dpop_binding() {
         .to_hex()
         .to_string();
     issuer.upsert_access(&token_hash, &access).await.unwrap();
-    let deferred = openid4vc_deferred_fixture(
+    let mut deferred = openid4vc_deferred_fixture(
         &access,
         "openid4vc-df06",
         Duration::seconds(1),
         Duration::minutes(30),
     );
     issuer.store_deferred(&deferred).await.unwrap();
+    mark_fixture_deferred_ready(&pool, &mut deferred).await;
 
     let claim = claim_payload(
         issuer
@@ -5075,7 +5145,7 @@ async fn deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transact
         .to_hex()
         .to_string();
     issuer.upsert_access(&token_hash, &access).await.unwrap();
-    let deferred = openid4vc_deferred_fixture(
+    let mut deferred = openid4vc_deferred_fixture(
         &access,
         "deferred-outcomes",
         Duration::seconds(30),
@@ -5099,6 +5169,7 @@ async fn deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transact
             && untouched.claim_expires_at.is_none()
             && untouched.consumed_at.is_none()
     );
+    mark_fixture_deferred_ready(&pool, &mut deferred).await;
     let owned = issuer
         .claim_ready_deferred(
             &deferred.transaction_hash,
@@ -5182,26 +5253,6 @@ async fn refreshed_access_continues_only_its_original_credential_intent_after_so
         [0x66_u8; 32],
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
-    async fn mark_fixture_deferred_ready(
-        pool: &nazo_postgres::DbPool,
-        credential: &mut DeferredCredential,
-    ) {
-        // Persist through the real adapter with a valid future readiness time,
-        // then model preparation which has already elapsed. Preserve its exact
-        // expiry and both production timestamp constraints.
-        credential.ready_at = Utc::now() - Duration::seconds(1);
-        let mut connection = get_conn(pool).await.unwrap();
-        assert_eq!(
-            sql_query("UPDATE openid4vci_deferred_transactions SET ready_at=$3, created_at=LEAST(created_at,$3 - interval '1 second') WHERE id=$1 AND token_id=$2")
-                .bind::<SqlUuid, _>(credential.id)
-                .bind::<SqlUuid, _>(credential.access.token_id)
-                .bind::<diesel::sql_types::Timestamptz, _>(credential.ready_at)
-                .execute(&mut connection)
-                .await
-                .expect("exact deferred fixture must retain created <= ready < expiry"),
-            1,
-        );
-    }
     async fn expire_fixture_access(pool: &nazo_postgres::DbPool, tenant_id: Uuid, token_id: Uuid) {
         // An expired row must still represent a valid issuance history. The
         // production CHECK requires expiry after creation, including fixtures.
@@ -5724,4 +5775,270 @@ async fn presentation_completion_rechecks_owner_clock_after_pool_and_record_wait
         .execute(&mut connection)
         .await
         .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deferred_locked_projection_rechecks_waited_facts_and_discards_cancelled_owner() {
+    use futures_util::FutureExt as _;
+    use nazo_openid4vci::DeferredClaimOutcome;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 2).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "df01-locked-facts").await;
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x75; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let check = std::panic::AssertUnwindSafe(async {
+        for case in ["allowed", "revoked", "lineage", "selector", "mtls",
+            "grant-expiry", "intent-expiry", "cancel"] {
+            let mut original = openid4vc_access_fixture(
+                tenant_id, subject_id, "df01-locked-wallet", Duration::minutes(10));
+            original.authorization_id = Some(Uuid::now_v7());
+            original.mtls_x5t_s256 = Some("df01-bound-certificate".to_owned());
+            let mut current = original.clone();
+            current.token_id = Uuid::now_v7();
+            for grant in [&original, &current] {
+                issuer.upsert_access(&blake3::hash(grant.token_id.as_bytes()).to_hex().to_string(), grant)
+                    .await.unwrap();
+            }
+            let mut deferred = openid4vc_deferred_fixture(&original, case,
+                Duration::seconds(1), Duration::minutes(5));
+            deferred.selection = Some(nazo_openid4vci::CredentialSelection {
+                configuration_id: "pid".to_owned(), credential_identifier: None });
+            issuer.store_deferred(&deferred).await.unwrap();
+            mark_fixture_deferred_ready(&pool, &mut deferred).await;
+            let untouched = deferred_lease_row(&pool, deferred.id).await;
+            let blocker_name = format!("df01-blocker-{}", Uuid::now_v7());
+            let waiter_name = format!("df01-waiter-{}", Uuid::now_v7());
+            let mut blocker = AsyncPgConnection::establish(
+                &tagged_openid4vc_database_url(&database_url, &blocker_name)).await.unwrap();
+            let mut observer = AsyncPgConnection::establish(&database_url).await.unwrap();
+            blocker.batch_execute("BEGIN; SET LOCAL lock_timeout='2s';").await.unwrap();
+            let intent_lock = case == "intent-expiry" || case == "cancel";
+            if intent_lock {
+                sql_query("SELECT id FROM openid4vci_deferred_transactions WHERE id=$1 FOR UPDATE")
+                    .bind::<SqlUuid, _>(deferred.id).execute(&mut blocker).await.unwrap();
+            } else {
+                sql_query("SELECT token_id FROM openid4vci_access_grants WHERE token_id=$1 FOR UPDATE")
+                    .bind::<SqlUuid, _>(current.token_id).execute(&mut blocker).await.unwrap();
+            }
+            let waiting_pool = create_pool(
+                tagged_openid4vc_database_url(&database_url, &waiter_name), 1).unwrap();
+            let waiting_issuer = Openid4vciRepository::new(waiting_pool.clone(), [0x75; 32],
+                std::sync::Arc::new(password::BlockingSecretVerifier));
+            let transaction_hash = deferred.transaction_hash.clone();
+            let current_token = current.token_id;
+            let admitted = Utc::now();
+            let mut task = tokio::spawn(async move {
+                waiting_issuer.claim_ready_deferred(&transaction_hash, current_token, "waited-owner", admitted).await
+            });
+            let while_locked = std::panic::AssertUnwindSafe(async {
+                wait_for_openid4vc_blocked_by_or_task(&mut observer, &waiter_name, &blocker_name, &mut task).await;
+                let statement = match case {
+                    "revoked" => Some("UPDATE openid4vci_access_grants SET revoked_at=clock_timestamp() WHERE token_id=$1"),
+                    "lineage" => Some("UPDATE openid4vci_access_grants SET authorization_id=NULL WHERE token_id=$1"),
+                    "selector" => Some("UPDATE openid4vci_access_grants SET credential_configuration_ids='[\"different\"]'::jsonb WHERE token_id=$1"),
+                    "mtls" => Some("UPDATE openid4vci_access_grants SET mtls_x5t_s256='different-bound-certificate' WHERE token_id=$1"),
+                    "grant-expiry" => Some("UPDATE openid4vci_access_grants SET expires_at=clock_timestamp()+INTERVAL '500 milliseconds' WHERE token_id=$1"),
+                    _ => None,
+                };
+                if let Some(statement) = statement {
+                    sql_query(statement).bind::<SqlUuid, _>(current.token_id)
+                        .execute(&mut blocker).await.unwrap();
+                }
+                if case == "intent-expiry" {
+                    sql_query("UPDATE openid4vci_deferred_transactions SET expires_at=clock_timestamp()+INTERVAL '500 milliseconds' WHERE id=$1")
+                        .bind::<SqlUuid, _>(deferred.id).execute(&mut blocker).await.unwrap();
+                }
+                if case == "grant-expiry" || case == "intent-expiry" {
+                    // Expire after request admission while the real owner waits.
+                    tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+                }
+                if case == "cancel" { task.abort(); }
+            }).catch_unwind().await;
+            // Always release the fixture blocker before assertions or cleanup.
+            blocker.batch_execute("COMMIT").await.unwrap();
+            if let Err(panic) = while_locked {
+                task.abort();
+                let _ = task.await;
+                std::panic::resume_unwind(panic);
+            }
+            if case == "cancel" {
+                assert!(task.await.unwrap_err().is_cancelled());
+                // Never re-check out the canceled one-connection pool: a fresh
+                // backend must obtain both grant locks without recycle helping.
+                observer.batch_execute("BEGIN; SET LOCAL lock_timeout='2s';").await.unwrap();
+                let peer = sql_query("SELECT token_id FROM openid4vci_access_grants WHERE token_id IN ($1,$2) ORDER BY token_id FOR UPDATE")
+                    .bind::<SqlUuid, _>(original.token_id).bind::<SqlUuid, _>(current.token_id)
+                    .execute(&mut observer).await;
+                observer.batch_execute("ROLLBACK").await.unwrap();
+                assert!(peer.is_ok(), "cancellation must release physical grant locks before pool reuse");
+                drop(waiting_pool);
+            } else {
+                let completed = tokio::time::timeout(std::time::Duration::from_secs(5), &mut task).await;
+                if completed.is_err() { task.abort(); let _ = task.await; }
+                let outcome = completed.expect("waited owner must complete after fixture unlock").unwrap().unwrap();
+                if case == "allowed" {
+                    let DeferredClaimOutcome::Claimed(claim) = outcome else {
+                        panic!("unchanged authority must continue after the real lock wait");
+                    };
+                    assert_eq!(claim.credential, deferred);
+                    assert!(issuer.release_deferred(&deferred.transaction_hash, current.token_id,
+                        "waited-owner", Utc::now()).await.unwrap());
+                } else {
+                    assert_eq!(outcome, DeferredClaimOutcome::Invalid,
+                        "post-wait {case} must deny before any lease write");
+                }
+            }
+            let after = deferred_lease_row(&pool, deferred.id).await;
+            assert_eq!(after.claim_id, untouched.claim_id);
+            assert_eq!(after.claim_expires_at, untouched.claim_expires_at);
+            assert_eq!(after.consumed_at, untouched.consumed_at);
+        }
+    }).catch_unwind().await;
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+    if let Err(panic) = check {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deferred_reverse_grant_pairs_wait_on_the_sorted_first_lock_and_both_commit() {
+    use futures_util::FutureExt as _;
+    use nazo_openid4vci::DeferredClaimOutcome;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 2).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "df01-reverse-pairs").await;
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x76; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let mut a = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "df01-reverse-wallet",
+        Duration::minutes(10),
+    );
+    a.authorization_id = Some(Uuid::now_v7());
+    let mut b = a.clone();
+    b.token_id = Uuid::now_v7();
+    for access in [&a, &b] {
+        issuer
+            .upsert_access(
+                &blake3::hash(access.token_id.as_bytes())
+                    .to_hex()
+                    .to_string(),
+                access,
+            )
+            .await
+            .unwrap();
+    }
+    let mut da =
+        openid4vc_deferred_fixture(&a, "reverse-a", Duration::seconds(1), Duration::minutes(5));
+    let mut db =
+        openid4vc_deferred_fixture(&b, "reverse-b", Duration::seconds(1), Duration::minutes(5));
+    for deferred in [&mut da, &mut db] {
+        deferred.selection = Some(nazo_openid4vci::CredentialSelection {
+            configuration_id: "pid".to_owned(),
+            credential_identifier: None,
+        });
+        issuer.store_deferred(deferred).await.unwrap();
+        mark_fixture_deferred_ready(&pool, deferred).await;
+    }
+    let blocker_name = format!("df01-order-blocker-{}", Uuid::now_v7());
+    let mut blocker =
+        AsyncPgConnection::establish(&tagged_openid4vc_database_url(&database_url, &blocker_name))
+            .await
+            .unwrap();
+    let mut observer = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let lower = a.token_id.min(b.token_id);
+    let higher = a.token_id.max(b.token_id);
+    blocker.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT token_id FROM openid4vci_access_grants WHERE token_id=$1 FOR UPDATE")
+        .bind::<SqlUuid, _>(lower)
+        .execute(&mut blocker)
+        .await
+        .unwrap();
+    let name_a = format!("df01-order-a-{}", Uuid::now_v7());
+    let name_b = format!("df01-order-b-{}", Uuid::now_v7());
+    let owner_a = Openid4vciRepository::new(
+        create_pool(tagged_openid4vc_database_url(&database_url, &name_a), 1).unwrap(),
+        [0x76; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let owner_b = Openid4vciRepository::new(
+        create_pool(tagged_openid4vc_database_url(&database_url, &name_b), 1).unwrap(),
+        [0x76; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let hash_a = da.transaction_hash.clone();
+    let hash_b = db.transaction_hash.clone();
+    let a_id = a.token_id;
+    let b_id = b.token_id;
+    let mut task_a = tokio::spawn(async move {
+        owner_a
+            .claim_ready_deferred(&hash_a, b_id, "order-a", Utc::now())
+            .await
+    });
+    let mut task_b = tokio::spawn(async move {
+        owner_b
+            .claim_ready_deferred(&hash_b, a_id, "order-b", Utc::now())
+            .await
+    });
+    let before_release = std::panic::AssertUnwindSafe(async {
+        wait_for_openid4vc_blocked_by_or_task(&mut observer, &name_a, &blocker_name, &mut task_a)
+            .await;
+        wait_for_openid4vc_blocked_by_or_task(&mut observer, &name_b, &blocker_name, &mut task_b)
+            .await;
+        observer.batch_execute("BEGIN").await.unwrap();
+        let higher_free = sql_query(
+            "SELECT token_id FROM openid4vci_access_grants WHERE token_id=$1 FOR UPDATE NOWAIT",
+        )
+        .bind::<SqlUuid, _>(higher)
+        .execute(&mut observer)
+        .await;
+        observer.batch_execute("ROLLBACK").await.unwrap();
+        assert!(
+            higher_free.is_ok(),
+            "both reversed pairs must wait on lower before acquiring higher"
+        );
+    })
+    .catch_unwind()
+    .await;
+    blocker.batch_execute("COMMIT").await.unwrap();
+    let outcomes = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(&mut task_a, &mut task_b)
+    })
+    .await;
+    if outcomes.is_err() {
+        task_a.abort();
+        task_b.abort();
+        let _ = tokio::join!(task_a, task_b);
+    }
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+    if let Err(panic) = before_release {
+        std::panic::resume_unwind(panic);
+    }
+    let (outcome_a, outcome_b) =
+        outcomes.expect("both ordered claims complete after fixture unlock");
+    for outcome in [outcome_a, outcome_b] {
+        assert!(matches!(
+            outcome.unwrap().unwrap(),
+            DeferredClaimOutcome::Claimed(_)
+        ));
+    }
 }

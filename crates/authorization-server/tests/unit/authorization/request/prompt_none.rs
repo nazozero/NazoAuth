@@ -216,7 +216,6 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
             &facts,
             payload.clone(),
             None,
-            None,
         ))
         .expect("the normalized private payload issues a code");
     let AuthorizationOutcome::Redirect { location } = result else {
@@ -308,7 +307,7 @@ fn pushed_prompt_none_fixture() -> (
 
 #[test]
 fn prompt_none_commit_uses_original_expiry_even_when_cleanup_snapshot_is_corrupt() {
-    let (fixture, payload, version, par_expires_at) = pushed_prompt_none_fixture();
+    let (fixture, payload, _version, par_expires_at) = pushed_prompt_none_fixture();
     fixture.ports.stored_par.lock().unwrap()[0]
         .1
         .params
@@ -325,7 +324,6 @@ fn prompt_none_commit_uses_original_expiry_even_when_cleanup_snapshot_is_corrupt
             &application.context(),
             &facts,
             payload.clone(),
-            Some(&version),
             Some(par_expires_at),
         ),
     )
@@ -350,7 +348,7 @@ fn prompt_none_commit_uses_original_expiry_even_when_cleanup_snapshot_is_corrupt
 
 #[test]
 fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
-    let (fixture, payload, version, par_expires_at) = pushed_prompt_none_fixture();
+    let (fixture, payload, _version, par_expires_at) = pushed_prompt_none_fixture();
     let application = fixture.make_application();
     let context = application.context();
     let session_id = nazo_identity::SessionId::new("session-1");
@@ -365,14 +363,12 @@ fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
                 &context,
                 &facts,
                 payload.clone(),
-                Some(&version),
                 Some(par_expires_at)
             ),
             super::issue_authorization_code_without_interaction_with_context(
                 &context,
                 &facts,
                 payload.clone(),
-                Some(&version),
                 Some(par_expires_at)
             ),
         )
@@ -448,7 +444,6 @@ fn issue_prompt_none_for_session(
             &application.context(),
             &facts,
             payload,
-            None,
             None,
         ),
     )
@@ -715,7 +710,6 @@ fn prompt_none_oidc_without_session_id_does_not_return_a_code() {
             &application.context(),
             &facts,
             payload,
-            None,
             None,
         ),
     )

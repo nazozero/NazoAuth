@@ -89,12 +89,15 @@ UUID, sequence zero, identical previous/event hashes, and Unix epoch time; it
 is a checkpoint, not a fabricated security event.
 
 The worker records its observation and every externally accepted checkpoint in the shared audit chain state. Event acknowledgement and checkpoint advancement are one database operation. In `AUDIT_ANCHOR_MODE=required`, high-impact management preflight requires a recent worker observation, a valid deployment checkpoint, and oldest pending event age within `AUDIT_ANCHOR_MAX_LAG_SECONDS`. A bounded backlog is allowed, including committed events not yet chained. With no backlog the checkpoint must equal the chain head; historical delivery latency does not keep a recovered deployment unavailable. An empty ledger records its signed, externally accepted genesis checkpoint before required mode becomes ready. No instance-local health file is used.
-A durable batch acknowledgement also refreshes the worker observation. The
-database observation function updates that timestamp only when it is absent or
-older than 30 seconds, so repeated observations after a recent acknowledgement
-do not rewrite the shared state row. This observation does not acknowledge
-pending events or replace the signed receiver receipt; committed business
-consumption fences retain their own retention boundary.
+A durable batch acknowledgement also refreshes the worker observation. Every
+successful background observation updates its timestamp from the database's
+real clock, including idle polls after a recent acknowledgement. Required mode
+therefore supports a positive freshness limit shorter than the former 30-second
+write throttle, such as a 10-second limit with a 5-second healthy poll. Choose
+the freshness limit to cover poll and scheduling delays. Observation does not
+acknowledge pending events or replace the signed receiver receipt; committed
+business consumption fences retain their own retention boundary. Request
+admission reads health and does not add observation writes.
 
 `optional` and `disabled` do not read exporter health on management admission;
 the durable writer availability check still applies. `disabled` is an explicit

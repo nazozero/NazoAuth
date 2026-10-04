@@ -22,7 +22,6 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     context: &AuthorizationRequestContext<'_>,
     facts: &AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
-    pushed_request_version: Option<&str>,
     pushed_request_expires_at: Option<DateTime<Utc>>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
     let (Some(signed_response_required), Some(session_management_allowed), Some(ttl_seconds)) = (
