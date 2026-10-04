@@ -88,7 +88,7 @@ impl LifecycleHealth {
 
     fn mark_failure(&self) {
         self.consecutive_failures
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                 Some(value.saturating_add(1))
             })
             .ok();

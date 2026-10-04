@@ -856,7 +856,7 @@ async fn bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner()
                 self.calls.fetch_add(1, Ordering::SeqCst);
                 if self
                     .remaining
-                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
                     .is_ok()
                 {
                     Ok(SigningKeysetCompareAndSwapResult::Conflict(

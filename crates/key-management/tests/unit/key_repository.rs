@@ -306,7 +306,7 @@ impl SigningKeyRepository for ConflictRepository {
             let current = self.inner.load().await?.expect("keyset exists before CAS");
             if self
                 .conflicts_remaining
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
                     if remaining > 0 {
                         Some(remaining - 1)
                     } else {
