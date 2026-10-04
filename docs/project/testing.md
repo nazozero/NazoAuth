@@ -269,3 +269,20 @@ without I/O. Existing staged-read and publication regressions remain applicable.
   failures as server errors and reject unsupported holder-binding waivers.
   These mounted tests are source evidence until executed at the candidate SHA.
   See [validation boundaries](../protocol/openid4vc-validation.md).
+
+## PostgreSQL cancellation observation
+
+The Required dataset and mTLS cancellation fixtures hold a server-side append
+barrier and require an independent peer to acquire the unchanged business row
+before the retained owner pool is checked out again. Their owner connections
+explicitly set `client_connection_check_interval=100ms` for this observation.
+The barrier and the three-second peer lock timeout remain in place; no query
+timeout or explicit server cancellation replaces physical connection disposal.
+
+PostgreSQL's default zero interval detects a closed client at a later socket
+interaction, so a backend blocked inside the artificial barrier can retain its
+locks after the client driver closes. These fixtures qualify `DiscardOnDrop`
+retirement under the declared observation setting; they do not establish a
+three-second lock-release bound under the production default or qualify physical
+commit-acknowledgement loss. The setting is confined to those test connections.
+See the [PostgreSQL connection-check documentation](https://www.postgresql.org/docs/18/runtime-config-connection.html#GUC-CLIENT-CONNECTION-CHECK-INTERVAL).

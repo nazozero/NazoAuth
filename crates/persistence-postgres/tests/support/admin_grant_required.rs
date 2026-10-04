@@ -253,7 +253,7 @@ async fn grant_current_role_gate_preserves_separate_admitted_actor_home_tenant()
     let organization = Uuid::now_v7();
     let suffix = actor.simple().to_string();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    sql_query("WITH t AS (INSERT INTO tenants(id,slug,display_name) VALUES($1,$5,'admitted actor home') RETURNING id), r AS (INSERT INTO realms(id,tenant_id,slug,display_name) SELECT $2,t.id,$5,'admitted actor realm' FROM t RETURNING id,tenant_id), o AS (INSERT INTO organizations(id,tenant_id,realm_id,slug,display_name) SELECT $3,r.tenant_id,r.id,$5,'admitted actor organization' FROM r RETURNING id,tenant_id,realm_id) INSERT INTO users(id,tenant_id,realm_id,organization_id,username,email,password_hash,role,admin_level) SELECT $4,o.tenant_id,o.realm_id,o.id,$5,$5||'@example.test','fixture','admin',2 FROM o")
+    sql_query("WITH t AS (INSERT INTO tenants(id,slug,display_name) VALUES($1,$5,'admitted actor home') RETURNING id), r AS (INSERT INTO realms(id,tenant_id,slug,display_name) SELECT $2,t.id,$5,'admitted actor realm' FROM t RETURNING id,tenant_id), o AS (INSERT INTO organizations(id,tenant_id,slug,display_name) SELECT $3,r.tenant_id,$5,'admitted actor organization' FROM r RETURNING id,tenant_id) INSERT INTO users(id,tenant_id,realm_id,organization_id,username,email,password_hash,role,admin_level) SELECT $4,o.tenant_id,$2,o.id,$5,$5||'@example.test','fixture','admin',2 FROM o")
         .bind::<SqlUuid,_>(home).bind::<SqlUuid,_>(realm).bind::<SqlUuid,_>(organization).bind::<SqlUuid,_>(actor)
         .bind::<Text,_>(format!("grant-admitted-{suffix}")).execute(&mut connection).await.unwrap();
     let revoked = repository
