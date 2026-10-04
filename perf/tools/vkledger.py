@@ -32,7 +32,7 @@ import sys
 import time
 
 import redis
-from redis.backoff import ExponentialWithJitterBackoff
+from redis.backoff import NoBackoff
 from redis.retry import Retry
 
 SAMPLE_PER_CAT = int(sys.argv[2]) if len(sys.argv) > 2 else 400
@@ -46,7 +46,7 @@ r = redis.Redis.from_url(
     socket_connect_timeout=None,
     socket_keepalive=False,
     max_connections=2**31,
-    retry=Retry(ExponentialWithJitterBackoff(base=1, cap=10), retries=3),
+    retry=Retry(NoBackoff(), retries=0),
 )
 
 
