@@ -24,18 +24,18 @@
 mod store;
 mod wire;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use serde_json::json;
 use std::fs::File;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use store::{Checkpoint, Store};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::pki_types::CertificateDer;
 use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Fault {
@@ -92,7 +92,8 @@ struct Receiver {
 #[tokio::main]
 async fn main() -> Result<()> {
     let listen = env("ANCHOR_RECEIVER_LISTEN").unwrap_or_else(|_| "0.0.0.0:9443".to_owned());
-    let cert_path = env("ANCHOR_RECEIVER_TLS_CERT").context("ANCHOR_RECEIVER_TLS_CERT is required")?;
+    let cert_path =
+        env("ANCHOR_RECEIVER_TLS_CERT").context("ANCHOR_RECEIVER_TLS_CERT is required")?;
     let key_path = env("ANCHOR_RECEIVER_TLS_KEY").context("ANCHOR_RECEIVER_TLS_KEY is required")?;
     let deployment_id =
         env("ANCHOR_RECEIVER_DEPLOYMENT").context("ANCHOR_RECEIVER_DEPLOYMENT is required")?;
@@ -102,7 +103,8 @@ async fn main() -> Result<()> {
     let signing_key = wire::parse_signing_key(
         &env("ANCHOR_RECEIVER_SIGNING_KEY").context("ANCHOR_RECEIVER_SIGNING_KEY is required")?,
     )?;
-    let data_dir = env("ANCHOR_RECEIVER_DATA_DIR").context("ANCHOR_RECEIVER_DATA_DIR is required")?;
+    let data_dir =
+        env("ANCHOR_RECEIVER_DATA_DIR").context("ANCHOR_RECEIVER_DATA_DIR is required")?;
     let max_envelope = env("ANCHOR_RECEIVER_MAX_ENVELOPE")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
@@ -230,11 +232,7 @@ fn authorized(request: &Request, token: &[u8]) -> bool {
         .is_some_and(|presented| presented.as_bytes() == token)
 }
 
-async fn respond<S: AsyncWriteExt + Unpin>(
-    stream: &mut S,
-    status: u16,
-    body: &[u8],
-) -> Result<()> {
+async fn respond<S: AsyncWriteExt + Unpin>(stream: &mut S, status: u16, body: &[u8]) -> Result<()> {
     stream
         .write_all(
             format!(
@@ -432,7 +430,10 @@ async fn handle_genesis(receiver: &Arc<Receiver>, body: &[u8]) -> Result<wire::A
             0,
             &envelope.event_hash,
             &digest,
-            Some(format!("genesis_conflicts_with_{}", checkpoint.checkpoint_kind)),
+            Some(format!(
+                "genesis_conflicts_with_{}",
+                checkpoint.checkpoint_kind
+            )),
             true,
         )),
         None => {
