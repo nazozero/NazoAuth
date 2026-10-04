@@ -1923,12 +1923,24 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
         assert_eq!(durability.synchronous_commit, "on");
         assert_eq!(durability.full_page_writes, "on");
         let baseline = row_versions(&pool, seed.user_id).await;
-        let requests = (0..SAMPLES).map(|_| {
-            let access = CredentialAccess { token_id: Uuid::now_v7(), ..access.clone() };
-            (blake3_hex(&access.token_id.to_string()), access)
-        }).collect::<Vec<_>>();
+        let requests = (0..SAMPLES)
+            .map(|_| {
+                let access = CredentialAccess {
+                    token_id: Uuid::now_v7(),
+                    ..access.clone()
+                };
+                (blake3_hex(&access.token_id.to_string()), access)
+            })
+            .collect::<Vec<_>>();
         let mut phases = Vec::new();
-        for (phase_index, phase) in ["fresh_registered_write", "exact_no_write_retry", "immutable_sender_rejection"].into_iter().enumerate() {
+        for (phase_index, phase) in [
+            "fresh_registered_write",
+            "exact_no_write_retry",
+            "immutable_sender_rejection",
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let versions_before = row_versions(&pool, seed.user_id).await;
             let mut samples_ns = Vec::with_capacity(SAMPLES);
             let mut queries = QuerySnapshot::default();
@@ -1938,11 +1950,26 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
             let phase_started = std::time::Instant::now();
             for (hash, access) in &requests {
                 let attempted = if phase_index == 2 {
-                    CredentialAccess { dpop_jkt: Some("A".repeat(43)), ..access.clone() }
-                } else { access.clone() };
+                    CredentialAccess {
+                        dpop_jkt: Some("A".repeat(43)),
+                        ..access.clone()
+                    }
+                } else {
+                    access.clone()
+                };
                 let started = std::time::Instant::now();
-                let (result, delta, acquires) = measure(&counter, issuer.persist_pre_authorized_access(hash, &attempted, Some(seed.client.client_id.as_str()))).await;
-                samples_ns.push(u64::try_from(started.elapsed().as_nanos()).expect("bounded duration fits u64"));
+                let (result, delta, acquires) = measure(
+                    &counter,
+                    issuer.persist_pre_authorized_access(
+                        hash,
+                        &attempted,
+                        Some(seed.client.client_id.as_str()),
+                    ),
+                )
+                .await;
+                samples_ns.push(
+                    u64::try_from(started.elapsed().as_nanos()).expect("bounded duration fits u64"),
+                );
                 if phase_index == 2 {
                     assert_eq!(result, Err(CredentialStoreError::InvalidTransition));
                     rejected += 1;
@@ -1962,7 +1989,10 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
             if phase_index == 0 {
                 assert_eq!(versions_after.len(), baseline.len() + SAMPLES);
             } else {
-                assert_eq!(versions_after, versions_before, "retry/rejection may not rewrite any grant row version");
+                assert_eq!(
+                    versions_after, versions_before,
+                    "retry/rejection may not rewrite any grant row version"
+                );
             }
             assert_eq!(samples_ns.len(), SAMPLES);
             assert_eq!(accepted + rejected, SAMPLES);
@@ -1985,14 +2015,17 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
                 "row_version_writes": if phase_index == 0 { SAMPLES } else { 0 }
             }));
         }
-        println!("NAZO_VCI_OWNER_METRICS {}", json!({
-            "recipe": "vf01-owner-serial-3x100-v1", "sample_count_per_phase": SAMPLES,
-            "percentile_method": "empirical nearest rank: sorted100 indices49/94/98",
-            "boundary": "complete instrumented production repository call; one pooled connection; single writer; includes QueryCounter snapshot overhead; excludes HTTP/signature/proof processing and fixture/version-read setup",
-            "drop_boundary": "unstarted_calls is planned minus completed in this closed-loop recipe; no fixed-arrival-rate dropped_iterations claim",
-            "write_boundary": "row_version_writes tracks inserted/new xmin versions; unchanged xmin does not assert zero WAL or physical writes",
-            "durability": durability, "phases": phases
-        }));
+        println!(
+            "NAZO_VCI_OWNER_METRICS {}",
+            json!({
+                "recipe": "vf01-owner-serial-3x100-v1", "sample_count_per_phase": SAMPLES,
+                "percentile_method": "empirical nearest rank: sorted100 indices49/94/98",
+                "boundary": "complete instrumented production repository call; one pooled connection; single writer; includes QueryCounter snapshot overhead; excludes HTTP/signature/proof processing and fixture/version-read setup",
+                "drop_boundary": "unstarted_calls is planned minus completed in this closed-loop recipe; no fixed-arrival-rate dropped_iterations claim",
+                "write_boundary": "row_version_writes tracks inserted/new xmin versions; unchanged xmin does not assert zero WAL or physical writes",
+                "durability": durability, "phases": phases
+            })
+        );
     }
 
     cleanup_seed(&database_url, tenant, &seed).await;
