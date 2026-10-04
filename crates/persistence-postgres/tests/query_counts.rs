@@ -1923,10 +1923,13 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
         assert_eq!(durability.synchronous_commit, "on");
         assert_eq!(durability.full_page_writes, "on");
         let baseline = row_versions(&pool, seed.user_id).await;
+        // A known mTLS binding is immutable even for this lineage-free fixture.
+        // DPoP projection updates on lineage-free rows are intentionally allowed.
         let requests = (0..SAMPLES)
             .map(|_| {
                 let access = CredentialAccess {
                     token_id: Uuid::now_v7(),
+                    mtls_x5t_s256: Some("B".repeat(43)),
                     ..access.clone()
                 };
                 (blake3_hex(&access.token_id.to_string()), access)
@@ -1951,7 +1954,7 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
             for (hash, access) in &requests {
                 let attempted = if phase_index == 2 {
                     CredentialAccess {
-                        dpop_jkt: Some("A".repeat(43)),
+                        mtls_x5t_s256: Some("A".repeat(43)),
                         ..access.clone()
                     }
                 } else {
