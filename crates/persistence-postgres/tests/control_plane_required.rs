@@ -310,7 +310,10 @@ async fn required_control_plane_rewritten_approval_expiry_is_rejected_and_rolled
             .issue_rotation_approval_with_required_audit(command, f.audit.clone())
             .await
             .unwrap_err();
-        assert!(matches!(error, IdentityApprovalError::Transport(_)));
+        assert!(matches!(
+            error,
+            RecoveryRotationError::Approval(IdentityApprovalError::Transport(_))
+        ));
         assert!(
             error
                 .to_string()
