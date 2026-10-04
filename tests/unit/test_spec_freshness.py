@@ -2,6 +2,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -53,6 +54,59 @@ class SpecFreshnessTests(unittest.TestCase):
         self.assertIn("oauth-grant-management-working", identifiers)
         self.assertIn("oauth-grant-management-id1", identifiers)
         self.assertGreaterEqual(len(identifiers), 35)
+
+    def test_json_report_retains_failure_and_checks_later_sources(self):
+        manifest = {
+            "schema_version": 1,
+            "sources": [
+                {
+                    "id": "current", "title": "Current", "kind": "rfc", "number": 7009,
+                    "url": "https://www.rfc-editor.org/info/rfc7009", "markers": ["RFC 7009"],
+                },
+                {
+                    "id": "expired", "title": "Expired", "kind": "ietf_draft",
+                    "url": "https://datatracker.ietf.org/doc/draft-example/",
+                    "document": "draft-example", "revision": "01",
+                },
+                {
+                    "id": "later", "title": "Later", "kind": "rfc", "number": 9728,
+                    "url": "https://www.rfc-editor.org/info/rfc9728", "markers": ["RFC 9728"],
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            report = Path(directory) / "results" / "sources.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with mock.patch.object(self.module, "check_entry", side_effect=[
+                "current: official markers present",
+                RuntimeError("expired: official draft is expired"),
+                "later: official markers present",
+            ]) as check:
+                status = self.module.main(["--manifest", str(path), "--report-json", str(report)])
+            self.assertEqual(status, 1)
+            self.assertEqual(check.call_count, 3)
+            data = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(data["mode"], "online")
+            self.assertEqual(data["status"], "failed")
+            self.assertEqual(data["checked_source_count"], 3)
+            self.assertEqual(data["failed_source_count"], 1)
+            self.assertEqual(
+                [item["status"] for item in data["checks"]], ["passed", "failed", "passed"]
+            )
+            self.assertIn("expired", data["checks"][1]["message"])
+
+    def test_offline_report_does_not_claim_online_source_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "sources.json"
+            with mock.patch.object(self.module, "check_entry") as check:
+                status = self.module.main(["--offline", "--report-json", str(report)])
+            self.assertEqual(status, 0)
+            check.assert_not_called()
+            data = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(data["mode"], "offline")
+            self.assertEqual(data["checked_source_count"], 0)
+            self.assertEqual(data["checks"], [])
 
     def test_manifest_rejects_duplicate_ids_and_unofficial_hosts(self):
         manifest = {

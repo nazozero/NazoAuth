@@ -236,7 +236,7 @@ refer to them until they are promoted through the Review Gate for New Standards.
 | `draft-aap-oauth-profile-01` | Watch only; expired | Agent Authorization Profile may become relevant for AI-agent delegated access. |
 | `draft-li-oauth-delegated-authorization-03` | Watch only | Subordinate delegated tokens overlap with bounded Token Exchange and agent delegation. |
 | `draft-mcguinness-oauth-mission-00` | Watch only | Mission-bound authorization can inform bounded-purpose grants. |
-| `draft-mcguinness-oauth-client-instance-assertion-01` | Watch only | Client-instance identity may complement attestation-based client authentication. |
+| `draft-mcguinness-oauth-client-instance-id-00` | Watch only | Successor to Client Instance Assertion: an optional Client Attestation claims profile for continuity across verified key changes. Trusted attester selection, receiver-scope privacy, and continuity need a separate audit before implementation. |
 | Actor delegation drafts (`draft-mcguinness-oauth-actor-profile-00`, `draft-mcguinness-oauth-actor-proofs-00`, `draft-mcguinness-oauth-actor-receipts-00`, `draft-mw-oauth-actor-chain-01`) | Watch only | Relevant to auditable multi-agent or multi-hop delegation. |
 | `draft-liu-oauth-authorization-evidence-01` | Watch only | Could improve access-token audit evidence if privacy and minimization are solved. |
 | `draft-parecki-oauth-global-token-revocation-06` | Watch only; expired | Operationally useful for compromise response; requires careful blast-radius controls. |
