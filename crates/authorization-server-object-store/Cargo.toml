@@ -20,6 +20,8 @@ sha2.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 uuid = { workspace = true, features = ["v7"] }
 

@@ -139,6 +139,6 @@ panic = "abort"
 
 # Reviewed Actix h2 0.4 port, pinned to an immutable upstream fork revision.
 [patch.crates-io]
-actix-http = { git = "https://github.com/nazozero/actix-web", rev = "e0b55813727db0a7e27122cfd2c252bc1c85e545" }
+actix-http = { git = "https://github.com/nazozero/actix-web", rev = "5efd453eaca0f997d94d4bd527df89ee0c3d21fa" }
 # Reviewed mdoc-rs coset 0.4 port, pinned to an immutable upstream fork revision.
 mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "40e5ac7e1739150870c41544219345c2b6de4c9b" }

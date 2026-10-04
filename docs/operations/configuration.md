@@ -473,3 +473,8 @@ or negative values for session, authorization-code, access-token, ID-token,
 refresh-token, PAR, client-delivery, and email-code lifetimes because those
 settings back Valkey `EX` keys, database expiry timestamps, or abuse-control
 windows.
+
+OTLP HTTP trace, metric and log exporters make one send attempt per export;
+SDK retry policies are explicitly disabled. `OTEL_EXPORTER_OTLP_TIMEOUT` is the
+per-request timeout in milliseconds, not an additional retry budget. Required
+audit export and its acceptance barriers remain a separate pipeline.

@@ -28,6 +28,13 @@ The target accepts only its fixed staging object and its signed exact byte count
 
 Final S3 reads obtain Content-Type and bytes from the same signed GET response. Staged reads obtain ETag, declared length and bytes from one signed GET response, enforce the streaming size bound and exact returned length, and retain that ETag for source-if-match copy; candidate publication retains its existing HEAD checks. Failed or ambiguous database CAS outcomes retain a direct-upload candidate because another lease may share it.
 
+S3 HTTPS connections use Reqwest 0.13's platform certificate verifier and
+operating-system trust store. This replaces the Reqwest 0.12 bundled WebPKI
+roots used by the earlier S3 adapter. Ensure the runtime CA package is present;
+install a private endpoint CA in the platform trust store before starting the
+service. Endpoint hostname verification remains required. This S3 trust change
+does not change custom roots or mTLS policy in the other HTTP adapters.
+
 For the S3-compatible adapter, set `AVATAR_OBJECT_STORE: s3` plus `AVATAR_S3_ENDPOINT`, `AVATAR_S3_REGION`, `AVATAR_S3_BUCKET`, `AVATAR_S3_ACCESS_KEY`, `AVATAR_S3_SECRET_KEY`, and optional `AVATAR_S3_PATH_STYLE`. The native object-store launcher parses these keys and passes the selected configuration to the S3 adapter. The deployment must keep the `avatars/staging/` prefix unreadable to the public; a private bucket provides this directly. If a deployment serves final objects through a public domain, its access policy must still exclude staging objects. Configure CORS to allow the browser origin to perform the signed PUT and to expose no broader write capability. Configure an object-lifecycle rule that deletes the adapter's `avatars/staging/` prefix after the upload authorization window; final objects require a separate retention process because the server never deletes them after an ambiguous database outcome.
 
 ## Global default and tenant overrides
