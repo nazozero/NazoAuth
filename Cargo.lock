@@ -60,7 +60,7 @@ dependencies = [
 [[package]]
 name = "actix-http"
 version = "3.18.12"
-source = "git+https://github.com/nazozero/actix-web?rev=809d0baf3765865d5cea687d674fb8c69d73f5de#809d0baf3765865d5cea687d674fb8c69d73f5de"
+source = "git+https://github.com/nazozero/actix-web?rev=8b4f61be8de6b4bf6279c472c144dfea133b34aa#8b4f61be8de6b4bf6279c472c144dfea133b34aa"
 dependencies = [
  "actix-codec",
  "actix-service",

@@ -8,7 +8,7 @@ WORKDIR /src
 COPY perf/runner/k6-json-throughput.patch /tmp/k6-json-throughput.patch
 RUN patch -p1 < /tmp/k6-json-throughput.patch \
     && gofmt -w internal/output/json/json.go internal/output/json/json_test.go \
-    && GOMAXPROCS=2 go test -p 2 -timeout 180s ./internal/output/json ./metrics \
+    && GOMAXPROCS=2 go test -v -p 2 -timeout 180s ./internal/output/json ./metrics \
     && CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -ldflags="-s -w" -o /usr/bin/k6 .
 
 FROM docker.io/library/python:3.14.8-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
