@@ -3,7 +3,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use diesel::{
     QueryableByName, sql_query,
-    sql_types::{BigInt, Bool, Integer, Jsonb, Text, Uuid as SqlUuid},
+    sql_types::{BigInt, Bool, Integer, Jsonb, Text, Timestamptz, Uuid as SqlUuid},
 };
 use diesel_async::{RunQueryDsl, SimpleAsyncConnection};
 use futures_util::FutureExt as _;
@@ -198,6 +198,117 @@ where
         .await
         .unwrap();
     if let Err(error) = caught {
+        std::panic::resume_unwind(error);
+    }
+}
+
+#[tokio::test]
+async fn required_control_plane_approvals_accept_submicrosecond_clocks_with_exact_stored_expiry() {
+    let Some(f) = Fixture::new().await else {
+        return;
+    };
+    #[derive(QueryableByName)]
+    struct ApprovalTimes {
+        #[diesel(sql_type = Timestamptz)]
+        created_at: DateTime<Utc>,
+        #[diesel(sql_type = Timestamptz)]
+        expires_at: DateTime<Utc>,
+    }
+    for nanos in [1, 999, 123_456_789, 999_999_999] {
+        let now = DateTime::<Utc>::from_timestamp(1_800_000_000, nanos).unwrap();
+        let stored_now = DateTime::<Utc>::from_timestamp(1_800_000_000, nanos / 1_000 * 1_000).unwrap();
+        let expected_expiry = stored_now + chrono::Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS);
+        for action in [
+            ControllerIdentityAction::Bind,
+            ControllerIdentityAction::Add,
+            ControllerIdentityAction::Rotate,
+            ControllerIdentityAction::Revoke,
+            ControllerIdentityAction::RecoveryRootRotate,
+        ] {
+            let approval = if action == ControllerIdentityAction::RecoveryRootRotate {
+                let mut command = f.recovery_approval();
+                command.now = now;
+                f.recovery
+                    .issue_rotation_approval_with_required_audit(command, f.audit.clone())
+                    .await
+                    .unwrap()
+            } else {
+                let mut command = f.approval(action);
+                command.now = now;
+                f.registry
+                    .issue_identity_approval_with_required_audit(command, f.audit.clone())
+                    .await
+                    .unwrap()
+            };
+            let stored = sql_query("SELECT created_at,expires_at FROM controller_identity_approvals WHERE approval_id=$1")
+                .bind::<SqlUuid, _>(approval.approval_id)
+                .get_result::<ApprovalTimes>(&mut get_conn(&f.pool).await.unwrap())
+                .await
+                .unwrap();
+            assert_eq!(stored.created_at, stored_now);
+            assert_eq!(stored.expires_at, expected_expiry);
+            assert_eq!(approval.expires_at, stored.expires_at);
+            assert_eq!(
+                (stored.expires_at - stored.created_at).num_seconds(),
+                IDENTITY_APPROVAL_TTL_SECONDS
+            );
+            let evidence = snapshot(&f).await;
+            let event = evidence["canonical"].as_array().unwrap().last().unwrap();
+            assert_eq!(event["payload"]["expires_at"], approval.expires_at.to_rfc3339());
+            assert_eq!(event["payload"]["approval_id"], approval.approval_id.to_string());
+        }
+    }
+    assert_eq!(snapshot(&f).await["canonical"].as_array().unwrap().len(), 20);
+}
+
+#[tokio::test]
+async fn required_control_plane_rewritten_approval_expiry_is_rejected_and_rolled_back() {
+    let Some(f) = Fixture::new().await else {
+        return;
+    };
+    let name = format!("approval_expiry_{}", Uuid::now_v7().simple());
+    get_conn(&f.pool)
+        .await
+        .unwrap()
+        .batch_execute(&format!(
+            "CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.expires_at := NEW.expires_at + interval '1 microsecond'; RETURN NEW; END $$; CREATE TRIGGER {name} BEFORE INSERT ON controller_identity_approvals FOR EACH ROW WHEN (NEW.deployment_id='{}') EXECUTE FUNCTION {name}();",
+            f.deployment
+        ))
+        .await
+        .unwrap();
+    let before = snapshot(&f).await;
+    let body = std::panic::AssertUnwindSafe(async {
+        let now = DateTime::<Utc>::from_timestamp(1_800_000_000, 123_456_789).unwrap();
+        let mut command = f.approval(ControllerIdentityAction::Add);
+        command.now = now;
+        let error = f.registry
+            .issue_identity_approval_with_required_audit(command, f.audit.clone())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, IdentityApprovalError::Transport(_)));
+        assert!(error.to_string().contains("approval insert changed its authority binding"));
+        assert_eq!(snapshot(&f).await, before);
+        let mut command = f.recovery_approval();
+        command.now = now;
+        let error = f.recovery
+            .issue_rotation_approval_with_required_audit(command, f.audit.clone())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, IdentityApprovalError::Transport(_)));
+        assert!(error.to_string().contains("approval insert changed its authority binding"));
+        assert_eq!(snapshot(&f).await, before);
+    })
+    .catch_unwind()
+    .await;
+    get_conn(&f.pool)
+        .await
+        .unwrap()
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON controller_identity_approvals; DROP FUNCTION {name}();"
+        ))
+        .await
+        .unwrap();
+    if let Err(error) = body {
         std::panic::resume_unwind(error);
     }
 }

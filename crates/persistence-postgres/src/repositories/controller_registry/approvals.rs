@@ -7,7 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use diesel::OptionalExtension;
 use diesel::QueryableByName;
 use diesel::sql_query;
-use diesel::sql_types::{Nullable, Timestamptz, Uuid as DieselUuid, Varchar};
+use diesel::sql_types::{Bool, Nullable, Timestamptz, Uuid as DieselUuid, Varchar};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
@@ -122,6 +122,8 @@ struct IssuedApprovalRow {
     token_hash: String,
     #[diesel(sql_type = Timestamptz)]
     expires_at: DateTime<Utc>,
+    #[diesel(sql_type = Bool)]
+    expires_at_matches: bool,
 }
 
 #[derive(QueryableByName)]
@@ -269,7 +271,8 @@ impl ControllerRegistryRepository {
                 (approval_id, deployment_id, action, action_sha256,
                  admin_user_id, token_hash, expires_at, consumed_at, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8)
-             RETURNING approval_id,deployment_id,action,action_sha256,admin_user_id,expires_at,token_hash",
+             RETURNING approval_id,deployment_id,action,action_sha256,admin_user_id,expires_at,token_hash,
+                       expires_at = $7 AS expires_at_matches",
         )
         .bind::<DieselUuid, _>(approval_id)
         .bind::<Varchar, _>(deployment_id)
@@ -284,9 +287,12 @@ impl ControllerRegistryRepository {
         .map_err(approval_transport)?;
         if rows.len() != 1 { return Err(approval_transport(anyhow::anyhow!("approval insert returned an invalid authority row count"))); }
         let row = rows.pop().expect("one fully received approval row");
+        // Compare expiry against the bound PostgreSQL value: Diesel encodes
+        // Timestamptz in microseconds, whereas the caller clock may carry nanoseconds.
+        // This exact SQL equality still rejects a trigger-rewritten expiry.
         if row.deployment_id != deployment_id || row.action != action.as_str()
             || row.action_sha256 != action_sha256 || row.admin_user_id != admin_user_id
-            || row.token_hash != token_hash || row.expires_at != expires_at {
+            || row.token_hash != token_hash || !row.expires_at_matches {
             return Err(approval_transport(anyhow::anyhow!("approval insert changed its authority binding")));
         }
         let issued = IssuedIdentityApproval { approval_id:row.approval_id,action,action_sha256:row.action_sha256,token,expires_at:row.expires_at };
