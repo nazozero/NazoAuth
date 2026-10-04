@@ -172,7 +172,7 @@ pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
     let wait_nanos = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
     DB_POOL_ACQUIRE_COUNT.fetch_add(1, Ordering::Relaxed);
     DB_POOL_WAIT_NANOS_TOTAL.fetch_add(wait_nanos, Ordering::Relaxed);
-    let _ = DB_POOL_WAIT_NANOS_MAX.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+    let _ = DB_POOL_WAIT_NANOS_MAX.try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
         (wait_nanos > current).then_some(wait_nanos)
     });
     Ok(connection?)

@@ -42,7 +42,8 @@ RUN mkdir -p /run/sshd \
 # Project Python lives in /usr/local; Debian tools retain /usr/bin/python3.
 COPY --from=python /usr/local /usr/local
 
-RUN python3 -m pip install --no-cache-dir \
+RUN ldconfig \
+    && python3 -m pip install --no-cache-dir \
         "argon2-cffi==25.1.0" \
         "cryptography==50.0.2" \
         "psycopg[binary]==3.3.6" \
