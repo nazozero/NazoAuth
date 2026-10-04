@@ -132,7 +132,7 @@ async fn retain_policy_credential_access(
     );
     repository
         .persist_pre_authorized_access(
-            &blake3::hash(token.as_bytes()).to_hex().to_string(),
+            blake3::hash(token.as_bytes()).to_hex().as_ref(),
             &access,
             Some(&access.client_id),
         )
