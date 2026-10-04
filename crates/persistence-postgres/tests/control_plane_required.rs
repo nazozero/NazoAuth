@@ -216,7 +216,8 @@ async fn required_control_plane_approvals_accept_submicrosecond_clocks_with_exac
     }
     for nanos in [1, 999, 123_456_789, 999_999_999] {
         let now = DateTime::<Utc>::from_timestamp(1_800_000_000, nanos).unwrap();
-        let stored_now = DateTime::<Utc>::from_timestamp(1_800_000_000, nanos / 1_000 * 1_000).unwrap();
+        let stored_now =
+            DateTime::<Utc>::from_timestamp(1_800_000_000, nanos / 1_000 * 1_000).unwrap();
         let expected_expiry = stored_now + chrono::Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS);
         for action in [
             ControllerIdentityAction::Bind,
@@ -254,11 +255,20 @@ async fn required_control_plane_approvals_accept_submicrosecond_clocks_with_exac
             );
             let evidence = snapshot(&f).await;
             let event = evidence["canonical"].as_array().unwrap().last().unwrap();
-            assert_eq!(event["payload"]["expires_at"], approval.expires_at.to_rfc3339());
-            assert_eq!(event["payload"]["approval_id"], approval.approval_id.to_string());
+            assert_eq!(
+                event["payload"]["expires_at"],
+                approval.expires_at.to_rfc3339()
+            );
+            assert_eq!(
+                event["payload"]["approval_id"],
+                approval.approval_id.to_string()
+            );
         }
     }
-    assert_eq!(snapshot(&f).await["canonical"].as_array().unwrap().len(), 20);
+    assert_eq!(
+        snapshot(&f).await["canonical"].as_array().unwrap().len(),
+        20
+    );
 }
 
 #[tokio::test]
@@ -281,21 +291,31 @@ async fn required_control_plane_rewritten_approval_expiry_is_rejected_and_rolled
         let now = DateTime::<Utc>::from_timestamp(1_800_000_000, 123_456_789).unwrap();
         let mut command = f.approval(ControllerIdentityAction::Add);
         command.now = now;
-        let error = f.registry
+        let error = f
+            .registry
             .issue_identity_approval_with_required_audit(command, f.audit.clone())
             .await
             .unwrap_err();
         assert!(matches!(error, IdentityApprovalError::Transport(_)));
-        assert!(error.to_string().contains("approval insert changed its authority binding"));
+        assert!(
+            error
+                .to_string()
+                .contains("approval insert changed its authority binding")
+        );
         assert_eq!(snapshot(&f).await, before);
         let mut command = f.recovery_approval();
         command.now = now;
-        let error = f.recovery
+        let error = f
+            .recovery
             .issue_rotation_approval_with_required_audit(command, f.audit.clone())
             .await
             .unwrap_err();
         assert!(matches!(error, IdentityApprovalError::Transport(_)));
-        assert!(error.to_string().contains("approval insert changed its authority binding"));
+        assert!(
+            error
+                .to_string()
+                .contains("approval insert changed its authority binding")
+        );
         assert_eq!(snapshot(&f).await, before);
     })
     .catch_unwind()
