@@ -6,7 +6,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 
-use fs2::FileExt as _;
 use nazo_operator_protocol::{
     CONTROL_OPERATION_SCHEMA, CONTROL_RESULT_SCHEMA, ControlOperation, ControlOperationPayload,
     ControlOutcome, ControlResult, ControlResultData,
@@ -1158,12 +1157,11 @@ fn cleanup_enumeration_releases_business_lock_and_contended_deletion_is_retained
     let expired = cleanup_record(&directory, OPERATION_ID, "completed", Some(1_000));
     let mut entries = fs::read_dir(control_journal_directory(&directory))
         .unwrap()
-        .map(|entry| {
+        .inspect(|_| {
             contender
                 .try_lock_exclusive()
                 .expect("enumeration must not hold the business lock");
             fs2::FileExt::unlock(&contender).unwrap();
-            entry
         });
     let batch = cleanup_batch(
         &directory,

@@ -71,13 +71,11 @@
 //! ```
 
 use std::fs::{self, OpenOptions};
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::bail;
 use chrono::Utc;
-use fs2::FileExt as _;
 use nazo_operator_protocol::{
     CONTROL_RESULT_SCHEMA, ControlErrorCode, ControlOperation, ControlOutcome, ControlResult,
     ControlResultData, encode_control_result, validate_control_result,

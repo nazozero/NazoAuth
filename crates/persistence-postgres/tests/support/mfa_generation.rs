@@ -170,7 +170,7 @@ async fn assert_full_generation(
             .remembered_device_valid(
                 tenant.tenant_id,
                 user,
-                &blake3::hash(generation.as_bytes()).to_hex().to_string(),
+                blake3::hash(generation.as_bytes()).to_hex().as_ref(),
                 None,
                 chrono::Utc::now()
             )
@@ -371,11 +371,11 @@ async fn mfa_clear_generation_lock_orders_formal_g2_install_after_commit() {
         clear.abort();
         let _ = tokio::time::timeout(Duration::from_secs(1), &mut clear).await;
     }
-    if let Some(handle) = install.as_mut() {
-        if !handle.is_finished() {
-            handle.abort();
-            let _ = tokio::time::timeout(Duration::from_secs(1), handle).await;
-        }
+    if let Some(handle) = install.as_mut()
+        && !handle.is_finished()
+    {
+        handle.abort();
+        let _ = tokio::time::timeout(Duration::from_secs(1), handle).await;
     }
     let fixture_cleanup = blocker
         .batch_execute(&format!(
