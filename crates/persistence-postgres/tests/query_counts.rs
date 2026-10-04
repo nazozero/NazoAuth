@@ -1710,11 +1710,11 @@ async fn exs04_existence_checks_are_single_statements() {
 // UP-06: idempotent access upsert
 // ---------------------------------------------------------------------------
 
-/// UP-06: `upsert_access` is one `INSERT .. ON CONFLICT DO UPDATE .. WHERE ..
-/// IS DISTINCT FROM` per call; replaying the identical payload stays a single
-/// statement and succeeds.
+/// UP-06: a fresh upsert writes in one statement. An identical retry preserves
+/// the row version and verifies its exact facts with one additional locked read;
+/// a zero-row write alone cannot distinguish it from immutable-binding rejection.
 #[tokio::test]
-async fn up06_upsert_access_is_one_statement_and_idempotent() {
+async fn up06_upsert_access_verifies_no_write_retries() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -1750,13 +1750,11 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
         let (result, delta, acquires) =
             measure(&counter, issuer.upsert_access(&token_hash, &access)).await;
         result.unwrap_or_else(|error| panic!("upsert round {round} must succeed: {error}"));
-        // 1 data statement per call: INSERT .. ON CONFLICT (token_hash) DO
-        // UPDATE .. WHERE <columns> IS DISTINCT FROM EXCLUDED. On round 2 the
-        // IS DISTINCT FROM guard makes the conflict update a no-op — still a
-        // single statement, and it must not error.
+        // Round one acknowledges the write. Round two's conditional upsert
+        // writes nothing and a fresh locked SELECT acknowledges the exact retry.
         assert_eq!(
-            delta.data_queries, 1,
-            "round {round} upsert is one statement"
+            delta.data_queries, round,
+            "round {round} retains the precise write/retry verification budget"
         );
         assert_no_transaction(delta);
         assert_eq!(acquires, 1, "round {round} uses one pooled checkout");
@@ -1773,7 +1771,8 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
 /// lock and the conditional grant upsert into one CTE statement on one
 /// connection — no wrapping transaction. A `registered_client_id` mismatch is
 /// rejected before any connection is acquired, and the anonymous path is the
-/// same single conditional upsert.
+/// same single conditional upsert. Identical retries on either path require
+/// a second, locked exact-fact check without writing a new row version.
 #[tokio::test]
 async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     let _serial = SERIAL.lock().await;

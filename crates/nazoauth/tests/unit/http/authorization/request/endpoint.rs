@@ -2182,7 +2182,11 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
     );
     fixture.q = outer.clone();
     let response = fixture.authorize().await;
-    assert_authorization_error_redirect(response, "invalid_request_uri", None);
+    assert_authorization_error_redirect(
+        response,
+        "invalid_request_uri",
+        Some("opaque-state"),
+    );
 
     let malformed_request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
     fixture
@@ -2295,7 +2299,11 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
         1
     );
     let response = fixture.authorize().await;
-    assert_authorization_error_redirect(response, "invalid_request_uri", None);
+    assert_authorization_error_redirect(
+        response,
+        "invalid_request_uri",
+        Some("opaque-state"),
+    );
     assert_eq!(
         super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
         1
