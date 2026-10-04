@@ -54,10 +54,15 @@ fn s3_platform_trust_requires_a_trusted_ca_and_matching_hostname() {
                     Err(error) => panic!("TLS fixture accept: {error}"),
                 }
             };
-            stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-            stream.set_write_timeout(Some(Duration::from_secs(3))).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
             let mut stream = rustls::StreamOwned::new(
-                rustls::ServerConnection::new(Arc::new(server)).unwrap(), stream,
+                rustls::ServerConnection::new(Arc::new(server)).unwrap(),
+                stream,
             );
             let mut request = Vec::new();
             while !request.ends_with(b"\r\n\r\n") {
@@ -70,8 +75,16 @@ fn s3_platform_trust_requires_a_trusted_ca_and_matching_hostname() {
             }
             let request = String::from_utf8(request).unwrap();
             assert!(request.starts_with("DELETE /avatars/avatars/final/"));
-            assert!(request.to_ascii_lowercase().contains("authorization: aws4-hmac-sha256 "));
-            stream.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("authorization: aws4-hmac-sha256 ")
+            );
+            stream
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
             stream.flush().unwrap();
             true
         });
@@ -80,10 +93,18 @@ fn s3_platform_trust_requires_a_trusted_ca_and_matching_hostname() {
         let trust = directory.join("ca.pem");
         fs::write(&trust, trusted_ca).unwrap();
         let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "s3_platform_tls_child", "--ignored", "--nocapture"])
+            .args([
+                "--exact",
+                "s3_platform_tls_child",
+                "--ignored",
+                "--nocapture",
+            ])
             .env("SSL_CERT_FILE", &trust)
             .env("SSL_CERT_DIR", &directory)
-            .env("NAZO_S3_TLS_CHILD_ENDPOINT", format!("https://localhost:{port}"))
+            .env(
+                "NAZO_S3_TLS_CHILD_ENDPOINT",
+                format!("https://localhost:{port}"),
+            )
             .env("NAZO_S3_TLS_CHILD_SUCCEEDS", succeeds.to_string())
             .env_remove("HTTPS_PROXY")
             .env_remove("https_proxy")
@@ -93,8 +114,15 @@ fn s3_platform_trust_requires_a_trusted_ca_and_matching_hostname() {
             .unwrap();
         let http_received = handler.join().unwrap();
         fs::remove_dir_all(&directory).unwrap();
-        assert!(output.status.success(), "{name}: {}", String::from_utf8_lossy(&output.stdout));
-        assert_eq!(http_received, succeeds, "{name}: rejected TLS must not carry a signed S3 request");
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert_eq!(
+            http_received, succeeds,
+            "{name}: rejected TLS must not carry a signed S3 request"
+        );
     }
 }
 
@@ -105,13 +133,18 @@ async fn s3_platform_tls_child() {
     let succeeds = std::env::var("NAZO_S3_TLS_CHILD_SUCCEEDS").unwrap() == "true";
     let store = S3AvatarObjectStore::new(
         S3AvatarObjectStoreConfig {
-            endpoint, region: "us-east-1".to_owned(), bucket: "avatars".to_owned(),
+            endpoint,
+            region: "us-east-1".to_owned(),
+            bucket: "avatars".to_owned(),
             access_key: "tls-fixture-access".to_owned(),
-            secret_key: "tls-fixture-secret-only".to_owned(), path_style: true,
+            secret_key: "tls-fixture-secret-only".to_owned(),
+            path_style: true,
         },
         TenantId::new(Uuid::now_v7()).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
     let result = tokio::time::timeout(Duration::from_secs(5), store.delete_final("object"))
-        .await.expect("TLS handshake and request must terminate");
+        .await
+        .expect("TLS handshake and request must terminate");
     assert_eq!(result.is_ok(), succeeds);
 }

@@ -60,7 +60,7 @@ dependencies = [
 [[package]]
 name = "actix-http"
 version = "3.18.12"
-source = "git+https://github.com/nazozero/actix-web?rev=e0b55813727db0a7e27122cfd2c252bc1c85e545#e0b55813727db0a7e27122cfd2c252bc1c85e545"
+source = "git+https://github.com/nazozero/actix-web?rev=809d0baf3765865d5cea687d674fb8c69d73f5de#809d0baf3765865d5cea687d674fb8c69d73f5de"
 dependencies = [
  "actix-codec",
  "actix-service",
@@ -2994,7 +2994,9 @@ dependencies = [
  "futures-util",
  "http 1.5.0",
  "nazo-identity",
+ "rcgen",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
