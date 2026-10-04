@@ -570,7 +570,10 @@ async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
     let (result, delta, acquires) = measure(&counter, repository.revoke_token(input)).await;
 
     assert_eq!(result.expect("revocation succeeds"), 0);
-    assert_eq!(delta.data_queries, 1, "verified access authority never probes refresh families");
+    assert_eq!(
+        delta.data_queries, 1,
+        "verified access authority never probes refresh families"
+    );
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1, "one pooled checkout for the whole revocation");
@@ -614,26 +617,34 @@ async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
     let repository = TokenIssuanceRepository::new(pool);
 
     let access_input = TokenRevocation {
-        tenant_id: tenant.tenant_id.as_uuid(), client_id: seed.client.id,
+        tenant_id: tenant.tenant_id.as_uuid(),
+        client_id: seed.client.id,
         raw_token: &raw_token,
         access_token: Some(AccessTokenRevocation {
             jti: format!("qc-associated-jti-{}", Uuid::now_v7()),
             expires_at: Utc::now() + Duration::minutes(5),
         }),
     };
-    let (result, access_delta, access_acquires) = measure(&counter, repository.revoke_token(access_input)).await;
+    let (result, access_delta, access_acquires) =
+        measure(&counter, repository.revoke_token(access_input)).await;
     assert_eq!(result.expect("verified access revocation succeeds"), 0);
     assert_eq!(access_delta.data_queries, 1);
     assert_eq!(access_delta.begins, 1);
     assert_eq!(access_delta.commits, 1);
     assert_eq!(access_acquires, 1);
     assert_clean(access_delta);
-    assert!(repository.refresh_family_active(tenant.tenant_id.as_uuid(), family_id, seed.user_id)
-        .await.expect("refresh family state remains readable"),
-        "verified access authority must leave the colliding refresh family active");
+    assert!(
+        repository
+            .refresh_family_active(tenant.tenant_id.as_uuid(), family_id, seed.user_id)
+            .await
+            .expect("refresh family state remains readable"),
+        "verified access authority must leave the colliding refresh family active"
+    );
     let input = TokenRevocation {
-        tenant_id: tenant.tenant_id.as_uuid(), client_id: seed.client.id,
-        raw_token: &raw_token, access_token: None,
+        tenant_id: tenant.tenant_id.as_uuid(),
+        client_id: seed.client.id,
+        raw_token: &raw_token,
+        access_token: None,
     };
     let (result, delta, acquires) = measure(&counter, repository.revoke_token(input)).await;
 
@@ -1835,8 +1846,15 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
 
     // No-write retry: the conditional upsert plus a fresh locked exact-fact
     // verification. It retains one checkout and never rewrites an identical row.
-    let (result, delta, acquires) = measure(&counter,
-        issuer.persist_pre_authorized_access(&registered_hash, &access, Some(seed.client.client_id.as_str()))).await;
+    let (result, delta, acquires) = measure(
+        &counter,
+        issuer.persist_pre_authorized_access(
+            &registered_hash,
+            &access,
+            Some(seed.client.client_id.as_str()),
+        ),
+    )
+    .await;
     result.expect("an exact registered retry must succeed");
     assert_eq!(delta.data_queries, 2);
     assert_no_transaction(delta);

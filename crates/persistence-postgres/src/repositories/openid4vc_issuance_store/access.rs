@@ -70,9 +70,11 @@ pub(super) async fn access_upsert_on_connection(
     // A zero-row conditional upsert may mean an identical retry or a rejected
     // immutable binding. A fresh locked read also sees a concurrent insert that
     // was invisible to the upsert's original statement snapshot.
-    Ok(access_verify_on_connection(connection, token_hash, access, None)
-        .await?
-        .grant_accepted)
+    Ok(
+        access_verify_on_connection(connection, token_hash, access, None)
+            .await?
+            .grant_accepted,
+    )
 }
 
 /// A racing identical insert can surface a unique violation on the `token_id`
@@ -171,7 +173,6 @@ async fn access_persist_registered_on_connection(
     .await
 }
 
-
 /// Verify a no-write retry against current, locked facts. The registered path
 /// takes the client lock before the grant lock and checks both in this statement;
 /// neither an active client alone nor an old snapshot proves persistence.
@@ -216,7 +217,11 @@ async fn access_verify_on_connection(
 }
 
 fn require_accepted(accepted: bool) -> Result<(), CredentialStoreError> {
-    if accepted { Ok(()) } else { Err(CredentialStoreError::InvalidTransition) }
+    if accepted {
+        Ok(())
+    } else {
+        Err(CredentialStoreError::InvalidTransition)
+    }
 }
 
 impl Openid4vciRepository {

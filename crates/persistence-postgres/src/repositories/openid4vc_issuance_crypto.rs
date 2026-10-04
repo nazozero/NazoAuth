@@ -24,13 +24,10 @@ pub(super) fn unprotect_payload(
     let (nonce, ciphertext) = protected
         .split_at_checked(12)
         .ok_or_else(corrupt_stored_credential)?;
-    let nonce: &[u8; 12] = nonce
-        .try_into()
-        .map_err(|_| corrupt_stored_credential())?;
+    let nonce: &[u8; 12] = nonce.try_into().map_err(|_| corrupt_stored_credential())?;
     nazo_crypto::aead::decrypt(key, nonce, transaction_id.as_bytes(), ciphertext)
         .map_err(|_| corrupt_stored_credential())
 }
-
 
 #[derive(Debug)]
 struct CorruptStoredCredential;
@@ -50,7 +47,10 @@ pub(super) fn corrupt_stored_credential() -> diesel::result::Error {
 pub(super) fn map_stored_credential_error(error: diesel::result::Error) -> CredentialStoreError {
     match error {
         diesel::result::Error::DeserializationError(cause)
-            if cause.is::<CorruptStoredCredential>() => CredentialStoreError::InvalidTransition,
+            if cause.is::<CorruptStoredCredential>() =>
+        {
+            CredentialStoreError::InvalidTransition
+        }
         _ => CredentialStoreError::Unavailable,
     }
 }

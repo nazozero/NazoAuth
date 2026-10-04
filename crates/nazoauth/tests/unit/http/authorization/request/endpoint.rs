@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Int4, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use fred::interfaces::ClientLike;
+use fred::interfaces::{ClientLike, KeysInterface as _};
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
@@ -2141,8 +2141,17 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
     };
     let request_uri = fixture.push().await;
     let key = par_storage_key(&request_uri);
-    let prepared = valkey_get(&fixture.live.state.valkey, &key).await.unwrap().unwrap();
-    let initial_ttl = fixture.live.state.valkey.pttl::<i64, _>(&key).await.unwrap();
+    let prepared = valkey_get(&fixture.live.state.valkey, &key)
+        .await
+        .unwrap()
+        .unwrap();
+    let initial_ttl = fixture
+        .live
+        .state
+        .valkey
+        .pttl::<i64, _>(&key)
+        .await
+        .unwrap();
     assert!(initial_ttl > 0 && initial_ttl <= 60_000);
     let outer = fixture.q.clone();
     let response = fixture.authorize().await;
@@ -2151,11 +2160,26 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
         location.query_pairs().any(|(key, _)| key == "code"),
         "the first consumer issues one code"
     );
-    assert_eq!(valkey_get(&fixture.live.state.valkey, &key).await.unwrap(), Some(prepared),
-        "committed consumption retains immutable preparation until its original TTL");
-    let remaining = fixture.live.state.valkey.pttl::<i64, _>(&key).await.unwrap();
-    assert!(remaining > 0 && remaining <= initial_ttl, "consumption must not extend preparation TTL");
-    assert_eq!(super::prompt_none::decision_fact_count(&fixture, &request_uri).await, 1);
+    assert_eq!(
+        valkey_get(&fixture.live.state.valkey, &key).await.unwrap(),
+        Some(prepared),
+        "committed consumption retains immutable preparation until its original TTL"
+    );
+    let remaining = fixture
+        .live
+        .state
+        .valkey
+        .pttl::<i64, _>(&key)
+        .await
+        .unwrap();
+    assert!(
+        remaining > 0 && remaining <= initial_ttl,
+        "consumption must not extend preparation TTL"
+    );
+    assert_eq!(
+        super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
+        1
+    );
     fixture.q = outer.clone();
     let response = fixture.authorize().await;
     assert_authorization_error_redirect(response, "invalid_request_uri", None);
@@ -2196,8 +2220,17 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
     };
     let request_uri = fixture.push().await;
     let key = par_storage_key(&request_uri);
-    let prepared = valkey_get(&fixture.live.state.valkey, &key).await.unwrap().unwrap();
-    let initial_ttl = fixture.live.state.valkey.pttl::<i64, _>(&key).await.unwrap();
+    let prepared = valkey_get(&fixture.live.state.valkey, &key)
+        .await
+        .unwrap()
+        .unwrap();
+    let initial_ttl = fixture
+        .live
+        .state
+        .valkey
+        .pttl::<i64, _>(&key)
+        .await
+        .unwrap();
     assert!(initial_ttl > 0 && initial_ttl <= 60_000);
     let application = fixture.dependencies.application();
     let sid = SessionId::new(fixture.sid.clone());
@@ -2241,17 +2274,33 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
             .count(),
         1
     );
-    assert_eq!(valkey_get(&fixture.live.state.valkey, &key).await.unwrap(), Some(prepared),
-        "committed consumption retains immutable preparation until its original TTL");
-    let remaining = fixture.live.state.valkey.pttl::<i64, _>(&key).await.unwrap();
-    assert!(remaining > 0 && remaining <= initial_ttl, "consumption must not extend preparation TTL");
-    assert_eq!(super::prompt_none::decision_fact_count(&fixture, &request_uri).await, 1);
+    assert_eq!(
+        valkey_get(&fixture.live.state.valkey, &key).await.unwrap(),
+        Some(prepared),
+        "committed consumption retains immutable preparation until its original TTL"
+    );
+    let remaining = fixture
+        .live
+        .state
+        .valkey
+        .pttl::<i64, _>(&key)
+        .await
+        .unwrap();
+    assert!(
+        remaining > 0 && remaining <= initial_ttl,
+        "consumption must not extend preparation TTL"
+    );
+    assert_eq!(
+        super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
+        1
+    );
     let response = fixture.authorize().await;
     assert_authorization_error_redirect(response, "invalid_request_uri", None);
-    assert_eq!(super::prompt_none::decision_fact_count(&fixture, &request_uri).await, 1);
-
+    assert_eq!(
+        super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
+        1
+    );
 }
-
 
 #[actix_web::test]
 async fn signed_response_with_precomputed_policy_accepts_only_an_active_database_client() {
