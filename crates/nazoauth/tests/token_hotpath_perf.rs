@@ -877,7 +877,7 @@ async fn seed_codes(
 // ---------------------------------------------------------------------------
 
 struct Worker {
-    client: reqwest_012::blocking::Client,
+    client: reqwest::blocking::Client,
     port: u16,
     host: String,
     basic: String,
@@ -887,7 +887,7 @@ struct Worker {
 impl Worker {
     fn new(port: u16, host: &str, client_id: &str, mtls_header: Option<String>) -> Self {
         use base64::engine::general_purpose::STANDARD;
-        let client = reqwest_012::blocking::Client::builder()
+        let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(60))
             .pool_max_idle_per_host(2)
             // The measurement target is always loopback; ambient HTTP(S)_PROXY

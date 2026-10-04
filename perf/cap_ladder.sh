@@ -9,7 +9,7 @@ DUR="${3:-60s}"; WARM="${4:-15000}"
 OUT=/workspace/perf-results/ladder
 mkdir -p "$OUT"
 
-sat() { docker run --rm python:3.12-alpine python -c "import sys;sys.exit(0 if ($1) else 1)"; }
+sat() { docker run --rm docker.io/library/python:3.14.8-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 python -c "import sys;sys.exit(0 if ($1) else 1)"; }
 
 prev_tps=0; low_growth=0; baseline_p99=0; saturated=0
 for c in $LEVELS; do
@@ -28,7 +28,7 @@ for c in $LEVELS; do
     -e PERF_DURATION="$DUR" -e CAP_WARMUP_MS="$WARM" \
     -e PERF_USER_COUNT="$users" \
     perf > "$d/run.log" 2>&1
-  read tps errs p99 appcpu <<<"$(docker run --rm -v "$d":/r -v /workspace/cap_point.py:/cap_point.py python:3.12-alpine python /cap_point.py /r "$SCEN" 2>/dev/null)"
+  read tps errs p99 appcpu <<<"$(docker run --rm -v "$d":/r -v /workspace/cap_point.py:/cap_point.py docker.io/library/python:3.14.8-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 python /cap_point.py /r "$SCEN" 2>/dev/null)"
   if [ -z "${tps:-}" ]; then
     echo "  FAILED: no measured stats; see $d/run.log"; tail -5 "$d/run.log"
     [ -f /workspace/perf-results/STOP ] && break
@@ -40,7 +40,7 @@ for c in $LEVELS; do
     echo "  SATURATED: errors/latency/cpu threshold"; saturated=1; break
   fi
   if [ "$prev_tps" != "0" ]; then
-    growth=$(docker run --rm python:3.12-alpine python -c "print(($tps-$prev_tps)/$prev_tps*100)")
+    growth=$(docker run --rm docker.io/library/python:3.14.8-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 python -c "print(($tps-$prev_tps)/$prev_tps*100)")
     echo "  growth vs prev: ${growth}%"
     if sat "$growth<10"; then
       low_growth=$((low_growth+1))

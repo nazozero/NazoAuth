@@ -15,7 +15,7 @@ test = false
 http.workspace = true
 actix-cors = { workspace = true }
 actix-files = { workspace = true }
-actix-multipart = "0.8.0"
+actix-multipart = "0.8.5"
 actix-rt = { workspace = true }
 actix-tls = { workspace = true, features = ["accept", "rustls-0_23"] }
 actix-web = { workspace = true, features = ["cookies", "rustls-0_23"] }
@@ -56,14 +56,14 @@ nazo-resource-server = { workspace = true }
 nazo-runtime-modules = { workspace = true }
 nazo-scim-events = { workspace = true }
 nazo-valkey = { workspace = true }
-opentelemetry = "0.32.0"
-opentelemetry-appender-tracing = "0.32.0"
-opentelemetry-otlp = { version = "0.32.0", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
-opentelemetry_sdk = { version = "0.32.1", features = ["logs", "metrics", "rt-tokio", "trace"] }
+opentelemetry = "0.33.0"
+opentelemetry-appender-tracing = "0.33.0"
+opentelemetry-otlp = { version = "0.33.0", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
+opentelemetry_sdk = { version = "0.33.0", features = ["logs", "metrics", "rt-tokio", "trace"] }
 passkey-auth = { workspace = true }
 process-wrap = { workspace = true }
 rand = { workspace = true }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "http2", "json", "stream"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "json", "stream", "query", "form"] }
 rustix = { workspace = true }
 rustls = { workspace = true }
 semver = { workspace = true }
@@ -75,14 +75,14 @@ tar = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
-tracing-opentelemetry = "0.33.0"
+tracing-opentelemetry = "0.34.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = { workspace = true }
 urlencoding = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
 webpki = { workspace = true }
 x509-parser = { workspace = true }
-yaml_serde = "0.10.4"
+yaml_serde = "0.10.7"
 yasna = { workspace = true }
 zeroize = { workspace = true }
 
@@ -102,7 +102,7 @@ fred = { workspace = true, features = ["i-scripts"] }
 nazo-key-management = { workspace = true, features = ["test-support"] }
 pkcs8 = { workspace = true }
 proptest = { workspace = true }
-reqwest_012 = { package = "reqwest", version = "0.12.28", default-features = false, features = ["rustls-tls", "blocking"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "blocking", "query", "form"] }
 uuid = { workspace = true, features = ["v7"] }
 
 [lints]

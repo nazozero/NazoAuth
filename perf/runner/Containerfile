@@ -1,4 +1,4 @@
-FROM docker.io/library/golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS k6
+FROM docker.io/library/golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS k6
 
 RUN apk add --no-cache patch
 # Exact upstream v2.3.0 source; the patch changes JSON output encoding only.
@@ -11,10 +11,10 @@ RUN patch -p1 < /tmp/k6-json-throughput.patch \
     && GOMAXPROCS=2 go test -p 2 -timeout 180s ./internal/output/json ./metrics \
     && CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -ldflags="-s -w" -o /usr/bin/k6 .
 
-FROM docker.io/library/python:3.14-alpine@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01
+FROM docker.io/library/python:3.14.8-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
 
 RUN apk add --no-cache ca-certificates docker-cli \
-    && pip install --no-cache-dir "psycopg[binary]==3.3.4" "redis==7.1.0" "argon2-cffi==25.1.0" "cryptography==50.0.0" "blake3==1.0.9" "orjson==3.12.0"
+    && pip install --no-cache-dir "psycopg[binary]==3.3.6" "redis==8.1.0" "argon2-cffi==25.1.0" "cryptography==50.0.2" "blake3==1.0.10" "orjson==3.12.0"
 
 COPY --from=k6 /usr/bin/k6 /usr/bin/k6
 COPY perf /perf

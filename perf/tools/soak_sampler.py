@@ -17,6 +17,8 @@ import urllib.request
 
 import psycopg
 import redis
+from redis.backoff import ExponentialWithJitterBackoff
+from redis.retry import Retry
 
 DB = os.environ.get("DB_URL", "postgresql://postgres:postgres@postgres:5432/oauth")
 VK = os.environ.get("VK_URL", "redis://valkey:6379/0")
@@ -72,7 +74,16 @@ def audit_snapshot(connection, predicates, include_totals=False):
 
 def main():
     out = open(OUT, "a", buffering=1)
-    r = redis.Redis.from_url(VK, decode_responses=True)
+    r = redis.Redis.from_url(
+        VK,
+        decode_responses=True,
+        protocol=2,
+        socket_timeout=None,
+        socket_connect_timeout=None,
+        socket_keepalive=False,
+        max_connections=2**31,
+        retry=Retry(ExponentialWithJitterBackoff(base=1, cap=10), retries=3),
+    )
     out.write(json.dumps({
         "kind": "meta", "run_id": RUN_ID, "script_sha256": self_sha256(),
         "db": DB.split("@")[-1], "app_metrics": APP,

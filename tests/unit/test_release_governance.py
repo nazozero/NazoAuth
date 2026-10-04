@@ -169,7 +169,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertNotIn("--input /image.tar", scan)
         self.assertEqual(
             scan.count(
-                "docker.io/aquasec/trivy:0.74.0@sha256:"
+                "docker.io/aquasec/trivy:0.75.0@sha256:"
                 "62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
             ),
             1,

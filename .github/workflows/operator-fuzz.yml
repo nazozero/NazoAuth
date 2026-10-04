@@ -30,12 +30,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@c6590455eca8e79d081430ebfe2074192ae90290 # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
 
       - name: Install pinned nightly and cargo-fuzz
         run: |
-          rustup toolchain install nightly-2026-07-31 --profile minimal
-          cargo +nightly-2026-07-31 install cargo-fuzz --version 0.13.2 --locked
+          rustup toolchain install nightly-2026-10-04 --profile minimal
+          cargo +nightly-2026-10-04 install cargo-fuzz --version 0.13.2 --locked
 
       - name: Fuzz closed operator JWS parser
-        run: cargo +nightly-2026-07-31 fuzz run operator_jws_parser -- -max_total_time=60 -rss_limit_mb=512 -timeout=10
+        run: cargo +nightly-2026-10-04 fuzz run operator_jws_parser -- -max_total_time=60 -rss_limit_mb=512 -timeout=10

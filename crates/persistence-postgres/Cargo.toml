@@ -44,7 +44,7 @@ argon2.workspace = true
 ed25519-dalek.workspace = true
 jsonwebtoken.workspace = true
 rcgen.workspace = true
-syn = { version = "3.0.0", features = ["full", "visit"] }
+syn = { version = "3.0.6", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 
 [lints]
