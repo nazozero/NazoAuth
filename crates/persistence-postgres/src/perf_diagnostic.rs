@@ -140,6 +140,17 @@ impl Instrumentation for ConnectionTiming {
     }
 }
 
+pub(crate) async fn backend_pid(client: &tokio_postgres::Client) -> u32 {
+    if writer().is_none() {
+        return 0;
+    }
+    client
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await
+        .map(|row| row.get::<_, i32>(0) as u32)
+        .unwrap_or(0)
+}
+
 pub(crate) fn attach(connection: &mut AsyncPgConnection, pid: u32) {
     if writer().is_none() {
         return;
