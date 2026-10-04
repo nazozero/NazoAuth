@@ -11,7 +11,7 @@ RUN patch -p1 < /tmp/k6-json-throughput.patch \
     && GOMAXPROCS=2 go test -p 2 -timeout 180s ./internal/output/json ./metrics \
     && CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -ldflags="-s -w" -o /usr/bin/k6 .
 
-FROM docker.io/library/python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
+FROM docker.io/library/python:3.14-alpine@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01
 
 RUN apk add --no-cache ca-certificates docker-cli \
     && pip install --no-cache-dir "psycopg[binary]==3.3.4" "redis==7.1.0" "argon2-cffi==25.1.0" "cryptography==50.0.0" "blake3==1.0.9" "orjson==3.12.0"
