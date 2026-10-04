@@ -183,9 +183,15 @@ async fn cancelled_trust_required_owner_releases_peer_lock_without_pool_checkout
     for action in [0, 1, 2] {
         let f = fixture(&url, action == 2).await;
         let application = format!("trust-owner-{}", Uuid::now_v7().simple());
+        // Poll the closed socket during the deliberate server-side lock
+        // barrier. PostgreSQL's default zero interval waits for later socket
+        // I/O; this fixture observes physical retirement before pool reuse.
         let separator = if url.contains('?') { '&' } else { '?' };
         let pool =
-            create_pool(format!("{url}{separator}application_name={application}"), 1).unwrap();
+            create_pool(
+                format!("{url}{separator}application_name={application}&options=-c%20client_connection_check_interval%3D100ms"),
+                1,
+            ).unwrap();
         let repository = MtlsTrustAnchorRepository::new(pool.clone());
         let mut coordinator = AsyncPgConnection::establish(&url).await.unwrap();
         let mut observer = AsyncPgConnection::establish(&url).await.unwrap();

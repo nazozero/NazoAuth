@@ -37,13 +37,16 @@ async fn fixture(url: &str) -> DatasetFixture {
 }
 
 async fn cleanup(connection: &mut AsyncPgConnection, f: &DatasetFixture) {
-    sql_query("DELETE FROM users WHERE tenant_id=$1 AND (id=$2 OR id=$3)")
-        .bind::<SqlUuid, _>(f.tenant)
-        .bind::<SqlUuid, _>(f.admin)
-        .bind::<SqlUuid, _>(f.subject)
-        .execute(connection)
-        .await
-        .unwrap();
+    // Removing the subject cascades its dataset/source events before the
+    // actor row is removed. Canonical Required evidence remains retained.
+    for user in [f.subject, f.admin] {
+        sql_query("DELETE FROM users WHERE tenant_id=$1 AND id=$2")
+            .bind::<SqlUuid, _>(f.tenant)
+            .bind::<SqlUuid, _>(user)
+            .execute(connection)
+            .await
+            .unwrap();
+    }
 }
 
 async fn snapshot(connection: &mut AsyncPgConnection, f: &DatasetFixture) -> serde_json::Value {
@@ -120,9 +123,15 @@ async fn cancelled_dataset_required_owner_releases_peer_row_lock_without_pool_ch
     for delete in [false, true] {
         let f = fixture(&url).await;
         let application = format!("dataset-owner-{}", Uuid::now_v7().simple());
+        // Poll the closed socket during the deliberate server-side lock
+        // barrier. PostgreSQL's default zero interval waits for later socket
+        // I/O; this fixture observes physical retirement before pool reuse.
         let separator = if url.contains('?') { '&' } else { '?' };
         let pool =
-            create_pool(format!("{url}{separator}application_name={application}"), 1).unwrap();
+            create_pool(
+                format!("{url}{separator}application_name={application}&options=-c%20client_connection_check_interval%3D100ms"),
+                1,
+            ).unwrap();
         let repo = Openid4vciDatasetRepository::new(pool.clone(), [0x72; 32]);
         assert!(
             put(&repo, &f, &serde_json::json!({"given_name":"original"}))

@@ -449,9 +449,18 @@ fn stale_update_and_delete_fail_without_mutation_or_success_audit() {
                 .await,
         );
         assert!(store.0.lock().unwrap().client.as_ref().unwrap().is_active);
+        // Readiness precedes each atomic write attempt. A stale credential
+        // still prevents mutation and success auditing after that check.
         assert_eq!(
             *guard.events.lock().unwrap(),
-            ["rate_limit", "mutation_ready", "rate_limit", "rate_limit"]
+            [
+                "rate_limit",
+                "mutation_ready",
+                "rate_limit",
+                "mutation_ready",
+                "rate_limit",
+                "mutation_ready",
+            ]
         );
     });
 }

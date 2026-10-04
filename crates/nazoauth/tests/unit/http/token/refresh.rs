@@ -1533,7 +1533,7 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
             mtls_refresh_request(&certificate),
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
-            "refresh_token 复用处理失败.",
+            "Request failed.",
         ),
     ]
     .into_iter()
