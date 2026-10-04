@@ -38,6 +38,8 @@ repository = "https://github.com/nazozero/NazoAuth"
 [workspace.dependencies]
 actix-cors = "0.7.1"
 actix-files = "0.7.0"
+# actix-server disables actix-rt defaults; 2.15 gates its signal API separately.
+actix-rt = { version = "2.15.0", default-features = false, features = ["signal"] }
 actix-web = "4.14.0"
 actix-tls = "3.4.0"
 anyhow = "1.0.103"

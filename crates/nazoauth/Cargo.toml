@@ -16,6 +16,7 @@ http.workspace = true
 actix-cors = { workspace = true }
 actix-files = { workspace = true }
 actix-multipart = "0.8.0"
+actix-rt = { workspace = true }
 actix-tls = { workspace = true, features = ["accept", "rustls-0_23"] }
 actix-web = { workspace = true, features = ["cookies", "rustls-0_23"] }
 anyhow = { workspace = true }

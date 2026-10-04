@@ -32,7 +32,7 @@ feeds two sub-4-KiB batches and verifies their complete envelopes arrive before
 the next batch or shutdown. All samples and the five-second lag gate remain
 unchanged.
 
-The runner builds exact k6 v2.2.0 source `00a9a1b7f552d6bb4337278b10ae25aac0f4e666`
+The runner builds exact k6 v2.3.0 source `e0887846143ab176d4b5483c9d52cf3b3e009f1a`
 from a checksum-verified archive. Its [small JSON output patch](runner/k6-json-throughput.patch)
 reuses bounded encodings of immutable tag sets and writes the same complete
 sample envelope without repeated reflection. Retained samples preserve every

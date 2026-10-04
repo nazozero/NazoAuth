@@ -86,7 +86,8 @@ Run the structure check before the Rust quality gate below.
 
 ## Verification
 
-Use the pinned toolchain in `rust-toolchain.toml`. The executable CI definition
+Use Rust 1.98.1, pinned in `rust-toolchain.toml` and the build images. The
+workflow toolchain actions use the same release at an immutable revision. The executable CI definition
 is [code-quality.yml](../../.github/workflows/code-quality.yml); it owns the
 service versions, fixtures, and complete environment. Do not point these tests
 at a deployment database or state store.
