@@ -26,7 +26,7 @@ use refresh_fixture::RefreshFixture;
 
 use chrono::{DateTime, Duration, Utc};
 use diesel::{sql_query, sql_types};
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     AccessTokenRevocation, ClientSecurityPolicy, CommitTokenIssuance, CommitTokenIssuanceResult,
     OAuthClient, RefreshToken, RefreshTokenAuthenticationContext, TokenIssuanceMode,
