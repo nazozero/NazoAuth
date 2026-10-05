@@ -52,9 +52,10 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
             // the request aborts the task and discards its unconfirmed connection.
             // An already-sent implicit statement may still commit on the server;
             // cancellation is an unknown outcome, not a confirmed rollback.
+            let bridge = crate::perf_diagnostic::Bridge::new("commit_authorization_decision");
             let mut operation = tokio::task::JoinSet::new();
             operation.spawn_on(
-                async move {
+                bridge.clone().run(async move {
                     let mut guard = DiscardOnDrop(Some(
                         get_conn(&pool)
                             .await
@@ -138,12 +139,12 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                         guard.return_to_pool();
                     }
                     result.map_err(|_| AuthorizationPortError::Unexpected)
-                },
+                }),
                 &self.pool.runtime,
             );
-            operation
-                .join_next()
-                .await
+            let joined = operation.join_next().await;
+            bridge.resumed();
+            joined
                 .expect("authorization decision task was registered")
                 .map_err(|_| AuthorizationPortError::Unavailable)?
         })
@@ -336,7 +337,8 @@ async fn execute_decision(
     connection: &mut diesel_async::AsyncPgConnection,
     input: &AuthorizationDecisionCommit,
 ) -> diesel::QueryResult<AuthorizationDecisionCommitResult> {
-    let rows = sql_query(
+    let span = crate::perf_diagnostic::Span::sql(connection, "authorization_function_load");
+    let rows = crate::perf_diagnostic::awaited(span, sql_query(
         "SELECT public.nazo_commit_authorization_decision(\
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
     )
@@ -354,7 +356,7 @@ async fn execute_decision(
     .bind::<sql_types::Jsonb, _>(serde_json::json!(input.scopes))
     .bind::<sql_types::Jsonb, _>(serde_json::json!(input.resource_indicators))
     .bind::<sql_types::Jsonb, _>(&input.authorization_details)
-    .load::<DecisionOutcomeRow>(connection)
+    .load::<DecisionOutcomeRow>(connection))
     .await?;
     let mut rows = rows.into_iter();
     let row = rows.next().ok_or(diesel::result::Error::NotFound)?;
