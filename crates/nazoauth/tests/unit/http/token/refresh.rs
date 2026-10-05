@@ -2978,7 +2978,7 @@ async fn oidc_refresh_projection_state(
     exec_sql(&state, &format!("CREATE SCHEMA {schema}")).await;
     // Preserve real column types/defaults but allow invalid domain values in
     // this lookup-only fixture. Public CHECK/FK constraints stay intact.
-    exec_sql(&state, "CREATE TABLE users (LIKE public.users INCLUDING DEFAULTS)").await;
+    exec_sql(&state, &format!("CREATE TABLE {schema}.users (LIKE public.users INCLUDING DEFAULTS)")).await;
     if let Some(user) = user {
         exec_sql(&state, &format!("INSERT INTO users SELECT * FROM public.users WHERE id='{user}'")).await;
     }

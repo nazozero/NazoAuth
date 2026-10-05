@@ -2264,26 +2264,17 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
         assert_eq!(q.data_queries, 1);
         assert_eq!(a, 1);
     }
-    for mutation in [
-        "is_active=false",
-    ] {
-        sql_query(format!(
-            "UPDATE users SET {mutation} WHERE tenant_id=$1 AND id=$2"
-        ))
+    sql_query("UPDATE users SET is_active=false WHERE tenant_id=$1 AND id=$2")
         .bind::<sql_types::Uuid, _>(id)
         .bind::<sql_types::Uuid, _>(seed.user_id)
-        .execute(&mut c)
-        .await
-        .unwrap();
-        let (r, q, a) = measure(
-            &counter,
-            repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
-        )
-        .await;
-        assert!(r.unwrap().unwrap().prepared_subject.is_none());
-        assert_eq!(q.data_queries, 1);
-        assert_eq!(a, 1);
-    }
+        .execute(&mut c).await.unwrap();
+    let (r, q, a) = measure(
+        &counter,
+        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+    ).await;
+    assert!(r.unwrap().unwrap().prepared_subject.is_none());
+    assert_eq!(q.data_queries, 1);
+    assert_eq!(a, 1);
     // A single-connection temporary users table permits corrupt profile data
     // without altering the real users CHECK/FK constraints or its rows.
     {
