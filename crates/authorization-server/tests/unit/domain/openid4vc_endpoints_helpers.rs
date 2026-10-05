@@ -473,7 +473,10 @@ fn credential_and_deferred_request_digest_preserve_exact_canonical_envelope() {
             r#"{{"kind":"{kind}","method":"POST","request":{{"a":{{"proof":"jwt.exact.签名","quoted":"\\\"\n"}},"z":[null,true,17,2.5]}},"request_url":"{url}","version":1}}"#,
         );
         let digest = issuance_request_digest(kind, &request, url, "POST").unwrap();
-        assert_eq!(digest, blake3::hash(expected.as_bytes()).to_hex().to_string());
+        assert_eq!(
+            digest,
+            blake3::hash(expected.as_bytes()).to_hex().to_string()
+        );
         assert_eq!(
             digest,
             issuance_request_digest(kind, &reordered, url, "POST").unwrap()

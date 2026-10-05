@@ -145,7 +145,9 @@ fn token_inspection_preserves_owned_audience_and_confirmation_shapes() {
                 x5t_s256: Some("certificate-thumbprint".to_owned()),
             }),
         ] {
-            let expected_cnf = cnf.as_ref().map(|value| serde_json::to_value(value).unwrap());
+            let expected_cnf = cnf
+                .as_ref()
+                .map(|value| serde_json::to_value(value).unwrap());
             let document = TokenInspection::ActiveAccess {
                 scope: String::new(),
                 client_id: "client".to_owned(),
@@ -164,7 +166,10 @@ fn token_inspection_preserves_owned_audience_and_confirmation_shapes() {
             assert_eq!(document["scope"], json!(""));
             assert_eq!(document["sub"], json!("subject\"\n签名"));
             assert_eq!(document.get("cnf"), expected_cnf.as_ref());
-            assert_eq!(document.as_object().unwrap().len(), 11 + usize::from(expected_cnf.is_some()));
+            assert_eq!(
+                document.as_object().unwrap().len(),
+                11 + usize::from(expected_cnf.is_some())
+            );
         }
     }
 }
