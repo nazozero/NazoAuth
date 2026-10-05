@@ -392,17 +392,17 @@ impl TokenInspection {
             } => {
                 let mut document = serde_json::json!({
                     "active": true,
-                    "scope": scope,
-                    "client_id": client_id,
                     "token_type": token_type,
                     "exp": expires_at,
                     "iat": issued_at,
                     "nbf": not_before,
-                    "sub": subject,
-                    "aud": audience,
-                    "iss": issuer,
-                    "jti": jti,
                 });
+                document["scope"] = serde_json::Value::String(scope);
+                document["client_id"] = serde_json::Value::String(client_id);
+                document["sub"] = serde_json::Value::String(subject);
+                document["aud"] = audience;
+                document["iss"] = serde_json::Value::String(issuer);
+                document["jti"] = serde_json::Value::String(jti);
                 if let Some(cnf) = cnf {
                     document["cnf"] = serde_json::to_value(cnf)
                         .expect("confirmation claims are always serializable");
@@ -415,14 +415,17 @@ impl TokenInspection {
                 expires_at,
                 issued_at,
                 subject,
-            } => serde_json::json!({
-                "active": true,
-                "scope": scope,
-                "client_id": client_id,
-                "exp": expires_at,
-                "iat": issued_at,
-                "sub": subject,
-            }),
+            } => {
+                let mut document = serde_json::json!({
+                    "active": true,
+                    "exp": expires_at,
+                    "iat": issued_at,
+                });
+                document["scope"] = serde_json::Value::String(scope);
+                document["client_id"] = serde_json::Value::String(client_id);
+                document["sub"] = serde_json::Value::String(subject);
+                document
+            }
         }
     }
 }

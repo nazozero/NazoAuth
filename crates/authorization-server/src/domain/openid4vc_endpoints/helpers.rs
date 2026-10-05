@@ -161,13 +161,13 @@ pub(super) fn issuance_request_digest<T: serde::Serialize>(
 ) -> Result<String, CredentialHttpError> {
     let request = serde_json::to_value(request)
         .map_err(|_| vci_error(500, "server_error", "Credential request digest failed."))?;
-    let input = serde_json::json!({
+    let mut input = serde_json::json!({
         "version": 1,
         "kind": kind,
-        "request": request,
         "request_url": request_url,
         "method": method,
     });
+    input["request"] = request;
     let encoded = serde_json::to_vec(&input)
         .map_err(|_| vci_error(500, "server_error", "Credential request digest failed."))?;
     Ok(blake3::hash(&encoded).to_hex().to_string())

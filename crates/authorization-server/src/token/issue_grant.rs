@@ -409,12 +409,13 @@ pub async fn issue_token_response(
     } else {
         "Bearer"
     };
+    let scope = issue.scopes.join(" ");
     let mut body = json!({
-        "access_token": issued_access_token.token,
         "token_type": token_type,
         "expires_in": context.config.access_token_ttl_seconds,
-        "scope": issue.scopes.join(" ")
+        "scope": scope
     });
+    body["access_token"] = serde_json::Value::String(issued_access_token.token);
     if !nazo_auth::authorization_details_empty(&issue.authorization_details) {
         body["authorization_details"] = issue.authorization_details.clone();
     }
@@ -546,7 +547,7 @@ pub async fn issue_token_response(
                 ));
             }
         };
-        body["id_token"] = json!(id_token);
+        body["id_token"] = serde_json::Value::String(id_token);
     }
     let mut refresh_token_to_commit = None;
     if will_issue_refresh && let Some((family, rotated_from, lost_response_retry)) = refresh_family
@@ -568,7 +569,7 @@ pub async fn issue_token_response(
             &refresh,
             id_token_sid_for_refresh_persistence.map(ToOwned::to_owned),
         );
-        body["refresh_token"] = json!(refresh.raw);
+        body["refresh_token"] = serde_json::Value::String(refresh.raw);
         refresh_token_family_id = Some(refresh.family);
         refresh_token_to_commit = Some(refresh_token);
     }
@@ -646,12 +647,13 @@ pub async fn issue_token_response(
         } => Some((code_identity.clone(), holder.clone())),
         _ => None,
     };
+    let subject_hash = blake3_hex(&issue.subject);
     match token_service
         .commit_token_issuance(nazo_auth::CommitTokenIssuance {
             authorization_id: Some(authorization_id),
             native_sso_source: issue.native_sso_source,
             principal_state,
-            subject: issue.subject.clone(),
+            subject: issue.subject,
             issuance_id,
             tenant_id: client.tenant_id,
             client_id: client.id,
@@ -662,9 +664,9 @@ pub async fn issue_token_response(
             refresh_token: refresh_commit,
             audit_fields: nazo_auth::TokenIssuedAuditFields {
                 client_id: client.client_id.clone(),
-                subject_hash: blake3_hex(&issue.subject),
-                scope: issue.scopes.join(" "),
-                audience: issue.audiences.clone(),
+                subject_hash,
+                scope,
+                audience: issue.audiences,
             },
         })
         .await

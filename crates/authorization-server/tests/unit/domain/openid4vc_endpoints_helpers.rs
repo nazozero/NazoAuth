@@ -457,3 +457,32 @@ fn presentation_verifier_dependency_errors_remain_server_errors() {
         assert_eq!((mapped.status, mapped.error), (503, "server_error"));
     }
 }
+
+#[test]
+fn credential_and_deferred_request_digest_preserve_exact_canonical_envelope() {
+    let request: Value = serde_json::from_str(
+        r#"{"z":[null,true,17,2.5],"a":{"proof":"jwt.exact.签名","quoted":"\\\"\n"}}"#,
+    )
+    .unwrap();
+    let reordered: Value = serde_json::from_str(
+        r#"{"a":{"quoted":"\\\"\n","proof":"jwt.exact.签名"},"z":[null,true,17,2.5]}"#,
+    )
+    .unwrap();
+    for (kind, url) in [("credential", "/credential"), ("deferred", "/deferred")] {
+        let expected = format!(
+            r#"{{"kind":"{kind}","method":"POST","request":{{"a":{{"proof":"jwt.exact.签名","quoted":"\\\"\n"}},"z":[null,true,17,2.5]}},"request_url":"{url}","version":1}}"#,
+        );
+        let digest = issuance_request_digest(kind, &request, url, "POST").unwrap();
+        assert_eq!(digest, blake3::hash(expected.as_bytes()).to_hex().to_string());
+        assert_eq!(
+            digest,
+            issuance_request_digest(kind, &reordered, url, "POST").unwrap()
+        );
+        let mut changed_proof = request.clone();
+        changed_proof["a"]["proof"] = serde_json::json!("jwt.other.签名");
+        assert_ne!(
+            digest,
+            issuance_request_digest(kind, &changed_proof, url, "POST").unwrap()
+        );
+    }
+}

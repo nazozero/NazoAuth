@@ -68,3 +68,29 @@ fn generic_audit_append_rejects_reserved_authorization_authority() {
     reserved.event_type = "authorization_decision_committed".to_owned();
     assert!(validate_event_for_transaction(&reserved).is_err());
 }
+
+#[test]
+fn payload_byte_count_matches_compact_json_and_exact_limit() {
+    for payload in [
+        serde_json::json!({}),
+        serde_json::json!({"escaped": "\\\"\n\t", "unicode": "签名😀"}),
+        serde_json::json!({"nested": [{"b": null, "a": [true, -17, 2.5]}, []]}),
+    ] {
+        let mut count = PayloadByteCount::default();
+        serde_json::to_writer(&mut count, &payload).unwrap();
+        assert_eq!(count.0, serde_json::to_vec(&payload).unwrap().len());
+        assert!(validate_payload_size(&event(payload)).is_ok());
+    }
+    let empty_size = serde_json::to_vec(&serde_json::json!({"body": ""}))
+        .unwrap()
+        .len();
+    for extra in [0, 1] {
+        let payload = serde_json::json!({
+            "body": "x".repeat(MAX_SECURITY_AUDIT_PAYLOAD_BYTES - empty_size + extra),
+        });
+        let mut count = PayloadByteCount::default();
+        serde_json::to_writer(&mut count, &payload).unwrap();
+        assert_eq!(count.0, MAX_SECURITY_AUDIT_PAYLOAD_BYTES + extra);
+        assert_eq!(validate_payload_size(&event(payload)).is_ok(), extra == 0);
+    }
+}

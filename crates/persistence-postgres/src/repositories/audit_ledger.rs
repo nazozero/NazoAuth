@@ -165,7 +165,13 @@ impl AuditLedgerRepository {
             0 => return Ok(()),
             // Keep the established single-event path: one checkout, one
             // autocommit, no extra transaction framing.
-            1 => return self.append(events[0].clone()).await,
+            1 => {
+                let mut connection = self.connection().await?;
+                return append_on_connection(&mut connection, &events[0])
+                    .await
+                    .map(|_| ())
+                    .map_err(map_error);
+            }
             _ => {}
         }
         // Same validation order and error classification as the single-event
@@ -785,10 +791,28 @@ fn validate_event(event: &SecurityAuditEvent) -> Result<(), RepositoryError> {
     Ok(())
 }
 
+#[derive(Default)]
+struct PayloadByteCount(usize);
+
+impl std::io::Write for PayloadByteCount {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 = self
+            .0
+            .checked_add(bytes.len())
+            .ok_or_else(|| std::io::Error::other("audit payload byte count overflow"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 fn validate_payload_size(event: &SecurityAuditEvent) -> Result<(), RepositoryError> {
-    let payload_bytes = serde_json::to_vec(&event.payload)
+    let mut payload_bytes = PayloadByteCount::default();
+    serde_json::to_writer(&mut payload_bytes, &event.payload)
         .map_err(|error| RepositoryError::Unexpected(format!("invalid audit payload: {error}")))?;
-    if payload_bytes.len() > MAX_SECURITY_AUDIT_PAYLOAD_BYTES {
+    if payload_bytes.0 > MAX_SECURITY_AUDIT_PAYLOAD_BYTES {
         return Err(RepositoryError::Unexpected(format!(
             "audit payload exceeds {MAX_SECURITY_AUDIT_PAYLOAD_BYTES} bytes"
         )));
