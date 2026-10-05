@@ -222,6 +222,12 @@ load wait loop; `generator-affinity.json` records the actual runner/k6 masks.
 during the existing main and sidecar wait loops, plus a final service snapshot
 after all runners finish. Samples retain PID/TID, UID, parent PID, process name, start ticks
 and allowed CPUs; they describe the sampled instants, not continuous coverage.
+The source-bound static pinset helper reads each snapshot in one process,
+without per-thread shell/awk children. It retries failed reads once and
+confirms a vanished task directory twice; unreadable still-present tasks,
+malformed rows or missing completion metadata make evidence incomplete and
+invalidate the point. Snapshot metadata retains read errors, confirmed exits
+and Docker-exec round-trip time so observation cost remains visible.
 A mismatch invalidates the point. Docker exec inspection and healthcheck roots
 are excluded from service-tree verification.
 

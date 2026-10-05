@@ -124,6 +124,143 @@ static int parse_list(const char *s, cpu_set_t *set) {
     return 0;
 }
 
+/* A single-process, bounded service-tree snapshot. No cmdline/environ reads. */
+#define SNAP_MAX_PROCS 4096
+struct snap_proc { long pid, parent; unsigned long long start; int service; };
+struct snap_task {
+    long pid, tid, parent, uid;
+    char name[64], mask[1024];
+};
+
+static int numeric_name(const char *name) {
+    if (!*name) return 0;
+    for (; *name; name++) if (*name < '0' || *name > '9') return 0;
+    return 1;
+}
+
+static int read_stat(const char *path, long *parent, unsigned long long *start) {
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    char line[4096];
+    if (!fgets(line, sizeof line, f)) { fclose(f); errno = EIO; return -1; }
+    fclose(f);
+    char *last = strrchr(line, ')');
+    if (!last || last[1] != ' ') { errno = EINVAL; return -1; }
+    char *save = NULL, *token = strtok_r(last + 2, " ", &save);
+    int got_parent = 0, got_start = 0;
+    for (int field = 3; token && field <= 22; field++, token = strtok_r(NULL, " ", &save)) {
+        char *end;
+        if (field == 4) { *parent = strtol(token, &end, 10); got_parent = *end == '\0'; }
+        if (field == 22) { *start = strtoull(token, &end, 10); got_start = *end == '\0'; }
+    }
+    if (!got_parent || !got_start) { errno = EINVAL; return -1; }
+    return 0;
+}
+
+static int read_task_status(const char *path, struct snap_task *task) {
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    char line[2048]; int fields = 0;
+    memset(task, 0, sizeof *task);
+    while (fgets(line, sizeof line, f)) {
+        if (sscanf(line, "Name: %63s", task->name) == 1) fields |= 1;
+        if (sscanf(line, "Tgid: %ld", &task->pid) == 1) fields |= 2;
+        if (sscanf(line, "Pid: %ld", &task->tid) == 1) fields |= 4;
+        if (sscanf(line, "PPid: %ld", &task->parent) == 1) fields |= 8;
+        if (sscanf(line, "Uid: %ld", &task->uid) == 1) fields |= 16;
+        if (sscanf(line, "Cpus_allowed_list: %1023s", task->mask) == 1) fields |= 32;
+    }
+    int failed = ferror(f); fclose(f);
+    if (failed || fields != 63) { errno = failed ? EIO : EINVAL; return -1; }
+    return 0;
+}
+
+/* Retry file reads once. A disappearing directory is confirmed twice; a
+ * still-present or unreadable directory is incomplete evidence, never PASS. */
+static int snapshot_failure(const char *directory, long pid, long tid, int error) {
+    int gone = 1;
+    for (int i = 0; i < 2; i++) {
+        if (access(directory, F_OK) == 0 || errno != ENOENT) gone = 0;
+    }
+    printf("%s %ld %ld %d\n", gone ? "gone" : "unread", pid, tid, error);
+    return !gone;
+}
+
+static int snapshot_services(void) {
+    struct snap_proc *procs = calloc(SNAP_MAX_PROCS, sizeof *procs);
+    if (!procs) { puts("snapshot_complete 0"); return 1; }
+    printf("inspector %ld\n", (long)getpid());
+    DIR *dir = opendir("/proc");
+    if (!dir) { free(procs); puts("snapshot_complete 0"); return 1; }
+    struct dirent *entry; size_t used = 0; int failures = 0, root = 0;
+    for (;;) {
+        errno = 0; entry = readdir(dir);
+        if (!entry) { if (errno) { failures++; printf("unread 0 0 %d\n", errno); } break; }
+        if (!numeric_name(entry->d_name)) continue;
+        long pid = strtol(entry->d_name, NULL, 10);
+        if (pid == (long)getpid()) continue;
+        char path[128], process_dir[64];
+        snprintf(process_dir, sizeof process_dir, "/proc/%ld", pid);
+        snprintf(path, sizeof path, "%s/stat", process_dir);
+        long parent; unsigned long long start;
+        int ok = -1;
+        for (int attempt = 0; attempt < 2 && ok; attempt++) ok = read_stat(path, &parent, &start);
+        if (ok) { failures += snapshot_failure(process_dir, pid, pid, errno); continue; }
+        if (used == SNAP_MAX_PROCS) { failures++; puts("unread 0 0 7"); break; }
+        procs[used++] = (struct snap_proc){pid, parent, start, pid == 1};
+        root |= pid == 1;
+    }
+    closedir(dir);
+    int changed;
+    do {
+        changed = 0;
+        for (size_t i = 0; i < used; i++) if (!procs[i].service) {
+            for (size_t j = 0; j < used; j++) if (procs[j].service && procs[i].parent == procs[j].pid) {
+                procs[i].service = 1; changed = 1; break;
+            }
+        }
+    } while (changed);
+    for (size_t i = 0; i < used; i++) {
+        if (!procs[i].service) continue;
+        char task_dir[128]; snprintf(task_dir, sizeof task_dir, "/proc/%ld/task", procs[i].pid);
+        DIR *tasks = opendir(task_dir);
+        if (!tasks) { failures += snapshot_failure(task_dir, procs[i].pid, procs[i].pid, errno); continue; }
+        for (;;) {
+            errno = 0; entry = readdir(tasks);
+            if (!entry) { if (errno) { failures++; printf("unread %ld 0 %d\n", procs[i].pid, errno); } break; }
+            if (!numeric_name(entry->d_name)) continue;
+            long tid = strtol(entry->d_name, NULL, 10);
+            char directory[160], status[180], stat[180];
+            snprintf(directory, sizeof directory, "%s/%ld", task_dir, tid);
+            snprintf(status, sizeof status, "%s/status", directory);
+            snprintf(stat, sizeof stat, "%s/stat", directory);
+            struct snap_task task; long parent; unsigned long long start;
+            int ok = -1;
+            for (int attempt = 0; attempt < 2 && ok; attempt++) {
+                ok = read_task_status(status, &task);
+                if (!ok) ok = read_stat(stat, &parent, &start);
+                if (!ok && (task.pid != procs[i].pid || task.tid != tid || parent != task.parent)) {
+                    errno = EINVAL; ok = -1;
+                }
+            }
+            if (ok) { failures += snapshot_failure(directory, procs[i].pid, tid, errno); continue; }
+            printf("%ld %ld %ld %ld %s %s %llu\n", task.pid, task.tid, task.parent,
+                   task.uid, task.mask, task.name, start);
+        }
+        closedir(tasks);
+        char stat[128], directory[64]; long parent; unsigned long long start;
+        snprintf(directory, sizeof directory, "/proc/%ld", procs[i].pid);
+        snprintf(stat, sizeof stat, "%s/stat", directory);
+        int ok = read_stat(stat, &parent, &start);
+        if (ok) failures += snapshot_failure(directory, procs[i].pid, procs[i].pid, errno);
+        else if (start != procs[i].start) { failures++; printf("unread %ld %ld 22\n", procs[i].pid, procs[i].pid); }
+    }
+    free(procs);
+    int complete = root && !failures;
+    printf("snapshot_complete %d\n", complete);
+    return complete ? 0 : 1;
+}
+
 static long pin_tree(const char *pid, cpu_set_t *set) {
     char dir[64];
     snprintf(dir, sizeof dir, "/proc/%s/task", pid);
@@ -146,11 +283,12 @@ static long pin_tree(const char *pid, cpu_set_t *set) {
  * pinset CPULIST --tree PID   retarget every thread of a process
  * pinset CPULIST --all        retarget every task visible in this pidns
  * pinset CPULIST --show PID   print Cpus_allowed_list of PID
+ * pinset CPULIST --snapshot   collect a complete service-tree task snapshot
  * pinset CPULIST CMD [ARGS]   pin self, then exec
  */
 int main(int argc, char **argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: pinset CPULIST (--pid TID|--tree PID|--all|--show PID|CMD [ARGS...])\n");
+        fprintf(stderr, "usage: pinset CPULIST (--pid TID|--tree PID|--all|--show PID|--snapshot|CMD [ARGS...])\n");
         return 64;
     }
     cpu_set_t set;
@@ -159,6 +297,8 @@ int main(int argc, char **argv) {
         return 64;
     }
     if (argv[2][0] == '-') {
+        if (strcmp(argv[2], "--snapshot") == 0 && argc == 3)
+            return snapshot_services();
         if (strcmp(argv[2], "--all") == 0 && argc == 3) {
             DIR *d = opendir("/proc");
             if (!d) { perror("opendir"); return 1; }
@@ -399,69 +539,68 @@ def ensure_pinset(container: str) -> None:
     dcx(container, ["chmod", "+x", "/tmp/pinset"], check=False)
 
 
-def container_uid(container: str) -> str:
-    """UID that owns PID 1; docker exec must match it because default
-    containers lack CAP_SYS_NICE (sched_setaffinity on other uids -> EPERM)."""
-    proc = dcx(container, ["sh", "-c",
-                           "awk '/^Uid:/{print $2}' /proc/1/status"],
-               check=False)
-    return proc.stdout.strip() or "0"
+def container_task_snapshot(container: str) -> dict:
+    """Read service tasks in one native process; retain incomplete evidence.
 
-
-def container_tasks(container: str) -> list[dict]:
-    """Snapshot PID 1's service tree, including every visible thread.
-
-    Docker exec inspection/healthcheck processes are separate roots in the
-    PID namespace. Exclude them and the inspector's own descendants; their
-    inherited engine affinity does not describe the running service.
+    pin_container/ensure_pinset must install the source-bound helper first.
+    The helper retries reads once and confirms vanished task directories;
+    unreadable still-present tasks and malformed output fail closed.
     """
-    proc = dcx(container, ["sh", "-c", r"""
-echo "inspector $$"
-for status in /proc/[0-9]*/task/[0-9]*/status; do
-    awk '
-      FNR == NR {
-        if ($1 == "Name:") name=$2
-        if ($1 == "Tgid:") pid=$2
-        if ($1 == "Pid:") tid=$2
-        if ($1 == "PPid:") ppid=$2
-        if ($1 == "Uid:") uid=$2
-        if ($1 == "Cpus_allowed_list:") mask=$2
-        next
-      }
-      {sub(/^.*\) /, ""); start=$20}
-      END {if (pid && tid && mask && start)
-           print pid, tid, ppid, uid, mask, name, start}
-    ' "$status" "${status%status}stat" 2>/dev/null
-done
-exit 0
-"""], check=False)
+    started = time.monotonic()
+    proc = dcx(container, ["/tmp/pinset", "0", "--snapshot"], check=False)
+    report = {"tasks": [], "complete": False, "read_errors": [],
+              "confirmed_gone": [], "collector_exit": proc.returncode,
+              "round_trip_ms": round((time.monotonic() - started) * 1000, 4)}
     lines = (proc.stdout or "").splitlines()
-    if proc.returncode or not lines:
-        return []
+    if not lines:
+        report["read_errors"].append({"kind": "missing_collector_output"})
+        return report
     try:
         tag, inspector = lines[0].split()
         if tag != "inspector":
-            return []
+            raise ValueError("collector_header")
         inspector = int(inspector)
-        tasks = []
+        footer = None
         for line in lines[1:]:
-            pid, tid, ppid, uid, allowed, name, start = line.split()
-            parse_cpu_list(allowed)
-            tasks.append({"pid": int(pid), "tid": int(tid),
-                          "ppid": int(ppid), "uid": str(int(uid)),
-                          "allowed": allowed, "name": name,
-                          "starttime_ticks": int(start)})
+            if line.startswith(("gone ", "unread ")):
+                kind, pid, tid, error = line.split()
+                item = {"pid": int(pid), "tid": int(tid), "errno": int(error)}
+                report["confirmed_gone" if kind == "gone" else "read_errors"].append(item)
+            elif line.startswith("snapshot_complete "):
+                if footer is not None:
+                    raise ValueError("duplicate_collector_footer")
+                if line not in ("snapshot_complete 0", "snapshot_complete 1"):
+                    raise ValueError("malformed_collector_footer")
+                footer = line == "snapshot_complete 1"
+            else:
+                if footer is not None:
+                    raise ValueError("data_after_collector_footer")
+                pid, tid, ppid, uid, allowed, name, start = line.split()
+                parse_cpu_list(allowed)
+                report["tasks"].append({"pid": int(pid), "tid": int(tid),
+                    "ppid": int(ppid), "uid": str(int(uid)), "allowed": allowed,
+                    "name": name, "starttime_ticks": int(start)})
+        if footer is None:
+            report["read_errors"].append({"kind": "missing_collector_completion"})
+        excluded = {inspector}
+        services = {1}
+        for _ in range(len(report["tasks"])):
+            old = (len(excluded), len(services))
+            excluded.update(t["pid"] for t in report["tasks"] if t["ppid"] in excluded)
+            services.update(t["pid"] for t in report["tasks"] if t["ppid"] in services)
+            if old == (len(excluded), len(services)):
+                break
+        report["tasks"] = [t for t in report["tasks"] if t["pid"] in services - excluded]
+        report["complete"] = bool(footer and not proc.returncode and not report["read_errors"])
     except (ValueError, TypeError):
-        return []
-    excluded = {inspector}
-    services = {1}
-    for _ in range(len(tasks)):
-        old = (len(excluded), len(services))
-        excluded.update(t["pid"] for t in tasks if t["ppid"] in excluded)
-        services.update(t["pid"] for t in tasks if t["ppid"] in services)
-        if old == (len(excluded), len(services)):
-            break
-    return [t for t in tasks if t["pid"] in services - excluded]
+        report["read_errors"].append({"kind": "malformed_collector_output"})
+    return report
+
+
+def container_tasks(container: str) -> list[dict]:
+    """Only a complete snapshot can establish the visible service masks."""
+    report = container_task_snapshot(container)
+    return report["tasks"] if report["complete"] else []
 
 
 def _tasks_pinned(tasks: list[dict], cpus: str, role: str | None = None) -> bool:
@@ -476,7 +615,8 @@ def _tasks_pinned(tasks: list[dict], cpus: str, role: str | None = None) -> bool
 
 def pin_container(container: str, cpus: str) -> dict:
     ensure_pinset(container)
-    before = container_tasks(container)
+    before_snapshot = container_task_snapshot(container)
+    before = before_snapshot["tasks"] if before_snapshot["complete"] else []
     owners: dict[str, set[int]] = {}
     for task in before:
         owners.setdefault(task["uid"], set()).add(task["pid"])
@@ -492,7 +632,8 @@ def pin_container(container: str, cpus: str) -> dict:
         attempts.append({"uid": uid, "pids": sorted(pids),
                          "returncode": out.returncode,
                          "stdout": out.stdout.strip()})
-    after = container_tasks(container)
+    after_snapshot = container_task_snapshot(container)
+    after = after_snapshot["tasks"] if after_snapshot["complete"] else []
     leader = next((t for t in after if t["pid"] == t["tid"] == 1), {})
     return {
         "container": container,
@@ -506,6 +647,8 @@ def pin_container(container: str, cpus: str) -> dict:
         "proc_masks": [f"/proc/{t['pid']} {t['name']} {t['allowed']}"
                        for t in after if t["pid"] == t["tid"]],
         "task_masks": after,
+        "snapshot": {k: v for k, v in after_snapshot.items() if k != "tasks"},
+        "before_snapshot": {k: v for k, v in before_snapshot.items() if k != "tasks"},
         "verified": _tasks_pinned(after, cpus),
     }
 
@@ -1565,11 +1708,13 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
                     (VALKEY, format_cpu_list(point.get("valkey_cpus", point["infra_cpus"])), "valkey-server")]
     def record_affinity() -> None:
         for name, cpus, role in service_sets:
-            tasks = container_tasks(name)
-            verified = _tasks_pinned(tasks, cpus, role)
+            snapshot = container_task_snapshot(name)
+            tasks = snapshot["tasks"]
+            verified = snapshot["complete"] and _tasks_pinned(tasks, cpus, role)
             service_affinity.append({"ts": time.time(), "container": name,
                                      "role": role, "requested": cpus,
-                                     "verified": verified, "task_masks": tasks})
+                                     "verified": verified, "task_masks": tasks,
+                                     "snapshot": {k: v for k, v in snapshot.items() if k != "tasks"}})
             jdump(out_dir / "service-affinity.json", service_affinity)
             if not verified:
                 raise RuntimeError(f"CPU_AFFINITY_INVALID: service {role}")
@@ -1580,8 +1725,9 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
                         check=False).stdout.strip() == "true"
             if not active:
                 continue
-            tasks = container_tasks(name)
-            verified = _tasks_pinned(tasks, infra)
+            snapshot = container_task_snapshot(name)
+            tasks = snapshot["tasks"]
+            verified = snapshot["complete"] and _tasks_pinned(tasks, infra)
             if not verified and dc("inspect", name, "--format", "{{.State.Running}}",
                                    check=False).stdout.strip() != "true":
                 # A naturally finished runner can exit between inspect and
@@ -1591,7 +1737,8 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
             if verified and any(t["name"] == "k6" for t in tasks):
                 k6_checked.add(name)
             generator_affinity.append({"ts": time.time(), "container": name,
-                                       "verified": verified, "task_masks": tasks})
+                                       "verified": verified, "task_masks": tasks,
+                                       "snapshot": {k: v for k, v in snapshot.items() if k != "tasks"}})
             jdump(out_dir / "generator-affinity.json", generator_affinity)
             if not verified:
                 raise RuntimeError(f"CPU_AFFINITY_INVALID: generator {name}")

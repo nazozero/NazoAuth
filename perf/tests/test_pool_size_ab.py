@@ -19,7 +19,7 @@ def _rec(run_id="A1", pool=24, ops=2800.0, p99=1100.0, drop=0.05,
                   "app_env_overrides":
                   {"DATABASE_MAX_CONNECTIONS": str(pool)}},
         "stack": {"app_binary_sha256": "deadbeef", "pin": {
-            component: {"requested": "8-9", "task_masks": [
+            component: {"requested": "8-9", "snapshot": {"complete": True}, "task_masks": [
                 {"pid": 1, "tid": 1, "allowed": "8-9", "name": role}]}
             for component, role in (("app", "nazoauth"), ("postgres", "postgres"),
                                     ("valkey", "valkey-server"))}},

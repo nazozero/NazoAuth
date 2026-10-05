@@ -1160,9 +1160,11 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
     journal = asc.get("journal") or {}
     pin = (rec.get("stack") or {}).get("pin") or {}
     affinity = {
-        component + "_affinity_verified": sis._tasks_pinned(
+        component + "_affinity_verified": (
+            ((pin.get(component) or {}).get("snapshot") or {}).get("complete") is True
+            and sis._tasks_pinned(
             (pin.get(component) or {}).get("task_masks") or [],
-            (pin.get(component) or {}).get("requested") or "", role)
+            (pin.get(component) or {}).get("requested") or "", role))
         for component, role in (("app", "nazoauth"), ("postgres", "postgres"),
                                 ("valkey", "valkey-server"))
     }
