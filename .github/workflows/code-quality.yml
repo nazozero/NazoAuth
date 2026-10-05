@@ -238,7 +238,7 @@ jobs:
           python -m unittest \
             perf.tests.test_capacity_window perf.tests.test_capacity_producer \
             perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \
-            perf.tests.test_service_affinity \
+            perf.tests.test_service_affinity perf.tests.test_cnb_controller \
             perf.tests.test_pool_size_ab perf.tests.test_issuance_maintenance \
             perf.tests.test_evidence_contract perf.tests.test_audit_reconciliation \
             perf.tests.test_audit_pending_schema \
