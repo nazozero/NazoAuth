@@ -2933,13 +2933,8 @@ async fn ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_
         assert_eq!(repository.active_subject_claims_count(), 0);
         assert_eq!(repository.principal_snapshot_count(), 0);
         assert_eq!(repository.commit_count(), 1);
-        // Invalid scope remains earlier than the fallback for a corrupt profile.
+        // Scope expansion is rejected before a successful preparation is consumed.
         let next = body["refresh_token"].as_str().unwrap().to_owned();
-        exec_sql(
-            &state,
-            &format!("UPDATE users SET role='invalid-snapshot-role' WHERE id='{user}'"),
-        )
-        .await;
         form.refresh_token = Some(next);
         form.scope = Some("openid unauthorized_scope".to_owned());
         let (status, body) = response_json(
@@ -2973,6 +2968,23 @@ async fn oidc_refresh_fixture(state: &TestInfrastructure) -> (ClientRow, TokenRo
     (client, token, raw)
 }
 
+async fn oidc_refresh_projection_state(
+    public_state: &TestInfrastructure,
+    user: Option<Uuid>,
+) -> (TestInfrastructure, String) {
+    let schema = format!("oidc_refresh_projection_{}", Uuid::now_v7().simple());
+    let mut state = public_state.clone();
+    state.diesel_db = create_pool(database_url_with_search_path(&schema).unwrap(), 4).unwrap();
+    exec_sql(&state, &format!("CREATE SCHEMA {schema}")).await;
+    // Preserve real column types/defaults but allow invalid domain values in
+    // this lookup-only fixture. Public CHECK/FK constraints stay intact.
+    exec_sql(&state, "CREATE TABLE users (LIKE public.users INCLUDING DEFAULTS)").await;
+    if let Some(user) = user {
+        exec_sql(&state, &format!("INSERT INTO users SELECT * FROM public.users WHERE id='{user}'")).await;
+    }
+    (state, schema)
+}
+
 #[actix_web::test]
 async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_priority() {
     let Some(public_state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
@@ -2990,23 +3002,13 @@ async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_prior
     ] {
         let (client, mut token, raw) = oidc_refresh_fixture(&public_state).await;
         let user = token.user_id.unwrap();
-        let schema = format!("oidc_refresh_projection_{}", Uuid::now_v7().simple());
-        let shadow = if matches!(failure, "missing" | "nil realm") {
-            // LIKE copies the real column types, checks and indexes but not
-            // foreign keys or triggers. Only this test's lookup sees it; the
-            // public users/family rows and their constraints remain intact.
-            let state = live_refresh_state_from_database_url(
-                AuthorizationServerProfile::Oauth2Baseline,
-                database_url_with_search_path(&schema).unwrap(),
-            )
-            .unwrap();
-            create_isolated_schema(&state, &schema, &["users"]).await;
+        let mut schema = None;
+        let shadow = if matches!(failure, "missing" | "nil realm" | "role") {
+            let (state, name) = oidc_refresh_projection_state(
+                &public_state, if failure == "missing" { None } else { Some(user) },
+            ).await;
+            schema = Some(name);
             if failure == "nil realm" {
-                exec_sql(
-                    &state,
-                    &format!("INSERT INTO users SELECT * FROM public.users WHERE id='{user}'"),
-                )
-                .await;
                 exec_sql(&state, &format!(
                     "UPDATE users SET realm_id='00000000-0000-0000-0000-000000000000' WHERE id='{user}'"
                 )).await;
@@ -3027,7 +3029,7 @@ async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_prior
             "role" => {
                 exec_sql(
                     state,
-                    &format!("UPDATE users SET role='invalid-snapshot-role' WHERE id='{user}'"),
+                    &format!("UPDATE users SET role='corrupt-role' WHERE id='{user}'"),
                 )
                 .await
             }
@@ -3124,7 +3126,7 @@ async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_prior
         assert!(body.get("access_token").is_none());
         assert!(body.get("refresh_token").is_none());
         if shadow.is_some() {
-            drop_schema(state, &schema).await;
+            drop_schema(state, schema.as_ref().unwrap()).await;
         }
     }
 }
@@ -3135,11 +3137,12 @@ async fn oidc_refresh_explicit_downscope_succeeds_without_subject_claims() {
         return;
     };
     let (client, token, raw) = oidc_refresh_fixture(&state).await;
+    let (state, schema) = oidc_refresh_projection_state(&state, token.user_id).await;
     // This unused profile cannot cause an OIDC profile failure after downscope.
     exec_sql(
         &state,
         &format!(
-            "UPDATE users SET role='invalid-snapshot-role' WHERE id='{}'",
+            "UPDATE users SET role='corrupt-role' WHERE id='{}'",
             token.user_id.unwrap()
         ),
     )
@@ -3166,6 +3169,7 @@ async fn oidc_refresh_explicit_downscope_succeeds_without_subject_claims() {
     assert_eq!(repository.active_subject_claims_count(), 0);
     assert_eq!(repository.principal_snapshot_count(), 1);
     assert_eq!(repository.commit_count(), 1);
+    drop_schema(&state, &schema).await;
 }
 
 #[actix_web::test]

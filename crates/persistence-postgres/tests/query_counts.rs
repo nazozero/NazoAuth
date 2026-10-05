@@ -2243,7 +2243,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     )
     .await;
     let (pool, counter) = instrumented_pool(&url).await;
-    let repo = TokenIssuanceRepository::new(pool);
+    let repo = TokenIssuanceRepository::new(pool.clone());
     for (lookup_tenant, lookup_client, hint) in [
         (id, seed.client.id, false),
         (id, Uuid::now_v7(), true),
@@ -2266,7 +2266,6 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     }
     for mutation in [
         "is_active=false",
-        "is_active=true,role='invalid-snapshot-role'",
     ] {
         sql_query(format!(
             "UPDATE users SET {mutation} WHERE tenant_id=$1 AND id=$2"
@@ -2285,6 +2284,22 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
         assert_eq!(q.data_queries, 1);
         assert_eq!(a, 1);
     }
+    // A single-connection temporary users table permits corrupt profile data
+    // without altering the real users CHECK/FK constraints or its rows.
+    {
+        let mut profile = get_conn(&pool).await.unwrap();
+        profile.batch_execute("CREATE TEMP TABLE users (LIKE public.users INCLUDING DEFAULTS)").await.unwrap();
+        sql_query("INSERT INTO users SELECT * FROM public.users WHERE id=$1")
+            .bind::<sql_types::Uuid,_>(seed.user_id).execute(&mut profile).await.unwrap();
+        profile.batch_execute("UPDATE users SET is_active=true,role='corrupt-role'").await.unwrap();
+    }
+    let (r, q, a) = measure(
+        &counter,
+        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+    ).await;
+    assert!(r.unwrap().unwrap().prepared_subject.is_none());
+    assert_eq!(q.data_queries, 1);
+    assert_eq!(a, 1);
     // A non-OIDC contract must not turn a corrupt, unused profile into an error.
     replace_oidc_refresh_contract(
         &mut c,
@@ -2303,8 +2318,12 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
     assert_eq!(q.data_queries, 1);
     assert_eq!(a, 1);
+    {
+        let mut profile = get_conn(&pool).await.unwrap();
+        profile.batch_execute("DROP TABLE pg_temp.users").await.unwrap();
+    }
     // Restore the principal, then retain any wrong binding owner as a collision.
-    sql_query("UPDATE users SET realm_id=$1,role='user' WHERE id=$2")
+    sql_query("UPDATE users SET is_active=true,realm_id=$1,role='user' WHERE id=$2")
         .bind::<sql_types::Uuid, _>(tenant.realm_id.as_uuid())
         .bind::<sql_types::Uuid, _>(seed.user_id)
         .execute(&mut c)
