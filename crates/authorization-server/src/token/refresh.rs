@@ -69,6 +69,11 @@ fn refresh_token_scopes(
     }
 }
 
+fn refresh_requests_oidc_subject(requested_scope: Option<&str>) -> bool {
+    let requested = requested_scope.map(parse_scope).unwrap_or_default();
+    requested.is_empty() || requested.iter().any(|scope| scope == "openid")
+}
+
 fn client_attestation_refresh_binding_matches(
     token_endpoint_auth_method: &str,
     expected: Option<&str>,
@@ -127,11 +132,12 @@ pub async fn token_refresh_with_service(
         ));
     };
     let token = match token_service
-        .refresh_token_snapshot(
+        .refresh_token_snapshot_with_subject(
             client.tenant_id,
             refresh_token,
             client.id,
             request_started_at,
+            refresh_requests_oidc_subject(form.scope.as_deref()),
         )
         .await
     {
@@ -329,6 +335,17 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
+    // Only a normal source and the effective OIDC scope consume successful
+    // early preparation. Holder/sender/scope/audience errors retain their
+    // original priority; missing/corrupt preparation uses the later read.
+    // Lost-response recovery deliberately retains its established path.
+    let prepared_subject = if lost_response_original.is_none()
+        && scopes.iter().any(|scope| scope == "openid")
+    {
+        snapshot.prepared_subject
+    } else {
+        None
+    };
     let refresh_token_policy = match lost_response_original {
         Some((original_id, original_blake3)) => RefreshTokenPolicy::RotateLostResponse {
             family_id: token.token_family_id,
@@ -349,7 +366,7 @@ pub async fn token_refresh_with_service(
         TokenIssue {
             native_sso_source: None,
             user_id: token.user_id,
-            prepared_subject: None,
+            prepared_subject,
             subject: token.subject,
             scopes,
             authorization_details: token.authorization_details,

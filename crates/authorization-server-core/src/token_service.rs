@@ -56,6 +56,10 @@ impl std::error::Error for TokenPortError {}
 pub struct RefreshTokenSnapshot {
     pub presented: RefreshToken,
     pub successor: Result<Option<RefreshToken>, TokenPortError>,
+    /// Optional successful OIDC subject preparation from the presentation read.
+    /// This request-local early snapshot is never final authority. Missing or
+    /// invalid preparation keeps the existing later claims read and its errors.
+    pub prepared_subject: Option<PreparedTokenSubject>,
 }
 
 #[derive(Clone, Debug)]
@@ -504,6 +508,20 @@ pub trait TokenRepositoryPort: Send + Sync {
         Box::pin(async { Err(TokenPortError::Unavailable) })
     }
 
+    /// Optionally prepare OIDC claims during an ordinary refresh presentation
+    /// read. The hint carries no storage detail; adapters without this
+    /// optimization retain the original snapshot and later claims path.
+    fn refresh_token_snapshot_with_subject<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+        client_id: Uuid,
+        retry_started_at: DateTime<Utc>,
+        _prepare_oidc_subject: bool,
+    ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>> {
+        self.refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
+    }
+
     fn inspect_lost_response_successor<'a>(
         &'a self,
         token: &'a RefreshToken,
@@ -746,6 +764,21 @@ where
     ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
         self.repository
             .refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
+            .await
+    }
+
+    pub async fn refresh_token_snapshot_with_subject(
+        &self,
+        tenant_id: Uuid,
+        raw_token: &str,
+        client_id: Uuid,
+        retry_started_at: DateTime<Utc>,
+        prepare_oidc_subject: bool,
+    ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
+        self.repository
+            .refresh_token_snapshot_with_subject(
+                tenant_id, raw_token, client_id, retry_started_at, prepare_oidc_subject,
+            )
             .await
     }
 

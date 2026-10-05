@@ -137,14 +137,7 @@ impl UserRepository {
         drop(connection);
         snapshot
             .map(|(row, epoch, bound_user)| {
-                let claims = identity::active_subject_claims(row)
-                    .map_err(|error| RepositoryError::Consistency(error.0))?;
-                if bound_user.is_some_and(|owner| owner != user_id.as_uuid()) {
-                    return Err(RepositoryError::Consistency(
-                        "subject ownership collision".to_owned(),
-                    ));
-                }
-                Ok((claims, epoch, bound_user.is_some()))
+                prepare_subject_claims(row, epoch, bound_user)
             })
             .transpose()
     }
@@ -1245,4 +1238,20 @@ async fn append_admin_user_audit(
             "is_active": account.principal.active, "outcome": "success", "source_ip_hash": source_ip_hash,
         }), occurred_at: chrono::Utc::now(),
     }).await
+}
+
+/// Shared conversion for active claims read alone or in a refresh statement.
+/// An unexpected binding owner is a collision, never an absent binding.
+pub(super) fn prepare_subject_claims(
+    row: SubjectClaimsRow,
+    epoch: i64,
+    bound_user: Option<Uuid>,
+) -> Result<(SubjectClaims, i64, bool), RepositoryError> {
+    let user_id = row.id;
+    let claims = identity::active_subject_claims(row)
+        .map_err(|error| RepositoryError::Consistency(error.0))?;
+    if bound_user.is_some_and(|owner| owner != user_id) {
+        return Err(RepositoryError::Consistency("subject ownership collision".to_owned()));
+    }
+    Ok((claims, epoch, bound_user.is_some()))
 }
