@@ -13,6 +13,7 @@
 //! ```
 
 mod convert;
+mod perf_diagnostic;
 mod pool;
 mod repositories;
 pub(crate) mod rows;

@@ -41,7 +41,33 @@ impl std::ops::Deref for DbPool {
         &self.connections
     }
 }
-pub type DbConnection = Object<AsyncPgConnection>;
+/// Diagnostic wrapper. Object's return/take completes before the hold ends.
+pub struct DbConnection {
+    inner: Option<Object<AsyncPgConnection>>,
+    timing: Option<std::sync::Arc<crate::perf_diagnostic::Checkout>>,
+}
+impl std::ops::Deref for DbConnection {
+    type Target = Object<AsyncPgConnection>;
+    fn deref(&self) -> &Self::Target { self.inner.as_ref().expect("connection is present") }
+}
+impl std::ops::DerefMut for DbConnection {
+    fn deref_mut(&mut self) -> &mut Self::Target { self.inner.as_mut().expect("connection is present") }
+}
+impl DbConnection {
+    pub(crate) fn discard(mut connection: Self) {
+        let physical = Object::take(connection.inner.take().expect("connection is present"));
+        drop(physical);
+        crate::perf_diagnostic::returned(connection.timing.take().as_deref(), "discard");
+    }
+}
+impl Drop for DbConnection {
+    fn drop(&mut self) {
+        if let Some(connection) = self.inner.take() {
+            drop(connection);
+            crate::perf_diagnostic::returned(self.timing.take().as_deref(), "return");
+        }
+    }
+}
 
 /// Discard the physical connection unless its transaction outcome is confirmed.
 /// Dropping a transaction future alone does not end a diesel-async transaction.
@@ -60,7 +86,7 @@ impl DiscardOnDrop {
 impl Drop for DiscardOnDrop {
     fn drop(&mut self) {
         if let Some(connection) = self.0.take() {
-            drop(DbConnection::take(connection));
+            DbConnection::discard(connection);
         }
     }
 }
@@ -137,7 +163,9 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
             .connect(tokio_postgres::NoTls)
             .await
             .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
-        return AsyncPgConnection::try_from_client_and_connection(client, connection).await;
+        let mut connection = AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+        crate::perf_diagnostic::attach(&mut connection).await;
+        return Ok(connection);
     }
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
@@ -163,10 +191,17 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
         .connect(tls)
         .await
         .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
-    AsyncPgConnection::try_from_client_and_connection(client, connection).await
+    let mut connection = AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+    crate::perf_diagnostic::attach(&mut connection).await;
+    Ok(connection)
 }
 
-pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
+#[track_caller]
+pub fn get_conn(pool: &DbPool) -> impl std::future::Future<Output = anyhow::Result<DbConnection>> + Send + '_ {
+    let location = std::panic::Location::caller();
+    let requested = crate::perf_diagnostic::requested();
+    async move {
+    let mut acquire = crate::perf_diagnostic::Acquire::new(location, requested);
     let started = Instant::now();
     let connection = pool.get().await;
     let wait_nanos = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
@@ -175,7 +210,14 @@ pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
     let _ = DB_POOL_WAIT_NANOS_MAX.try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
         (wait_nanos > current).then_some(wait_nanos)
     });
-    Ok(connection?)
+    match connection {
+        Ok(mut connection) => {
+            let timing = acquire.acquired(&mut connection);
+            Ok(DbConnection { inner: Some(connection), timing })
+        }
+        Err(error) => { acquire.failed(); Err(error.into()) }
+    }
+    }
 }
 
 /// Performs a real database round trip used by readiness probes.

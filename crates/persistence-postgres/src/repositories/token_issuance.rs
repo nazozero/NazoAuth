@@ -162,10 +162,10 @@ impl TokenIssuanceRepository {
         }
     }
 
-    async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        get_conn(&self.pool)
-            .await
-            .map_err(|_| RepositoryError::Unavailable)
+    #[track_caller]
+    fn connection(&self) -> impl std::future::Future<Output=Result<crate::DbConnection, RepositoryError>> + Send + '_ {
+        let acquire = get_conn(&self.pool);
+        async move { acquire.await.map_err(|_| RepositoryError::Unavailable) }
     }
 
     /// One-read UserInfo snapshot: resolve the active subject by user UUID or
@@ -608,18 +608,21 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             // cancels the operation; DiscardOnDrop still discards an unconfirmed
             // transaction's physical connection.
             let pool = self.pool.clone();
+            let bridge = crate::perf_diagnostic::Bridge::new("commit_token_issuance");
             let mut operation = tokio::task::JoinSet::new();
             operation.spawn_on(
-                async move {
+                bridge.clone().run(async move {
                     let mut guard = DiscardOnDrop(Some(
                         get_conn(&pool)
                             .await
                             .map_err(|_| TokenPortError::Unavailable)?,
                     ));
+                    let diagnostic_transaction = crate::perf_diagnostic::Transaction::new(guard.connection());
                     let transaction = guard
                         .connection()
                         .transaction::<CommitTokenIssuanceResult, CommitTransactionError, _>(
                             async |connection| {
+                                let _body = diagnostic_transaction.body();
                                 diesel::sql_query("SET LOCAL lock_timeout = '2s'")
                                     .execute(connection)
                                     .await?;
@@ -677,14 +680,15 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                 }
                                 let mut retired_native_source = None;
                                 if let Some(refresh) = input.refresh_token.as_ref() {
-                                    match TokenRepository::persist_refresh_token_on_connection(
+                                    let span = crate::perf_diagnostic::Span::phase(connection, "refresh_persist_phase");
+                                    match crate::perf_diagnostic::awaited(span, TokenRepository::persist_refresh_token_on_connection(
                                         connection,
                                         refresh,
                                         &client_type,
                                         input.issuance_id,
                                         prepared_contract.as_ref(),
                                         input.native_sso_source.as_ref(),
-                                    )
+                                    ))
                                     .await
                                     .map_err(CommitTransactionError::Repository)?
                                     {
@@ -728,15 +732,18 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                 if let Some(source) = input.native_sso_source.as_ref() {
                                     fence_native_sso_source(connection, source, retired_native_source.as_ref()).await?;
                                 }
-                                append_fresh_security_audit_on_connection(
+                                let audit = token_issued_audit_event(&input, input.refresh_token.as_ref());
+                                let span = crate::perf_diagnostic::Span::phase(connection, "fresh_security_audit_phase");
+                                crate::perf_diagnostic::awaited(span, append_fresh_security_audit_on_connection(
                                     connection,
-                                    &token_issued_audit_event(&input, input.refresh_token.as_ref()),
-                                )
+                                    &audit,
+                                ))
                                 .await?;
                                 Ok(CommitTokenIssuanceResult::Committed)
                             },
                         )
                         .await;
+                    diagnostic_transaction.after_body(transaction.is_ok());
                     match transaction {
                         Ok(result) => {
                             guard.return_to_pool();
@@ -760,12 +767,12 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                         }
                         Err(CommitTransactionError::Diesel(error)) => Err(map_diesel_error(error)),
                     }
-                },
+                }),
                 &self.pool.runtime,
             );
-            operation
-                .join_next()
-                .await
+            let joined = operation.join_next().await;
+            bridge.resumed();
+            joined
                 .expect("issuance transaction task was registered")
                 .map_err(|error| {
                     tracing::warn!(%error, "token issuance runtime ended before completion");
