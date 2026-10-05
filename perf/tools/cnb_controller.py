@@ -14,7 +14,7 @@ sys.path.insert(0,str(R/'perf/tools'))
 import single_instance_scaling as sis,point_runner as points,short_baseline as sb
 points.KEYSET_VOLUME=P+'-keys'
 RAW=sis.dc;SECRETS=[];OUTS={};VOLS={};SYNCING=False
-INSPECT_SKIPS=[];COPY_OPS=[];COPY_FAILURES=[];TERMINAL_CAPTURED=set()
+INSPECT_SKIPS=[];COPY_OPS=[];COPY_FAILURES=[];TERMINAL_CAPTURED=set();TERMINATION_ERRORS=[]
 CLEANING=False;CLEANUP_DEADLINE=None
 SCRIPT_VOL=P+'-scripts';TLS_VOL=P+'-audit-tls';PIN_VOL=P+'-pinbin'
 def scrub(text):
@@ -48,6 +48,18 @@ def output_name(value):
     if value in OUTS:return value
     return next((name for name,(_,_,cid) in OUTS.items() if value==cid),None)
 
+def output_state(name,deadline=None):
+    """Read the exact registered instance and verify ownership before terminal capture."""
+    cid=OUTS[name][2]
+    limit=2 if deadline is None else min(2,max(.05,deadline-time.monotonic()))
+    fmt='{"id":{{json .Id}},"running":{{json .State.Running}},"labels":{{json .Config.Labels}}}'
+    reply=RAW('inspect',cid,'--format',fmt,check=False,timeout=limit)
+    if reply.returncode:raise RuntimeError('registered output instance unavailable')
+    state=json.loads(reply.stdout)
+    if state.get('id')!=cid or (state.get('labels') or {}).get(sis.SIS_LABEL)!=P or not isinstance(state.get('running'),bool):
+        raise RuntimeError('registered output instance ownership/state mismatch')
+    return state
+
 def finalize_outputs(timeout_s=35):
     """Stop only registered, still-owned instances and take final output before cleanup."""
     deadline=time.monotonic()+timeout_s;errors=[];stopped=[];partial=[]
@@ -55,12 +67,7 @@ def finalize_outputs(timeout_s=35):
         if name in TERMINAL_CAPTURED:continue
         try:
             if time.monotonic()>=deadline:raise TimeoutError('output finalization budget exhausted')
-            fmt='{"id":{{json .Id}},"running":{{json .State.Running}},"labels":{{json .Config.Labels}}}'
-            q=RAW('inspect',cid,'--format',fmt,check=False,timeout=min(2,max(.05,deadline-time.monotonic())))
-            if q.returncode:raise RuntimeError('registered output instance unavailable')
-            state=json.loads(q.stdout)
-            if state['id']!=cid or (state.get('labels') or {}).get(sis.SIS_LABEL)!=P:
-                raise RuntimeError('registered output instance ownership mismatch')
+            state=output_state(name,deadline)
             confirmed_stopped=not state['running']
             if state['running']:
                 stopped.append(name)
@@ -74,9 +81,7 @@ def finalize_outputs(timeout_s=35):
                         errors.append({'container':name,'reason':command[0]+': '+type(exc).__name__})
             if not confirmed_stopped:
                 try:
-                    reply=RAW('inspect',cid,'--format',fmt,check=False,timeout=min(2,max(.05,deadline-time.monotonic())))
-                    final=json.loads(reply.stdout) if reply.returncode==0 else {}
-                    confirmed_stopped=(final.get('id')==cid and (final.get('labels') or {}).get(sis.SIS_LABEL)==P and final.get('running') is False)
+                    confirmed_stopped=output_state(name,deadline)['running'] is False
                 except BaseException as exc:
                     errors.append({'container':name,'reason':'stop confirmation: '+type(exc).__name__})
             if not confirmed_stopped:
@@ -92,16 +97,31 @@ def sync_one(name,terminal=False,deadline=None):
     global SYNCING
     if SYNCING or name not in OUTS or name in TERMINAL_CAPTURED:return
     source,dest,cid=OUTS[name];SYNCING=True;ts=time.time();started=time.monotonic()
+    requested_terminal=terminal;terminal=False;proof=None;copied=False
     try:
+        if requested_terminal:
+            try:state=output_state(name,deadline)
+            except BaseException as exc:
+                TERMINATION_ERRORS.append({'container':name,'reason':'terminal confirmation: '+type(exc).__name__})
+                raise
+            if state['running']:
+                TERMINATION_ERRORS.append({'container':name,'reason':'output is partial; termination unconfirmed'})
+            else:
+                proof={'container_id':cid,'owner':P,'running':False,'checked_at':time.time(),
+                       'basis':'owned exact-ID Docker inspect before copy'}
+                terminal=True
         limit=30 if deadline is None else max(.05,min(30,deadline-time.monotonic()))
         q=RAW('cp',cid+':'+dest+'/.',source+'/',check=False,timeout=limit)
         if q.returncode:
-            COPY_FAILURES.append({'container':name,'exit':q.returncode,'terminal':terminal})
+            COPY_FAILURES.append({'container':name,'exit':q.returncode,'requested_terminal':requested_terminal,'terminal':False})
             raise RuntimeError('required container output copy failed: '+name)
+        copied=True
         if terminal:TERMINAL_CAPTURED.add(name)
     finally:
         SYNCING=False
-        COPY_OPS.append({'ts_start':ts,'ts_end':time.time(),'elapsed_ms':round((time.monotonic()-started)*1000,4),'container':name,'terminal':terminal})
+        COPY_OPS.append({'ts_start':ts,'ts_end':time.time(),'elapsed_ms':round((time.monotonic()-started)*1000,4),
+                         'container':name,'requested_terminal':requested_terminal,'terminal':terminal and copied,
+                         'copy_succeeded':copied,'termination_proof':proof})
 
 def sync_samplers():
     for name in list(OUTS):
@@ -291,7 +311,7 @@ def run(key):
         # A copy failure never skips the independent state capture.
         try:capture(runid,out)
         except BaseException as exc:error=error or type(exc).__name__+': '+scrub(str(exc))
-        copy_complete=not COPY_FAILURES and not finalization['errors'] and error is None
+        copy_complete=not COPY_FAILURES and not TERMINATION_ERRORS and not finalization['errors'] and error is None
         result.setdefault('health',{})['collector_copy_complete']=copy_complete
         if not copy_complete:
             original=result.get('verdict','INVALID')
@@ -302,7 +322,7 @@ def run(key):
         save(E/'copy-policy-evidence.json',{'source_sha':M['source_sha'],
              'policy':'inspect never copies output; required readiness and instance-ID terminal capture',
              'skipped_inspects':INSPECT_SKIPS,'copies':COPY_OPS,'required_copy_failures':COPY_FAILURES,
-             'terminal_captured':sorted(TERMINAL_CAPTURED),'finalization':finalization})
+             'termination_errors':TERMINATION_ERRORS,'terminal_captured':sorted(TERMINAL_CAPTURED),'finalization':finalization})
         event('point-evaluation',key=key,verdict=result.get('verdict','INVALID'),error=error,
               metrics=result.get('metrics'),health=result.get('health'))
         cleanup_start=time.monotonic();CLEANING=True;CLEANUP_DEADLINE=min(start+500,cleanup_start+45)

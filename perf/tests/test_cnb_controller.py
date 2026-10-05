@@ -8,7 +8,7 @@ import unittest
 
 TOOLS=pathlib.Path(__file__).resolve().parents[1]/'tools'
 tree=ast.parse((TOOLS/'cnb_controller.py').read_text())
-functions=['dc','health','sync_samplers','sync_one','output_name','finalize_outputs','run']
+functions=['dc','health','sync_samplers','sync_one','output_name','output_state','finalize_outputs','run']
 code=compile(ast.Module(body=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in functions],type_ignores=[]),'<cnb-controller>','exec')
 sis_tree=ast.parse((TOOLS/'single_instance_scaling.py').read_text())
 owned_code=compile(ast.Module(body=[n for n in sis_tree.body if isinstance(n,ast.FunctionDef) and n.name in ['_label_of','_remove_owned_by_name','stop_samplers']],type_ignores=[]),'<existing-sampler-lifecycle>','exec')
@@ -19,7 +19,7 @@ class CopyPolicy(unittest.TestCase):
         self.add_instance('sis-load-own','a'*64)
         self.add_instance('sis-sampler-own','b'*64)
         self.ns={'RAW':self.raw,'OUTS':{name:('/unused','/out',cid) for cid,row in self.instances.items() for name in [row['name']]},
-            'INSPECT_SKIPS':[],'SYNCING':False,'TERMINAL_CAPTURED':set(),'COPY_FAILURES':[],'COPY_OPS':[],
+            'INSPECT_SKIPS':[],'SYNCING':False,'TERMINAL_CAPTURED':set(),'COPY_FAILURES':[],'COPY_OPS':[],'TERMINATION_ERRORS':[],
             'CLEANING':False,'CLEANUP_DEADLINE':None,'P':'own','sis':types.SimpleNamespace(SIS_LABEL='sis.owner'),
             'os':types.SimpleNamespace(environ={}), 'pathlib':pathlib,'time':__import__('time'),'hashlib':hashlib,
             'signal':types.SimpleNamespace(SIGALRM=1,SIGTERM=2,signal=lambda *a:None,alarm=lambda *a:None),
@@ -63,7 +63,32 @@ class CopyPolicy(unittest.TestCase):
         with self.assertRaises(AssertionError):self.assertNoCopies()
     def test_logs_preserve_capture(self):
         self.ns['dc']('logs','sis-load-own')
-        self.assertEqual(self.operations(),['logs','cp']);self.assertIn('sis-load-own',self.ns['TERMINAL_CAPTURED'])
+        self.assertEqual(self.operations(),['logs','inspect','cp']);self.assertIn('sis-load-own',self.ns['TERMINAL_CAPTURED'])
+    def test_live_logs_only_capture_partial_and_record_error(self):
+        self.instances['a'*64]['running']=True;self.ns['dc']('logs','sis-load-own')
+        self.assertEqual(self.operations(),['logs','inspect','cp']);self.assertNotIn('sis-load-own',self.ns['TERMINAL_CAPTURED'])
+        self.assertFalse(self.ns['COPY_OPS'][-1]['terminal']);self.assertIsNone(self.ns['COPY_OPS'][-1]['termination_proof'])
+        self.assertTrue(self.ns['TERMINATION_ERRORS'])
+    def test_live_rm_only_captures_partial_and_continues_owned_removal(self):
+        self.instances['a'*64]['running']=True;self.ns['dc']('rm','-f','a'*64)
+        self.assertEqual(self.operations(),['inspect','cp','rm']);self.assertNotIn('sis-load-own',self.ns['TERMINAL_CAPTURED'])
+        self.assertFalse(self.ns['COPY_OPS'][-1]['terminal']);self.assertTrue(self.ns['TERMINATION_ERRORS'])
+    def test_existing_sampler_stop_failure_is_partial_and_does_not_skip_proc(self):
+        self.instances['b'*64]['running']=True;self.add_instance('sis-proc-own','c'*64,running=True)
+        self.ns['OUTS']['sis-proc-own']=('/unused','/out','c'*64);raw=self.raw
+        def failed_stop(*a,**k):
+            if a[0]=='stop' and a[-1]=='b'*64:
+                self.calls.append(('docker',a[0],a[1:]));return types.SimpleNamespace(returncode=1,stdout='',stderr='')
+            return raw(*a,**k)
+        self.ns['RAW']=failed_stop;self.owned['stop_samplers']('own')
+        self.assertNotIn('sis-sampler-own',self.ns['TERMINAL_CAPTURED']);self.assertIn('sis-proc-own',self.ns['TERMINAL_CAPTURED'])
+        self.assertTrue(self.ns['TERMINATION_ERRORS']);self.assertNotIn('b'*64,self.instances);self.assertNotIn('c'*64,self.instances)
+        self.assertFalse(next(c for c in self.ns['COPY_OPS'] if c['container']=='sis-sampler-own')['terminal'])
+    def test_every_terminal_copy_has_stopped_exact_instance_proof(self):
+        self.ns['dc']('logs','sis-load-own');self.ns['dc']('rm','-f','b'*64)
+        for row in self.ns['COPY_OPS']:
+            self.assertTrue(row['terminal'] and row['copy_succeeded']);self.assertFalse(row['termination_proof']['running'])
+            self.assertEqual(row['termination_proof']['container_id'],self.ns['OUTS'][row['container']][2])
     def test_run_registers_returned_full_instance_id(self):
         cid='d'*64
         self.ns.update(E='/evidence',R='/workspace',output_volume=lambda source:'owned-output',
@@ -73,10 +98,10 @@ class CopyPolicy(unittest.TestCase):
         self.assertEqual(self.ns['OUTS']['sis-new-own'],('/evidence/out','/out',cid))
         self.assertEqual(self.ns['output_name'](cid),'sis-new-own')
     def test_name_removal_copies_before_delete(self):
-        self.ns['dc']('rm','-f','sis-load-own');self.assertEqual(self.operations(),['cp','rm'])
+        self.ns['dc']('rm','-f','sis-load-own');self.assertEqual(self.operations(),['inspect','cp','rm'])
     def test_cid_removal_copies_exact_instance_before_delete(self):
         self.ns['dc']('rm','-f','a'*64)
-        self.assertEqual(self.operations(),['cp','rm']);self.assertTrue(self.calls[0][2][0].startswith('a'*64+':'))
+        self.assertEqual(self.operations(),['inspect','cp','rm']);self.assertTrue(self.calls[1][2][0].startswith('a'*64+':'))
     def test_existing_stop_samplers_cid_path_retains_final_output(self):
         self.add_instance('sis-proc-own','c'*64,running=True)
         self.instances['b'*64]['running']=True;self.ns['OUTS']['sis-proc-own']=('/unused','/out','c'*64)
@@ -91,11 +116,11 @@ class CopyPolicy(unittest.TestCase):
         self.assertNoCopies();self.assertNotIn('stop',self.operations());self.assertNotIn('rm',self.operations())
     def test_terminal_capture_not_repeated_on_cid_removal(self):
         self.ns['dc']('logs','sis-load-own');self.ns['dc']('rm','-f','a'*64)
-        self.assertEqual(self.operations(),['logs','cp','rm'])
+        self.assertEqual(self.operations(),['logs','inspect','cp','rm'])
     def test_failed_terminal_copy_blocks_normal_removal(self):
         self.failed_copies.add('a'*64)
         with self.assertRaisesRegex(RuntimeError,'required container output copy failed'):self.ns['dc']('rm','-f','a'*64)
-        self.assertNotIn('rm',self.operations());self.assertFalse(self.ns['SYNCING']);self.assertEqual(len(self.ns['COPY_FAILURES']),1)
+        self.assertNotIn('rm',self.operations());self.assertFalse(self.ns['SYNCING']);self.assertEqual(len(self.ns['COPY_FAILURES']),1);self.assertFalse(self.ns['COPY_OPS'][-1]['terminal'])
     def test_invalid_point_cleanup_can_remove_failed_capture(self):
         self.failed_copies.add('a'*64);self.ns['CLEANING']=True;self.ns['dc']('rm','-f','a'*64)
         self.assertEqual(self.operations(),['rm']);self.assertNotIn('sis-load-own',self.ns['TERMINAL_CAPTURED'])
@@ -165,6 +190,12 @@ class CopyPolicy(unittest.TestCase):
         self.failed_copies.add('b'*64);rc,result,capture,cleaned=self.run_fixture()
         self.assertEqual(rc,2);self.assertEqual(result['verdict'],'INVALID');self.assertFalse(result['health']['collector_copy_complete'])
         self.assertEqual(capture,[True]);self.assertEqual(cleaned,[True]);self.assertEqual(result['metrics'],{'retained':42})
+    def test_prior_unconfirmed_terminal_request_prevents_business_pass(self):
+        self.instances['a'*64]['running']=True;self.ns['dc']('logs','sis-load-own')
+        self.instances['a'*64]['running']=False
+        rc,result,capture,cleaned=self.run_fixture()
+        self.assertEqual(rc,2);self.assertEqual(result['verdict'],'INVALID');self.assertFalse(result['health']['collector_copy_complete'])
+        self.assertEqual(capture,[True]);self.assertEqual(cleaned,[True])
     def test_worker_timeout_preserves_failure_metrics_and_finalizes_live_workload(self):
         self.instances['a'*64]['running']=True;rc,result,capture,cleaned=self.run_fixture(verdict='FAIL',timeout=True)
         self.assertEqual(rc,2);self.assertEqual(result['verdict'],'FAIL');self.assertEqual(result['metrics'],{'retained':42})
