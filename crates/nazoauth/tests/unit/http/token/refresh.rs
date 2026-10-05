@@ -3181,7 +3181,6 @@ async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
     let mut successor = predecessor.clone();
     successor.id = Uuid::now_v7();
     successor.revoked_at = None;
-    successor.rotated_from_id = Some(predecessor.id);
     let successor_raw = format!("oidc-lost-response-successor-{}", Uuid::now_v7());
     insert_refresh_token_row(
         &state,
