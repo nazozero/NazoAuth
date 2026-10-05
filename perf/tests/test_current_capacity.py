@@ -108,13 +108,6 @@ class CapacityBoundsTests(unittest.TestCase):
 class PointVerdictTests(unittest.TestCase):
     def setUp(self):
         self.rec = _rec()
-        self.rec['stack']['pin'] = {
-            name: {'requested': '8-9', 'task_masks': [
-                {'pid': 1, 'tid': 1, 'allowed': '8-9',
-                 'name': {'app': 'nazoauth', 'postgres': 'postgres', 'valkey': 'valkey-server'}[name]}]}
-            for name in ('app', 'postgres', 'valkey')}
-        self.rec['load']['generator_affinity_verified'] = True
-        self.rec['load']['service_affinity_verified'] = True
         self.rec['metrics']['audit_log_scan']['collected'] = True
         self.rec['metrics']['common_window_s'] = {'seconds': 180}
         self.rec['audit_state_check']['checks'] = {'collected': True}
