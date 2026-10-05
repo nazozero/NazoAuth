@@ -88,6 +88,39 @@ diagnostic artifact. Ordering and truncation of this sampled forensic copy may
 change; it remains separate from exhaustive authoritative counters and never
 feeds the business verdict. Keep worker count frozen within a capacity interval.
 
+## CNB Docker-socket controller
+
+The normal host-bind entry in `tools/single_instance_scaling.py` calls Docker
+directly; state inspection does not copy output. When a CNB controller shares a
+Docker socket but cannot expose its own bind paths to that daemon, use the
+committed `tools/cnb_controller.py` entry with named output volumes:
+
+```sh
+SIS_CNB_EVIDENCE=/evidence SIS_WORKSPACE=/workspace python perf/tools/cnb_controller.py setup
+SIS_CNB_EVIDENCE=/evidence SIS_WORKSPACE=/workspace python perf/tools/cnb_controller.py s21
+```
+
+Prepare a fresh, task-owned project and its `scripts`, `pinbin`, `audit-tls`,
+`evidence` and `work` volumes before setup. Mount the complete selected Git source
+read-only at `/workspace`, writable evidence at `/evidence`, and the work volume
+at `/workspace/perf-results`. The controller image needs the existing runner
+Python dependencies, Docker/Compose, Git and a C compiler. The public
+`/evidence/requests/manifest.json` binds `project`, `source_sha`, `runner_image`,
+`app_image`, `helpers` (keyset/receiver), `cpus`, `harness_file_sha256`, and each
+`requests` entry's exact `path` and `sha256`. Requests retain the normal harness
+parameters and gates; the controller verifies their hashes and does not change
+rates, VUs, windows, CPU widths, pool size, audit or durability settings.
+
+Only explicit sampler readiness and terminal capture copy output. Running
+state/affinity checks never copy whole result directories. Terminal `logs` or
+removal captures each output once before removal, including final reducer flush
+and summaries. Sampler metadata is copied before its bounded readiness check.
+Required copy failure prevents PASS, records `collector_copy_complete=false`,
+keeps any business metrics, and produces `INVALID` after owned cleanup. The
+existing exact-window, full-stream, terminal-summary and affinity gates remain
+in force; diagnostic event sampling does not replace them. The normal host-bind
+path and application code are unchanged.
+
 ## Run
 
 Run the full matrix:
