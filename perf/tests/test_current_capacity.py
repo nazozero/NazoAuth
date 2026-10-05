@@ -108,6 +108,13 @@ class CapacityBoundsTests(unittest.TestCase):
 class PointVerdictTests(unittest.TestCase):
     def setUp(self):
         self.rec = _rec()
+        self.rec['stack']['pin'] = {
+            name: {'requested': '8-9', 'task_masks': [
+                {'pid': 1, 'tid': 1, 'allowed': '8-9',
+                 'name': {'app': 'nazoauth', 'postgres': 'postgres', 'valkey': 'valkey-server'}[name]}]}
+            for name in ('app', 'postgres', 'valkey')}
+        self.rec['load']['generator_affinity_verified'] = True
+        self.rec['load']['service_affinity_verified'] = True
         self.rec['metrics']['audit_log_scan']['collected'] = True
         self.rec['metrics']['common_window_s'] = {'seconds': 180}
         self.rec['audit_state_check']['checks'] = {'collected': True}
@@ -133,6 +140,25 @@ class PointVerdictTests(unittest.TestCase):
             result = cc.evaluate_point(self.point, self.rec, Path(tmp),
                                        confirmation=confirmation)
             return result, evaluator.call_args_list
+
+    def test_service_child_outside_cpu_set_invalidates_clean_business_results(self):
+        self.rec['stack']['pin']['valkey']['task_masks'].append(
+            {'pid': 7, 'tid': 7, 'allowed': '0-63'})
+        (verdict, _, health, _), _ = self.evaluate()
+        self.assertEqual(verdict, 'INVALID')
+        self.assertFalse(health['valkey_affinity_verified'])
+
+    def test_missing_thread_evidence_cannot_reuse_pid1_only_verification(self):
+        self.rec['stack']['pin'] = {'app_verified': True, 'pg_verified': True}
+        (verdict, _, health, _), _ = self.evaluate()
+        self.assertEqual(verdict, 'INVALID')
+        self.assertFalse(health['app_affinity_verified'])
+
+    def test_unverified_k6_affinity_invalidates_clean_business_results(self):
+        self.rec['load'].pop('generator_affinity_verified')
+        (verdict, _, health, _), _ = self.evaluate()
+        self.assertEqual(verdict, 'INVALID')
+        self.assertFalse(health['generator_affinity_verified'])
 
     def test_clean_point_evaluates_each_sidecar_with_its_own_recipe(self):
         (verdict, metrics, _, _), calls = self.evaluate()

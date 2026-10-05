@@ -213,6 +213,17 @@ when a later step succeeds. Historical results retain their original accounting.
 `point_runner.stack_up_pinned` accepts optional `postgres_cpus` and
 `valkey_cpus` sets to separate those components from the generator's
 `infra_cpus`; application affinity is applied before the runtime starts.
+The runtime pinning helper applies affinity under each service process owner's
+UID, including non-root daemons below a root-owned init process. Preflight
+requires PID 1, its service descendants and every visible service thread to
+match the declared CPU set. Generator service threads are checked during the
+load wait loop; `generator-affinity.json` records the actual runner/k6 masks.
+`service-affinity.json` records the app, PostgreSQL and Valkey service trees
+during that loop, including the final snapshot before main-runner exit is
+observed. Samples retain PID/TID, UID, parent PID, process name, start ticks
+and allowed CPUs; they describe the sampled instants, not continuous coverage.
+A mismatch invalidates the point. Docker exec inspection and healthcheck roots
+are excluded from service-tree verification.
 
 `perf/capacity.py` runs one fixed-arrival-rate point at a time, tears down the
 compose stack, and repeats for each selected replica count, scenario, and rate.

@@ -132,8 +132,10 @@ def evaluate_point(point, rec, out, *, confirmation=False):
             collected = collected and rec.get("audit_queue_post_drain", {}).get("collected") is True
         # Local/unknown preparation failures remain invalid even if every
         # independent health snapshot was collected successfully.
+        affinity_valid = all(value for key, value in health.items()
+                             if key.endswith("_affinity_verified"))
         health_verdict = ("FAIL" if collected and health["preparation_valid"]
-                          else "INVALID")
+                          and affinity_valid else "INVALID")
         metrics["health_verdict"] = health_verdict
         metrics["failed_health_checks"] = [k for k, v in health.items() if not v]
         metrics["health_evidence_collected"] = collected
