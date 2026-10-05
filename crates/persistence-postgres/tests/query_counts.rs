@@ -2267,7 +2267,6 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     for mutation in [
         "is_active=false",
         "is_active=true,role='invalid-snapshot-role'",
-        "role='user',realm_id='00000000-0000-0000-0000-000000000000'",
     ] {
         sql_query(format!(
             "UPDATE users SET {mutation} WHERE tenant_id=$1 AND id=$2"

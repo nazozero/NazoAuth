@@ -2952,3 +2952,183 @@ async fn ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_
         assert_eq!(repository.commit_count(), 1);
     }
 }
+
+
+async fn oidc_refresh_fixture(
+    state: &TestInfrastructure,
+) -> (ClientRow, TokenRow, String) {
+    let mut client = client_row();
+    client.client_id = format!("oidc-refresh-review-{}", Uuid::now_v7());
+    client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = false;
+    insert_refresh_client(state, &client).await;
+    let user = Uuid::now_v7();
+    insert_refresh_user(state, user, true).await;
+    let mut token = token_row_for_client(state, &client);
+    token.user_id = Some(user);
+    token.subject = user.to_string();
+    token.dpop_jkt = None;
+    token.mtls_x5t_s256 = None;
+    token.scopes = json!(["openid", "offline_access"]);
+    let raw = format!("oidc-refresh-review-{}", Uuid::now_v7());
+    insert_refresh_token_row(state, &raw, &token, None, None).await;
+    (client, token, raw)
+}
+
+#[actix_web::test]
+async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_priority() {
+    let Some(public_state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post().uri("/oauth/token").to_http_request();
+    for failure in ["missing", "inactive", "role", "nil realm", "binding collision"] {
+        let (client, mut token, raw) = oidc_refresh_fixture(&public_state).await;
+        let user = token.user_id.unwrap();
+        let schema = format!("oidc_refresh_projection_{}", Uuid::now_v7().simple());
+        let shadow = if matches!(failure, "missing" | "nil realm") {
+            // LIKE copies the real column types, checks and indexes but not
+            // foreign keys or triggers. Only this test's lookup sees it; the
+            // public users/family rows and their constraints remain intact.
+            let state = live_refresh_state_from_database_url(
+                AuthorizationServerProfile::Oauth2Baseline,
+                database_url_with_search_path(&schema).unwrap(),
+            ).unwrap();
+            create_isolated_schema(&state, &schema, &["users"]).await;
+            if failure == "nil realm" {
+                exec_sql(&state, &format!(
+                    "INSERT INTO users SELECT * FROM public.users WHERE id='{user}'"
+                )).await;
+                exec_sql(&state, &format!(
+                    "UPDATE users SET realm_id='00000000-0000-0000-0000-000000000000' WHERE id='{user}'"
+                )).await;
+            }
+            Some(state)
+        } else {
+            None
+        };
+        let state = shadow.as_ref().unwrap_or(&public_state);
+        match failure {
+            "inactive" => exec_sql(state, &format!("UPDATE users SET is_active=false WHERE id='{user}'")).await,
+            "role" => exec_sql(state, &format!("UPDATE users SET role='invalid-snapshot-role' WHERE id='{user}'")).await,
+            "binding collision" => {
+                let other = Uuid::now_v7();
+                insert_refresh_user(state, other, true).await;
+                token.subject = format!("oidc-collision-{}", Uuid::now_v7());
+                let mut c = get_conn(&state.diesel_db).await.unwrap();
+                sql_query("INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)")
+                    .bind::<SqlUuid,_>(client.tenant_id).bind::<Text,_>(&token.subject)
+                    .bind::<SqlUuid,_>(other).execute(&mut c).await.unwrap();
+                drop(c);
+                insert_refresh_token_row(state, &raw, &token, None, None).await;
+            }
+            _ => {}
+        }
+        let inner = crate::test_support::token_issuance_repository(state.diesel_db.clone());
+        let source = inner.refresh_token_snapshot_with_subject(
+            client.tenant_id, &raw, client.id, Utc::now(), true,
+        ).await.unwrap().unwrap();
+        assert!(source.prepared_subject.is_none(), "{failure}");
+        let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(inner)));
+        let mut form = refresh_form_without_token();
+        form.refresh_token = Some(raw.clone());
+        token.dpop_jkt = Some("oidc-domain-fallback-holder".to_owned());
+        insert_refresh_token_row(state, &raw, &token, None, None).await;
+        let (status, body) = response_json(token_refresh_with_repository(
+            state, &req, &client, &form, None, repository.clone(),
+        ).await).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{failure}");
+        assert_eq!(body["error"], "invalid_grant");
+        assert_eq!(body["error_description"], "refresh_token requires proof of possession.");
+        assert_eq!(repository.active_subject_claims_count(), 0);
+        token.dpop_jkt = None;
+        insert_refresh_token_row(state, &raw, &token, None, None).await;
+        form.scope = Some("openid unauthorized_scope".to_owned());
+        let (status, body) = response_json(token_refresh_with_repository(
+            state, &req, &client, &form, None, repository.clone(),
+        ).await).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{failure}");
+        assert_eq!(body["error"], "invalid_scope");
+        assert_eq!(repository.active_subject_claims_count(), 0);
+        form.scope = None;
+        let (status, body) = response_json(token_refresh_with_repository(
+            state, &req, &client, &form, None, repository.clone(),
+        ).await).await;
+        let missing = matches!(failure, "missing" | "inactive");
+        assert_eq!(status, if missing { StatusCode::BAD_REQUEST } else { StatusCode::SERVICE_UNAVAILABLE }, "{failure}");
+        assert_eq!(body["error"], if missing { "invalid_grant" } else { "server_error" });
+        assert_eq!(repository.refresh_snapshot_count(), 3);
+        assert_eq!(repository.active_subject_claims_count(), 1);
+        assert_eq!(repository.principal_snapshot_count(), 0);
+        assert_eq!(repository.commit_count(), 0);
+        assert!(body.get("access_token").is_none());
+        assert!(body.get("refresh_token").is_none());
+        if shadow.is_some() { drop_schema(state, &schema).await; }
+    }
+}
+
+#[actix_web::test]
+async fn oidc_refresh_explicit_downscope_succeeds_without_subject_claims() {
+    let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let (client, token, raw) = oidc_refresh_fixture(&state).await;
+    // This unused profile cannot cause an OIDC profile failure after downscope.
+    exec_sql(&state, &format!("UPDATE users SET role='invalid-snapshot-role' WHERE id='{}'", token.user_id.unwrap())).await;
+    let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+    )));
+    let req = actix_web::test::TestRequest::post().uri("/oauth/token").to_http_request();
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw);
+    form.scope = Some("offline_access".to_owned());
+    let (status, body) = response_json(token_refresh_with_repository(
+        &state, &req, &client, &form, None, repository.clone(),
+    ).await).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["scope"], "offline_access");
+    assert!(body.get("id_token").is_none());
+    assert!(body.get("access_token").is_some());
+    assert!(body.get("refresh_token").is_some());
+    assert_eq!(repository.refresh_snapshot_count(), 1);
+    assert_eq!(repository.active_subject_claims_count(), 0);
+    assert_eq!(repository.principal_snapshot_count(), 1);
+    assert_eq!(repository.commit_count(), 1);
+}
+
+#[actix_web::test]
+async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
+    let Some(state) = live_trusted_proxy_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let (client, mut predecessor, predecessor_raw) = oidc_refresh_fixture(&state).await;
+    let certificate = crate::test_support::rfc9440_certificate_fixture("oidc-lost-response");
+    predecessor.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
+    predecessor.revoked_at = Some(Utc::now() - Duration::seconds(35));
+    let mut successor = predecessor.clone();
+    successor.id = Uuid::now_v7();
+    successor.revoked_at = None;
+    successor.rotated_from_id = Some(predecessor.id);
+    let successor_raw = format!("oidc-lost-response-successor-{}", Uuid::now_v7());
+    insert_refresh_token_row(&state, &successor_raw, &successor,
+        Some(spent_edge(&predecessor, &predecessor_raw)), None).await;
+    let inner = crate::test_support::token_issuance_repository(state.diesel_db.clone());
+    let source = inner.refresh_token_snapshot_with_subject(
+        client.tenant_id, &predecessor_raw, client.id, Utc::now(), true,
+    ).await.unwrap().unwrap();
+    assert!(source.presented.revoked_at.is_some());
+    assert!(source.prepared_subject.is_none());
+    let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(inner)));
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(predecessor_raw.clone());
+    let (status, body) = response_json(token_refresh_with_repository(
+        &state, &mtls_refresh_request(&certificate), &client, &form, None, repository.clone(),
+    ).await).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("id_token").is_some());
+    assert_ne!(body["refresh_token"], predecessor_raw);
+    assert_ne!(body["refresh_token"], successor_raw);
+    assert_eq!(repository.refresh_snapshot_count(), 1);
+    assert_eq!(repository.active_subject_claims_count(), 1);
+    assert_eq!(repository.principal_snapshot_count(), 0);
+    assert_eq!(repository.commit_count(), 1);
+}

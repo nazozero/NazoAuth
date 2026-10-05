@@ -254,7 +254,10 @@ snapshot; it must not be endorsed by replacing its epoch with a later value.
 The client epoch always remains the version read during client authentication.
 
 Missing/inactive/corrupt profiles and binding collisions produce no prepared
-subject and retain the original later claims query and error ordering. Only
+subject and retain the original later claims query and the holder/scope
+priority for these domain projection failures. A column, privilege or
+connection fault in the combined SQL still fails the initial lookup;
+it is not masked by a retry or a claims fallback. Only
 the effective `openid` scope consumes preparation. Explicit removal of
 `openid`, non-OIDC sources and machine subjects do not read a profile for this
 optimization; an absent or empty requested scope retains original scopes.
