@@ -15,6 +15,7 @@ import single_instance_scaling as sis,point_runner as points,short_baseline as s
 points.KEYSET_VOLUME=P+'-keys'
 RAW=sis.dc;SECRETS=[];OUTS={};VOLS={};SYNCING=False
 INSPECT_SKIPS=[];COPY_OPS=[];COPY_FAILURES=[];TERMINAL_CAPTURED=set()
+CLEANING=False;CLEANUP_DEADLINE=None
 SCRIPT_VOL=P+'-scripts';TLS_VOL=P+'-audit-tls';PIN_VOL=P+'-pinbin'
 def scrub(text):
     for value in sorted(set(SECRETS),key=len,reverse=True):
@@ -43,12 +44,45 @@ def output_volume(source):
         finally:RAW('rm','-f',helper,check=False,timeout=15)
         VOLS[source]=volume
     return volume
-def sync_one(name,terminal=False):
+def output_name(value):
+    if value in OUTS:return value
+    return next((name for name,(_,_,cid) in OUTS.items() if value==cid),None)
+
+def finalize_outputs(timeout_s=35):
+    """Stop only registered, still-owned instances and take final output before cleanup."""
+    deadline=time.monotonic()+timeout_s;errors=[];stopped=[]
+    for name,(_,_,cid) in list(OUTS.items()):
+        if name in TERMINAL_CAPTURED:continue
+        try:
+            if time.monotonic()>=deadline:raise TimeoutError('output finalization budget exhausted')
+            fmt='{"id":{{json .Id}},"running":{{json .State.Running}},"labels":{{json .Config.Labels}}}'
+            q=RAW('inspect',cid,'--format',fmt,check=False,timeout=min(2,max(.05,deadline-time.monotonic())))
+            if q.returncode:raise RuntimeError('registered output instance unavailable')
+            state=json.loads(q.stdout)
+            if state['id']!=cid or (state.get('labels') or {}).get(sis.SIS_LABEL)!=P:
+                raise RuntimeError('registered output instance ownership mismatch')
+            if state['running']:
+                stopped.append(name)
+                errors.append({'container':name,'reason':'workload still running at finalization'})
+                for command,limit in [(('stop','--time','3',cid),5),(('wait',cid),2)]:
+                    try:
+                        reply=RAW(*command,check=False,timeout=min(limit,max(.05,deadline-time.monotonic())))
+                        if reply.returncode:errors.append({'container':name,'reason':command[0]+' failed'})
+                    except BaseException as exc:
+                        errors.append({'container':name,'reason':command[0]+': '+type(exc).__name__})
+            sync_one(name,terminal=True,deadline=deadline)
+        except BaseException as exc:
+            errors.append({'container':name,'reason':type(exc).__name__+': '+scrub(str(exc))})
+    return {'errors':errors,'stopped':stopped,'terminal_captured':sorted(TERMINAL_CAPTURED),
+            'copy_failures':COPY_FAILURES,'budget_seconds':timeout_s}
+
+def sync_one(name,terminal=False,deadline=None):
     global SYNCING
     if SYNCING or name not in OUTS or name in TERMINAL_CAPTURED:return
-    source,dest=OUTS[name];SYNCING=True;ts=time.time();started=time.monotonic()
+    source,dest,cid=OUTS[name];SYNCING=True;ts=time.time();started=time.monotonic()
     try:
-        q=RAW('cp',name+':'+dest+'/.',source+'/',check=False,timeout=30)
+        limit=30 if deadline is None else max(.05,min(30,deadline-time.monotonic()))
+        q=RAW('cp',cid+':'+dest+'/.',source+'/',check=False,timeout=limit)
         if q.returncode:
             COPY_FAILURES.append({'container':name,'exit':q.returncode,'terminal':terminal})
             raise RuntimeError('required container output copy failed: '+name)
@@ -108,10 +142,13 @@ def dc(*values,check=True,timeout=None):
     args=new
     if args and args[0]=='rm':
         for item in args[1:]:
-            if item in OUTS and not COPY_FAILURES:sync_one(item,terminal=True)
+            target=output_name(item)
+            if target and not CLEANING:sync_one(target,terminal=True)
     try:
         os.environ.update(env)
-        q=RAW(*args,check=False,timeout=min(timeout or 90,90))
+        limit=min(timeout or 90,90)
+        if CLEANING and CLEANUP_DEADLINE is not None:limit=min(limit,max(.05,CLEANUP_DEADLINE-time.monotonic()))
+        q=RAW(*args,check=False,timeout=limit)
     finally:
         for key,old in oldenv.items():
             if old is None:os.environ.pop(key,None)
@@ -119,10 +156,14 @@ def dc(*values,check=True,timeout=None):
     if check and q.returncode:
         event('task-command-failure',operation=str(args[0]),exit=q.returncode,stderr=scrub(q.stderr[-2600:]))
         raise RuntimeError('task command failed rc='+str(q.returncode)+': '+scrub(q.stderr[-1800:]))
-    if run and name and output and q.returncode==0:OUTS[name]=output
+    if run and name and output and q.returncode==0:
+        cid=q.stdout.strip()
+        if len(cid)!=64 or any(c not in '0123456789abcdef' for c in cid):raise RuntimeError('output container did not return its full instance ID')
+        OUTS[name]=(*output,cid)
     # State/affinity inspection needs no output files; copying live output perturbs the workload.
-    if args and args[0]=='inspect' and len(args)>1 and args[1] in OUTS:INSPECT_SKIPS.append({'ts':time.time(),'container':args[1]})
-    if args and args[0]=='logs' and len(args)>1 and args[1] in OUTS:sync_one(args[1],terminal=True)
+    target=output_name(args[1]) if len(args)>1 else None
+    if args and args[0]=='inspect' and target:INSPECT_SKIPS.append({'ts':time.time(),'container':target})
+    if args and args[0]=='logs' and target:sync_one(target,terminal=True)
     return q
 sis.dc=dc
 def receiver_get(run_id,path,token):
@@ -203,46 +244,78 @@ def setup():
     allowed=sis.format_cpu_list(M['cpus']['allowed'])
     q=RAW('run','--rm','--label','diag.owner='+P,'-v',PIN_VOL+':/pin:ro','--entrypoint','/pin/pinset',M['runner_image'],allowed,'--all',timeout=20)
     event('task-environment-setup',pinset_sha256=hashlib.sha256((E/'bin/pinset').read_bytes()).hexdigest(),isolated_pinset_output=q.stdout.strip(),scripts_volume=SCRIPT_VOL,pinbin_volume=PIN_VOL,tls_volume=TLS_VOL)
-def capture(runid,out):
-    states={}
+def capture(runid,out,timeout_s=10):
+    states={};errors=[];deadline=time.monotonic()+timeout_s
     for name in ['sis-rcv-'+runid,'sis-worker-'+runid,'sis-sampler-'+runid,'sis-proc-'+runid,sis.APP,sis.POSTGRES,sis.VALKEY,sis.MIGRATE]:
-        q=RAW('inspect',name,check=False,timeout=8)
+        try:q=RAW('inspect',name,check=False,timeout=min(1,max(.05,deadline-time.monotonic())))
+        except BaseException as exc:
+            errors.append(type(exc).__name__+': '+name);continue
         if q.returncode:continue
         d=json.loads(q.stdout)[0];states[name]={'image':d['Image'],'state':d['State'],'restart_count':d['RestartCount'],'resources':{k:d['HostConfig'].get(k) for k in ['CpusetCpus','NanoCpus','Memory','MemorySwap','PidsLimit']},'public_env':{k:v for k,v in [x.split('=',1) for x in d['Config'].get('Env',[]) if '=' in x] if k in ['DATABASE_MAX_CONNECTIONS','K6_JSON_OMIT_UNUSED_HTTP_TIMINGS','RUST_LOG','AUDIT_ANCHOR_MAX_BATCH_SIZE','AUDIT_ANCHOR_POLL_INTERVAL_MS']},'mounts':[{'type':x['Type'],'destination':x['Destination'],'rw':x['RW']} for x in d.get('Mounts',[])]}
     save(out/'task-container-states-before-cleanup.json',states)
+    if errors:raise RuntimeError("state capture failed: "+", ".join(errors))
 def run(key):
+    global CLEANING,CLEANUP_DEADLINE
     request=pathlib.Path(M['requests'][key]['path']);raw=request.read_bytes()
     assert hashlib.sha256(raw).hexdigest()==M['requests'][key]['sha256']
     for rel,h in M['harness_file_sha256'].items():assert hashlib.sha256((R/rel).read_bytes()).hexdigest()==h,rel
     point=json.loads(raw);runid=point['name'];out=E/'results'/point['phase']/runid
+    assert not (out/'short-result.json').exists(), 'Preserve completed point evidence'
     out.mkdir(parents=True,exist_ok=True);start=time.monotonic()
     def deadline(signum,frame):raise TimeoutError('task point deadline before cleanup')
     signal.signal(signal.SIGALRM,deadline);signal.signal(signal.SIGTERM,deadline);signal.alarm(390)
-    error=None;result={}
+    error=None;result={};finalization={}
     try:
         sb.worker(str(request))
         result=json.loads((out/'short-result.json').read_text())
     except BaseException as exc:
         error=type(exc).__name__+': '+scrub(str(exc));event('point-exception',key=key,error=error)
+        if (out/'short-result.json').is_file():
+            try:result=json.loads((out/'short-result.json').read_text())
+            except ValueError:pass
     finally:
         signal.alarm(0)
-        try:
-            sync_samplers();capture(runid,out)
-        except BaseException as exc:
-            error=error or type(exc).__name__+': '+scrub(str(exc))
-        copy_complete=not COPY_FAILURES and error is None
+        finalization=finalize_outputs()
+        # A copy failure never skips the independent state capture.
+        try:capture(runid,out)
+        except BaseException as exc:error=error or type(exc).__name__+': '+scrub(str(exc))
+        copy_complete=not COPY_FAILURES and not finalization['errors'] and error is None
         result.setdefault('health',{})['collector_copy_complete']=copy_complete
-        if not copy_complete:result['verdict']='INVALID'
-        if result:save(out/'short-result.json',result)
-        save(E/'copy-policy-evidence.json',{'source_sha':M['source_sha'],'policy':'inspect never copies output; terminal logs/rm and explicit sampler preflight retain required copies','skipped_inspects':INSPECT_SKIPS,'copies':COPY_OPS,'required_copy_failures':COPY_FAILURES,'terminal_captured':sorted(TERMINAL_CAPTURED)})
-        event('point-evaluation',key=key,verdict=result.get('verdict','INVALID'),load_started=(out/'load/run.log').exists(),error=error,metrics=result.get('metrics'),health=result.get('health'))
-        cleanup_start=time.monotonic()
-        sis.stack_down()
-        for volume in set(VOLS.values()):RAW('volume','rm',volume,check=False,timeout=15)
+        if not copy_complete:
+            original=result.get('verdict','INVALID')
+            result['original_verdict']=original
+            result['verdict']=original if original in ['FAIL','INVALID'] else 'INVALID'
+        save(out/'short-result.json',result)
+        save(out/'task-finalization.json',finalization)
+        save(E/'copy-policy-evidence.json',{'source_sha':M['source_sha'],
+             'policy':'inspect never copies output; required readiness and instance-ID terminal capture',
+             'skipped_inspects':INSPECT_SKIPS,'copies':COPY_OPS,'required_copy_failures':COPY_FAILURES,
+             'terminal_captured':sorted(TERMINAL_CAPTURED),'finalization':finalization})
+        event('point-evaluation',key=key,verdict=result.get('verdict','INVALID'),error=error,
+              metrics=result.get('metrics'),health=result.get('health'))
+        cleanup_start=time.monotonic();CLEANING=True;CLEANUP_DEADLINE=min(start+500,cleanup_start+45)
+        cleanup_error=None
+        try:sis.stack_down()
+        except BaseException as exc:cleanup_error=type(exc).__name__+': '+scrub(str(exc))
+        for volume in set(VOLS.values()):
+            try:RAW('volume','rm',volume,check=False,timeout=max(.05,min(15,CLEANUP_DEADLINE-time.monotonic())))
+            except BaseException as exc:cleanup_error=cleanup_error or type(exc).__name__
         remaining=[]
         for label in ['com.docker.compose.project='+P,sis.SIS_LABEL+'='+P]:
-            q=RAW('ps','-aq','--filter','label='+label,timeout=10);remaining+=q.stdout.split()
-        cleanup={'label':M.get('label',P),'key':key,'containers_remaining':remaining,'cleanup_elapsed_s':round(time.monotonic()-cleanup_start,3),'total_elapsed_s':round(time.monotonic()-start,3),'request_sha256_unchanged':hashlib.sha256(request.read_bytes()).hexdigest()==M['requests'][key]['sha256'],'verdict':result.get('verdict','INVALID'),'error':error}
+            try:
+                q=RAW('ps','-aq','--filter','label='+label,timeout=max(.05,min(10,CLEANUP_DEADLINE-time.monotonic())))
+                remaining+=q.stdout.split()
+                if q.returncode:remaining.append('unknown')
+            except BaseException:remaining.append('unknown')
+        if cleanup_error or remaining:
+            result['original_verdict']=result.get('original_verdict',result.get('verdict','INVALID'))
+            if result.get('verdict') not in ['FAIL','INVALID']:result['verdict']='INVALID'
+            result['health']['collector_copy_complete']=False
+            save(out/'short-result.json',result)
+        cleanup={'label':M.get('label',P),'key':key,'containers_remaining':remaining,
+                 'cleanup_elapsed_s':round(time.monotonic()-cleanup_start,3),'total_elapsed_s':round(time.monotonic()-start,3),
+                 'request_sha256_unchanged':hashlib.sha256(request.read_bytes()).hexdigest()==M['requests'][key]['sha256'],
+                 'verdict':result.get('verdict','INVALID'),'error':error,'cleanup_error':cleanup_error}
         save(out/'task-cleanup.json',cleanup);event('point-cleanup',**cleanup)
     if cleanup['containers_remaining'] or cleanup['total_elapsed_s']>=530:raise SystemExit(3)
     raise SystemExit(0 if result.get('verdict')=='PASS' and error is None else 2)
