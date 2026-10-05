@@ -50,7 +50,7 @@ def output_name(value):
 
 def finalize_outputs(timeout_s=35):
     """Stop only registered, still-owned instances and take final output before cleanup."""
-    deadline=time.monotonic()+timeout_s;errors=[];stopped=[]
+    deadline=time.monotonic()+timeout_s;errors=[];stopped=[];partial=[]
     for name,(_,_,cid) in list(OUTS.items()):
         if name in TERMINAL_CAPTURED:continue
         try:
@@ -61,6 +61,7 @@ def finalize_outputs(timeout_s=35):
             state=json.loads(q.stdout)
             if state['id']!=cid or (state.get('labels') or {}).get(sis.SIS_LABEL)!=P:
                 raise RuntimeError('registered output instance ownership mismatch')
+            confirmed_stopped=not state['running']
             if state['running']:
                 stopped.append(name)
                 errors.append({'container':name,'reason':'workload still running at finalization'})
@@ -68,13 +69,24 @@ def finalize_outputs(timeout_s=35):
                     try:
                         reply=RAW(*command,check=False,timeout=min(limit,max(.05,deadline-time.monotonic())))
                         if reply.returncode:errors.append({'container':name,'reason':command[0]+' failed'})
+                        elif command[0]=='wait':confirmed_stopped=True
                     except BaseException as exc:
                         errors.append({'container':name,'reason':command[0]+': '+type(exc).__name__})
-            sync_one(name,terminal=True,deadline=deadline)
+            if not confirmed_stopped:
+                try:
+                    reply=RAW('inspect',cid,'--format',fmt,check=False,timeout=min(2,max(.05,deadline-time.monotonic())))
+                    final=json.loads(reply.stdout) if reply.returncode==0 else {}
+                    confirmed_stopped=(final.get('id')==cid and (final.get('labels') or {}).get(sis.SIS_LABEL)==P and final.get('running') is False)
+                except BaseException as exc:
+                    errors.append({'container':name,'reason':'stop confirmation: '+type(exc).__name__})
+            if not confirmed_stopped:
+                partial.append(name)
+                errors.append({'container':name,'reason':'output is partial; termination unconfirmed'})
+            sync_one(name,terminal=confirmed_stopped,deadline=deadline)
         except BaseException as exc:
             errors.append({'container':name,'reason':type(exc).__name__+': '+scrub(str(exc))})
     return {'errors':errors,'stopped':stopped,'terminal_captured':sorted(TERMINAL_CAPTURED),
-            'copy_failures':COPY_FAILURES,'budget_seconds':timeout_s}
+            'partial_captured':partial,'copy_failures':COPY_FAILURES,'budget_seconds':timeout_s}
 
 def sync_one(name,terminal=False,deadline=None):
     global SYNCING

@@ -116,6 +116,30 @@ class CopyPolicy(unittest.TestCase):
         ops=self.operations();self.assertLess(ops.index('stop'),ops.index('wait'));self.assertLess(ops.index('wait'),ops.index('cp'))
         self.assertEqual(result['stopped'],['sis-load-own']);self.assertTrue(result['errors'])
         self.assertEqual(set(result['terminal_captured']),set(self.ns['OUTS']))
+    def failed_stop_wait_fixture(self,timeout=False,stopped=False):
+        self.instances['a'*64]['running']=True;raw=self.raw
+        def failing(*args,**kwargs):
+            if args[0] in ['stop','wait']:
+                self.calls.append(('docker',args[0],args[1:]))
+                if stopped and args[0]=='stop':self.instances['a'*64]['running']=False
+                if timeout:raise TimeoutError('fixture command timeout')
+                return types.SimpleNamespace(returncode=1,stdout='',stderr='')
+            return raw(*args,**kwargs)
+        self.ns['RAW']=failing
+        return self.ns['finalize_outputs'](timeout_s=5)
+    def test_failed_stop_and_wait_only_capture_partial_running_output(self):
+        result=self.failed_stop_wait_fixture()
+        self.assertIn('sis-load-own',result['partial_captured']);self.assertNotIn('sis-load-own',result['terminal_captured'])
+        self.assertTrue(result['errors']);self.assertIn('sis-sampler-own',result['terminal_captured'])
+        self.assertFalse(next(c for c in self.ns['COPY_OPS'] if c['container']=='sis-load-own')['terminal'])
+    def test_stop_and_wait_timeout_only_capture_partial_running_output(self):
+        result=self.failed_stop_wait_fixture(timeout=True)
+        self.assertIn('sis-load-own',result['partial_captured']);self.assertNotIn('sis-load-own',result['terminal_captured'])
+        self.assertTrue(result['errors']);self.assertEqual(self.operations().count('cp'),2)
+    def test_failed_commands_with_inspected_stopped_instance_capture_terminal(self):
+        result=self.failed_stop_wait_fixture(stopped=True)
+        self.assertNotIn('sis-load-own',result['partial_captured']);self.assertIn('sis-load-own',result['terminal_captured'])
+        self.assertTrue(result['errors'])
     def test_one_failed_copy_does_not_skip_other_outputs(self):
         self.failed_copies.add('a'*64);result=self.ns['finalize_outputs'](timeout_s=5)
         self.assertTrue(result['errors']);self.assertIn('sis-sampler-own',self.ns['TERMINAL_CAPTURED']);self.assertEqual(self.operations().count('cp'),2)
