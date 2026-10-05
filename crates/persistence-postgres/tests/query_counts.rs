@@ -2267,11 +2267,14 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     sql_query("UPDATE users SET is_active=false WHERE tenant_id=$1 AND id=$2")
         .bind::<sql_types::Uuid, _>(id)
         .bind::<sql_types::Uuid, _>(seed.user_id)
-        .execute(&mut c).await.unwrap();
+        .execute(&mut c)
+        .await
+        .unwrap();
     let (r, q, a) = measure(
         &counter,
         repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
-    ).await;
+    )
+    .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
     assert_eq!(q.data_queries, 1);
     assert_eq!(a, 1);
@@ -2279,15 +2282,25 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     // without altering the real users CHECK/FK constraints or its rows.
     {
         let mut profile = get_conn(&pool).await.unwrap();
-        profile.batch_execute("CREATE TEMP TABLE users (LIKE public.users INCLUDING DEFAULTS)").await.unwrap();
+        profile
+            .batch_execute("CREATE TEMP TABLE users (LIKE public.users INCLUDING DEFAULTS)")
+            .await
+            .unwrap();
         sql_query("INSERT INTO users SELECT * FROM public.users WHERE id=$1")
-            .bind::<sql_types::Uuid,_>(seed.user_id).execute(&mut profile).await.unwrap();
-        profile.batch_execute("UPDATE users SET is_active=true,role='corrupt-role'").await.unwrap();
+            .bind::<sql_types::Uuid, _>(seed.user_id)
+            .execute(&mut profile)
+            .await
+            .unwrap();
+        profile
+            .batch_execute("UPDATE users SET is_active=true,role='corrupt-role'")
+            .await
+            .unwrap();
     }
     let (r, q, a) = measure(
         &counter,
         repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
-    ).await;
+    )
+    .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
     assert_eq!(q.data_queries, 1);
     assert_eq!(a, 1);
@@ -2311,7 +2324,10 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     assert_eq!(a, 1);
     {
         let mut profile = get_conn(&pool).await.unwrap();
-        profile.batch_execute("DROP TABLE pg_temp.users").await.unwrap();
+        profile
+            .batch_execute("DROP TABLE pg_temp.users")
+            .await
+            .unwrap();
     }
     // Restore the principal, then retain any wrong binding owner as a collision.
     sql_query("UPDATE users SET is_active=true,realm_id=$1,role='user' WHERE id=$2")

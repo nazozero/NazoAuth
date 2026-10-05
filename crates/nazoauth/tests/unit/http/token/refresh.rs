@@ -2978,9 +2978,17 @@ async fn oidc_refresh_projection_state(
     exec_sql(&state, &format!("CREATE SCHEMA {schema}")).await;
     // Preserve real column types/defaults but allow invalid domain values in
     // this lookup-only fixture. Public CHECK/FK constraints stay intact.
-    exec_sql(&state, &format!("CREATE TABLE {schema}.users (LIKE public.users INCLUDING DEFAULTS)")).await;
+    exec_sql(
+        &state,
+        &format!("CREATE TABLE {schema}.users (LIKE public.users INCLUDING DEFAULTS)"),
+    )
+    .await;
     if let Some(user) = user {
-        exec_sql(&state, &format!("INSERT INTO users SELECT * FROM public.users WHERE id='{user}'")).await;
+        exec_sql(
+            &state,
+            &format!("INSERT INTO users SELECT * FROM public.users WHERE id='{user}'"),
+        )
+        .await;
     }
     (state, schema)
 }
@@ -3005,8 +3013,14 @@ async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_prior
         let mut schema = None;
         let shadow = if matches!(failure, "missing" | "nil realm" | "role") {
             let (state, name) = oidc_refresh_projection_state(
-                &public_state, if failure == "missing" { None } else { Some(user) },
-            ).await;
+                &public_state,
+                if failure == "missing" {
+                    None
+                } else {
+                    Some(user)
+                },
+            )
+            .await;
             schema = Some(name);
             if failure == "nil realm" {
                 exec_sql(&state, &format!(
