@@ -163,7 +163,10 @@ impl TokenIssuanceRepository {
     }
 
     #[track_caller]
-    fn connection(&self) -> impl std::future::Future<Output=Result<crate::DbConnection, RepositoryError>> + Send + '_ {
+    fn connection(
+        &self,
+    ) -> impl std::future::Future<Output = Result<crate::DbConnection, RepositoryError>> + Send + '_
+    {
         let acquire = get_conn(&self.pool);
         async move { acquire.await.map_err(|_| RepositoryError::Unavailable) }
     }

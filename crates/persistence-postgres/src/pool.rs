@@ -48,10 +48,14 @@ pub struct DbConnection {
 }
 impl std::ops::Deref for DbConnection {
     type Target = Object<AsyncPgConnection>;
-    fn deref(&self) -> &Self::Target { self.inner.as_ref().expect("connection is present") }
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref().expect("connection is present")
+    }
 }
 impl std::ops::DerefMut for DbConnection {
-    fn deref_mut(&mut self) -> &mut Self::Target { self.inner.as_mut().expect("connection is present") }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.inner.as_mut().expect("connection is present")
+    }
 }
 impl DbConnection {
     pub(crate) fn discard(mut connection: Self) {
@@ -163,7 +167,8 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
             .connect(tokio_postgres::NoTls)
             .await
             .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
-        let mut connection = AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+        let mut connection =
+            AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
         crate::perf_diagnostic::attach(&mut connection).await;
         return Ok(connection);
     }
@@ -191,32 +196,42 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
         .connect(tls)
         .await
         .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
-    let mut connection = AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
+    let mut connection =
+        AsyncPgConnection::try_from_client_and_connection(client, connection).await?;
     crate::perf_diagnostic::attach(&mut connection).await;
     Ok(connection)
 }
 
 #[track_caller]
-pub fn get_conn(pool: &DbPool) -> impl std::future::Future<Output = anyhow::Result<DbConnection>> + Send + '_ {
+pub fn get_conn(
+    pool: &DbPool,
+) -> impl std::future::Future<Output = anyhow::Result<DbConnection>> + Send + '_ {
     let location = std::panic::Location::caller();
     let requested = crate::perf_diagnostic::requested();
     async move {
-    let mut acquire = crate::perf_diagnostic::Acquire::new(location, requested);
-    let started = Instant::now();
-    let connection = pool.get().await;
-    let wait_nanos = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-    DB_POOL_ACQUIRE_COUNT.fetch_add(1, Ordering::Relaxed);
-    DB_POOL_WAIT_NANOS_TOTAL.fetch_add(wait_nanos, Ordering::Relaxed);
-    let _ = DB_POOL_WAIT_NANOS_MAX.try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-        (wait_nanos > current).then_some(wait_nanos)
-    });
-    match connection {
-        Ok(mut connection) => {
-            let timing = acquire.acquired(&mut connection);
-            Ok(DbConnection { inner: Some(connection), timing })
+        let mut acquire = crate::perf_diagnostic::Acquire::new(location, requested);
+        let started = Instant::now();
+        let connection = pool.get().await;
+        let wait_nanos = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        DB_POOL_ACQUIRE_COUNT.fetch_add(1, Ordering::Relaxed);
+        DB_POOL_WAIT_NANOS_TOTAL.fetch_add(wait_nanos, Ordering::Relaxed);
+        let _ =
+            DB_POOL_WAIT_NANOS_MAX.try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                (wait_nanos > current).then_some(wait_nanos)
+            });
+        match connection {
+            Ok(mut connection) => {
+                let timing = acquire.acquired(&mut connection);
+                Ok(DbConnection {
+                    inner: Some(connection),
+                    timing,
+                })
+            }
+            Err(error) => {
+                acquire.failed();
+                Err(error.into())
+            }
         }
-        Err(error) => { acquire.failed(); Err(error.into()) }
-    }
     }
 }
 
