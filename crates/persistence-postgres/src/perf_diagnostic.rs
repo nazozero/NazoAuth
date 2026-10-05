@@ -2,7 +2,7 @@
 //! FinishQuery is deliberately ignored: Diesel loads can finish their event
 //! before the result stream/implicit transaction has actually completed.
 use diesel::connection::{Instrumentation, InstrumentationEvent};
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection};
 use serde::Serialize;
 use std::{
     future::Future,
@@ -282,6 +282,7 @@ impl Instrumentation for Identity {
     fn on_connection_event(&mut self, _event: InstrumentationEvent<'_>) {}
 }
 pub(crate) async fn attach(connection: &mut AsyncPgConnection) {
+    use diesel_async::RunQueryDsl as _;
     if recorder().is_none() {
         return;
     }
