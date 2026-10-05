@@ -18,7 +18,11 @@ def _rec(run_id="A1", pool=24, ops=2800.0, p99=1100.0, drop=0.05,
         "point": {"name": run_id, "phase": "pool24v32/mixed",
                   "app_env_overrides":
                   {"DATABASE_MAX_CONNECTIONS": str(pool)}},
-        "stack": {"app_binary_sha256": "deadbeef"},
+        "stack": {"app_binary_sha256": "deadbeef", "pin": {
+            component: {"requested": "8-9", "task_masks": [
+                {"pid": 1, "tid": 1, "allowed": "8-9", "name": role}]}
+            for component, role in (("app", "nazoauth"), ("postgres", "postgres"),
+                                    ("valkey", "valkey-server"))}},
         "metrics": {
             "outcome_success": 300000, "successful_ops_per_s": ops,
             "ops_per_s": attempted,
@@ -48,7 +52,8 @@ def _rec(run_id="A1", pool=24, ops=2800.0, p99=1100.0, drop=0.05,
                                    "spent_expired_backlog": 0},
             "sidecar_terminal_complete": True,
         },
-        "load": {"load_status": "completed"},
+        "load": {"load_status": "completed", "service_affinity_verified": True,
+                 "generator_affinity_verified": True},
         "wal_delta": {"fsyncs_total": fsyncs,
                       "fsyncs_client_backend": fsyncs,
                       "db_xact_commit": commits + 100},
