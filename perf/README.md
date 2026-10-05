@@ -114,8 +114,11 @@ rates, VUs, windows, CPU widths, pool size, audit or durability settings.
 Only explicit sampler readiness and terminal capture copy output. Running
 state/affinity checks never copy whole result directories. Terminal `logs` or
 removal resolves the registered name or full instance ID and captures each output
-once from that exact instance before removal, including final reducer flush
-and summaries. Fault finalization verifies the existing ownership label, then
+once from that exact instance before removal. All terminal promotion passes
+through the same exact-ID ownership and stopped-state inspection in `sync_one`;
+the copy record retains that positive proof. A still-running instance is copied
+as partial and records a termination error while other collection and existing
+owned cleanup continue. The error prevents PASS even if the business metrics pass. Fault finalization verifies the existing ownership label, then
 boundedly stops/waits for remaining workloads and attempts their final output
 before the existing owned cleanup. One failed copy does not skip other copies
 or independent state capture; original failed verdicts and metrics are retained. Sampler metadata is copied before its bounded readiness check.
