@@ -2883,9 +2883,8 @@ async fn ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_
     };
     // Successful OIDC signing uses the protocol default RS256; the generic
     // refresh fixture's EdDSA key is retained by the existing failure cases.
-    state.keyset = crate::test_support::test_key_manager_with_algorithm(
-        jsonwebtoken::Algorithm::RS256,
-    );
+    state.keyset =
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
     let req = actix_web::test::TestRequest::post()
         .uri("/oauth/token")
         .to_http_request();
@@ -3193,15 +3192,15 @@ async fn oidc_refresh_explicit_downscope_succeeds_without_subject_claims() {
 
 #[actix_web::test]
 async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
-    let Some(mut state) = live_trusted_proxy_refresh_state(AuthorizationServerProfile::Oauth2Baseline)
+    let Some(mut state) =
+        live_trusted_proxy_refresh_state(AuthorizationServerProfile::Oauth2Baseline)
     else {
         return;
     };
     // Successful OIDC signing uses the protocol default RS256; the generic
     // refresh fixture's EdDSA key is retained by the existing failure cases.
-    state.keyset = crate::test_support::test_key_manager_with_algorithm(
-        jsonwebtoken::Algorithm::RS256,
-    );
+    state.keyset =
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
     let (client, mut predecessor, predecessor_raw) = oidc_refresh_fixture(&state).await;
     let certificate = crate::test_support::rfc9440_certificate_fixture("oidc-lost-response");
     predecessor.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
