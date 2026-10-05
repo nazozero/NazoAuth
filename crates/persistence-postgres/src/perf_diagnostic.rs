@@ -232,7 +232,7 @@ fn emit(
         let mut permitted = false;
         let _ = m
             .rate
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |old| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |old| {
                 let count = if old >> 16 == sec { old & 0xffff } else { 0 };
                 if count < PER_STAGE_SECOND {
                     permitted = true;
