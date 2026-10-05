@@ -531,7 +531,7 @@ def stack_up_pinned(point: dict) -> dict:
         sis.APP)
 
     # pin_container injects /tmp/pinset and retargets stray threads;
-    # verify_pin shells the same binary — so pin must run before verify.
+    # Verify actual service descendants and all their threads after pinning.
     evidence["pin"] = {
         "app_exec_mode": "pinset-exec",
         "app_cpus": app_cpus,
@@ -541,11 +541,16 @@ def stack_up_pinned(point: dict) -> dict:
             point.get("valkey_cpus", point["infra_cpus"]))),
         "keyset": sis.pin_container(sis.KEYSET, infra_cpus),
         "pg_verified": sis.verify_pin(sis.POSTGRES, sis.format_cpu_list(
-            point.get("postgres_cpus", point["infra_cpus"]))),
+            point.get("postgres_cpus", point["infra_cpus"])), "postgres"),
     }
     # Record the proc masks after exec-pinning for the thread/CPU evidence.
     evidence["pin"]["app"] = sis.pin_container(sis.APP, app_cpus)
-    evidence["pin"]["app_verified"] = sis.verify_pin(sis.APP, app_cpus)
+    evidence["pin"]["app_verified"] = sis.verify_pin(sis.APP, app_cpus, "nazoauth")
+    evidence["pin"]["valkey_verified"] = sis.verify_pin(
+        sis.VALKEY, sis.format_cpu_list(point.get("valkey_cpus", point["infra_cpus"])), "valkey-server")
+    if not all(evidence["pin"][key] for key in
+               ("app_verified", "pg_verified", "valkey_verified")):
+        raise RuntimeError("CPU_AFFINITY_INVALID: service threads exceed requested sets")
 
     depid = ""
     for _ in range(30):
@@ -1153,7 +1158,20 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
     scan = m.get("audit_log_scan") or {}
     asc = rec.get("audit_state_check") or {}
     journal = asc.get("journal") or {}
+    pin = (rec.get("stack") or {}).get("pin") or {}
+    affinity = {
+        component + "_affinity_verified": sis._tasks_pinned(
+            (pin.get(component) or {}).get("task_masks") or [],
+            (pin.get(component) or {}).get("requested") or "", role)
+        for component, role in (("app", "nazoauth"), ("postgres", "postgres"),
+                                ("valkey", "valkey-server"))
+    }
+    affinity["service_affinity_verified"] = (
+        (rec.get("load") or {}).get("service_affinity_verified") is True)
+    affinity["generator_affinity_verified"] = (
+        (rec.get("load") or {}).get("generator_affinity_verified") is True)
     checks = {
+        **affinity,
         "point_completed": rec.get("ok") is True,
         "unexpected_zero": m.get("outcome_unexpected") == 0,
         "preparation_valid": (m.get("outcome_prepare_failed", 0) == 0

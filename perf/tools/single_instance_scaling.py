@@ -408,38 +408,111 @@ def container_uid(container: str) -> str:
     return proc.stdout.strip() or "0"
 
 
+def container_tasks(container: str) -> list[dict]:
+    """Snapshot PID 1's service tree, including every visible thread.
+
+    Docker exec inspection/healthcheck processes are separate roots in the
+    PID namespace. Exclude them and the inspector's own descendants; their
+    inherited engine affinity does not describe the running service.
+    """
+    proc = dcx(container, ["sh", "-c", r"""
+echo "inspector $$"
+for status in /proc/[0-9]*/task/[0-9]*/status; do
+    awk '
+      FNR == NR {
+        if ($1 == "Name:") name=$2
+        if ($1 == "Tgid:") pid=$2
+        if ($1 == "Pid:") tid=$2
+        if ($1 == "PPid:") ppid=$2
+        if ($1 == "Uid:") uid=$2
+        if ($1 == "Cpus_allowed_list:") mask=$2
+        next
+      }
+      {sub(/^.*\) /, ""); start=$20}
+      END {if (pid && tid && mask && start)
+           print pid, tid, ppid, uid, mask, name, start}
+    ' "$status" "${status%status}stat" 2>/dev/null
+done
+exit 0
+"""], check=False)
+    lines = (proc.stdout or "").splitlines()
+    if proc.returncode or not lines:
+        return []
+    try:
+        tag, inspector = lines[0].split()
+        if tag != "inspector":
+            return []
+        inspector = int(inspector)
+        tasks = []
+        for line in lines[1:]:
+            pid, tid, ppid, uid, allowed, name, start = line.split()
+            parse_cpu_list(allowed)
+            tasks.append({"pid": int(pid), "tid": int(tid),
+                          "ppid": int(ppid), "uid": str(int(uid)),
+                          "allowed": allowed, "name": name,
+                          "starttime_ticks": int(start)})
+    except (ValueError, TypeError):
+        return []
+    excluded = {inspector}
+    services = {1}
+    for _ in range(len(tasks)):
+        old = (len(excluded), len(services))
+        excluded.update(t["pid"] for t in tasks if t["ppid"] in excluded)
+        services.update(t["pid"] for t in tasks if t["ppid"] in services)
+        if old == (len(excluded), len(services)):
+            break
+    return [t for t in tasks if t["pid"] in services - excluded]
+
+
+def _tasks_pinned(tasks: list[dict], cpus: str, role: str | None = None) -> bool:
+    try:
+        requested = parse_cpu_list(cpus)
+        return (any(t["pid"] == t["tid"] == 1 for t in tasks)
+                and (role is None or any(t.get("name") == role for t in tasks))
+                and all(parse_cpu_list(t["allowed"]) == requested for t in tasks))
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def pin_container(container: str, cpus: str) -> dict:
     ensure_pinset(container)
-    uid = container_uid(container)
-    # --all is best-effort: a stray proc owned by another uid cannot be
-    # retargeted without CAP_SYS_NICE; the masks audit + verify_pin on
-    # PID 1 record the effective coverage instead of aborting the point.
-    out = dc("exec", "-u", uid, container,
-             "/tmp/pinset", cpus, "--all", check=False)
-    show = dc("exec", "-u", uid, container,
-              "/tmp/pinset", cpus, "--show", "1", check=False)
-    masks = dc("exec", "-u", uid, container, "sh", "-c",
-               "for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null); "
-               "a=$(awk '/Cpus_allowed_list/{print $2}' $p/status 2>/dev/null); "
-               "[ -n \"$a\" ] && echo \"$p $c $a\"; done",
-               check=False)
+    before = container_tasks(container)
+    owners: dict[str, set[int]] = {}
+    for task in before:
+        owners.setdefault(task["uid"], set()).add(task["pid"])
+    attempts = []
+    # PID 1 can be root-owned tini while the daemon uses another UID.
+    # Match each process owner to retarget its threads without CAP_SYS_NICE.
+    for uid, pids in sorted(owners.items()):
+        out = dc("exec", "-u", uid, container, "sh", "-c",
+                 'rc=0; cpus=$1; shift; for pid; do '
+                 '/tmp/pinset "$cpus" --tree "$pid" || rc=1; '
+                 'done; exit "$rc"', "pin-services", cpus,
+                 *[str(pid) for pid in sorted(pids)], check=False)
+        attempts.append({"uid": uid, "pids": sorted(pids),
+                         "returncode": out.returncode,
+                         "stdout": out.stdout.strip()})
+    after = container_tasks(container)
+    leader = next((t for t in after if t["pid"] == t["tid"] == 1), {})
     return {
         "container": container,
-        "uid": uid,
+        "uid": leader.get("uid"),
         "requested": cpus,
-        "pin_rc": out.returncode,
-        "pin_output": out.stdout.strip(),
-        "pid1_allowed": (show.stdout or "").strip(),
-        "proc_masks": masks.stdout.strip().splitlines(),
+        "pin_rc": max((a["returncode"] for a in attempts), default=1),
+        "pin_output": "\n".join(a["stdout"] for a in attempts),
+        "pin_attempts": attempts,
+        "pid1_allowed": ("Cpus_allowed_list: " + leader["allowed"]
+                         if leader else ""),
+        "proc_masks": [f"/proc/{t['pid']} {t['name']} {t['allowed']}"
+                       for t in after if t["pid"] == t["tid"]],
+        "task_masks": after,
+        "verified": _tasks_pinned(after, cpus),
     }
 
 
-def verify_pin(container: str, cpus: str) -> bool:
-    """PID 1's allowed list must equal the requested set exactly."""
-    show = dc("exec", "-u", container_uid(container), container,
-              "/tmp/pinset", cpus, "--show", "1", check=False)
-    m = re.search(r"Cpus_allowed_list:\s*(\S+)", show.stdout or "")
-    return bool(m) and parse_cpu_list(m.group(1)) == parse_cpu_list(cpus)
+def verify_pin(container: str, cpus: str, role: str | None = None) -> bool:
+    """Require the service root, descendants and all threads to match."""
+    return _tasks_pinned(container_tasks(container), cpus, role)
 
 
 # ---------------------------------------------------------------------
@@ -589,8 +662,12 @@ def stack_up(point: dict) -> dict:
         "valkey": pin_container(VALKEY, infra_cpus),
         "keyset": pin_container(KEYSET, infra_cpus),
     }
-    evidence["pin"]["app_verified"] = verify_pin(APP, app_cpus)
-    evidence["pin"]["pg_verified"] = verify_pin(POSTGRES, infra_cpus)
+    evidence["pin"]["app_verified"] = verify_pin(APP, app_cpus, "nazoauth")
+    evidence["pin"]["pg_verified"] = verify_pin(POSTGRES, infra_cpus, "postgres")
+    evidence["pin"]["valkey_verified"] = verify_pin(VALKEY, infra_cpus, "valkey-server")
+    if not all(evidence["pin"][key] for key in
+               ("app_verified", "pg_verified", "valkey_verified")):
+        raise RuntimeError("CPU_AFFINITY_INVALID: service threads exceed requested sets")
 
     depid = ""
     for _ in range(30):
@@ -1426,7 +1503,9 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
     _record_extra(proc.stdout, main, "load")
     infra = format_cpu_list(point["infra_cpus"])
     time.sleep(2)
-    pin_container(main, infra)
+    main_pin = pin_container(main, infra)
+    if not main_pin["verified"]:
+        raise RuntimeError("CPU_AFFINITY_INVALID: main generator")
 
     sidecars: list[dict] = []
     if point.get("sidecars"):
@@ -1469,14 +1548,53 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
             _record_extra(proc.stdout, name, f"sidecar:{sc['name']}")
             sc["container"] = name
             sc["started_ts"] = time.time()
-            pin_container(name, infra)
+            sc["pin"] = pin_container(name, infra)
+            if not sc["pin"]["verified"]:
+                raise RuntimeError(f"CPU_AFFINITY_INVALID: sidecar {sc['name']}")
             sidecars.append(sc)
 
     # Bounded wait: launch + duration + grace; overrun -> INVALID point.
     dur_s = _duration_seconds(point["duration"])
     deadline = start_ts + dur_s + int(point.get("grace_s", 300))
     exit_code = "deadline_exceeded"
+    generator_affinity = []
+    k6_checked = set()
+    service_affinity = []
+    service_sets = [(APP, format_cpu_list(point["app_cpus"]), "nazoauth"),
+                    (POSTGRES, format_cpu_list(point.get("postgres_cpus", point["infra_cpus"])), "postgres"),
+                    (VALKEY, format_cpu_list(point.get("valkey_cpus", point["infra_cpus"])), "valkey-server")]
     while time.time() < deadline:
+        for name, cpus, role in service_sets:
+            tasks = container_tasks(name)
+            verified = _tasks_pinned(tasks, cpus, role)
+            service_affinity.append({"ts": time.time(), "container": name,
+                                     "role": role, "requested": cpus,
+                                     "verified": verified, "task_masks": tasks})
+            jdump(out_dir / "service-affinity.json", service_affinity)
+            if not verified:
+                raise RuntimeError(f"CPU_AFFINITY_INVALID: service {role}")
+        # Runners bootstrap before spawning k6. Check the live service tree
+        # during the existing wait loop so actual k6 threads are covered too.
+        for name in [main, *[sc["container"] for sc in sidecars]]:
+            active = dc("inspect", name, "--format", "{{.State.Running}}",
+                        check=False).stdout.strip() == "true"
+            if not active:
+                continue
+            tasks = container_tasks(name)
+            verified = _tasks_pinned(tasks, infra)
+            if not verified and dc("inspect", name, "--format", "{{.State.Running}}",
+                                   check=False).stdout.strip() != "true":
+                # A naturally finished runner can exit between inspect and
+                # /proc sampling. It contributes terminal workload evidence,
+                # not a fabricated affinity failure for a vanished process.
+                continue
+            if verified and any(t["name"] == "k6" for t in tasks):
+                k6_checked.add(name)
+            generator_affinity.append({"ts": time.time(), "container": name,
+                                       "verified": verified, "task_masks": tasks})
+            jdump(out_dir / "generator-affinity.json", generator_affinity)
+            if not verified:
+                raise RuntimeError(f"CPU_AFFINITY_INVALID: generator {name}")
         running = dc("inspect", main, "--format",
                      "{{.State.Running}}", check=False)
         if "true" not in running.stdout:
@@ -1526,12 +1644,21 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
             "name": sc["name"], "container": name,
             "exit_code": code or "unknown", "interrupted": interrupted,
             "terminal_summary": summary_ok,
+            "pin": sc["pin"],
         })
         _remove_owned_by_name(name)
         load_seconds = max(load_seconds, end_ts - start_ts)
 
     return {
         "main_container": main, "main_exit_code": exit_code,
+        "main_pin": main_pin,
+        "service_affinity_verified": (
+            bool(service_affinity) and all(row["verified"] for row in service_affinity)),
+        "generator_affinity_verified": (
+            bool(generator_affinity)
+            and all(row["verified"] for row in generator_affinity)
+            and k6_checked == {main, *[sc["container"] for sc in sidecars]}),
+        "k6_containers_verified": sorted(k6_checked),
         "main_oom_killed": oom == "true",
         "load_status": load_status,
         "started_ts": start_ts, "ended_ts": end_ts,
