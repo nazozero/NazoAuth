@@ -777,7 +777,11 @@ where
     ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
         self.repository
             .refresh_token_snapshot_with_subject(
-                tenant_id, raw_token, client_id, retry_started_at, prepare_oidc_subject,
+                tenant_id,
+                raw_token,
+                client_id,
+                retry_started_at,
+                prepare_oidc_subject,
             )
             .await
     }

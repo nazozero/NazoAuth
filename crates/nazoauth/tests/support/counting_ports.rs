@@ -193,18 +193,34 @@ impl TokenRepositoryPort for CountingTokenRepository {
         client_id: Uuid,
         retry_started_at: chrono::DateTime<chrono::Utc>,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
-        self.refresh_token_snapshot_with_subject(tenant_id, raw_token, client_id, retry_started_at, false)
+        self.refresh_token_snapshot_with_subject(
+            tenant_id,
+            raw_token,
+            client_id,
+            retry_started_at,
+            false,
+        )
     }
 
     fn refresh_token_snapshot_with_subject<'a>(
-        &'a self, tenant_id: Uuid, raw_token: &'a str, client_id: Uuid,
-        retry_started_at: chrono::DateTime<chrono::Utc>, prepare_oidc_subject: bool,
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+        client_id: Uuid,
+        retry_started_at: chrono::DateTime<chrono::Utc>,
+        prepare_oidc_subject: bool,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         self.refresh_snapshot_calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async move {
             let mut result = self
                 .inner
-                .refresh_token_snapshot_with_subject(tenant_id, raw_token, client_id, retry_started_at, prepare_oidc_subject)
+                .refresh_token_snapshot_with_subject(
+                    tenant_id,
+                    raw_token,
+                    client_id,
+                    retry_started_at,
+                    prepare_oidc_subject,
+                )
                 .await?;
             if self.fail_refresh_candidate_projection {
                 let snapshot = result

@@ -852,26 +852,47 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         })
     }
     fn refresh_token_snapshot<'a>(
-        &'a self, tenant_id: Uuid, raw_token: &'a str, client_id: Uuid,
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+        client_id: Uuid,
         retry_started_at: DateTime<Utc>,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
-        self.refresh_token_snapshot_with_subject(tenant_id, raw_token, client_id, retry_started_at, false)
+        self.refresh_token_snapshot_with_subject(
+            tenant_id,
+            raw_token,
+            client_id,
+            retry_started_at,
+            false,
+        )
     }
 
     fn refresh_token_snapshot_with_subject<'a>(
-        &'a self, tenant_id: Uuid, raw_token: &'a str, client_id: Uuid,
-        retry_started_at: DateTime<Utc>, prepare_oidc_subject: bool,
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+        client_id: Uuid,
+        retry_started_at: DateTime<Utc>,
+        prepare_oidc_subject: bool,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         Box::pin(async move {
-            self.tokens.refresh_token_snapshot(
-                tenant_id, raw_token, client_id, retry_started_at, prepare_oidc_subject,
-            ).await.map_err(map_repository_error).map(|snapshot| {
-                snapshot.map(|snapshot| nazo_auth::RefreshTokenSnapshot {
-                    presented: snapshot.presented,
-                    successor: snapshot.successor.map_err(map_repository_error),
-                    prepared_subject: snapshot.prepared_subject,
+            self.tokens
+                .refresh_token_snapshot(
+                    tenant_id,
+                    raw_token,
+                    client_id,
+                    retry_started_at,
+                    prepare_oidc_subject,
+                )
+                .await
+                .map_err(map_repository_error)
+                .map(|snapshot| {
+                    snapshot.map(|snapshot| nazo_auth::RefreshTokenSnapshot {
+                        presented: snapshot.presented,
+                        successor: snapshot.successor.map_err(map_repository_error),
+                        prepared_subject: snapshot.prepared_subject,
+                    })
                 })
-            })
         })
     }
 

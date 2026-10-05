@@ -339,13 +339,12 @@ pub async fn token_refresh_with_service(
     // early preparation. Holder/sender/scope/audience errors retain their
     // original priority; missing/corrupt preparation uses the later read.
     // Lost-response recovery deliberately retains its established path.
-    let prepared_subject = if lost_response_original.is_none()
-        && scopes.iter().any(|scope| scope == "openid")
-    {
-        snapshot.prepared_subject
-    } else {
-        None
-    };
+    let prepared_subject =
+        if lost_response_original.is_none() && scopes.iter().any(|scope| scope == "openid") {
+            snapshot.prepared_subject
+        } else {
+            None
+        };
     let refresh_token_policy = match lost_response_original {
         Some((original_id, original_blake3)) => RefreshTokenPolicy::RotateLostResponse {
             family_id: token.token_family_id,
