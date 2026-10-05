@@ -147,6 +147,12 @@ class PointVerdictTests(unittest.TestCase):
         self.assertEqual(verdict, 'INVALID')
         self.assertFalse(health['app_affinity_verified'])
 
+    def test_incomplete_snapshot_cannot_qualify_matching_service_masks(self):
+        self.rec['stack']['pin']['valkey']['snapshot']['complete'] = False
+        (verdict, _, health, _), _ = self.evaluate()
+        self.assertEqual(verdict, 'INVALID')
+        self.assertFalse(health['valkey_affinity_verified'])
+
     def test_unverified_k6_affinity_invalidates_clean_business_results(self):
         self.rec['load'].pop('generator_affinity_verified')
         (verdict, _, health, _), _ = self.evaluate()

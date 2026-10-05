@@ -10,7 +10,7 @@ import single_instance_scaling as sis
 
 
 def snapshot(*rows):
-    return subprocess.CompletedProcess([], 0, "inspector 90\n" + "\n".join(row + " 12345" for row in rows), "")
+    return subprocess.CompletedProcess([], 0, "inspector 90\n" + "\n".join(row + " 12345" for row in rows) + "\nsnapshot_complete 1", "")
 
 
 class ServiceAffinityTests(unittest.TestCase):
@@ -22,6 +22,31 @@ class ServiceAffinityTests(unittest.TestCase):
     def test_matching_init_mask_without_actual_daemon_does_not_qualify(self):
         with patch.object(sis, "dcx", return_value=snapshot("1 1 0 0 8-9 tini")):
             self.assertFalse(sis.verify_pin("fixture", "8-9", "valkey-server"))
+
+    def test_unread_still_present_worker_invalidates_otherwise_matching_rows(self):
+        result = snapshot("1 1 0 10001 8-9 nazoauth")
+        result.stdout = result.stdout.replace("snapshot_complete 1", "unread 1 17 13\nsnapshot_complete 0")
+        result.returncode = 1
+        with patch.object(sis, "dcx", return_value=result):
+            report = sis.container_task_snapshot("fixture")
+            self.assertFalse(report['complete'])
+            self.assertEqual(report['read_errors'], [{'pid': 1, 'tid': 17, 'errno': 13}])
+            self.assertFalse(sis.verify_pin("fixture", "8-9"))
+
+    def test_confirmed_exited_worker_is_retained_without_invalidating_live_tasks(self):
+        result = snapshot("1 1 0 10001 8-9 nazoauth")
+        result.stdout = result.stdout.replace("snapshot_complete 1", "gone 1 17 2\nsnapshot_complete 1")
+        with patch.object(sis, "dcx", return_value=result):
+            report = sis.container_task_snapshot("fixture")
+            self.assertTrue(report['complete'])
+            self.assertEqual(report['confirmed_gone'], [{'pid': 1, 'tid': 17, 'errno': 2}])
+            self.assertTrue(sis.verify_pin("fixture", "8-9"))
+
+    def test_missing_collector_footer_cannot_qualify_matching_rows(self):
+        result = snapshot("1 1 0 10001 8-9 nazoauth")
+        result.stdout = result.stdout.replace("\nsnapshot_complete 1", "")
+        with patch.object(sis, "dcx", return_value=result):
+            self.assertFalse(sis.verify_pin("fixture", "8-9"))
 
     def test_one_worker_thread_outside_mask_rejects_process(self):
         with patch.object(sis, "dcx", return_value=snapshot(
