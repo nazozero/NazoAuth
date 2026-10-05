@@ -95,7 +95,7 @@ pub(crate) struct PrincipalRow {
     pub(crate) admin_level: i32,
 }
 
-#[derive(Clone, Debug, Queryable, Selectable)]
+#[derive(Clone, Debug, Queryable, Selectable, serde::Deserialize)]
 #[diesel(table_name = crate::schema::users)]
 pub(crate) struct SubjectClaimsRow {
     pub(crate) id: Uuid,

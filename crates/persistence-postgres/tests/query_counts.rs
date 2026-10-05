@@ -2075,3 +2075,138 @@ async fn id01_active_subject_id_by_tenant_id_is_single_read() {
     assert_clean(delta);
     cleanup_seed(&database_url, tenant, &seed).await;
 }
+
+
+// Ordinary OIDC refresh combines presentation and successful subject preparation.
+async fn replace_oidc_refresh_contract(
+    connection: &mut AsyncPgConnection, tenant: TenantContext, seed: &Seed,
+    family: Uuid, subject: &str, scopes: Vec<String>,
+) {
+    let contract = nazo_auth::RefreshContract {
+        subject: subject.to_owned(), scopes,
+        audiences: vec!["resource://default".to_owned()], authorization_details: json!([]),
+        authentication_context: refresh_context(&seed.client.client_id),
+    }.persisted();
+    let key = contract.blake3_digest().to_vec();
+    sql_query("INSERT INTO oauth_refresh_contracts (tenant_id,contract_blake3,contract) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+        .bind::<sql_types::Uuid,_>(tenant.tenant_id.as_uuid()).bind::<sql_types::Binary,_>(&key)
+        .bind::<sql_types::Jsonb,_>(serde_json::to_value(contract).unwrap())
+        .execute(connection).await.unwrap();
+    sql_query("UPDATE oauth_refresh_families SET contract_blake3=$1 WHERE tenant_id=$2 AND token_family_id=$3")
+        .bind::<sql_types::Binary,_>(key).bind::<sql_types::Uuid,_>(tenant.tenant_id.as_uuid())
+        .bind::<sql_types::Uuid,_>(family).execute(connection).await.unwrap();
+}
+
+#[tokio::test]
+async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_query() {
+    let _serial=SERIAL.lock().await;
+    let Some(url)=database_url() else { return; };
+    run_pending_migrations(&url).await.unwrap();
+    let tenant=TenantContext::default_system();let tenant_id=tenant.tenant_id.as_uuid();
+    let seed=seed_principal(&url,tenant).await;let family=Uuid::now_v7();let raw=format!("oidc-snapshot-{}",Uuid::now_v7());
+    let mut connection=connect(&url).await;
+    seed_refresh_token_row(&mut connection,tenant,&seed,Uuid::now_v7(),family,&raw,None,None,None).await;
+    let role=format!("oidc_snapshot_reader_{}",Uuid::now_v7().simple());
+    connection.batch_execute(&format!("CREATE ROLE {role} NOLOGIN")).await.unwrap();
+    nazo_postgres::configure_runtime_role(&url,&role).await.unwrap();
+    let (pool,counter)=instrumented_pool(&url).await;
+    {let mut c=get_conn(&pool).await.unwrap();c.batch_execute(&format!("SET ROLE {role}")).await.unwrap();}
+    let repository=TokenIssuanceRepository::new(pool.clone());
+    for subject in [seed.user_id.to_string(),format!("oidc-pairwise-{}",Uuid::now_v7())] {
+        replace_oidc_refresh_contract(&mut connection,tenant,&seed,family,&subject,vec!["openid".to_owned(),"offline_access".to_owned()]).await;
+        let private=subject!=seed.user_id.to_string();
+        if private {sql_query("INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)")
+            .bind::<sql_types::Uuid,_>(tenant_id).bind::<sql_types::Text,_>(&subject).bind::<sql_types::Uuid,_>(seed.user_id)
+            .execute(&mut connection).await.unwrap();}
+        let (result,delta,acquires)=measure(&counter,repository.refresh_token_snapshot_with_subject(tenant_id,&raw,seed.client.id,Utc::now(),true)).await;
+        let snapshot=result.unwrap().unwrap();let prepared=snapshot.prepared_subject.unwrap();
+        assert_eq!(prepared.token_subject,subject);assert_eq!(prepared.tenant_id,tenant_id);
+        assert_eq!(prepared.claims.subject.as_uuid(),seed.user_id);assert_eq!(prepared.user_epoch,0);
+        assert_eq!(prepared.subject_bound,private);assert_eq!(delta.data_queries,1);assert_eq!(acquires,1);assert_no_transaction(delta);assert_clean(delta);
+        let (_,baseline,baseline_acquires)=measure(&counter,async {
+            let original=repository.refresh_token_snapshot(tenant_id,&raw,seed.client.id,Utc::now()).await.unwrap().unwrap();
+            assert!(original.prepared_subject.is_none());
+            repository.active_subject_claims(tenant_id,seed.user_id,&original.presented.subject).await.unwrap().unwrap()
+        }).await;
+        assert_eq!(baseline.data_queries,2);assert_eq!(baseline_acquires,2);
+    }
+    {let mut c=get_conn(&pool).await.unwrap();c.batch_execute("RESET ROLE").await.unwrap();}
+    connection.batch_execute(&format!("DROP OWNED BY {role};DROP ROLE {role}")).await.unwrap();
+    cleanup_seed(&url,tenant,&seed).await;
+}
+
+#[tokio::test]
+async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
+    let _serial=SERIAL.lock().await;let Some(url)=database_url() else {return;};run_pending_migrations(&url).await.unwrap();
+    let tenant=TenantContext::default_system();let id=tenant.tenant_id.as_uuid();let seed=seed_principal(&url,tenant).await;
+    let family=Uuid::now_v7();let raw=format!("oidc-fallback-{}",Uuid::now_v7());let mut c=connect(&url).await;
+    seed_refresh_token_row(&mut c,tenant,&seed,Uuid::now_v7(),family,&raw,None,None,None).await;
+    let (pool,counter)=instrumented_pool(&url).await;let repo=TokenIssuanceRepository::new(pool);
+    for (lookup_tenant,lookup_client,hint) in [(id,seed.client.id,false),(id,Uuid::now_v7(),true),(Uuid::now_v7(),seed.client.id,true)] {
+        let (r,q,a)=measure(&counter,repo.refresh_token_snapshot_with_subject(lookup_tenant,&raw,lookup_client,Utc::now(),hint)).await;
+        assert!(r.unwrap().is_none_or(|s|s.prepared_subject.is_none()));assert_eq!(q.data_queries,1);assert_eq!(a,1);
+    }
+    for mutation in ["is_active=false","is_active=true,role='invalid-snapshot-role'","role='user',realm_id='00000000-0000-0000-0000-000000000000'"] {
+        sql_query(format!("UPDATE users SET {mutation} WHERE tenant_id=$1 AND id=$2"))
+            .bind::<sql_types::Uuid,_>(id).bind::<sql_types::Uuid,_>(seed.user_id).execute(&mut c).await.unwrap();
+        let (r,q,a)=measure(&counter,repo.refresh_token_snapshot_with_subject(id,&raw,seed.client.id,Utc::now(),true)).await;
+        assert!(r.unwrap().unwrap().prepared_subject.is_none());assert_eq!(q.data_queries,1);assert_eq!(a,1);
+    }
+    // A non-OIDC contract must not turn a corrupt, unused profile into an error.
+    replace_oidc_refresh_contract(&mut c,tenant,&seed,family,&seed.user_id.to_string(),vec!["offline_access".to_owned()]).await;
+    let (r,q,a)=measure(&counter,repo.refresh_token_snapshot_with_subject(id,&raw,seed.client.id,Utc::now(),true)).await;
+    assert!(r.unwrap().unwrap().prepared_subject.is_none());assert_eq!(q.data_queries,1);assert_eq!(a,1);
+    // Restore the principal, then retain any wrong binding owner as a collision.
+    sql_query("UPDATE users SET realm_id=$1,role='user' WHERE id=$2").bind::<sql_types::Uuid,_>(tenant.realm_id.as_uuid()).bind::<sql_types::Uuid,_>(seed.user_id).execute(&mut c).await.unwrap();
+    let subject=format!("oidc-collision-{}",Uuid::now_v7());let other=Uuid::now_v7();seed_user(&mut c,tenant,other).await;
+    replace_oidc_refresh_contract(&mut c,tenant,&seed,family,&subject,vec!["openid".to_owned()]).await;
+    sql_query("INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)")
+        .bind::<sql_types::Uuid,_>(id).bind::<sql_types::Text,_>(&subject).bind::<sql_types::Uuid,_>(other).execute(&mut c).await.unwrap();
+    let (r,q,a)=measure(&counter,repo.refresh_token_snapshot_with_subject(id,&raw,seed.client.id,Utc::now(),true)).await;
+    assert!(r.unwrap().unwrap().prepared_subject.is_none());assert_eq!(q.data_queries,1);assert_eq!(a,1);
+    assert!(matches!(repo.active_subject_claims(id,seed.user_id,&subject).await,Err(nazo_auth::TokenPortError::CorruptData)));
+    sql_query("DELETE FROM oauth_subject_bindings WHERE tenant_id=$1 AND subject=$2").bind::<sql_types::Uuid,_>(id).bind::<sql_types::Text,_>(&subject).execute(&mut c).await.unwrap();
+    sql_query("DELETE FROM users WHERE id=$1").bind::<sql_types::Uuid,_>(other).execute(&mut c).await.unwrap();
+    cleanup_seed(&url,tenant,&seed).await;
+}
+
+#[tokio::test]
+async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes() {
+    let _serial=SERIAL.lock().await;let Some(url)=database_url() else {return;};run_pending_migrations(&url).await.unwrap();
+    let tenant=TenantContext::default_system();let id=tenant.tenant_id.as_uuid();let seed=seed_principal(&url,tenant).await;
+    let family=Uuid::now_v7();let raw=format!("oidc-early-{}",Uuid::now_v7());let mut c=connect(&url).await;
+    seed_refresh_token_row(&mut c,tenant,&seed,Uuid::now_v7(),family,&raw,None,None,None).await;
+    sql_query("UPDATE users SET display_name='before snapshot' WHERE id=$1").bind::<sql_types::Uuid,_>(seed.user_id).execute(&mut c).await.unwrap();
+    let repo=TokenIssuanceRepository::new(create_pool(&url,2).unwrap());
+    let early=repo.refresh_token_snapshot_with_subject(id,&raw,seed.client.id,Utc::now(),true).await.unwrap().unwrap();
+    let prepared=early.prepared_subject.unwrap();let epoch=prepared.user_epoch;
+    sql_query("UPDATE users SET display_name='after snapshot' WHERE id=$1").bind::<sql_types::Uuid,_>(seed.user_id).execute(&mut c).await.unwrap();
+    let late=repo.active_subject_claims(id,seed.user_id,&early.presented.subject).await.unwrap().unwrap();
+    assert_eq!(prepared.claims.name.as_deref(),Some("before snapshot"));assert_eq!(late.claims.name.as_deref(),Some("after snapshot"));assert_eq!(late.user_epoch,epoch);
+    for case in ["user epoch","client epoch","family revoked"] {
+        let authenticated_client_epoch=OAuthClientRepository::new(create_pool(&url,1).unwrap())
+            .authentication_snapshot(id,&seed.client.client_id).await.unwrap().unwrap().2;
+        let source=repo.refresh_token_snapshot_with_subject(id,&raw,seed.client.id,Utc::now(),true).await.unwrap().unwrap();let profile=source.prepared_subject.unwrap();
+        let mut input=refresh_issuance(new_refresh_token(&seed,id,family,format!("unused-{}",Uuid::now_v7()),None,None)).await;
+        input.subject=profile.token_subject;input.principal_state.user_epoch=Some(profile.user_epoch);input.principal_state.subject_bound=profile.subject_bound;
+        input.refresh_token=Some(nazo_auth::RefreshTokenCommit::UseExisting{authority:source.presented.authority(),rotation:None});
+        let (sql,key,expected)=match case {
+            "user epoch" => ("UPDATE users SET access_token_epoch=access_token_epoch+1 WHERE id=$1",seed.user_id,CommitTokenIssuanceResult::SubjectInactive),
+            "client epoch" => ("UPDATE oauth_clients SET access_token_epoch=access_token_epoch+1 WHERE id=$1",seed.client.id,CommitTokenIssuanceResult::ClientInactive),
+            _ => ("UPDATE oauth_refresh_families SET revoked_at=CURRENT_TIMESTAMP WHERE token_family_id=$1",family,CommitTokenIssuanceResult::RefreshGrantUnavailable),
+        };
+        if case=="user epoch" {
+            for active in [false,true] {
+                sql_query("UPDATE users SET is_active=$1 WHERE id=$2")
+                    .bind::<sql_types::Bool,_>(active).bind::<sql_types::Uuid,_>(key).execute(&mut c).await.unwrap();
+            }
+        } else { sql_query(sql).bind::<sql_types::Uuid,_>(key).execute(&mut c).await.unwrap(); }
+        // Never endorse the subject snapshot with a newer authentication epoch.
+        input.principal_state.client_epoch=authenticated_client_epoch;
+        let issuance_id=input.issuance_id;assert_eq!(repo.commit_token_issuance(input).await.unwrap(),expected);
+        #[derive(diesel::QueryableByName)]struct AuditCount{#[diesel(sql_type=sql_types::BigInt)]count:i64}
+        let count=sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type='token_issued' AND payload->>'issuance_id'=$1")
+            .bind::<sql_types::Text,_>(issuance_id.to_string()).get_result::<AuditCount>(&mut c).await.unwrap();assert_eq!(count.count,0);
+    }
+    cleanup_seed(&url,tenant,&seed).await;
+}

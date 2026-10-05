@@ -236,3 +236,29 @@ limits, original-expiry cleanup, unknown-token non-attribution, downgrade and
 rotation in both lock orders, genuine pre-005 migration data, restricted-role
 audit append, and rollback that cannot revive revoked credentials. Existing
 lost-response and HTTP proof-validation tests remain required.
+
+
+### Request-local OIDC subject preparation
+
+An ordinary current refresh presentation for the same client may read the
+necessary active-user claims, user epoch and exact subject-binding owner in
+the same PostgreSQL statement snapshot. A successful `PreparedTokenSubject`
+is consumed by that request's OIDC issuance instead of a second claims query.
+This is an early request-local snapshot, not a cache or final authority.
+
+The profile can precede holder validation. A concurrent ordinary profile
+update can therefore leave this request with the earlier coherent profile.
+A concurrent deactivate/reactivate or principal-version change after the
+snapshot causes the existing final locked epoch recheck to reject the old
+snapshot; it must not be endorsed by replacing its epoch with a later value.
+The client epoch always remains the version read during client authentication.
+
+Missing/inactive/corrupt profiles and binding collisions produce no prepared
+subject and retain the original later claims query and error ordering. Only
+the effective `openid` scope consumes preparation. Explicit removal of
+`openid`, non-OIDC sources and machine subjects do not read a profile for this
+optimization; an absent or empty requested scope retains original scopes.
+Spent presentations and lost-response recovery retain their established path.
+Final client/user locks, source-family revalidation, replay/capacity checks,
+exact subject binding and Required audit in the same business COMMIT remain
+mandatory, including when preparation succeeds.

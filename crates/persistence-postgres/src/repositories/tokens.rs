@@ -5,7 +5,7 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, RefreshContract, RefreshToken, RefreshTokenCommit,
+    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, PreparedTokenSubject, RefreshContract, RefreshToken, RefreshTokenCommit,
     RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 use nazo_identity::ports::RepositoryError;
@@ -179,7 +179,7 @@ impl TokenRepository {
     ) -> Result<Option<RefreshToken>, RepositoryError> {
         let digest = blake3::hash(raw_token.as_bytes());
         let mut connection = self.connection().await?;
-        let presentation = lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes())
+        let presentation = lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes(), None)
             .await
             .map_err(map_error)?;
         drop(connection);
@@ -198,12 +198,14 @@ impl TokenRepository {
         raw_token: &str,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
+        prepare_oidc_subject: bool,
     ) -> Result<Option<RefreshPresentation>, RepositoryError> {
         let digest = blake3::hash(raw_token.as_bytes());
         let mut connection = self.connection().await?;
-        let row = lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes())
-            .await
-            .map_err(map_error)?;
+        let row = lookup_refresh_token(
+            &mut connection, tenant_id, digest.as_bytes(),
+            prepare_oidc_subject.then_some(client_id),
+        ).await.map_err(map_error)?;
         drop(connection);
         row.map(|row| row.into_presentation(Some((client_id, retry_started_at))))
             .transpose()
@@ -697,34 +699,55 @@ async fn lookup_refresh_token(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     digest: &[u8],
+    profile_client_id: Option<Uuid>,
 ) -> diesel::QueryResult<Option<RefreshPresentationRow>> {
-    sql_query(
-        "WITH presentation AS ( \
-             SELECT tenant_id, token_family_id, 0 AS priority, \
-                    NULL::bytea AS spent_digest, NULL::uuid AS spent_member_id, \
-                    NULL::timestamptz AS spent_at, NULL::timestamptz AS spent_expires_at, \
-                    NULL::uuid AS successor_member_id \
-             FROM oauth_refresh_families \
-             WHERE tenant_id = $1 AND current_token_blake3 = $2 \
-             UNION ALL \
-             SELECT tenant_id, token_family_id, 1, refresh_token_blake3, member_id, \
-                    spent_at, expires_at, successor_member_id \
-             FROM oauth_refresh_spent_tokens \
-             WHERE tenant_id = $1 AND refresh_token_blake3 = $2 \
-         ), selected AS (SELECT * FROM presentation ORDER BY priority LIMIT 1) \
-         SELECT f.*, c.contract, p.spent_digest, p.spent_member_id, \
-                p.spent_at, p.spent_expires_at, p.successor_member_id \
-         FROM selected AS p \
-         JOIN oauth_refresh_families AS f \
-           ON f.tenant_id = p.tenant_id AND f.token_family_id = p.token_family_id \
-         LEFT JOIN oauth_refresh_contracts AS c \
-           ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3",
-    )
-    .bind::<sql_types::Uuid, _>(tenant_id)
-    .bind::<sql_types::Binary, _>(digest)
-    .get_result::<RefreshPresentationRow>(connection)
-    .await
-    .optional()
+    // The plain path has no user/profile projection. The prepared path only
+    // joins a current same-client OIDC source; spent/recovery sources do not
+    // read profiles. Projection and principal epoch share this one MVCC read.
+    let projection = if profile_client_id.is_some() {
+        "CASE WHEN profile.id IS NULL THEN NULL::jsonb ELSE to_jsonb(profile) END"
+    } else { "NULL::jsonb" };
+    let profile_join = if profile_client_id.is_some() { r#"
+         LEFT JOIN LATERAL (
+             SELECT u.id, u.tenant_id, u.realm_id, u.organization_id,
+                    u.username, u.email, u.is_active, u.updated_at,
+                    u.email_verified, u.display_name, u.avatar_url, u.given_name,
+                    u.family_name, u.middle_name, u.nickname, u.profile_url,
+                    u.website_url, u.gender, u.birthdate, u.zoneinfo,
+                    u.locale, u.role, u.admin_level, u.address_formatted,
+                    u.address_street_address, u.address_locality, u.address_region, u.address_postal_code,
+                    u.address_country, u.phone_number, u.phone_number_verified,
+                    u.access_token_epoch AS user_epoch,
+                    CASE WHEN c.contract->>'subject' <> u.id::text THEN (
+                        SELECT binding.user_id FROM oauth_subject_bindings AS binding
+                        WHERE binding.tenant_id = f.tenant_id
+                          AND binding.subject = c.contract->>'subject'
+                    ) ELSE NULL::uuid END AS bound_user
+             FROM users AS u
+             WHERE p.spent_digest IS NULL AND f.client_id = $3
+               AND f.revoked_at IS NULL AND f.reuse_detected_at IS NULL
+               AND f.current_expires_at > CURRENT_TIMESTAMP
+               AND c.contract->'scopes' ? 'openid'
+               AND u.tenant_id = f.tenant_id AND u.id = f.user_id
+               AND u.is_active
+         ) AS profile ON true"# } else { "" };
+    let query = sql_query(format!(r#"WITH presentation AS (
+             SELECT tenant_id, token_family_id, 0 AS priority, NULL::bytea AS spent_digest, NULL::uuid AS spent_member_id, NULL::timestamptz AS spent_at, NULL::timestamptz AS spent_expires_at, NULL::uuid AS successor_member_id FROM oauth_refresh_families WHERE tenant_id = $1 AND current_token_blake3 = $2
+             UNION ALL SELECT tenant_id, token_family_id, 1, refresh_token_blake3, member_id, spent_at, expires_at, successor_member_id FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND refresh_token_blake3 = $2
+         ), selected AS (SELECT * FROM presentation ORDER BY priority LIMIT 1)
+         SELECT f.*, c.contract, p.spent_digest, p.spent_member_id, p.spent_at, p.spent_expires_at, p.successor_member_id, {projection} AS prepared_subject
+         FROM selected AS p
+         JOIN oauth_refresh_families AS f ON f.tenant_id = p.tenant_id AND f.token_family_id = p.token_family_id
+         LEFT JOIN oauth_refresh_contracts AS c ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 {profile_join}"#))
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Binary, _>(digest);
+    let row = if let Some(client_id) = profile_client_id {
+        query.bind::<sql_types::Uuid, _>(client_id)
+            .get_result::<RefreshPresentationRow>(connection).await
+    } else {
+        query.get_result::<RefreshPresentationRow>(connection).await
+    };
+    row.optional()
 }
 
 #[derive(diesel::QueryableByName)]
@@ -743,11 +766,14 @@ struct RefreshPresentationRow {
     spent_expires_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
     successor_member_id: Option<Uuid>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    prepared_subject: Option<Value>,
 }
 
 pub(super) struct RefreshPresentation {
     pub(super) presented: RefreshToken,
     pub(super) successor: Result<Option<RefreshToken>, RepositoryError>,
+    pub(super) prepared_subject: Option<PreparedTokenSubject>,
 }
 
 impl RefreshPresentationRow {
@@ -755,6 +781,7 @@ impl RefreshPresentationRow {
         self,
         retry: Option<(Uuid, DateTime<Utc>)>,
     ) -> diesel::QueryResult<RefreshPresentation> {
+        let prepared_subject = self.prepared_subject;
         let contract = require_contract(
             self.contract
                 .map(|contract| RefreshContractRow { contract }),
@@ -814,11 +841,37 @@ impl RefreshPresentationRow {
                 ));
             }
         };
-        Ok(RefreshPresentation {
-            presented,
-            successor,
-        })
+        let prepared_subject = prepare_refresh_subject(prepared_subject, &presented);
+        Ok(RefreshPresentation { presented, successor, prepared_subject })
     }
+}
+
+#[derive(serde::Deserialize)]
+struct RefreshSubjectProjection {
+    #[serde(flatten)]
+    claims: crate::rows::identity::SubjectClaimsRow,
+    user_epoch: i64,
+    bound_user: Option<Uuid>,
+}
+
+fn prepare_refresh_subject(
+    projection: Option<Value>,
+    token: &RefreshToken,
+) -> Option<PreparedTokenSubject> {
+    let projection: RefreshSubjectProjection = serde_json::from_value(projection?).ok()?;
+    if projection.claims.tenant_id != token.tenant_id
+        || Some(projection.claims.id) != token.user_id
+        || projection.user_epoch < 0
+    { return None; }
+    // Failures do not advance an error ahead of holder/scope validation:
+    // absence of successful preparation retains the original late claims read.
+    let (claims, user_epoch, subject_bound) = super::users::prepare_subject_claims(
+        projection.claims, projection.user_epoch, projection.bound_user,
+    ).ok()?;
+    Some(PreparedTokenSubject {
+        tenant_id: token.tenant_id, claims, user_epoch,
+        token_subject: token.subject.clone(), subject_bound,
+    })
 }
 
 struct LockedRefreshFamily {

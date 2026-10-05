@@ -2874,3 +2874,36 @@ async fn signed_credential_authorization_survives_real_refresh_and_separates_equ
     assert!(independent.authorization_id.is_some());
     assert_ne!(independent.authorization_id, refreshed.authorization_id);
 }
+
+
+#[actix_web::test]
+async fn ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_error_priority() {
+    let Some(state)=live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {return;};
+    let req=actix_web::test::TestRequest::post().uri("/oauth/token").to_http_request();
+    for private in [false,true] {
+        let mut client=client_row();client.client_id=format!("oidc-prepared-{}",Uuid::now_v7());
+        client.require_dpop_bound_tokens=false;client.require_mtls_bound_tokens=false;
+        insert_refresh_client(&state,&client).await;
+        let user=Uuid::now_v7();insert_refresh_user(&state,user,true).await;
+        let raw=format!("oidc-prepared-{}",Uuid::now_v7());let mut token=token_row_for_client(&state,&client);
+        token.user_id=Some(user);token.subject=if private {format!("private-{}",Uuid::now_v7())} else {user.to_string()};
+        token.dpop_jkt=None;token.mtls_x5t_s256=None;token.scopes=json!(["openid","offline_access"]);
+        if private {
+            let mut c=get_conn(&state.diesel_db).await.unwrap();
+            sql_query("INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)")
+                .bind::<SqlUuid,_>(client.tenant_id).bind::<diesel::sql_types::Text,_>(&token.subject).bind::<SqlUuid,_>(user).execute(&mut c).await.unwrap();
+        }
+        insert_refresh_token_row(&state,&raw,&token,None,None).await;
+        let repository=Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(crate::test_support::token_issuance_repository(state.diesel_db.clone()))));
+        let mut form=refresh_form_without_token();form.refresh_token=Some(raw);form.scope=None;
+        let (status,body)=response_json(token_refresh_with_repository(&state,&req,&client,&form,None,repository.clone()).await).await;
+        assert_eq!(status,StatusCode::OK,"{body:?}");assert!(body.get("id_token").is_some());
+        assert_eq!(repository.refresh_snapshot_count(),1);assert_eq!(repository.active_subject_claims_count(),0);assert_eq!(repository.principal_snapshot_count(),0);assert_eq!(repository.commit_count(),1);
+        // Invalid scope remains earlier than the fallback for a corrupt profile.
+        let next=body["refresh_token"].as_str().unwrap().to_owned();
+        exec_sql(&state,&format!("UPDATE users SET role='invalid-snapshot-role' WHERE id='{user}'")).await;
+        form.refresh_token=Some(next);form.scope=Some("openid unauthorized_scope".to_owned());
+        let (status,body)=response_json(token_refresh_with_repository(&state,&req,&client,&form,None,repository.clone()).await).await;
+        assert_eq!(status,StatusCode::BAD_REQUEST);assert_eq!(body["error"],"invalid_scope");assert_eq!(repository.active_subject_claims_count(),0);assert_eq!(repository.commit_count(),1);
+    }
+}

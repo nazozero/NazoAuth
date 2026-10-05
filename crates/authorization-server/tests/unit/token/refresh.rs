@@ -99,3 +99,14 @@ fn refresh_token_scope_request_rejects_privilege_expansion() {
         );
     }
 }
+
+
+#[test]
+fn refresh_subject_preparation_hint_respects_effective_scope_shape() {
+    for scope in [None, Some(""), Some("   "), Some("openid"), Some("profile openid")] {
+        assert!(refresh_requests_oidc_subject(scope));
+    }
+    for scope in [Some("profile"), Some("offline_access"), Some("OPENID")] {
+        assert!(!refresh_requests_oidc_subject(scope));
+    }
+}
