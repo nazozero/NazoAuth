@@ -5,8 +5,8 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, PreparedTokenSubject, RefreshContract, RefreshToken, RefreshTokenCommit,
-    RefreshTokenPersistResult, refresh_spent_proof_limit,
+    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, PreparedTokenSubject, RefreshContract, RefreshToken,
+    RefreshTokenCommit, RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::SecurityAuditEvent;
@@ -179,9 +179,10 @@ impl TokenRepository {
     ) -> Result<Option<RefreshToken>, RepositoryError> {
         let digest = blake3::hash(raw_token.as_bytes());
         let mut connection = self.connection().await?;
-        let presentation = lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes(), None)
-            .await
-            .map_err(map_error)?;
+        let presentation =
+            lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes(), None)
+                .await
+                .map_err(map_error)?;
         drop(connection);
         presentation
             .map(|row| {
@@ -203,9 +204,13 @@ impl TokenRepository {
         let digest = blake3::hash(raw_token.as_bytes());
         let mut connection = self.connection().await?;
         let row = lookup_refresh_token(
-            &mut connection, tenant_id, digest.as_bytes(),
+            &mut connection,
+            tenant_id,
+            digest.as_bytes(),
             prepare_oidc_subject.then_some(client_id),
-        ).await.map_err(map_error)?;
+        )
+        .await
+        .map_err(map_error)?;
         drop(connection);
         row.map(|row| row.into_presentation(Some((client_id, retry_started_at))))
             .transpose()
@@ -706,8 +711,11 @@ async fn lookup_refresh_token(
     // read profiles. Projection and principal epoch share this one MVCC read.
     let projection = if profile_client_id.is_some() {
         "CASE WHEN profile.id IS NULL THEN NULL::jsonb ELSE to_jsonb(profile) END"
-    } else { "NULL::jsonb" };
-    let profile_join = if profile_client_id.is_some() { r#"
+    } else {
+        "NULL::jsonb"
+    };
+    let profile_join = if profile_client_id.is_some() {
+        r#"
          LEFT JOIN LATERAL (
              SELECT u.id, u.tenant_id, u.realm_id, u.organization_id,
                     u.username, u.email, u.is_active, u.updated_at,
@@ -730,7 +738,10 @@ async fn lookup_refresh_token(
                AND c.contract->'scopes' ? 'openid'
                AND u.tenant_id = f.tenant_id AND u.id = f.user_id
                AND u.is_active
-         ) AS profile ON true"# } else { "" };
+         ) AS profile ON true"#
+    } else {
+        ""
+    };
     let query = sql_query(format!(r#"WITH presentation AS (
              SELECT tenant_id, token_family_id, 0 AS priority, NULL::bytea AS spent_digest, NULL::uuid AS spent_member_id, NULL::timestamptz AS spent_at, NULL::timestamptz AS spent_expires_at, NULL::uuid AS successor_member_id FROM oauth_refresh_families WHERE tenant_id = $1 AND current_token_blake3 = $2
              UNION ALL SELECT tenant_id, token_family_id, 1, refresh_token_blake3, member_id, spent_at, expires_at, successor_member_id FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND refresh_token_blake3 = $2
@@ -742,8 +753,10 @@ async fn lookup_refresh_token(
         .bind::<sql_types::Uuid, _>(tenant_id)
         .bind::<sql_types::Binary, _>(digest);
     let row = if let Some(client_id) = profile_client_id {
-        query.bind::<sql_types::Uuid, _>(client_id)
-            .get_result::<RefreshPresentationRow>(connection).await
+        query
+            .bind::<sql_types::Uuid, _>(client_id)
+            .get_result::<RefreshPresentationRow>(connection)
+            .await
     } else {
         query.get_result::<RefreshPresentationRow>(connection).await
     };
@@ -842,7 +855,11 @@ impl RefreshPresentationRow {
             }
         };
         let prepared_subject = prepare_refresh_subject(prepared_subject, &presented);
-        Ok(RefreshPresentation { presented, successor, prepared_subject })
+        Ok(RefreshPresentation {
+            presented,
+            successor,
+            prepared_subject,
+        })
     }
 }
 
@@ -862,15 +879,23 @@ fn prepare_refresh_subject(
     if projection.claims.tenant_id != token.tenant_id
         || Some(projection.claims.id) != token.user_id
         || projection.user_epoch < 0
-    { return None; }
+    {
+        return None;
+    }
     // Failures do not advance an error ahead of holder/scope validation:
     // absence of successful preparation retains the original late claims read.
     let (claims, user_epoch, subject_bound) = super::users::prepare_subject_claims(
-        projection.claims, projection.user_epoch, projection.bound_user,
-    ).ok()?;
+        projection.claims,
+        projection.user_epoch,
+        projection.bound_user,
+    )
+    .ok()?;
     Some(PreparedTokenSubject {
-        tenant_id: token.tenant_id, claims, user_epoch,
-        token_subject: token.subject.clone(), subject_bound,
+        tenant_id: token.tenant_id,
+        claims,
+        user_epoch,
+        token_subject: token.subject.clone(),
+        subject_bound,
     })
 }
 

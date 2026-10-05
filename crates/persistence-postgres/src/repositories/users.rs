@@ -136,9 +136,7 @@ impl UserRepository {
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
         drop(connection);
         snapshot
-            .map(|(row, epoch, bound_user)| {
-                prepare_subject_claims(row, epoch, bound_user)
-            })
+            .map(|(row, epoch, bound_user)| prepare_subject_claims(row, epoch, bound_user))
             .transpose()
     }
 
@@ -1251,7 +1249,9 @@ pub(super) fn prepare_subject_claims(
     let claims = identity::active_subject_claims(row)
         .map_err(|error| RepositoryError::Consistency(error.0))?;
     if bound_user.is_some_and(|owner| owner != user_id) {
-        return Err(RepositoryError::Consistency("subject ownership collision".to_owned()));
+        return Err(RepositoryError::Consistency(
+            "subject ownership collision".to_owned(),
+        ));
     }
     Ok((claims, epoch, bound_user.is_some()))
 }
