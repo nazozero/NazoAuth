@@ -338,25 +338,28 @@ async fn execute_decision(
     input: &AuthorizationDecisionCommit,
 ) -> diesel::QueryResult<AuthorizationDecisionCommitResult> {
     let span = crate::perf_diagnostic::Span::sql(connection, "authorization_function_load");
-    let rows = crate::perf_diagnostic::awaited(span, sql_query(
-        "SELECT public.nazo_commit_authorization_decision(\
+    let rows = crate::perf_diagnostic::awaited(
+        span,
+        sql_query(
+            "SELECT public.nazo_commit_authorization_decision(\
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        )
+        .bind::<sql_types::Uuid, _>(input.tenant_id)
+        .bind::<sql_types::Uuid, _>(input.user_id)
+        .bind::<sql_types::Text, _>(&input.client_id)
+        .bind::<sql_types::Text, _>(&input.request_id)
+        .bind::<sql_types::Nullable<sql_types::Text>, _>(input.pushed_request_uri.as_deref())
+        .bind::<sql_types::Timestamptz, _>(input.valid_until)
+        .bind::<sql_types::Timestamptz, _>(input.retain_until)
+        .bind::<sql_types::Text, _>(input.decision.as_str())
+        .bind::<sql_types::Uuid, _>(input.event_id)
+        .bind::<sql_types::Timestamptz, _>(input.occurred_at)
+        .bind::<sql_types::Jsonb, _>(&input.audit_fields)
+        .bind::<sql_types::Jsonb, _>(serde_json::json!(input.scopes))
+        .bind::<sql_types::Jsonb, _>(serde_json::json!(input.resource_indicators))
+        .bind::<sql_types::Jsonb, _>(&input.authorization_details)
+        .load::<DecisionOutcomeRow>(connection),
     )
-    .bind::<sql_types::Uuid, _>(input.tenant_id)
-    .bind::<sql_types::Uuid, _>(input.user_id)
-    .bind::<sql_types::Text, _>(&input.client_id)
-    .bind::<sql_types::Text, _>(&input.request_id)
-    .bind::<sql_types::Nullable<sql_types::Text>, _>(input.pushed_request_uri.as_deref())
-    .bind::<sql_types::Timestamptz, _>(input.valid_until)
-    .bind::<sql_types::Timestamptz, _>(input.retain_until)
-    .bind::<sql_types::Text, _>(input.decision.as_str())
-    .bind::<sql_types::Uuid, _>(input.event_id)
-    .bind::<sql_types::Timestamptz, _>(input.occurred_at)
-    .bind::<sql_types::Jsonb, _>(&input.audit_fields)
-    .bind::<sql_types::Jsonb, _>(serde_json::json!(input.scopes))
-    .bind::<sql_types::Jsonb, _>(serde_json::json!(input.resource_indicators))
-    .bind::<sql_types::Jsonb, _>(&input.authorization_details)
-    .load::<DecisionOutcomeRow>(connection))
     .await?;
     let mut rows = rows.into_iter();
     let row = rows.next().ok_or(diesel::result::Error::NotFound)?;

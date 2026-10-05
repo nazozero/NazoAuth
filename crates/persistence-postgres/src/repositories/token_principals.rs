@@ -68,10 +68,13 @@ pub(super) async fn snapshot(
         .select(oauth_subject_bindings::user_id)
         .single_value();
     let span = crate::perf_diagnostic::Span::sql(connection, "principal_snapshot");
-    let (user_epoch, bound_user) = crate::perf_diagnostic::awaited(span, diesel::select((user_epoch, bound_user))
-        .get_result::<(Option<i64>, Option<Uuid>)>(connection))
-        .await
-        .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+    let (user_epoch, bound_user) = crate::perf_diagnostic::awaited(
+        span,
+        diesel::select((user_epoch, bound_user))
+            .get_result::<(Option<i64>, Option<Uuid>)>(connection),
+    )
+    .await
+    .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
     if bound_user.is_some() && bound_user != user_id {
         return Err(RepositoryError::Consistency(
             "subject ownership collision".to_owned(),
@@ -89,18 +92,21 @@ pub(super) async fn lock_and_recheck(
     input: &CommitTokenIssuance,
 ) -> diesel::QueryResult<Result<String, CommitTokenIssuanceResult>> {
     let span = crate::perf_diagnostic::Span::sql(connection, "lock_client_principal");
-    let client = crate::perf_diagnostic::awaited(span, client_principals::table
-        .filter(client_principals::tenant_id.eq(input.tenant_id))
-        .filter(client_principals::id.eq(input.client_id))
-        .select((
-            client_principals::is_active,
-            client_principals::access_token_epoch,
-            client_principals::client_type,
-        ))
-        .for_share()
-        .first::<(bool, i64, String)>(connection))
-        .await
-        .optional()?;
+    let client = crate::perf_diagnostic::awaited(
+        span,
+        client_principals::table
+            .filter(client_principals::tenant_id.eq(input.tenant_id))
+            .filter(client_principals::id.eq(input.client_id))
+            .select((
+                client_principals::is_active,
+                client_principals::access_token_epoch,
+                client_principals::client_type,
+            ))
+            .for_share()
+            .first::<(bool, i64, String)>(connection),
+    )
+    .await
+    .optional()?;
     let Some((active, epoch, client_type)) = client else {
         return Ok(Err(CommitTokenIssuanceResult::ClientInactive));
     };
@@ -109,17 +115,20 @@ pub(super) async fn lock_and_recheck(
     }
     if let Some(user_id) = input.user_id {
         let span = crate::perf_diagnostic::Span::sql(connection, "lock_user_principal");
-        let user = crate::perf_diagnostic::awaited(span, user_principals::table
-            .filter(user_principals::tenant_id.eq(input.tenant_id))
-            .filter(user_principals::id.eq(user_id))
-            .select((
-                user_principals::is_active,
-                user_principals::access_token_epoch,
-            ))
-            .for_share()
-            .first::<(bool, i64)>(connection))
-            .await
-            .optional()?;
+        let user = crate::perf_diagnostic::awaited(
+            span,
+            user_principals::table
+                .filter(user_principals::tenant_id.eq(input.tenant_id))
+                .filter(user_principals::id.eq(user_id))
+                .select((
+                    user_principals::is_active,
+                    user_principals::access_token_epoch,
+                ))
+                .for_share()
+                .first::<(bool, i64)>(connection),
+        )
+        .await
+        .optional()?;
         if !user.is_some_and(|(active, epoch)| {
             active && Some(epoch) == input.principal_state.user_epoch
         }) {
@@ -148,14 +157,17 @@ pub(super) async fn ensure_subject_binding(
         return Ok(());
     }
     let span = crate::perf_diagnostic::Span::sql(connection, "subject_binding_insert");
-    let inserted = crate::perf_diagnostic::awaited(span, sql_query(
-        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3) \
+    let inserted = crate::perf_diagnostic::awaited(
+        span,
+        sql_query(
+            "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3) \
          ON CONFLICT (tenant_id, subject) DO NOTHING RETURNING user_id",
+        )
+        .bind::<sql_types::Uuid, _>(input.tenant_id)
+        .bind::<sql_types::Text, _>(&input.subject)
+        .bind::<sql_types::Uuid, _>(user_id)
+        .get_result::<BindingOwner>(connection),
     )
-    .bind::<sql_types::Uuid, _>(input.tenant_id)
-    .bind::<sql_types::Text, _>(&input.subject)
-    .bind::<sql_types::Uuid, _>(user_id)
-    .get_result::<BindingOwner>(connection))
     .await
     .optional()?;
     if inserted.is_some() {
@@ -164,12 +176,15 @@ pub(super) async fn ensure_subject_binding(
     // A concurrent first issuance may have created the same binding while we
     // waited. A new READ COMMITTED statement sees that committed owner.
     let span = crate::perf_diagnostic::Span::sql(connection, "subject_binding_owner");
-    let owner = crate::perf_diagnostic::awaited(span, sql_query(
-        "SELECT user_id FROM oauth_subject_bindings WHERE tenant_id = $1 AND subject = $2",
+    let owner = crate::perf_diagnostic::awaited(
+        span,
+        sql_query(
+            "SELECT user_id FROM oauth_subject_bindings WHERE tenant_id = $1 AND subject = $2",
+        )
+        .bind::<sql_types::Uuid, _>(input.tenant_id)
+        .bind::<sql_types::Text, _>(&input.subject)
+        .get_result::<BindingOwner>(connection),
     )
-    .bind::<sql_types::Uuid, _>(input.tenant_id)
-    .bind::<sql_types::Text, _>(&input.subject)
-    .get_result::<BindingOwner>(connection))
     .await?;
     if owner.user_id != user_id {
         return Err(diesel::result::Error::RollbackTransaction);
