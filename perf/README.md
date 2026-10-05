@@ -219,8 +219,8 @@ requires PID 1, its service descendants and every visible service thread to
 match the declared CPU set. Generator service threads are checked during the
 load wait loop; `generator-affinity.json` records the actual runner/k6 masks.
 `service-affinity.json` records the app, PostgreSQL and Valkey service trees
-during that loop, including the final snapshot before main-runner exit is
-observed. Samples retain PID/TID, UID, parent PID, process name, start ticks
+during the existing main and sidecar wait loops, plus a final service snapshot
+after all runners finish. Samples retain PID/TID, UID, parent PID, process name, start ticks
 and allowed CPUs; they describe the sampled instants, not continuous coverage.
 A mismatch invalidates the point. Docker exec inspection and healthcheck roots
 are excluded from service-tree verification.

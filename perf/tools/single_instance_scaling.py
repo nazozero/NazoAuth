@@ -1563,7 +1563,7 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
     service_sets = [(APP, format_cpu_list(point["app_cpus"]), "nazoauth"),
                     (POSTGRES, format_cpu_list(point.get("postgres_cpus", point["infra_cpus"])), "postgres"),
                     (VALKEY, format_cpu_list(point.get("valkey_cpus", point["infra_cpus"])), "valkey-server")]
-    while time.time() < deadline:
+    def record_affinity() -> None:
         for name, cpus, role in service_sets:
             tasks = container_tasks(name)
             verified = _tasks_pinned(tasks, cpus, role)
@@ -1595,6 +1595,9 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
             jdump(out_dir / "generator-affinity.json", generator_affinity)
             if not verified:
                 raise RuntimeError(f"CPU_AFFINITY_INVALID: generator {name}")
+
+    while time.time() < deadline:
+        record_affinity()
         running = dc("inspect", main, "--format",
                      "{{.State.Running}}", check=False)
         if "true" not in running.stdout:
@@ -1625,6 +1628,7 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
         side_deadline = sc["started_ts"] + _duration_seconds(sc["duration"]) + 180
         interrupted = False
         while time.time() < side_deadline:
+            record_affinity()
             running = dc("inspect", name, "--format",
                          "{{.State.Running}}", check=False)
             if "true" not in running.stdout:
@@ -1648,6 +1652,8 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
         })
         _remove_owned_by_name(name)
         load_seconds = max(load_seconds, end_ts - start_ts)
+
+    record_affinity()
 
     return {
         "main_container": main, "main_exit_code": exit_code,
