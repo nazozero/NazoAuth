@@ -1071,9 +1071,10 @@ async fn persist_refresh_token_inner(
         };
         let family = locked.family;
         // Read the clock only after all source locks have been acquired.
+        let transition_at = Utc::now();
         if family.revoked_at.is_some()
             || family.reuse_detected_at.is_some()
-            || family.current_expires_at <= Utc::now()
+            || family.current_expires_at <= transition_at
         {
             return Ok((RefreshTokenPersistResult::InvalidSource, None));
         }
@@ -1150,7 +1151,7 @@ async fn persist_refresh_token_inner(
                 oauth_refresh_spent_tokens::token_family_id.eq(token.family_id),
                 oauth_refresh_spent_tokens::member_id.eq(family.current_member_id),
                 oauth_refresh_spent_tokens::successor_member_id.eq(token.member_id),
-                oauth_refresh_spent_tokens::spent_at.eq(token.issued_at),
+                oauth_refresh_spent_tokens::spent_at.eq(transition_at),
                 oauth_refresh_spent_tokens::expires_at.eq(family.current_expires_at),
             ))
             .execute(connection)

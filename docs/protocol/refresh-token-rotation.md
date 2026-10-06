@@ -104,6 +104,13 @@ If a client successfully rotates a refresh token but loses the HTTP response bef
 - exactly one non-expired, non-revoked successor exists for the old token
 - the sender constraint on the old token still validates
 
+The spent proof's clock is sampled once after the source advisory and row locks
+are acquired, and also checks the locked source's expiry. It does not use the
+successor's earlier signing-time `issued_at`. Retry eligibility uses request
+admission time; audit and transaction commit may still consume part of the
+budget. This does not promise 60 seconds from delivery of the HTTP response.
+The successor's issuance/expiry and the spent proof's original expiry are unchanged.
+
 The retry continues from the active successor and rotates again. It requires an
 actual persisted DPoP or mTLS binding. An authenticated, retained, unexpired
 spent token outside this rule is replay, not compatibility recovery. An
