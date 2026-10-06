@@ -45,7 +45,7 @@ async fn ciba_decision_storage_failure_maps_to_non_cacheable_server_error() {
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
     )
     .await;
     let request = actix_web::test::TestRequest::post()
@@ -89,7 +89,7 @@ async fn ciba_verification_page_preserves_redirect_and_non_cacheable_headers() {
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
     )
     .await;
 
@@ -155,7 +155,7 @@ async fn ciba_verification_loads_the_bound_user_and_rejects_a_session_mismatch()
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
     )
     .await;
 
@@ -200,7 +200,7 @@ async fn ciba_browser_decision_rejects_invalid_csrf_before_session_lookup() {
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
     )
     .await;
 
@@ -256,7 +256,7 @@ async fn ciba_browser_decision_commits_user_context_and_rejects_replay() {
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
     )
     .await;
 

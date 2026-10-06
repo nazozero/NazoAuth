@@ -507,32 +507,14 @@ mod queue_persistence {
         }
     }
 
-    // The queue counters are process-global atomics, so tests that assert on
-    // their deltas must not overlap.
-    static COUNTER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
     fn telemetry_event() -> QueuedAuditEvent {
         prepare_event("login_success", serde_json::Map::new()).unwrap()
     }
-
-    fn counters() -> (u64, u64, u64, u64, u64, u64) {
-        (
-            AUDIT_QUEUE_ENQUEUED.load(Ordering::Relaxed),
-            AUDIT_QUEUE_PERSISTED.load(Ordering::Relaxed),
-            AUDIT_QUEUE_DROPPED.load(Ordering::Relaxed),
-            AUDIT_PERSIST_BATCHES.load(Ordering::Relaxed),
-            AUDIT_PERSIST_BATCH_EVENTS.load(Ordering::Relaxed),
-            AUDIT_PERSIST_MAX_BATCH.load(Ordering::Relaxed),
-        )
-    }
-
     #[tokio::test]
     async fn worker_persists_a_single_event_after_bounded_coalescing() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
         let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
-        let (e0, p0, _, b0, be0, _) = counters();
         let event = telemetry_event();
         let id = event.event_id;
         sender.send(event.into()).await.unwrap();
@@ -551,17 +533,10 @@ mod queue_persistence {
             .await
             .expect("worker must finish after the sender closes")
             .unwrap();
-        let (e1, p1, _, b1, be1, m1) = counters();
-        assert_eq!(p1 - p0, 1);
-        assert_eq!(b1 - b0, 1);
-        assert_eq!(be1 - be0, 1);
-        assert!(m1 >= 1);
-        let _ = (e0, e1);
     }
 
     #[tokio::test(start_paused = true)]
     async fn worker_coalesces_arrivals_without_extending_the_first_event_deadline() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
         let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
@@ -591,7 +566,6 @@ mod queue_persistence {
 
     #[tokio::test(start_paused = true)]
     async fn full_or_closed_batch_flushes_without_waiting_for_the_window() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         for (count, close) in [(AUDIT_PERSIST_BATCH_MAX, false), (1, true)] {
             let (sender, receiver) = mpsc::channel(AUDIT_PERSIST_BATCH_MAX);
             let ledger = Arc::new(FakeLedger::new());
@@ -617,7 +591,6 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn worker_retries_failed_append_then_preserves_order() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
         ledger.fail_next_batch.store(1, AtomicOrdering::Relaxed);
@@ -641,15 +614,14 @@ mod queue_persistence {
     }
 
     #[tokio::test]
-    async fn queue_counters_reconcile_enqueue_persist_drop_and_pending() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
+    async fn full_telemetry_queue_keeps_accepted_events_and_rejects_excess() {
         let (sender, receiver) = mpsc::channel(4);
         let ledger = Arc::new(FakeLedger::new());
         let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
-        let (e0, p0, d0, _, _, _) = counters();
         for _ in 0..4 {
             enqueue_into_sink(&sender, "login_success", telemetry_event());
         }
+        assert_eq!(sender.capacity(), 0, "accepted events filled the channel");
         // Channel is full: the next two sends must drop, not block.
         enqueue_into_sink(&sender, "login_success", telemetry_event());
         enqueue_into_sink(&sender, "login_success", telemetry_event());
@@ -658,22 +630,20 @@ mod queue_persistence {
             .await
             .unwrap()
             .unwrap();
-        let (e1, p1, d1, _, _, _) = counters();
-        // Counters are process-global; only deltas belong to this test.
-        assert_eq!(e1 - e0, 4, "four successful try_send calls");
-        assert_eq!(d1 - d0, 2, "two queue_full rejections");
-        assert_eq!(p1 - p0, 4, "each enqueued event persisted");
+        assert_eq!(
+            ledger.appended.lock().unwrap().len(),
+            4,
+            "only accepted events reach the ledger"
+        );
     }
 
     #[tokio::test(start_paused = true)]
     async fn required_records_wait_for_the_coalesced_batch_commit() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let fake = Arc::new(FakeLedger::new());
         let (release, commit) = oneshot::channel();
         *fake.commit_gate.lock().unwrap() = Some(commit);
         let worker = tokio::spawn(run_audit_persist_worker(receiver, fake.clone()));
-        let initial = counters();
         let first_event =
             prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap();
         let second_event =
@@ -711,18 +681,12 @@ mod queue_persistence {
         first.await.unwrap().unwrap();
         second.await.unwrap().unwrap();
         assert_eq!(*fake.batches.lock().unwrap(), vec![expected]);
-        assert_eq!(
-            counters(),
-            initial,
-            "Required batches must not change Telemetry counters"
-        );
         drop(sender);
         worker.await.unwrap();
     }
 
     #[tokio::test(start_paused = true)]
     async fn required_batch_failure_is_returned_without_retry_and_later_calls_can_commit() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let fake = Arc::new(FakeLedger::new());
         fake.fail_next_batch.store(1, AtomicOrdering::Relaxed);
@@ -770,7 +734,6 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn required_records_fail_closed_on_full_closed_or_stopped_channel() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(1);
         let (completion, _persisted) = oneshot::channel();
         sender
@@ -815,11 +778,9 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn burst_events_persist_in_bounded_batches() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(256);
         let ledger = Arc::new(FakeLedger::new());
         let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
-        let (e0, p0, _, b0, be0, _) = counters();
         let mut ids = Vec::new();
         for _ in 0..130 {
             let event = telemetry_event();
@@ -852,24 +813,16 @@ mod queue_persistence {
         let mut expected = ids.clone();
         expected.sort();
         assert_eq!(sorted, expected);
-        let (e1, p1, _, b1, be1, m1) = counters();
-        let _ = (e0, e1);
-        assert_eq!(p1 - p0, 130);
-        assert_eq!(be1 - be0, 130);
-        assert_eq!(b1 - b0, batches.len() as u64);
-        assert!(m1 <= AUDIT_PERSIST_BATCH_MAX as u64);
     }
 
     #[tokio::test]
     async fn failed_batch_is_retried_whole_and_blocks_later_batches() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(16);
         let ledger = Arc::new(FakeLedger::new());
         // Fail the first two batch attempts: the first batch must be retried
         // intact and nothing behind it may overtake.
         ledger.fail_next_batch.store(2, AtomicOrdering::Relaxed);
         let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
-        let (e0, p0, _, _, _, _) = counters();
         let mut ids = Vec::new();
         for _ in 0..80 {
             let event = telemetry_event();
@@ -886,9 +839,6 @@ mod queue_persistence {
         // In-order persistence: batch contents concat in enqueue order.
         let persisted: Vec<Uuid> = batches.iter().flatten().copied().collect();
         assert_eq!(persisted, ids);
-        let (_, p1, _, _, _, _) = counters();
-        assert_eq!(p1 - p0, 80, "persisted only counts successful batches");
-        let _ = e0;
     }
 }
 

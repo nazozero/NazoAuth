@@ -31,7 +31,6 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore>;
     fn security_audit_ledger(&self) -> Arc<dyn nazo_persistence::SecurityAuditLedger>;
     fn database_health(&self) -> Arc<dyn nazo_persistence::DatabaseHealthPort>;
-    fn database_pool_metrics(&self) -> Arc<dyn nazo_persistence::DatabasePoolMetricsPort>;
     fn security_state_maintenance(&self)
     -> Arc<dyn nazo_persistence::SecurityStateMaintenancePort>;
     fn runtime_modules(

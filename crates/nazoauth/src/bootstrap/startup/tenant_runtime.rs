@@ -29,14 +29,12 @@ const DIRECTORY_DATABASE_RECONCILE_INTERVAL: Duration = Duration::from_secs(5);
 /// used as a request tenant or CORS policy.
 pub(super) struct ProcessRuntime {
     pub(super) config: ConfigSource,
-    pub(super) perf_metrics_enabled: bool,
     /// The sole tenant allowed to reach deployment-global HTTP control routes.
     pub(super) control_tenant_id: nazo_identity::TenantId,
     pub(super) persistence: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
     pub(super) state_backend: nazo_oauth_server::ports::transient_state::ServerStateBackendBindings,
     pub(super) avatar_object_store: super::super::ServerAvatarObjectStoreBindings,
     pub(super) control_discovery: web::Data<crate::control_discovery::ControlDiscoveryEndpoint>,
-    pub(super) database_pool_metrics: web::Data<dyn nazo_persistence::DatabasePoolMetricsPort>,
     pub(super) route_settings: Arc<Settings>,
 }
 

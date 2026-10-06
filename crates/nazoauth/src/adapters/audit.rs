@@ -1,10 +1,7 @@
 //! 结构化安全审计日志。
 
 use std::{
-    sync::{
-        Arc, Mutex, OnceLock,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
@@ -430,33 +427,6 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
 
 const AUDIT_QUEUE_CAPACITY: usize = 4096;
 
-/// Best-effort queue telemetry. Required events never enter this queue, so
-/// these counters describe the telemetry path only; they are surfaced solely
-/// through the `PERF_METRICS_ENABLED` endpoint.
-static AUDIT_QUEUE_ENQUEUED: AtomicU64 = AtomicU64::new(0);
-static AUDIT_QUEUE_PERSISTED: AtomicU64 = AtomicU64::new(0);
-static AUDIT_QUEUE_DROPPED: AtomicU64 = AtomicU64::new(0);
-static AUDIT_PERSIST_BATCHES: AtomicU64 = AtomicU64::new(0);
-static AUDIT_PERSIST_BATCH_EVENTS: AtomicU64 = AtomicU64::new(0);
-static AUDIT_PERSIST_MAX_BATCH: AtomicU64 = AtomicU64::new(0);
-
-/// Snapshot of the best-effort audit queue counters for the perf-only
-/// metrics endpoint. `pending_in_process` = enqueued minus persisted, i.e.
-/// events sitting in the channel or inside a retrying batch.
-pub(crate) fn audit_queue_metrics() -> serde_json::Value {
-    let enqueued = AUDIT_QUEUE_ENQUEUED.load(Ordering::Relaxed);
-    let persisted = AUDIT_QUEUE_PERSISTED.load(Ordering::Relaxed);
-    serde_json::json!({
-        "enqueued": enqueued,
-        "persisted": persisted,
-        "dropped": AUDIT_QUEUE_DROPPED.load(Ordering::Relaxed),
-        "pending_in_process": enqueued.saturating_sub(persisted),
-        "persist_batches": AUDIT_PERSIST_BATCHES.load(Ordering::Relaxed),
-        "persist_batch_events": AUDIT_PERSIST_BATCH_EVENTS.load(Ordering::Relaxed),
-        "persist_max_batch": AUDIT_PERSIST_MAX_BATCH.load(Ordering::Relaxed),
-    })
-}
-
 // These are process-lifetime handles: the request path currently resolves the
 // durable sink through `ensure_audit_storage`, so bootstrap must install them
 // exactly once before handlers start accepting traffic.
@@ -611,12 +581,6 @@ async fn run_audit_persist_worker(
         loop {
             match repository.append_batch(&events).await {
                 Ok(()) => {
-                    if !required {
-                        AUDIT_QUEUE_PERSISTED.fetch_add(batch_len, Ordering::Relaxed);
-                        AUDIT_PERSIST_BATCHES.fetch_add(1, Ordering::Relaxed);
-                        AUDIT_PERSIST_BATCH_EVENTS.fetch_add(batch_len, Ordering::Relaxed);
-                        AUDIT_PERSIST_MAX_BATCH.fetch_max(batch_len, Ordering::Relaxed);
-                    }
                     let first_event_id = events[0].event_id;
                     for (event, completion) in events.into_iter().zip(completions) {
                         if let Some(completion) = completion {
@@ -839,11 +803,8 @@ fn enqueue_into_sink(
         }
     }
     match sink.try_send(queued.into()) {
-        Ok(()) => {
-            AUDIT_QUEUE_ENQUEUED.fetch_add(1, Ordering::Relaxed);
-        }
+        Ok(()) => {}
         Err(error) => {
-            AUDIT_QUEUE_DROPPED.fetch_add(1, Ordering::Relaxed);
             let reason = match error {
                 mpsc::error::TrySendError::Full(_) => "queue_full",
                 mpsc::error::TrySendError::Closed(_) => "sink_closed",

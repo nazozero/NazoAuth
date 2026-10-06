@@ -141,12 +141,10 @@ pub(super) async fn run(
 ) -> anyhow::Result<()> {
     let config = process.config.clone();
     let route_settings = process.route_settings.clone();
-    let perf_metrics_enabled = process.perf_metrics_enabled;
     let control_discovery = process.control_discovery.clone();
     let control_tenant_id = web::Data::new(crate::bootstrap::routes::ControlTenantId::new(
         process.control_tenant_id,
     ));
-    let database_pool_metrics = process.database_pool_metrics.clone();
     let bind = config.string("BIND", "0.0.0.0:8000");
     let addr: SocketAddr = bind.parse()?;
     let direct_tls = crate::bootstrap::direct_tls_listeners(&config, &route_settings)?;
@@ -174,9 +172,8 @@ pub(super) async fn run(
             tenant_scope = tenant_scope.service(crate::bootstrap::ui_static_files(path));
         }
         let settings = Arc::clone(&route_settings);
-        tenant_scope = tenant_scope.configure(move |cfg| {
-            crate::bootstrap::routes::configure_dynamic(cfg, &settings, perf_metrics_enabled)
-        });
+        tenant_scope = tenant_scope
+            .configure(move |cfg| crate::bootstrap::routes::configure_dynamic(cfg, &settings));
         let tenant_scope = tenant_scope.wrap(from_fn(move |request, next| {
             bind_tenant_app_data(tenant_registry.clone(), Rc::clone(&cache), request, next)
         }));
@@ -213,7 +210,6 @@ pub(super) async fn run(
                 .instrument(span)
             })
             .wrap(from_fn(security_headers))
-            .app_data(database_pool_metrics.clone())
             .app_data(control_discovery.clone())
             .app_data(control_tenant_id.clone())
             .app_data(web::Data::new(registry.clone()))

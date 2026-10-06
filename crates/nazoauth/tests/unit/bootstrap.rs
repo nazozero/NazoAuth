@@ -1260,7 +1260,7 @@ async fn fapi_resource_static_route_rejects_options_without_cors_and_keeps_secur
     let app = actix_test::init_service(
         App::new()
             .wrap(from_fn(security_headers))
-            .configure(|cfg| routes::configure(cfg, &settings, false)),
+            .configure(|cfg| routes::configure(cfg, &settings)),
     )
     .await;
 
@@ -1321,10 +1321,9 @@ async fn openid4vci_dataset_route_is_nested_inside_the_admin_scope() {
         ),
     ]);
     let settings = Settings::from_config(&config).unwrap();
-    let app = actix_test::init_service(
-        App::new().configure(|cfg| routes::configure(cfg, &settings, false)),
-    )
-    .await;
+    let app =
+        actix_test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings)))
+            .await;
 
     let response = actix_test::call_service(
         &app,

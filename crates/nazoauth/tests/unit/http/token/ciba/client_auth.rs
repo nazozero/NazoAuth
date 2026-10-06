@@ -172,7 +172,7 @@ async fn ciba_backchannel_fails_closed_before_client_state_access() {
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
     )
     .await;
 
@@ -245,7 +245,7 @@ async fn ciba_backchannel_validates_request_object_and_creates_bound_state() {
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
     )
     .await;
 
@@ -322,7 +322,7 @@ async fn ciba_backchannel_rejects_invalid_request_object_claims_before_user_look
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
     )
     .await;
 

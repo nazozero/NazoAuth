@@ -103,8 +103,7 @@ services:
       context: .
       dockerfile: Containerfile
       target: perf-runtime
-    environment:
-      PERF_METRICS_ENABLED: "true"
+    environment: {}
     volumes:
       - perf_runtime:/var/lib/nazo_oauth
     command: ["nazoauth", "server"]

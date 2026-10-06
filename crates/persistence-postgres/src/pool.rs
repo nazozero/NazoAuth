@@ -8,12 +8,7 @@ use diesel_async::{
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use futures_util::FutureExt as _;
-use serde::Serialize;
-use std::{
-    str::FromStr as _,
-    sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
-};
+use std::{str::FromStr as _, time::Duration};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
@@ -63,22 +58,6 @@ impl Drop for DiscardOnDrop {
             drop(DbConnection::take(connection));
         }
     }
-}
-
-static DB_POOL_ACQUIRE_COUNT: AtomicU64 = AtomicU64::new(0);
-static DB_POOL_WAIT_NANOS_TOTAL: AtomicU64 = AtomicU64::new(0);
-static DB_POOL_WAIT_NANOS_MAX: AtomicU64 = AtomicU64::new(0);
-
-/// Business-pool acquisition counters. `acquire_count` is the number of
-/// `get_conn` attempts (success and failure each count once); the wait fields
-/// record the time spent inside `pool.get()` before success or error.
-/// Migration and other standalone connections established outside this pool
-/// do not go through `get_conn` and are not included.
-#[derive(Serialize)]
-pub struct DbPoolMetrics {
-    pub acquire_count: u64,
-    pub wait_nanos_total: u64,
-    pub wait_nanos_max: u64,
 }
 
 #[derive(diesel::QueryableByName)]
@@ -167,15 +146,7 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
 }
 
 pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
-    let started = Instant::now();
-    let connection = pool.get().await;
-    let wait_nanos = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-    DB_POOL_ACQUIRE_COUNT.fetch_add(1, Ordering::Relaxed);
-    DB_POOL_WAIT_NANOS_TOTAL.fetch_add(wait_nanos, Ordering::Relaxed);
-    let _ = DB_POOL_WAIT_NANOS_MAX.try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-        (wait_nanos > current).then_some(wait_nanos)
-    });
-    Ok(connection?)
+    Ok(pool.get().await?)
 }
 
 /// Performs a real database round trip used by readiness probes.
@@ -187,15 +158,6 @@ pub async fn health_check(pool: &DbPool) -> anyhow::Result<()> {
         .execute(&mut connection)
         .await?;
     Ok(())
-}
-
-#[must_use]
-pub fn db_pool_metrics() -> DbPoolMetrics {
-    DbPoolMetrics {
-        acquire_count: DB_POOL_ACQUIRE_COUNT.load(Ordering::Relaxed),
-        wait_nanos_total: DB_POOL_WAIT_NANOS_TOTAL.load(Ordering::Relaxed),
-        wait_nanos_max: DB_POOL_WAIT_NANOS_MAX.load(Ordering::Relaxed),
-    }
 }
 
 pub async fn run_pending_migrations(database_url: &str) -> anyhow::Result<bool> {

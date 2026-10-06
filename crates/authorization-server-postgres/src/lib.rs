@@ -8,10 +8,10 @@ use nazo_postgres::{
     AuditRepository, AuthorizationFlowRepository, ControllerRegistryRepository, DbPool,
     FederationRepository, GrantRepository, MfaRepository, MtlsTrustAnchorRepository,
     OAuthClientRepository, Openid4vciDatasetRepository, Openid4vciRepository, Openid4vpRepository,
-    PasskeyRepository, PostgresHealthCheck, PostgresPoolMetrics, RecoveryRootRepository,
-    RuntimeModuleRepository, ScimEventRepository, ScimRepository,
-    SecurityStateMaintenanceRepository, TenantDirectoryRepository, TenantResourceRepository,
-    TokenIssuanceRepository, TokenRepository, UserRepository,
+    PasskeyRepository, PostgresHealthCheck, RecoveryRootRepository, RuntimeModuleRepository,
+    ScimEventRepository, ScimRepository, SecurityStateMaintenanceRepository,
+    TenantDirectoryRepository, TenantResourceRepository, TokenIssuanceRepository, TokenRepository,
+    UserRepository,
 };
 
 #[derive(Clone)]
@@ -51,11 +51,6 @@ impl ServerPersistenceProvider for PostgresProvider {
     fn database_health(&self) -> Arc<dyn nazo_persistence::DatabaseHealthPort> {
         Arc::new(PostgresHealthCheck::new(self.pool.clone()))
     }
-
-    fn database_pool_metrics(&self) -> Arc<dyn nazo_persistence::DatabasePoolMetricsPort> {
-        Arc::new(PostgresPoolMetrics::new(self.pool.clone()))
-    }
-
     fn security_state_maintenance(
         &self,
     ) -> Arc<dyn nazo_persistence::SecurityStateMaintenancePort> {
