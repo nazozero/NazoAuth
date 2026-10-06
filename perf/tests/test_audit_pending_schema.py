@@ -183,14 +183,17 @@ class SamplerTests(unittest.TestCase):
                         mock.patch.object(sampler.psycopg, "connect", side_effect=connections), \
                         mock.patch.object(sampler.time, "monotonic", return_value=100), \
                         mock.patch.object(sampler.time, "time", return_value=100), \
-                        mock.patch.object(sampler.time, "sleep", side_effect=[None, StopSampler]), \
-                        mock.patch.object(sampler.urllib.request, "urlopen", side_effect=RuntimeError("offline")):
+                        mock.patch.object(sampler.time, "sleep", side_effect=[None, StopSampler]):
                     sampler.redis.Redis.from_url.return_value.info.return_value = {}
                     with self.assertRaises(StopSampler):
                         sampler.main()
                 rows = [json.loads(line) for line in output.getvalue().splitlines()]
                 self.assertNotIn("pg_err", rows[1])
                 self.assertNotIn("pg_err", rows[2])
+                self.assertIn("runtime_role_activity", rows[1])
+                self.assertIn("runtime_role_activity", rows[2])
+                self.assertNotIn("pool", rows[1])
+                self.assertNotIn("audit_queue", rows[1])
                 queries = [query for connection in connections for query in connection.queries]
                 self.assertEqual(sum("FROM pg_attribute" in query for query in queries), 1)
                 self.assertEqual(sum("FILTER (WHERE" in query and "FROM security_audit_events" in query

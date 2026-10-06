@@ -130,7 +130,7 @@ class CopyPolicy(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             out=pathlib.Path(d);order=[]
             def sampler():
-                order.append('copy');(out/'soak-metrics.jsonl').write_text(json.dumps({'ts':1,'pg':{},'vk':{},'pool':{},'audit_queue':{}})+'\n')
+                order.append('copy');(out/'soak-metrics.jsonl').write_text(json.dumps({'ts':1,'pg':{},'vk':{},'audit':{},'runtime_role_activity':[]})+'\n')
             def metadata(*a,**k):
                 self.assertTrue((out/'soak-metrics.jsonl').is_file());order.append('read');return {'ok':True}
             self.ns.update(sync_samplers=sampler,ORIG_HEALTH=metadata)

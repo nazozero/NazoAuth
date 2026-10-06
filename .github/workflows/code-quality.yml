@@ -236,6 +236,7 @@ jobs:
         run: |
           node --version
           python -m unittest \
+            perf.tests.test_blackbox_contract \
             perf.tests.test_capacity_window perf.tests.test_capacity_producer \
             perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \
             perf.tests.test_service_affinity perf.tests.test_cnb_controller \

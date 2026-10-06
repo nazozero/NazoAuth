@@ -42,6 +42,10 @@ class BlackboxContractTests(unittest.TestCase):
         self.assertEqual(ca.pool_deltas(data)[0],[])
         import stability_analyze as sa
         self.assertEqual(sa.per_bucket_pool([{"kind":"sample","ts":61,"pool":{"con":32,"idle":0}}],0,2),{})
+        buckets={i:{"p95":1,"p99":2,"ops_per_s":3000} for i in range(5)}
+        cliff=sa.sustained_cliff(buckets,{})
+        self.assertEqual(cliff["B_pool_exhaustion"],"UNVERIFIED")
+        self.assertEqual(cliff["overall_rule_scope"],"observable A_latency and C_rate_under_2850 only")
     def test_legacy_health_contract_retains_its_internal_gates(self):
         rec=_rec();health=points._health_checks(rec,mixed=True)
         self.assertTrue(all(key in health for key in contract.INTERNAL_GATES))
