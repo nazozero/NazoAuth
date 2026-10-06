@@ -669,7 +669,10 @@ def _stream_metric(raw: bytes) -> bytes | None:
 
 
 @lru_cache(maxsize=1024)
-def _metric_shard(metric: bytes, workers: int) -> int:
+def _metric_shard(metric: bytes | str, workers: int) -> int:
+    # Decoded names stay cache keys; encode only on a cache miss.
+    if isinstance(metric, str):
+        metric = metric.encode("utf-8")
     # Spread the standard per-request/per-iteration families evenly. A hash
     # alone can put the two dominant forensic counters on the same worker.
     common = (b"http_reqs", b"http_req_duration", b"http_req_blocked",
@@ -742,7 +745,7 @@ def _stream_shard(connection, index, workers, diag_path):
                 continue
             contract = metric.startswith("cap_window_")
             if contract != broadcast or (not contract and
-                    _metric_shard(metric.encode("utf-8"), workers) != index):
+                    _metric_shard(metric, workers) != index):
                 raise ValueError("point metric does not match stream shard")
             before_points, before_late = series.points, series.lag_over_5s
             before_errors, before_max_lag = series.parse_errors, series.lag_max_s
