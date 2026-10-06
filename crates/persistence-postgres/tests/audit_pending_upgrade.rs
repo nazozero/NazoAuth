@@ -7,9 +7,10 @@
 //! generation/digest preservation, chain head and anchor integrity, and
 //! claim/fail/reclaim/ack retry semantics.
 //!
-//! The current adapter needs the later function-only fresh-claim capability.
-//! Install it without changing the pre-cutover tables or state, then execute
-//! PENDING_SET alone and retain all migration-preservation and rollback checks.
+//! Pre-upgrade seeds call the old append/open/ACK APIs and the production
+//! canonical hash/digest helpers. PENDING_SET runs alone; only after its
+//! preservation assertions do real application/audit migrations provide the
+//! current schema for the current repository's delivery/reclaim checks.
 //!
 //! A text-level guard check cannot substitute for these executions.
 
@@ -25,6 +26,9 @@ use nazo_persistence::{
 use nazo_postgres::{AuditLedgerRepository, SecurityAuditEvent, create_pool};
 use serde_json::json;
 use uuid::Uuid;
+
+#[path = "support/audit_upgrade.rs"]
+mod audit_upgrade;
 
 const ORIGINAL: &str =
     include_str!("../../../migrations/20260805000100_security_audit_ledger/up.sql");
@@ -42,8 +46,6 @@ const DELIVERY_RETENTION: &str =
     include_str!("../../../migrations/20260924000100_audit_delivery_scoped_retention/up.sql");
 const BOUNDED_CLAIM: &str =
     include_str!("../../../migrations/20260925000100_audit_claim_bounded_scan/up.sql");
-const FRESH_CLAIM: &str =
-    include_str!("../../../migrations/20261006000200_audit_fresh_claim_finalization/up.sql");
 const PENDING_SET: &str =
     include_str!("../../../migrations/20260927000100_audit_pending_event_set/up.sql");
 
@@ -238,22 +240,16 @@ async fn scratch_database(label: &str) -> (AsyncPgConnection, String) {
             .await
             .expect("pre-upgrade migration should apply");
     }
-    // Keep the genuine pre-cutover physical schema while supplying the current
-    // adapter's stored-function interface for seeding and post-upgrade delivery.
-    let before = snapshot(&mut owner).await;
-    owner
-        .transaction::<_, diesel::result::Error, _>(async |connection| {
-            connection.batch_execute(FRESH_CLAIM).await
-        })
-        .await
-        .expect("current claim functions should install on the pre-upgrade layout");
     assert!(reg_exists(&mut owner, "public.security_audit_event_outbox").await);
     assert!(!reg_exists(&mut owner, "public.idx_security_audit_events_pending_order").await);
-    assert_eq!(
-        snapshot(&mut owner).await,
-        before,
-        "claim functions must preserve the pre-upgrade state"
-    );
+    let missing_current_claim = sql_query(
+        "SELECT to_regprocedure('public.nazo_finalize_security_audit_claim(\
+         bigint,bytea,uuid[],bytea[],bigint,bigint,integer,bytea,integer)') IS NULL AS value",
+    )
+    .get_result::<RegExists>(&mut owner)
+    .await
+    .expect("historical function boundary should be readable");
+    assert!(missing_current_claim.value);
     (owner, url.to_string())
 }
 
@@ -284,6 +280,165 @@ async fn persist_pending(
         ids.push(id);
     }
     ids
+}
+
+#[derive(QueryableByName)]
+struct LegacyHead {
+    #[diesel(sql_type = BigInt)]
+    last_sequence: i64,
+    #[diesel(sql_type = Binary)]
+    last_hash: Vec<u8>,
+}
+
+#[derive(QueryableByName)]
+struct LegacyPendingEvent {
+    #[diesel(sql_type = SqlUuid)]
+    event_id: Uuid,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    sequence: Option<i64>,
+    #[diesel(sql_type = Text)]
+    event_type: String,
+    #[diesel(sql_type = Text)]
+    event_category: String,
+    #[diesel(sql_type = Text)]
+    payload_canonical: String,
+    #[diesel(sql_type = Timestamptz)]
+    occurred_at: DateTime<Utc>,
+}
+
+// This fixture seeds fresh batches only through the old database owner APIs.
+// Canonical hashing/digest stays in the production persistence implementation;
+// SQL owns proof insertion, the lease, generation and every state transition.
+async fn legacy_fresh_batch(owner: &mut AsyncPgConnection) -> SecurityAuditBatch {
+    use nazo_persistence::audit_chain::{security_audit_batch_digest, security_audit_event_hash};
+
+    owner
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            let head = sql_query(
+                "SELECT last_sequence, last_hash \
+                 FROM public.nazo_security_audit_chain_head_for_update()",
+            )
+            .get_result::<LegacyHead>(connection)
+            .await?;
+            let rows = sql_query(
+                "SELECT event_id, sequence, event_type, event_category, \
+                        payload_canonical, occurred_at \
+                 FROM public.nazo_claim_security_audit_pending($1)",
+            )
+            .bind::<BigInt, _>(256_i64)
+            .load::<LegacyPendingEvent>(connection)
+            .await?;
+            assert!(!rows.is_empty() && rows.len() <= 256);
+            assert!(rows.iter().all(|row| row.sequence.is_none()));
+            let first_sequence = head.last_sequence + 1;
+            let previous_hash = head.last_hash;
+            let mut last_hash = previous_hash.clone();
+            let mut hashes = Vec::with_capacity(rows.len());
+            let mut deliveries = Vec::with_capacity(rows.len());
+            for (index, row) in rows.into_iter().enumerate() {
+                let sequence = first_sequence + index as i64;
+                let event_hash = security_audit_event_hash(
+                    sequence,
+                    &last_hash,
+                    row.event_id,
+                    &row.event_type,
+                    &row.event_category,
+                    row.occurred_at,
+                    row.payload_canonical.as_bytes(),
+                );
+                deliveries.push(nazo_persistence::SecurityAuditPendingDelivery {
+                    event_id: row.event_id,
+                    sequence,
+                    event_type: row.event_type,
+                    event_category: row.event_category,
+                    payload_canonical: row.payload_canonical,
+                    occurred_at: row.occurred_at,
+                    previous_hash: last_hash,
+                    event_hash: event_hash.to_vec(),
+                });
+                hashes.push(event_hash);
+                last_hash = event_hash.to_vec();
+            }
+            let last_sequence = deliveries.last().unwrap().sequence;
+            let digest = security_audit_batch_digest(
+                "upgrade-test",
+                first_sequence,
+                last_sequence,
+                deliveries.len() as i64,
+                &previous_hash,
+                &last_hash,
+                &hashes,
+            )
+            .to_vec();
+            sql_query("SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)")
+                .bind::<BigInt, _>(head.last_sequence)
+                .bind::<Binary, _>(&previous_hash)
+                .bind::<diesel::sql_types::Array<SqlUuid>, _>(
+                    deliveries
+                        .iter()
+                        .map(|event| event.event_id)
+                        .collect::<Vec<_>>(),
+                )
+                .bind::<diesel::sql_types::Array<Binary>, _>(
+                    hashes.iter().map(|hash| hash.to_vec()).collect::<Vec<_>>(),
+                )
+                .execute(connection)
+                .await?;
+            let generation = sql_query(
+                "SELECT public.nazo_open_security_audit_batch($1, $2, $3, $4, $5) AS value",
+            )
+            .bind::<BigInt, _>(first_sequence)
+            .bind::<BigInt, _>(last_sequence)
+            .bind::<diesel::sql_types::Integer, _>(deliveries.len() as i32)
+            .bind::<Binary, _>(&digest)
+            .bind::<diesel::sql_types::Integer, _>(60)
+            .get_result::<Count>(connection)
+            .await?
+            .value;
+            Ok(SecurityAuditBatch {
+                generation,
+                first_sequence,
+                last_sequence,
+                previous_hash,
+                last_hash,
+                digest,
+                attempts: 0,
+                deliveries,
+            })
+        })
+        .await
+        .expect("the old append/open transaction should seed a real batch")
+}
+
+async fn legacy_anchor_observed(owner: &mut AsyncPgConnection) {
+    sql_query("SELECT public.nazo_record_security_audit_genesis($1, $2)")
+        .bind::<Text, _>("upgrade-test")
+        .bind::<Binary, _>(vec![0_u8; 32])
+        .execute(owner)
+        .await
+        .expect("old genesis API should initialize the fixture anchor");
+    sql_query("SELECT public.nazo_observe_security_audit_anchor($1)")
+        .bind::<Text, _>("upgrade-test")
+        .execute(owner)
+        .await
+        .expect("old observation API should observe the fixture anchor");
+}
+
+async fn legacy_ack(owner: &mut AsyncPgConnection, batch: &SecurityAuditBatch) {
+    let changed = sql_query(
+        "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS value",
+    )
+    .bind::<BigInt, _>(batch.generation)
+    .bind::<BigInt, _>(batch.first_sequence)
+    .bind::<BigInt, _>(batch.last_sequence)
+    .bind::<diesel::sql_types::Integer, _>(batch.event_count() as i32)
+    .bind::<Binary, _>(&batch.last_hash)
+    .bind::<Binary, _>(&batch.digest)
+    .bind::<Text, _>("upgrade-test")
+    .get_result::<RegExists>(owner)
+    .await
+    .expect("old ACK API should retire the historical batch");
+    assert!(changed.value);
 }
 
 async fn anchor_observed(repository: &AuditLedgerRepository) {
@@ -408,6 +563,7 @@ async fn pending_set_upgrade_from_empty_state() {
         .await
         .expect("empty upgrade should apply");
     assert_migrated_shape(&mut owner, &pre, 0).await;
+    audit_upgrade::upgrade_to_current_audit_schema(&mut owner).await;
 
     // The migrated schema must run the full delivery cycle.
     let repository = AuditLedgerRepository::new(create_pool(url, 2).unwrap());
@@ -463,6 +619,7 @@ async fn pending_set_upgrade_from_unchained_backlog() {
         .await
         .expect("unchained backlog upgrade should apply");
     assert_migrated_shape(&mut owner, &pre, 600).await;
+    audit_upgrade::upgrade_to_current_audit_schema(&mut owner).await;
 
     // Ordered pending claims on the migrated schema must deliver the exact
     // (occurred_at, event_id) prefix order the outbox index encoded.
@@ -494,11 +651,10 @@ async fn pending_set_upgrade_from_inflight_batch() {
     }
     let (mut owner, url) = scratch_database("inflight").await;
     persist_pending(&mut owner, "inflight", 0, 512).await;
-    let seed_repository = AuditLedgerRepository::new(create_pool(url.clone(), 2).unwrap());
-    anchor_observed(&seed_repository).await;
-    // The current stored-function protocol on the pre-cutover table layout:
-    // chain entries and the lease commit in chain_state (bounded at 256).
-    let batch = claimed_batch(&seed_repository).await;
+    legacy_anchor_observed(&mut owner).await;
+    // The old append/open protocol on the genuine pre-upgrade schema:
+    // chain entries and the batch lease commit in chain_state (bounded at 256).
+    let batch = legacy_fresh_batch(&mut owner).await;
     assert_eq!(batch.event_count(), 256);
     let pre = snapshot(&mut owner).await;
     assert_eq!(pre.state[5], "Some(1)", "batch must be in flight");
@@ -506,6 +662,7 @@ async fn pending_set_upgrade_from_inflight_batch() {
         .await
         .expect("in-flight upgrade should apply");
     assert_migrated_shape(&mut owner, &pre, 512).await;
+    audit_upgrade::upgrade_to_current_audit_schema(&mut owner).await;
 
     // The in-flight lease is still fenced after the migration: a fail
     // releases it, the identical range re-claims with a bumped generation,
@@ -550,14 +707,18 @@ async fn pending_set_upgrade_from_mixed_backlog() {
         return;
     }
     let (mut owner, url) = scratch_database("mixed").await;
-    let seed_repository = AuditLedgerRepository::new(create_pool(url.clone(), 2).unwrap());
-    anchor_observed(&seed_repository).await;
+    legacy_anchor_observed(&mut owner).await;
     // Delivered-and-acked history: chain head advances, rows retire.
     persist_pending(&mut owner, "acked", 0, 300).await;
-    drain(&seed_repository).await;
+    let first_history = legacy_fresh_batch(&mut owner).await;
+    assert_eq!(first_history.event_count(), 256);
+    legacy_ack(&mut owner, &first_history).await;
+    let remaining_history = legacy_fresh_batch(&mut owner).await;
+    assert_eq!(remaining_history.event_count(), 44);
+    legacy_ack(&mut owner, &remaining_history).await;
     // One committed in-flight batch behind a fresh unchained tail.
     persist_pending(&mut owner, "inflight", 300, 200).await;
-    let inflight = claimed_batch(&seed_repository).await;
+    let inflight = legacy_fresh_batch(&mut owner).await;
     assert_eq!(inflight.event_count(), 200);
     persist_pending(&mut owner, "pending", 500, 150).await;
     let pre = snapshot(&mut owner).await;
@@ -568,6 +729,7 @@ async fn pending_set_upgrade_from_mixed_backlog() {
         .await
         .expect("mixed backlog upgrade should apply");
     assert_migrated_shape(&mut owner, &pre, 350).await;
+    audit_upgrade::upgrade_to_current_audit_schema(&mut owner).await;
 
     let repository = AuditLedgerRepository::new(create_pool(url, 2).unwrap());
     repository

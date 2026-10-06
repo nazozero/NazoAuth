@@ -9,6 +9,9 @@ use nazo_postgres::{AuditLedgerRepository, SecurityAuditEvent, create_pool};
 use serde_json::json;
 use uuid::Uuid;
 
+#[path = "support/audit_upgrade.rs"]
+mod audit_upgrade;
+
 const ORIGINAL: &str =
     include_str!("../../../migrations/20260805000100_security_audit_ledger/up.sql");
 const SHARED: &str =
@@ -25,8 +28,8 @@ const DELIVERY_RETENTION: &str =
     include_str!("../../../migrations/20260924000100_audit_delivery_scoped_retention/up.sql");
 const BOUNDED_CLAIM: &str =
     include_str!("../../../migrations/20260925000100_audit_claim_bounded_scan/up.sql");
-const FRESH_CLAIM: &str =
-    include_str!("../../../migrations/20261006000200_audit_fresh_claim_finalization/up.sql");
+const PENDING_SET: &str =
+    include_str!("../../../migrations/20260927000100_audit_pending_event_set/up.sql");
 
 #[derive(QueryableByName)]
 struct Count {
@@ -158,8 +161,6 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
         BATCH_DELIVERY,
         DELIVERY_RETENTION,
         BOUNDED_CLAIM,
-        // Function-only capability used by the current adapter on the old layout.
-        FRESH_CLAIM,
     ] {
         owner
             .transaction::<_, diesel::result::Error, _>(async |connection| {
@@ -177,6 +178,48 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
     let removed = sql_query("SELECT to_regprocedure('public.nazo_append_security_audit_event(uuid,text,text,jsonb,timestamptz,bytea,bytea)') IS NULL AND to_regprocedure('public.nazo_claim_security_audit_events(bigint,integer)') IS NULL AND to_regprocedure('public.nazo_ack_security_audit_event(uuid,integer,text)') IS NULL AND to_regprocedure('public.nazo_reschedule_security_audit_event(uuid,integer,timestamptz,text)') IS NULL AS value")
         .get_result::<Allowed>(&mut owner).await.unwrap();
     assert!(removed.value);
+
+    // Verify the old role APIs before advancing this scratch schema.
+    let mut legacy_url = url.clone();
+    legacy_url.set_username(&writer_role).unwrap();
+    legacy_url.set_password(Some(&suffix)).unwrap();
+    let mut legacy_writer = AsyncPgConnection::establish(legacy_url.as_str()).await.unwrap();
+    let allowed = sql_query(
+        "SELECT policy_satisfied AS value \
+         FROM public.nazo_security_audit_shared_privilege_preflight(TRUE, TRUE, FALSE)",
+    )
+    .get_result::<Allowed>(&mut legacy_writer)
+    .await
+    .unwrap();
+    assert!(allowed.value);
+    assert!(
+        sql_query("SELECT * FROM public.nazo_security_audit_chain_head_for_update()")
+            .execute(&mut legacy_writer)
+            .await
+            .is_err()
+    );
+    drop(legacy_writer);
+    legacy_url.set_username(&exporter_role).unwrap();
+    let mut legacy_exporter = AsyncPgConnection::establish(legacy_url.as_str()).await.unwrap();
+    let allowed = sql_query(
+        "SELECT policy_satisfied AS value \
+         FROM public.nazo_security_audit_shared_privilege_preflight(TRUE, FALSE, TRUE)",
+    )
+    .get_result::<Allowed>(&mut legacy_exporter)
+    .await
+    .unwrap();
+    assert!(allowed.value);
+    drop(legacy_exporter);
+
+    // Historical preservation/removal assertions above belong to CUTOVER.
+    // The current repository below receives a real current audit schema.
+    owner
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            connection.batch_execute(PENDING_SET).await
+        })
+        .await
+        .expect("the pending-set successor should apply after the cutover checkpoint");
+    audit_upgrade::upgrade_to_current_audit_schema(&mut owner).await;
 
     url.set_username(&writer_role).unwrap();
     url.set_password(Some(&suffix)).unwrap();
