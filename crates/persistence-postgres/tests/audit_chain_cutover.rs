@@ -183,7 +183,9 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
     let mut legacy_url = url.clone();
     legacy_url.set_username(&writer_role).unwrap();
     legacy_url.set_password(Some(&suffix)).unwrap();
-    let mut legacy_writer = AsyncPgConnection::establish(legacy_url.as_str()).await.unwrap();
+    let mut legacy_writer = AsyncPgConnection::establish(legacy_url.as_str())
+        .await
+        .unwrap();
     let allowed = sql_query(
         "SELECT policy_satisfied AS value \
          FROM public.nazo_security_audit_shared_privilege_preflight(TRUE, TRUE, FALSE)",
@@ -200,7 +202,9 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
     );
     drop(legacy_writer);
     legacy_url.set_username(&exporter_role).unwrap();
-    let mut legacy_exporter = AsyncPgConnection::establish(legacy_url.as_str()).await.unwrap();
+    let mut legacy_exporter = AsyncPgConnection::establish(legacy_url.as_str())
+        .await
+        .unwrap();
     let allowed = sql_query(
         "SELECT policy_satisfied AS value \
          FROM public.nazo_security_audit_shared_privilege_preflight(TRUE, FALSE, TRUE)",
