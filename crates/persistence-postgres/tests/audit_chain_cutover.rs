@@ -25,6 +25,8 @@ const DELIVERY_RETENTION: &str =
     include_str!("../../../migrations/20260924000100_audit_delivery_scoped_retention/up.sql");
 const BOUNDED_CLAIM: &str =
     include_str!("../../../migrations/20260925000100_audit_claim_bounded_scan/up.sql");
+const FRESH_CLAIM: &str =
+    include_str!("../../../migrations/20261006000200_audit_fresh_claim_finalization/up.sql");
 
 #[derive(QueryableByName)]
 struct Count {
@@ -156,6 +158,8 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
         BATCH_DELIVERY,
         DELIVERY_RETENTION,
         BOUNDED_CLAIM,
+        // Function-only capability used by the current adapter on the old layout.
+        FRESH_CLAIM,
     ] {
         owner
             .transaction::<_, diesel::result::Error, _>(async |connection| {

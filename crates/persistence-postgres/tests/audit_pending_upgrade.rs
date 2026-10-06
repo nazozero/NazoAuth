@@ -7,6 +7,10 @@
 //! generation/digest preservation, chain head and anchor integrity, and
 //! claim/fail/reclaim/ack retry semantics.
 //!
+//! The current adapter needs the later function-only fresh-claim capability.
+//! Install it without changing the pre-cutover tables or state, then execute
+//! PENDING_SET alone and retain all migration-preservation and rollback checks.
+//!
 //! A text-level guard check cannot substitute for these executions.
 
 use chrono::{DateTime, Utc};
@@ -38,6 +42,8 @@ const DELIVERY_RETENTION: &str =
     include_str!("../../../migrations/20260924000100_audit_delivery_scoped_retention/up.sql");
 const BOUNDED_CLAIM: &str =
     include_str!("../../../migrations/20260925000100_audit_claim_bounded_scan/up.sql");
+const FRESH_CLAIM: &str =
+    include_str!("../../../migrations/20261006000200_audit_fresh_claim_finalization/up.sql");
 const PENDING_SET: &str =
     include_str!("../../../migrations/20260927000100_audit_pending_event_set/up.sql");
 
@@ -232,6 +238,22 @@ async fn scratch_database(label: &str) -> (AsyncPgConnection, String) {
             .await
             .expect("pre-upgrade migration should apply");
     }
+    // Keep the genuine pre-cutover physical schema while supplying the current
+    // adapter's stored-function interface for seeding and post-upgrade delivery.
+    let before = snapshot(&mut owner).await;
+    owner
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            connection.batch_execute(FRESH_CLAIM).await
+        })
+        .await
+        .expect("current claim functions should install on the pre-upgrade layout");
+    assert!(reg_exists(&mut owner, "public.security_audit_event_outbox").await);
+    assert!(!reg_exists(&mut owner, "public.idx_security_audit_events_pending_order").await);
+    assert_eq!(
+        snapshot(&mut owner).await,
+        before,
+        "claim functions must preserve the pre-upgrade state"
+    );
     (owner, url.to_string())
 }
 
@@ -474,8 +496,8 @@ async fn pending_set_upgrade_from_inflight_batch() {
     persist_pending(&mut owner, "inflight", 0, 512).await;
     let seed_repository = AuditLedgerRepository::new(create_pool(url.clone(), 2).unwrap());
     anchor_observed(&seed_repository).await;
-    // The real claim protocol on the pre-upgrade schema: chain entries are
-    // written and the batch lease committed in chain_state (bounded at 256).
+    // The current stored-function protocol on the pre-cutover table layout:
+    // chain entries and the lease commit in chain_state (bounded at 256).
     let batch = claimed_batch(&seed_repository).await;
     assert_eq!(batch.event_count(), 256);
     let pre = snapshot(&mut owner).await;
