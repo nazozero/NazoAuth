@@ -301,7 +301,16 @@ def sustained_cliff(buckets: dict[int, dict],
                for i in win):
             triggers.append({"rule": "C_rate_under_2850",
                              "buckets": win})
-    return {"sustained_cliff": bool(triggers), "triggers": triggers}
+    pool_observed = bool(ids) and all(i in pool for i in ids)
+    return {
+        "sustained_cliff": bool(triggers),
+        "triggers": triggers,
+        "B_pool_exhaustion": "OBSERVED" if pool_observed else "UNVERIFIED",
+        "overall_rule_scope": (
+            "A_latency, B_pool_exhaustion, C_rate_under_2850"
+            if pool_observed else "observable A_latency and C_rate_under_2850 only"
+        ),
+    }
 
 
 def anomaly_buckets(buckets: dict[int, dict],
