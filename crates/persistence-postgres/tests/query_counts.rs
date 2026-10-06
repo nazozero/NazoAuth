@@ -2509,3 +2509,139 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
     }
     cleanup_seed(&url, tenant, &seed).await;
 }
+
+#[tokio::test]
+async fn refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds() {
+    let _serial = SERIAL.lock().await;
+    let Some(url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let seed = seed_principal(&url, tenant).await;
+    let mut connection = connect(&url).await;
+    let mut fixtures = Vec::new();
+    for _ in 0..2 {
+        let family = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        let raw = format!("lookup-cache-{}", Uuid::now_v7());
+        seed_refresh_token_row(
+            &mut connection,
+            tenant,
+            &seed,
+            member,
+            family,
+            &raw,
+            None,
+            None,
+            None,
+        )
+        .await;
+        replace_oidc_refresh_contract(
+            &mut connection,
+            tenant,
+            &seed,
+            family,
+            &seed.user_id.to_string(),
+            vec!["openid".to_owned(), "offline_access".to_owned()],
+        )
+        .await;
+        fixtures.push((member, raw));
+    }
+    #[derive(diesel::QueryableByName)]
+    struct CacheState {
+        #[diesel(sql_type = sql_types::Integer)]
+        backend_pid: i32,
+        #[diesel(sql_type = sql_types::BigInt)]
+        plain_count: i64,
+        #[diesel(sql_type = sql_types::BigInt)]
+        prepared_count: i64,
+        #[diesel(sql_type = sql_types::BigInt)]
+        plain_executions: i64,
+        #[diesel(sql_type = sql_types::BigInt)]
+        prepared_executions: i64,
+        #[diesel(sql_type = sql_types::Bool)]
+        parameter_types_match: bool,
+    }
+    async fn cache_state(pool: &DbPool) -> CacheState {
+        let mut connection = get_conn(pool).await.unwrap();
+        sql_query(
+            "SELECT pg_backend_pid() AS backend_pid, \
+             count(*) FILTER (WHERE position('NULL::jsonb AS prepared_subject' in statement)>0) AS plain_count, \
+             count(*) FILTER (WHERE position('to_jsonb(profile)' in statement)>0) AS prepared_count, \
+             coalesce(sum(generic_plans+custom_plans) FILTER (WHERE position('NULL::jsonb AS prepared_subject' in statement)>0),0)::bigint AS plain_executions, \
+             coalesce(sum(generic_plans+custom_plans) FILTER (WHERE position('to_jsonb(profile)' in statement)>0),0)::bigint AS prepared_executions, \
+             coalesce(bool_and(CASE WHEN position('to_jsonb(profile)' in statement)>0 \
+               THEN parameter_types=ARRAY['uuid'::regtype,'bytea'::regtype,'uuid'::regtype] \
+               ELSE parameter_types=ARRAY['uuid'::regtype,'bytea'::regtype] END),true) AS parameter_types_match \
+             FROM pg_prepared_statements WHERE statement LIKE 'WITH presentation AS (%'",
+        )
+        .get_result(&mut connection)
+        .await
+        .unwrap()
+    }
+    let pool = create_pool(&url, 1).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let before = cache_state(&pool).await;
+    assert_eq!((before.plain_count, before.prepared_count), (0, 0));
+    for _ in 0..3 {
+        for (member, raw) in &fixtures {
+            for prepared in [false, true] {
+                let result = repository
+                    .refresh_token_snapshot_with_subject(
+                        tenant_id,
+                        raw,
+                        seed.client.id,
+                        Utc::now(),
+                        prepared,
+                    )
+                    .await;
+                let snapshot = result.unwrap().unwrap();
+                assert_eq!(snapshot.presented.id, *member);
+                assert_eq!(snapshot.presented.tenant_id, tenant_id);
+                assert_eq!(snapshot.prepared_subject.is_some(), prepared);
+            }
+        }
+    }
+    let unknown = format!("lookup-cache-missing-{}", Uuid::now_v7());
+    for prepared in [false, true] {
+        for (lookup_tenant, raw) in [
+            (Uuid::now_v7(), fixtures[0].1.as_str()),
+            (tenant_id, unknown.as_str()),
+        ] {
+            let result = repository
+                .refresh_token_snapshot_with_subject(
+                    lookup_tenant,
+                    raw,
+                    seed.client.id,
+                    Utc::now(),
+                    prepared,
+                )
+                .await;
+            assert!(result.unwrap().is_none());
+        }
+    }
+    let result = repository
+        .refresh_token_snapshot_with_subject(
+            tenant_id,
+            &fixtures[0].1,
+            Uuid::now_v7(),
+            Utc::now(),
+            true,
+        )
+        .await;
+    let foreign_client = result.unwrap().unwrap();
+    assert_eq!(foreign_client.presented.id, fixtures[0].0);
+    assert!(foreign_client.prepared_subject.is_none());
+
+    let after = cache_state(&pool).await;
+    assert_eq!(before.backend_pid, after.backend_pid);
+    assert_eq!((after.plain_count, after.prepared_count), (1, 1));
+    assert_eq!((after.plain_executions, after.prepared_executions), (8, 9));
+    assert!(after.parameter_types_match);
+    eprintln!(
+        "REFRESH_LOOKUP_CACHE same_backend=true statements=2 plain_executions=8 prepared_executions=9 parameter_types_match=true bind_isolation=true"
+    );
+    cleanup_seed(&url, tenant, &seed).await;
+}

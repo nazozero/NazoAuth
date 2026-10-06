@@ -696,26 +696,29 @@ fn require_contract(row: Option<RefreshContractRow>) -> diesel::QueryResult<Refr
     parse_contract(row.contract).map_err(deserialization_error)
 }
 
-/// Current presentation takes precedence over a spent proof in the same
-/// statement snapshot. LEFT JOIN keeps missing contracts observable. Family
-/// facts and the direct successor edge come from this statement, never a second
-/// pool checkout; no lock or authorization is implied by this read.
-async fn lookup_refresh_token(
-    connection: &mut AsyncPgConnection,
-    tenant_id: Uuid,
-    digest: &[u8],
-    profile_client_id: Option<Uuid>,
-) -> diesel::QueryResult<Option<RefreshPresentationRow>> {
-    // The plain path has no user/profile projection. The prepared path only
-    // joins a current same-client OIDC source; spent/recovery sources do not
-    // read profiles. Projection and principal epoch share this one MVCC read.
-    let projection = if profile_client_id.is_some() {
-        "CASE WHEN profile.id IS NULL THEN NULL::jsonb ELSE to_jsonb(profile) END"
-    } else {
-        "NULL::jsonb"
-    };
-    let profile_join = if profile_client_id.is_some() {
-        r#"
+const REFRESH_LOOKUP_PREFIX: &str = r#"WITH presentation AS (
+             SELECT tenant_id, token_family_id, 0 AS priority, NULL::bytea AS spent_digest, NULL::uuid AS spent_member_id, NULL::timestamptz AS spent_at, NULL::timestamptz AS spent_expires_at, NULL::uuid AS successor_member_id FROM oauth_refresh_families WHERE tenant_id = "#;
+
+const REFRESH_LOOKUP_AFTER_TENANT: &str = r#" AND current_token_blake3 = "#;
+
+const PLAIN_REFRESH_LOOKUP_SUFFIX: &str = r#"
+             UNION ALL SELECT tenant_id, token_family_id, 1, refresh_token_blake3, member_id, spent_at, expires_at, successor_member_id FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND refresh_token_blake3 = $2
+         ), selected AS (SELECT * FROM presentation ORDER BY priority LIMIT 1)
+         SELECT f.*, c.contract, p.spent_digest, p.spent_member_id, p.spent_at, p.spent_expires_at, p.successor_member_id, NULL::jsonb AS prepared_subject
+         FROM selected AS p
+         JOIN oauth_refresh_families AS f ON f.tenant_id = p.tenant_id AND f.token_family_id = p.token_family_id
+         LEFT JOIN oauth_refresh_contracts AS c ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 "#;
+
+const PREPARED_REFRESH_LOOKUP_BEFORE_CLIENT: &str = concat!(
+    r#"
+             UNION ALL SELECT tenant_id, token_family_id, 1, refresh_token_blake3, member_id, spent_at, expires_at, successor_member_id FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND refresh_token_blake3 = $2
+         ), selected AS (SELECT * FROM presentation ORDER BY priority LIMIT 1)
+         SELECT f.*, c.contract, p.spent_digest, p.spent_member_id, p.spent_at, p.spent_expires_at, p.successor_member_id, CASE WHEN profile.id IS NULL THEN NULL::jsonb ELSE to_jsonb(profile) END AS prepared_subject
+         FROM selected AS p
+         JOIN oauth_refresh_families AS f ON f.tenant_id = p.tenant_id AND f.token_family_id = p.token_family_id
+         LEFT JOIN oauth_refresh_contracts AS c ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3"#,
+    " ",
+    r#"
          LEFT JOIN LATERAL (
              SELECT u.id, u.tenant_id, u.realm_id, u.organization_id,
                     u.username, u.email, u.is_active, u.updated_at,
@@ -732,33 +735,107 @@ async fn lookup_refresh_token(
                           AND binding.subject = c.contract->>'subject'
                     ) ELSE NULL::uuid END AS bound_user
              FROM users AS u
-             WHERE p.spent_digest IS NULL AND f.client_id = $3
+             WHERE p.spent_digest IS NULL AND f.client_id = "#
+);
+
+const PREPARED_REFRESH_LOOKUP_AFTER_CLIENT: &str = r#"
                AND f.revoked_at IS NULL AND f.reuse_detected_at IS NULL
                AND f.current_expires_at > CURRENT_TIMESTAMP
                AND c.contract->'scopes' ? 'openid'
                AND u.tenant_id = f.tenant_id AND u.id = f.user_id
                AND u.is_active
-         ) AS profile ON true"#
-    } else {
-        ""
-    };
-    let query = sql_query(format!(r#"WITH presentation AS (
-             SELECT tenant_id, token_family_id, 0 AS priority, NULL::bytea AS spent_digest, NULL::uuid AS spent_member_id, NULL::timestamptz AS spent_at, NULL::timestamptz AS spent_expires_at, NULL::uuid AS successor_member_id FROM oauth_refresh_families WHERE tenant_id = $1 AND current_token_blake3 = $2
-             UNION ALL SELECT tenant_id, token_family_id, 1, refresh_token_blake3, member_id, spent_at, expires_at, successor_member_id FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND refresh_token_blake3 = $2
-         ), selected AS (SELECT * FROM presentation ORDER BY priority LIMIT 1)
-         SELECT f.*, c.contract, p.spent_digest, p.spent_member_id, p.spent_at, p.spent_expires_at, p.successor_member_id, {projection} AS prepared_subject
-         FROM selected AS p
-         JOIN oauth_refresh_families AS f ON f.tenant_id = p.tenant_id AND f.token_family_id = p.token_family_id
-         LEFT JOIN oauth_refresh_contracts AS c ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 {profile_join}"#))
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Binary, _>(digest);
+         ) AS profile ON true"#;
+
+// These two private query types have fixed SQL and distinct cache identities.
+// Only bound values vary; every execution still reads one fresh MVCC snapshot.
+// Raw SqlQuery disables statement caching even when its SQL text is constant.
+struct PlainRefreshLookup<'a> {
+    tenant_id: Uuid,
+    digest: &'a [u8],
+}
+
+impl diesel::query_builder::QueryId for PlainRefreshLookup<'_> {
+    type QueryId = PlainRefreshLookup<'static>;
+
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+
+impl diesel::query_builder::Query for PlainRefreshLookup<'_> {
+    type SqlType = sql_types::Untyped;
+}
+
+impl<Conn> diesel::RunQueryDsl<Conn> for PlainRefreshLookup<'_> {}
+
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PlainRefreshLookup<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql(REFRESH_LOOKUP_PREFIX);
+        out.push_bind_param::<sql_types::Uuid, _>(&self.tenant_id)?;
+        out.push_sql(REFRESH_LOOKUP_AFTER_TENANT);
+        out.push_bind_param::<sql_types::Binary, _>(self.digest)?;
+        out.push_sql(PLAIN_REFRESH_LOOKUP_SUFFIX);
+        Ok(())
+    }
+}
+
+struct PreparedRefreshLookup<'a> {
+    tenant_id: Uuid,
+    digest: &'a [u8],
+    client_id: Uuid,
+}
+
+impl diesel::query_builder::QueryId for PreparedRefreshLookup<'_> {
+    type QueryId = PreparedRefreshLookup<'static>;
+
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+
+impl diesel::query_builder::Query for PreparedRefreshLookup<'_> {
+    type SqlType = sql_types::Untyped;
+}
+
+impl<Conn> diesel::RunQueryDsl<Conn> for PreparedRefreshLookup<'_> {}
+
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PreparedRefreshLookup<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql(REFRESH_LOOKUP_PREFIX);
+        out.push_bind_param::<sql_types::Uuid, _>(&self.tenant_id)?;
+        out.push_sql(REFRESH_LOOKUP_AFTER_TENANT);
+        out.push_bind_param::<sql_types::Binary, _>(self.digest)?;
+        out.push_sql(PREPARED_REFRESH_LOOKUP_BEFORE_CLIENT);
+        out.push_bind_param::<sql_types::Uuid, _>(&self.client_id)?;
+        out.push_sql(PREPARED_REFRESH_LOOKUP_AFTER_CLIENT);
+        Ok(())
+    }
+}
+
+/// Current presentation takes precedence over a spent proof in the same
+/// statement snapshot. LEFT JOIN keeps missing contracts observable. Family
+/// facts and the direct successor edge come from this statement, never a second
+/// pool checkout; no lock or authorization is implied by this read.
+async fn lookup_refresh_token(
+    connection: &mut AsyncPgConnection,
+    tenant_id: Uuid,
+    digest: &[u8],
+    profile_client_id: Option<Uuid>,
+) -> diesel::QueryResult<Option<RefreshPresentationRow>> {
     let row = if let Some(client_id) = profile_client_id {
-        query
-            .bind::<sql_types::Uuid, _>(client_id)
+        PreparedRefreshLookup {
+            tenant_id,
+            digest,
+            client_id,
+        }
+        .get_result::<RefreshPresentationRow>(connection)
+        .await
+    } else {
+        PlainRefreshLookup { tenant_id, digest }
             .get_result::<RefreshPresentationRow>(connection)
             .await
-    } else {
-        query.get_result::<RefreshPresentationRow>(connection).await
     };
     row.optional()
 }
