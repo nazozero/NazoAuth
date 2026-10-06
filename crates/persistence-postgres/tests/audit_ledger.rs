@@ -1835,7 +1835,7 @@ struct FreshClaimGeneration {
 }
 
 impl FreshClaimCall {
-    async fn execute(
+    async fn invoke(
         &self,
         connection: &mut AsyncPgConnection,
     ) -> Result<FreshClaimGeneration, diesel::result::Error> {
@@ -2043,7 +2043,7 @@ async fn fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation() {
             .batch_execute("SAVEPOINT invalid_claim")
             .await
             .unwrap();
-        assert!(call.execute(&mut connection).await.is_err(), "{case}");
+        assert!(call.invoke(&mut connection).await.is_err(), "{case}");
         connection
             .batch_execute("ROLLBACK TO invalid_claim; RELEASE invalid_claim")
             .await
@@ -2162,7 +2162,7 @@ async fn fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation() {
         .batch_execute("UPDATE fresh_claim_fail SET fail = TRUE; SAVEPOINT failed_update")
         .await
         .unwrap();
-    assert!(base.execute(&mut connection).await.is_err());
+    assert!(base.invoke(&mut connection).await.is_err());
     connection
         .batch_execute(
             "ROLLBACK TO failed_update; RELEASE failed_update; \
@@ -2172,7 +2172,7 @@ async fn fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation() {
         .unwrap();
     assert_eq!(fresh_claim_snapshot(&mut connection).await, before);
 
-    let claimed = base.execute(&mut connection).await.unwrap();
+    let claimed = base.invoke(&mut connection).await.unwrap();
     let after = fresh_claim_snapshot(&mut connection).await;
     assert_eq!(after.contents["updates"], 1);
     assert_eq!(
@@ -2201,7 +2201,7 @@ async fn fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation() {
         .batch_execute("SAVEPOINT inflight")
         .await
         .unwrap();
-    assert!(inflight.execute(&mut connection).await.is_err());
+    assert!(inflight.invoke(&mut connection).await.is_err());
     connection
         .batch_execute("ROLLBACK TO inflight; RELEASE inflight")
         .await
