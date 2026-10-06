@@ -89,8 +89,13 @@ UUID, sequence zero, identical previous/event hashes, and Unix epoch time; it
 is a checkpoint, not a fabricated security event.
 
 The worker records its observation and every externally accepted checkpoint in the shared audit chain state. Event acknowledgement and checkpoint advancement are one database operation. In `AUDIT_ANCHOR_MODE=required`, high-impact management preflight requires a recent worker observation, a valid deployment checkpoint, and oldest pending event age within `AUDIT_ANCHOR_MAX_LAG_SECONDS`. A bounded backlog is allowed, including committed events not yet chained. With no backlog the checkpoint must equal the chain head; historical delivery latency does not keep a recovered deployment unavailable. An empty ledger records its signed, externally accepted genesis checkpoint before required mode becomes ready. No instance-local health file is used.
-A durable batch acknowledgement also refreshes the worker observation. Every
-successful background observation updates its timestamp from the database's
+A durable batch acknowledgement also refreshes the worker observation. After
+locking the chain head and validating the full batch, it samples the database's
+real clock once before mutation. Retained decision export time, checkpoint
+acceptance time and worker observation share this ACK operation timestamp; it
+does not represent the exact transaction commit time. An ACK delayed behind an
+observation therefore samples its time after that observation's lock is released.
+Every successful background observation updates its timestamp from the database's
 real clock, including idle polls after a recent acknowledgement. Required mode
 therefore supports a positive freshness limit shorter than the former 30-second
 write throttle, such as a 10-second limit with a 5-second healthy poll. Choose

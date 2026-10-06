@@ -9,6 +9,7 @@ use nazo_auth::{
     AuthorizationDecisionCommit, AuthorizationDecisionCommitResult as Outcome,
     AuthorizationDecisionKind as Kind, AuthorizationRepositoryPort,
 };
+use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{SecurityAuditBatchAck, SecurityAuditBatchClaim};
 use nazo_postgres::{
     AuditLedgerRepository, AuthorizationFlowRepository, DbPool, SecurityAuditEvent, create_pool,
@@ -26,6 +27,11 @@ const STATEMENT_TIMEOUT_UP: &str = include_str!(
 const STATEMENT_TIMEOUT_DOWN: &str = include_str!(
     "../../../migrations/20261001000200_authorization_decision_statement_timeout/down.sql"
 );
+
+const ACK_CLOCK_UP: &str =
+    include_str!("../../../migrations/20261006000100_audit_ack_observation_clock/up.sql");
+const ACK_CLOCK_DOWN: &str =
+    include_str!("../../../migrations/20261006000100_audit_ack_observation_clock/down.sql");
 
 #[test]
 fn decision_migration_has_independent_fences_and_safe_retention() {
@@ -1130,6 +1136,324 @@ async fn authorization_decision_waits_for_implicit_commit_ack() {
     drop(repository);
     drop(pool);
     drop(connection);
+    coordinator
+        .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
+        .await
+        .unwrap();
+}
+
+#[derive(QueryableByName)]
+struct AuditClockRow {
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    timestamp: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Eq, PartialEq, QueryableByName)]
+struct AuditAckFunctionIdentity {
+    #[diesel(sql_type = sql_types::BigInt)]
+    oid: i64,
+    #[diesel(sql_type = sql_types::BigInt)]
+    owner_oid: i64,
+    #[diesel(sql_type = sql_types::Text)]
+    acl: String,
+    #[diesel(sql_type = sql_types::Bool)]
+    security_definer: bool,
+    #[diesel(sql_type = sql_types::Text)]
+    settings: String,
+}
+
+async fn audit_ack_function_identity(
+    connection: &mut AsyncPgConnection,
+) -> AuditAckFunctionIdentity {
+    sql_query(
+        "SELECT oid::bigint AS oid, proowner::bigint AS owner_oid, \
+                COALESCE(proacl::text, '') AS acl, prosecdef AS security_definer, \
+                COALESCE(proconfig::text, '') AS settings \
+         FROM pg_proc WHERE oid = \
+           'public.nazo_ack_security_audit_batch(bigint,bigint,bigint,integer,bytea,bytea,text)'::regprocedure",
+    )
+    .get_result(connection)
+    .await
+    .unwrap()
+}
+
+#[derive(Debug, Eq, PartialEq, QueryableByName)]
+struct AuditContents {
+    #[diesel(sql_type = sql_types::Jsonb)]
+    contents: serde_json::Value,
+}
+
+async fn audit_ack_contents(connection: &mut AsyncPgConnection) -> AuditContents {
+    sql_query(
+        "SELECT jsonb_build_object( \
+           'state', to_jsonb(state), \
+           'events', (SELECT jsonb_agg(to_jsonb(event) ORDER BY event.event_id) \
+                      FROM public.security_audit_events AS event), \
+           'chain', (SELECT jsonb_agg(to_jsonb(chain) ORDER BY chain.sequence) \
+                     FROM public.security_audit_chain_entries AS chain)) AS contents \
+         FROM public.security_audit_chain_state AS state WHERE singleton",
+    )
+    .get_result(connection)
+    .await
+    .unwrap()
+}
+
+async fn retained_decision_contents(
+    connection: &mut AsyncPgConnection,
+    event_id: Uuid,
+) -> AuditContents {
+    sql_query(
+        "SELECT to_jsonb(event) - 'exported_at' AS contents \
+         FROM public.security_audit_events AS event WHERE event_id = $1",
+    )
+    .bind::<sql_types::Uuid, _>(event_id)
+    .get_result(connection)
+    .await
+    .unwrap()
+}
+
+/// The ACK connection must actually wait for this connection's head-row lock.
+/// Refresh statistics inside the open transaction; no sleep guesses its start.
+async fn wait_for_audit_ack_barrier(
+    connection: &mut AsyncPgConnection,
+    application: &str,
+) -> chrono::DateTime<Utc> {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            connection
+                .batch_execute("SELECT pg_stat_clear_snapshot()")
+                .await
+                .unwrap();
+            let waiting = sql_query(
+                "SELECT activity.xact_start AS timestamp FROM pg_stat_activity AS activity \
+                 WHERE activity.application_name = $1 \
+                   AND activity.datname = current_database() \
+                   AND activity.wait_event_type = 'Lock' \
+                   AND pg_backend_pid() = ANY(pg_blocking_pids(activity.pid))",
+            )
+            .bind::<sql_types::Text, _>(application)
+            .load::<AuditClockRow>(connection)
+            .await
+            .unwrap();
+            if let [waiting] = waiting.as_slice() {
+                return waiting.timestamp;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("ACK should reach the head-row barrier held by this connection")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn audit_ack_samples_time_after_blocked_head_validation() {
+    let Some(base_url) = database_url() else {
+        return;
+    };
+    let name = format!("audit_ack_clock_{}", Uuid::now_v7().simple());
+    let mut coordinator = AsyncPgConnection::establish(&base_url).await.unwrap();
+    coordinator
+        .batch_execute(&format!("CREATE DATABASE \"{name}\""))
+        .await
+        .unwrap();
+    let mut isolated = url::Url::parse(&base_url).unwrap();
+    isolated.set_path(&format!("/{name}"));
+    let url = isolated.to_string();
+    nazo_postgres::run_pending_migrations(&url).await.unwrap();
+    let pool = create_pool(url.clone(), 4).unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let fixture = fixture(&mut connection).await;
+    let repository = AuthorizationFlowRepository::new(pool.clone(), fixture.tenant_id);
+    let audit = AuditLedgerRepository::new(pool.clone());
+    let initial = audit.anchor_health().await.unwrap();
+    audit
+        .record_genesis("decision-test", &initial.head_hash)
+        .await
+        .unwrap();
+    let identity = audit_ack_function_identity(&mut connection).await;
+
+    // The down definition is a negative control, not a second ACK implementation.
+    // It must reproduce the freshness invariant failure before the up definition passes.
+    for (definition, fixed) in [(ACK_CLOCK_DOWN, false), (ACK_CLOCK_UP, true)] {
+        connection.batch_execute(definition).await.unwrap();
+        assert_eq!(audit_ack_function_identity(&mut connection).await, identity);
+        let retained = decision(&fixture, Kind::Approve);
+        assert_eq!(
+            repository.commit_decision(retained.clone()).await.unwrap(),
+            Outcome::Committed
+        );
+        let immutable = retained_decision_contents(&mut connection, retained.event_id).await;
+        let grants = grant_count(&mut connection, &fixture).await;
+        let ordinary = SecurityAuditEvent {
+            event_id: Uuid::now_v7(),
+            event_type: "decision_ack_clock_test".to_owned(),
+            event_category: "authorization".to_owned(),
+            payload: json!({"schema_version": "nazo.audit.v1"}),
+            occurred_at: Utc::now(),
+        };
+        audit.append(ordinary.clone()).await.unwrap();
+        let batch = match audit
+            .claim_batch("decision-test", 256, 1024 * 1024, 60)
+            .await
+            .unwrap()
+        {
+            SecurityAuditBatchClaim::Claimed(batch) => batch,
+            other => panic!("expected the decision and ordinary event batch, got {other:?}"),
+        };
+        assert_eq!(batch.event_count(), 2);
+        assert!(
+            batch
+                .deliveries
+                .iter()
+                .any(|event| event.event_id == retained.event_id)
+        );
+        assert!(
+            batch
+                .deliveries
+                .iter()
+                .any(|event| event.event_id == ordinary.event_id)
+        );
+        let ack = SecurityAuditBatchAck {
+            generation: batch.generation,
+            deployment_id: "decision-test".to_owned(),
+            first_sequence: batch.first_sequence,
+            last_sequence: batch.last_sequence,
+            event_count: batch.event_count(),
+            last_hash: batch.last_hash.clone(),
+            batch_digest: batch.digest.clone(),
+        };
+        let before = audit_ack_contents(&mut connection).await;
+        let mut wrong_generation = ack.clone();
+        wrong_generation.generation += 1;
+        let mut wrong_digest = ack.clone();
+        wrong_digest.batch_digest[0] ^= 1;
+        let mut wrong_deployment = ack.clone();
+        wrong_deployment.deployment_id = "other-deployment".to_owned();
+        for rejected in [wrong_generation, wrong_digest, wrong_deployment] {
+            assert!(matches!(
+                audit.ack_batch(rejected).await,
+                Err(RepositoryError::Consistency(_))
+            ));
+            assert_eq!(audit_ack_contents(&mut connection).await, before);
+        }
+
+        let application = format!("audit_ack_barrier_{}", Uuid::now_v7().simple());
+        let mut ack_url = isolated.clone();
+        ack_url
+            .query_pairs_mut()
+            .append_pair("application_name", &application);
+        let ack_pool = create_pool(ack_url.to_string(), 1).unwrap();
+        let ack_audit = AuditLedgerRepository::new(ack_pool.clone());
+        connection
+            .batch_execute("BEGIN; SELECT singleton FROM public.security_audit_chain_state WHERE singleton FOR UPDATE")
+            .await
+            .unwrap();
+        let mut pending = tokio::spawn(async move { ack_audit.ack_batch(ack).await });
+        let started = tokio::select! {
+            biased;
+            result = &mut pending => panic!("ACK returned before releasing its head-row barrier: {result:?}"),
+            started = wait_for_audit_ack_barrier(&mut connection, &application) => started,
+        };
+        connection
+            .batch_execute("SELECT public.nazo_observe_security_audit_anchor('decision-test')")
+            .await
+            .unwrap();
+        let observation = sql_query(
+            "SELECT anchor_observed_at AS timestamp FROM public.security_audit_chain_state WHERE singleton",
+        )
+        .get_result::<AuditClockRow>(&mut connection)
+        .await
+        .unwrap()
+        .timestamp;
+        assert!(
+            observation > started,
+            "the observation must occur after ACK's transaction began"
+        );
+        assert!(!pending.is_finished());
+        connection.batch_execute("COMMIT").await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), pending)
+            .await
+            .expect("ACK should finish after the head barrier is released")
+            .unwrap()
+            .unwrap();
+        drop(ack_pool);
+
+        let exported = sql_query(
+            "SELECT exported_at AS timestamp FROM public.security_audit_events WHERE event_id = $1",
+        )
+        .bind::<sql_types::Uuid, _>(retained.event_id)
+        .get_result::<AuditClockRow>(&mut connection)
+        .await
+        .unwrap()
+        .timestamp;
+        let health = audit.anchor_health().await.unwrap();
+        assert_eq!(health.last_exported_at, Some(exported));
+        assert_eq!(health.observed_at, Some(exported));
+        if fixed {
+            assert!(
+                exported >= observation,
+                "ACK must not overwrite a newer locked observation with its transaction start"
+            );
+        } else {
+            assert_eq!(
+                exported, started,
+                "the down definition uses transaction start"
+            );
+            assert!(
+                exported < observation,
+                "the down definition must reproduce the old freshness failure"
+            );
+            eprintln!("legacy ACK negative control: freshness invariant FAIL (expected)");
+        }
+        eprintln!(
+            "audit ACK clock control={} barrier=pg_blocking_pids started={} observation={} exported={} accepted={} observed={}",
+            if fixed { "up" } else { "down" },
+            started,
+            observation,
+            exported,
+            health.last_exported_at.unwrap(),
+            health.observed_at.unwrap(),
+        );
+        assert_eq!(health.last_exported_sequence, Some(batch.last_sequence));
+        assert_eq!(health.last_exported_hash, Some(batch.last_hash.clone()));
+        assert_eq!(
+            health.last_exported_occurred_at,
+            Some(batch.deliveries.last().unwrap().occurred_at)
+        );
+        assert_eq!(health.head_sequence, batch.last_sequence);
+        assert_eq!(health.head_hash, batch.last_hash);
+        assert_eq!(health.deployment_id.as_deref(), Some("decision-test"));
+        assert!(!health.pending_exists && !health.pending_orphan_exists);
+        assert!(health.batch.is_none());
+        assert_eq!(fact_count(&mut connection, ordinary.event_id).await, 0);
+        assert_eq!(fact_count(&mut connection, retained.event_id).await, 1);
+        assert_eq!(
+            retained_decision_contents(&mut connection, retained.event_id).await,
+            immutable
+        );
+        assert_eq!(
+            sql_query("SELECT COUNT(*)::bigint AS count FROM public.security_audit_chain_entries")
+                .get_result::<CountRow>(&mut connection)
+                .await
+                .unwrap()
+                .count,
+            0
+        );
+        assert_eq!(
+            cleanup(&mut connection).await,
+            0,
+            "export must not expire the business fence"
+        );
+        assert_eq!(
+            repository.commit_decision(retained).await.unwrap(),
+            Outcome::Conflict
+        );
+        assert_eq!(grant_count(&mut connection, &fixture).await, grants);
+    }
+    drop(repository);
+    drop(audit);
+    drop(connection);
+    drop(pool);
     coordinator
         .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
         .await
