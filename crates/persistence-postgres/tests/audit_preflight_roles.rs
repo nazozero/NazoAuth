@@ -12,11 +12,15 @@ const DOWN: &str =
 const PREFLIGHT: &str =
     "public.nazo_security_audit_shared_privilege_preflight(boolean,boolean,boolean)";
 const APPEND: &str = "public.nazo_persist_security_audit_event(uuid,text,text,jsonb,timestamptz)";
-const EXPORT_FUNCTIONS: [&str; 11] = [
+const FINALIZE: &str = "public.nazo_finalize_security_audit_claim(bigint,bytea,uuid[],bytea[],bigint,bigint,integer,bytea,integer)";
+const STAGE: &str = "public.nazo_stage_security_audit_chain(bigint,bytea,uuid[],bytea[])";
+const INVALID_FINALIZE: &str = "SELECT public.nazo_finalize_security_audit_claim(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL)";
+const EXPORT_FUNCTIONS: [&str; 12] = [
     "public.nazo_security_audit_chain_head_for_update()",
     "public.nazo_security_audit_batch_members()",
     "public.nazo_claim_security_audit_pending(bigint)",
     "public.nazo_open_security_audit_batch(bigint,bigint,integer,bytea,integer)",
+    FINALIZE,
     "public.nazo_reclaim_security_audit_batch(bytea,integer)",
     "public.nazo_append_security_audit_chain(bigint,bytea,uuid[],bytea[])",
     "public.nazo_ack_security_audit_batch(bigint,bigint,bigint,integer,bytea,bytea,text)",
@@ -52,13 +56,14 @@ struct FunctionIdentity {
     settings: String,
 }
 
-async fn identity(connection: &mut AsyncPgConnection) -> FunctionIdentity {
-    sql_query(format!(
+async fn identity(connection: &mut AsyncPgConnection, function: &str) -> FunctionIdentity {
+    sql_query(
         "SELECT oid::bigint AS oid, proowner::bigint AS owner_oid,
                 COALESCE(proacl::text, '') AS acl, prosecdef AS security_definer,
                 COALESCE(proconfig::text, '') AS settings
-         FROM pg_proc WHERE oid = '{PREFLIGHT}'::regprocedure"
-    ))
+         FROM pg_proc WHERE oid = $1::regprocedure",
+    )
+    .bind::<Text, _>(function)
     .get_result(connection)
     .await
     .unwrap()
@@ -102,6 +107,7 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
     let c = format!("audit_c_{tag}");
     let d = format!("audit_d_{tag}");
     let table_owner = format!("audit_owner_{tag}");
+    let append_owner = format!("audit_append_owner_{tag}");
     let super_role = format!("audit_super_{tag}");
 
     let mut admin = AsyncPgConnection::establish(&base).await.unwrap();
@@ -133,6 +139,7 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
          CREATE ROLE {c} NOLOGIN NOSUPERUSER NOINHERIT;
          CREATE ROLE {d} NOLOGIN NOSUPERUSER NOINHERIT;
          CREATE ROLE {table_owner} NOLOGIN NOSUPERUSER NOINHERIT;
+         CREATE ROLE {append_owner} NOLOGIN NOSUPERUSER NOINHERIT;
          CREATE ROLE {super_role} NOLOGIN SUPERUSER NOINHERIT;
          GRANT CONNECT ON DATABASE {database} TO {login};
          GRANT USAGE ON SCHEMA public TO {login};
@@ -140,6 +147,82 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
         ))
         .await
         .unwrap();
+
+    // Only holders of both legacy capabilities gain the fused API on upgrade.
+    owner
+        .batch_execute(include_str!(
+            "../../../migrations/20261006000200_audit_fresh_claim_finalization/down.sql"
+        ))
+        .await
+        .unwrap();
+    owner
+        .batch_execute(&format!(
+            "GRANT USAGE, CREATE ON SCHEMA public TO {append_owner}; \
+             GRANT SELECT, UPDATE ON public.security_audit_chain_state, \
+                 public.security_audit_events TO {append_owner}; \
+             GRANT SELECT, INSERT ON public.security_audit_chain_entries TO {append_owner}; \
+             ALTER FUNCTION {} OWNER TO {append_owner}; \
+             GRANT EXECUTE ON FUNCTION {} TO {a}, {c}; \
+             GRANT EXECUTE ON FUNCTION {} TO {b}, {c}; \
+             ALTER DEFAULT PRIVILEGES GRANT EXECUTE ON FUNCTIONS TO {login}; \
+             ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO {login};",
+            EXPORT_FUNCTIONS[6], EXPORT_FUNCTIONS[6], EXPORT_FUNCTIONS[3]
+        ))
+        .await
+        .unwrap();
+    let upgrade_identity = identity(&mut owner, PREFLIGHT).await;
+    let append_identity = identity(&mut owner, EXPORT_FUNCTIONS[6]).await;
+    let migration_owner =
+        sql_query("SELECT oid::bigint AS value FROM pg_roles WHERE rolname = current_user")
+            .get_result::<Number>(&mut owner)
+            .await
+            .unwrap();
+    assert_ne!(
+        append_identity.owner_oid, migration_owner.value,
+        "legacy append definer must differ from the migration actor"
+    );
+    owner
+        .batch_execute(include_str!(
+            "../../../migrations/20261006000200_audit_fresh_claim_finalization/up.sql"
+        ))
+        .await
+        .unwrap();
+    assert_eq!(identity(&mut owner, PREFLIGHT).await, upgrade_identity);
+    assert_eq!(
+        identity(&mut owner, EXPORT_FUNCTIONS[6]).await,
+        append_identity,
+        "upgrade must preserve a different legacy append owner's ACL and identity"
+    );
+    owner
+        .batch_execute(&format!(
+            "ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM {login}; \
+             ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM {login};"
+        ))
+        .await
+        .unwrap();
+    for (role, expected) in [(&a, false), (&b, false), (&c, true)] {
+        let allowed = sql_query(format!(
+            "SELECT has_function_privilege('{role}', '{FINALIZE}', 'EXECUTE') AS value"
+        ))
+        .get_result::<Allowed>(&mut owner)
+        .await
+        .unwrap();
+        assert_eq!(allowed.value, expected, "legacy capability intersection");
+    }
+    let public_denied = sql_query(format!(
+        "SELECT NOT EXISTS (\
+             SELECT 1 FROM pg_proc AS proc, \
+                  LATERAL aclexplode(COALESCE(proc.proacl, acldefault('f', proc.proowner))) AS acl \
+             WHERE proc.oid IN ('{FINALIZE}'::regprocedure, '{STAGE}'::regprocedure) \
+               AND acl.grantee = 0 AND acl.privilege_type = 'EXECUTE') AS value"
+    ))
+    .get_result::<Allowed>(&mut owner)
+    .await
+    .unwrap();
+    assert!(
+        public_denied.value,
+        "new functions must not grant PUBLIC execute"
+    );
 
     // Authenticate a new connection as the runtime LOGIN. SET ROLE on the
     // administrator would leave its session_user and exercise another policy.
@@ -186,6 +269,21 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
         .await
         .unwrap();
     policy(&mut runtime, true, true, false, true, "writer API granted").await;
+    for function in [FINALIZE, STAGE] {
+        let denied = sql_query(format!(
+            "SELECT NOT has_function_privilege(current_user, '{function}', 'EXECUTE') AS value"
+        ))
+        .get_result::<Allowed>(&mut runtime)
+        .await
+        .unwrap();
+        assert!(denied.value, "writer must not execute {function}");
+    }
+    let writer_error = sql_query(INVALID_FINALIZE)
+        .execute(&mut runtime)
+        .await
+        .expect_err("writer must be denied the finalizer");
+    assert!(writer_error.to_string().contains("permission denied"));
+
     owner
         .batch_execute(&format!("REVOKE EXECUTE ON FUNCTION {APPEND} FROM {login}"))
         .await
@@ -214,26 +312,105 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
         "all exporter APIs granted",
     )
     .await;
-    let one_export = EXPORT_FUNCTIONS[3];
-    owner
-        .batch_execute(&format!(
-            "REVOKE EXECUTE ON FUNCTION {one_export} FROM {login}"
-        ))
+    // A real NOSUPERUSER/NOINHERIT exporter has no table access. Exercise
+    // both legacy append under its different definer and a true fresh claim.
+    let repository = nazo_postgres::AuditLedgerRepository::new(
+        nazo_postgres::create_pool(runtime_url.as_str().to_owned(), 2).unwrap(),
+    );
+    repository.check_exporter_available().await.unwrap();
+    for legacy_append in [true, false] {
+        let head = repository.anchor_health().await.unwrap();
+        let event_id = Uuid::now_v7();
+        let occurred_at = chrono::DateTime::from_timestamp(1700000000, 0).unwrap();
+        sql_query(
+            "SELECT public.nazo_persist_security_audit_event(\
+                $1, 'token_issued', 'token_lifecycle', '{}'::jsonb, $2)",
+        )
+        .bind::<diesel::sql_types::Uuid, _>(event_id)
+        .bind::<diesel::sql_types::Timestamptz, _>(occurred_at)
+        .execute(&mut owner)
         .await
         .unwrap();
-    policy(
-        &mut runtime,
-        false,
-        false,
-        true,
-        false,
-        "one missing exporter API",
-    )
-    .await;
+        if legacy_append {
+            let hash = nazo_persistence::audit_chain::security_audit_event_hash(
+                head.head_sequence + 1,
+                &head.head_hash,
+                event_id,
+                "token_issued",
+                "token_lifecycle",
+                occurred_at,
+                b"{}",
+            )
+            .to_vec();
+            sql_query("SELECT public.nazo_append_security_audit_chain($1,$2,$3,$4)")
+                .bind::<diesel::sql_types::BigInt, _>(head.head_sequence)
+                .bind::<diesel::sql_types::Binary, _>(&head.head_hash)
+                .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(vec![event_id])
+                .bind::<diesel::sql_types::Array<diesel::sql_types::Binary>, _>(vec![hash])
+                .execute(&mut runtime)
+                .await
+                .unwrap();
+        }
+        let nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) = repository
+            .claim_batch("role-fixture", 1, 128 * 1024, 60)
+            .await
+            .unwrap()
+        else {
+            panic!("restricted exporter must successfully finalize the pending event")
+        };
+        assert_eq!(batch.event_count(), 1);
+        assert_eq!(batch.deliveries[0].event_id, event_id);
+        assert_eq!(batch.first_sequence, head.head_sequence + 1);
+        repository
+            .ack_batch(nazo_persistence::SecurityAuditBatchAck {
+                generation: batch.generation,
+                deployment_id: "role-fixture".into(),
+                first_sequence: batch.first_sequence,
+                last_sequence: batch.last_sequence,
+                event_count: batch.event_count(),
+                last_hash: batch.last_hash,
+                batch_digest: batch.digest,
+            })
+            .await
+            .unwrap();
+    }
+    drop(repository);
+
+    let exporter_error = sql_query(INVALID_FINALIZE)
+        .execute(&mut runtime)
+        .await
+        .expect_err("invalid arguments must reach the granted exporter function");
+    assert!(
+        exporter_error
+            .to_string()
+            .contains("audit batch open arguments are invalid")
+    );
+    for one_export in [EXPORT_FUNCTIONS[3], FINALIZE] {
+        owner
+            .batch_execute(&format!(
+                "REVOKE EXECUTE ON FUNCTION {one_export} FROM {login}"
+            ))
+            .await
+            .unwrap();
+        policy(
+            &mut runtime,
+            false,
+            false,
+            true,
+            false,
+            "legacy or fused exporter execute missing",
+        )
+        .await;
+        owner
+            .batch_execute(&format!(
+                "GRANT EXECUTE ON FUNCTION {one_export} TO {login}"
+            ))
+            .await
+            .unwrap();
+    }
     owner
         .batch_execute(&format!(
-            "GRANT EXECUTE ON FUNCTION {one_export} TO {login};
-         REVOKE EXECUTE ON FUNCTION {exports} FROM {login};"
+            "REVOKE EXECUTE ON FUNCTION {exports} FROM {login}"
         ))
         .await
         .unwrap();
@@ -246,11 +423,11 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
         ))
         .await
         .unwrap();
-    let before = identity(&mut owner).await;
+    let before = identity(&mut owner, PREFLIGHT).await;
     assert!(before.security_definer);
     owner.batch_execute(DOWN).await.unwrap();
     assert_eq!(
-        identity(&mut owner).await,
+        identity(&mut owner, PREFLIGHT).await,
         before,
         "down preserves owner, ACL and OID"
     );
@@ -265,7 +442,7 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
     .await;
     owner.batch_execute(UP).await.unwrap();
     assert_eq!(
-        identity(&mut owner).await,
+        identity(&mut owner, PREFLIGHT).await,
         before,
         "up preserves owner, ACL, OID and search path"
     );
@@ -563,10 +740,45 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
     )
     .await;
     assert_eq!(
-        identity(&mut owner).await,
+        identity(&mut owner, PREFLIGHT).await,
         before,
         "role changes never alter function identity"
     );
+
+    // Deliberately leave accidental new grants behind, then exercise the
+    // actual writer reconfiguration rather than merely inspecting its SQL.
+    owner
+        .batch_execute(&format!(
+            "GRANT EXECUTE ON FUNCTION {FINALIZE}, {STAGE} TO {login}"
+        ))
+        .await
+        .unwrap();
+    nazo_postgres::configure_runtime_role(owner_url.as_str(), &login)
+        .await
+        .unwrap();
+    for function in [FINALIZE, STAGE] {
+        let denied = sql_query(format!(
+            "SELECT NOT has_function_privilege(current_user, '{function}', 'EXECUTE') AS value"
+        ))
+        .get_result::<Allowed>(&mut runtime)
+        .await
+        .unwrap();
+        assert!(denied.value, "writer reconfigure must revoke {function}");
+    }
+    policy(
+        &mut runtime,
+        true,
+        true,
+        false,
+        true,
+        "writer remains usable",
+    )
+    .await;
+    let writer_error = sql_query(INVALID_FINALIZE)
+        .execute(&mut runtime)
+        .await
+        .expect_err("reconfigured writer must lose finalizer access");
+    assert!(writer_error.to_string().contains("permission denied"));
 
     drop(runtime);
     drop(owner);
@@ -578,7 +790,7 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
         .unwrap();
     admin
         .batch_execute(&format!(
-            "DROP ROLE {login}, {a}, {b}, {c}, {d}, {table_owner}, {super_role}"
+            "DROP ROLE {login}, {a}, {b}, {c}, {d}, {table_owner}, {append_owner}, {super_role}"
         ))
         .await
         .unwrap();

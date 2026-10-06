@@ -859,12 +859,31 @@ async fn verify_audit_lifetime(
     assert!(
         sql_query("SELECT public.nazo_append_security_audit_chain($1,$2,$3,$4)")
             .bind::<sql_types::BigInt, _>(health.head_sequence)
-            .bind::<sql_types::Binary, _>(health.head_hash)
+            .bind::<sql_types::Binary, _>(&health.head_hash)
             .bind::<sql_types::Array<sql_types::Uuid>, _>(vec![retained.event_id])
             .bind::<sql_types::Array<sql_types::Binary>, _>(vec![vec![7_u8; 32]])
             .execute(connection)
             .await
             .is_err()
+    );
+    // The fused fresh-claim API shares that exported-event guard.
+    assert!(
+        sql_query(
+            "SELECT public.nazo_finalize_security_audit_claim(\
+                $1,$2,$3,$4,$5,$6,$7,$8,$9)",
+        )
+        .bind::<sql_types::BigInt, _>(health.head_sequence)
+        .bind::<sql_types::Binary, _>(&health.head_hash)
+        .bind::<sql_types::Array<sql_types::Uuid>, _>(vec![retained.event_id])
+        .bind::<sql_types::Array<sql_types::Binary>, _>(vec![vec![7_u8; 32]])
+        .bind::<sql_types::BigInt, _>(health.head_sequence + 1)
+        .bind::<sql_types::BigInt, _>(health.head_sequence + 1)
+        .bind::<sql_types::Integer, _>(1)
+        .bind::<sql_types::Binary, _>(vec![8_u8; 32])
+        .bind::<sql_types::Integer, _>(30)
+        .execute(connection)
+        .await
+        .is_err()
     );
     connection
         .batch_execute("SET nazo.audit_ack = 'on'; SET nazo.audit_reclaim = 'on'")

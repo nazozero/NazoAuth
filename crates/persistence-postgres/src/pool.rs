@@ -243,9 +243,11 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_cleanup_authorization_decisions(), \
                          public.nazo_access_request_required_approval_matches(UUID, UUID, UUID, UUID, TEXT, TEXT), \
                          public.nazo_append_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
+                         public.nazo_stage_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
                          public.nazo_security_audit_batch_members(), \
                          public.nazo_claim_security_audit_pending(BIGINT), \
                          public.nazo_open_security_audit_batch(BIGINT, BIGINT, INTEGER, BYTEA, INTEGER), \
+                         public.nazo_finalize_security_audit_claim(BIGINT, BYTEA, UUID[], BYTEA[], BIGINT, BIGINT, INTEGER, BYTEA, INTEGER), \
                          public.nazo_reclaim_security_audit_batch(BYTEA, INTEGER), \
                          public.nazo_ack_security_audit_batch(BIGINT, BIGINT, BIGINT, INTEGER, BYTEA, BYTEA, TEXT), \
                          public.nazo_fail_security_audit_batch(BIGINT, TIMESTAMPTZ, TEXT, BOOLEAN), \

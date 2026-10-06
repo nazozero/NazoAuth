@@ -59,7 +59,13 @@ TO nazoauth_audit_writer;
 
 The exporter chains committed events, holds the single batch lease, and
 acknowledges delivered batches atomically with the checkpoint. It cannot
-create raw events:
+create raw events. Fresh claims finalize chain assignment and the lease in one
+head update; legacy append/open functions remain available. The internal
+invoker-only proof helper is not granted to runtime roles. The fresh-claim
+migration removes all non-owner creation-time grants on both new functions,
+including grants inherited from ALTER DEFAULT PRIVILEGES, before granting
+the finalizer to holders of both legacy append and open capabilities. Roles
+created later need the explicit exporter grants below:
 
 ```sql
 GRANT EXECUTE ON FUNCTION
@@ -68,6 +74,7 @@ GRANT EXECUTE ON FUNCTION
     public.nazo_security_audit_batch_members(),
     public.nazo_claim_security_audit_pending(bigint),
     public.nazo_open_security_audit_batch(bigint, bigint, integer, bytea, integer),
+    public.nazo_finalize_security_audit_claim(bigint, bytea, uuid[], bytea[], bigint, bigint, integer, bytea, integer),
     public.nazo_reclaim_security_audit_batch(bytea, integer),
     public.nazo_append_security_audit_chain(bigint, bytea, uuid[], bytea[]),
     public.nazo_ack_security_audit_batch(bigint, bigint, bigint, integer, bytea, bytea, text),

@@ -1814,3 +1814,540 @@ async fn new_claim_budget_exact_multi_event_fit_and_one_byte_overflow_have_no_ch
         repository.ack_batch(batch_ack(&next)).await.unwrap();
     }
 }
+
+#[derive(Clone)]
+struct FreshClaimCall {
+    previous_sequence: Option<i64>,
+    previous_hash: Option<Vec<u8>>,
+    event_ids: Option<Vec<Uuid>>,
+    event_hashes: Option<Vec<Vec<u8>>>,
+    first_sequence: Option<i64>,
+    last_sequence: Option<i64>,
+    event_count: Option<i32>,
+    digest: Option<Vec<u8>>,
+    timeout: Option<i32>,
+}
+
+#[derive(QueryableByName)]
+struct FreshClaimGeneration {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    generation: i64,
+}
+
+impl FreshClaimCall {
+    async fn execute(
+        &self,
+        connection: &mut AsyncPgConnection,
+    ) -> Result<FreshClaimGeneration, diesel::result::Error> {
+        use diesel::sql_types::{Array, BigInt, Binary, Integer, Nullable};
+        sql_query(
+            "SELECT public.nazo_finalize_security_audit_claim(\
+                $1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        )
+        .bind::<Nullable<BigInt>, _>(self.previous_sequence)
+        .bind::<Nullable<Binary>, _>(self.previous_hash.clone())
+        .bind::<Nullable<Array<SqlUuid>>, _>(self.event_ids.clone())
+        .bind::<Nullable<Array<Binary>>, _>(self.event_hashes.clone())
+        .bind::<Nullable<BigInt>, _>(self.first_sequence)
+        .bind::<Nullable<BigInt>, _>(self.last_sequence)
+        .bind::<Nullable<Integer>, _>(self.event_count)
+        .bind::<Nullable<Binary>, _>(self.digest.clone())
+        .bind::<Nullable<Integer>, _>(self.timeout)
+        .get_result(connection)
+        .await
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, QueryableByName)]
+struct FreshClaimSnapshot {
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    contents: serde_json::Value,
+}
+
+async fn fresh_claim_snapshot(connection: &mut AsyncPgConnection) -> FreshClaimSnapshot {
+    sql_query(
+        "SELECT jsonb_build_object(\
+            'head', to_jsonb(state), \
+            'proofs', (SELECT jsonb_agg(to_jsonb(chain) ORDER BY chain.sequence) \
+                       FROM public.security_audit_chain_entries AS chain), \
+            'events', (SELECT jsonb_agg(to_jsonb(event) ORDER BY event.event_id) \
+                       FROM public.security_audit_events AS event), \
+            'updates', (SELECT count(*) FROM pg_temp.fresh_claim_updates)) AS contents \
+         FROM public.security_audit_chain_state AS state WHERE singleton",
+    )
+    .get_result(connection)
+    .await
+    .unwrap()
+}
+
+async fn legacy_claim_identities(connection: &mut AsyncPgConnection) -> FreshClaimSnapshot {
+    sql_query(
+        "SELECT jsonb_agg(jsonb_build_object(\
+            'oid', proc.oid, 'owner', proc.proowner, 'acl', proc.proacl, \
+            'definer', proc.prosecdef, 'settings', proc.proconfig, \
+            'unchanged_body', CASE WHEN proc.proname IN (\
+                'nazo_open_security_audit_batch', 'nazo_ack_security_audit_batch', \
+                'nazo_observe_security_audit_anchor') THEN pg_get_functiondef(proc.oid) END) \
+            ORDER BY proc.oid) AS contents \
+         FROM pg_proc AS proc JOIN pg_namespace AS namespace ON namespace.oid = proc.pronamespace \
+         WHERE namespace.nspname = 'public' AND proc.proname IN (\
+             'nazo_append_security_audit_chain', 'nazo_open_security_audit_batch', \
+             'nazo_ack_security_audit_batch', 'nazo_observe_security_audit_anchor', \
+             'nazo_security_audit_shared_privilege_preflight')",
+    )
+    .get_result(connection)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(url) = database_url() else { return };
+    run_pending_migrations(&url).await.unwrap();
+    let repository = AuditLedgerRepository::new(create_pool(url.clone(), 2).unwrap());
+    drain_pending(&repository).await;
+    let head = repository.anchor_health().await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    connection.batch_execute("BEGIN").await.unwrap();
+
+    // Keep legacy identity/ACL and the newest lock-relative ACK clock/observer.
+    let identities = legacy_claim_identities(&mut connection).await;
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261006000200_audit_fresh_claim_finalization/down.sql"
+        ))
+        .await
+        .unwrap();
+    assert_eq!(legacy_claim_identities(&mut connection).await, identities);
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261006000200_audit_fresh_claim_finalization/up.sql"
+        ))
+        .await
+        .unwrap();
+    assert_eq!(legacy_claim_identities(&mut connection).await, identities);
+    connection
+        .batch_execute(
+            "CREATE TEMP TABLE fresh_claim_updates (updated BOOLEAN); \
+             CREATE TEMP TABLE fresh_claim_fail (fail BOOLEAN); \
+             INSERT INTO fresh_claim_fail VALUES (FALSE); \
+             CREATE FUNCTION pg_temp.count_fresh_claim_update() RETURNS TRIGGER \
+             LANGUAGE plpgsql AS $$ BEGIN \
+                 INSERT INTO pg_temp.fresh_claim_updates VALUES (TRUE); \
+                 IF (SELECT fail FROM pg_temp.fresh_claim_fail) THEN \
+                     RAISE EXCEPTION 'injected failure after final head update'; \
+                 END IF; \
+                 RETURN NEW; \
+             END $$; \
+             CREATE TRIGGER count_fresh_claim_update AFTER UPDATE \
+             ON public.security_audit_chain_state \
+             FOR EACH ROW EXECUTE FUNCTION pg_temp.count_fresh_claim_update();",
+        )
+        .await
+        .unwrap();
+    let ids = [Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()];
+    for id in ids {
+        sql_query(
+            "SELECT public.nazo_persist_security_audit_event(\
+                $1, 'fresh_claim_fixture', 'security', '{}'::jsonb, CURRENT_TIMESTAMP)",
+        )
+        .bind::<SqlUuid, _>(id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    let base = FreshClaimCall {
+        previous_sequence: Some(head.head_sequence),
+        previous_hash: Some(head.head_hash.clone()),
+        event_ids: Some(ids[..2].to_vec()),
+        event_hashes: Some(vec![vec![11_u8; 32], vec![12_u8; 32]]),
+        first_sequence: Some(head.head_sequence + 1),
+        last_sequence: Some(head.head_sequence + 2),
+        event_count: Some(2),
+        digest: Some(vec![13_u8; 32]),
+        timeout: Some(60),
+    };
+    let before = fresh_claim_snapshot(&mut connection).await;
+    let mut cases = Vec::new();
+    macro_rules! invalid {
+        ($name:literal, $field:ident, $value:expr) => {{
+            let mut call = base.clone();
+            call.$field = $value;
+            cases.push(($name, call));
+        }};
+    }
+    invalid!("null head sequence", previous_sequence, None);
+    invalid!(
+        "stale head sequence",
+        previous_sequence,
+        Some(head.head_sequence + 1)
+    );
+    invalid!("null head hash", previous_hash, None);
+    invalid!("stale head hash", previous_hash, Some(vec![14_u8; 32]));
+    invalid!("null IDs", event_ids, None);
+    invalid!("null hashes", event_hashes, None);
+    invalid!("unequal arrays", event_hashes, Some(vec![vec![11_u8; 32]]));
+    invalid!("unpaired empty arrays", event_ids, Some(Vec::new()));
+    invalid!("too many events", event_ids, Some(vec![ids[0]; 257]));
+    invalid!(
+        "duplicate ID after proof",
+        event_ids,
+        Some(vec![ids[0], ids[0]])
+    );
+    invalid!(
+        "missing event after proof",
+        event_ids,
+        Some(vec![ids[0], Uuid::now_v7()])
+    );
+    invalid!(
+        "short hash after proof",
+        event_hashes,
+        Some(vec![vec![11_u8; 32], vec![12_u8; 31]])
+    );
+    invalid!(
+        "long hash after proof",
+        event_hashes,
+        Some(vec![vec![11_u8; 32], vec![12_u8; 33]])
+    );
+    invalid!(
+        "duplicate hash after proof",
+        event_hashes,
+        Some(vec![vec![11_u8; 32]; 2])
+    );
+    invalid!("null first", first_sequence, None);
+    invalid!("null last", last_sequence, None);
+    invalid!("null count", event_count, None);
+    invalid!("null digest", digest, None);
+    invalid!("short digest", digest, Some(vec![13_u8; 31]));
+    invalid!("long digest", digest, Some(vec![13_u8; 33]));
+    invalid!("null timeout", timeout, None);
+    invalid!("zero timeout", timeout, Some(0));
+    invalid!("long timeout", timeout, Some(3_601));
+    invalid!(
+        "non-prefix after proof",
+        first_sequence,
+        Some(head.head_sequence + 2)
+    );
+    invalid!(
+        "range beyond staged head",
+        last_sequence,
+        Some(head.head_sequence + 3)
+    );
+    invalid!("reversed range", last_sequence, Some(head.head_sequence));
+    invalid!("mismatched count after proof", event_count, Some(1));
+    invalid!("zero count", event_count, Some(0));
+    invalid!("oversized count", event_count, Some(257));
+    for (case, call) in cases {
+        connection
+            .batch_execute("SAVEPOINT invalid_claim")
+            .await
+            .unwrap();
+        assert!(call.execute(&mut connection).await.is_err(), "{case}");
+        connection
+            .batch_execute("ROLLBACK TO invalid_claim; RELEASE invalid_claim")
+            .await
+            .unwrap();
+        assert_eq!(
+            fresh_claim_snapshot(&mut connection).await,
+            before,
+            "{case}"
+        );
+    }
+    // NULL elements also fail after staging the first proof, not just NULL arrays.
+    for null_id in [true, false] {
+        connection
+            .batch_execute("SAVEPOINT null_member")
+            .await
+            .unwrap();
+        assert!(
+            sql_query(
+                "SELECT public.nazo_finalize_security_audit_claim(\
+                    $1, $2, ARRAY[$3,$4]::uuid[], ARRAY[$5,$6]::bytea[], \
+                    $7, $8, $9, $10, $11)",
+            )
+            .bind::<diesel::sql_types::BigInt, _>(head.head_sequence)
+            .bind::<diesel::sql_types::Binary, _>(&head.head_hash)
+            .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(ids[0]))
+            .bind::<diesel::sql_types::Nullable<SqlUuid>, _>((!null_id).then_some(ids[1]))
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::Binary>, _>(Some(vec![
+                11_u8;
+                32
+            ]))
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::Binary>, _>(
+                null_id.then_some(vec![12_u8; 32]),
+            )
+            .bind::<diesel::sql_types::BigInt, _>(head.head_sequence + 1)
+            .bind::<diesel::sql_types::BigInt, _>(head.head_sequence + 2)
+            .bind::<diesel::sql_types::Integer, _>(2)
+            .bind::<diesel::sql_types::Binary, _>(vec![13_u8; 32])
+            .bind::<diesel::sql_types::Integer, _>(60)
+            .execute(&mut connection)
+            .await
+            .is_err()
+        );
+        connection
+            .batch_execute("ROLLBACK TO null_member; RELEASE null_member")
+            .await
+            .unwrap();
+        assert_eq!(fresh_claim_snapshot(&mut connection).await, before);
+    }
+    // Legacy append continues to reject paired empty arrays.
+    connection
+        .batch_execute("SAVEPOINT legacy_empty")
+        .await
+        .unwrap();
+    assert!(
+        sql_query(
+            "SELECT public.nazo_append_security_audit_chain(\
+                $1, $2, '{}'::uuid[], '{}'::bytea[])",
+        )
+        .bind::<diesel::sql_types::BigInt, _>(head.head_sequence)
+        .bind::<diesel::sql_types::Binary, _>(&head.head_hash)
+        .execute(&mut connection)
+        .await
+        .is_err()
+    );
+    connection
+        .batch_execute("ROLLBACK TO legacy_empty; RELEASE legacy_empty")
+        .await
+        .unwrap();
+    assert_eq!(fresh_claim_snapshot(&mut connection).await, before);
+
+    // Legacy append followed by legacy open still performs its two established
+    // mutations and advances the same lease generation.
+    connection
+        .batch_execute("SAVEPOINT legacy_pair")
+        .await
+        .unwrap();
+    sql_query("SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)")
+        .bind::<diesel::sql_types::BigInt, _>(head.head_sequence)
+        .bind::<diesel::sql_types::Binary, _>(&head.head_hash)
+        .bind::<diesel::sql_types::Array<SqlUuid>, _>(ids[..2].to_vec())
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Binary>, _>(vec![
+            vec![11_u8; 32],
+            vec![12_u8; 32],
+        ])
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let legacy_generation =
+        sql_query("SELECT public.nazo_open_security_audit_batch($1, $2, $3, $4, $5) AS generation")
+            .bind::<diesel::sql_types::BigInt, _>(head.head_sequence + 1)
+            .bind::<diesel::sql_types::BigInt, _>(head.head_sequence + 2)
+            .bind::<diesel::sql_types::Integer, _>(2)
+            .bind::<diesel::sql_types::Binary, _>(vec![13_u8; 32])
+            .bind::<diesel::sql_types::Integer, _>(60)
+            .get_result::<FreshClaimGeneration>(&mut connection)
+            .await
+            .unwrap();
+    let legacy = fresh_claim_snapshot(&mut connection).await;
+    assert_eq!(legacy.contents["updates"], 2);
+    assert_eq!(
+        legacy_generation.generation,
+        before.contents["head"]["batch_generation"]
+            .as_i64()
+            .unwrap()
+            + 1
+    );
+    connection
+        .batch_execute("ROLLBACK TO legacy_pair; RELEASE legacy_pair")
+        .await
+        .unwrap();
+    assert_eq!(fresh_claim_snapshot(&mut connection).await, before);
+
+    // Also fail after UPDATE: proofs, head, lease, generation and trigger side
+    // effects all roll back together, rather than merely rejecting early.
+    connection
+        .batch_execute("UPDATE fresh_claim_fail SET fail = TRUE; SAVEPOINT failed_update")
+        .await
+        .unwrap();
+    assert!(base.execute(&mut connection).await.is_err());
+    connection
+        .batch_execute(
+            "ROLLBACK TO failed_update; RELEASE failed_update; \
+             UPDATE fresh_claim_fail SET fail = FALSE",
+        )
+        .await
+        .unwrap();
+    assert_eq!(fresh_claim_snapshot(&mut connection).await, before);
+
+    let claimed = base.execute(&mut connection).await.unwrap();
+    let after = fresh_claim_snapshot(&mut connection).await;
+    assert_eq!(after.contents["updates"], 1);
+    assert_eq!(
+        after.contents["head"]["last_sequence"],
+        head.head_sequence + 2
+    );
+    assert_eq!(
+        after.contents["head"]["batch_generation"],
+        claimed.generation
+    );
+    assert_eq!(
+        claimed.generation,
+        before.contents["head"]["batch_generation"]
+            .as_i64()
+            .unwrap()
+            + 1
+    );
+    let mut inflight = base;
+    inflight.previous_sequence = Some(head.head_sequence + 2);
+    inflight.previous_hash = Some(vec![12_u8; 32]);
+    inflight.event_ids = Some(vec![ids[2]]);
+    inflight.event_hashes = Some(vec![vec![15_u8; 32]]);
+    inflight.last_sequence = Some(head.head_sequence + 3);
+    inflight.event_count = Some(3);
+    connection
+        .batch_execute("SAVEPOINT inflight")
+        .await
+        .unwrap();
+    assert!(inflight.execute(&mut connection).await.is_err());
+    connection
+        .batch_execute("ROLLBACK TO inflight; RELEASE inflight")
+        .await
+        .unwrap();
+    assert_eq!(fresh_claim_snapshot(&mut connection).await, after);
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
+#[tokio::test]
+async fn fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(url) = database_url() else { return };
+    run_pending_migrations(&url).await.unwrap();
+    let repository = AuditLedgerRepository::new(create_pool(url.clone(), 4).unwrap());
+    drain_pending(&repository).await;
+    let before = repository.anchor_health().await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let empty_before = anchor_heartbeat(&mut connection).await;
+    assert!(matches!(
+        repository
+            .claim_batch("test-deployment", 1, 128 * 1024, 60)
+            .await
+            .unwrap(),
+        SecurityAuditBatchClaim::Empty
+    ));
+    assert_eq!(anchor_heartbeat(&mut connection).await, empty_before);
+    let ids = [Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()];
+    for (offset, id) in ids.into_iter().enumerate() {
+        repository
+            .append(SecurityAuditEvent {
+                event_id: id,
+                event_type: "fresh_claim_fixture".into(),
+                event_category: "security".into(),
+                payload: json!({}),
+                occurred_at: chrono::DateTime::from_timestamp(1700000000 + offset as i64, 0)
+                    .unwrap(),
+            })
+            .await
+            .unwrap();
+    }
+    let rows = sql_query(
+        "SELECT event_id, event_type, event_category, payload::TEXT AS payload_canonical, occurred_at \
+         FROM public.security_audit_events WHERE event_id = ANY($1) ORDER BY occurred_at, event_id",
+    )
+    .bind::<diesel::sql_types::Array<SqlUuid>, _>(ids[..2].to_vec())
+    .load::<BudgetEventRow>(&mut connection)
+    .await
+    .unwrap();
+    let mut previous_hash = before.head_hash.clone();
+    let mut hashes = Vec::new();
+    for (offset, row) in rows.into_iter().enumerate() {
+        let hash = nazo_persistence::audit_chain::security_audit_event_hash(
+            before.head_sequence + offset as i64 + 1,
+            &previous_hash,
+            row.event_id,
+            &row.event_type,
+            &row.event_category,
+            row.occurred_at,
+            row.payload_canonical.as_bytes(),
+        )
+        .to_vec();
+        previous_hash = hash.clone();
+        hashes.push(hash);
+    }
+    sql_query("SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)")
+        .bind::<diesel::sql_types::BigInt, _>(before.head_sequence)
+        .bind::<diesel::sql_types::Binary, _>(&before.head_hash)
+        .bind::<diesel::sql_types::Array<SqlUuid>, _>(ids[..2].to_vec())
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Binary>, _>(hashes)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    // Only chained leftovers are selected; empty new arrays must open a prefix
+    // whose tail is legitimately below the existing global chain head.
+    for (offset, id) in ids[..2].iter().enumerate() {
+        let SecurityAuditBatchClaim::Claimed(batch) = repository
+            .claim_batch("test-deployment", 1, 128 * 1024, 60)
+            .await
+            .unwrap()
+        else {
+            panic!("chained prefix must remain claimable")
+        };
+        assert_eq!(batch.event_count(), 1);
+        assert_eq!(batch.deliveries[0].event_id, *id);
+        assert_eq!(
+            batch.last_sequence,
+            before.head_sequence + offset as i64 + 1
+        );
+        let health = repository.anchor_health().await.unwrap();
+        assert_eq!(health.head_sequence, before.head_sequence + 2);
+        assert_eq!(health.head_hash, previous_hash);
+        repository.ack_batch(batch_ack(&batch)).await.unwrap();
+    }
+    let (left, right) = tokio::join!(
+        repository.claim_batch("test-deployment", 1, 128 * 1024, 60),
+        repository.claim_batch("test-deployment", 1, 128 * 1024, 60)
+    );
+    let first = match (left.unwrap(), right.unwrap()) {
+        (SecurityAuditBatchClaim::Claimed(batch), SecurityAuditBatchClaim::Busy)
+        | (SecurityAuditBatchClaim::Busy, SecurityAuditBatchClaim::Claimed(batch)) => batch,
+        other => panic!("exactly one fresh claim must own the lease: {other:?}"),
+    };
+    assert_eq!(first.deliveries[0].event_id, ids[2]);
+    assert_eq!(first.first_sequence, before.head_sequence + 3);
+    assert_eq!(first.previous_hash, previous_hash);
+    let bytes =
+        nazo_persistence::audit_wire::security_audit_batch_body("test-deployment", &first).unwrap();
+    repository
+        .fail_batch(
+            first.generation,
+            Utc::now() - chrono::Duration::seconds(1),
+            "reclaim fixture",
+            false,
+        )
+        .await
+        .unwrap();
+    let SecurityAuditBatchClaim::Claimed(reclaimed) = repository
+        .claim_batch("test-deployment", 256, 1024 * 1024, 60)
+        .await
+        .unwrap()
+    else {
+        panic!("committed batch must reclaim")
+    };
+    assert_eq!(reclaimed.generation, first.generation + 1);
+    assert_eq!(reclaimed.attempts, first.attempts + 1);
+    assert_eq!(reclaimed.first_sequence, first.first_sequence);
+    assert_eq!(reclaimed.last_sequence, first.last_sequence);
+    assert_eq!(reclaimed.digest, first.digest);
+    assert_eq!(
+        nazo_persistence::audit_wire::security_audit_batch_body("test-deployment", &reclaimed)
+            .unwrap(),
+        bytes
+    );
+    assert!(repository.ack_batch(batch_ack(&first)).await.is_err());
+    assert!(
+        repository
+            .fail_batch(first.generation, Utc::now(), "stale", false)
+            .await
+            .is_err()
+    );
+    repository.ack_batch(batch_ack(&reclaimed)).await.unwrap();
+    assert!(matches!(
+        repository
+            .claim_batch("test-deployment", 1, 128 * 1024, 60)
+            .await
+            .unwrap(),
+        SecurityAuditBatchClaim::Empty
+    ));
+}

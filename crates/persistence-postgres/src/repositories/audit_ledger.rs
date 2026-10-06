@@ -582,15 +582,6 @@ async fn claim_fresh(
             "security audit event exceeds the committed envelope bound",
         ));
     }
-    if !new_event_ids.is_empty() {
-        sql_query("SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)")
-            .bind::<diesel::sql_types::BigInt, _>(head.last_sequence)
-            .bind::<diesel::sql_types::Binary, _>(&head.last_hash)
-            .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(new_event_ids)
-            .bind::<diesel::sql_types::Array<diesel::sql_types::Binary>, _>(new_event_hashes)
-            .execute(connection)
-            .await?;
-    }
     let first = deliveries.as_slice().first().expect("non-empty batch");
     let last = deliveries.iter().next_back().expect("non-empty batch");
     let event_hashes: Vec<[u8; 32]> = deliveries
@@ -613,15 +604,21 @@ async fn claim_fresh(
         &event_hashes,
     )
     .to_vec();
-    let generation =
-        sql_query("SELECT public.nazo_open_security_audit_batch($1, $2, $3, $4, $5) AS generation")
-            .bind::<diesel::sql_types::BigInt, _>(first.sequence)
-            .bind::<diesel::sql_types::BigInt, _>(last.sequence)
-            .bind::<diesel::sql_types::Integer, _>(deliveries.len() as i32)
-            .bind::<diesel::sql_types::Binary, _>(&digest)
-            .bind::<diesel::sql_types::Integer, _>(lock_timeout_seconds)
-            .get_result::<AuditGenerationRow>(connection)
-            .await?;
+    let generation = sql_query(
+        "SELECT public.nazo_finalize_security_audit_claim(\
+            $1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+    )
+    .bind::<diesel::sql_types::BigInt, _>(head.last_sequence)
+    .bind::<diesel::sql_types::Binary, _>(&head.last_hash)
+    .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(new_event_ids)
+    .bind::<diesel::sql_types::Array<diesel::sql_types::Binary>, _>(new_event_hashes)
+    .bind::<diesel::sql_types::BigInt, _>(first.sequence)
+    .bind::<diesel::sql_types::BigInt, _>(last.sequence)
+    .bind::<diesel::sql_types::Integer, _>(deliveries.len() as i32)
+    .bind::<diesel::sql_types::Binary, _>(&digest)
+    .bind::<diesel::sql_types::Integer, _>(lock_timeout_seconds)
+    .get_result::<AuditGenerationRow>(connection)
+    .await?;
     Ok(SecurityAuditBatchClaim::Claimed(SecurityAuditBatch {
         generation: generation.generation,
         first_sequence: first.sequence,
