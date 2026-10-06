@@ -25,6 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import single_instance_scaling as sis  # noqa: E402
+from blackbox_contract import (CONTRACT, audit_queue_unverified, require_external_point,
+                               unavailable_dimension, unverified_gates)
 
 
 KEYSET_VOLUME = "sisprsa-confirm-keys"
@@ -566,12 +568,14 @@ def stack_up_pinned(point: dict) -> dict:
 
 def run_ab_point(point: dict) -> dict:
     """run_point equivalent with receiver-state baselines around load."""
+    require_external_point(point)
     run_id = point["name"]
     out_dir = sis.RESULTS / point["phase"] / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     sis.CURRENT_POINT = point
 
-    rec: dict = {"point": point, "run_id": run_id}
+    rec: dict = {"point": point, "run_id": run_id, "collection_contract": CONTRACT,
+                 "unverified_internal_gates": unverified_gates()}
     # load_seconds is one shared elapsed window per point (main and
     # sidecars run concurrently, tracked via max()), so the planned
     # estimate must be the longest container duration plus margin,
@@ -613,12 +617,9 @@ def run_ab_point(point: dict) -> dict:
                 raise RuntimeError(
                     "PROVENANCE_INVALID: "
                     f"{rec['binary_provenance']}")
-            rec["perf_schema"] = sis.app_perf_schema(
-                out_path=out_dir / "perf-metrics-preflight.json")
-            if not rec["perf_schema"]["ok"]:
-                raise RuntimeError(
-                    f"perf metrics schema missing fields: "
-                    f"{rec['perf_schema']}")
+            rec["application_performance_observation"] = {
+                "status": "UNAVAILABLE", "contract": CONTRACT,
+                "reason": "application performance collection removed"}
         depid = rec["stack"].get("deployment_id")
         if not depid:
             raise RuntimeError("deployment id unavailable after stack up")
@@ -688,11 +689,7 @@ def run_ab_point(point: dict) -> dict:
             sis._spend_load_budget(run_id, rec)
 
         rec["audit_drain"] = sis.audit_drain()
-        queue_path = out_dir / "perf-metrics-post-drain.json"
-        queue_schema = sis.app_perf_schema(out_path=queue_path)
-        queue_body = json.loads(queue_path.read_text()).get("response") or {}
-        rec["audit_queue_post_drain"] = dict(queue_body.get("audit_queue") or {})
-        rec["audit_queue_post_drain"]["collected"] = queue_schema["ok"]
+        rec["audit_queue_post_drain"] = audit_queue_unverified()
         rec["audit_state_post"] = audit_state_snapshot(run_id)
         rec["audit_state_post"]["deployment_id"] = depid
 
@@ -728,12 +725,8 @@ def run_ab_point(point: dict) -> dict:
             wal_w = sis.windowed_series_delta(
                 soak_path, "wal_bytes",
                 m.get("window_start_ms"), m.get("window_end_ms"))
-            acq_w = sis.windowed_series_delta(
-                soak_path, "pool.acq",
-                m.get("window_start_ms"), m.get("window_end_ms"))
-            wait_w = sis.windowed_series_delta(
-                soak_path, "pool.wait_ns",
-                m.get("window_start_ms"), m.get("window_end_ms"))
+            acq_w = unavailable_dimension("pool.acq")
+            wait_w = unavailable_dimension("pool.wait_ns")
             wal_io_w = {
                 k: sis.windowed_series_delta(
                     soak_path, f"wal_io.{k}",
@@ -1111,30 +1104,7 @@ def _proc_cpu(point_dir: Path, rec: dict) -> dict:
 
 
 def audit_queue_final(out_dir: Path) -> dict:
-    """Last audit_queue counters sampled by the soak sampler.
-
-    The sampler keeps ticking until after audit_drain, so the final row
-    carrying audit_queue data is the post-drain in-process truth: the
-    enqueued==persisted and pending_in_process==0 gates read it here
-    instead of a live endpoint that is already gone."""
-    path = out_dir / "soak-metrics.jsonl"
-    if not path.exists():
-        return {"collected": False, "error": "sampler stream missing"}
-    last = None
-    for line in path.read_text(errors="replace").splitlines():
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        q = row.get("audit_queue")
-        if isinstance(q, dict):
-            last = q
-    if last is None:
-        return {"collected": False, "error": "no audit_queue samples"}
-    out = dict(last)
-    out["collected"] = True
-    return out
-
+    return audit_queue_unverified()
 
 def _bounded(value, limit) -> bool:
     return isinstance(value, (int, float)) and value <= limit
@@ -1205,9 +1175,10 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
         checks.update(_refresh_ok(m.get("refresh_invariants") or {}))
         checks["sidecars_complete"] = (
             m.get("sidecar_terminal_complete") is True)
-        checks["queue_dropped_zero"] = q.get("dropped") == 0
-        checks["pending_zero_post_drain"] = q.get("pending_in_process") == 0
-        checks["enqueued_eq_persisted"] = (
-            isinstance(q.get("enqueued"), int)
-            and q.get("enqueued") == q.get("persisted"))
+        if rec.get("collection_contract") != CONTRACT:
+            checks["queue_dropped_zero"] = q.get("dropped") == 0
+            checks["pending_zero_post_drain"] = q.get("pending_in_process") == 0
+            checks["enqueued_eq_persisted"] = (
+                isinstance(q.get("enqueued"), int)
+                and q.get("enqueued") == q.get("persisted"))
     return checks

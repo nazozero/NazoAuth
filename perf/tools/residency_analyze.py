@@ -152,11 +152,12 @@ def analyze_point(residency_path: Path, point_path: Path) -> dict:
         pool = s.get("pool") or {}
         backends = s.get("backends")
         if (s.get("app_err") or s.get("pg_err") or backends is None
-                or pool.get("con") is None or pool.get("idle") is None):
+                or pool.get("con") is None or pool.get("idle") is None
+                or pool.get("waiting") is None):
             invalid.append("missing_pool_or_pg")
             continue
         con, idle_n = pool["con"], pool["idle"]
-        waiting = pool.get("waiting") or 0
+        waiting = pool["waiting"]
         n_back = len(backends)
         if n_back > con:
             # More runtime-role client backends than pool connections:

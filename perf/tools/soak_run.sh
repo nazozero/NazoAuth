@@ -181,7 +181,6 @@ if [ "$CKPT_EVIDENCE" = "1" ]; then
   docker run -d --name "$OBS_NAME" --network nazoauth-perf_perf_net \
     -v "$TOOLS/checkpoint_observer.py:/tmp/checkpoint_observer.py:ro" \
     -e DB_URL="postgresql://postgres:postgres@postgres:5432/oauth" \
-    -e APP_METRICS="http://nazoauth:8000/__perf/metrics" \
     -e APP_METRICS_HOST="127.0.0.1:8000" \
     -e APP_IDENTITY="nazoauth-perf-nazoauth-1" \
     -e OUT_PATH=/tmp/ckpt-observer.jsonl \

@@ -315,12 +315,16 @@ Each scenario writes:
 - Docker CPU and memory samples for NazoAuth, PostgreSQL, and Valkey
 - PostgreSQL `pg_stat_statements` calls, mean statement latency, and
   statements per HTTP request
-- NazoAuth DB pool acquire count and wait time from the perf-only
-  `/__perf/metrics` endpoint
+- Task runtime-role PostgreSQL backend states and wait events (database view)
 - Valkey command, hit, miss, expiry, and key-count deltas
 
-The perf-only metrics endpoint is registered only when
-`PERF_METRICS_ENABLED=true` is present in the server process environment.
+New runs explicitly declare `blackbox-db-v1`. Application performance endpoints,
+pool acquire/wait counters and in-process audit counters are removed. Missing
+internal dimensions are `UNAVAILABLE`; process queue gates are `UNVERIFIED`.
+DB outbox drainage and receiver chain/ACK reconciliation remain required and
+do not establish best-effort in-process queue emptiness. Historical records keep
+their original evidence contract and are not silently reclassified or pooled
+with new runs. See `perf/docs/blackbox-evidence-contract.md`.
 
 ## Notes
 

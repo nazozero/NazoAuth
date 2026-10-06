@@ -164,7 +164,7 @@ fi
   echo "| Network topology | Single Docker bridge network; perf runner reaches NazoAuth at http://nazoauth:8000; NazoAuth reaches PostgreSQL and Valkey inside the same network. |"
   echo "| PostgreSQL container | docker.io/library/postgres:18.6-alpine; pg_stat_statements enabled; track_io_timing enabled; ephemeral Docker volume. |"
   echo "| Valkey container | docker.io/valkey/valkey:9.1.2-alpine; RDB save disabled; AOF disabled; warning log level; ephemeral state for benchmark isolation. |"
-  echo "| NazoAuth container | Built from local Containerfile target runtime; PERF_METRICS_ENABLED=true; signing keys are database-backed. |"
+  echo "| NazoAuth container | Built from local Containerfile target runtime; application performance collection absent; signing keys are database-backed. |"
   echo "| Migration setup | migrate service runs a signed, one-shot operator-task before the NazoAuth service is considered ready for benchmark traffic. |"
   echo "| Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports under docs/performance/reports/ and runtime JSON/logs to ignored perf/results/. |"
   echo "| Metrics sources | k6 HTTP metrics; Docker stats CPU/memory samples; PostgreSQL pg_stat_statements; NazoAuth DB pool metrics; Valkey INFO counters. |"

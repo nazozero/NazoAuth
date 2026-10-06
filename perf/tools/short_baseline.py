@@ -195,6 +195,8 @@ def worker(point_path):
                       component_cpu_cores=points._proc_cpu(out, rec),
                       audit=rec.get("audit_state_check"),
                       queue=rec.get("audit_queue_post_drain"),
+                      collection_contract=rec.get("collection_contract"),
+                      unverified_internal_gates=rec.get("unverified_internal_gates"),
                       elapsed_s=rec.get("elapsed_s"))
     except (ValueError, KeyError, TypeError, OSError) as exc:
         result["error_kind"] = type(exc).__name__

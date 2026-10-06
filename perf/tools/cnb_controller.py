@@ -12,6 +12,8 @@ os.umask(0o077)
 os.environ.update(SIS_WORKSPACE=str(R),SIS_RESULTS=str(E/'results'),SIS_BIN=str(E/'bin'),SIS_PROJECT=P,SIS_PERF_IMAGE=M['runner_image'],SIS_SOURCE_SHA=M['source_sha'],COMPOSE_PROJECT_NAME=P)
 sys.path.insert(0,str(R/'perf/tools'))
 import single_instance_scaling as sis,point_runner as points,short_baseline as sb
+from blackbox_contract import CONTRACT
+assert M.get('collection_contract') == CONTRACT
 points.KEYSET_VOLUME=P+'-keys'
 RAW=sis.dc;SECRETS=[];OUTS={};VOLS={};SYNCING=False
 INSPECT_SKIPS=[];COPY_OPS=[];COPY_FAILURES=[];TERMINAL_CAPTURED=set();TERMINATION_ERRORS=[]
@@ -249,9 +251,9 @@ def health(runid,outdir,**kwargs):
                 try:row=json.loads(line)
                 except ValueError:continue
                 if 'ts' in row:rows.append(row)
-        if rows and all(k in rows[-1] for k in ['pg','vk','pool','audit_queue']) and not any(k.endswith('_err') for k in rows[-1]):break
+        if rows and all(k in rows[-1] for k in ['pg','vk','audit','runtime_role_activity']) and not any(k.endswith('_err') for k in rows[-1]):break
         rows=[];time.sleep(0.5)
-    sample_ok=bool(rows) and all(k in rows[-1] for k in ['pg','vk','pool','audit_queue']) and not any(k.endswith('_err') for k in rows[-1])
+    sample_ok=bool(rows) and all(k in rows[-1] for k in ['pg','vk','audit','runtime_role_activity']) and not any(k.endswith('_err') for k in rows[-1])
     result['real_sample_ok']=sample_ok;result['ok']=result['ok'] and sample_ok
     save(outdir/'task-collector-preflight.json',{'health':result,'last_sample':rows[-1] if rows else None})
     event('collector-preflight',run_id=runid,ok=result['ok'],checks=result.get('checks'),real_sample_ok=sample_ok)
@@ -283,7 +285,7 @@ def capture(runid,out,timeout_s=10):
         except BaseException as exc:
             errors.append(type(exc).__name__+': '+name);continue
         if q.returncode:continue
-        d=json.loads(q.stdout)[0];states[name]={'image':d['Image'],'state':d['State'],'restart_count':d['RestartCount'],'resources':{k:d['HostConfig'].get(k) for k in ['CpusetCpus','NanoCpus','Memory','MemorySwap','PidsLimit']},'public_env':{k:v for k,v in [x.split('=',1) for x in d['Config'].get('Env',[]) if '=' in x] if k in ['DATABASE_MAX_CONNECTIONS','K6_JSON_OMIT_UNUSED_HTTP_TIMINGS','RUST_LOG','AUDIT_ANCHOR_MAX_BATCH_SIZE','AUDIT_ANCHOR_POLL_INTERVAL_MS']},'mounts':[{'type':x['Type'],'destination':x['Destination'],'rw':x['RW']} for x in d.get('Mounts',[])]}
+        d=json.loads(q.stdout)[0];states[name]={'image':d['Image'],'state':d['State'],'restart_count':d['RestartCount'],'resources':{k:d['HostConfig'].get(k) for k in ['CpusetCpus','NanoCpus','Memory','MemorySwap','PidsLimit']},'public_env':{k:v for k,v in [x.split('=',1) for x in d['Config'].get('Env',[]) if '=' in x] if k in ['DATABASE_MAX_CONNECTIONS','OTEL_ENABLED','K6_JSON_OMIT_UNUSED_HTTP_TIMINGS','RUST_LOG','AUDIT_ANCHOR_MAX_BATCH_SIZE','AUDIT_ANCHOR_POLL_INTERVAL_MS']},'mounts':[{'type':x['Type'],'destination':x['Destination'],'rw':x['RW']} for x in d.get('Mounts',[])]}
     save(out/'task-container-states-before-cleanup.json',states)
     if errors:raise RuntimeError("state capture failed: "+", ".join(errors))
 def run(key):

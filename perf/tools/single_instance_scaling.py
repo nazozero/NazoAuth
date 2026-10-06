@@ -1147,40 +1147,7 @@ def sampler_health(run_id: str, out_dir: Path,
 
 
 def app_perf_schema(out_path: Path | None = None) -> dict:
-    """Fetch /__perf/metrics inside the APP container's own network
-    namespace (127.0.0.1) — never via the shared DNS name, which could
-    resolve to a different responder on a shared network. The schema
-    contract requires both db_pool and audit_queue."""
-    helper = (  # noqa: E501 - inline python one-liner for the perf image
-        "import urllib.request,sys;"
-        "sys.stdout.write(urllib.request.urlopen("
-        "'http://127.0.0.1:8000/__perf/metrics',timeout=10)"
-        ".read().decode())")
-    proc = dc("run", "--rm", "--network", f"container:{APP}",
-              "--label", f"{SIS_LABEL}={PROJECT}",
-              PERF_IMAGE, "python3", "-c", helper, check=False)
-    body = None
-    parse_error = None
-    try:
-        body = json.loads(proc.stdout)
-    except (json.JSONDecodeError, ValueError):
-        parse_error = (proc.stdout + proc.stderr)[:300]
-    out = {
-        "http_ok": proc.returncode == 0 and body is not None,
-        "has_db_pool": isinstance(body, dict) and "db_pool" in body,
-        "has_audit_queue": isinstance(body, dict)
-                         and "audit_queue" in body,
-        "app_container": APP,
-        "via": "container-netns 127.0.0.1:8000",
-    }
-    if parse_error:
-        out["parse_error"] = parse_error
-    out["ok"] = (out["http_ok"] and out["has_db_pool"]
-                 and out["has_audit_queue"])
-    if out_path is not None:
-        jdump(out_path, {"response": body, "check": out})
-    return out
-
+    raise RuntimeError("retired application collection: use blackbox-db-v1 external evidence")
 
 def runtime_binary_provenance(image_sha: str | None = None,
                               expected_sha: str | None = None) -> dict:

@@ -38,7 +38,6 @@ for p in ["/health", "/live", "/startup", "/jwks.json",
           "/.well-known/openid-credential-issuer"]:
     add("discovery", "GET", p)
 add("discovery", "POST", "/.well-known/nazoauth-control", "control-tenant only")
-add("discovery", "GET", "/__perf/metrics", "control-tenant only")
 # oauth core
 add("oauth", "GET", "/authorize"); add("oauth", "POST", "/authorize")
 add("oauth", "GET", "/authorize/client-presentation"); add("oauth", "GET", "/authorize/consent")

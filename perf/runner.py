@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from tools.blackbox_contract import CONTRACT, unavailable_dimension
+
 import json
 import os
 import re
@@ -263,40 +265,10 @@ def compose_containers() -> list[dict[str, str]]:
 
 
 def app_metric_urls() -> list[str]:
-    urls: list[str] = []
-    for container in compose_containers():
-        if container["service"] != APP_SERVICE:
-            continue
-        completed = subprocess.run(
-            [
-                "docker",
-                "inspect",
-                "--format",
-                "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-                container["name"],
-            ],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        ip_address = completed.stdout.strip()
-        if ip_address:
-            urls.append(f"http://{ip_address}:8000/__perf/metrics")
-    return urls or [f"{BASE_URL}/__perf/metrics"]
-
+    raise RuntimeError("application performance endpoints are retired")
 
 def get_app_metrics() -> dict[str, Any]:
-    metrics = [get_json_url(url) for url in app_metric_urls()]
-    db_pools = [metric["db_pool"] for metric in metrics]
-    return {
-        "instances": len(metrics),
-        "db_pool": {
-            "acquire_count": sum(pool["acquire_count"] for pool in db_pools),
-            "wait_nanos_total": sum(pool["wait_nanos_total"] for pool in db_pools),
-            "wait_nanos_max": max((pool["wait_nanos_max"] for pool in db_pools), default=0),
-        },
-    }
-
+    raise RuntimeError("application performance collection is retired")
 
 def docker_stats_once() -> list[dict[str, Any]]:
     containers = compose_containers()
@@ -732,7 +704,6 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     if os.environ.get("PERF_SKIP_PG_STATS_RESET") != "1":
         reset_pg_stats()
     valkey_before = valkey_stats()
-    app_before = get_app_metrics()
     env = os.environ.copy()
     env["PERF_PROFILE"] = profile
     env["PERF_SCENARIO"] = scenario
@@ -851,22 +822,12 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
             "lag_over_5s": stats.get("lag_over_5s"),
             "diag_overflow": stats.get("diag_overflow"),
         }
-    app_after = get_app_metrics()
+    observed_app_instances = sum(c["service"] == APP_SERVICE for c in compose_containers())
     pg = pg_stats()
     valkey = delta(valkey_stats(), valkey_before)
     http_reqs = k6_http_reqs(k6_summary)
     if http_reqs == 0:
         raise RuntimeError(f"k6 scenario produced zero HTTP requests: {profile}/{scenario}")
-    db_pool_before = app_before["db_pool"]
-    db_pool_after = app_after["db_pool"]
-    acquire_raw = db_pool_after["acquire_count"] - db_pool_before["acquire_count"]
-    wait_raw = db_pool_after["wait_nanos_total"] - db_pool_before["wait_nanos_total"]
-    # A negative delta means the app process restarted (counter reset) or was
-    # replaced mid-run; report the clamped value and flag it instead of
-    # averaging a meaningless negative into aggregates.
-    pool_counter_reset = acquire_raw < 0 or wait_raw < 0
-    acquire_delta = max(acquire_raw, 0)
-    wait_delta = max(wait_raw, 0)
     k6 = k6_brief(k6_summary)
     target_rate = int(os.environ.get("PERF_RATE", "0") or 0)
     target_miss = (
@@ -902,13 +863,9 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
             **pg,
             "statements_per_http_request": round(pg["statement_calls"] / http_reqs, 3) if http_reqs else 0,
         },
-        "db_pool": {
-            "counter_reset": pool_counter_reset,
-            "acquire_count": acquire_delta,
-            "wait_ms_total": round(wait_delta / 1_000_000, 3),
-            "wait_ms_avg": round(wait_delta / acquire_delta / 1_000_000, 3) if acquire_delta else 0,
-            "wait_ms_max_observed_process_lifetime": round(db_pool_after["wait_nanos_max"] / 1_000_000, 3),
-        },
+        "collection_contract": CONTRACT,
+        "db_pool": None,
+        "application_pool_observation": unavailable_dimension("application_pool"),
         "valkey": valkey,
         "containers": sampler.summary(),
         "load_model": {
@@ -916,8 +873,8 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
             "target_rate": target_rate,
             "time_unit": os.environ.get("PERF_TIME_UNIT", "1s"),
             "duration": os.environ.get("PERF_DURATION", "20s"),
-            "app_replicas": int(os.environ.get("PERF_APP_REPLICAS", str(app_after.get("instances", 1))) or 1),
-            "observed_app_instances": app_after.get("instances", 1),
+            "app_replicas": int(os.environ.get("PERF_APP_REPLICAS", str(observed_app_instances)) or 1),
+            "observed_app_instances": observed_app_instances,
         },
     }
     combined_path.write_text(json.dumps(combined, indent=2), encoding="utf-8")

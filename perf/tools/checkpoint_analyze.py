@@ -1406,7 +1406,7 @@ def pool_deltas(rows: list[dict]) -> tuple[list[dict], int]:
         pool = r.get("pool")
         ts = r.get("ts")
         if not isinstance(pool, dict) or "error" in pool or ts is None \
-                or pool.get("acquire_count") is None:
+                or pool.get("acquire_count") is None or pool.get("wait_nanos_total") is None:
             if prev is not None:
                 breaks += 1
             prev = None
@@ -1419,8 +1419,7 @@ def pool_deltas(rows: list[dict]) -> tuple[list[dict], int]:
                 deltas.append({
                     "t0": prev_ts, "t1": ts, "dt": dt,
                     "acquires": pool["acquire_count"] - prev["acquire_count"],
-                    "wait_ms": ((pool.get("wait_nanos_total") or 0)
-                                - (prev.get("wait_nanos_total") or 0)) / 1e6,
+                    "wait_ms": (pool["wait_nanos_total"] - prev["wait_nanos_total"]) / 1e6,
                 })
             else:
                 breaks += 1
@@ -1974,7 +1973,8 @@ def cmd_report(args) -> int:
         "wait_ms_per_s_dip_range": (
             [round(min(dip_pool.values()), 1),
              round(max(dip_pool.values()), 1)] if dip_pool else None),
-        "acquires": sum(d["acquires"] for d in pool_win),
+        "acquires": sum(d["acquires"] for d in pool_win) if pool_win else None,
+        "observation_status": "AVAILABLE" if pool_win else "UNAVAILABLE",
         "note": "wait_nanos_total is cumulative pool wait; per-second "
                 "figures are deltas, never the lifetime max gauge",
     }

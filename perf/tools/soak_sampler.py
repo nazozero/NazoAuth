@@ -6,14 +6,13 @@ row per interval. Any dependency error is recorded as a *_err field — the
 ledger_check.py `sampler` mode treats every *_err as a validation failure,
 so a metrics 404 or a SQL error can never pass silently.
 
-Env: RUN_ID (required), DB_URL, VK_URL, APP_METRICS, OUT_PATH, INTERVAL_S.
+Env: RUN_ID (required), DB_URL, VK_URL, OUT_PATH, INTERVAL_S.
 """
 import hashlib
 import json
 import os
 import sys
 import time
-import urllib.request
 
 import psycopg
 import redis
@@ -22,7 +21,6 @@ from redis.retry import Retry
 
 DB = os.environ.get("DB_URL", "postgresql://postgres:postgres@postgres:5432/oauth")
 VK = os.environ.get("VK_URL", "redis://valkey:6379/0")
-APP = os.environ.get("APP_METRICS", "http://nazoauth:8000/__perf/metrics")
 OUT = os.environ.get("OUT_PATH", "/perf-state/soak-metrics.jsonl")
 INTERVAL = float(os.environ.get("INTERVAL_S", "10"))
 RUN_ID = os.environ.get("RUN_ID", "unset")
@@ -86,7 +84,8 @@ def main():
     )
     out.write(json.dumps({
         "kind": "meta", "run_id": RUN_ID, "script_sha256": self_sha256(),
-        "db": DB.split("@")[-1], "app_metrics": APP,
+        "db": DB.split("@")[-1], "collection_contract": "blackbox-db-v1",
+        "application_pool_status": "UNAVAILABLE", "in_process_queue_status": "UNVERIFIED",
         "started_at": int(time.time()),
     }) + "\n")
     next_issuance_count = 0.0
@@ -275,6 +274,17 @@ def main():
                 if include_audit_totals:
                     row["audit"]["counts_sampled_at_s"] = int(time.time())
                     next_audit_count = time.monotonic() + 60
+                # Database view of the task runtime role only. These counts
+                # are not application pool checkout or in-process queue counts.
+                row["runtime_role_activity"] = [
+                    dict(zip(["state", "wait_event_type", "wait_event", "backends"], values))
+                    for values in c.execute(
+                        "SELECT state, wait_event_type, wait_event, count(*) "
+                        "FROM pg_stat_activity WHERE usename=%s "
+                        "AND datname=current_database() AND backend_type='client backend' "
+                        "GROUP BY state, wait_event_type, wait_event "
+                        "ORDER BY state, wait_event_type, wait_event",
+                        ("nazoauth_perf_runtime",)).fetchall()]
                 # PG wait-event distribution by type: distinguishes
                 # connection-hold vs in-server wait when pool wait is high.
                 row["pg_waits"] = {
@@ -301,25 +311,6 @@ def main():
             }
         except Exception as e:
             row["vk_err"] = str(e)[:120]
-        try:
-            req = urllib.request.Request(APP, headers={"Host": "127.0.0.1"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"metrics status {resp.status}")
-                pm = json.load(resp)
-            p = pm["db_pool"]
-            row["pool"] = {
-                "acq": p["acquire_count"],
-                "wait_ns": p["wait_nanos_total"],
-                "wait_max_ns": p["wait_nanos_max"],
-                "waiting": p.get("waiting_acquisitions"),
-                "size": p.get("connections"),
-                "idle": p.get("idle_connections"),
-            }
-            if "audit_queue" in pm:
-                row["audit_queue"] = pm["audit_queue"]
-        except Exception as e:
-            row["app_err"] = str(e)[:120]
         out.write(json.dumps(row) + "\n")
         time.sleep(INTERVAL)
 

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import capacity_search as gate
 import point_runner as points
+from blackbox_contract import CONTRACT
 import single_instance_scaling as sis
 
 SCENARIOS = {
@@ -118,7 +119,8 @@ def evaluate_point(point, rec, out, *, confirmation=False):
                                     require_stream=True)
     metrics["main_verdict"] = verdict
     raw, _ = gate.k6_metrics(summary)
-    metrics["complete_operation_latency_ms"] = gate._trend(raw, "cap_iter_ms")
+    metrics["complete_operation_latency_ms"] = (
+        gate._trend(raw, "cap_iter_ms") if "cap_iter_ms" in raw else None)
     health = points._health_checks(rec, mixed=scenario == "cap_mixed")
     if not all(health.values()):
         m = rec.get("metrics") or {}
@@ -128,7 +130,7 @@ def evaluate_point(point, rec, out, *, confirmation=False):
                      and (m.get("audit_log_scan") or {}).get("collected") is True
                      and (rec.get("audit_state_check", {}).get("checks") or {}).get("collected") is True
                      and (rec.get("journal_stats") or {}).get("collected") is True)
-        if scenario == "cap_mixed":
+        if scenario == "cap_mixed" and rec.get("collection_contract") != CONTRACT:
             collected = collected and rec.get("audit_queue_post_drain", {}).get("collected") is True
         # Local/unknown preparation failures remain invalid even if every
         # independent health snapshot was collected successfully.

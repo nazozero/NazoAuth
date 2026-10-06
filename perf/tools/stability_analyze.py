@@ -195,11 +195,14 @@ def per_bucket_pool(residency_rows: list[dict], window_start_s: float,
         i = _bucket_index(r["ts"] * 1000, window_start_s * 1000)
         if i < 1 or i > n_buckets:
             continue
-        b = acc.setdefault(i, {"waiting": [], "checked": []})
         p = r["pool"]
-        b["waiting"].append(float(p.get("waiting", 0) or 0))
-        con = p.get("con", p.get("size", 0)) or 0
-        idle = p.get("idle", 0) or 0
+        con = p.get("con", p.get("size"))
+        idle = p.get("idle")
+        waiting = p.get("waiting")
+        if con is None or idle is None or waiting is None:
+            continue
+        b = acc.setdefault(i, {"waiting": [], "checked": []})
+        b["waiting"].append(float(waiting))
         b["checked"].append(float(con) - float(idle))
     return {
         i: {"waiting_mean": round(sum(v["waiting"]) / len(v["waiting"]), 1),
