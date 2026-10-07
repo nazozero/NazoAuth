@@ -311,7 +311,7 @@ impl AuthorizationStore {
         command::set_ex_string(
             &self.connection,
             keys::reauth_nonce(nonce),
-            started_at.to_string(),
+            format!("micros-v1:{started_at}"),
             ttl_seconds,
         )
         .await
@@ -321,9 +321,14 @@ impl AuthorizationStore {
         command::take(&self.connection, keys::reauth_nonce(nonce))
             .await?
             .map(|raw| {
-                raw.parse().map_err(|error| {
-                    Error::corrupt_data(format!("malformed reauth timestamp: {error}"))
-                })
+                raw.strip_prefix("micros-v1:")
+                    .ok_or_else(|| {
+                        Error::corrupt_data("legacy reauth timestamp is not completion proof")
+                    })?
+                    .parse()
+                    .map_err(|error| {
+                        Error::corrupt_data(format!("malformed reauth timestamp: {error}"))
+                    })
             })
             .transpose()
     }

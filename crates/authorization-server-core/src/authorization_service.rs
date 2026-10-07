@@ -415,6 +415,7 @@ pub trait AuthorizationStateStorePort: Send + Sync {
     ) -> AuthorizationFuture<'a, ()>;
     fn delete_authorization_code<'a>(&'a self, code_hash: &'a str) -> AuthorizationFuture<'a, ()>;
     fn take_reauth_nonce<'a>(&'a self, nonce: &'a str) -> AuthorizationFuture<'a, Option<i64>>;
+    /// Store a one-use challenge timestamp in Unix microseconds.
     fn store_reauth_nonce<'a>(
         &'a self,
         nonce: &'a str,
@@ -567,6 +568,7 @@ where
         self.as_ref().take_reauth_nonce(nonce)
     }
 
+    /// Store a one-use challenge timestamp in Unix microseconds.
     fn store_reauth_nonce<'a>(
         &'a self,
         nonce: &'a str,

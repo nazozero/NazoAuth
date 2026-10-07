@@ -1281,3 +1281,31 @@ async fn authorization_code_begin_and_busy_retry_preserve_the_original_ttl() {
         AuthorizationCodeBegin::Missing
     ));
 }
+
+#[tokio::test]
+async fn reauthentication_precision_is_versioned_and_legacy_nonce_is_consumed_fail_closed() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let nonce = uuid::Uuid::now_v7().to_string();
+    let key = nazo_valkey::test_support::reauth_nonce_storage_key(&nonce);
+    store
+        .store_reauth_nonce(&nonce, 1_000_500_000, 30)
+        .await
+        .unwrap();
+    assert_eq!(
+        inspector.get::<String, _>(&key).await.unwrap(),
+        "micros-v1:1000500000"
+    );
+    assert_eq!(
+        store.take_reauth_nonce(&nonce).await.unwrap(),
+        Some(1_000_500_000)
+    );
+    assert_eq!(store.take_reauth_nonce(&nonce).await.unwrap(), None);
+    inspector
+        .set::<(), _, _>(&key, "1000", Some(Expiration::EX(30)), None, false)
+        .await
+        .unwrap();
+    assert!(store.take_reauth_nonce(&nonce).await.is_err());
+    assert_eq!(store.take_reauth_nonce(&nonce).await.unwrap(), None);
+}

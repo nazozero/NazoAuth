@@ -347,6 +347,7 @@ pub(crate) async fn authorize_request_with_context(
     match nazo_auth::authorization_session_decision(
         session.as_ref().map(|session| AuthorizationSession {
             auth_time: session.auth_time,
+            auth_time_micros: session.auth_time_micros,
         }),
         normalized.prompt,
         normalized.max_age,

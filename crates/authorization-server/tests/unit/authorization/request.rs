@@ -131,10 +131,13 @@ fn session_requires_reauthentication(
     now: i64,
 ) -> bool {
     authorization_session_decision(
-        Some(AuthorizationSession { auth_time }),
+        Some(AuthorizationSession {
+            auth_time,
+            auth_time_micros: Some(auth_time * 1_000_000),
+        }),
         prompt,
         max_age,
-        reauth_started_at,
+        reauth_started_at.map(|t| t * 1_000_000),
         now,
     ) != AuthorizationSessionDecision::Continue
 }
@@ -376,7 +379,7 @@ fn max_age_zero_and_prompt_directives_require_reauthentication() {
             ..PromptDirectives::default()
         },
         None,
-        1_001,
+        1_002,
         Some(1_001),
         1_006,
     ));
@@ -406,7 +409,7 @@ fn max_age_zero_and_prompt_directives_require_reauthentication() {
             ..PromptDirectives::default()
         },
         None,
-        1_001,
+        1_002,
         Some(1_001),
         1_006,
     ));
@@ -1122,5 +1125,114 @@ fn protocol_max_age_zero_application_uses_existing_one_use_reauthentication_nonc
             1
         );
         assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn protocol_same_second_old_session_cannot_complete_reauthentication() {
+    use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
+    use nazo_identity::{
+        SessionId,
+        session::{SessionRecord, SessionSnapshot, SessionVersion},
+    };
+    futures_executor::block_on(async {
+        let mut observed = Vec::new();
+        for directive in [
+            ("max_age", "0"),
+            ("prompt", "login"),
+            ("prompt", "select_account"),
+        ] {
+            let fixture = authorization_fixture::Fixture::new(
+                Ok(Some(authorization_fixture::client(true))),
+                Ok(Some(authorization_fixture::session())),
+            );
+            fixture
+                .ports
+                .record_consent_writes
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let app = fixture.make_application();
+            let sid = SessionId::new("unchanged-old-session");
+            let facts = AuthorizationRequestFacts {
+                source_ip: "192.0.2.1",
+                session_id: Some(&sid),
+                user_agent: None,
+            };
+            let parameters = query(&[
+                ("client_id", "client-1"),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("scope", "openid"),
+                directive,
+                (
+                    "code_challenge",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                ),
+                ("code_challenge_method", "S256"),
+            ]);
+            let mut same_second = None;
+            for _ in 0..4 {
+                let authenticated_at = chrono::Utc::now();
+                let auth_time = authenticated_at.timestamp();
+                let mut old_record = SessionRecord::new(
+                    authorization_fixture::account().user_id(),
+                    auth_time,
+                    vec!["pwd".into()],
+                    false,
+                    Some("unchanged-oidc-session".into()),
+                );
+                old_record.record_authentication_at(authenticated_at);
+                let old = SessionSnapshot::new(
+                    old_record,
+                    SessionVersion::from_storage(
+                        b"unchanged-old-version".to_vec().into_boxed_slice(),
+                    ),
+                );
+                *fixture.ports.session.lock().unwrap() = Ok(Some(old.clone()));
+                let AuthorizationOutcome::Redirect { location } = app
+                    .authorize(&facts, &mut parameters.clone())
+                    .await
+                    .unwrap()
+                else {
+                    panic!("first request must demand fresh authentication");
+                };
+                let login = url::Url::parse(&location).unwrap();
+                assert_eq!(login.path(), "/auth");
+                let next = login
+                    .query_pairs()
+                    .find_map(|(k, v)| (k == "next").then_some(v.into_owned()))
+                    .unwrap();
+                let resumed_url =
+                    url::Url::parse(&format!("https://issuer.example{next}")).unwrap();
+                let resumed: HashMap<String, String> =
+                    resumed_url.query_pairs().into_owned().collect();
+                let nonce = &resumed[reauth_nonce_parameter()];
+                let started = fixture.ports.reauth_nonces.lock().unwrap()[nonce];
+                if started / 1_000_000 == auth_time {
+                    same_second = Some((old, resumed));
+                    break;
+                }
+            }
+            let (old, mut resumed) = same_second
+                .expect("fixture must exercise equal-second authentication and challenge");
+            assert_eq!(
+                *fixture.ports.session.lock().unwrap(),
+                Ok(Some(old.clone()))
+            );
+            // No login, credential verification, or session replacement occurs between calls.
+            let AuthorizationOutcome::Redirect { location } =
+                app.authorize(&facts, &mut resumed).await.unwrap()
+            else {
+                panic!("unchanged old session must redirect to authentication");
+            };
+            assert_eq!(*fixture.ports.session.lock().unwrap(), Ok(Some(old)));
+            observed.push((
+                directive,
+                url::Url::parse(&location).unwrap().path().to_owned(),
+            ));
+        }
+        assert!(
+            observed.iter().all(|(_, path)| path == "/auth"),
+            "old-session outcomes: {observed:?}"
+        );
     });
 }

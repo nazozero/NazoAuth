@@ -174,7 +174,7 @@ impl ServerMfaProfileOperations {
                 method.amr(),
                 self.session_ttl_seconds,
                 require_pending_mfa,
-                context.now,
+                Utc::now(),
             )
             .await
             .map_err(|error| {

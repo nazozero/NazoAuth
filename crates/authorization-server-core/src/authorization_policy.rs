@@ -377,6 +377,8 @@ fn acr_value_is_baseline(value: &Value) -> Result<bool, AuthorizationPolicyError
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AuthorizationSession {
     pub auth_time: i64,
+    /// Authentication-event timestamp in Unix microseconds; absent for legacy sessions.
+    pub auth_time_micros: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -391,7 +393,7 @@ pub fn authorization_session_decision(
     session: Option<AuthorizationSession>,
     prompt: PromptDirectives,
     max_age: Option<i64>,
-    reauthentication_started_at: Option<i64>,
+    reauthentication_started_at_micros: Option<i64>,
     now: i64,
 ) -> AuthorizationSessionDecision {
     // OIDC max_age=0 follows the same one-use reauthentication completion as prompt=login.
@@ -406,7 +408,14 @@ pub fn authorization_session_decision(
         };
     };
     let prompt_requires_fresh_login = fresh_authentication
-        && reauthentication_started_at.is_none_or(|started_at| session.auth_time < started_at);
+        && !reauthentication_started_at_micros.is_some_and(|started_at| {
+            session.auth_time_micros.is_some_and(|authenticated_at| {
+                started_at > 0
+                    && authenticated_at > started_at
+                    && authenticated_at / 1_000_000 == session.auth_time
+                    && session.auth_time <= now
+            })
+        });
     let max_age_expired = match max_age {
         Some(0) | None => false,
         Some(max_age) => now.saturating_sub(session.auth_time) > max_age,

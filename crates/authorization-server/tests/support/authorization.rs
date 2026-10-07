@@ -651,14 +651,17 @@ pub fn account() -> PublicAccount {
     }
 }
 pub fn session() -> SessionSnapshot {
+    let now = Utc::now();
+    let mut record = SessionRecord::new(
+        account().user_id(),
+        now.timestamp(),
+        vec!["pwd".into()],
+        false,
+        Some("oidc-session".into()),
+    );
+    record.record_authentication_at(now);
     SessionSnapshot::new(
-        SessionRecord::new(
-            account().user_id(),
-            Utc::now().timestamp(),
-            vec!["pwd".into()],
-            false,
-            Some("oidc-session".into()),
-        ),
+        record,
         SessionVersion::from_storage(b"v1".to_vec().into_boxed_slice()),
     )
 }

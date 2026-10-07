@@ -22,6 +22,7 @@ pub struct SessionPayload {
 pub struct CurrentSession {
     pub user: PublicAccount,
     pub auth_time: i64,
+    pub auth_time_micros: Option<i64>,
     pub amr: Vec<String>,
     pub oidc_sid: String,
     pub logged_in_client_ids: Vec<String>,
@@ -77,12 +78,14 @@ impl SessionResolver {
         {
             nazo_identity::SessionResolution::Present(session) => {
                 let auth_time = session.auth_time();
+                let auth_time_micros = session.auth_time_micros();
                 let amr = session.amr().to_vec();
                 let oidc_sid = session.oidc_sid().to_owned();
                 let logged_in_client_ids = session.logged_in_client_ids().to_vec();
                 Ok(Some(CurrentSession {
                     user: (*session).into_user(),
                     auth_time,
+                    auth_time_micros,
                     amr,
                     oidc_sid,
                     logged_in_client_ids,

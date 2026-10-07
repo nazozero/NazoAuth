@@ -175,6 +175,7 @@ fn current_session_exposes_exact_logged_in_clients() {
             updated_at: now,
         },
         auth_time: 900,
+        auth_time_micros: None,
         amr: vec!["password".to_owned()],
         oidc_sid: "oidc-sid".to_owned(),
         logged_in_client_ids: vec!["client-a".to_owned(), "client-b".to_owned()],
@@ -314,7 +315,13 @@ async fn step_up_builds_a_fresh_session_and_csrf_pair_for_atomic_rotation() {
     let store = Arc::new(FakeStore::with_record(record(true)));
     let old_session_id = SessionId::new("session-1");
     let rotation = service(store.clone())
-        .step_up(&old_session_id, "totp", 3_600, true, 1_000)
+        .step_up(
+            &old_session_id,
+            "totp",
+            3_600,
+            true,
+            chrono::DateTime::from_timestamp(1_000, 0).unwrap(),
+        )
         .await
         .unwrap()
         .unwrap();
@@ -462,4 +469,19 @@ async fn mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_depen
             usize::from(matches!(case, "inactive" | "corrupt"))
         );
     }
+}
+
+#[test]
+fn authentication_precision_is_owned_by_the_record_and_legacy_updates_clear_it() {
+    let mut session = record(false);
+    assert_eq!(session.auth_time_micros(), None);
+    let now = chrono::DateTime::from_timestamp_micros(1_000_123_456).unwrap();
+    session.record_authentication_at(now);
+    assert_eq!(session.auth_time(), 1_000);
+    assert_eq!(session.auth_time_micros(), Some(1_000_123_456));
+    assert!(!session.restore_auth_time_micros(Some(1_001_123_456)));
+    assert!(!session.restore_auth_time_micros(Some(-1)));
+    assert_eq!(session.auth_time_micros(), Some(1_000_123_456));
+    session.set_auth_time(1_001);
+    assert_eq!(session.auth_time_micros(), None);
 }

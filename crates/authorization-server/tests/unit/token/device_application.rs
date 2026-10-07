@@ -325,6 +325,7 @@ fn session() -> CurrentSession {
     CurrentSession {
         user: crate::test_support::authorization::account(),
         auth_time: Utc::now().timestamp(),
+        auth_time_micros: None,
         amr: vec!["pwd".into()],
         oidc_sid: "device-session".into(),
         logged_in_client_ids: vec![],

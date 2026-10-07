@@ -293,6 +293,7 @@ fn fixture_with_client(
     let session = CurrentSession {
         user,
         auth_time: now - 10,
+        auth_time_micros: None,
         amr: vec!["pwd".into(), "otp".into()],
         oidc_sid: "session-1".into(),
         logged_in_client_ids: vec![],

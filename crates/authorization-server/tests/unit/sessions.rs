@@ -271,6 +271,7 @@ fn administrator_policy_requires_a_positive_admin_level() {
         let session = CurrentSession {
             user,
             auth_time: 1_000,
+            auth_time_micros: None,
             amr: vec!["password".to_owned()],
             oidc_sid: "sid-1".to_owned(),
             logged_in_client_ids: Vec::new(),

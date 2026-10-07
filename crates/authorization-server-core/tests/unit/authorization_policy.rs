@@ -126,7 +126,10 @@ fn session_policy_handles_prompt_none_and_reauthentication_without_transport_sta
     );
     assert_eq!(
         authorization_session_decision(
-            Some(AuthorizationSession { auth_time: 900 }),
+            Some(AuthorizationSession {
+                auth_time: 900,
+                auth_time_micros: Some(900_000_000)
+            }),
             PromptDirectives::default(),
             Some(50),
             None,
@@ -265,11 +268,11 @@ proptest! {
     fn max_age_decision_matches_elapsed_session_age(
         auth_time in 0_i64..1_000_000,
         elapsed in 0_i64..100_000,
-        max_age in 0_i64..100_000,
+        max_age in prop_oneof![Just(0_i64), 1_i64..100_000],
     ) {
         let now = auth_time.saturating_add(elapsed);
         let decision = authorization_session_decision(
-            Some(AuthorizationSession { auth_time }),
+            Some(AuthorizationSession { auth_time, auth_time_micros: Some(auth_time * 1_000_000) }),
             PromptDirectives::default(),
             Some(max_age),
             None,
@@ -279,7 +282,7 @@ proptest! {
         prop_assert_eq!(
             decision,
             if requires_login {
-                AuthorizationSessionDecision::Login { fresh_authentication: false }
+                AuthorizationSessionDecision::Login { fresh_authentication: max_age == 0 }
             } else {
                 AuthorizationSessionDecision::Continue
             }
@@ -289,7 +292,13 @@ proptest! {
 
 #[test]
 fn protocol_max_age_zero_requires_fresh_authentication_without_completion_nonce() {
-    for session in [None, Some(AuthorizationSession { auth_time: 1_000 })] {
+    for session in [
+        None,
+        Some(AuthorizationSession {
+            auth_time: 1_000,
+            auth_time_micros: Some(1_000_000_000),
+        }),
+    ] {
         assert_eq!(
             authorization_session_decision(
                 session,
@@ -308,11 +317,19 @@ fn protocol_max_age_zero_requires_fresh_authentication_without_completion_nonce(
 #[test]
 fn protocol_max_age_zero_accepts_only_completed_fresh_authentication() {
     for (auth_time, started_at, expected) in [
-        (1_000, Some(1_000), AuthorizationSessionDecision::Continue),
-        (1_001, Some(1_000), AuthorizationSessionDecision::Continue),
+        (
+            1_000,
+            Some(999_999_999),
+            AuthorizationSessionDecision::Continue,
+        ),
+        (
+            1_001,
+            Some(1_000_000_000),
+            AuthorizationSessionDecision::Continue,
+        ),
         (
             999,
-            Some(1_000),
+            Some(1_000_000_000),
             AuthorizationSessionDecision::Login {
                 fresh_authentication: true,
             },
@@ -327,7 +344,10 @@ fn protocol_max_age_zero_accepts_only_completed_fresh_authentication() {
     ] {
         assert_eq!(
             authorization_session_decision(
-                Some(AuthorizationSession { auth_time }),
+                Some(AuthorizationSession {
+                    auth_time,
+                    auth_time_micros: Some(auth_time * 1_000_000)
+                }),
                 PromptDirectives::default(),
                 Some(0),
                 started_at,
@@ -342,7 +362,10 @@ fn protocol_max_age_zero_accepts_only_completed_fresh_authentication() {
     };
     assert_eq!(
         authorization_session_decision(
-            Some(AuthorizationSession { auth_time: 1_000 }),
+            Some(AuthorizationSession {
+                auth_time: 1_000,
+                auth_time_micros: Some(1_000_000_000)
+            }),
             prompt_none,
             Some(0),
             None,
@@ -352,12 +375,61 @@ fn protocol_max_age_zero_accepts_only_completed_fresh_authentication() {
     );
     assert_eq!(
         authorization_session_decision(
-            Some(AuthorizationSession { auth_time: 1_000 }),
+            Some(AuthorizationSession {
+                auth_time: 1_000,
+                auth_time_micros: Some(1_000_000_000)
+            }),
             prompt_none,
             Some(0),
-            Some(1_000),
+            Some(999_999_999),
             1_010,
         ),
         AuthorizationSessionDecision::Continue
     );
+}
+
+#[test]
+fn same_second_fresh_authentication_requires_strictly_later_server_event() {
+    let challenge = 1_000_500_000;
+    for (completed, expected) in [
+        (
+            None,
+            AuthorizationSessionDecision::Login {
+                fresh_authentication: true,
+            },
+        ),
+        (
+            Some(challenge - 1),
+            AuthorizationSessionDecision::Login {
+                fresh_authentication: true,
+            },
+        ),
+        (
+            Some(challenge),
+            AuthorizationSessionDecision::Login {
+                fresh_authentication: true,
+            },
+        ),
+        (Some(challenge + 1), AuthorizationSessionDecision::Continue),
+        (
+            Some(1_001_000_000),
+            AuthorizationSessionDecision::Login {
+                fresh_authentication: true,
+            },
+        ),
+    ] {
+        assert_eq!(
+            authorization_session_decision(
+                Some(AuthorizationSession {
+                    auth_time: 1_000,
+                    auth_time_micros: completed
+                }),
+                PromptDirectives::default(),
+                Some(0),
+                Some(challenge),
+                1_000,
+            ),
+            expected
+        );
+    }
 }

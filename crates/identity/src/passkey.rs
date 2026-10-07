@@ -609,13 +609,14 @@ where
         } else {
             self.config.session_ttl_seconds
         };
-        let session = SessionRecord::new(
+        let mut session = SessionRecord::new(
             account.user_id(),
             now.timestamp(),
             amr,
             pending_mfa,
             Some(random_urlsafe_token()),
         );
+        session.record_authentication_at(now);
         let session_id = random_urlsafe_token();
         let csrf_token = random_urlsafe_token();
         match self

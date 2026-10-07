@@ -180,3 +180,8 @@ pub async fn scoped_connect(
         .map_err(crate::Error::from_fred)?;
     Ok(scoped_connection(client))
 }
+
+/// Exact scoped key for testing legacy reauthentication-state migration.
+pub fn reauth_nonce_storage_key(nonce: &str) -> String {
+    state_storage_key(crate::keys::reauth_nonce(nonce))
+}

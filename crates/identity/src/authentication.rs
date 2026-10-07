@@ -231,13 +231,14 @@ where
             amr.push("remembered_mfa".to_owned());
             amr.push("mfa".to_owned());
         }
-        let session = SessionRecord::new(
+        let mut session = SessionRecord::new(
             account.user_id(),
             input.now.timestamp(),
             amr,
             account.account.mfa_enabled && !remembered_mfa,
             Some(random_urlsafe_token()),
         );
+        session.record_authentication_at(input.now);
         let session_id = random_urlsafe_token();
         let csrf_token = random_urlsafe_token();
         let session_ttl_seconds = if session.pending_mfa() {

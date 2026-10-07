@@ -24,8 +24,8 @@ use chrono::{Duration, Utc};
 use http::StatusCode;
 use nazo_auth::{
     DpopError, ExpandedParAdmissionPolicy, ParAdmissionError, PresentedClientCredentials,
-    RawParAdmissionPolicy, is_valid_dpop_jkt, unverified_client_assertion_client_id,
-    validate_expanded_par_admission, validate_raw_par_admission,
+    RawParAdmissionPolicy, unverified_client_assertion_client_id, validate_expanded_par_admission,
+    validate_raw_par_admission,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -428,17 +428,7 @@ impl PreparedParClient<'_> {
         ) {
             return Err(par_admission_error(error));
         }
-        let request_dpop_jkt = match params.get("dpop_jkt") {
-            Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
-            Some(_) => {
-                return Err(OAuthEndpointError::json(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "dpop_jkt 无效.",
-                ));
-            }
-            None => None,
-        };
+        let request_dpop_jkt = params.get("dpop_jkt").cloned();
         let header_dpop_jkt = match crate::security::dpop::validate_dpop_proof(
             context.service,
             context.security_audit,

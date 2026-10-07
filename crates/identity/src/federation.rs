@@ -445,13 +445,14 @@ where
         source_ip: String,
     ) -> Result<LoginSuccess, FederationError> {
         let now = Utc::now();
-        let session = SessionRecord::new(
+        let mut session = SessionRecord::new(
             account.user_id(),
             now.timestamp(),
             vec![method.clone(), "federated".to_owned()],
             false,
             Some(random_urlsafe_token()),
         );
+        session.record_authentication_at(now);
         let session_id = random_urlsafe_token();
         let csrf_token = random_urlsafe_token();
         match self
