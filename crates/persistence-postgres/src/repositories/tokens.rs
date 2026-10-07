@@ -33,6 +33,18 @@ use super::access_token_revocation::{
 
 pub(crate) const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 60;
 
+/// Adapter-local lookup after the public string tenant boundary is parsed.
+pub(super) struct TypedRevocationLookupKey<'a> {
+    pub(super) tenant_id: Uuid,
+    pub(super) jti: &'a str,
+    pub(super) client_id: &'a str,
+    pub(super) subject: &'a str,
+    pub(super) user_id: Option<&'a str>,
+    pub(super) subject_type: Option<&'a str>,
+    pub(super) client_epoch: Option<i64>,
+    pub(super) user_epoch: Option<i64>,
+}
+
 #[derive(Clone)]
 pub struct TokenRepository {
     pool: DbPool,
@@ -309,6 +321,24 @@ impl TokenRepository {
     ) -> Result<bool, RepositoryError> {
         let tenant_id = Uuid::parse_str(key.tenant_id)
             .map_err(|_| RepositoryError::Consistency("invalid token tenant".to_owned()))?;
+        self.access_token_state_revoked_typed(TypedRevocationLookupKey {
+            tenant_id,
+            jti: key.jti,
+            client_id: key.client_id,
+            subject: key.subject,
+            user_id: key.user_id,
+            subject_type: key.subject_type,
+            client_epoch: key.client_epoch,
+            user_epoch: key.user_epoch,
+        })
+        .await
+    }
+
+    pub(super) async fn access_token_state_revoked_typed(
+        &self,
+        key: TypedRevocationLookupKey<'_>,
+    ) -> Result<bool, RepositoryError> {
+        let tenant_id = key.tenant_id;
         let Some(client_epoch) = key.client_epoch else {
             if key.user_epoch.is_some() {
                 return Ok(true);
@@ -632,7 +662,7 @@ fn token_from_current(
         client_id: family.client_id,
         user_id: family.user_id,
         contract_key: digest32(&family.contract_blake3)?,
-        contract_audiences: contract.audiences.clone(),
+        contract_audiences: contract.audiences,
         scopes: Value::Array(contract.scopes.into_iter().map(Value::String).collect()),
         audience: family.current_audience,
         authorization_details: contract.authorization_details,

@@ -1014,9 +1014,10 @@ where
         now: DateTime<Utc>,
     ) -> Result<TokenInspection, TokenPortError> {
         if let Some(claims) = self.signer.decode_access_token(issuer, raw_token).await? {
-            let audience_allowed = token_audiences(&claims.aud)
+            let audience_allowed = resource_server
+                .allowed_audiences
                 .iter()
-                .any(|audience| resource_server.allowed_audiences.contains(audience));
+                .any(|audience| crate::token_audience_contains(&claims.aud, audience));
             if (claims.client_id != resource_server.client_id && !audience_allowed)
                 || claims.tenant_id.parse::<Uuid>().ok() != Some(resource_server.tenant_id)
             {
@@ -1062,7 +1063,7 @@ where
             return Ok(TokenInspection::Inactive);
         }
         Ok(TokenInspection::ActiveRefresh {
-            scope: json_strings(&token.scopes).join(" "),
+            scope: json_scope_string(&token.scopes),
             client_id: resource_server.client_id.clone(),
             expires_at: token.expires_at.timestamp(),
             issued_at: token.issued_at.timestamp(),
@@ -1160,24 +1161,24 @@ where
     }
 }
 
-fn token_audiences(value: &Value) -> Vec<String> {
-    match value {
-        Value::String(value) => vec![value.clone()],
-        Value::Array(values) => values
-            .iter()
-            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
-            .collect(),
-        _ => Vec::new(),
+fn json_scope_string(value: &Value) -> String {
+    let Some(values) = value.as_array() else {
+        return String::new();
+    };
+    let (bytes, count) = values
+        .iter()
+        .filter_map(Value::as_str)
+        .fold((0, 0usize), |(bytes, count), scope| {
+            (bytes + scope.len(), count + 1)
+        });
+    let mut scope = String::with_capacity(bytes + count.saturating_sub(1));
+    for (index, value) in values.iter().filter_map(Value::as_str).enumerate() {
+        if index != 0 {
+            scope.push(' ');
+        }
+        scope.push_str(value);
     }
-}
-
-fn json_strings(value: &Value) -> Vec<String> {
-    value
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|value| value.as_str().map(ToOwned::to_owned))
-        .collect()
+    scope
 }
 
 fn access_token_type(claims: &Claims) -> &'static str {

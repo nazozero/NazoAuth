@@ -987,8 +987,8 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
     ) -> TokenFuture<'a, bool> {
         Box::pin(async move {
             self.tokens
-                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
-                    tenant_id: &tenant_id.to_string(),
+                .access_token_state_revoked_typed(super::tokens::TypedRevocationLookupKey {
+                    tenant_id,
                     jti: &claims.jti,
                     client_id: &claims.client_id,
                     subject: &claims.sub,

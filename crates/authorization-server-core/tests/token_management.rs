@@ -15,6 +15,7 @@ struct Calls {
 #[derive(Clone)]
 struct Ports {
     claims: Option<Claims>,
+    refresh: Option<RefreshToken>,
     calls: Arc<Mutex<Calls>>,
     unavailable: bool,
 }
@@ -58,7 +59,7 @@ impl TokenRepositoryPort for Ports {
         tenant_id: Uuid,
         raw_token: &'a str,
     ) -> TokenFuture<'a, Option<RefreshToken>> {
-        panic!("unexpected refresh_token call")
+        Box::pin(async move { Ok(self.refresh.clone()) })
     }
     fn inspect_lost_response_successor<'a>(
         &'a self,
@@ -295,6 +296,7 @@ fn fixture(
 ) -> (TokenService<Ports, Ports>, Arc<Mutex<Calls>>) {
     let ports = Ports {
         claims,
+        refresh: None,
         calls: Arc::new(Mutex::new(Calls::default())),
         unavailable,
     };
@@ -392,4 +394,137 @@ fn expired_introspection_avoids_storage_but_live_token_fails_closed_on_storage_e
         Err(TokenPortError::Unavailable)
     ));
     assert_eq!(calls.lock().unwrap().revocation_reads, 1);
+}
+
+#[test]
+fn ownership_introspection_audience_shapes_keep_membership_and_tenant_boundaries() {
+    let mut resource = client(Uuid::from_u128(101));
+    resource.registration.allowed_audiences = vec![
+        "resource://api".into(),
+        "resource://\u{7b7e}\u{540d}".into(),
+    ];
+    let expiry = 1_800_000_000;
+    for (audience, member) in [
+        (serde_json::json!("resource://api"), true),
+        (serde_json::json!(["other", "resource://api"]), true),
+        (
+            serde_json::json!([null, 7, false, "resource://api", "resource://api"]),
+            true,
+        ),
+        (serde_json::json!(["resource://\u{7b7e}\u{540d}"]), true),
+        (serde_json::json!([null, 7, false]), false),
+        (serde_json::json!(null), false),
+        (serde_json::json!({"aud": "resource://api"}), false),
+        (serde_json::json!("other"), false),
+        (serde_json::json!([]), false),
+        (serde_json::json!(""), false),
+    ] {
+        for same_client in [false, true] {
+            for same_tenant in [false, true] {
+                let mut token = claims(&resource, expiry);
+                token.aud = audience.clone();
+                if !same_client {
+                    token.client_id = "other-client".into();
+                }
+                if !same_tenant {
+                    token.tenant_id = Uuid::from_u128(102).to_string();
+                }
+                let (service, calls) = fixture(Some(token), false);
+                let inspection = futures_executor::block_on(service.inspect_token(
+                    "https://issuer.example",
+                    "jwt",
+                    &resource,
+                    Utc.timestamp_opt(expiry - 1, 0).unwrap(),
+                ))
+                .unwrap();
+                let allowed = same_tenant && (same_client || member);
+                assert_eq!(calls.lock().unwrap().revocation_reads, usize::from(allowed));
+                let document = inspection.into_document();
+                assert_eq!(document["active"], allowed);
+                if allowed {
+                    assert_eq!(
+                        document["aud"], audience,
+                        "return the original audience shape"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn ownership_refresh_introspection_preserves_scope_output() {
+    let client = client(Uuid::from_u128(101));
+    let now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+    for (scopes, expected) in [
+        (serde_json::json!(null), ""),
+        (serde_json::json!("openid"), ""),
+        (serde_json::json!([]), ""),
+        (serde_json::json!([1, null, false]), ""),
+        (serde_json::json!([""]), ""),
+        (serde_json::json!(["", "openid", ""]), " openid "),
+        (serde_json::json!(["", ""]), " "),
+        (
+            serde_json::json!(["openid", null, 1, "openid", "email"]),
+            "openid openid email",
+        ),
+        (
+            serde_json::json!(["\u{7b7e}\u{540d}", "", false, "read"]),
+            "\u{7b7e}\u{540d}  read",
+        ),
+    ] {
+        let token = RefreshToken {
+            id: Uuid::from_u128(1),
+            token_blake3: [1; 32],
+            tenant_id: client.tenant_id,
+            token_family_id: Uuid::from_u128(2),
+            client_id: client.id,
+            user_id: None,
+            contract_key: [2; 32],
+            contract_audiences: vec!["resource".into()],
+            scopes,
+            audience: serde_json::json!(["resource"]),
+            authorization_details: serde_json::json!([]),
+            issued_at: now - chrono::Duration::minutes(1),
+            expires_at: now + chrono::Duration::hours(1),
+            revoked_at: None,
+            subject: "subject".into(),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            client_attestation_jkt: None,
+            authentication_context: RefreshTokenAuthenticationContext {
+                version: 1,
+                issuer: "https://issuer.example".into(),
+                audience: client.client_id.clone(),
+                auth_time: now.timestamp(),
+                amr: vec!["pwd".into()],
+                oidc_sid: None,
+                id_token_sid: None,
+                acr: None,
+                nonce: None,
+                userinfo_claims: Vec::new(),
+                userinfo_claim_requests: Vec::new(),
+                id_token_claims: Vec::new(),
+                id_token_claim_requests: Vec::new(),
+            },
+        };
+        let ports = Ports {
+            claims: None,
+            refresh: Some(token),
+            calls: Arc::new(Mutex::new(Calls::default())),
+            unavailable: false,
+        };
+        let service = TokenService::new(ports.clone(), ports.clone(), ports.clone());
+        let document = futures_executor::block_on(service.inspect_token(
+            "https://issuer.example",
+            "refresh",
+            &client,
+            now,
+        ))
+        .unwrap()
+        .into_document();
+        assert_eq!(document["active"], true);
+        assert_eq!(document["scope"], expected);
+        assert_eq!(ports.calls.lock().unwrap().revocation_reads, 0);
+    }
 }

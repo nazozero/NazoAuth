@@ -146,3 +146,133 @@ fn refresh_contract_preparation_rejects_each_nonpersistent_context_field() {
         assert!(prepare_refresh_contract(&refresh).is_err());
     }
 }
+
+fn ownership_family(contract: &RefreshContract) -> RefreshFamilyRow {
+    let now = Utc::now();
+    RefreshFamilyRow {
+        tenant_id: Uuid::from_u128(1),
+        token_family_id: Uuid::from_u128(2),
+        client_id: Uuid::from_u128(3),
+        user_id: Some(Uuid::from_u128(4)),
+        contract_blake3: contract.blake3_digest().to_vec(),
+        current_member_id: Uuid::from_u128(5),
+        current_token_blake3: vec![6; 32],
+        current_audience: serde_json::json!(["resource://a"]),
+        current_issued_at: now,
+        current_expires_at: now + Duration::hours(1),
+        current_id_token_sid: Some("generation-sid".into()),
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        client_attestation_jkt: None,
+        revoked_at: None,
+        reuse_detected_at: None,
+    }
+}
+
+#[test]
+fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() {
+    let contract = RefreshContract {
+        subject: "subject".into(),
+        scopes: vec!["openid".into()],
+        audiences: vec!["resource://a".into(), "resource://b".into()],
+        authorization_details: serde_json::json!([]),
+        authentication_context: valid_context(1_700_000_000),
+    };
+    let family = ownership_family(&contract);
+    let spent_contract = contract.clone();
+    let original_allocation = contract.audiences.as_ptr();
+    let current = token_from_current(family.clone(), contract).unwrap();
+    assert_eq!(current.contract_audiences, ["resource://a", "resource://b"]);
+    assert_eq!(current.contract_audiences.as_ptr(), original_allocation);
+    assert_eq!(current.audience, serde_json::json!(["resource://a"]));
+    assert_eq!(
+        current.authentication_context.id_token_sid.as_deref(),
+        Some("generation-sid")
+    );
+    let spent = SpentRefreshTokenRow {
+        refresh_token_blake3: vec![7; 32],
+        member_id: Uuid::from_u128(8),
+        spent_at: family.current_issued_at,
+        expires_at: family.current_expires_at,
+    };
+    let mut restored = token_from_spent(spent, family, spent_contract).unwrap();
+    assert_eq!(
+        restored.contract_audiences,
+        ["resource://a", "resource://b"]
+    );
+    assert_eq!(
+        restored.audience,
+        serde_json::json!(["resource://a", "resource://b"])
+    );
+    restored.audience[0] = serde_json::json!("changed");
+    assert_eq!(
+        restored.contract_audiences,
+        ["resource://a", "resource://b"]
+    );
+    assert_eq!(
+        restored.authentication_context.id_token_sid.as_deref(),
+        Some("generation-sid")
+    );
+}
+
+#[tokio::test]
+async fn ownership_public_uuid_boundary_keeps_consistency_error_before_connection() {
+    let pool = crate::create_pool("not-a-database-url", 1).unwrap();
+    let repo = TokenRepository::new(pool.clone());
+    for tenant_id in ["", "not-a-uuid", "00000000-0000-0000-0000-00000000000g"] {
+        let result = repo
+            .access_token_state_revoked(RevocationLookupKey {
+                tenant_id,
+                jti: "jti",
+                client_id: "client",
+                subject: "subject",
+                user_id: None,
+                subject_type: Some("client"),
+                client_epoch: None,
+                user_epoch: None,
+            })
+            .await;
+        assert!(
+            matches!(result, Err(RepositoryError::Consistency(message)) if message == "invalid token tenant")
+        );
+    }
+    assert_eq!(pool.status().size, 0);
+    for (client_epoch, user_epoch, user_id) in [
+        (None, Some(1), None),
+        (Some(-1), None, None),
+        (Some(1), Some(-1), None),
+        (Some(1), Some(1), Some("invalid-user")),
+    ] {
+        let tenant = Uuid::from_u128(1);
+        let text = tenant.to_string();
+        assert!(
+            repo.access_token_state_revoked(RevocationLookupKey {
+                tenant_id: &text,
+                jti: "jti",
+                client_id: "client",
+                subject: "subject",
+                user_id,
+                subject_type: Some("user"),
+                client_epoch,
+                user_epoch,
+            })
+            .await
+            .unwrap()
+        );
+        assert!(
+            repo.access_token_state_revoked_typed(TypedRevocationLookupKey {
+                tenant_id: tenant,
+                jti: "jti",
+                client_id: "client",
+                subject: "subject",
+                user_id,
+                subject_type: Some("user"),
+                client_epoch,
+                user_epoch,
+            })
+            .await
+            .unwrap()
+        );
+    }
+    assert_eq!(pool.status().size, 0);
+}

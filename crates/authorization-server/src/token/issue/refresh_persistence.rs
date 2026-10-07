@@ -72,17 +72,25 @@ pub(super) fn refresh_issue_matches_source(
         ) if *family_id == source.family_id && *successor_id == source.member_id => source,
         _ => return false,
     };
-    let Some(mut context) = refresh_authentication_context(issue, issuer, &client.client_id, None)
-    else {
-        return false;
-    };
-    context.nonce = None;
+    let context = &source.contract.authentication_context;
     source.tenant_id == client.tenant_id
         && source.client_id == client.id
         && source.user_id == issue.user_id
         && source.contract.subject == issue.subject
         && source.contract.authorization_details == issue.authorization_details
-        && source.contract.authentication_context == context
+        && context.is_well_formed()
+        && context.issuer == issuer
+        && context.audience == client.client_id
+        && issue.auth_time == Some(context.auth_time)
+        && context.amr == issue.amr
+        && context.oidc_sid == issue.oidc_sid
+        && context.id_token_sid.is_none()
+        && context.acr == issue.acr
+        && context.nonce.is_none()
+        && context.userinfo_claims == issue.userinfo_claims
+        && context.userinfo_claim_requests == issue.userinfo_claim_requests
+        && context.id_token_claims == issue.id_token_claims
+        && context.id_token_claim_requests == issue.id_token_claim_requests
         && nazo_auth::is_subset(&issue.scopes, &source.contract.scopes)
         && !issue.audiences.is_empty()
         && nazo_auth::is_subset(&issue.audiences, &source.current_audiences)

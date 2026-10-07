@@ -150,6 +150,23 @@ async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
         CommitTokenIssuanceResult::Committed
     );
     for (issuance, expected) in [(&input, true), (&current, false)] {
+        let claims: nazo_auth::Claims = serde_json::from_value(serde_json::json!({
+            "iss": "https://issuer.example", "sub": fixture.client_public_id,
+            "tenant_id": tenant.to_string(), "subject_type": "client",
+            "aud": fixture.client_public_id, "client_id": fixture.client_public_id,
+            "scope": "", "token_use": "access", "jti": issuance.access_token_jti,
+            "iat": 1, "nbf": 1, "exp": issuance.access_token_expires_at,
+            "client_epoch": issuance.principal_state.client_epoch,
+        }))
+        .unwrap();
+        assert_eq!(
+            repository
+                .access_token_revoked(tenant, &claims)
+                .await
+                .unwrap(),
+            expected,
+            "ownership typed adapter keeps client epoch revocation semantics"
+        );
         assert_eq!(
             tokens
                 .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
@@ -262,6 +279,22 @@ async fn repeated_pairwise_issuance_reuses_one_binding_and_honors_user_epoch() {
             .execute(&mut connection)
             .await
             .unwrap();
+        let claims: nazo_auth::Claims = serde_json::from_value(serde_json::json!({
+            "iss": "https://issuer.example", "sub": subject, "tenant_id": tenant.to_string(),
+            "subject_type": "user", "aud": fixture.client_public_id,
+            "client_id": fixture.client_public_id, "scope": "", "token_use": "access",
+            "jti": last_jti, "iat": 1, "nbf": 1, "exp": 1_800_000_000,
+            "client_epoch": 0, "user_epoch": 0,
+        }))
+        .unwrap();
+        assert_eq!(
+            repository
+                .access_token_revoked(tenant, &claims)
+                .await
+                .unwrap(),
+            expected,
+            "ownership typed adapter keeps pairwise binding and user epoch semantics"
+        );
         assert_eq!(
             tokens
                 .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {

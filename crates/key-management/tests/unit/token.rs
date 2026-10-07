@@ -510,3 +510,71 @@ async fn logout_hint_supported_algorithms_match_original_claim_and_expiry_semant
         assert!(manager.decode_id_token_hint(issuer, tampered).is_none());
     }
 }
+
+#[test]
+fn ownership_introspection_envelope_preserves_fixed_time_payload_bytes() {
+    let iat = 1_700_000_000;
+    for body in [
+        json!(null),
+        json!(false),
+        json!(["", "\u{7b7e}\u{540d}", 1]),
+        json!({"active": true, "z": ["", "a", "a"], "nested": {"z": 1, "a": "\n\"\\"}}),
+    ] {
+        let old = json!({"iss": "https://issuer.example/\u{7b7e}", "aud": "client/\u{540d}", "iat": iat, "token_introspection": &body});
+        let borrowed = super::IntrospectionResponseClaims {
+            aud: "client/\u{540d}",
+            iat,
+            iss: "https://issuer.example/\u{7b7e}",
+            token_introspection: &body,
+        };
+        assert_eq!(
+            serde_json::to_vec(&borrowed).unwrap(),
+            serde_json::to_vec(&old).unwrap()
+        );
+    }
+}
+
+#[tokio::test]
+async fn ownership_signed_introspection_payload_matches_original_bytes_and_algorithm() {
+    for requested in [None, Some("PS256")] {
+        let manager = KeyManager::for_test_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+        let body = json!({"active": true, "aud": ["a", "a", "\u{7b7e}\u{540d}"], "nested": {"z": null, "a": false}});
+        let token = manager
+            .sign_introspection_response(IntrospectionSignInput {
+                issuer: "https://issuer.example",
+                audience: "client",
+                body: &body,
+                signing_algorithm: requested,
+            })
+            .await
+            .unwrap();
+        let header = nazo_crypto::jwt::decode_header(&token).unwrap();
+        let expected_algorithm = if requested.is_some() {
+            jsonwebtoken::Algorithm::PS256
+        } else {
+            jsonwebtoken::Algorithm::EdDSA
+        };
+        assert_eq!(header.alg, expected_algorithm);
+        assert_eq!(header.typ.as_deref(), Some("token-introspection+jwt"));
+        let payload = URL_SAFE_NO_PAD
+            .decode(token.split('.').nth(1).unwrap())
+            .unwrap();
+        let decoded: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        let old = json!({"iss": "https://issuer.example", "aud": "client", "iat": decoded["iat"], "token_introspection": &body});
+        assert_eq!(payload, serde_json::to_vec(&old).unwrap());
+        let snapshot = manager.snapshot();
+        let key = snapshot
+            .verification_key(header.kid.as_deref().unwrap())
+            .unwrap();
+        let mut validation = nazo_crypto::jwt::Validation::new(expected_algorithm);
+        validation.required_spec_claims.remove("exp");
+        validation.set_issuer(&["https://issuer.example"]);
+        validation.set_audience(&["client"]);
+        assert_eq!(
+            nazo_crypto::jwt::decode::<serde_json::Value>(&token, &key.prepared.key, &validation)
+                .unwrap()
+                .claims,
+            old
+        );
+    }
+}

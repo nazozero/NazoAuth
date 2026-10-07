@@ -1676,12 +1676,13 @@ async fn bound_delayed_rotation_uses_transition_clock_without_false_reuse() {
                 CommitTokenIssuanceResult::Committed
             );
             let operation_completed_at = Utc::now();
-            // Explicit admission 45s after repository completion is 65s after signing.
-            let retry_started_at = operation_completed_at + Duration::seconds(45);
             let child = lookup(&url, &child_raw).await;
             assert_eq!(child.issued_at, signed_at);
             assert_eq!(child.expires_at, signed_expiry);
             let spent = lookup(&url, &original_raw).await;
+            // Admission is exactly 45s after the durable transition, independent
+            // of repository-return or fixture-read scheduling delays.
+            let retry_started_at = spent.revoked_at.unwrap() + Duration::seconds(45);
             assert_eq!(spent.expires_at, original.expires_at);
             let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
             if old_anchor {

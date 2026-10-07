@@ -9,6 +9,15 @@ use uuid::Uuid;
 
 use crate::{KeyManager, signing_algorithm_from_name};
 
+// Match the sorted field order of the previous serde_json::Value payload.
+#[derive(serde::Serialize)]
+struct IntrospectionResponseClaims<'a> {
+    aud: &'a str,
+    iat: i64,
+    iss: &'a str,
+    token_introspection: &'a Value,
+}
+
 impl TokenSignerPort for KeyManager {
     fn sign_access_token<'a>(
         &'a self,
@@ -188,12 +197,12 @@ impl TokenSignerPort for KeyManager {
             };
             let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("token-introspection+jwt".to_owned());
-            let claims = serde_json::json!({
-                "iss": input.issuer,
-                "aud": input.audience,
-                "iat": Utc::now().timestamp(),
-                "token_introspection": input.body,
-            });
+            let claims = IntrospectionResponseClaims {
+                aud: input.audience,
+                iat: Utc::now().timestamp(),
+                iss: input.issuer,
+                token_introspection: input.body,
+            };
             crate::model::encode_jwt_for_generation(
                 &generation,
                 &self.inner.health,

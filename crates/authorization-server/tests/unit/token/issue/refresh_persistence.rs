@@ -379,3 +379,123 @@ fn unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_t
     assert!(replacement.mtls_x5t_s256.is_none());
     assert!(replacement.client_attestation_jkt.is_none());
 }
+
+fn ownership_preserved_issue(client: &ClientRow) -> TokenIssue {
+    let mut issue = openid_issue();
+    issue.refresh_authority = Some(source_for_issue(&issue, client));
+    issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
+    issue.refresh_id_token_sid = Some(None);
+    issue.audiences = vec!["resource://a".into()];
+    issue
+}
+
+#[test]
+fn ownership_refresh_borrowed_context_rejects_each_contract_field_difference() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    for field in 0..13 {
+        let mut issue = ownership_preserved_issue(&client);
+        assert!(refresh_issue_matches_source(
+            &issue,
+            &client,
+            "https://issuer.example"
+        ));
+        let context = &mut issue
+            .refresh_authority
+            .as_mut()
+            .unwrap()
+            .contract
+            .authentication_context;
+        let request = nazo_auth::OidcClaimRequest {
+            name: "profile".into(),
+            essential: true,
+            value: Some(json!("expected")),
+            values: vec![],
+        };
+        match field {
+            0 => context.version += 1,
+            1 => context.issuer.push_str("/different"),
+            2 => context.audience.push_str("-different"),
+            3 => context.auth_time += 1,
+            4 => context.amr.push("mfa".into()),
+            5 => context.oidc_sid = Some("different".into()),
+            6 => context.id_token_sid = Some("not-persisted".into()),
+            7 => context.acr = Some("different".into()),
+            8 => context.nonce = Some("not-persisted".into()),
+            9 => context.userinfo_claims.push("profile".into()),
+            10 => context.userinfo_claim_requests.push(request),
+            11 => context.id_token_claims.push("profile".into()),
+            12 => context.id_token_claim_requests.push(request),
+            _ => unreachable!(),
+        }
+        assert!(
+            !refresh_issue_matches_source(&issue, &client, "https://issuer.example"),
+            "context field {field}"
+        );
+    }
+}
+
+#[test]
+fn ownership_refresh_context_normalizes_nonce_and_keeps_generation_sid_separate() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = ownership_preserved_issue(&client);
+    issue.nonce = Some("different-response-nonce".into());
+    issue.refresh_authority.as_mut().unwrap().id_token_sid = Some("generation-sid".into());
+    issue.refresh_id_token_sid = Some(Some("generation-sid".into()));
+    assert!(refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+    issue.refresh_id_token_sid = Some(Some("other-sid".into()));
+    assert!(!refresh_issue_matches_source(
+        &issue,
+        &client,
+        "https://issuer.example"
+    ));
+}
+
+#[test]
+fn ownership_refresh_context_rejects_equal_but_malformed_issue_and_source() {
+    for field in 0..6 {
+        let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
+        let mut issue = ownership_preserved_issue(&client);
+        let mut issuer = "https://issuer.example";
+        let context = &mut issue
+            .refresh_authority
+            .as_mut()
+            .unwrap()
+            .contract
+            .authentication_context;
+        match field {
+            0 => {
+                issuer = " ";
+                context.issuer = issuer.into();
+            }
+            1 => {
+                client.client_id = " ".into();
+                context.audience = " ".into();
+            }
+            2 => {
+                issue.auth_time = Some(0);
+                context.auth_time = 0;
+            }
+            3 => {
+                issue.amr = vec![" ".into()];
+                context.amr = issue.amr.clone();
+            }
+            4 => {
+                issue.oidc_sid = Some(" ".into());
+                context.oidc_sid = issue.oidc_sid.clone();
+            }
+            5 => {
+                issue.acr = Some(" ".into());
+                context.acr = issue.acr.clone();
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !refresh_issue_matches_source(&issue, &client, issuer),
+            "malformed context field {field}"
+        );
+    }
+}
