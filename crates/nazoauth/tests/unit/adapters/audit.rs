@@ -291,7 +291,11 @@ fn high_impact_state_changes_have_durable_audit_boundaries() {
         "preview_user_decision(",
     );
     assert_source_order(authorization, "preview_user_decision(", "commit_decision(");
-    assert!(!authorization.contains(".discard_decision_material("));
+    assert_source_order(
+        authorization,
+        "AuthorizationDecisionCommitResult::Committed => {}",
+        ".discard_decision_material(&command.request_id, &preview)",
+    );
     assert!(!authorization.contains(".record_required("));
     assert!(!authorization.contains("authorization_approved"));
     assert!(!authorization.contains("authorization_denied"));
@@ -314,7 +318,11 @@ fn high_impact_state_changes_have_durable_audit_boundaries() {
         include_str!("../../../../authorization-server/src/authorization/request/prompt_none.rs")
             .split_whitespace()
             .collect::<String>();
-    assert!(!prompt_none.contains(".discard_pushed_authorization_request("));
+    assert_source_order(
+        &prompt_none,
+        "ifresult!=AuthorizationDecisionCommitResult::Committed{",
+        ".discard_pushed_authorization_request(uri,version)",
+    );
     assert!(!prompt_none.contains(".record_required("));
     assert!(authorization.contains("AuthorizationDecisionError::AuditUnavailable"));
 
