@@ -587,7 +587,7 @@ async fn prompt_none_issues_single_use_authorization_code_without_user_interacti
     }
 }
 #[actix_web::test]
-async fn prompt_none_retains_original_ttl_preparation_after_committing_and_publishing_code() {
+async fn prompt_none_discards_preparation_after_committing_and_publishing_code() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::None, None).await else {
         return;
     };
@@ -601,13 +601,13 @@ async fn prompt_none_retains_original_ttl_preparation_after_committing_and_publi
         valkey_get(&fixture.live.state.valkey, par_storage_key(&uri))
             .await
             .expect("PAR lookup")
-            .is_some(),
-        "original TTL preparation remains disposable"
+            .is_none(),
+        "committed preparation is removed"
     );
     assert_eq!(
         fixture.reached.as_ref().load(Ordering::SeqCst),
-        0,
-        "response does not await preparation disposal"
+        1,
+        "cleanup follows the committed decision"
     );
 }
 #[actix_web::test]
@@ -712,26 +712,26 @@ async fn assert_par_disposal_failure_keeps_committed_code(fault: Fault) {
     assert_eq!(authorization_count(&fixture).await, 1);
     assert_eq!(
         fixture.reached.as_ref().load(Ordering::SeqCst),
-        0,
-        "post-commit preparation disposal is absent from the response path"
+        1,
+        "cleanup failure does not change committed success"
     );
 }
 
 #[actix_web::test]
-async fn prompt_none_does_not_call_cache_eviction_disposal() {
+async fn prompt_none_cache_eviction_during_disposal_keeps_committed_code() {
     assert_par_disposal_failure_keeps_committed_code(Fault::ParMissing).await;
 }
 #[actix_web::test]
-async fn prompt_none_does_not_call_corrupt_snapshot_disposal() {
+async fn prompt_none_corrupt_cleanup_snapshot_keeps_committed_code() {
     assert_par_disposal_failure_keeps_committed_code(Fault::ParMalformed).await;
 }
 #[actix_web::test]
-async fn prompt_none_does_not_call_unavailable_disposal_storage() {
+async fn prompt_none_unavailable_disposal_storage_keeps_committed_code() {
     assert_par_disposal_failure_keeps_committed_code(Fault::ParRead).await;
 }
 
 #[actix_web::test]
-async fn prompt_none_does_not_attempt_a_post_commit_par_replacement() {
+async fn prompt_none_rejected_par_replacement_does_not_prevent_cleanup() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::ParReplaced, None).await else {
         return;
     };
@@ -748,8 +748,8 @@ async fn prompt_none_does_not_attempt_a_post_commit_par_replacement() {
             .load_par(&uri)
             .await
             .unwrap()
-            .is_some()
+            .is_none()
     );
     assert_eq!(decision_fact_count(&fixture, &uri).await, 1);
-    assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 1);
 }

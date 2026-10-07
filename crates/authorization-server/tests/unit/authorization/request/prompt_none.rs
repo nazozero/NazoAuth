@@ -216,6 +216,7 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
             &facts,
             payload.clone(),
             None,
+            None,
         ))
         .expect("the normalized private payload issues a code");
     let AuthorizationOutcome::Redirect { location } = result else {
@@ -306,8 +307,8 @@ fn pushed_prompt_none_fixture() -> (
 }
 
 #[test]
-fn prompt_none_commit_uses_original_expiry_even_when_cleanup_snapshot_is_corrupt() {
-    let (fixture, payload, _version, par_expires_at) = pushed_prompt_none_fixture();
+fn prompt_none_commit_preserves_original_expiry_and_changed_cleanup_snapshot() {
+    let (fixture, payload, version, par_expires_at) = pushed_prompt_none_fixture();
     fixture.ports.stored_par.lock().unwrap()[0]
         .1
         .params
@@ -325,6 +326,7 @@ fn prompt_none_commit_uses_original_expiry_even_when_cleanup_snapshot_is_corrupt
             &facts,
             payload.clone(),
             Some(par_expires_at),
+            Some(&version),
         ),
     )
     .unwrap();
@@ -348,7 +350,7 @@ fn prompt_none_commit_uses_original_expiry_even_when_cleanup_snapshot_is_corrupt
 
 #[test]
 fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
-    let (fixture, payload, _version, par_expires_at) = pushed_prompt_none_fixture();
+    let (fixture, payload, version, par_expires_at) = pushed_prompt_none_fixture();
     let application = fixture.make_application();
     let context = application.context();
     let session_id = nazo_identity::SessionId::new("session-1");
@@ -363,13 +365,15 @@ fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
                 &context,
                 &facts,
                 payload.clone(),
-                Some(par_expires_at)
+                Some(par_expires_at),
+                Some(&version)
             ),
             super::issue_authorization_code_without_interaction_with_context(
                 &context,
                 &facts,
                 payload.clone(),
-                Some(par_expires_at)
+                Some(par_expires_at),
+                Some(&version)
             ),
         )
     });
@@ -404,8 +408,8 @@ fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
     );
     assert_eq!(fixture.ports.stored_codes.lock().unwrap().len(), 1);
     assert!(
-        !fixture.ports.stored_par.lock().unwrap().is_empty(),
-        "original TTL remains; durable PAR fence still permits one code"
+        fixture.ports.stored_par.lock().unwrap().is_empty(),
+        "preparation is removed; the durable PAR fence still permits one code"
     );
 }
 
@@ -444,6 +448,7 @@ fn issue_prompt_none_for_session(
             &application.context(),
             &facts,
             payload,
+            None,
             None,
         ),
     )
@@ -711,6 +716,7 @@ fn prompt_none_oidc_without_session_id_does_not_return_a_code() {
             &facts,
             payload,
             None,
+            None,
         ),
     )
     .unwrap();
@@ -758,4 +764,62 @@ fn prompt_none_rejected_commit_never_writes_a_code_or_binds_a_session() {
     );
     assert!(fixture.ports.decisions.lock().unwrap().facts.is_empty());
     assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+}
+
+#[test]
+fn prompt_none_cleanup_failure_preserves_success_and_durable_replay_fence() {
+    let (fixture, payload, version, par_expires_at) = pushed_prompt_none_fixture();
+    fixture
+        .ports
+        .par_cleanup_unavailable
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let application = fixture.make_application();
+    let session_id = nazo_identity::SessionId::new("session-1");
+    let facts = crate::authorization::AuthorizationRequestFacts {
+        source_ip: "192.0.2.10",
+        session_id: Some(&session_id),
+        user_agent: None,
+    };
+    let first = futures_executor::block_on(
+        super::issue_authorization_code_without_interaction_with_context(
+            &application.context(),
+            &facts,
+            payload.clone(),
+            Some(par_expires_at),
+            Some(&version),
+        ),
+    )
+    .unwrap();
+    assert_prompt_none_returns_code(first);
+    assert_eq!(fixture.ports.stored_par.lock().unwrap().len(), 1);
+    let second = futures_executor::block_on(
+        super::issue_authorization_code_without_interaction_with_context(
+            &application.context(),
+            &facts,
+            payload,
+            Some(par_expires_at),
+            Some(&version),
+        ),
+    )
+    .unwrap();
+    let crate::authorization::AuthorizationOutcome::Redirect { location } = second else {
+        panic!("replay must redirect with an error")
+    };
+    assert!(
+        url::Url::parse(&location)
+            .unwrap()
+            .query_pairs()
+            .any(|(k, v)| k == "error" && v == "invalid_request_uri")
+    );
+    assert_eq!(fixture.ports.stored_codes.lock().unwrap().len(), 1);
+    assert_eq!(fixture.ports.decisions.lock().unwrap().facts.len(), 1);
+    assert_eq!(
+        fixture
+            .ports
+            .calls()
+            .iter()
+            .filter(|call| **call == "consume_par")
+            .count(),
+        1
+    );
 }

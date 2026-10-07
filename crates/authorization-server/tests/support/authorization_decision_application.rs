@@ -15,6 +15,8 @@ enum Failure {
     None,
     DynamicReadiness,
     DecisionCommit,
+    ConsentCleanup,
+    ParCleanup,
 }
 
 struct Audit {
@@ -84,108 +86,159 @@ fn consent() -> ConsentPayload {
 }
 
 #[test]
-fn decision_commits_durable_denial_without_waiting_for_preparation_disposal() {
+fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
     block_on(async {
-        for failure in [
-            Failure::None,
-            Failure::DynamicReadiness,
-            Failure::DecisionCommit,
+        for decision in [
+            UserAuthorizationDecision::Approve,
+            UserAuthorizationDecision::Deny,
         ] {
-            let fixture = Fixture::new(Ok(Some(client(true))), Ok(Some(session())));
-            let mut payload = consent();
-            let valid_until = payload.expires_at;
-            let retain_until = payload.expires_at + chrono::Duration::minutes(5);
-            let par = nazo_auth::PushedAuthorizationRequest {
-                client_id: payload.client_id.clone(),
-                params: HashMap::new(),
-                dpop_jkt: None,
-                mtls_x5t_s256: None,
-                issued_at: payload.issued_at,
-                expires_at: retain_until,
-            };
-            payload.pushed_request_uri = Some("par".into());
-            payload.pushed_request_digest =
-                Some(nazo_auth::pushed_authorization_request_digest(&par).unwrap());
-            fixture
-                .ports
-                .stored_par
-                .lock()
-                .unwrap()
-                .push(("par".into(), par, 600));
-            *fixture.ports.consent.lock().unwrap() = Some(payload);
-            fixture.ports.decisions.lock().unwrap().outcome =
-                Some(if matches!(failure, Failure::DecisionCommit) {
-                    Err(AuthorizationPortError::Unavailable)
-                } else {
-                    Ok(nazo_auth::AuthorizationDecisionCommitResult::Committed)
+            for failure in [
+                Failure::None,
+                Failure::DynamicReadiness,
+                Failure::DecisionCommit,
+                Failure::ConsentCleanup,
+                Failure::ParCleanup,
+            ] {
+                let fixture = Fixture::new(Ok(Some(client(true))), Ok(Some(session())));
+                fixture.ports.consent_cleanup_unavailable.store(
+                    matches!(failure, Failure::ConsentCleanup),
+                    std::sync::atomic::Ordering::SeqCst,
+                );
+                fixture.ports.par_cleanup_unavailable.store(
+                    matches!(failure, Failure::ParCleanup),
+                    std::sync::atomic::Ordering::SeqCst,
+                );
+                fixture
+                    .ports
+                    .record_code_writes
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                let mut payload = consent();
+                let valid_until = payload.expires_at;
+                let retain_until = payload.expires_at + chrono::Duration::minutes(5);
+                let par = nazo_auth::PushedAuthorizationRequest {
+                    client_id: payload.client_id.clone(),
+                    params: HashMap::new(),
+                    dpop_jkt: None,
+                    mtls_x5t_s256: None,
+                    issued_at: payload.issued_at,
+                    expires_at: retain_until,
+                };
+                payload.pushed_request_uri = Some("par".into());
+                payload.pushed_request_digest =
+                    Some(nazo_auth::pushed_authorization_request_digest(&par).unwrap());
+                fixture
+                    .ports
+                    .stored_par
+                    .lock()
+                    .unwrap()
+                    .push(("par".into(), par, 600));
+                *fixture.ports.consent.lock().unwrap() = Some(payload);
+                fixture.ports.decisions.lock().unwrap().outcome =
+                    Some(if matches!(failure, Failure::DecisionCommit) {
+                        Err(AuthorizationPortError::Unavailable)
+                    } else {
+                        Ok(nazo_auth::AuthorizationDecisionCommitResult::Committed)
+                    });
+                let audit = Arc::new(Audit {
+                    failure,
+                    calls: Mutex::new(vec![]),
                 });
-            let audit = Arc::new(Audit {
-                failure,
-                calls: Mutex::new(vec![]),
-            });
-            let tenant = nazo_identity::TenantId::new(fixture.tenant_id).unwrap();
-            let application = ServerAuthorizationDecisionOperations::new(
-                fixture.service,
-                nazo_identity::SessionService::new(
-                    fixture.ports.clone(),
-                    fixture.ports.clone(),
+                let tenant = nazo_identity::TenantId::new(fixture.tenant_id).unwrap();
+                let application = ServerAuthorizationDecisionOperations::new(
+                    fixture.service,
+                    nazo_identity::SessionService::new(
+                        fixture.ports.clone(),
+                        fixture.ports.clone(),
+                        tenant,
+                    ),
                     tenant,
-                ),
-                tenant,
-                Arc::new(fixture.config),
-                fixture.snapshots,
-                fixture.remote_client_documents,
-                audit.clone(),
-            );
-            let result = application
-                .decide(AuthorizationDecisionCommand {
-                    request_id: "request".into(),
-                    decision: UserAuthorizationDecision::Deny,
-                    session_id: SessionId::new("active"),
-                    source_ip: "192.0.2.1".into(),
-                })
-                .await;
-            let calls = fixture.ports.calls();
-            match failure {
-                Failure::None => {
-                    assert!(result.is_ok(), "{result:?}");
-                    assert!(fixture.ports.consent.lock().unwrap().is_some());
-                    assert!(calls.contains(&"commit_decision"));
-                    assert!(!calls.contains(&"consume_consent"));
-                    let decisions = fixture.ports.decisions.lock().unwrap();
-                    assert_eq!(decisions.facts.len(), 1);
-                    assert_eq!(
-                        decisions.facts[0].request_id, "request",
-                        "the storage/command identity owns the consumption fence"
-                    );
-                    assert_eq!(
-                        decisions.facts[0].decision,
-                        nazo_auth::AuthorizationDecisionKind::Deny
-                    );
-                    assert_eq!(decisions.facts[0].valid_until, valid_until);
-                    assert_eq!(
-                        decisions.facts[0].retain_until, retain_until,
-                        "a shorter consent must not free a still-live PAR fence"
-                    );
-                    assert!(decisions.facts[0].audit_fields.get("code_hash").is_none());
-                    assert_eq!(decisions.explicit_grant_writes, 0);
+                    Arc::new(fixture.config),
+                    fixture.snapshots,
+                    fixture.remote_client_documents,
+                    audit.clone(),
+                );
+                let result = application
+                    .decide(AuthorizationDecisionCommand {
+                        request_id: "request".into(),
+                        decision,
+                        session_id: SessionId::new("active"),
+                        source_ip: "192.0.2.1".into(),
+                    })
+                    .await;
+                let calls = fixture.ports.calls();
+                match failure {
+                    Failure::None | Failure::ConsentCleanup | Failure::ParCleanup => {
+                        assert!(result.is_ok(), "{result:?}");
+                        assert_eq!(
+                            fixture.ports.consent.lock().unwrap().is_some(),
+                            matches!(failure, Failure::ConsentCleanup)
+                        );
+                        assert_eq!(
+                            fixture.ports.stored_par.lock().unwrap().is_empty(),
+                            matches!(failure, Failure::None)
+                        );
+                        assert!(calls.contains(&"commit_decision"));
+                        let commit = calls
+                            .iter()
+                            .position(|call| *call == "commit_decision")
+                            .unwrap();
+                        let cleanup = calls
+                            .iter()
+                            .position(|call| *call == "consume_consent")
+                            .unwrap();
+                        assert!(commit < cleanup);
+                        let decisions = fixture.ports.decisions.lock().unwrap();
+                        assert_eq!(decisions.facts.len(), 1);
+                        assert_eq!(
+                            decisions.facts[0].request_id, "request",
+                            "the storage/command identity owns the consumption fence"
+                        );
+                        assert_eq!(
+                            decisions.facts[0].decision,
+                            if decision == UserAuthorizationDecision::Approve {
+                                nazo_auth::AuthorizationDecisionKind::Approve
+                            } else {
+                                nazo_auth::AuthorizationDecisionKind::Deny
+                            }
+                        );
+                        assert_eq!(decisions.facts[0].valid_until, valid_until);
+                        assert_eq!(
+                            decisions.facts[0].retain_until, retain_until,
+                            "a shorter consent must not free a still-live PAR fence"
+                        );
+                        assert_eq!(
+                            decisions.facts[0].audit_fields.get("code_hash").is_some(),
+                            decision == UserAuthorizationDecision::Approve
+                        );
+                        assert_eq!(
+                            decisions.explicit_grant_writes,
+                            usize::from(decision == UserAuthorizationDecision::Approve)
+                        );
+                    }
+                    Failure::DynamicReadiness | Failure::DecisionCommit => {
+                        assert_eq!(
+                            result.unwrap_err(),
+                            if matches!(failure, Failure::DynamicReadiness) {
+                                AuthorizationDecisionError::AuditUnavailable
+                            } else {
+                                AuthorizationDecisionError::ApprovalUnavailable
+                            }
+                        );
+                        assert!(fixture.ports.consent.lock().unwrap().is_some());
+                        assert!(!calls.contains(&"consume_consent"));
+                        assert!(fixture.ports.decisions.lock().unwrap().facts.is_empty());
+                    }
                 }
-                Failure::DynamicReadiness | Failure::DecisionCommit => {
-                    assert_eq!(
-                        result.unwrap_err(),
-                        if matches!(failure, Failure::DynamicReadiness) {
-                            AuthorizationDecisionError::AuditUnavailable
-                        } else {
-                            AuthorizationDecisionError::ApprovalUnavailable
-                        }
-                    );
-                    assert!(fixture.ports.consent.lock().unwrap().is_some());
-                    assert!(!calls.contains(&"consume_consent"));
-                    assert!(fixture.ports.decisions.lock().unwrap().facts.is_empty());
-                }
+                let committed = matches!(
+                    failure,
+                    Failure::None | Failure::ConsentCleanup | Failure::ParCleanup
+                );
+                assert_eq!(
+                    fixture.ports.stored_codes.lock().unwrap().len(),
+                    usize::from(committed && decision == UserAuthorizationDecision::Approve)
+                );
+                assert_eq!(*audit.calls.lock().unwrap(), ["dynamic_readiness"]);
             }
-            assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
-            assert_eq!(*audit.calls.lock().unwrap(), ["dynamic_readiness"]);
         }
     });
 }

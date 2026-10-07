@@ -23,6 +23,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     facts: &AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
     pushed_request_expires_at: Option<DateTime<Utc>>,
+    pushed_request_version: Option<&str>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
     let (Some(signed_response_required), Some(session_management_allowed), Some(ttl_seconds)) = (
         payload.signed_authorization_response_required,
@@ -169,8 +170,21 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         )
         .await;
     }
-    // Preparation keeps its original TTL. The durable request/PAR decision
-    // identity, not eager cache deletion, prevents a second effective decision.
+    // Cleanup uses the admission snapshot, never a reread or reconstructed
+    // version. The committed decision remains authoritative if cleanup fails.
+    if let (Some(uri), Some(version)) = (
+        payload.pushed_request_uri.as_deref(),
+        pushed_request_version,
+    ) && let Err(error) = context
+        .service
+        .discard_pushed_authorization_request(uri, version)
+        .await
+    {
+        tracing::warn!(
+            ?error,
+            "failed to discard committed prompt-none preparation"
+        );
+    }
     if payload.scopes.iter().any(|scope| scope == "openid") {
         let bound = match facts.session_id {
             Some(session_id) => context

@@ -378,7 +378,7 @@ async fn token_authorization_code_replay_reads_back_committed_issuance_evidence(
 }
 
 #[actix_web::test]
-async fn committed_authorization_code_replays_revoke_with_retained_and_expired_cache() {
+async fn committed_code_cleanup_success_failure_and_lost_ack_preserve_replay_revocation() {
     use fred::interfaces::KeysInterface as _;
     let mut settings = LiveAuthorizationCodeFixture::settings();
     settings.protocol.auth_code_ttl_seconds = 2;
@@ -396,7 +396,24 @@ async fn committed_authorization_code_replays_revoke_with_retained_and_expired_c
     let req = actix_web::test::TestRequest::post()
         .uri("/token")
         .to_http_request();
-    for expire in [false, true] {
+    for (fault, expire) in [
+        (CodeCleanupFault::None, false),
+        (CodeCleanupFault::BeforeDelete, false),
+        (CodeCleanupFault::BeforeDelete, true),
+        (CodeCleanupFault::AfterDelete, false),
+    ] {
+        let store = Arc::new(CodeCleanupStore {
+            live: nazo_valkey::TokenIssuanceStateAdapter::new(&fixture.state.valkey_connection()),
+            fault,
+            delete_calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let service = ServerTokenService::from_port(
+            Arc::new(crate::test_support::token_issuance_repository(
+                fixture.state.diesel_db.clone(),
+            )),
+            store.clone(),
+            fixture.state.keyset.clone(),
+        );
         let code = format!("code-{}", Uuid::now_v7());
         let mut payload = payload_for_client(&client);
         payload.user_id = user.id;
@@ -407,9 +424,15 @@ async fn committed_authorization_code_replays_revoke_with_retained_and_expired_c
             .await;
         let key = authorization_code_key(&code);
         let initial_ttl = fixture.state.valkey.pttl::<i64, _>(&key).await.unwrap();
-        let response =
-            token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None)
-                .await;
+        let response = token_authorization_code_using_service(
+            &fixture.state,
+            &req,
+            &client,
+            &form_for_code(&code),
+            None,
+            &service,
+        )
+        .await;
         let (status, body) = token_json_body(response).await;
         assert_eq!(status, StatusCode::OK);
         let encoded = body["access_token"]
@@ -421,14 +444,33 @@ async fn committed_authorization_code_replays_revoke_with_retained_and_expired_c
         let claims: Value =
             serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
         let jti = claims["jti"].as_str().unwrap();
-        assert!(matches!(
-            fixture.code_state(&code).await,
-            AuthorizationCodeState::Consuming { .. }
-        ));
+        assert_eq!(
+            std::sync::atomic::AtomicUsize::load(
+                &store.delete_calls,
+                std::sync::atomic::Ordering::SeqCst
+            ),
+            1
+        );
         let remaining = fixture.state.valkey.pttl::<i64, _>(&key).await.unwrap();
-        assert!(
-            remaining > 0 && remaining <= initial_ttl,
-            "commit must not refresh the code TTL"
+        if matches!(fault, CodeCleanupFault::BeforeDelete) {
+            assert!(matches!(
+                fixture.code_state(&code).await,
+                AuthorizationCodeState::Consuming { .. }
+            ));
+            assert!(
+                remaining > 0 && remaining <= initial_ttl,
+                "failed cleanup must not refresh TTL"
+            );
+        } else {
+            assert_eq!(
+                remaining, -2,
+                "confirmed commit releases the entire code payload"
+            );
+        }
+        assert_eq!(
+            fixture.access_token_revocation_count(&client, jti).await,
+            0,
+            "cleanup failure must not revoke committed tokens"
         );
         if expire {
             tokio::time::sleep(StdDuration::from_millis(2_100)).await;
@@ -459,5 +501,74 @@ async fn committed_authorization_code_replays_revoke_with_retained_and_expired_c
             1,
             "a matching holder replay synchronously revokes through the durable receipt"
         );
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CodeCleanupFault {
+    None,
+    BeforeDelete,
+    AfterDelete,
+}
+
+/// Delegate state transitions to live Valkey, faulting only committed cleanup.
+struct CodeCleanupStore {
+    live: nazo_valkey::TokenIssuanceStateAdapter,
+    fault: CodeCleanupFault,
+    delete_calls: std::sync::atomic::AtomicUsize,
+}
+impl nazo_auth::TokenStateStorePort for CodeCleanupStore {
+    fn load_authorization_code<'a>(
+        &'a self,
+        hash: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, Option<AuthorizationCodeState>> {
+        self.live.load_authorization_code(hash)
+    }
+    fn begin_authorization_code<'a>(
+        &'a self,
+        hash: &'a str,
+        now: DateTime<Utc>,
+    ) -> nazo_auth::TokenFuture<'a, nazo_auth::AuthorizationCodeBeginResult> {
+        self.live.begin_authorization_code(hash, now)
+    }
+    fn mark_authorization_code<'a>(
+        &'a self,
+        hash: &'a str,
+        replacement: &'a AuthorizationCodeState,
+        ttl: u64,
+    ) -> nazo_auth::TokenFuture<'a, nazo_auth::AuthorizationCodeTransitionResult> {
+        self.live.mark_authorization_code(hash, replacement, ttl)
+    }
+    fn delete_authorization_code<'a>(&'a self, hash: &'a str) -> nazo_auth::TokenFuture<'a, ()> {
+        Box::pin(async move {
+            self.delete_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if matches!(self.fault, CodeCleanupFault::BeforeDelete) {
+                return Err(nazo_auth::TokenPortError::Unavailable);
+            }
+            self.live.delete_authorization_code(hash).await?;
+            if matches!(self.fault, CodeCleanupFault::AfterDelete) {
+                return Err(nazo_auth::TokenPortError::Unavailable);
+            }
+            Ok(())
+        })
+    }
+    fn increment_token_management_rate<'a>(
+        &'a self,
+        subject: &'a str,
+        window: u64,
+    ) -> nazo_auth::TokenFuture<'a, u64> {
+        self.live.increment_token_management_rate(subject, window)
+    }
+    fn store_native_sso<'a>(
+        &'a self,
+        secret: &'a str,
+        value: &'a Value,
+        ttl: u64,
+    ) -> nazo_auth::TokenFuture<'a, ()> {
+        self.live.store_native_sso(secret, value, ttl)
+    }
+    fn load_native_sso<'a>(&'a self, secret: &'a str) -> nazo_auth::TokenFuture<'a, Option<Value>> {
+        self.live.load_native_sso(secret)
     }
 }

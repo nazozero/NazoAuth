@@ -25,6 +25,10 @@ An extra valid optional proof does not erase the original requirements.
 Pending parameter errors do not consume the code. The existing state-store begin
 lease is retained for this repair, including Native SSO's preparation behavior.
 Busy, Failed, Missing and cached Consumed states all consult the durable receipt.
+After confirmed issuance, the consumed cache payload is deleted. A deletion
+failure, including a lost deletion acknowledgement, cannot turn the committed
+issuance into an error or revoke its tokens. Undeleted material keeps its
+original TTL; no cleanup is attempted for a rejected or unknown commit.
 An expired cached Pending is also replay evidence, not new issuance eligibility:
 it consults the receipt after fresh holder validation without beginning another
 redemption. Wrong/missing proofs never revoke, and expiry is never bypassed to

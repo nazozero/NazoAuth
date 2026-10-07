@@ -67,6 +67,8 @@ pub struct Ports {
     pub record_code_writes: AtomicBool,
     pub stored_codes: Mutex<Vec<RecordedAuthorizationCode>>,
     pub consent: Mutex<Option<ConsentPayload>>,
+    pub consent_cleanup_unavailable: AtomicBool,
+    pub par_cleanup_unavailable: AtomicBool,
     pub record_consent_writes: AtomicBool,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
     pub session: Mutex<Result<Option<SessionSnapshot>, RepositoryError>>,
@@ -222,6 +224,9 @@ impl AuthorizationStateStorePort for Ports {
     ) -> AuthorizationFuture<'a, bool> {
         self.record("consume_par");
         Box::pin(async move {
+            if self.par_cleanup_unavailable.load(Ordering::SeqCst) {
+                return Err(AuthorizationPortError::Unavailable);
+            }
             let mut stored = self.stored_par.lock().unwrap();
             let Some(index) = stored.iter().position(|(uri, request, _)| {
                 let version = serde_json::to_value(request).unwrap().to_string();
@@ -266,6 +271,9 @@ impl AuthorizationStateStorePort for Ports {
     ) -> AuthorizationFuture<'a, bool> {
         self.record("consume_consent");
         Box::pin(async move {
+            if self.consent_cleanup_unavailable.load(Ordering::SeqCst) {
+                return Err(AuthorizationPortError::Unavailable);
+            }
             let mut consent = self.consent.lock().unwrap();
             assert_eq!(
                 serde_json::to_value(consent.as_ref().unwrap())
@@ -695,6 +703,8 @@ impl Fixture {
             record_code_writes: AtomicBool::new(false),
             stored_codes: Mutex::new(Vec::new()),
             consent: Mutex::new(None),
+            consent_cleanup_unavailable: AtomicBool::new(false),
+            par_cleanup_unavailable: AtomicBool::new(false),
             record_consent_writes: AtomicBool::new(false),
             client,
             session: Mutex::new(session),

@@ -2141,10 +2141,12 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
     };
     let request_uri = fixture.push().await;
     let key = par_storage_key(&request_uri);
-    let prepared = valkey_get(&fixture.live.state.valkey, &key)
-        .await
-        .unwrap()
-        .unwrap();
+    assert!(
+        valkey_get(&fixture.live.state.valkey, &key)
+            .await
+            .unwrap()
+            .is_some()
+    );
     let initial_ttl = fixture
         .live
         .state
@@ -2162,8 +2164,8 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
     );
     assert_eq!(
         valkey_get(&fixture.live.state.valkey, &key).await.unwrap(),
-        Some(prepared),
-        "committed consumption retains immutable preparation until its original TTL"
+        None,
+        "confirmed commit removes preparation without releasing the durable fence"
     );
     let remaining = fixture
         .live
@@ -2173,8 +2175,8 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
         .await
         .unwrap();
     assert!(
-        remaining > 0 && remaining <= initial_ttl,
-        "consumption must not extend preparation TTL"
+        remaining == -2,
+        "confirmed consumption removes the preparation key"
     );
     assert_eq!(
         super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
@@ -2182,7 +2184,8 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
     );
     fixture.q = outer.clone();
     let response = fixture.authorize().await;
-    assert_authorization_error_redirect(response, "invalid_request_uri", Some("opaque-state"));
+    // The consumed PAR no longer supplies parameters to a new request.
+    assert_authorization_error_redirect(response, "invalid_request_uri", None);
 
     let malformed_request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
     fixture
@@ -2220,10 +2223,12 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
     };
     let request_uri = fixture.push().await;
     let key = par_storage_key(&request_uri);
-    let prepared = valkey_get(&fixture.live.state.valkey, &key)
-        .await
-        .unwrap()
-        .unwrap();
+    assert!(
+        valkey_get(&fixture.live.state.valkey, &key)
+            .await
+            .unwrap()
+            .is_some()
+    );
     let initial_ttl = fixture
         .live
         .state
@@ -2276,8 +2281,8 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
     );
     assert_eq!(
         valkey_get(&fixture.live.state.valkey, &key).await.unwrap(),
-        Some(prepared),
-        "committed consumption retains immutable preparation until its original TTL"
+        None,
+        "confirmed commit removes preparation without releasing the durable fence"
     );
     let remaining = fixture
         .live
@@ -2287,15 +2292,16 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
         .await
         .unwrap();
     assert!(
-        remaining > 0 && remaining <= initial_ttl,
-        "consumption must not extend preparation TTL"
+        remaining == -2,
+        "confirmed consumption removes the preparation key"
     );
     assert_eq!(
         super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
         1
     );
     let response = fixture.authorize().await;
-    assert_authorization_error_redirect(response, "invalid_request_uri", Some("opaque-state"));
+    // The consumed PAR no longer supplies parameters to a new request.
+    assert_authorization_error_redirect(response, "invalid_request_uri", None);
     assert_eq!(
         super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
         1

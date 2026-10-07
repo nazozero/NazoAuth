@@ -215,14 +215,20 @@ storage remains a dependency failure. The removed early read did not authorize
 a later decision. Denied coverage can now reach code preparation; no measured
 CPU or latency improvement is claimed.
 
-Committed silent and interactive decisions leave consent/PAR preparation to
-its original TTL. The retained durable request/PAR identity prevents reuse;
-expiry and retention deadlines are unchanged. Response completion no longer
-awaits best-effort cache compare-delete, and no detached cleanup task is added.
-Existing direct disposal APIs keep their exact-version comparison contract.
-The adapted real PG/Valkey source regressions still check single-use code,
-durable decision/authorization counts and final coverage storage failures;
-they have not been executed at this candidate.
+Committed silent and interactive decisions discard their consent/PAR preparation
+using the original admission snapshot's exact version. Cleanup runs only after
+confirmed commit and code publication; failure cannot change the committed
+response or release the durable request/PAR fence. Failed cleanup leaves the
+original TTL as the recovery boundary. Expiry and durable retention deadlines
+are unchanged. Cleanup adds no detached task or retry queue.
+After successful disposal, a new request using the consumed PAR handle cannot
+recover its former parameters, including `state`; it follows the existing
+missing-request-URI rejection path. A concurrent request that already loaded
+that snapshot still encounters the durable decision fence.
+The real PG/Valkey regressions cover single-use code, durable decision counts,
+cleanup failure and lost acknowledgements, snapshot replacement, concurrent
+replay and final coverage storage failures. Performance and long-term storage
+acceptance require separate measurements.
 
 
 JWT bearer grant processing now evaluates pure scope/target admission after
