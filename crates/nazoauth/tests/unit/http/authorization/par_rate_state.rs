@@ -97,9 +97,9 @@ impl AuthorizationStateStorePort for AllowParRateState {
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
-        self.0.as_ref().consume_jar(client_id, jti, ttl_seconds)
+        self.0.as_ref().consume_jar(client_id, jti, expires_at)
     }
 
     fn consume_client_attestation_proof<'a>(
@@ -139,11 +139,11 @@ impl AuthorizationStateStorePort for AllowParRateState {
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         self.0
             .as_ref()
-            .consume_ciba_request_object(client_id, jti, ttl_seconds)
+            .consume_ciba_request_object(client_id, jti, expires_at)
     }
 
     fn consume_dpop<'a>(

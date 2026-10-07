@@ -390,6 +390,7 @@ async fn call_ciba_token_with_prepared_service(
     let ciba_config = ciba_config(state.settings.as_ref());
     let authorization = super::super::issue::test_support::test_authorization_service(state);
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::Ciba),
         client_epoch,
         config: &issuance_config,
         modules: &modules,

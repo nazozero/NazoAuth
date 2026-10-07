@@ -52,9 +52,9 @@ pub(crate) async fn apply_request_object_with_context(
     outer: &mut HashMap<String, String>,
     client: &mut ClientRow,
     prepared: Option<DecryptedRequestObject>,
-) -> Result<(), OAuthEndpointError> {
+) -> Result<Option<nazo_auth::RequestObjectReplay>, OAuthEndpointError> {
     let Some(request_object) = outer.get("request") else {
-        return Ok(());
+        return Ok(None);
     };
     let decrypted;
     let request_object = if request_object.split('.').count() == 5 {
@@ -101,39 +101,31 @@ pub(crate) async fn apply_request_object_with_context(
         expected_signing_algorithm: client.request_object_signing_alg.as_deref(),
     })
     .map_err(request_object_verification_error)?;
-    let normalized = context
-        .service
-        .admit_request_object_owned(
-            outer,
-            &verified.claims,
-            RequestObjectPolicy {
-                issuer: &context.config.issuer,
-                client_id: &client.client_id,
-                jti_policy: match context.config.request_object_jti_policy {
-                    ServerRequestObjectJtiPolicy::Optional => RequestObjectJtiPolicy::Optional,
-                    ServerRequestObjectJtiPolicy::RequiredForSignedJar => {
-                        RequestObjectJtiPolicy::RequiredForSignedJar
-                    }
-                },
-                require_integrity_protected_parameters:
-                    signed_request_object_requires_integrity_protected_parameters(
-                        client,
-                        context
-                            .config
-                            .requires_signed_authorization_request(&client.security_policy),
-                    ),
-                now: Utc::now().timestamp(),
+    let normalized = nazo_auth::normalize_request_object_owned(
+        outer,
+        &verified.claims,
+        RequestObjectPolicy {
+            issuer: &context.config.issuer,
+            client_id: &client.client_id,
+            jti_policy: match context.config.request_object_jti_policy {
+                ServerRequestObjectJtiPolicy::Optional => RequestObjectJtiPolicy::Optional,
+                ServerRequestObjectJtiPolicy::RequiredForSignedJar => {
+                    RequestObjectJtiPolicy::RequiredForSignedJar
+                }
             },
-        )
-        .await
-        .map_err(|error| {
-            if let AuthorizationRequestError::Dependency(dependency) = error {
-                tracing::warn!(?dependency, "failed to store request object jti");
-            }
-            request_object_policy_error(error)
-        })?;
+            require_integrity_protected_parameters:
+                signed_request_object_requires_integrity_protected_parameters(
+                    client,
+                    context
+                        .config
+                        .requires_signed_authorization_request(&client.security_policy),
+                ),
+            now: Utc::now().timestamp(),
+        },
+    )
+    .map_err(request_object_policy_error)?;
     *outer = normalized.parameters;
-    Ok(())
+    Ok(normalized.replay)
 }
 
 fn signed_request_object_requires_integrity_protected_parameters(

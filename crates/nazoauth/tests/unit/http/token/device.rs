@@ -298,6 +298,7 @@ async fn call_device_token_with_request_for_test(
         .unwrap()
         .client_epoch;
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::DeviceCode),
         client_epoch,
         config: &issuance_config,
         modules: &modules,
@@ -526,6 +527,7 @@ async fn device_token_rejects_client_policy_before_polling_state() {
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::DeviceCode),
         client_epoch: 0,
         config: &issuance_config,
         modules: &modules,
@@ -836,4 +838,69 @@ async fn approved_device_code_has_one_consumption_identity_across_valid_sender_k
             "device replay must not revoke the first holder's tokens"
         );
     }
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_dispatch_device_after_approved_poll() {
+    use crate::http::token::issue::test_support::{
+        assert_expired_grant_dispatch_response, token_with_expired_grant_commit,
+    };
+    use nazo_auth::{DeviceAuthorizationApproval, DeviceAuthorizationState};
+    let mut state = live_device_replay_state()
+        .await
+        .expect("device commit regression requires isolated PostgreSQL and Valkey");
+    state.keyset =
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
+    let mut client = device_client();
+    client.client_id = format!("device-expired-commit-{}", Uuid::now_v7());
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(&client, None, None)
+        .await
+        .unwrap();
+    let user_id = Uuid::now_v7();
+    insert_device_user(&state, user_id).await;
+    let code = format!("device-commit-{}", Uuid::now_v7());
+    let now = Utc::now();
+    let approved = DeviceAuthorizationState::Approved {
+        payload: DeviceAuthorizationPayload {
+            client_id: client.client_id.clone(),
+            client_name: client.client_name.clone(),
+            scopes: vec!["openid".to_owned()],
+            resource_indicators: vec!["resource://default".to_owned()],
+            authorization_details: json!([]),
+            interval_seconds: 5,
+            issued_at: now,
+            expires_at: now + Duration::minutes(10),
+        },
+        approval: DeviceAuthorizationApproval {
+            user_id,
+            subject: user_id.to_string(),
+            auth_time: now.timestamp(),
+            amr: vec!["pwd".to_owned()],
+            oidc_sid: None,
+        },
+        approved_at: now,
+    };
+    nazo_valkey::DeviceStore::new(&state.valkey_connection())
+        .create(
+            &code,
+            &format!("DEVICE-{}", Uuid::now_v7().simple()),
+            &approved,
+            600,
+        )
+        .await
+        .unwrap();
+    let request = TestRequest::post()
+        .uri("/token")
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", DEVICE_CODE_GRANT_TYPE)
+        .append_pair("client_id", &client.client_id)
+        .append_pair("device_code", &code)
+        .finish();
+    let (response, commits) =
+        token_with_expired_grant_commit(&state, request, Bytes::from(body)).await;
+    assert_expired_grant_dispatch_response(&state, &client, response, commits, "expired_token")
+        .await;
 }

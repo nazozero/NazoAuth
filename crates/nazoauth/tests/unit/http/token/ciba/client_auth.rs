@@ -50,7 +50,7 @@ fn signed_ciba_request_object_for_client(
     )
 }
 
-fn signed_ciba_client_assertion(
+pub(super) fn signed_ciba_client_assertion(
     client_id: &str,
     kid: &str,
     fixture: &ClientSigningFixture,
@@ -398,7 +398,7 @@ async fn ciba_backchannel_rejects_invalid_request_object_claims_before_user_look
 #[actix_web::test]
 async fn ciba_request_parser_enforces_form_encoding_and_parameter_uniqueness() {
     let body = concat!(
-        "request=jwt&scope=openid%20profile&login_hint=user%40example.test&",
+        "scope=openid%20profile&login_hint=user%40example.test&",
         "id_token_hint=id-token&login_hint_token=hint-token&binding_message=1234&",
         "acr_values=1&requested_expiry=30&client_id=client-1&client_secret=secret&",
         "client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&",
@@ -415,7 +415,7 @@ async fn ciba_request_parser_enforces_form_encoding_and_parameter_uniqueness() {
     let form = parse_backchannel_authentication_form(&request, &mut payload)
         .await
         .expect("valid CIBA form should parse");
-    assert_eq!(form.request.as_deref(), Some("jwt"));
+    assert!(form.request.is_none());
     assert_eq!(form.scope.as_deref(), Some("openid profile"));
     assert_eq!(form.login_hint.as_deref(), Some("user@example.test"));
     assert_eq!(form.id_token_hint.as_deref(), Some("id-token"));
@@ -513,5 +513,63 @@ async fn ciba_token_request_validates_mtls_binding_before_issuing_approved_token
     assert_eq!(
         Some(oauth_error_code(response).await.as_str()),
         Some("invalid_grant")
+    );
+}
+
+#[actix_web::test]
+async fn protocol_ciba_http_rejects_outer_field_presence_without_erasing_empty_values() {
+    for field in [
+        "scope",
+        "login_hint",
+        "id_token_hint",
+        "login_hint_token",
+        "binding_message",
+        "acr_values",
+        "client_notification_token",
+        "requested_expiry",
+    ] {
+        for value in ["", "same-as-signed", "not-a-number", "0"] {
+            let body = url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs([
+                    ("request", "signed.request.object"),
+                    ("client_id", "client-1"),
+                    (field, value),
+                ])
+                .finish();
+            let (request, mut payload) = actix_web::test::TestRequest::post()
+                .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+                .set_payload(body)
+                .to_http_parts();
+            let mut payload = <actix_web::web::Payload as actix_web::FromRequest>::from_request(
+                &request,
+                &mut payload,
+            )
+            .await
+            .unwrap();
+            let response = match parse_backchannel_authentication_form(&request, &mut payload).await
+            {
+                Ok(_) => panic!(
+                    "outer field {field} presence must reject before authentication or storage"
+                ),
+                Err(response) => response,
+            };
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(oauth_error_code(response).await, "invalid_request");
+        }
+    }
+    let (request, mut payload) = actix_web::test::TestRequest::post()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .set_payload("request=signed.request.object&client_id=client-1&client_assertion_type=jwt-bearer&client_assertion=outer-authentication")
+        .to_http_parts();
+    let mut payload =
+        <actix_web::web::Payload as actix_web::FromRequest>::from_request(&request, &mut payload)
+            .await
+            .unwrap();
+    let form = parse_backchannel_authentication_form(&request, &mut payload).await
+        .expect("signed-only authentication parameters may retain separate outer client-authentication fields");
+    assert_eq!(form.client_id.as_deref(), Some("client-1"));
+    assert_eq!(
+        form.client_assertion.as_deref(),
+        Some("outer-authentication")
     );
 }

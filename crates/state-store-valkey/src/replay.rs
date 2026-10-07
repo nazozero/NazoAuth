@@ -56,6 +56,16 @@ end
 return 'rejected'
 "#;
 
+// The original JWT expiry is checked and installed in the same atomic owner operation.
+const REQUEST_OBJECT_REPLAY_SCRIPT: &str = r#"
+local now = tonumber(redis.call('TIME')[1])
+local expires_at = tonumber(ARGV[1])
+if now >= expires_at then return 'rejected' end
+local result = redis.call('SET', KEYS[1], '1', 'NX', 'EXAT', ARGV[1])
+if result then return 'accepted' end
+return 'rejected'
+"#;
+
 const FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS: i64 = 5;
 
 #[derive(Clone, Debug)]
@@ -209,9 +219,9 @@ impl ReplayStore {
         &self,
         client_id: &str,
         jti: &str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> Result<bool, Error> {
-        self.consume_key(keys::jar_replay(client_id, jti), ttl_seconds)
+        self.consume_request_object_key(keys::jar_replay(client_id, jti), expires_at)
             .await
     }
 
@@ -229,13 +239,32 @@ impl ReplayStore {
         &self,
         client_id: &str,
         jti: &str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> Result<bool, Error> {
-        self.consume_key(
+        self.consume_request_object_key(
             keys::ciba_request_object_replay(client_id, jti),
-            ttl_seconds,
+            expires_at,
         )
         .await
+    }
+
+    async fn consume_request_object_key(
+        &self,
+        key: String,
+        expires_at: i64,
+    ) -> Result<bool, Error> {
+        let reply = command::eval_string(
+            &self.connection,
+            REQUEST_OBJECT_REPLAY_SCRIPT,
+            vec![key],
+            vec![expires_at.to_string()],
+        )
+        .await?;
+        match reply.as_str() {
+            "accepted" => Ok(true),
+            "rejected" => Ok(false),
+            _ => Err(Error::unexpected("invalid request object replay reply")),
+        }
     }
 
     async fn consume_key(&self, key: String, ttl_seconds: u64) -> Result<bool, Error> {

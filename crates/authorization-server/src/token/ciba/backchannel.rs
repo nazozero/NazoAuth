@@ -305,7 +305,7 @@ impl CibaApplication {
         .map_err(token_management_auth_error)?;
         if let Some(replay) = request_object_replay {
             match authorization_service
-                .consume_ciba_request_object(&client.client_id, &replay.jti, replay.ttl_seconds)
+                .consume_ciba_request_object(&client.client_id, &replay.jti, replay.expires_at)
                 .await
             {
                 Ok(true) => {}

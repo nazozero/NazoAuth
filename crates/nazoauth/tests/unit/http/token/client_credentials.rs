@@ -66,6 +66,7 @@ pub(crate) async fn token_client_credentials(
             &service,
             &authorization_service,
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::ClientCredentials),
                 client_epoch: 0,
                 config: &config,
                 modules: &modules,

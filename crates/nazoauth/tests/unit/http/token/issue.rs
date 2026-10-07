@@ -92,6 +92,7 @@ async fn issue_token_response_with_repository(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::ClientCredentials),
                 client_epoch,
                 config: &config,
                 modules: &state.active_module_snapshot(),
@@ -126,6 +127,7 @@ async fn issue_token_response_with_modules(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::ClientCredentials),
                 client_epoch: 0,
                 config: &config,
                 modules: &modules,
@@ -195,6 +197,7 @@ async fn issue_token_response_with_mode_and_modules_for_test(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::ClientCredentials),
                 client_epoch: 0,
                 config: &config,
                 modules: &modules,

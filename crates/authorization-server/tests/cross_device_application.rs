@@ -119,6 +119,25 @@ impl CibaStateStorePort for Ports {
             Ok(CibaAtomicResult::Applied)
         })
     }
+    fn replace_with_authorization_deadline<'a>(
+        &'a self,
+        id: &'a str,
+        version: &'a Self::Version,
+        state: &'a CibaRequestState,
+        deadline: Option<i64>,
+    ) -> CibaStateFuture<'a, CibaAtomicResult> {
+        Box::pin(async move {
+            // This in-memory test adapter checks its clock while holding the mutation lock.
+            let mut stored = self.state.lock().unwrap();
+            if deadline.is_some_and(|deadline| chrono::Utc::now().timestamp() >= deadline) {
+                return Ok(CibaAtomicResult::DeadlineElapsed);
+            }
+            let _ = (id, version);
+            self.record_call("decide");
+            *stored = state.clone();
+            Ok(CibaAtomicResult::Applied)
+        })
+    }
     fn delete<'a>(
         &'a self,
         _: &'a str,

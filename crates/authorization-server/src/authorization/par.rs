@@ -376,7 +376,7 @@ impl PreparedParClient<'_> {
         ) {
             return Err(par_admission_error(error));
         }
-        apply_request_object_with_context(
+        let request_object_replay = apply_request_object_with_context(
             context,
             &mut params,
             &mut client,
@@ -400,12 +400,29 @@ impl PreparedParClient<'_> {
             ExpandedParAdmissionPolicy {
                 client_type: &client.client_type,
                 redirect_uris: &client.redirect_uris,
+                allowed_scopes: &client.scopes,
+                capabilities: nazo_auth::AuthorizationCapabilityPolicy {
+                    authorization_details: super::accepts_module(
+                        context,
+                        nazo_runtime_modules::ModuleId::AuthorizationDetails,
+                    ),
+                    jarm: super::accepts_module(context, nazo_runtime_modules::ModuleId::Jarm),
+                    native_sso: super::accepts_module(
+                        context,
+                        nazo_runtime_modules::ModuleId::NativeSso,
+                    ),
+                    form_post: !fapi2_security,
+                },
+                signed_authorization_response_required: context
+                    .config
+                    .requires_signed_authorization_response(&client_policy),
                 allowed_audiences: &client.allowed_audiences,
                 pkce_required: !client_policy.allow_confidential_oidc_without_pkce
                     || fapi2_security
                     || client.require_dpop_bound_tokens
                     || client.require_mtls_bound_tokens
-                    || params.contains_key("dpop_jkt"),
+                    || params.contains_key("dpop_jkt")
+                    || facts.dpop.proof_present,
                 fapi2_requires_explicit_redirect_uri: fapi2_security,
             },
         ) {
@@ -468,6 +485,13 @@ impl PreparedParClient<'_> {
             None
         };
 
+        if let Some(replay) = request_object_replay.as_ref() {
+            context
+                .service
+                .consume_request_object_replay(replay)
+                .await
+                .map_err(super::jar::request_object_policy_error)?;
+        }
         let now = Utc::now();
         let request_token = random_urlsafe_token();
         let request_uri = format!("{PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX}{request_token}");
@@ -503,9 +527,9 @@ fn par_admission_error(error: ParAdmissionError) -> OAuthEndpointError {
             StatusCode::BAD_REQUEST,
             "PAR request object 不能包含 request_uri.",
         ),
-        ParAdmissionError::UnsupportedResponseType => (
+        ParAdmissionError::Authorization(_) => (
             StatusCode::BAD_REQUEST,
-            "PAR response_type is not supported.",
+            "PAR authorization parameters are invalid or unsupported.",
         ),
         ParAdmissionError::RequestObjectRequired => {
             (StatusCode::BAD_REQUEST, "PAR 请求缺少 request object.")
@@ -522,11 +546,6 @@ fn par_admission_error(error: ParAdmissionError) -> OAuthEndpointError {
             StatusCode::BAD_REQUEST,
             "FAPI2 profiles require sender-constrained access tokens.",
         ),
-        ParAdmissionError::PkceRequired => (StatusCode::BAD_REQUEST, "PAR requests require PKCE."),
-        ParAdmissionError::InvalidPkce => (
-            StatusCode::BAD_REQUEST,
-            "PAR code_challenge must use a valid S256 value.",
-        ),
         ParAdmissionError::ExplicitRedirectUriRequired => (
             StatusCode::BAD_REQUEST,
             "FAPI2 PAR 请求必须显式包含 redirect_uri.",
@@ -537,14 +556,6 @@ fn par_admission_error(error: ParAdmissionError) -> OAuthEndpointError {
         ParAdmissionError::RedirectUriNotRegistered => {
             (StatusCode::BAD_REQUEST, "PAR 请求 redirect_uri 未注册.")
         }
-        ParAdmissionError::InvalidResource => (
-            StatusCode::BAD_REQUEST,
-            "resource must be an absolute URI without a fragment.",
-        ),
-        ParAdmissionError::ResourceNotAllowed => (
-            StatusCode::BAD_REQUEST,
-            "请求的 resource 不在客户端允许范围内.",
-        ),
     };
     OAuthEndpointError::json(status, error.oauth_error(), description)
 }

@@ -77,6 +77,7 @@ pub(crate) async fn token_jwt_bearer(
         token_jwt_bearer_with_service(
             &service,
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::JwtBearer),
                 client_epoch: 0,
                 config: &config,
                 modules: &modules,
@@ -524,4 +525,48 @@ async fn jwt_bearer_invalid_scope_does_not_consume_the_valid_signed_assertion() 
         consume_jwt_bearer_assertion(&state, &client, &validated).await,
         Err(JwtBearerAssertionError::ReplayDetected)
     ));
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_dispatch_jwt_bearer_after_verified_assertion() {
+    use crate::http::token::issue::test_support::{
+        assert_expired_grant_dispatch_response, token_with_expired_grant_commit,
+    };
+    let mut state = live_jwt_bearer_issuance_state()
+        .await
+        .expect("JWT bearer commit regression requires isolated PostgreSQL and Valkey");
+    state.keyset =
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let id = format!("jwt-expired-commit-{}", Uuid::now_v7());
+    let mut client = jwt_bearer_client(&id, "jwt-expired-commit-kid", &key);
+    let secret = format!("jwt-commit-fixture-{}", Uuid::now_v7());
+    client.token_endpoint_auth_method = "client_secret_post".to_owned();
+    let secret_hash = crate::test_support::hash_client_secret_fixture(
+        &secret,
+        &state.settings.protocol.client_secret_pepper,
+    );
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(&client, Some(&secret_hash), None)
+        .await
+        .unwrap();
+    let assertion = signed_jwt_bearer_assertion(&id, "jwt-expired-commit-kid", &key, json!({}));
+    let request = TestRequest::post()
+        .uri("/token")
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        ))
+        .to_http_request();
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", JWT_BEARER_GRANT_TYPE)
+        .append_pair("client_id", &id)
+        .append_pair("client_secret", &secret)
+        .append_pair("assertion", &assertion)
+        .append_pair("scope", "accounts")
+        .finish();
+    let (response, commits) =
+        token_with_expired_grant_commit(&state, request, actix_web::web::Bytes::from(body)).await;
+    assert_expired_grant_dispatch_response(&state, &client, response, commits, "invalid_grant")
+        .await;
 }

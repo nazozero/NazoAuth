@@ -56,6 +56,7 @@ pub struct DecisionState {
 
 pub struct Ports {
     pub decisions: Mutex<DecisionState>,
+    pub jar_replays: Mutex<Option<BTreeSet<(String, String)>>>,
     pub assertion_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
     pub ciba_request_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
     pub ciba_replay_delay_ms: AtomicU64,
@@ -66,6 +67,7 @@ pub struct Ports {
     pub record_code_writes: AtomicBool,
     pub stored_codes: Mutex<Vec<RecordedAuthorizationCode>>,
     pub consent: Mutex<Option<ConsentPayload>>,
+    pub record_consent_writes: AtomicBool,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
     pub session: Mutex<Result<Option<SessionSnapshot>, RepositoryError>>,
     pub session_update_unavailable: AtomicBool,
@@ -277,10 +279,18 @@ impl AuthorizationStateStorePort for Ports {
     fn store_consent<'a>(
         &'a self,
         _request_id: &'a str,
-        _payload: &'a ConsentPayload,
+        payload: &'a ConsentPayload,
         _ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()> {
-        panic!("unexpected AuthorizationStateStorePort::store_consent call")
+        assert!(
+            self.record_consent_writes.load(Ordering::SeqCst),
+            "unexpected AuthorizationStateStorePort::store_consent call"
+        );
+        self.record("store_consent");
+        Box::pin(async move {
+            *self.consent.lock().unwrap() = Some(payload.clone());
+            Ok(())
+        })
     }
     fn store_authorization_code<'a>(
         &'a self,
@@ -338,11 +348,20 @@ impl AuthorizationStateStorePort for Ports {
     }
     fn consume_jar<'a>(
         &'a self,
-        _client_id: &'a str,
-        _jti: &'a str,
-        _ttl_seconds: u64,
+        client_id: &'a str,
+        jti: &'a str,
+        _expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::consume_jar call")
+        self.record("consume_jar");
+        Box::pin(async move {
+            Ok(self
+                .jar_replays
+                .lock()
+                .unwrap()
+                .as_mut()
+                .expect("JAR replay storage must be configured")
+                .insert((client_id.into(), jti.into())))
+        })
     }
     fn consume_client_attestation_proof<'a>(
         &'a self,
@@ -389,7 +408,7 @@ impl AuthorizationStateStorePort for Ports {
         &'a self,
         _client_id: &'a str,
         _jti: &'a str,
-        _ttl_seconds: u64,
+        _expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         self.record("ciba_request_object_replay");
         Box::pin(async {
@@ -662,6 +681,7 @@ impl Fixture {
     ) -> Self {
         let ports = Arc::new(Ports {
             decisions: Mutex::new(DecisionState::default()),
+            jar_replays: Mutex::new(None),
             assertion_replay: Mutex::new(None),
             ciba_request_replay: Mutex::new(None),
             ciba_replay_delay_ms: AtomicU64::new(0),
@@ -672,6 +692,7 @@ impl Fixture {
             record_code_writes: AtomicBool::new(false),
             stored_codes: Mutex::new(Vec::new()),
             consent: Mutex::new(None),
+            record_consent_writes: AtomicBool::new(false),
             client,
             session: Mutex::new(session),
             session_update_unavailable: AtomicBool::new(false),

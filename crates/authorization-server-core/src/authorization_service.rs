@@ -421,11 +421,12 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         started_at: i64,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()>;
+    /// Atomically reject expired/replayed objects using the store clock and original Unix expiry.
     fn consume_jar<'a>(
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool>;
     /// Validate the verified PoP's absolute window using the replay owner's
     /// clock and consume its client-scoped JTI in the same atomic operation.
@@ -449,11 +450,12 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool>;
+    /// Atomically reject expired/replayed objects using the store clock and original Unix expiry.
     fn consume_ciba_request_object<'a>(
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool>;
     fn consume_dpop<'a>(
         &'a self,
@@ -579,9 +581,9 @@ where
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
-        self.as_ref().consume_jar(client_id, jti, ttl_seconds)
+        self.as_ref().consume_jar(client_id, jti, expires_at)
     }
 
     fn consume_client_attestation_proof<'a>(
@@ -618,10 +620,10 @@ where
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         self.as_ref()
-            .consume_ciba_request_object(client_id, jti, ttl_seconds)
+            .consume_ciba_request_object(client_id, jti, expires_at)
     }
 
     fn consume_dpop<'a>(
@@ -995,9 +997,9 @@ where
         &self,
         client_id: &str,
         jti: &str,
-        ttl: u64,
+        expires_at: i64,
     ) -> Result<bool, AuthorizationPortError> {
-        self.state.consume_jar(client_id, jti, ttl).await
+        self.state.consume_jar(client_id, jti, expires_at).await
     }
 
     /// Validates a verified request object and commits its replay marker only
@@ -1023,13 +1025,22 @@ where
     ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
         let plan = prepare_request_object(outer, claims, policy)?;
         if let Some(replay) = plan.replay() {
-            super::authorization_request::classify_request_object_replay(
-                self.state
-                    .consume_jar(&replay.client_id, &replay.jti, replay.ttl_seconds)
-                    .await,
-            )?;
+            self.consume_request_object_replay(replay).await?;
         }
         Ok(apply_request_object_plan(outer, plan))
+    }
+
+    /// Commits the verified request object's replay claim at the application
+    /// admission boundary, after any login round trip and pure validation.
+    pub async fn consume_request_object_replay(
+        &self,
+        replay: &crate::RequestObjectReplay,
+    ) -> Result<(), AuthorizationRequestError> {
+        super::authorization_request::classify_request_object_replay(
+            self.state
+                .consume_jar(&replay.client_id, &replay.jti, replay.expires_at)
+                .await,
+        )
     }
 
     /// Discards only the already-committed PAR preparation version.
@@ -1084,10 +1095,10 @@ where
         &self,
         client_id: &str,
         jti: &str,
-        ttl: u64,
+        expires_at: i64,
     ) -> Result<bool, AuthorizationPortError> {
         self.state
-            .consume_ciba_request_object(client_id, jti, ttl)
+            .consume_ciba_request_object(client_id, jti, expires_at)
             .await
     }
 

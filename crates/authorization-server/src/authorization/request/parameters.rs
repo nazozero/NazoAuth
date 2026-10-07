@@ -75,7 +75,9 @@ pub(super) fn authorization_login_query(
     original: Option<&HashMap<String, String>>,
     request_uri: Option<&String>,
 ) -> HashMap<String, String> {
-    if request_uri.is_some() {
+    if request_uri.is_some()
+        || original.is_some_and(|q| q.contains_key("request") || q.contains_key("request_uri"))
+    {
         original.cloned().unwrap_or_else(|| expanded.clone())
     } else {
         expanded.clone()

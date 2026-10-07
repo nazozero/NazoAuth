@@ -448,6 +448,7 @@ async fn token_exchange_subject_binding_requires_the_presented_sender_proof() {
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::TokenExchange),
         client_epoch: 0,
         config: &config,
         modules: &modules,
@@ -864,6 +865,7 @@ async fn token_exchange_request_policy_and_admission_wrappers_preserve_boundarie
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::TokenExchange),
         client_epoch: 0,
         config: &config,
         modules: &modules,

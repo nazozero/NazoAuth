@@ -1015,3 +1015,189 @@ async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_
     );
     assert!(store.resolve_user_code(&user_code).await.unwrap().is_none());
 }
+
+fn protocol_ciba_deadline_state(now: i64) -> CibaRequestState {
+    CibaRequestState {
+        client_id: "deadline-contract-client".to_owned(),
+        user_id: uuid::Uuid::now_v7(),
+        scopes: vec!["openid".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        acr: None,
+        authentication_context: None,
+        binding_message: None,
+        issued_at: now,
+        status: CibaStatus::Pending,
+        interval_seconds: 5,
+        expires_at: now + 600,
+        retention_expires_at: now + 900,
+        last_poll_at: None,
+        ping_notification: None,
+    }
+}
+
+#[tokio::test]
+async fn protocol_ciba_deadline_create_rejects_every_explicit_elapsed_value() {
+    let (connection, inspector) = setup()
+        .await
+        .expect("deadline regression requires explicit test Valkey");
+    let store = CibaStore::new(&connection);
+    let now = server_time(&inspector).await;
+    let state = protocol_ciba_deadline_state(now);
+    for deadline in [0, -1, now - 1, now] {
+        let id = format!("ciba-create-deadline-{}", uuid::Uuid::now_v7());
+        assert_eq!(
+            store
+                .create_with_authorization_deadline(&id, &state, Some(deadline))
+                .await
+                .unwrap(),
+            AtomicResult::DeadlineElapsed
+        );
+        assert!(
+            store.load(&id).await.unwrap().is_none(),
+            "explicit elapsed authority must not create state"
+        );
+    }
+    for deadline in [None, Some(now + 300)] {
+        let id = format!("ciba-create-valid-deadline-{}", uuid::Uuid::now_v7());
+        assert_eq!(
+            store
+                .create_with_authorization_deadline(&id, &state, deadline)
+                .await
+                .unwrap(),
+            AtomicResult::Applied
+        );
+        let stored = store.load(&id).await.unwrap().unwrap();
+        assert_eq!(stored.state(), &state);
+        assert_eq!(
+            store.delete(&id, stored.version()).await.unwrap(),
+            AtomicResult::Applied
+        );
+    }
+}
+
+#[tokio::test]
+async fn protocol_ciba_deadline_replace_rejects_elapsed_authority_without_mutation() {
+    let (connection, inspector) = setup()
+        .await
+        .expect("deadline regression requires explicit test Valkey");
+    let store = CibaStore::new(&connection);
+    let now = server_time(&inspector).await;
+    let state = protocol_ciba_deadline_state(now);
+    let id = format!("ciba-replace-deadline-{}", uuid::Uuid::now_v7());
+    assert_eq!(
+        store.create(&id, &state).await.unwrap(),
+        AtomicResult::Applied
+    );
+    let stored = store.load(&id).await.unwrap().unwrap();
+    let mut replacement = state.clone();
+    replacement.last_poll_at = Some(now);
+    for deadline in [0, -1, now - 1, now] {
+        assert_eq!(
+            store
+                .replace_with_authorization_deadline(
+                    &id,
+                    stored.version(),
+                    &replacement,
+                    Some(deadline)
+                )
+                .await
+                .unwrap(),
+            AtomicResult::DeadlineElapsed
+        );
+        let after = store.load(&id).await.unwrap().unwrap();
+        assert_eq!(after.state(), &state);
+        assert_eq!(
+            after.version().comparison_token(),
+            stored.version().comparison_token()
+        );
+        assert_eq!(
+            after.version().retention_expires_at(),
+            stored.version().retention_expires_at()
+        );
+    }
+    let wrong = nazo_auth::CibaStateVersion::new(
+        "wrong-CAS-version".to_owned(),
+        state.retention_expires_at,
+    );
+    assert_eq!(
+        store
+            .replace_with_authorization_deadline(&id, &wrong, &replacement, Some(now + 300))
+            .await
+            .unwrap(),
+        AtomicResult::Conflict
+    );
+    assert_eq!(store.load(&id).await.unwrap().unwrap().state(), &state);
+    assert_eq!(
+        store
+            .replace_with_authorization_deadline(
+                &id,
+                stored.version(),
+                &replacement,
+                Some(now + 300)
+            )
+            .await
+            .unwrap(),
+        AtomicResult::Applied
+    );
+    let after = store.load(&id).await.unwrap().unwrap();
+    assert_eq!(after.state(), &replacement);
+    assert_eq!(
+        store.delete(&id, after.version()).await.unwrap(),
+        AtomicResult::Applied
+    );
+}
+
+#[tokio::test]
+async fn protocol_ciba_deadline_delete_rejects_elapsed_authority_without_mutation() {
+    let (connection, inspector) = setup()
+        .await
+        .expect("deadline regression requires explicit test Valkey");
+    let store = CibaStore::new(&connection);
+    let now = server_time(&inspector).await;
+    let state = protocol_ciba_deadline_state(now);
+    let id = format!("ciba-delete-deadline-{}", uuid::Uuid::now_v7());
+    assert_eq!(
+        store.create(&id, &state).await.unwrap(),
+        AtomicResult::Applied
+    );
+    let stored = store.load(&id).await.unwrap().unwrap();
+    for deadline in [0, -1, now - 1, now] {
+        assert_eq!(
+            store
+                .delete_with_authorization_deadline(&id, stored.version(), Some(deadline))
+                .await
+                .unwrap(),
+            AtomicResult::DeadlineElapsed
+        );
+        let after = store.load(&id).await.unwrap().unwrap();
+        assert_eq!(after.state(), &state);
+        assert_eq!(
+            after.version().comparison_token(),
+            stored.version().comparison_token()
+        );
+        assert_eq!(
+            after.version().retention_expires_at(),
+            stored.version().retention_expires_at()
+        );
+    }
+    let wrong = nazo_auth::CibaStateVersion::new(
+        "wrong-CAS-version".to_owned(),
+        state.retention_expires_at,
+    );
+    assert_eq!(
+        store
+            .delete_with_authorization_deadline(&id, &wrong, Some(now + 300))
+            .await
+            .unwrap(),
+        AtomicResult::Conflict
+    );
+    assert_eq!(store.load(&id).await.unwrap().unwrap().state(), &state);
+    assert_eq!(
+        store
+            .delete_with_authorization_deadline(&id, stored.version(), Some(now + 300))
+            .await
+            .unwrap(),
+        AtomicResult::Applied
+    );
+    assert!(store.load(&id).await.unwrap().is_none());
+}

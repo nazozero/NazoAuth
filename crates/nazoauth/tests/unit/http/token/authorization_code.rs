@@ -146,6 +146,7 @@ async fn token_authorization_code_using_service(
         token_authorization_code_with_service(
             service,
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::AuthorizationCode),
                 client_epoch: 0,
                 config: &config,
                 modules: &modules,

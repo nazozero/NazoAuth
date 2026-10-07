@@ -119,4 +119,4 @@ pub(crate) use token_with_service as token;
 
 #[cfg(test)]
 #[path = "../../../../tests/unit/http/token/dispatch.rs"]
-mod tests;
+pub(crate) mod tests;

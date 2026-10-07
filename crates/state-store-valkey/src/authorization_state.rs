@@ -189,11 +189,11 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         Box::pin(async move {
             self.replay
-                .consume_jar(client_id, jti, ttl_seconds)
+                .consume_jar(client_id, jti, expires_at)
                 .await
                 .map_err(map_error)
         })
@@ -245,11 +245,11 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         Box::pin(async move {
             self.replay
-                .consume_ciba_request_object(client_id, jti, ttl_seconds)
+                .consume_ciba_request_object(client_id, jti, expires_at)
                 .await
                 .map_err(map_error)
         })

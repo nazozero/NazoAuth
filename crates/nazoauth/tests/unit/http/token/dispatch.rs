@@ -151,6 +151,32 @@ async fn token_with_port_repositories_and_state(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
+    token_with_port_repositories_and_state_and_modules(
+        state,
+        token_repository,
+        authorization_repository,
+        authorization_state,
+        resolver,
+        openid4vc,
+        req,
+        body,
+        crate::test_support::persisted_runtime_modules_fixture(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn token_with_port_repositories_and_state_and_modules(
+    state: Data<TestInfrastructure>,
+    token_repository: Arc<dyn nazo_auth::TokenRepositoryPort>,
+    authorization_repository: Arc<dyn nazo_auth::AuthorizationRepositoryPort>,
+    authorization_state: Arc<dyn nazo_auth::AuthorizationStateStorePort>,
+    resolver: Arc<crate::adapters::remote_client_documents::RemoteClientDocumentResolver>,
+    openid4vc: Openid4vcTokenHandles,
+    req: HttpRequest,
+    body: Bytes,
+    modules: std::collections::BTreeSet<nazo_runtime_modules::ModuleId>,
+) -> HttpResponse {
     let service = Data::new(ServerTokenService::from_port(
         token_repository,
         Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
@@ -180,12 +206,14 @@ async fn token_with_port_repositories_and_state(
     let device_service = Data::new(nazo_oauth_server::services::ServerDeviceGrantService::new(
         Arc::new(nazo_valkey::DeviceStore::new(&connection)),
     ));
-    let runtime_modules = (crate::runtime_modules::test_support::runtime_module_registry_for_test(
-        state.diesel_db.clone(),
-        state.settings.as_ref(),
-    )
-    .expect("test runtime module registry should be valid"))
-    .snapshot_store();
+    let runtime_modules =
+        (crate::runtime_modules::test_support::runtime_module_registry_with_modules_for_test(
+            state.diesel_db.clone(),
+            state.settings.as_ref(),
+            modules,
+        )
+        .expect("test runtime module registry should be valid"))
+        .snapshot_store();
     token_with_service(
         Data::new(TokenEndpointHandles::new(
             TokenCoreHandles {

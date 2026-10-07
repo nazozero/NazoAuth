@@ -414,3 +414,391 @@ async fn refresh_issue_new_persistence_failure_uses_non_rotation_error_mapping()
     assert_eq!(value["error"], "server_error");
     assert!(value.get("refresh_token").is_none());
 }
+
+async fn protocol_native_sso_source_fixture() -> (TestInfrastructure, Value) {
+    let state = issue_state_with_live_database()
+        .expect("Native SSO audience regression requires isolated PostgreSQL and Valkey");
+    state
+        .valkey
+        .init()
+        .await
+        .expect("isolated Valkey readiness");
+    let mut source = client_with_grants(&["authorization_code", "refresh_token"]);
+    source.client_id = format!("native-source-{}", Uuid::now_v7());
+    source.scopes = vec![
+        "openid".into(),
+        "offline_access".into(),
+        "device_sso".into(),
+    ];
+    let user_id = Uuid::now_v7();
+    insert_issue_client(&state, &source).await;
+    insert_issue_user(&state, user_id).await;
+    let mut issue = token_issue_with_sid(vec!["sid".into()]);
+    issue.user_id = Some(user_id);
+    issue.subject = user_id.to_string();
+    issue.scopes = source.scopes.clone();
+    issue.include_refresh = true;
+    issue.native_sso = nazo_oauth_server::token::native_sso::new_native_sso_token_binding(Some(
+        "native-source-session",
+    ));
+    let source_response = issue_native_sso_token_response(&state, &source, issue).await;
+    assert_eq!(source_response.status(), StatusCode::OK);
+    let source_body: Value = serde_json::from_slice(&response_body(source_response).await).unwrap();
+    (state, source_body)
+}
+
+#[actix_web::test]
+async fn protocol_native_sso_exchange_checks_target_default_audience() {
+    use nazo_oauth_server::contracts::token_forms::TokenForm;
+    use nazo_oauth_server::token::native_sso::{
+        NATIVE_SSO_DEVICE_SECRET_TYPE, NATIVE_SSO_ID_TOKEN_TYPE, token_native_sso_exchange,
+    };
+    let (state, source_body) = protocol_native_sso_source_fixture().await;
+    let config = token_issuance_config(state.settings.as_ref());
+    let authorization = test_support::test_authorization_service(&state);
+    let service = ServerTokenService::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+        Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    );
+    let mut modules = state.active_module_snapshot();
+    modules
+        .accepting
+        .insert(nazo_runtime_modules::ModuleId::NativeSso);
+    let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::TokenExchange),
+        client_epoch: 0,
+        config: &config,
+        modules: &modules,
+        authorization: &authorization,
+        security_audit: crate::http::authorization::test_support::test_security_audit(),
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
+    };
+    for allowed in [false, true] {
+        let mut target = client_with_grants(&[
+            "urn:ietf:params:oauth:grant-type:token-exchange",
+            "refresh_token",
+        ]);
+        target.client_id = format!("native-target-{}", Uuid::now_v7());
+        target.scopes = vec![
+            "openid".into(),
+            "offline_access".into(),
+            "device_sso".into(),
+        ];
+        target.allowed_audiences = vec![if allowed {
+            config.default_audience().into()
+        } else {
+            "resource://other".into()
+        }];
+        insert_issue_client(&state, &target).await;
+        let form = TokenForm {
+            grant_type: "urn:ietf:params:oauth:grant-type:token-exchange".into(),
+            code: None,
+            device_code: None,
+            auth_req_id: None,
+            redirect_uri: None,
+            code_verifier: None,
+            refresh_token: None,
+            device_secret: None,
+            scope: None,
+            client_id: Some(target.client_id.clone()),
+            client_secret: None,
+            client_assertion_type: None,
+            client_assertion: None,
+            assertion: None,
+            requested_token_type: None,
+            subject_token: Some(source_body["id_token"].as_str().unwrap().into()),
+            subject_token_type: Some(NATIVE_SSO_ID_TOKEN_TYPE.into()),
+            actor_token: Some(source_body["device_secret"].as_str().unwrap().into()),
+            actor_token_type: Some(NATIVE_SSO_DEVICE_SECRET_TYPE.into()),
+            audiences: vec![config.issuer().into()],
+            has_audience_param: true,
+        };
+        let request = actix_web::test::TestRequest::post()
+            .uri("/token")
+            .to_http_request();
+        let facts = test_support::token_request_facts(&request, state.settings.as_ref());
+        let response = present_token_result(
+            token_native_sso_exchange(&service, &issuance, &facts, &target, &form, None, None)
+                .await,
+        );
+        let status = response.status();
+        let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+        if allowed {
+            assert_eq!(
+                status,
+                StatusCode::OK,
+                "allowed target must issue successfully"
+            );
+            let claims = nazo_crypto::jwt::dangerous::insecure_decode::<Value>(
+                body["access_token"].as_str().unwrap(),
+            )
+            .unwrap()
+            .claims;
+            let audience = &claims["aud"];
+            let audiences = audience
+                .as_array()
+                .map_or(std::slice::from_ref(audience), Vec::as_slice);
+            assert_eq!(audiences, &[json!(config.default_audience())]);
+            assert_eq!(refresh_token_row_count(&state, &target).await, 1);
+        } else {
+            assert_eq!(
+                status,
+                StatusCode::BAD_REQUEST,
+                "disallowed target must reject before issuance"
+            );
+            assert_eq!(body["error"], "invalid_target");
+            assert!(body.get("access_token").is_none());
+            assert!(body.get("refresh_token").is_none());
+            assert!(body.get("id_token").is_none());
+            assert_eq!(refresh_token_row_count(&state, &target).await, 0);
+            assert_eq!(token_issuance_row_count(&state, &target).await, 0);
+        }
+    }
+}
+
+async fn protocol_native_sso_attested_http_request(
+    state: &TestInfrastructure,
+    validator: Arc<nazo_oauth_server::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator>,
+    attestation: Option<&str>,
+    proof: Option<&str>,
+    body: &str,
+) -> HttpResponse {
+    let mut request = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .insert_header(("content-type", "application/x-www-form-urlencoded"));
+    if let Some(attestation) = attestation {
+        request = request.insert_header(("OAuth-Client-Attestation", attestation));
+    }
+    if let Some(proof) = proof {
+        request = request.insert_header(("OAuth-Client-Attestation-PoP", proof));
+    }
+    let mut modules = state.active_module_snapshot().accepting;
+    modules.insert(nazo_runtime_modules::ModuleId::NativeSso);
+    crate::http::token::dispatch::tests::token_with_port_repositories_and_state_and_modules(
+        actix_web::web::Data::new(state.clone()),
+        Arc::new(crate::test_support::token_issuance_repository(
+            state.diesel_db.clone(),
+        )),
+        Arc::new(nazo_postgres::AuthorizationFlowRepository::new(
+            state.diesel_db.clone(),
+            DEFAULT_TENANT_ID,
+        )),
+        Arc::new(nazo_valkey::AuthorizationStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        Arc::new(
+            crate::adapters::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                .unwrap(),
+        ),
+        nazo_oauth_server::token::dispatch::Openid4vcTokenHandles {
+            credential_issuer: None,
+            client_attestation: Some(validator),
+        },
+        request.to_http_request(),
+        actix_web::web::Bytes::from(body.to_owned()),
+        modules,
+    )
+    .await
+}
+
+#[actix_web::test]
+async fn protocol_native_sso_dispatch_preserves_verified_instance_binding() {
+    use nazo_oauth_server::domain::openid4vc::client_attestation::{
+        Openid4vcClientAttestationValidator, client_instance_key_thumbprint,
+    };
+    use nazo_oauth_server::token::native_sso::{
+        NATIVE_SSO_DEVICE_SECRET_TYPE, NATIVE_SSO_ID_TOKEN_TYPE,
+    };
+    let (state, source_body) = protocol_native_sso_source_fixture().await;
+    let config = token_issuance_config(state.settings.as_ref());
+    let mut target = client_with_grants(&[
+        "urn:ietf:params:oauth:grant-type:token-exchange",
+        "refresh_token",
+    ]);
+    target.client_id = format!("native-attested-target-{}", Uuid::now_v7());
+    target.client_type = "confidential".into();
+    target.token_endpoint_auth_method = "attest_jwt_client_auth".into();
+    target.scopes = vec![
+        "openid".into(),
+        "offline_access".into(),
+        "device_sso".into(),
+    ];
+    target.allowed_audiences = vec![config.default_audience().into()];
+    insert_issue_client(&state, &target).await;
+    {
+        let mut connection = get_conn(&state.diesel_db).await.unwrap();
+        sql_query(
+            "UPDATE oauth_clients SET allowed_audiences = $1 WHERE tenant_id = $2 AND id = $3",
+        )
+        .bind::<Jsonb, _>(json!(target.allowed_audiences))
+        .bind::<SqlUuid, _>(target.tenant_id)
+        .bind::<SqlUuid, _>(target.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    let attester = client_signing_fixture(jsonwebtoken::Algorithm::ES256);
+    let instance = client_signing_fixture(jsonwebtoken::Algorithm::ES256);
+    let other_instance = client_signing_fixture(jsonwebtoken::Algorithm::ES256);
+    let validator = Arc::new(
+        Openid4vcClientAttestationValidator::new(
+            "https://attester.example",
+            json!({"keys":[attester.public_jwk("attester")]}),
+        )
+        .unwrap(),
+    );
+    let attestation_for = |key: &crate::test_support::ClientSigningFixture| {
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+        header.typ = Some("oauth-client-attestation+jwt".into());
+        header.kid = Some("attester".into());
+        attester.encode_jwt(
+            &header,
+            &json!({
+                "iss":"https://attester.example", "sub":target.client_id,
+                "exp":Utc::now().timestamp()+600, "cnf":{"jwk":key.public_jwk("instance")},
+            }),
+        )
+    };
+    let proof_for = |key: &crate::test_support::ClientSigningFixture| {
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+        header.typ = Some("oauth-client-attestation-pop+jwt".into());
+        key.encode_jwt(
+            &header,
+            &json!({
+                "iss":target.client_id, "aud":config.issuer(),
+                "iat":Utc::now().timestamp(), "jti":Uuid::now_v7().to_string(),
+            }),
+        )
+    };
+    let attestation = attestation_for(&instance);
+    let other_attestation = attestation_for(&other_instance);
+    let form = url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs([
+            (
+                "grant_type",
+                "urn:ietf:params:oauth:grant-type:token-exchange",
+            ),
+            ("client_id", target.client_id.as_str()),
+            ("audience", config.issuer()),
+            ("subject_token", source_body["id_token"].as_str().unwrap()),
+            ("subject_token_type", NATIVE_SSO_ID_TOKEN_TYPE),
+            (
+                "actor_token",
+                source_body["device_secret"].as_str().unwrap(),
+            ),
+            ("actor_token_type", NATIVE_SSO_DEVICE_SECRET_TYPE),
+        ])
+        .finish();
+    for (proof, status, error) in [
+        (None, StatusCode::BAD_REQUEST, "invalid_request"),
+        (
+            Some(proof_for(&other_instance)),
+            StatusCode::UNAUTHORIZED,
+            "invalid_client_attestation",
+        ),
+    ] {
+        let response = protocol_native_sso_attested_http_request(
+            &state,
+            validator.clone(),
+            Some(&attestation),
+            proof.as_deref(),
+            &form,
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            status,
+            "invalid or missing proof must fail before exchange"
+        );
+        let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+        assert_eq!(body["error"], error);
+        assert!(body.get("access_token").is_none() && body.get("refresh_token").is_none());
+        assert_eq!(refresh_token_row_count(&state, &target).await, 0);
+    }
+    let response = protocol_native_sso_attested_http_request(
+        &state,
+        validator.clone(),
+        Some(&attestation),
+        Some(&proof_for(&instance)),
+        &form,
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "verified instance must survive Native SSO dispatch"
+    );
+    let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+    assert!(body.get("access_token").is_some() && body.get("id_token").is_some());
+    let refresh_token = body["refresh_token"].as_str().unwrap();
+    let service = ServerTokenService::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+        Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    );
+    let persisted = service
+        .refresh_token_snapshot_with_subject(
+            target.tenant_id,
+            refresh_token,
+            target.id,
+            Utc::now(),
+            false,
+        )
+        .await
+        .expect("persisted refresh-token snapshot should load")
+        .expect("Native SSO must persist a refresh family");
+    assert_eq!(
+        persisted.presented.client_attestation_jkt,
+        Some(client_instance_key_thumbprint(&instance.public_jwk("instance")).unwrap()),
+    );
+    let refresh_form = url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs([
+            ("grant_type", "refresh_token"),
+            ("client_id", target.client_id.as_str()),
+            ("refresh_token", refresh_token),
+        ])
+        .finish();
+    let response = protocol_native_sso_attested_http_request(
+        &state,
+        validator.clone(),
+        Some(&other_attestation),
+        Some(&proof_for(&other_instance)),
+        &refresh_form,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let denied: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+    assert_eq!(denied["error"], "invalid_client_attestation");
+    assert!(denied.get("access_token").is_none() && denied.get("refresh_token").is_none());
+    let response = protocol_native_sso_attested_http_request(
+        &state,
+        validator.clone(),
+        Some(&attestation),
+        None,
+        &refresh_form,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let denied: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+    assert_eq!(denied["error"], "invalid_request");
+    let response = protocol_native_sso_attested_http_request(
+        &state,
+        validator,
+        Some(&attestation),
+        Some(&proof_for(&instance)),
+        &refresh_form,
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "the originally verified instance must refresh"
+    );
+    let refreshed: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+    assert!(refreshed.get("access_token").is_some() && refreshed.get("refresh_token").is_some());
+}

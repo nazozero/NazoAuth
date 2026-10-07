@@ -64,6 +64,18 @@ pub fn client_attestation_replay_storage_key(client_id: &str, jti: &str) -> Stri
     state_storage_key(crate::keys::client_attestation_replay(client_id, jti))
 }
 
+/// Inspect the production JAR replay key without repeating its derivation.
+#[must_use]
+pub fn jar_replay_storage_key(client_id: &str, jti: &str) -> String {
+    state_storage_key(crate::keys::jar_replay(client_id, jti))
+}
+
+/// Inspect the production CIBA request-object replay key.
+#[must_use]
+pub fn ciba_request_object_replay_storage_key(client_id: &str, jti: &str) -> String {
+    state_storage_key(crate::keys::ciba_request_object_replay(client_id, jti))
+}
+
 /// Returns the actual storage key used for a PAR request URI.
 ///
 /// This is intentionally exposed only through the raw test harness so

@@ -194,11 +194,16 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
             .await
             .unwrap()
     );
-    assert!(store.consume_jar(client_id, jti, 30).await.unwrap());
+    assert!(
+        store
+            .consume_jar(client_id, jti, chrono::Utc::now().timestamp() + 30)
+            .await
+            .unwrap()
+    );
     assert!(store.consume_jwt_bearer(client_id, jti, 30).await.unwrap());
     assert!(
         store
-            .consume_ciba_request_object(client_id, jti, 30)
+            .consume_ciba_request_object(client_id, jti, chrono::Utc::now().timestamp() + 30)
             .await
             .unwrap()
     );
@@ -213,11 +218,16 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
             .await
             .unwrap()
     );
-    assert!(!store.consume_jar(client_id, jti, 30).await.unwrap());
+    assert!(
+        !store
+            .consume_jar(client_id, jti, chrono::Utc::now().timestamp() + 30)
+            .await
+            .unwrap()
+    );
     assert!(!store.consume_jwt_bearer(client_id, jti, 30).await.unwrap());
     assert!(
         !store
-            .consume_ciba_request_object(client_id, jti, 30)
+            .consume_ciba_request_object(client_id, jti, chrono::Utc::now().timestamp() + 30)
             .await
             .unwrap()
     );
@@ -226,13 +236,21 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     let adapter_jti = "adapter-jti";
     assert!(
         adapter
-            .consume_ciba_request_object(client_id, adapter_jti, 30)
+            .consume_ciba_request_object(
+                client_id,
+                adapter_jti,
+                chrono::Utc::now().timestamp() + 30
+            )
             .await
             .unwrap()
     );
     assert!(
         !adapter
-            .consume_ciba_request_object(client_id, adapter_jti, 30)
+            .consume_ciba_request_object(
+                client_id,
+                adapter_jti,
+                chrono::Utc::now().timestamp() + 30
+            )
             .await
             .unwrap()
     );
@@ -552,4 +570,73 @@ async fn client_attestation_expired_marker_cannot_be_reinserted_by_slow_node() {
             .await
             .unwrap()
     );
+}
+
+#[tokio::test]
+async fn protocol_request_object_replay_keeps_absolute_expiry_and_refuses_expired_reinsertion() {
+    let url = explicit_valkey_url().expect("this regression requires real Valkey");
+    let connection = nazo_valkey::test_support::scoped_connect(&url, Duration::from_secs(1))
+        .await
+        .unwrap();
+    let store = ReplayStore::new(&connection);
+    let inspector = inspection_client(&url).await;
+    for ciba in [false, true] {
+        let client = uuid::Uuid::now_v7().to_string();
+        let jti = "absolute-deadline";
+        let expiry = chrono::Utc::now().timestamp() + 2;
+        let key = if ciba {
+            nazo_valkey::test_support::ciba_request_object_replay_storage_key(&client, jti)
+        } else {
+            nazo_valkey::test_support::jar_replay_storage_key(&client, jti)
+        };
+        let accepted = if ciba {
+            store
+                .consume_ciba_request_object(&client, jti, expiry)
+                .await
+        } else {
+            store.consume_jar(&client, jti, expiry).await
+        }
+        .unwrap();
+        assert!(accepted);
+        assert_eq!(
+            inspector.expire_time::<i64, _>(&key).await.unwrap(),
+            expiry,
+            "request-object expiry must not be reconstructed as a relative TTL"
+        );
+        let duplicate = if ciba {
+            store
+                .consume_ciba_request_object(&client, jti, expiry)
+                .await
+        } else {
+            store.consume_jar(&client, jti, expiry).await
+        }
+        .unwrap();
+        assert!(!duplicate);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let delayed = if ciba {
+            store
+                .consume_ciba_request_object(&client, jti, expiry)
+                .await
+        } else {
+            store.consume_jar(&client, jti, expiry).await
+        }
+        .unwrap();
+        assert!(
+            !delayed,
+            "an elapsed request object must not reinsert its expired replay marker"
+        );
+        assert_eq!(inspector.exists::<i64, _>(&key).await.unwrap(), 0);
+        for expired in [-1, 0, chrono::Utc::now().timestamp()] {
+            let delayed = if ciba {
+                store
+                    .consume_ciba_request_object(&client, jti, expired)
+                    .await
+            } else {
+                store.consume_jar(&client, jti, expired).await
+            }
+            .unwrap();
+            assert!(!delayed);
+            assert_eq!(inspector.exists::<i64, _>(&key).await.unwrap(), 0);
+        }
+    }
 }

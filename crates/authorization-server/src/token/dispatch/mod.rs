@@ -412,6 +412,7 @@ impl TokenEndpointHandles {
         }
         let modules = runtime_modules.load_full();
         let issuance = TokenIssuanceContext {
+            grant_type: nazo_auth::GrantType::try_from(form.grant_type.as_str()).ok(),
             client_epoch,
             config: issuance_config,
             modules: &modules,
@@ -539,6 +540,7 @@ impl TokenEndpointHandles {
                     &client,
                     &form,
                     client_assertion.as_ref(),
+                    client_attestation_jkt.as_deref(),
                 )
                 .await
             }

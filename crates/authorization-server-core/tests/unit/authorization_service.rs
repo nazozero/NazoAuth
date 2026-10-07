@@ -288,7 +288,7 @@ impl AuthorizationStateStorePort for FakeStore {
         &'a self,
         _client_id: &'a str,
         _jti: &'a str,
-        _ttl_seconds: u64,
+        _expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         let error = self.0.jar_error.lock().unwrap().take();
         Box::pin(async move { error.map_or(Ok(true), Err) })
@@ -325,7 +325,7 @@ impl AuthorizationStateStorePort for FakeStore {
         &'a self,
         _client_id: &'a str,
         _jti: &'a str,
-        _ttl_seconds: u64,
+        _expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         Box::pin(async { Ok(true) })
     }

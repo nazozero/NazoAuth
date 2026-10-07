@@ -77,6 +77,7 @@ async fn issue_counted(
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::ClientCredentials),
                 client_epoch: 0,
                 config: &config,
                 modules: &modules,

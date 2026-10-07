@@ -36,8 +36,9 @@ pub(crate) async fn authorize_request_with_context(
         return Err(response);
     }
 
-    let original_authorization_query = q.get("request_uri").is_some().then(|| q.clone());
     let reauth_started_at = consume_reauth_nonce_with_context(context, q).await;
+    let original_authorization_query =
+        (q.contains_key("request_uri") || q.contains_key("request")).then(|| q.clone());
     // RFC 9101 section 5 and RFC 9126 section 4 require client_id in the
     // authorization request itself, including when a PAR handle is supplied.
     // Check before replacing the outer parameters with stored PAR parameters.
@@ -202,9 +203,11 @@ pub(crate) async fn authorize_request_with_context(
         }
     }
     let direct_request_object_present = q.contains_key("request");
-    let request_object_error = apply_request_object_with_context(context, q, &mut client, None)
-        .await
-        .err();
+    let (request_object_replay, request_object_error) =
+        match apply_request_object_with_context(context, q, &mut client, None).await {
+            Ok(replay) => (replay, None),
+            Err(error) => (None, Some(error)),
+        };
     if let Some(response) = runtime_authorization_capability_error(context, q) {
         return Err(response);
     }
@@ -393,6 +396,12 @@ pub(crate) async fn authorize_request_with_context(
             };
         }
         AuthorizationSessionDecision::Continue => {}
+    }
+    if let Some(replay) = request_object_replay.as_ref()
+        && let Err(error) = context.service.consume_request_object_replay(replay).await
+    {
+        return authorization_oauth_error_redirect(context, &redirect_uri, error.oauth_error(), q)
+            .await;
     }
     let session = session.expect("authorization session policy allowed continuation");
     if let Some(issuer_state) = q.get("issuer_state") {

@@ -282,3 +282,192 @@ fn policy_and_replay_errors_preserve_status_code_and_body() {
         );
     }
 }
+
+#[test]
+fn protocol_jar_login_preserves_signed_envelope_and_consumes_replay_only_on_continuation() {
+    use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
+    use crate::test_support::authorization as fixture;
+    use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision};
+    futures_executor::block_on(async {
+        for with_jti in [false, true] {
+            let mut claims = request_claims();
+            if with_jti {
+                claims["jti"] = json!("login-request");
+            }
+            let (signed, mut client) = nested_request_object(&claims);
+            client.registration.require_par_request_object = true;
+            let fixture = fixture::Fixture::new(Ok(Some(client)), Ok(None));
+            *fixture.ports.jar_replays.lock().unwrap() = Some(Default::default());
+            fixture
+                .ports
+                .record_consent_writes
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            fixture
+                .snapshots
+                .compare_and_publish(
+                    ModuleRevision::new(1),
+                    ActiveModuleSnapshot {
+                        revision: ModuleRevision::new(2),
+                        accepting: [ModuleId::RequestObjects].into(),
+                        draining: Default::default(),
+                    },
+                )
+                .unwrap();
+            let application = fixture.make_application();
+            let sid = nazo_identity::SessionId::new("jar-login");
+            let facts = AuthorizationRequestFacts {
+                source_ip: "192.0.2.1",
+                session_id: Some(&sid),
+                user_agent: None,
+            };
+            let original = HashMap::from([
+                ("client_id".into(), "client-1".into()),
+                ("request".into(), signed),
+            ]);
+            let AuthorizationOutcome::Redirect { location } = application
+                .authorize(&facts, &mut original.clone())
+                .await
+                .unwrap()
+            else {
+                panic!("login redirect expected");
+            };
+            let login = url::Url::parse(&location).unwrap();
+            assert_eq!(login.path(), "/auth");
+            assert!(
+                !fixture.ports.calls().contains(&"consume_jar"),
+                "login must not consume a verified JAR"
+            );
+            let next = login
+                .query_pairs()
+                .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
+                .unwrap();
+            let next = url::Url::parse(&format!("https://issuer.example{next}")).unwrap();
+            let resumed: HashMap<String, String> = next.query_pairs().into_owned().collect();
+            assert_eq!(
+                resumed, original,
+                "expanded claims must not become outer parameters on login return"
+            );
+            *fixture.ports.session.lock().unwrap() = Ok(Some(fixture::session()));
+            let AuthorizationOutcome::Redirect { location } = application
+                .authorize(&facts, &mut resumed.clone())
+                .await
+                .unwrap()
+            else {
+                panic!("consent expected");
+            };
+            assert_eq!(url::Url::parse(&location).unwrap().path(), "/consent");
+            if with_jti {
+                assert_eq!(
+                    fixture
+                        .ports
+                        .calls()
+                        .iter()
+                        .filter(|call| **call == "consume_jar")
+                        .count(),
+                    1
+                );
+                let AuthorizationOutcome::Redirect { location } = application
+                    .authorize(&facts, &mut resumed.clone())
+                    .await
+                    .unwrap()
+                else {
+                    panic!("replay error expected");
+                };
+                assert!(
+                    url::Url::parse(&location)
+                        .unwrap()
+                        .query_pairs()
+                        .any(|(k, v)| k == "error" && v == "invalid_request_object")
+                );
+                assert_eq!(
+                    fixture
+                        .ports
+                        .calls()
+                        .iter()
+                        .filter(|call| **call == "store_consent")
+                        .count(),
+                    1
+                );
+            }
+            assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+        }
+    });
+}
+
+#[test]
+fn protocol_par_invalid_signed_scope_does_not_consume_request_object_replay() {
+    use crate::authorization::par::ParRequestFacts;
+    use crate::contracts::request_facts::DpopRequestFacts;
+    use crate::contracts::token_client_auth::{
+        BasicAuthorizationCredentials, TokenClientAuthTransportFacts,
+    };
+    use crate::token::client_auth::ClientAuthRequestFacts;
+    use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision};
+    futures_executor::block_on(async {
+        let mut claims = request_claims();
+        claims["scope"] = json!("unregistered");
+        claims["jti"] = json!("rejected-before-admission");
+        let (signed, mut client) = nested_request_object(&claims);
+        client.registration.client_type = "public".into();
+        client.registration.token_endpoint_auth_method = "none".into();
+        let fixture = crate::test_support::authorization::Fixture::new(Ok(Some(client)), Ok(None));
+        *fixture.ports.par_rate.lock().unwrap() = Some(Ok(1));
+        *fixture.ports.jar_replays.lock().unwrap() = Some(Default::default());
+        fixture
+            .snapshots
+            .compare_and_publish(
+                ModuleRevision::new(1),
+                ActiveModuleSnapshot {
+                    revision: ModuleRevision::new(2),
+                    accepting: [ModuleId::RequestObjects].into(),
+                    draining: Default::default(),
+                },
+            )
+            .unwrap();
+        let application = fixture.make_application();
+        let transport = TokenClientAuthTransportFacts::from_parts(
+            BasicAuthorizationCredentials::Absent,
+            Some("client-1".into()),
+            None,
+            None,
+            None,
+        );
+        let result = application
+            .begin_par("192.0.2.1")
+            .await
+            .unwrap()
+            .prepare_parameters(
+                HashMap::from([
+                    ("client_id".into(), "client-1".into()),
+                    ("request".into(), signed),
+                ]),
+                false,
+                None,
+            )
+            .unwrap()
+            .prepare_client(&transport, false, false)
+            .await
+            .unwrap()
+            .par(
+                ParRequestFacts {
+                    client_auth: ClientAuthRequestFacts::new("/par", None),
+                    dpop: DpopRequestFacts {
+                        method: http::Method::POST,
+                        path: "/par",
+                        proof: Ok(None),
+                        proof_present: false,
+                    },
+                    mtls_thumbprint: None,
+                    attestation: None,
+                },
+                None,
+            )
+            .await;
+        let OAuthEndpointError::Json(fields) = result.unwrap_err() else {
+            panic!("JSON error expected");
+        };
+        assert_eq!(fields.error, "invalid_scope");
+        assert!(!fixture.ports.calls().contains(&"consume_jar"));
+        assert!(fixture.ports.stored_par.lock().unwrap().is_empty());
+    });
+}

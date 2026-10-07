@@ -298,7 +298,7 @@ fn ciba_request_object_helpers_cover_protocol_boundaries() {
     ));
     assert!(ciba_request_object_audience_valid(
         &claims(
-            Some(json!(["other", "https://issuer.example/bc-authorize"])),
+            Some(json!(["other", "https://issuer.example"])),
             now + 120,
             now,
             now,
@@ -406,16 +406,6 @@ fn ciba_request_object_helpers_cover_protocol_boundaries() {
         assert_eq!(oauth_error_code(response), "invalid_binding_message");
     }
 
-    let mut target = None;
-    merge_request_object_string(&mut target, Some(" value ".to_owned()), "conflict")
-        .expect("first request object value should apply");
-    merge_request_object_string(&mut target, None, "conflict").expect("missing value is a no-op");
-    merge_request_object_string(&mut target, Some("value".to_owned()), "conflict")
-        .expect("equal request object value should be accepted");
-    assert!(
-        merge_request_object_string(&mut target, Some("other".to_owned()), "conflict").is_err()
-    );
-    assert!(merge_request_object_string(&mut target, Some("  ".to_owned()), "conflict").is_err());
     assert_eq!(ciba_requested_expiry_seconds(&json!(30)), Some(30));
     assert_eq!(ciba_requested_expiry_seconds(&json!("30")), Some(30));
     assert_eq!(ciba_requested_expiry_seconds(&json!(0)), None);
@@ -466,7 +456,6 @@ fn ciba_request_object_rejects_unsupported_binding_and_parameter_conflicts() {
         signed_ciba_request_object("ciba-kid", &key, json!({"binding_message": "\u{0001}"}));
     let mut form = BackchannelAuthenticationForm {
         request: Some(unsupported),
-        scope: Some("conflicting-outer-scope".to_owned()),
         ..BackchannelAuthenticationForm::default()
     };
     let response =
@@ -1117,7 +1106,7 @@ fn ciba_token_profile_covers_fapi2_client_and_sender_constraints() {
 }
 
 #[test]
-fn ciba_binding_merge_preserves_trimmed_value_and_outer_only_validation() {
+fn ciba_signed_binding_is_trimmed_and_outer_binding_is_rejected() {
     let state = config();
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let client = ciba_private_key_jwt_client("ciba-kid", &key);
@@ -1127,7 +1116,6 @@ fn ciba_binding_merge_preserves_trimmed_value_and_outer_only_validation() {
             &key,
             json!({"binding_message": "  1234  "}),
         )),
-        binding_message: Some("1234".to_owned()),
         ..BackchannelAuthenticationForm::default()
     };
     validate_and_apply_ciba_request_object_claims_with_config(&state, &client, &mut trimmed)
@@ -1144,6 +1132,133 @@ fn ciba_binding_merge_preserves_trimmed_value_and_outer_only_validation() {
     };
     let response =
         validate_and_apply_ciba_request_object_claims_with_config(&state, &client, &mut outer_only)
-            .expect_err("outer-only merged binding retains validation");
-    assert_eq!(oauth_error_code(response), "invalid_binding_message");
+            .expect_err("signed requests reject outer binding presence");
+    assert_eq!(oauth_error_code(response), "invalid_request");
+}
+
+#[test]
+fn protocol_ciba_signed_request_requires_op_issuer_audience() {
+    let fixture = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let client = ciba_private_key_jwt_client("request-key", &fixture);
+    for (audience, allowed) in [
+        (json!("https://issuer.example"), true),
+        (json!(["https://issuer.example"]), true),
+        (
+            json!([
+                "https://issuer.example/bc-authorize",
+                "https://issuer.example"
+            ]),
+            true,
+        ),
+        (json!("https://issuer.example/bc-authorize"), false),
+        (json!(["https://issuer.example/bc-authorize"]), false),
+        (json!(["https://other.example"]), false),
+    ] {
+        let mut form = BackchannelAuthenticationForm {
+            request: Some(signed_ciba_request_object(
+                "request-key",
+                &fixture,
+                json!({"aud":audience}),
+            )),
+            client_id: Some(client.client_id.clone()),
+            client_assertion_type: Some(
+                "urn:ietf:params:oauth:client-assertion-type:jwt-bearer".into(),
+            ),
+            client_assertion: Some("client-authentication-is-separate".into()),
+            ..Default::default()
+        };
+        let result = validate_and_apply_ciba_request_object_claims_with_config(
+            &config(),
+            &client,
+            &mut form,
+        );
+        if allowed {
+            assert!(
+                result
+                    .expect("signed-only issuer audience must be admitted")
+                    .is_some()
+            );
+            assert_eq!(form.scope.as_deref(), Some("openid profile email"));
+            assert_eq!(form.login_hint.as_deref(), Some("subject@example.test"));
+            assert_eq!(form.client_id.as_deref(), Some(client.client_id.as_str()));
+            assert_eq!(
+                form.client_assertion.as_deref(),
+                Some("client-authentication-is-separate")
+            );
+        } else {
+            let error = result
+                .expect_err("endpoint-only or foreign request-object audience must be rejected");
+            assert_eq!(fields(&error).status, StatusCode::BAD_REQUEST);
+            assert_eq!(fields(&error).error, "invalid_request");
+        }
+    }
+}
+
+#[test]
+fn protocol_ciba_signed_request_rejects_all_outer_authentication_fields() {
+    let fixture = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let client = ciba_private_key_jwt_client("request-key", &fixture);
+    for field in [
+        "scope",
+        "login_hint",
+        "id_token_hint",
+        "login_hint_token",
+        "binding_message",
+        "acr_values",
+        "client_notification_token",
+        "requested_expiry",
+    ] {
+        for empty in [false, true] {
+            let mut form = BackchannelAuthenticationForm {
+                request: Some(signed_ciba_request_object(
+                    "request-key",
+                    &fixture,
+                    json!({
+                        "acr_values":"1", "client_notification_token":"notification", "requested_expiry":120,
+                    }),
+                )),
+                ..Default::default()
+            };
+            let value = |signed: &str| {
+                if empty {
+                    String::new()
+                } else {
+                    signed.to_owned()
+                }
+            };
+            match field {
+                "scope" => form.scope = Some(value("openid profile email")),
+                "login_hint" => form.login_hint = Some(value("subject@example.test")),
+                "id_token_hint" => form.id_token_hint = Some(value("unsigned-id-token")),
+                "login_hint_token" => form.login_hint_token = Some(value("unsigned-hint-token")),
+                "binding_message" => form.binding_message = Some(value("1234")),
+                "acr_values" => form.acr_values = Some(value("1")),
+                "client_notification_token" => {
+                    form.client_notification_token = Some(value("notification"))
+                }
+                "requested_expiry" => {
+                    form.requested_expiry_seconds = Some(if empty { 0 } else { 120 })
+                }
+                _ => unreachable!(),
+            }
+            let error = validate_and_apply_ciba_request_object_claims_with_config(
+                &config(),
+                &client,
+                &mut form,
+            )
+            .expect_err(
+                "signed request must reject every outer authentication field, even equal or empty",
+            );
+            assert_eq!(
+                fields(&error).status,
+                StatusCode::BAD_REQUEST,
+                "field {field}, empty {empty}"
+            );
+            assert_eq!(
+                fields(&error).error,
+                "invalid_request",
+                "field {field}, empty {empty}"
+            );
+        }
+    }
 }

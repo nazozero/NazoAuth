@@ -394,7 +394,8 @@ pub fn authorization_session_decision(
     reauthentication_started_at: Option<i64>,
     now: i64,
 ) -> AuthorizationSessionDecision {
-    let fresh_authentication = prompt.login || prompt.select_account;
+    // OIDC max_age=0 follows the same one-use reauthentication completion as prompt=login.
+    let fresh_authentication = prompt.login || prompt.select_account || max_age == Some(0);
     let Some(session) = session else {
         return if prompt.none {
             AuthorizationSessionDecision::LoginRequired
@@ -407,9 +408,8 @@ pub fn authorization_session_decision(
     let prompt_requires_fresh_login = fresh_authentication
         && reauthentication_started_at.is_none_or(|started_at| session.auth_time < started_at);
     let max_age_expired = match max_age {
-        Some(0) => true,
+        Some(0) | None => false,
         Some(max_age) => now.saturating_sub(session.auth_time) > max_age,
-        None => false,
     };
     if prompt_requires_fresh_login || max_age_expired {
         if prompt.none {

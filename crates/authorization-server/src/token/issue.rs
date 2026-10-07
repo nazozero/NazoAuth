@@ -104,6 +104,9 @@ impl TokenIssuanceConfig {
 }
 
 pub struct TokenIssuanceContext<'a> {
+    /// OAuth grant routed by the application. External pre-authorized
+    /// credential issuance shares sender validation but never this commit.
+    pub grant_type: Option<nazo_auth::GrantType>,
     /// Client version read by this request's authentication snapshot.
     pub client_epoch: i64,
     pub config: &'a TokenIssuanceConfig,

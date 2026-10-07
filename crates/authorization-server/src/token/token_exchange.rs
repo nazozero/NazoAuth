@@ -380,6 +380,7 @@ pub async fn validate_actor_token(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn token_exchange(
     token_service: &ServerTokenService,
     authorization_service: &crate::services::ServerAuthorizationService,
@@ -388,6 +389,7 @@ pub async fn token_exchange(
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
+    client_attestation_jkt: Option<&str>,
 ) -> Result<TokenEndpointSuccess, OAuthEndpointError> {
     if native_sso_profile_requested(form) {
         return token_native_sso_exchange(
@@ -397,6 +399,7 @@ pub async fn token_exchange(
             client,
             form,
             client_assertion,
+            client_attestation_jkt,
         )
         .await;
     }

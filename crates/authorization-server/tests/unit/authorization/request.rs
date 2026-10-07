@@ -1008,3 +1008,119 @@ fn attested_clients_enforce_their_pushed_request_policy_before_login() {
         }
     });
 }
+
+#[test]
+fn protocol_max_age_zero_application_uses_existing_one_use_reauthentication_nonce() {
+    use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
+    use nazo_identity::SessionId;
+    futures_executor::block_on(async {
+        let fixture = authorization_fixture::Fixture::new(
+            Ok(Some(authorization_fixture::client(true))),
+            Ok(Some(authorization_fixture::session())),
+        );
+        fixture
+            .ports
+            .record_consent_writes
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let app = fixture.make_application();
+        let sid = SessionId::new("max-age-session");
+        let facts = AuthorizationRequestFacts {
+            source_ip: "192.0.2.1",
+            session_id: Some(&sid),
+            user_agent: None,
+        };
+        let parameters = query(&[
+            ("client_id", "client-1"),
+            ("redirect_uri", "https://client.example/callback"),
+            ("response_type", "code"),
+            ("scope", "openid"),
+            ("max_age", "0"),
+            (
+                "code_challenge",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            ),
+            ("code_challenge_method", "S256"),
+        ]);
+        let AuthorizationOutcome::Redirect { location } = app
+            .authorize(&facts, &mut parameters.clone())
+            .await
+            .unwrap()
+        else {
+            panic!("max_age=0 must redirect to fresh authentication");
+        };
+        let login = url::Url::parse(&location).unwrap();
+        assert_eq!(login.path(), "/auth");
+        let next = login
+            .query_pairs()
+            .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
+            .unwrap();
+        let resumed_url = url::Url::parse(&format!("https://issuer.example{next}")).unwrap();
+        let resumed: HashMap<String, String> = resumed_url.query_pairs().into_owned().collect();
+        let nonce = resumed
+            .get(reauth_nonce_parameter())
+            .expect("fresh login must carry the existing completion nonce")
+            .clone();
+        assert!(
+            fixture
+                .ports
+                .reauth_nonces
+                .lock()
+                .unwrap()
+                .contains_key(&nonce)
+        );
+        assert!(fixture.ports.consent.lock().unwrap().is_none());
+        assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+        *fixture.ports.session.lock().unwrap() = Ok(Some(authorization_fixture::session()));
+        let AuthorizationOutcome::Redirect { location } =
+            app.authorize(&facts, &mut resumed.clone()).await.unwrap()
+        else {
+            panic!("completed fresh authentication must continue");
+        };
+        assert_eq!(url::Url::parse(&location).unwrap().path(), "/consent");
+        assert!(
+            !fixture
+                .ports
+                .reauth_nonces
+                .lock()
+                .unwrap()
+                .contains_key(&nonce)
+        );
+        assert_eq!(
+            fixture
+                .ports
+                .calls()
+                .iter()
+                .filter(|call| **call == "store_consent")
+                .count(),
+            1
+        );
+        assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+        let AuthorizationOutcome::Redirect { location } =
+            app.authorize(&facts, &mut resumed.clone()).await.unwrap()
+        else {
+            panic!("replayed completion nonce must demand fresh authentication");
+        };
+        assert_eq!(url::Url::parse(&location).unwrap().path(), "/auth");
+        let mut forged = parameters.clone();
+        forged.insert(
+            reauth_nonce_parameter().into(),
+            "untrusted-completion-nonce".into(),
+        );
+        let AuthorizationOutcome::Redirect { location } =
+            app.authorize(&facts, &mut forged).await.unwrap()
+        else {
+            panic!("untrusted completion nonce must demand fresh authentication");
+        };
+        assert_eq!(url::Url::parse(&location).unwrap().path(), "/auth");
+        assert_eq!(
+            fixture
+                .ports
+                .calls()
+                .iter()
+                .filter(|call| **call == "store_consent")
+                .count(),
+            1
+        );
+        assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+    });
+}

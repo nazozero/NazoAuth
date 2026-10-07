@@ -13,9 +13,9 @@ if not value then return false end
 return {value, redis.call('EXPIRETIME', KEYS[1])}
 "#;
 const SET_NX_DEADLINE_SCRIPT: &str = r#"
-local authorization_deadline = tonumber(ARGV[3]) or 0
+local authorization_deadline = tonumber(ARGV[3])
 local now = tonumber(redis.call('TIME')[1])
-if authorization_deadline > 0 and now >= authorization_deadline then return 'deadline_elapsed' end
+if authorization_deadline and now >= authorization_deadline then return 'deadline_elapsed' end
 local deadline = tonumber(ARGV[2])
 if now >= deadline then return 'deadline_elapsed' end
 if redis.call('SETNX', KEYS[1], ARGV[1]) == 0 then return 'conflict' end
@@ -26,8 +26,8 @@ return 'applied'
 const COMPARE_SET_DEADLINE_SCRIPT: &str = r#"
 local deadline = tonumber(ARGV[3])
 local now = tonumber(redis.call('TIME')[1])
-local authorization_deadline = tonumber(ARGV[6]) or 0
-if authorization_deadline > 0 and now >= authorization_deadline then
+local authorization_deadline = tonumber(ARGV[6])
+if authorization_deadline and now >= authorization_deadline then
   return 'deadline_elapsed'
 end
 if now >= deadline then
@@ -53,8 +53,8 @@ return 'applied'
 const COMPARE_DELETE_DEADLINE_SCRIPT: &str = r#"
 local deadline = tonumber(ARGV[2])
 local now = tonumber(redis.call('TIME')[1])
-local authorization_deadline = tonumber(ARGV[4]) or 0
-if authorization_deadline > 0 and now >= authorization_deadline then
+local authorization_deadline = tonumber(ARGV[4])
+if authorization_deadline and now >= authorization_deadline then
   return 'deadline_elapsed'
 end
 if now >= deadline then

@@ -1,6 +1,6 @@
 use super::*;
 use chrono::{Duration, Utc};
-use nazo_auth::{CommitTokenIssuanceResult, TokenIssuanceMode};
+use nazo_auth::{CommitTokenIssuanceResult, GrantType, TokenIssuanceMode};
 use uuid::Uuid;
 
 #[allow(clippy::needless_return)]
@@ -762,7 +762,10 @@ pub async fn issue_token_response(
             .await;
             Err(OAuthEndpointError::token(
                 StatusCode::BAD_REQUEST,
-                "invalid_grant",
+                match context.grant_type {
+                    Some(GrantType::DeviceCode | GrantType::Ciba) => "expired_token",
+                    _ => "invalid_grant",
+                },
                 "令牌签发授权已过期.",
                 false,
             ))

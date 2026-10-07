@@ -188,13 +188,18 @@ pub trait CibaStateStorePort: Send + Sync {
     ) -> CibaStateFuture<'a, CibaAtomicResult>;
 
     /// Creates a request while optionally enforcing an external capability
-    /// deadline in the state-store atomic operation itself.
+    /// deadline in the state-store atomic operation itself. A supplied deadline
+    /// must be checked against the store clock atomically with the mutation;
+    /// adapters without that capability fail closed without changing state.
     fn create_with_authorization_deadline<'a>(
         &'a self,
         auth_req_id: &'a str,
         state: &'a CibaRequestState,
-        _authorization_deadline: Option<i64>,
+        authorization_deadline: Option<i64>,
     ) -> CibaStateFuture<'a, CibaAtomicResult> {
+        if authorization_deadline.is_some() {
+            return Box::pin(async { Err(CibaStatePortError::Unavailable) });
+        }
         self.create(auth_req_id, state)
     }
 
@@ -206,16 +211,18 @@ pub trait CibaStateStorePort: Send + Sync {
     ) -> CibaStateFuture<'a, CibaAtomicResult>;
 
     /// Replaces a request while optionally enforcing an external capability
-    /// deadline in the state-store CAS itself. Implementations that do not
-    /// have an external deadline-aware CAS can safely fall back to the normal
-    /// state transition.
+    /// deadline in the state-store CAS itself. Adapters without deadline-aware
+    /// CAS reject a supplied deadline without invoking the normal transition.
     fn replace_with_authorization_deadline<'a>(
         &'a self,
         auth_req_id: &'a str,
         version: &'a Self::Version,
         state: &'a CibaRequestState,
-        _authorization_deadline: Option<i64>,
+        authorization_deadline: Option<i64>,
     ) -> CibaStateFuture<'a, CibaAtomicResult> {
+        if authorization_deadline.is_some() {
+            return Box::pin(async { Err(CibaStatePortError::Unavailable) });
+        }
         self.replace(auth_req_id, version, state)
     }
 
@@ -226,13 +233,17 @@ pub trait CibaStateStorePort: Send + Sync {
     ) -> CibaStateFuture<'a, CibaAtomicResult>;
 
     /// Deletes a request while optionally enforcing an external capability
-    /// deadline in the state-store CAS itself.
+    /// deadline in the state-store CAS itself. Adapters without deadline-aware
+    /// CAS reject a supplied deadline without invoking the normal transition.
     fn delete_with_authorization_deadline<'a>(
         &'a self,
         auth_req_id: &'a str,
         version: &'a Self::Version,
-        _authorization_deadline: Option<i64>,
+        authorization_deadline: Option<i64>,
     ) -> CibaStateFuture<'a, CibaAtomicResult> {
+        if authorization_deadline.is_some() {
+            return Box::pin(async { Err(CibaStatePortError::Unavailable) });
+        }
         self.delete(auth_req_id, version)
     }
 }

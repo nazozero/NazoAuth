@@ -286,3 +286,78 @@ proptest! {
         );
     }
 }
+
+#[test]
+fn protocol_max_age_zero_requires_fresh_authentication_without_completion_nonce() {
+    for session in [None, Some(AuthorizationSession { auth_time: 1_000 })] {
+        assert_eq!(
+            authorization_session_decision(
+                session,
+                PromptDirectives::default(),
+                Some(0),
+                None,
+                1_000
+            ),
+            AuthorizationSessionDecision::Login {
+                fresh_authentication: true
+            },
+        );
+    }
+}
+
+#[test]
+fn protocol_max_age_zero_accepts_only_completed_fresh_authentication() {
+    for (auth_time, started_at, expected) in [
+        (1_000, Some(1_000), AuthorizationSessionDecision::Continue),
+        (1_001, Some(1_000), AuthorizationSessionDecision::Continue),
+        (
+            999,
+            Some(1_000),
+            AuthorizationSessionDecision::Login {
+                fresh_authentication: true,
+            },
+        ),
+        (
+            1_001,
+            None,
+            AuthorizationSessionDecision::Login {
+                fresh_authentication: true,
+            },
+        ),
+    ] {
+        assert_eq!(
+            authorization_session_decision(
+                Some(AuthorizationSession { auth_time }),
+                PromptDirectives::default(),
+                Some(0),
+                started_at,
+                1_010,
+            ),
+            expected
+        );
+    }
+    let prompt_none = PromptDirectives {
+        none: true,
+        ..PromptDirectives::default()
+    };
+    assert_eq!(
+        authorization_session_decision(
+            Some(AuthorizationSession { auth_time: 1_000 }),
+            prompt_none,
+            Some(0),
+            None,
+            1_010,
+        ),
+        AuthorizationSessionDecision::LoginRequired
+    );
+    assert_eq!(
+        authorization_session_decision(
+            Some(AuthorizationSession { auth_time: 1_000 }),
+            prompt_none,
+            Some(0),
+            Some(1_000),
+            1_010,
+        ),
+        AuthorizationSessionDecision::Continue
+    );
+}

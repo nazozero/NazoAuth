@@ -270,6 +270,7 @@ mod ciba_device_contract {
         let authorization =
             crate::http::token::issue::test_support::test_authorization_service(state);
         let issuance = TokenIssuanceContext {
+            grant_type: Some(nazo_auth::GrantType::Ciba),
             client_epoch: 0,
             config: &config,
             modules: &modules,
@@ -673,6 +674,7 @@ mod ciba_device_contract {
         let authorization =
             crate::http::token::issue::test_support::test_authorization_service(&state);
         let context = TokenIssuanceContext {
+            grant_type: Some(nazo_auth::GrantType::Ciba),
             client_epoch: 0,
             config: &config,
             modules: &modules,

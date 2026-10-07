@@ -54,6 +54,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
 
     {
         let issuance = TokenIssuanceContext {
+            grant_type: Some(nazo_auth::GrantType::AuthorizationCode),
             client_epoch: 0,
             config: &config,
             modules: &modules,
@@ -118,6 +119,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
         .accepting
         .insert(nazo_runtime_modules::ModuleId::NativeSso);
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::AuthorizationCode),
         client_epoch: 0,
         config: &config,
         modules: &modules,

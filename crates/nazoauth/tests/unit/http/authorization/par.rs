@@ -168,6 +168,14 @@ fn expanded_par_policy(client: &ClientRow, fapi2: bool) -> ExpandedParAdmissionP
         client_type: &client.client_type,
         redirect_uris: &client.redirect_uris,
         allowed_audiences: &client.allowed_audiences,
+        allowed_scopes: &client.scopes,
+        capabilities: nazo_auth::AuthorizationCapabilityPolicy {
+            authorization_details: true,
+            jarm: true,
+            native_sso: true,
+            form_post: !fapi2,
+        },
+        signed_authorization_response_required: false,
         pkce_required: true,
         fapi2_requires_explicit_redirect_uri: fapi2,
     }
@@ -222,7 +230,9 @@ fn pushed_authorization_request_resources_reject_unregistered_target() {
 
     assert_eq!(
         validate_expanded_par_admission(&params, expanded_par_policy(&client, false)),
-        Err(ParAdmissionError::ResourceNotAllowed)
+        Err(ParAdmissionError::Authorization(
+            nazo_auth::AuthorizationPolicyError::InvalidTarget
+        ))
     );
 }
 
@@ -792,7 +802,9 @@ fn par_rejects_explicit_unsupported_response_type() {
     params.insert("response_type".to_owned(), "code id_token".to_owned());
     assert_eq!(
         validate_expanded_par_admission(&params, expanded_par_policy(&client, false)),
-        Err(ParAdmissionError::UnsupportedResponseType)
+        Err(ParAdmissionError::Authorization(
+            nazo_auth::AuthorizationPolicyError::UnsupportedResponseType
+        ))
     );
 }
 

@@ -82,6 +82,7 @@ async fn token_refresh_with_repository(
         token_refresh_with_service(
             &service,
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::RefreshToken),
                 client_epoch: 0,
                 config: &config,
                 modules: &modules,

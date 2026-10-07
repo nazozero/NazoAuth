@@ -31,6 +31,7 @@ pub(crate) struct CountingTokenRepository {
     commit_calls: Arc<AtomicUsize>,
     fail_refresh_candidate_projection: bool,
     fail_owner_lookups: bool,
+    expire_grant_at_commit: bool,
     lose_next_commit_ack: Arc<AtomicBool>,
     code_commit_keys: Arc<Mutex<Vec<String>>>,
 }
@@ -48,6 +49,7 @@ impl CountingTokenRepository {
             commit_calls: Arc::new(AtomicUsize::new(0)),
             fail_refresh_candidate_projection: false,
             fail_owner_lookups: false,
+            expire_grant_at_commit: false,
             lose_next_commit_ack: Arc::new(AtomicBool::new(false)),
             code_commit_keys: Arc::new(Mutex::new(Vec::new())),
         }
@@ -79,6 +81,15 @@ impl CountingTokenRepository {
     ) -> Self {
         Self {
             fail_refresh_candidate_projection: true,
+            ..Self::new(inner)
+        }
+    }
+
+    /// Force the already reached commit boundary to report expiration.
+    /// Other reads still use the real repository; no issuance is committed.
+    pub(crate) fn with_expired_grant_commit(inner: Arc<dyn TokenRepositoryPort>) -> Self {
+        Self {
+            expire_grant_at_commit: true,
             ..Self::new(inner)
         }
     }
@@ -146,6 +157,24 @@ impl TokenRepositoryPort for CountingTokenRepository {
                 .lock()
                 .unwrap()
                 .push(code_identity.clone());
+        }
+        if self.expire_grant_at_commit {
+            let expires_at = match &input.mode {
+                nazo_auth::TokenIssuanceMode::SingleUse {
+                    grant_expires_at, ..
+                }
+                | nazo_auth::TokenIssuanceMode::AuthorizationCode {
+                    grant_expires_at, ..
+                } => grant_expires_at,
+                nazo_auth::TokenIssuanceMode::Fresh => {
+                    panic!("expiration fault requires a grant commit")
+                }
+            };
+            assert!(
+                *expires_at > chrono::Utc::now(),
+                "fixture must reach commit with an initially live grant"
+            );
+            return Box::pin(async { Ok(CommitTokenIssuanceResult::GrantExpired) });
         }
         Box::pin(async move {
             let result = self.inner.commit_token_issuance(input).await?;

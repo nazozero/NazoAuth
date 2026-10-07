@@ -232,3 +232,56 @@ async fn ciba_precommit_dependency_failure_is_retryable_and_sender_keys_share_on
         );
     }
 }
+
+#[actix_web::test]
+async fn protocol_grant_expired_dispatch_ciba_after_approved_poll() {
+    use crate::http::token::issue::test_support::{
+        assert_expired_grant_dispatch_response, token_with_expired_grant_commit,
+    };
+    let mut state = live_ciba_replay_state()
+        .await
+        .expect("CIBA commit regression requires isolated PostgreSQL and Valkey");
+    configure_ciba_test_mtls_proxy(&mut state);
+    state.keyset =
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("ciba-expired-commit-kid", &key);
+    client.client_id = format!("ciba-expired-commit-{}", Uuid::now_v7());
+    client.require_mtls_bound_tokens = true;
+    persist_ciba_test_client(&state, &client).await;
+    let user_id = Uuid::now_v7();
+    insert_ciba_user(&state, user_id).await;
+    let id = format!("ciba-commit-{}", Uuid::now_v7());
+    store_ciba_state_with_user(&state, &client, &id, user_id, CibaStatus::Approved).await;
+    let certificate = ciba_test_mtls_certificate();
+    let request = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .app_data(actix_web::web::Data::new(
+            crate::http::mtls::MtlsCertificateSource::new(
+                crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
+            ),
+        ))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("client-cert", certificate.header.as_str()))
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    let assertion = super::client_auth::signed_ciba_client_assertion(
+        &client.client_id,
+        "ciba-expired-commit-kid",
+        &key,
+    );
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", CIBA_GRANT_TYPE)
+        .append_pair("client_id", &client.client_id)
+        .append_pair("auth_req_id", &id)
+        .append_pair(
+            "client_assertion_type",
+            nazo_auth::CLIENT_ASSERTION_TYPE_JWT_BEARER,
+        )
+        .append_pair("client_assertion", &assertion)
+        .finish();
+    let (response, commits) =
+        token_with_expired_grant_commit(&state, request, actix_web::web::Bytes::from(body)).await;
+    assert_expired_grant_dispatch_response(&state, &client, response, commits, "expired_token")
+        .await;
+}

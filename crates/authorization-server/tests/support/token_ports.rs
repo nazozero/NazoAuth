@@ -281,7 +281,7 @@ impl AuthorizationStateStorePort for HolderFixture {
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::consume_jar call")
     }
@@ -314,7 +314,7 @@ impl AuthorizationStateStorePort for HolderFixture {
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::consume_ciba_request_object call")
     }

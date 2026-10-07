@@ -238,8 +238,11 @@ fn short_creation_validity_starts_after_required_audit_and_request_replay_comple
         )
         .await
         .unwrap();
-        let mut request = form();
-        request.requested_expiry_seconds = Some(1);
+        let mut request = BackchannelAuthenticationForm {
+            client_id: Some("client-1".into()),
+            client_secret: Some("test-secret".into()),
+            ..Default::default()
+        };
         request.request = Some(format!(
             "{input}.{}",
             URL_SAFE_NO_PAD.encode(signature.as_bytes())
