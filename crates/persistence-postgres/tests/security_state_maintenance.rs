@@ -5,7 +5,7 @@
 //! the exclusive family advisory try-lock: spent proofs delete at their own
 //! expiry or drain under one global budget for revoked/expired families, and a
 //! parent row leaves only after its proofs are gone. Orphan contracts leave after
-//! a grace period once the last family reference is gone — never touching a
+//! parent locks once the last family reference is gone — never touching a
 //! family that still has an unexpired current member or a same-named family
 //! in another tenant. OpenID4VP reads are pure selects; the global
 //! presentation sweep belongs exclusively to this worker.
@@ -2666,6 +2666,306 @@ async fn grant_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
     sql_query("DELETE FROM oauth_clients WHERE id = $1")
         .bind::<SqlUuid, _>(fixture.client_id)
         .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[derive(QueryableByName)]
+struct ContractRaceRow {
+    #[diesel(sql_type = sql_types::Binary)]
+    digest: Vec<u8>,
+    #[diesel(sql_type = sql_types::Jsonb)]
+    contract: serde_json::Value,
+    #[diesel(sql_type = sql_types::Jsonb)]
+    family: serde_json::Value,
+}
+async fn contract_race_seed(
+    connection: &mut AsyncPgConnection,
+    fixture: &FixtureIds,
+) -> ContractRaceRow {
+    let id = Uuid::now_v7();
+    insert_refresh_leaf(
+        connection,
+        fixture,
+        id,
+        None,
+        Utc::now() + Duration::hours(1),
+    )
+    .await;
+    let row=sql_query("SELECT c.contract_blake3 AS digest,c.contract,to_jsonb(f) AS family FROM oauth_refresh_families f JOIN oauth_refresh_contracts c USING (tenant_id,contract_blake3) WHERE f.token_family_id=$1")
+         .bind::<SqlUuid,_>(id).get_result::<ContractRaceRow>(connection).await.unwrap();
+    sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=$1")
+        .bind::<SqlUuid, _>(id)
+        .execute(connection)
+        .await
+        .unwrap();
+    // Age only this fixture so the race executes before the optional grace
+    // removal. The protection under test is the row lock, not elapsed time.
+    sql_query("UPDATE oauth_refresh_contracts SET created_at=TIMESTAMPTZ '1000-01-01 UTC' WHERE tenant_id=$1 AND contract_blake3=$2")
+         .bind::<SqlUuid,_>(SYSTEM_TENANT).bind::<sql_types::Binary,_>(&row.digest).execute(connection).await.unwrap();
+    row
+}
+async fn ensure_race_contract(connection: &mut AsyncPgConnection, row: &ContractRaceRow) {
+    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1,$2,$3)")
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<sql_types::Binary, _>(&row.digest)
+        .bind::<sql_types::Jsonb, _>(&row.contract)
+        .execute(connection)
+        .await
+        .unwrap();
+}
+async fn insert_race_family(connection: &mut AsyncPgConnection, row: &ContractRaceRow) {
+    sql_query("INSERT INTO oauth_refresh_families SELECT (jsonb_populate_record(NULL::oauth_refresh_families,$1)).*")
+         .bind::<sql_types::Jsonb,_>(&row.family).execute(connection).await.unwrap();
+}
+async fn race_contract_count(connection: &mut AsyncPgConnection, row: &ContractRaceRow) -> i64 {
+    sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id=$1 AND contract_blake3=$2")
+         .bind::<SqlUuid,_>(SYSTEM_TENANT).bind::<sql_types::Binary,_>(&row.digest).get_result::<CountRow>(connection).await.unwrap().count
+}
+async fn wait_contract_backend(connection: &mut AsyncPgConnection, name: &str, waiting: bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let count=sql_query("SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE application_name=$1 AND ($2='gone' OR wait_event_type='Lock')")
+             .bind::<Text,_>(name).bind::<Text,_>(if waiting {"wait"} else {"gone"}).get_result::<CountRow>(connection).await.unwrap().count;
+        if (waiting && count > 0) || (!waiting && count == 0) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "contract race connection {name}: expected waiting={waiting}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconnect() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut observer) = fixture(&database_url).await;
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    for outcome in ["commit", "rollback", "disconnect"] {
+        let row = contract_race_seed(&mut observer, &fixture).await;
+        let name = format!("contract-writer-{}", Uuid::now_v7().simple());
+        let mut url = url::Url::parse(&database_url).unwrap();
+        url.query_pairs_mut().append_pair("application_name", &name);
+        let mut writer = AsyncPgConnection::establish(url.as_str()).await.unwrap();
+        writer.batch_execute("BEGIN").await.unwrap();
+        ensure_race_contract(&mut writer, &row).await;
+        for _ in 0..3 {
+            maintenance.cleanup_batch().await.unwrap();
+        }
+        assert_eq!(
+            race_contract_count(&mut observer, &row).await,
+            1,
+            "writer KEY SHARE must skip cleanup"
+        );
+        insert_race_family(&mut writer, &row).await;
+        match outcome {
+            "commit" => writer.batch_execute("COMMIT").await.unwrap(),
+            "rollback" => writer.batch_execute("ROLLBACK").await.unwrap(),
+            _ => {}
+        }
+        drop(writer);
+        wait_contract_backend(&mut observer, &name, false).await;
+        for _ in 0..4 {
+            maintenance.cleanup_batch().await.unwrap();
+        }
+        assert_eq!(
+            race_contract_count(&mut observer, &row).await,
+            i64::from(outcome == "commit")
+        );
+        if outcome == "commit" {
+            sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=($1->>'token_family_id')::uuid").bind::<sql_types::Jsonb,_>(&row.family).execute(&mut observer).await.unwrap();
+            for _ in 0..4 {
+                maintenance.cleanup_batch().await.unwrap();
+            }
+            assert_eq!(race_contract_count(&mut observer, &row).await, 0);
+        }
+        println!(
+            "contract writer first/{outcome}: locked parent skipped, committed reference retained, unreferenced parent converged after cursor wrap"
+        );
+    }
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn contract_cleaner_first_fences_writer_and_cancelled_sweeper_discards_connection() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut observer) = fixture(&database_url).await;
+    for outcome in ["commit", "rollback", "cancel"] {
+        let row = contract_race_seed(&mut observer, &fixture).await;
+        let suffix = Uuid::now_v7().simple().to_string();
+        let function = format!("contract_gate_{suffix}");
+        let fail = if outcome == "rollback" {
+            "RAISE EXCEPTION 'contract cleanup late failure';"
+        } else {
+            ""
+        };
+        observer.batch_execute(&format!("CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.contract_blake3=decode('{}','hex') THEN PERFORM pg_advisory_xact_lock(23020261009); {fail} END IF; RETURN OLD; END $$; CREATE TRIGGER {function} BEFORE DELETE ON oauth_refresh_contracts FOR EACH ROW EXECUTE FUNCTION {function}();",row.digest.iter().map(|byte|format!("{byte:02x}")).collect::<String>())).await.unwrap();
+        observer
+            .batch_execute("SELECT pg_advisory_lock(23020261009)")
+            .await
+            .unwrap();
+        let cleaner_name = format!("contract-cleaner-{suffix}");
+        let mut url = url::Url::parse(&database_url).unwrap();
+        url.query_pairs_mut()
+            .append_pair("application_name", &cleaner_name);
+        let pool = create_pool(url.as_str(), 1).unwrap();
+        let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
+        let cleanup = tokio::spawn(async move { maintenance.cleanup_batch().await });
+        wait_contract_backend(&mut observer, &cleaner_name, true).await;
+        let writer_name = format!("contract-writer-{suffix}");
+        let mut url = url::Url::parse(&database_url).unwrap();
+        url.query_pairs_mut()
+            .clear()
+            .append_pair("application_name", &writer_name);
+        let mut writer = AsyncPgConnection::establish(url.as_str()).await.unwrap();
+        let write = tokio::spawn(async move {
+            writer.batch_execute("BEGIN").await.unwrap();
+            ensure_race_contract(&mut writer, &row).await;
+            insert_race_family(&mut writer, &row).await;
+            writer.batch_execute("COMMIT").await.unwrap();
+            row
+        });
+        wait_contract_backend(&mut observer, &writer_name, true).await;
+        if outcome == "cancel" {
+            cleanup.abort();
+            assert!(cleanup.await.unwrap_err().is_cancelled());
+            // Recycle the only lease: an interrupted transaction must be
+            // discarded, never reused with its row locks still owned.
+            let replacement = tokio::spawn(async move { get_conn(&pool).await.unwrap() });
+            observer
+                .batch_execute("SELECT pg_advisory_unlock(23020261009)")
+                .await
+                .unwrap();
+            let connection = tokio::time::timeout(std::time::Duration::from_secs(5), replacement)
+                .await
+                .unwrap()
+                .unwrap();
+            drop(connection);
+        } else {
+            observer
+                .batch_execute("SELECT pg_advisory_unlock(23020261009)")
+                .await
+                .unwrap();
+            let result = cleanup.await.unwrap();
+            assert_eq!(result.is_ok(), outcome == "commit");
+        }
+        let row = tokio::time::timeout(std::time::Duration::from_secs(5), write)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(race_contract_count(&mut observer, &row).await, 1);
+        observer
+            .batch_execute(&format!(
+                "DROP TRIGGER {function} ON oauth_refresh_contracts; DROP FUNCTION {function}()"
+            ))
+            .await
+            .unwrap();
+        sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=($1->>'token_family_id')::uuid").bind::<sql_types::Jsonb,_>(&row.family).execute(&mut observer).await.unwrap();
+        sql_query("DELETE FROM oauth_refresh_contracts WHERE tenant_id=$1 AND contract_blake3=$2")
+            .bind::<SqlUuid, _>(SYSTEM_TENANT)
+            .bind::<sql_types::Binary, _>(&row.digest)
+            .execute(&mut observer)
+            .await
+            .unwrap();
+        println!(
+            "contract cleaner first/{outcome}: writer waited on parent lock then safely referenced or recreated exact contract"
+        );
+    }
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_atomic() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut observer) = fixture(&database_url).await;
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    for commit in [false, true] {
+        let row = contract_race_seed(&mut observer, &fixture).await;
+        sql_query("DELETE FROM oauth_refresh_contracts WHERE tenant_id=$1 AND contract_blake3=$2")
+            .bind::<SqlUuid, _>(SYSTEM_TENANT)
+            .bind::<sql_types::Binary, _>(&row.digest)
+            .execute(&mut observer)
+            .await
+            .unwrap();
+        let mut writer = AsyncPgConnection::establish(&database_url).await.unwrap();
+        writer.batch_execute("BEGIN").await.unwrap();
+        ensure_race_contract(&mut writer, &row).await;
+        assert_eq!(
+            race_contract_count(&mut observer, &row).await,
+            0,
+            "uncommitted parent is invisible"
+        );
+        maintenance.cleanup_batch().await.unwrap();
+        insert_race_family(&mut writer, &row).await;
+        writer
+            .batch_execute(if commit { "COMMIT" } else { "ROLLBACK" })
+            .await
+            .unwrap();
+        assert_eq!(
+            race_contract_count(&mut observer, &row).await,
+            i64::from(commit)
+        );
+        if commit {
+            for _ in 0..3 {
+                maintenance.cleanup_batch().await.unwrap();
+            }
+            assert_eq!(
+                race_contract_count(&mut observer, &row).await,
+                1,
+                "fresh live reference survives"
+            );
+            sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=($1->>'token_family_id')::uuid").bind::<sql_types::Jsonb,_>(&row.family).execute(&mut observer).await.unwrap();
+            // No timestamp backdating or shortened security TTL: this parent
+            // was created moments ago and has no remaining owner.
+            for _ in 0..4 {
+                maintenance.cleanup_batch().await.unwrap();
+            }
+            assert_eq!(
+                race_contract_count(&mut observer, &row).await,
+                0,
+                "fresh orphan needs no age grace"
+            );
+        }
+    }
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut observer)
         .await
         .unwrap();
 }

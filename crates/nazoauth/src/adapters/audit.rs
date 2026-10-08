@@ -522,7 +522,11 @@ pub(crate) fn install_persistent_audit_sink(
         repository.clone(),
         Some(preflight),
     ));
-    tokio::spawn(run_audit_persist_worker(required_receiver, repository, None));
+    tokio::spawn(run_audit_persist_worker(
+        required_receiver,
+        repository,
+        None,
+    ));
     Ok(())
 }
 

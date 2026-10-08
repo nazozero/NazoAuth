@@ -328,3 +328,114 @@ async fn hidden_committed_trust_ack_is_503_for_approve_reject_and_revoke_with_re
         std::panic::resume_unwind(error);
     }
 }
+
+#[actix_web::test]
+async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_failure() {
+    use diesel_async::SimpleAsyncConnection;
+    let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .ok();
+    let valkey_url = std::env::var("VALKEY_URL").ok();
+    if (database_url.is_none() || valkey_url.is_none()) && std::env::var_os("CI").is_some() {
+        panic!("real HTTP audit test requires isolated PostgreSQL and Valkey");
+    }
+    let (Some(database_url), Some(valkey_url)) = (database_url, valkey_url) else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    crate::test_support::initialize_audit_dependencies(&pool);
+    let valkey =
+        fred::prelude::Builder::from_config(fred::prelude::Config::from_url(&valkey_url).unwrap())
+            .build()
+            .unwrap();
+    valkey.init().await.unwrap();
+    let state = TestInfrastructure {
+        diesel_db: pool.clone(),
+        valkey,
+        settings: Arc::new(Settings::from_config(&ConfigSource::default()).unwrap()),
+        keyset: crate::test_support::test_key_manager(),
+    };
+    let admin = Uuid::now_v7();
+    let suffix = admin.simple().to_string();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("INSERT INTO users (id,username,email,password_hash,role,admin_level) VALUES ($1,$2,$3,'fixture','admin',1)")
+         .bind::<SqlUuid,_>(admin).bind::<Text,_>(format!("bundle-{suffix}")).bind::<Text,_>(format!("bundle-{suffix}@example.test")).execute(&mut connection).await.unwrap();
+    let sid = format!("bundle-{suffix}");
+    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}"));
+    let payload = nazo_oauth_server::sessions::SessionPayload {
+        user_id: admin,
+        auth_time: Utc::now().timestamp(),
+        amr: vec!["pwd".into()],
+        pending_mfa: false,
+        oidc_sid: Some(sid.clone()),
+    };
+    crate::test_support::valkey::valkey_set_ex(
+        &state.valkey,
+        key.clone(),
+        serde_json::to_string(&payload).unwrap(),
+        300,
+    )
+    .await
+    .unwrap();
+    let sessions = web::Data::new(admin_session_handles(&state));
+    let service: web::Data<super::super::MtlsTrustAnchorService> = web::Data::from(Arc::new(
+        MtlsTrustAnchorRepository::new(pool.clone()),
+    )
+        as Arc<dyn MtlsTrustAnchorStore>);
+    let function = format!("bundle_late_{suffix}");
+    connection.batch_execute(&format!(r#"
+         CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN
+             IF NEW.event_type='mtls_trust_bundle_exported' AND NEW.payload->>'admin_user_id'='{admin}' THEN
+                 RAISE EXCEPTION 'bundle audit late commit failure' USING ERRCODE='23514';
+             END IF;
+             RETURN NULL;
+         END $$;
+         CREATE CONSTRAINT TRIGGER {function} AFTER INSERT ON security_audit_events
+           DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION {function}();
+     "#)).await.unwrap();
+    let failure=futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
+         let req=TestRequest::get().cookie(actix_web::cookie::Cookie::new(state.settings.session.session_cookie_name.clone(),sid.clone())).to_http_request();
+         let response=super::super::admin_mtls_trust_bundle(sessions.clone(),service.clone(),req).await;
+         assert_eq!(response.status(),actix_web::http::StatusCode::SERVICE_UNAVAILABLE);
+         assert!(!response.headers().contains_key("content-disposition"));
+         let body=actix_web::body::to_bytes(response.into_body()).await.unwrap();
+         assert_eq!(serde_json::from_slice::<Value>(&body).unwrap()["error"],"server_error");
+         let rows=sql_query("SELECT jsonb_agg(payload) AS value FROM security_audit_events WHERE event_type='mtls_trust_bundle_exported' AND payload->>'admin_user_id'=$1 HAVING count(*)>0")
+             .bind::<Text,_>(admin.to_string()).load::<Evidence>(&mut connection).await.unwrap();
+         assert!(rows.is_empty(),"late failure must leave no export evidence");
+     })).await;
+    connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {function} ON security_audit_events; DROP FUNCTION {function}()"
+        ))
+        .await
+        .unwrap();
+    let success=futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
+         let req=TestRequest::get().cookie(actix_web::cookie::Cookie::new(state.settings.session.session_cookie_name.clone(),sid.clone())).to_http_request();
+         let response=super::super::admin_mtls_trust_bundle(sessions,service,req).await;
+         assert_eq!(response.status(),actix_web::http::StatusCode::OK);
+         assert!(response.headers().contains_key("content-disposition"));
+         let rows=sql_query("SELECT jsonb_agg(payload) AS value FROM security_audit_events WHERE event_type='mtls_trust_bundle_exported' AND payload->>'admin_user_id'=$1")
+             .bind::<Text,_>(admin.to_string()).get_result::<Evidence>(&mut connection).await.unwrap();
+         assert_eq!(rows.value.as_array().unwrap().len(),1);
+         println!("mTLS bundle HTTP: deferred PG commit error -> 503/no attachment/no row; restored commit -> 200/attachment/exactly one Required event");
+     })).await;
+    crate::test_support::valkey::valkey_del(&state.valkey, key)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<SqlUuid, _>(admin)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    if let Err(error) = failure {
+        std::panic::resume_unwind(error);
+    }
+    if let Err(error) = success {
+        std::panic::resume_unwind(error);
+    }
+}

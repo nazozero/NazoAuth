@@ -188,6 +188,9 @@ struct ScriptedRepository {
     failures: Mutex<Vec<(i64, String, bool)>>,
     acked: Mutex<Vec<SecurityAuditBatchAck>>,
     fail_call_fails: bool,
+    observe_calls: std::sync::atomic::AtomicUsize,
+    claim_calls: std::sync::atomic::AtomicUsize,
+    ack_calls: std::sync::atomic::AtomicUsize,
 }
 
 impl ScriptedRepository {
@@ -267,6 +270,8 @@ impl AuditAnchorRepository for ScriptedRepository {
 
     fn observe_anchor<'a>(&'a self, _deployment_id: &'a str) -> RepositoryFuture<'a, ()> {
         Box::pin(async move {
+            self.observe_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.observations
                 .lock()
                 .expect("scripted repository mutex is not poisoned")
@@ -297,6 +302,8 @@ impl AuditAnchorRepository for ScriptedRepository {
         _lock_timeout_seconds: i32,
     ) -> RepositoryFuture<'a, SecurityAuditBatchClaim> {
         Box::pin(async move {
+            self.claim_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.claims
                 .lock()
                 .expect("scripted repository mutex is not poisoned")
@@ -311,6 +318,8 @@ impl AuditAnchorRepository for ScriptedRepository {
 
     fn ack_batch<'a>(&'a self, ack: SecurityAuditBatchAck) -> RepositoryFuture<'a, ()> {
         Box::pin(async move {
+            self.ack_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let result = self
                 .acknowledgements
                 .lock()
@@ -2059,4 +2068,105 @@ async fn required_ten_second_freshness_stays_ready_across_five_second_idle_pg_po
             .ensure_fresh(&current)
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn consecutive_real_receipts_ack_without_redundant_observations_and_restart_revalidates() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let repository = ScriptedRepository::default();
+    let mut last = None;
+    let mut blocked = None;
+    let client = test_client();
+    for sequence in 8..13 {
+        let batch = batch(vec![delivery(sequence)]);
+        let (endpoint, server) =
+            local_anchor_endpoint_with_body(200, accepted_batch_receipt(&batch)).await;
+        let config = valid_worker_config(endpoint);
+        repository
+            .health
+            .lock()
+            .unwrap()
+            .push_back(Ok(health_snapshot()));
+        repository
+            .claims
+            .lock()
+            .unwrap()
+            .push_back(Ok(SecurityAuditBatchClaim::Claimed(batch)));
+        assert_eq!(
+            run_iteration(&repository, &client, &config, &mut last, &mut blocked).await,
+            IterationOutcome::Continue
+        );
+        server.await.unwrap();
+        assert_eq!(last.as_ref().unwrap().sequence, sequence);
+    }
+    assert_eq!(repository.ack_calls.load(Relaxed), 5);
+    assert_eq!(repository.observe_calls.load(Relaxed), 1);
+    // A new worker must validate the binding despite a recent committed ACK.
+    last = None;
+    repository
+        .health
+        .lock()
+        .unwrap()
+        .push_back(Ok(health_snapshot()));
+    repository
+        .claims
+        .lock()
+        .unwrap()
+        .push_back(Ok(SecurityAuditBatchClaim::Empty));
+    let config = valid_worker_config(Url::parse("http://127.0.0.1:1/").unwrap());
+    assert_eq!(
+        run_iteration(&repository, &client, &config, &mut last, &mut blocked).await,
+        IterationOutcome::Poll(config.poll_interval)
+    );
+    assert_eq!(repository.observe_calls.load(Relaxed), 2);
+    assert_eq!(repository.claim_calls.load(Relaxed), 6);
+    assert_eq!(repository.ack_calls.load(Relaxed), 5);
+    println!("5 signed HTTP receipts: ACK calls=5, observe calls=1; restart: observe +1, ACK +0");
+}
+
+#[tokio::test]
+async fn iteration_observes_missing_stale_future_and_foreign_bindings_before_every_claim_kind() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let client = test_client();
+    let config = valid_worker_config(Url::parse("http://127.0.0.1:1/").unwrap());
+    for kind in ["empty", "busy", "blocked"] {
+        for age in ["missing", "stale", "future", "foreign"] {
+            let mut health = health_snapshot();
+            match age {
+                "missing" => health.observed_at = None,
+                "stale" => health.observed_at = Some(Utc::now() - ChronoDuration::seconds(5)),
+                "future" => health.observed_at = Some(Utc::now() + ChronoDuration::seconds(5)),
+                "foreign" => health.deployment_id = Some("other".into()),
+                _ => unreachable!(),
+            }
+            let claim = match kind {
+                "empty" => SecurityAuditBatchClaim::Empty,
+                "busy" => SecurityAuditBatchClaim::Busy,
+                _ => SecurityAuditBatchClaim::Blocked {
+                    reason: "permanent".into(),
+                },
+            };
+            let repository = ScriptedRepository::with_health(Ok(health), Ok(claim));
+            let mut last = AnchorCheckpoint::from_snapshot(&health_snapshot());
+            let mut blocked = None;
+            if age == "foreign" {
+                repository
+                    .observations
+                    .lock()
+                    .unwrap()
+                    .push_back(Err(repository_error("deployment mismatch")));
+            }
+            let outcome =
+                run_iteration(&repository, &client, &config, &mut last, &mut blocked).await;
+            assert_eq!(repository.observe_calls.load(Relaxed), 1);
+            assert_eq!(repository.ack_calls.load(Relaxed), 0);
+            if age == "foreign" {
+                assert!(matches!(outcome, IterationOutcome::Retry(_)));
+                assert_eq!(repository.claim_calls.load(Relaxed), 0);
+            } else {
+                assert_eq!(outcome, IterationOutcome::Poll(config.poll_interval));
+                assert_eq!(repository.claim_calls.load(Relaxed), 1);
+            }
+        }
+    }
 }

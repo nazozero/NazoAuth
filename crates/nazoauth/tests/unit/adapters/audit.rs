@@ -642,8 +642,8 @@ mod queue_persistence {
 
     #[tokio::test(start_paused = true)]
     async fn required_records_start_immediately_but_wait_for_batch_commit() {
-        for count in [1, 2] {
-            let (sender, receiver) = mpsc::channel(8);
+        for count in [1, 2, AUDIT_PERSIST_BATCH_MAX] {
+            let (sender, receiver) = mpsc::channel(AUDIT_PERSIST_BATCH_MAX);
             let fake = Arc::new(FakeLedger::new());
             let (release, commit) = oneshot::channel();
             *fake.commit_gate.lock().unwrap() = Some(commit);
@@ -696,11 +696,8 @@ mod queue_persistence {
             let (completion, persisted) = oneshot::channel();
             sender
                 .try_send(AuditPersistRequest {
-                    event: prepare_event(
-                        "authorization_decision_intent",
-                        serde_json::Map::new(),
-                    )
-                    .unwrap(),
+                    event: prepare_event("authorization_decision_intent", serde_json::Map::new())
+                        .unwrap(),
                     completion: Some(completion),
                 })
                 .unwrap();
@@ -740,14 +737,56 @@ mod queue_persistence {
         use super::transactional_readiness::{healthy_anchor, preflight};
         use crate::adapters::audit_anchor::config::AuditAnchorMode;
 
-        for unavailable in [true, false] {
-            let (sender, receiver) = mpsc::channel(4);
+        for fault in [
+            "unavailable",
+            "stale",
+            "lag",
+            "blocked",
+            "deployment",
+            "checkpoint",
+        ] {
+            let (sender, receiver) = mpsc::channel(AUDIT_QUEUE_CAPACITY);
             let ledger = Arc::new(FakeLedger::new());
-            if !unavailable {
-                let mut stale = healthy_anchor();
-                stale.observed_at = Some(Utc::now() - chrono::Duration::seconds(3600));
-                *ledger.health.lock().unwrap() = Some(stale);
+            if fault != "unavailable" {
+                let mut health = healthy_anchor();
+                match fault {
+                    "stale" => {
+                        health.observed_at = Some(Utc::now() - chrono::Duration::seconds(3600))
+                    }
+                    "lag" => {
+                        health.pending_exists = true;
+                        health.oldest_pending_occurred_at =
+                            Some(Utc::now() - chrono::Duration::seconds(3600));
+                    }
+                    "blocked" => {
+                        health.batch = Some(nazo_persistence::SecurityAuditBatchLease {
+                            first_sequence: 1,
+                            last_sequence: 3,
+                            event_count: 3,
+                            generation: 1,
+                            attempts: 1,
+                            available_at: None,
+                            locked_until: None,
+                            last_error: None,
+                            blocked_reason: Some("receiver rejected event".to_owned()),
+                        })
+                    }
+                    "deployment" => health.deployment_id = Some("foreign".into()),
+                    "checkpoint" => health.last_exported_hash = Some(vec![0xBB; 32]),
+                    _ => unreachable!(),
+                }
+                *ledger.health.lock().unwrap() = Some(health);
             }
+            let admission = RequiredAuditRepository {
+                repository: ledger.clone(),
+                require_least_privilege: false,
+                preflight: preflight(AuditAnchorMode::Required),
+            };
+            assert!(
+                ensure_transactional_audit_ready_via(&admission)
+                    .await
+                    .is_err()
+            );
             let first = telemetry_event();
             let mut expected = vec![first.event_id];
             sender.try_send(first.into()).unwrap();
@@ -761,7 +800,7 @@ mod queue_persistence {
             tokio::task::yield_now().await;
             assert!(ledger.health_calls.load(AtomicOrdering::Relaxed) > 0);
             assert_eq!(ledger.batch_attempts.load(AtomicOrdering::Relaxed), 0);
-            for _ in 0..4 {
+            for _ in 0..AUDIT_QUEUE_CAPACITY {
                 let event = telemetry_event();
                 expected.push(event.event_id);
                 sender.try_send(event.into()).unwrap();
@@ -798,7 +837,13 @@ mod queue_persistence {
                 .unwrap();
             expected.insert(0, required_id);
             assert_eq!(*ledger.appended.lock().unwrap(), expected);
-            assert_eq!(ledger.batch_attempts.load(AtomicOrdering::Relaxed), 3);
+            assert_eq!(
+                ledger.batch_attempts.load(AtomicOrdering::Relaxed),
+                2 + (AUDIT_QUEUE_CAPACITY / AUDIT_PERSIST_BATCH_MAX) as u64
+            );
+            println!(
+                "{fault}: zero Telemetry appends while unhealthy, bounded at 4096 queued + 1 held, excess rejected, accepted IDs recovered in order"
+            );
         }
     }
 

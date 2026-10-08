@@ -10,9 +10,8 @@
 //! 3. Refresh families — terminal families are revoked or expired. Their
 //!    spent proofs are drained under the family lock with one global 256-row
 //!    budget per call; a parent is deleted only after its proofs are gone.
-//! 4. Orphaned refresh contracts — deleted once no family references them,
-//!    behind a grace so an in-flight issuance can never lose a contract row
-//!    it just inserted.
+//! 4. Orphaned refresh contracts — deleted under parent row locks once no
+//!    family references them. Issuance holds KEY SHARE through its commit.
 //! 5. `nazo_openid4vp_cleanup_expired_transactions()` — expired presentations.
 //! 6. OpenID4VCI offer, nonce, deferred, notification and response expiry;
 //!    access-grant ownership is retained through verifier clock skew and until
@@ -41,9 +40,6 @@ use crate::{DbConnection, DbPool, get_conn};
 
 /// Per-category row budget per batch (matches the SQL function contract).
 const CLEANUP_BATCH_LIMIT: i64 = 256;
-/// Contracts only become deletable once no in-flight issuance can still be
-/// attaching a family to them; an hour dwarfs any issuance transaction.
-const ORPHAN_CONTRACT_GRACE_SECONDS: i64 = 3600;
 
 #[derive(Clone)]
 pub struct SecurityStateMaintenanceRepository {
@@ -387,10 +383,9 @@ impl SecurityStateMaintenanceRepository {
             .map_err(map_error)
     }
 
-    /// Delete contracts no family references, behind the in-flight-insert
-    /// grace. An issuance writes the contract row and the family row in one
-    /// transaction, so a committed-but-unreferenced contract is either a
-    /// rolled-back remnant or a retired family's residue — both collectible.
+    /// Delete unreferenced contracts under the parent UPDATE lock. Issuance
+    /// creates the contract and family in one transaction, or holds KEY SHARE
+    /// on an existing contract until its family reference commits.
     async fn delete_orphan_refresh_contracts(&self) -> Result<(u64, bool), RepositoryError> {
         // Wait for the process-local cursor before acquiring a pool lease.
         let mut cursor = self.contract_cursor.lock().await;
@@ -403,11 +398,11 @@ impl SecurityStateMaintenanceRepository {
                 let page = sql_query(
                     "WITH scan AS MATERIALIZED ( \
                          SELECT tenant_id, contract_blake3, created_at, \
-                                COALESCE($3, CURRENT_TIMESTAMP - make_interval(secs => $2)) AS cutoff \
+                                COALESCE($2, CURRENT_TIMESTAMP) AS cutoff \
                          FROM oauth_refresh_contracts \
-                         WHERE created_at < COALESCE($3, CURRENT_TIMESTAMP - make_interval(secs => $2)) \
+                         WHERE created_at < COALESCE($2, CURRENT_TIMESTAMP) \
                            AND (created_at, tenant_id, contract_blake3) > \
-                               (COALESCE($4, '-infinity'::timestamptz), $5, $6) \
+                               (COALESCE($3, '-infinity'::timestamptz), $4, $5) \
                          ORDER BY created_at, tenant_id, contract_blake3 LIMIT $1 \
                      ) \
                      SELECT scan.*, COALESCE(held.locked, FALSE) AS locked FROM scan \
@@ -423,11 +418,22 @@ impl SecurityStateMaintenanceRepository {
                      ORDER BY scan.created_at, scan.tenant_id, scan.contract_blake3",
                 )
                 .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
-                .bind::<sql_types::Double, _>(ORPHAN_CONTRACT_GRACE_SECONDS as f64)
-                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.as_ref().map(|row| row.cutoff))
-                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.as_ref().map(|row| row.created_at))
-                .bind::<sql_types::Uuid, _>(after.as_ref().map_or(uuid::Uuid::nil(), |row| row.tenant_id))
-                .bind::<sql_types::Binary, _>(after.as_ref().map_or(&[][..], |row| row.contract_blake3.as_slice()))
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
+                    after.as_ref().map(|row| row.cutoff),
+                )
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
+                    after.as_ref().map(|row| row.created_at),
+                )
+                .bind::<sql_types::Uuid, _>(
+                    after
+                        .as_ref()
+                        .map_or(uuid::Uuid::nil(), |row| row.tenant_id),
+                )
+                .bind::<sql_types::Binary, _>(
+                    after
+                        .as_ref()
+                        .map_or(&[][..], |row| row.contract_blake3.as_slice()),
+                )
                 .load::<ContractSweepRow>(connection)
                 .await?;
                 let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;
@@ -444,12 +450,18 @@ impl SecurityStateMaintenanceRepository {
                 } else {
                     None
                 };
-                let locked = page.into_iter().filter(|row| row.locked).collect::<Vec<_>>();
+                let locked = page
+                    .into_iter()
+                    .filter(|row| row.locked)
+                    .collect::<Vec<_>>();
                 if locked.is_empty() {
                     return Ok((0, saturated, next));
                 }
                 let tenant_ids = locked.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
-                let digests = locked.iter().map(|row| row.contract_blake3.clone()).collect::<Vec<_>>();
+                let digests = locked
+                    .iter()
+                    .map(|row| row.contract_blake3.clone())
+                    .collect::<Vec<_>>();
                 // The held UPDATE locks conflict with both the writer's
                 // contract-ensure KEY SHARE and family FK checks. This fresh
                 // READ COMMITTED snapshot also sees references that committed
@@ -459,14 +471,12 @@ impl SecurityStateMaintenanceRepository {
                      USING UNNEST($1::uuid[], $2::bytea[]) AS due(tenant_id, contract_blake3) \
                      WHERE target.tenant_id = due.tenant_id \
                        AND target.contract_blake3 = due.contract_blake3 \
-                       AND target.created_at < CURRENT_TIMESTAMP - make_interval(secs => $3) \
                        AND NOT EXISTS (SELECT 1 FROM oauth_refresh_families AS family \
                                        WHERE family.tenant_id = target.tenant_id \
                                          AND family.contract_blake3 = target.contract_blake3)",
                 )
                 .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
                 .bind::<sql_types::Array<sql_types::Binary>, _>(&digests)
-                .bind::<sql_types::Double, _>(ORPHAN_CONTRACT_GRACE_SECONDS as f64)
                 .execute(connection)
                 .await?;
                 Ok((deleted as u64, saturated, next))
