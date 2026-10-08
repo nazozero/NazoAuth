@@ -475,9 +475,9 @@ struct QueuedAuditEvent {
 /// Required records use an independent bounded channel and await the batch's
 /// durable commit. Required failures return to the caller; Telemetry retries
 /// its own failed batch without delaying the Required channel. In Required
-/// anchor mode, Telemetry also waits for healthy export before appending, so
-/// an export outage fills the bounded channel rather than an unbounded ledger.
-/// Unattempted Telemetry older than the Required lag limit expires in memory
+/// anchor mode, unattempted Telemetry is discarded while export is unhealthy.
+/// Previously attempted batches remain in the bounded channel/worker lifecycle.
+/// Unattempted Telemetry older than the Required lag limit also expires in memory
 /// instead of re-poisoning admission during recovery. Attempted batches keep
 /// their exact identity/content because an error does not prove rollback.
 /// Audit inside a business transaction retains its fail-closed semantics.
@@ -600,7 +600,7 @@ async fn run_audit_persist_worker(
         let mut retry_delay = Duration::from_millis(100);
         loop {
             // Reuse the configured live-health gate, not a new disk queue or
-            // a cached authorization decision. A stalled Telemetry batch stays
+            // a cached authorization decision. Already-attempted batches stay
             // in memory; the existing try_send boundary rejects excess work.
             let readiness = match &telemetry_preflight {
                 Some(preflight) if !required => match repository.anchor_health().await {
@@ -618,8 +618,11 @@ async fn run_audit_persist_worker(
                 _ => Ok(()),
             };
             // Check after the awaited health query: queue/connection waiting
-            // may have aged a previously fresh event. Only a never-submitted
-            // batch with no Required waiter is eligible. An attempted append
+            // may have aged a previously fresh event. An unhealthy exporter
+            // also rejects new best-effort work: retaining it until just below
+            // max_lag would recreate expired pending as soon as export resumes.
+            // Only a never-submitted batch without Required waiters is eligible.
+            // An attempted append
             // may already have committed, so its members are never filtered.
             if !append_attempted
                 && !required
@@ -628,9 +631,11 @@ async fn run_audit_persist_worker(
             {
                 let now = Utc::now();
                 let previous_len = events.len();
+                let export_unavailable = readiness.is_err();
                 events.retain(|event| {
                     audit_event_is_required(&event.event_type)
-                        || !preflight.telemetry_event_expired(event.occurred_at, now)
+                        || (!export_unavailable
+                            && !preflight.telemetry_event_expired(event.occurred_at, now))
                 });
                 let discarded_events = (previous_len - events.len()) as u64;
                 if discarded_events > 0 {
@@ -640,8 +645,12 @@ async fn run_audit_persist_worker(
                     tracing::warn!(
                         target: "audit.persistence",
                         discarded_events,
-                        persistence_status = "expired_unattempted_telemetry",
-                        "expired unattempted telemetry discarded before persistence"
+                        persistence_status = if export_unavailable {
+                            "unavailable_export_unattempted_telemetry"
+                        } else {
+                            "expired_unattempted_telemetry"
+                        },
+                        "unattempted telemetry discarded before persistence"
                     );
                 }
                 if events.is_empty() {

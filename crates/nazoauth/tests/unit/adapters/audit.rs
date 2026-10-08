@@ -733,7 +733,8 @@ mod queue_persistence {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn unhealthy_export_stalls_telemetry_in_memory_without_blocking_the_required_worker() {
+    async fn unhealthy_export_discards_unattempted_telemetry_without_blocking_the_required_worker()
+    {
         use super::transactional_readiness::{healthy_anchor, preflight};
         use crate::adapters::audit_anchor::config::AuditAnchorMode;
 
@@ -787,29 +788,22 @@ mod queue_persistence {
                     .await
                     .is_err()
             );
-            let first = telemetry_event();
-            let mut expected = vec![first.event_id];
-            sender.try_send(first.into()).unwrap();
-            let worker = tokio::spawn(run_audit_persist_worker(
-                receiver,
-                ledger.clone(),
-                Some(preflight(AuditAnchorMode::Required)),
-            ));
-            tokio::task::yield_now().await;
-            tokio::time::advance(AUDIT_PERSIST_COALESCE_WINDOW).await;
-            tokio::task::yield_now().await;
+            for _ in 0..130 {
+                sender.try_send(telemetry_event().into()).unwrap();
+            }
+            drop(sender);
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                run_audit_persist_worker(
+                    receiver,
+                    ledger.clone(),
+                    Some(preflight(AuditAnchorMode::Required)),
+                ),
+            )
+            .await
+            .expect("unattempted telemetry must leave memory while export is unhealthy");
             assert!(ledger.health_calls.load(AtomicOrdering::Relaxed) > 0);
             assert_eq!(ledger.batch_attempts.load(AtomicOrdering::Relaxed), 0);
-            for _ in 0..AUDIT_QUEUE_CAPACITY {
-                let event = telemetry_event();
-                expected.push(event.event_id);
-                sender.try_send(event.into()).unwrap();
-            }
-            assert_eq!(sender.capacity(), 0);
-            assert!(matches!(
-                sender.try_send(telemetry_event().into()),
-                Err(mpsc::error::TrySendError::Full(_))
-            ));
 
             // This exercises worker independence, not the caller's separate
             // fail-closed Required anchor preflight (covered below).
@@ -830,19 +824,24 @@ mod queue_persistence {
             required_worker.await.unwrap();
 
             *ledger.health.lock().unwrap() = Some(healthy_anchor());
+            let (sender, receiver) = mpsc::channel(1);
+            let fresh = telemetry_event();
+            let fresh_id = fresh.event_id;
+            sender.try_send(fresh.into()).unwrap();
             drop(sender);
-            tokio::time::timeout(Duration::from_secs(5), worker)
-                .await
-                .expect("the accepted bounded backlog must resume after export recovers")
-                .unwrap();
-            expected.insert(0, required_id);
-            assert_eq!(*ledger.appended.lock().unwrap(), expected);
+            run_audit_persist_worker(
+                receiver,
+                ledger.clone(),
+                Some(preflight(AuditAnchorMode::Required)),
+            )
+            .await;
             assert_eq!(
-                ledger.batch_attempts.load(AtomicOrdering::Relaxed),
-                2 + (AUDIT_QUEUE_CAPACITY / AUDIT_PERSIST_BATCH_MAX) as u64
+                *ledger.appended.lock().unwrap(),
+                vec![required_id, fresh_id]
             );
+            assert_eq!(ledger.batch_attempts.load(AtomicOrdering::Relaxed), 2);
             println!(
-                "{fault}: zero Telemetry appends while unhealthy, bounded at 4096 queued + 1 held, excess rejected, accepted IDs recovered in order"
+                "{fault}: unattempted Telemetry discarded, Required worker independent, fresh event persisted after recovery"
             );
         }
     }

@@ -303,3 +303,42 @@ async fn an_attempted_batch_keeps_its_exact_identity_after_it_ages_and_returns_a
     }
     assert_eq!(ledger.persisted.lock().unwrap().len(), 2);
 }
+
+#[tokio::test(start_paused = true)]
+async fn fresh_unattempted_telemetry_is_rejected_while_export_is_unhealthy() {
+    let ledger = Arc::new(RecoveryLedger::new());
+    ledger.available.store(false, Ordering::SeqCst);
+    let (sender, receiver) = mpsc::channel(130);
+    for _ in 0..130 {
+        sender
+            .try_send(event_at("login_success", Utc::now()).into())
+            .unwrap();
+    }
+    drop(sender);
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        run_audit_persist_worker(
+            receiver,
+            ledger.clone(),
+            Some(preflight(AuditAnchorMode::Required, 10)),
+        ),
+    )
+    .await
+    .expect("unattempted best-effort telemetry must not wait until the lag boundary");
+    assert!(ledger.attempts.lock().unwrap().is_empty());
+    ledger.available.store(true, Ordering::SeqCst);
+    let (sender, receiver) = mpsc::channel(1);
+    let fresh = event_at("login_success", Utc::now());
+    let id = fresh.event_id;
+    sender.try_send(fresh.into()).unwrap();
+    drop(sender);
+    run_audit_persist_worker(
+        receiver,
+        ledger.clone(),
+        Some(preflight(AuditAnchorMode::Required, 10)),
+    )
+    .await;
+    let persisted = ledger.persisted.lock().unwrap();
+    assert_eq!(persisted.len(), 1);
+    assert_eq!(persisted[0].event_id, id);
+}

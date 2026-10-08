@@ -9,7 +9,7 @@ implements their storage. A structured log line alone is not a durable receipt.
 
 | Path | Guarantee |
 | --- | --- |
-| `audit_event` | Validates fields, logs `target="audit"`, then tries a bounded 4,096-entry in-process queue. Attempted batches retry intact from 100 ms up to 5 s. In Required anchor mode, explicit Telemetry that has never been submitted may instead expire before its first append, as specified below. Queue saturation/disconnection is reported as `target="audit.persistence"`, `persistence_status="not_queued"` — or `"dropped_required"` when the dropped event belongs to the required evidence class. Queued events can be lost on process exit before persistence. Required-class events emitted through this path additionally log `persistence_status="misrouted_required"` (once per event name per process): they should use `audit_event_required` or a transactional append instead. |
+| `audit_event` | Validates fields, logs `target="audit"`, then tries a bounded 4,096-entry in-process queue. Attempted batches retry intact from 100 ms up to 5 s. In Required anchor mode, explicit Telemetry that has never been submitted may instead be discarded before its first append, as specified below. Queue saturation/disconnection is reported as `target="audit.persistence"`, `persistence_status="not_queued"` — or `"dropped_required"` when the dropped event belongs to the required evidence class. Queued events can be lost on process exit before persistence. Required-class events emitted through this path additionally log `persistence_status="misrouted_required"` (once per event name per process): they should use `audit_event_required` or a transactional append instead. |
 | `audit_event_required` | Awaits ledger append before logging `persistence_status="durable"` and `event_id`; append failure propagates to the caller. This does not put a separate business mutation in the same transaction. |
 | Transactional repository append | Token issuance, refresh rotation/reuse handling, and tenant directory/resource operations append their owned audit event with the corresponding durable mutation in one database transaction. |
 | External anchor worker | Exports only committed ledger events through the durable outbox. Receiver acceptance, retry ordering, freshness, and remaining trust limits are specified in [audit anchoring](audit-anchor.md). |
@@ -34,12 +34,14 @@ intent proves admission to an attempt; it does not prove the mutation committed.
 ## Telemetry expiry and recovery admission
 
 In Required anchor mode, the worker still checks live exporter health before
-appending. After that awaited check, it removes only explicit Telemetry whose
-original event age exceeds `AUDIT_ANCHOR_MAX_LAG_SECONDS`, using the same clock
-and seconds boundary as Required admission. This prevents old memory-only
-telemetry from recreating an unhealthy ledger immediately after recovery.
+appending. If that check fails, it discards explicit, never-attempted Telemetry
+instead of keeping best-effort work until it nearly reaches the lag limit.
+Otherwise it removes explicit Telemetry whose original age exceeds
+`AUDIT_ANCHOR_MAX_LAG_SECONDS`, using the same clock and seconds boundary as
+Required admission. Expiry alone is insufficient: a nearly expired event can
+become overdue between append and export, repeatedly closing Required admission.
 
-Expiry is permitted only while the batch has **never** been submitted to the
+Either discard is permitted only while the batch has **never** been submitted to the
 repository and has no Required completion waiter. The event allowlist remains
 the sole class authority: Required-class and unknown names survive even when
 misrouted onto the Telemetry channel. An append attempt latches the batch as
@@ -49,8 +51,10 @@ Already persisted events and business retention are untouched. Empty filtered
 batches issue no append. Future/unknown clock state is not treated as expiry.
 
 Each discarded group emits `target="audit.persistence"`,
-`persistence_status="expired_unattempted_telemetry"` and `discarded_events`.
-Collectors must include this count separately from queue-full rejection and
+`discarded_events`, with `persistence_status="expired_unattempted_telemetry"`
+for age expiry or `"unavailable_export_unattempted_telemetry"` for closed export
+admission. The latter is best-effort rejection, not an expiry or durable receipt.
+Collectors must count these reasons separately from queue-full rejection and
 persistence success; no payload, tenant or credential is logged by the expiry
 record. A successful read and its initial audit log do not promise that its
 best-effort telemetry will eventually reach the ledger. Memory remains bounded
