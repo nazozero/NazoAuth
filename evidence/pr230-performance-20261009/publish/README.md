@@ -15,7 +15,7 @@
 
 | 维度 | 结果 | 本轮证据范围 |
 |---|---|---|
-| CODE | PASS | 最终修改对应回归、nazo-postgres 全目标补齐后 511 passed、fmt、静态边界、workspace Clippy、release 构建；未重复完整 workspace suite。 |
+| CODE（本地变更门禁） | PASS | 最终修改对应回归、nazo-postgres 全目标补齐后 511 passed、fmt、静态边界、workspace Clippy、release 构建；未重复完整 workspace suite。 |
 | SECURITY | PASS | 修改触及的真实 PostgreSQL 提交/取消/断连边界及安全状态回归通过，安全语义未降低。 |
 | PERFORMANCE | FAIL | 原容量门槛仍未达到，局部 prepared statement 修复不构成整体性能通过证明。无效测点另列 INVALID。 |
 | STORAGE（decision 自然回收） | PASS | 43,601 条冻结批次经过最后保留期及完整自然维护周期后归零；合法未到期状态保留。 |
@@ -158,3 +158,11 @@ DB/receiver/签名 checkpoint 对齐在 121,875；新增及接收事件同为 12
 | A04R | FAIL | meta | PASS | 200.0 | 12.0/21.0 | 0.0 |
 | A04R | FAIL | fapi | FAIL | 16.252 | 3207.3999999999996/4435.14 | 0.458272 |
 | A04R | FAIL | refresh | FAIL | 210.074 | 1015.0499999999993/1396.0 | 0.649877 |
+
+## 最后 CI 检查与测试夹具修正
+
+最终源码 SHA：`0e263eb96b4884735f90e3f6059e1490a6536b1d`。正式压测及生产实现仍是 `101939f7095a9ea5822ff68580d9fedcd259e970`；两者 crates/migrations/Cargo 差异仅为 `hotpath_statement_cache.rs` 的数据库 URL 读取，生产源码完全不变。无需重复未受影响的性能/故障负载。
+
+按要求在本轮测试及报告发布后才检查 CI：旧源码 Rust quality 失败于新测试缺少 NAZO_TEST_DATABASE_URL，尚未执行缓存断言。仓库现有测试采用 NAZO_TEST_DATABASE_URL 或 DATABASE_URL；新测试现也接受这两个显式测试配置，缺失仍报错，不静默跳过。CNB 中以 CI=true、去掉 NAZO_TEST_DATABASE_URL、只提供隔离 DATABASE_URL 重测通过；fmt 和该测试 Clippy 均 exit0。失败摘录和重测命令附后，未删除测试或降低断言。
+
+**CODE 最终 CI：BLOCKED（等待新 HEAD）；本地修改门禁 PASS。** 本报告不宣称 CI 已绿色。PERFORMANCE 仍 FAIL；decision 自然回收 PASS；长期目标负载存储仍 INVALID。当前最终源码仅增加测试夹具修正，保留所有已有生产证据。

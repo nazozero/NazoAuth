@@ -7414,5 +7414,45 @@
     "source_sha256": "c96848593f08bff01078627fc6e47b52e1f87ebad56536431f4371b4d1614bac",
     "published_bytes": 5906,
     "published_sha256": "c96848593f08bff01078627fc6e47b52e1f87ebad56536431f4371b4d1614bac"
+  },
+  {
+    "published": "final-source-ci-fixture.json",
+    "published_sha256": "535c3b9e08f91ec31d375e04db6d2a43a86a1a4912fefc8cb21523fa2d2a00a0",
+    "published_bytes": 264,
+    "source": "CI follow-up after initial report",
+    "source_bytes": 264,
+    "source_sha256": "535c3b9e08f91ec31d375e04db6d2a43a86a1a4912fefc8cb21523fa2d2a00a0"
+  },
+  {
+    "published": "ci-fixture-retest.json",
+    "published_sha256": "0e36c40a63ca9ffc12f4f3e6d2d9cde2e4367d7563078d267f7c6963ab82cc5e",
+    "published_bytes": 885,
+    "source": "CI follow-up after initial report",
+    "source_bytes": 885,
+    "source_sha256": "0e36c40a63ca9ffc12f4f3e6d2d9cde2e4367d7563078d267f7c6963ab82cc5e"
+  },
+  {
+    "published": "ci-fixture-retest.log",
+    "published_sha256": "6d0cb74416869829db84455c7b3d76c4f71c82b8328b629fb54692e2ad3f7ed4",
+    "published_bytes": 4110,
+    "source": "CI follow-up after initial report",
+    "source_bytes": 4110,
+    "source_sha256": "6d0cb74416869829db84455c7b3d76c4f71c82b8328b629fb54692e2ad3f7ed4"
+  },
+  {
+    "published": "ci-final.json",
+    "published_sha256": "45f0bc033a94643b7ce42acad47e840cc99401ae57acc557a119e4c348b6b33c",
+    "published_bytes": 9369,
+    "source": "CI follow-up after initial report",
+    "source_bytes": 9369,
+    "source_sha256": "45f0bc033a94643b7ce42acad47e840cc99401ae57acc557a119e4c348b6b33c"
+  },
+  {
+    "published": "source-ci-cache-failure.txt",
+    "published_sha256": "2fb887d5026b28e5c7b86b6dc9f523a532d60de06a60b34df6c9ccce98b0fa7e",
+    "published_bytes": 1257,
+    "source": "CI follow-up after initial report",
+    "source_bytes": 1257,
+    "source_sha256": "2fb887d5026b28e5c7b86b6dc9f523a532d60de06a60b34df6c9ccce98b0fa7e"
   }
 ]

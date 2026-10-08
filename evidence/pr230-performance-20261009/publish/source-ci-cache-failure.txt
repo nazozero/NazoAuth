@@ -1,0 +1,18 @@
+Running tests/hotpath_statement_cache.rs (target/debug/deps/hotpath_statement_cache-63a80b0404116f2e)
+2026-10-08T17:32:04.1441027Z 
+2026-10-08T17:32:04.1441610Z running 1 test
+2026-10-08T17:32:04.1483592Z 
+2026-10-08T17:32:04.1484521Z thread 'audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds' (29932) panicked at crates/persistence-postgres/tests/hotpath_statement_cache.rs:12:55:
+2026-10-08T17:32:04.1485269Z isolated PostgreSQL is required: NotPresent
+2026-10-08T17:32:04.1485669Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-08T17:32:04.1505583Z test audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds ... FAILED
+2026-10-08T17:32:04.1506056Z 
+2026-10-08T17:32:04.1506182Z failures:
+2026-10-08T17:32:04.1507456Z 
+2026-10-08T17:32:04.1507730Z failures:
+2026-10-08T17:32:04.1508592Z     audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds
+2026-10-08T17:32:04.1508874Z 
+2026-10-08T17:32:04.1509145Z test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+2026-10-08T17:32:04.1509474Z 
+2026-10-08T17:32:04.1537250Z error: test failed, to rerun pass `-p nazo-postgres --test hotpath_statement_cache`
+2026-10-08T17:32:04.1547420Z      

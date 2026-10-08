@@ -1,0 +1,6 @@
+{
+  "sha": "0e263eb96b4884735f90e3f6059e1490a6536b1d",
+  "production_tested_sha": "101939f7095a9ea5822ff68580d9fedcd259e970",
+  "only_change_since_tested_source": "crates/persistence-postgres/tests/hotpath_statement_cache.rs",
+  "production_code_unchanged": true
+}
