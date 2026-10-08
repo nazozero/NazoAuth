@@ -1012,7 +1012,7 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn retired_contract_is_reclaimed_after_grace_without_touching_live_references() {
+async fn fresh_retired_contract_is_reclaimed_without_touching_live_references() {
     use diesel::sql_types::Binary;
     use nazo_persistence::SecurityStateMaintenancePort;
     use nazo_postgres::SecurityStateMaintenanceRepository;
@@ -1135,12 +1135,15 @@ async fn retired_contract_is_reclaimed_after_grace_without_touching_live_referen
         "bounded maintenance should remove the proofless terminal parent"
     );
     assert!(
-        contract_exists(&mut connection, tenant_id, &orphan_digest).await,
-        "the one-hour creation grace must protect a fresh orphan"
+        !contract_exists(&mut connection, tenant_id, &orphan_digest).await,
+        "the unreferenced fresh contract must be reclaimed after its terminal parent"
     );
-    // Both keys are old enough. The orphan sorts first among test fixtures;
-    // the live key must remain regardless of its age.
-    for digest in [&orphan_digest, &live_digest] {
+    assert!(
+        contract_exists(&mut connection, tenant_id, &live_digest).await,
+        "a surviving family reference must protect a fresh contract"
+    );
+    // A live reference protects the contract independently of its age.
+    for digest in [&live_digest] {
         sql_query(
             "UPDATE oauth_refresh_contracts SET created_at = '1970-01-01 UTC' \
              WHERE tenant_id = $1 AND contract_blake3 = $2",
