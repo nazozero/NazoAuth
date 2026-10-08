@@ -1,0 +1,8 @@
+{
+  "point": "pool-E1",
+  "maintenance_acquisitions": 161,
+  "p50_ms": 181.38,
+  "p95_ms": 307.384,
+  "p99_ms": 343.489,
+  "max_waiters": 959
+}

@@ -1,0 +1,567 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": [
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4168841698",
+                    "path": "crates/nazoauth/tests/unit/http/token/ciba/issuance.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4168841712",
+                    "path": "crates/nazoauth/tests/unit/http/token/device.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4169001197",
+                    "path": "crates/nazoauth/tests/unit/http/token/ciba/issuance.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4169001223",
+                    "path": "crates/nazoauth/tests/unit/http/token/device.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4169464276",
+                    "path": "crates/persistence-postgres/tests/controller_recovery.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4169464306",
+                    "path": "crates/persistence-postgres/tests/controller_recovery.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4169464316",
+                    "path": "crates/persistence-postgres/tests/controller_recovery.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4169464326",
+                    "path": "crates/persistence-postgres/tests/controller_recovery.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4170473134",
+                    "path": "crates/nazoauth/tests/unit/domain/openid4vci_endpoint_operations/credential.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4170473141",
+                    "path": "crates/nazoauth/tests/unit/domain/openid4vci_endpoint_operations/credential.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4171797042",
+                    "path": "crates/persistence-postgres/tests/support/mfa_generation.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4171921584",
+                    "path": "crates/authorization-server/tests/client_delivery_secret.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4171921593",
+                    "path": "crates/authorization-server/tests/client_delivery_secret.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4171921603",
+                    "path": "crates/authorization-server/tests/client_delivery_secret.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4171921608",
+                    "path": "crates/authorization-server/tests/client_delivery_secret.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4171921612",
+                    "path": "crates/authorization-server/tests/client_delivery_secret.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4171921615",
+                    "path": "crates/authorization-server/tests/client_delivery_secret.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4172223925",
+                    "path": "crates/key-management/tests/unit/key_repository.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4172223933",
+                    "path": "crates/key-management/tests/unit/key_repository.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4172223937",
+                    "path": "crates/key-management/tests/unit/key_repository.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4172223939",
+                    "path": "crates/key-management/tests/unit/key_repository.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4172610999",
+                    "path": "crates/key-management/tests/unit/key_repository.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4172611004",
+                    "path": "crates/nazoauth/tests/unit/keyctl/openid4vc_material.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4173836092",
+                    "path": "crates/authorization-server/tests/unit/domain/openid4vc_credential_crypto.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614007",
+                    "path": "crates/authorization-server/tests/unit/domain/openid4vc_credential_crypto.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614011",
+                    "path": "crates/nazoauth/tests/unit/http/profile/mfa_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614016",
+                    "path": "crates/nazoauth/tests/unit/http/profile/mfa_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614019",
+                    "path": "crates/nazoauth/tests/unit/http/profile/mfa_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614025",
+                    "path": "crates/persistence-postgres/tests/control_plane_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614034",
+                    "path": "crates/persistence-postgres/tests/support/admin_user_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614038",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614046",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614053",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614060",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614069",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175614072",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689230",
+                    "path": "crates/nazoauth/tests/unit/http/profile/mfa_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689235",
+                    "path": "crates/nazoauth/tests/unit/http/profile/mfa_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689239",
+                    "path": "crates/nazoauth/tests/unit/http/profile/mfa_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689243",
+                    "path": "crates/persistence-postgres/tests/control_plane_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689247",
+                    "path": "crates/persistence-postgres/tests/support/admin_user_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689254",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689259",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689266",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689271",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/nazozero/NazoAuth/pull/230#discussion_r4175689276",
+                    "path": "crates/persistence-postgres/tests/support/managed_dataset_required.rs"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+ "census_exact": {
+  "oauth:client_assertion": 7722,
+  "oauth:dpop": 12870,
+  "oauth:jar": 25180,
+  "oauth:rate": 7,
+  "oauth:session": 1506,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 47286,
+  "evicted_keys": 0,
+  "expired_keys": 17,
+  "keyspace_hits": 579508,
+  "keyspace_misses": 1473,
+  "mem_fragmentation_ratio": 1.57,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 17994048,
+  "used_memory_rss": 28205056
+ },
+ "keys_seen": 47286,
+ "mem_bytes_sampled": {
+  "oauth:client_assertion": 128000,
+  "oauth:dpop": 116800,
+  "oauth:jar": 131200,
+  "oauth:rate": 1792,
+  "oauth:session": 183904,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:rate": 7,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "r230-p04-h1-20261008",
+  "sample_per_cat": 400,
+  "sampled_at": 1791447713,
+  "scan_ms": 255,
+  "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+ },
+ "sampled_per_cat": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:rate": 7,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 47286,
+ "ttl_buckets_sampled": {
+  "oauth:client_assertion|1m+": 95,
+  "oauth:client_assertion|2m+": 119,
+  "oauth:client_assertion|3m+": 186,
+  "oauth:dpop|2m+": 76,
+  "oauth:dpop|3m+": 142,
+  "oauth:dpop|4m+": 148,
+  "oauth:dpop|5m+": 34,
+  "oauth:jar|1m+": 170,
+  "oauth:jar|2m+": 184,
+  "oauth:jar|3m+": 46,
+  "oauth:rate|0m+": 7,
+  "oauth:session|477m+": 295,
+  "oauth:session|478m+": 35,
+  "oauth:session|479m+": 70,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

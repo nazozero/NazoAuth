@@ -1,0 +1,1 @@
+{"kind": "minio", "command": ["docker", "build", "-t", "nazoauth-revision-minio:20261008", "-"], "exit": 0, "seconds": 433.47340230387636, "utc": "2026-10-08T08:41:33.398185+00:00", "log": "/src/evidence/pr230-revision-20261008/continuation/resume/image-minio.log", "image": "sha256:b212aef9602cc60ddb8ceeea37a95a5a4f22bc41d2c7f58e695a7011a6b724f3"}

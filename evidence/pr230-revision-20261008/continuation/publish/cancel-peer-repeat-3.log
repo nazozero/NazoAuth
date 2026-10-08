@@ -1,0 +1,7 @@
+    Finished `test` profile [unoptimized] target(s) in 0.17s
+     Running tests/control_plane_required.rs (target/debug/deps/control_plane_required-fc7418767ce40018)
+
+running 1 test
+test required_control_plane_cancelled_accepting_owner_releases_connection_and_deployment_lock ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.18s

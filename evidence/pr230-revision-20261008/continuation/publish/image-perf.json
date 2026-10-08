@@ -1,0 +1,1 @@
+{"kind": "perf", "command": ["docker", "build", "-t", "nazoauth-revision-perf:20261008", "-"], "exit": 0, "seconds": 120.40133442101069, "utc": "2026-10-08T08:36:20.817194+00:00", "log": "/src/evidence/pr230-revision-20261008/continuation/resume/image-perf.log", "image": "sha256:182d72b35f420f4d33d03388def1a789f8ad70c418d39ade0a9a4c05f954c3ab"}

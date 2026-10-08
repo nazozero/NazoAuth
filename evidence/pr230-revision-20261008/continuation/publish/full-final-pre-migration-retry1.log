@@ -1,0 +1,20 @@
+   Compiling nazo-crypto v0.2.16 (/src/crates/crypto)
+   Compiling nazo-scim-events v0.2.16 (/src/crates/scim-events)
+   Compiling nazo-runtime-modules v0.2.16 (/src/crates/runtime-capabilities)
+   Compiling nazo-digital-credentials v0.2.16 (/src/crates/digital-credentials)
+   Compiling nazo-identity v0.2.16 (/src/crates/identity)
+   Compiling nazo-operator-protocol v0.2.16 (/src/crates/operator-protocol)
+   Compiling nazo-resource-server v0.2.16 (/src/crates/resource-server)
+   Compiling nazo-openid4vci v0.2.16 (/src/crates/openid4vci)
+   Compiling nazo-openid4vp v0.2.16 (/src/crates/openid4vp)
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-key-management v0.2.16 (/src/crates/key-management)
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 40.25s
+     Running tests/migrations.rs (target/debug/deps/migrations-4aee129ee41fdcbe)
+
+running 1 test
+test pending_migrations_create_all_runtime_module_state_tables ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 2.37s

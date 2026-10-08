@@ -1,0 +1,21 @@
+test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) ... ERROR
+
+======================================================================
+ERROR: test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/src/perf/tests/test_seed_jwk.py", line 22, in test_p256_fields_keep_leading_zero_octets
+    raw = base64.urlsafe_b64decode(jwk[field] + "=")
+  File "/usr/local/lib/python3.14/base64.py", line 131, in urlsafe_b64decode
+    return b64decode(s)
+  File "/usr/local/lib/python3.14/base64.py", line 85, in b64decode
+    return binascii.a2b_base64(s, strict_mode=validate)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+binascii.Error: Incorrect padding
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (errors=1)
+
+EXIT 1

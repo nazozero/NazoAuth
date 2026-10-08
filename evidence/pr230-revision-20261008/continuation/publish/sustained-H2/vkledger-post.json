@@ -1,0 +1,51 @@
+{
+ "census_exact": {
+  "oauth:jar": 54480,
+  "oauth:session": 993,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 55474,
+  "evicted_keys": 0,
+  "expired_keys": 26278,
+  "keyspace_hits": 1294134,
+  "keyspace_misses": 718,
+  "mem_fragmentation_ratio": 1.85,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 21894472,
+  "used_memory_rss": 40525824
+ },
+ "keys_seen": 55474,
+ "mem_bytes_sampled": {
+  "oauth:jar": 131200,
+  "oauth:session": 179168,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:jar": 400,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "r230-sustained-h2-20261008",
+  "sample_per_cat": 400,
+  "sampled_at": 1791445244,
+  "scan_ms": 328,
+  "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+ },
+ "sampled_per_cat": {
+  "oauth:jar": 400,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 55474,
+ "ttl_buckets_sampled": {
+  "oauth:jar|0m+": 190,
+  "oauth:jar|1m+": 191,
+  "oauth:jar|2m+": 19,
+  "oauth:session|474m+": 400,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

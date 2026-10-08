@@ -1,0 +1,10 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 33.72s
+     Running tests/audit_bounded_reads.rs (target/debug/deps/audit_bounded_reads-5f79e092550d1327)
+
+running 1 test
+test exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale ... finalize: shared_blocks=5157; actual_plan=[{"Execution Time":27.48,"Plan":{"Actual Loops":1,"Actual Rows":1.0,"Actual Startup Time":27.47,"Actual Total Time":27.47,"Async Capable":false,"Disabled":false,"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Node Type":"Result","Parallel Aware":false,"Plan Rows":1,"Plan Width":8,"Shared Dirtied Blocks":13,"Shared Hit Blocks":5156,"Shared Read Blocks":1,"Shared Written Blocks":10,"Startup Cost":0.0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Total Cost":0.26},"Planning":{"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Shared Dirtied Blocks":0,"Shared Hit Blocks":0,"Shared Read Blocks":0,"Shared Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0},"Planning Time":0.026,"Triggers":[]}]
+ack: shared_blocks=6503; actual_plan=[{"Execution Time":7.462,"Plan":{"Actual Loops":1,"Actual Rows":1.0,"Actual Startup Time":7.454,"Actual Total Time":7.454,"Async Capable":false,"Disabled":false,"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Node Type":"Result","Parallel Aware":false,"Plan Rows":1,"Plan Width":1,"Shared Dirtied Blocks":0,"Shared Hit Blocks":6503,"Shared Read Blocks":0,"Shared Written Blocks":0,"Startup Cost":0.0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Total Cost":0.26},"Planning":{"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Shared Dirtied Blocks":0,"Shared Hit Blocks":0,"Shared Read Blocks":0,"Shared Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0},"Planning Time":0.028,"Triggers":[]}]
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.38s

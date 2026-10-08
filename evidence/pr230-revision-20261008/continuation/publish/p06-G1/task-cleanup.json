@@ -1,0 +1,11 @@
+{
+  "label": "r230-p06-g1-20261008",
+  "key": "p06-G1",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.342,
+  "total_elapsed_s": 208.093,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

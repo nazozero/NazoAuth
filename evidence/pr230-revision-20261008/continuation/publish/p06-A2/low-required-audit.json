@@ -1,0 +1,94 @@
+{
+  "before": {
+    "receiver_state": {
+      "accepted": 1,
+      "checkpoint": {
+        "accepted_batches": 0,
+        "accepted_events": 0,
+        "batch_digest": "fB9lbxZR0qV5_hkVyofs_Zf7Z3GLpVK7hqmiBrPJHmg",
+        "checkpoint_kind": "genesis",
+        "deployment_id": "01a11a3a-9e1d-76de-a394-82dee2c125bc",
+        "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "last_sequence": 0,
+        "updated_at": "2026-10-08T06:37:09.819872193Z"
+      },
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 4,
+      "collected": true
+    },
+    "receiver_checkpoint": {
+      "deployment_id": "01a11a3a-9e1d-76de-a394-82dee2c125bc",
+      "checkpoint_kind": "genesis",
+      "last_sequence": 0,
+      "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "batch_digest": "fB9lbxZR0qV5_hkVyofs_Zf7Z3GLpVK7hqmiBrPJHmg",
+      "accepted_batches": 0,
+      "accepted_events": 0,
+      "updated_at": "2026-10-08T06:37:09.819872193Z",
+      "collected": true
+    },
+    "db": {
+      "collected": true,
+      "pending": 0,
+      "total": 0,
+      "exported_retained": 0,
+      "last_sequence": 0,
+      "last_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "anchor_deployment_id": "01a11a3a-9e1d-76de-a394-82dee2c125bc",
+      "anchor_sequence": 0,
+      "anchor_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "after": {
+    "receiver_state": {
+      "accepted": 4,
+      "checkpoint": {
+        "accepted_batches": 3,
+        "accepted_events": 30,
+        "batch_digest": "vWgcgo2q_7OlIa9KUcYuiN42mJRPwmwxNMRtifIah44",
+        "checkpoint_kind": "batch",
+        "deployment_id": "01a11a3a-9e1d-76de-a394-82dee2c125bc",
+        "last_hash": "hN7zL-ORxFOb8yPa3yNWHcqCX-Z0GjGu7w8RMjw_hJU",
+        "last_sequence": 30,
+        "updated_at": "2026-10-08T06:37:23.963511467Z"
+      },
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 9,
+      "collected": true
+    },
+    "receiver_checkpoint": {
+      "deployment_id": "01a11a3a-9e1d-76de-a394-82dee2c125bc",
+      "checkpoint_kind": "batch",
+      "last_sequence": 30,
+      "last_hash": "hN7zL-ORxFOb8yPa3yNWHcqCX-Z0GjGu7w8RMjw_hJU",
+      "batch_digest": "vWgcgo2q_7OlIa9KUcYuiN42mJRPwmwxNMRtifIah44",
+      "accepted_batches": 3,
+      "accepted_events": 30,
+      "updated_at": "2026-10-08T06:37:23.963511467Z",
+      "collected": true
+    },
+    "db": {
+      "collected": true,
+      "pending": 0,
+      "total": 0,
+      "exported_retained": 0,
+      "last_sequence": 30,
+      "last_hash": "84def32fe391c4539bf323dadf23561dca825fe6741a31aeef0f11323c3f8495",
+      "anchor_deployment_id": "01a11a3a-9e1d-76de-a394-82dee2c125bc",
+      "anchor_sequence": 30,
+      "anchor_hash": "84def32fe391c4539bf323dadf23561dca825fe6741a31aeef0f11323c3f8495"
+    }
+  },
+  "drain": {
+    "pending": 0,
+    "last_sequence": 30,
+    "anchor_sequence": 30,
+    "drained": true,
+    "total": 0,
+    "exported_retained": 0
+  }
+}

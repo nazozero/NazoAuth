@@ -1,0 +1,14 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.57s
+     Running tests/control_plane_required.rs (target/debug/deps/control_plane_required-fc7418767ce40018)
+
+running 7 tests
+test required_control_plane_all_six_ledger_failures_roll_back_exact_owners ... ok
+test required_control_plane_approvals_accept_submicrosecond_clocks_with_exact_stored_expiry ... ok
+test required_control_plane_cancelled_accepting_owner_releases_connection_and_deployment_lock ... ok
+test required_control_plane_current_actor_denies_inactive_demoted_and_moved_context ... ok
+test required_control_plane_defaults_never_invoke_bare_mutation ... ok
+test required_control_plane_hidden_real_commits_withhold_tokens_and_receipts ... ok
+test required_control_plane_rewritten_approval_expiry_is_rejected_and_rolled_back ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.11s

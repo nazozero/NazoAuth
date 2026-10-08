@@ -1,0 +1,174 @@
+{
+  "utc": "2026-10-08T07:40:14.009858+00:00",
+  "head": "6b1e40f05d4d93eedc330a8d76eb441c826627b1",
+  "pull_requests": [
+    {
+      "number": 222,
+      "state": "CLOSED",
+      "headRefOid": "d8bdb2dec4d0a4ca42e1cde4c2bba060590b5024",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "d8bdb2dec4d0a4ca42e1cde4c2bba060590b5024",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 223,
+      "state": "CLOSED",
+      "headRefOid": "898cae468fa901e5595f9aa244cc5ab96d87f137",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "898cae468fa901e5595f9aa244cc5ab96d87f137",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 224,
+      "state": "CLOSED",
+      "headRefOid": "2a2c79a4e63b00d1543760860ac3d440286b8288",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "2a2c79a4e63b00d1543760860ac3d440286b8288",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 225,
+      "state": "CLOSED",
+      "headRefOid": "63bf8cb7481a5baab937779c185f66be0a08d3bc",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "63bf8cb7481a5baab937779c185f66be0a08d3bc",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 226,
+      "state": "CLOSED",
+      "headRefOid": "9a85e8b8bba97c5466dba7cb673a4b70d0db3045",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "9a85e8b8bba97c5466dba7cb673a4b70d0db3045",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 227,
+      "state": "CLOSED",
+      "headRefOid": "63ab347c4b01ff14d6bed893842997f953d344c7",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "63ab347c4b01ff14d6bed893842997f953d344c7",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 228,
+      "state": "CLOSED",
+      "headRefOid": "43482e67cca05b5659ea7f438cba552c98520f7f",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "43482e67cca05b5659ea7f438cba552c98520f7f",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 231,
+      "state": "CLOSED",
+      "headRefOid": "1cc838cd08a3551699d493c65b4e54d3f8cc17f7",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "1cc838cd08a3551699d493c65b4e54d3f8cc17f7",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 232,
+      "state": "CLOSED",
+      "headRefOid": "e00f98a6e66ecb3d4d3ef996b81f43b13f272922",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "e00f98a6e66ecb3d4d3ef996b81f43b13f272922",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 233,
+      "state": "CLOSED",
+      "headRefOid": "ee5029f1c048405a537692ae3ce1be5d9e1978af",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "ee5029f1c048405a537692ae3ce1be5d9e1978af",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 234,
+      "state": "CLOSED",
+      "headRefOid": "d79bff083b4f894f44d04c2a3b407a589214f77f",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "d79bff083b4f894f44d04c2a3b407a589214f77f",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    },
+    {
+      "number": 235,
+      "state": "CLOSED",
+      "headRefOid": "90fca2fdba4e9ff82b0251708c0174b60d7b7af5",
+      "merged": false,
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "90fca2fdba4e9ff82b0251708c0174b60d7b7af5",
+        "HEAD"
+      ],
+      "ancestor_exit": 0
+    }
+  ]
+}

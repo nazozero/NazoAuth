@@ -1,0 +1,1 @@
+{"kind": "keyset", "command": ["docker", "build", "-t", "nazoauth-revision-keyset:20261008", "-"], "exit": 0, "seconds": 9.961141154868528, "utc": "2026-10-08T08:34:30.088121+00:00", "log": "/src/evidence/pr230-revision-20261008/continuation/resume/image-keyset.log", "image": "sha256:2ebf44db4fceca05705a77b3206341919a1cc3f895274814b2b971ead341cce7"}

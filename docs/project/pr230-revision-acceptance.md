@@ -1,6 +1,6 @@
 # PR #230：审计修订与 agents 验收任务
 
-本轮实际运行、修复与未通过项见 [2026-10-08 验收报告](../../evidence/pr230-revision-20261008/publish/README.md)。该报告保留性能/存储失败和验证边界，本任务书不代表验收通过。
+本轮最终验证、修复与合并判断见 [2026-10-08 继续修订验收报告](../../evidence/pr230-revision-20261008/continuation/publish/README.md)。[前轮报告](../../evidence/pr230-revision-20261008/publish/README.md) 保留原失败与诊断过程。最终报告分别列出代码、安全、性能、存储结论及共享资源例外；本任务书本身不代表验收通过。
 
 ## 修订范围与证据边界
 

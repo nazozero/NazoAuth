@@ -1,0 +1,287 @@
+{
+  "state_after_collector_deadline": [
+    {
+      "container": "r230-sustained-f2-20261008-nazoauth-1",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2847653,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-08T06:20:08.247335506Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      }
+    },
+    {
+      "container": "sis-worker-r230-sustained-f2-20261008",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2845522,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-08T06:19:56.270477322Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      }
+    },
+    {
+      "container": "sis-rcv-r230-sustained-f2-20261008",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2845210,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-08T06:19:55.263317627Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      }
+    },
+    {
+      "container": "r230-sustained-f2-20261008-migrate-1",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2840879,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-08T06:19:31.028021768Z",
+        "FinishedAt": "0001-01-01T00:00:00Z",
+        "Health": {
+          "Status": "healthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-08T06:31:33.218895956Z",
+              "End": "2026-10-08T06:31:33.285637291Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T06:31:35.286714897Z",
+              "End": "2026-10-08T06:31:35.346323024Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T06:31:37.34689973Z",
+              "End": "2026-10-08T06:31:37.496543166Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T06:31:39.497554643Z",
+              "End": "2026-10-08T06:31:39.561495738Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T06:31:41.562021435Z",
+              "End": "2026-10-08T06:31:41.63813584Z",
+              "ExitCode": 0,
+              "Output": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "container": "r230-sustained-f2-20261008-postgres-init-1",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-08T06:20:06.79375856Z",
+        "FinishedAt": "2026-10-08T06:20:07.301056757Z"
+      }
+    },
+    {
+      "container": "r230-sustained-f2-20261008-postgres-1",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2840472,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-08T06:19:24.065603366Z",
+        "FinishedAt": "0001-01-01T00:00:00Z",
+        "Health": {
+          "Status": "healthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-08T06:31:16.523096133Z",
+              "End": "2026-10-08T06:31:16.592408724Z",
+              "ExitCode": 0,
+              "Output": "/var/run/postgresql:5432 - accepting connections\n"
+            },
+            {
+              "Start": "2026-10-08T06:31:21.593216013Z",
+              "End": "2026-10-08T06:31:21.662147491Z",
+              "ExitCode": 0,
+              "Output": "/var/run/postgresql:5432 - accepting connections\n"
+            },
+            {
+              "Start": "2026-10-08T06:31:26.662835742Z",
+              "End": "2026-10-08T06:31:26.798488276Z",
+              "ExitCode": 0,
+              "Output": "/var/run/postgresql:5432 - accepting connections\n"
+            },
+            {
+              "Start": "2026-10-08T06:31:31.799906353Z",
+              "End": "2026-10-08T06:31:31.895433403Z",
+              "ExitCode": 0,
+              "Output": "/var/run/postgresql:5432 - accepting connections\n"
+            },
+            {
+              "Start": "2026-10-08T06:31:36.896965937Z",
+              "End": "2026-10-08T06:31:36.964224411Z",
+              "ExitCode": 0,
+              "Output": "/var/run/postgresql:5432 - accepting connections\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "container": "r230-sustained-f2-20261008-valkey-1",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2840443,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-08T06:19:24.072319562Z",
+        "FinishedAt": "0001-01-01T00:00:00Z",
+        "Health": {
+          "Status": "healthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-08T06:31:20.812886343Z",
+              "End": "2026-10-08T06:31:20.877500324Z",
+              "ExitCode": 0,
+              "Output": "PONG\n"
+            },
+            {
+              "Start": "2026-10-08T06:31:25.87889767Z",
+              "End": "2026-10-08T06:31:25.943358144Z",
+              "ExitCode": 0,
+              "Output": "PONG\n"
+            },
+            {
+              "Start": "2026-10-08T06:31:30.944642573Z",
+              "End": "2026-10-08T06:31:31.007378194Z",
+              "ExitCode": 0,
+              "Output": "PONG\n"
+            },
+            {
+              "Start": "2026-10-08T06:31:36.008608904Z",
+              "End": "2026-10-08T06:31:36.071830274Z",
+              "ExitCode": 0,
+              "Output": "PONG\n"
+            },
+            {
+              "Start": "2026-10-08T06:31:41.072898918Z",
+              "End": "2026-10-08T06:31:41.13649884Z",
+              "ExitCode": 0,
+              "Output": "PONG\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "container": "r230-sustained-f2-20261008-keyset-1",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2840461,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-08T06:19:24.066178603Z",
+        "FinishedAt": "0001-01-01T00:00:00Z",
+        "Health": {
+          "Status": "healthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-08T06:31:32.957615125Z",
+              "End": "2026-10-08T06:31:33.03557333Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T06:31:35.036577437Z",
+              "End": "2026-10-08T06:31:35.114251509Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T06:31:37.115114649Z",
+              "End": "2026-10-08T06:31:37.165419025Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T06:31:39.166903762Z",
+              "End": "2026-10-08T06:31:39.246731328Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T06:31:41.247234516Z",
+              "End": "2026-10-08T06:31:41.297080482Z",
+              "ExitCode": 0,
+              "Output": ""
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "note": "Post-timeout read, not replacement of INVALID performance verdict",
+  "database_read_exit": 0,
+  "database": {
+    "pending": 0,
+    "checkpoint": {
+      "last_sequence": 635406,
+      "anchor_sequence": 635406,
+      "batch_last_sequence": null,
+      "blocked": null
+    }
+  }
+}

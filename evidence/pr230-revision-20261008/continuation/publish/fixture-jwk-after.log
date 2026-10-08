@@ -1,0 +1,8 @@
+test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+
+EXIT 0

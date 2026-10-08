@@ -1,0 +1,13 @@
+{
+  "label": "r230-sustained-f2-20261008",
+  "key": "sustained-F2",
+  "containers_remaining": [
+    "unknown"
+  ],
+  "cleanup_elapsed_s": 0.223,
+  "total_elapsed_s": 599.895,
+  "request_sha256_unchanged": true,
+  "verdict": "INVALID",
+  "error": null,
+  "cleanup_error": "TimeoutExpired: Command '['docker', 'compose', '-f', '/src/docker-compose.perf.yml', '-f', '/src/evidence/pr230-revision-20261008/perf/sustained-F2/environment.override.yml', '-p', 'r230-sustained-f2-20261008', 'down', '-v', '--remove-orphans']' timed out after 0.05 seconds"
+}

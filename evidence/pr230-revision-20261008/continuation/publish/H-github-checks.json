@@ -1,0 +1,149 @@
+{
+  "headRefOid": "6b1e40f05d4d93eedc330a8d76eb441c826627b1",
+  "isDraft": false,
+  "mergeStateStatus": "CLEAN",
+  "mergeable": "MERGEABLE",
+  "reviewDecision": "",
+  "statusCheckRollup": [
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:37:32Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222674/job/113195334003",
+      "name": "Rust quality gate",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "code-quality"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:28:20Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222624/job/113195334210",
+      "name": "CodeQL Rust analysis",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "codeql"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:14:44Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222589/job/113195333453",
+      "name": "source-policy-gate",
+      "startedAt": "2026-10-08T07:14:35Z",
+      "status": "COMPLETED",
+      "workflowName": "conformance-security"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:14:53Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222840/job/113195334698",
+      "name": "Dependency vulnerability review",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "dependency-review"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:16:53Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222570/job/113195333654",
+      "name": "Operator JWS parser fuzz gate",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "operator-fuzz"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:16:17Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222604/job/113195334370",
+      "name": "performance runner image",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "performance-images"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:14:42Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222733/job/113195334444",
+      "name": "Release policy gate",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "release-policy"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:14:51Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222640/job/113195334077",
+      "name": "Validate inventory and active pins",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "specification-freshness"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:14:31Z",
+      "conclusion": "SKIPPED",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222840/job/113195336657",
+      "name": "Rust advisory audit",
+      "startedAt": "2026-10-08T07:14:32Z",
+      "status": "COMPLETED",
+      "workflowName": "dependency-review"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:14:51Z",
+      "conclusion": "SKIPPED",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222640/job/113195440669",
+      "name": "Verify official primary sources",
+      "startedAt": "2026-10-08T07:14:51Z",
+      "status": "COMPLETED",
+      "workflowName": "specification-freshness"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:15:03Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222674/job/113195334426",
+      "name": "Python script syntax gate",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "code-quality"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:22:35Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222589/job/113195333818",
+      "name": "supply-chain-gate",
+      "startedAt": "2026-10-08T07:14:33Z",
+      "status": "COMPLETED",
+      "workflowName": "conformance-security"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:23:29Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/actions/runs/37742222589/job/113197972279",
+      "name": "real-http-security-matrix",
+      "startedAt": "2026-10-08T07:22:37Z",
+      "status": "COMPLETED",
+      "workflowName": "conformance-security"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-08T07:28:13Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/nazozero/NazoAuth/runs/113199807578",
+      "name": "CodeQL",
+      "startedAt": "2026-10-08T07:28:10Z",
+      "status": "COMPLETED",
+      "workflowName": ""
+    }
+  ]
+}

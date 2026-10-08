@@ -1,0 +1,2 @@
+968d889d93503c5447b5f81f5d55809b70ef8cf089ce7b5f6d1bc5c56243c01b  /src/evidence/pr230-revision-20261008/perf/p04-H1/bin/pinset
+{"utc": "2026-10-08T08:18:05.467231+00:00", "stage": "task-environment-setup", "pinset_sha256": "968d889d93503c5447b5f81f5d55809b70ef8cf089ce7b5f6d1bc5c56243c01b", "isolated_pinset_output": "pinned_tasks=1 failed_procs=0", "scripts_volume": "r230-p04-h1-20261008-scripts", "pinbin_volume": "r230-p04-h1-20261008-pinbin", "tls_volume": "r230-p04-h1-20261008-audit-tls"}

@@ -1,0 +1,5 @@
+{
+  "exact_whole_window_latency": "summary/short-result produced from full k6 stream",
+  "time_series": "per-second complete-operation histogram, counts, sum and maximum; 10-second histogram quantiles are bounds",
+  "diagnostic_stream": "sampled optional forensic stream; rejected as exact latency population after 847 versus 24000 cohort mismatch; no sampled exact-quantile result used"
+}

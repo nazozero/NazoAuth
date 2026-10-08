@@ -1,0 +1,49 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.32s
+     Running tests/audit_commit_boundary.rs (target/debug/deps/audit_commit_boundary-ac6634436bdbcf27)
+
+running 4 tests
+test committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint ... proxy dropped committed ACK ReadyForQuery(I): caller Err, original backend 2279 disposed, checkpoint recovered, stale generation rejected, next batch ACK succeeded
+ok
+test every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect ... Genesis: late commit error propagated: unexpected repository error: revision late commit failure; backend=2287
+Genesis/raise: backend gone, replacement=2288, durable_changed=false
+Genesis: cancel at deferred commit, no early success, backend=2295
+Genesis/cancel: backend gone, replacement=2296, durable_changed=true
+Genesis: disconnect at deferred commit, no early success, backend=2302
+Genesis/disconnect: backend gone, replacement=2303, durable_changed=false
+Observe: late commit error propagated: unexpected repository error: revision late commit failure; backend=2310
+Observe/raise: backend gone, replacement=2311, durable_changed=false
+Observe: cancel at deferred commit, no early success, backend=2317
+Observe/cancel: backend gone, replacement=2318, durable_changed=true
+Observe: disconnect at deferred commit, no early success, backend=2325
+Observe/disconnect: backend gone, replacement=2326, durable_changed=false
+Singleton: late commit error propagated: unexpected repository error: revision late commit failure; backend=2333
+Singleton/raise: backend gone, replacement=2334, durable_changed=false
+Singleton: cancel at deferred commit, no early success, backend=2340
+Singleton/cancel: backend gone, replacement=2341, durable_changed=true
+Singleton: disconnect at deferred commit, no early success, backend=2348
+Singleton/disconnect: backend gone, replacement=2349, durable_changed=false
+Batch: late commit error propagated: unexpected repository error: revision late commit failure; backend=2355
+Batch/raise: backend gone, replacement=2357, durable_changed=false
+Batch: cancel at deferred commit, no early success, backend=2363
+Batch/cancel: backend gone, replacement=2364, durable_changed=true
+Batch: disconnect at deferred commit, no early success, backend=2371
+Batch/disconnect: backend gone, replacement=2372, durable_changed=false
+Ack: late commit error propagated: unexpected repository error: revision late commit failure; backend=2378
+Ack/raise: backend gone, replacement=2379, durable_changed=false
+Ack: cancel at deferred commit, no early success, backend=2386
+Ack/cancel: backend gone, replacement=2387, durable_changed=true
+Ack: disconnect at deferred commit, no early success, backend=2393
+Ack/disconnect: backend gone, replacement=2395, durable_changed=false
+Fail: late commit error propagated: unexpected repository error: revision late commit failure; backend=2401
+Fail/raise: backend gone, replacement=2402, durable_changed=false
+Fail: cancel at deferred commit, no early success, backend=2409
+Fail/cancel: backend gone, replacement=2410, durable_changed=true
+Fail: disconnect at deferred commit, no early success, backend=2417
+Fail/disconnect: backend gone, replacement=2418, durable_changed=false
+ok
+test first_data_row_is_not_a_commit_acknowledgement ... first DataRow=true, next result=23514 revision late commit failure; no durable event
+ok
+test fresh_audit_conflict_rolls_back_the_callers_business_transaction ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.04s
