@@ -72,8 +72,9 @@ const SENSITIVE_FIELD_NAMES: &[&str] = &[
 
 /// Audit evidence class: `Required` events are security evidence whose
 /// durable persistence must not silently fail; `Telemetry` events are
-/// best-effort operational signal. The class is metadata for routing checks
-/// and observability, not a filter — both classes reach the durable sink.
+/// best-effort operational signal. Both normally reach the durable sink;
+/// only explicitly classified, unattempted Telemetry may expire in memory.
+/// A Required-class or unknown event must never use that expiry policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AuditEventClass {
     Required,
@@ -476,6 +477,9 @@ struct QueuedAuditEvent {
 /// its own failed batch without delaying the Required channel. In Required
 /// anchor mode, Telemetry also waits for healthy export before appending, so
 /// an export outage fills the bounded channel rather than an unbounded ledger.
+/// Unattempted Telemetry older than the Required lag limit expires in memory
+/// instead of re-poisoning admission during recovery. Attempted batches keep
+/// their exact identity/content because an error does not prove rollback.
 /// Audit inside a business transaction retains its fail-closed semantics.
 pub(crate) fn install_persistent_audit_sink(
     repository: Arc<dyn SecurityAuditLedger>,
@@ -537,7 +541,8 @@ const AUDIT_PERSIST_COALESCE_WINDOW: Duration = Duration::from_millis(10);
 
 /// Drain one audit channel into the durable ledger. Required records start
 /// immediately and await the committed batch. Telemetry coalesces arrivals
-/// within a fixed window, then retries the same bounded batch in order.
+/// within a fixed window. Before its first append, expired Telemetry may be
+/// discarded; after an append is attempted, retries preserve the whole batch.
 /// Required failures return to every caller without retry and never share
 /// Telemetry's export-health or persistence backlog.
 async fn run_audit_persist_worker(
@@ -575,7 +580,7 @@ async fn run_audit_persist_worker(
                 .iter()
                 .all(|request| request.completion.is_some() == required)
         );
-        let (events, mut completions): (Vec<SecurityAuditEvent>, Vec<_>) = batch
+        let (mut events, mut completions): (Vec<SecurityAuditEvent>, Vec<_>) = batch
             .into_iter()
             .map(|request| {
                 let event = request.event;
@@ -591,7 +596,7 @@ async fn run_audit_persist_worker(
                 )
             })
             .unzip();
-        let batch_len = events.len() as u64;
+        let mut append_attempted = false;
         let mut retry_delay = Duration::from_millis(100);
         loop {
             // Reuse the configured live-health gate, not a new disk queue or
@@ -612,8 +617,43 @@ async fn run_audit_persist_worker(
                 },
                 _ => Ok(()),
             };
+            // Check after the awaited health query: queue/connection waiting
+            // may have aged a previously fresh event. Only a never-submitted
+            // batch with no Required waiter is eligible. An attempted append
+            // may already have committed, so its members are never filtered.
+            if !append_attempted
+                && !required
+                && completions.iter().all(Option::is_none)
+                && let Some(preflight) = &telemetry_preflight
+            {
+                let now = Utc::now();
+                let previous_len = events.len();
+                events.retain(|event| {
+                    audit_event_is_required(&event.event_type)
+                        || !preflight.telemetry_event_expired(event.occurred_at, now)
+                });
+                let discarded_events = (previous_len - events.len()) as u64;
+                if discarded_events > 0 {
+                    // Every completion is None here; preserve the zip length
+                    // without creating a second copy of event or tenant data.
+                    completions.truncate(events.len());
+                    tracing::warn!(
+                        target: "audit.persistence",
+                        discarded_events,
+                        persistence_status = "expired_unattempted_telemetry",
+                        "expired unattempted telemetry discarded before persistence"
+                    );
+                }
+                if events.is_empty() {
+                    break;
+                }
+            }
+            let batch_len = events.len() as u64;
             let result = match readiness {
-                Ok(()) => repository.append_batch(&events).await,
+                Ok(()) => {
+                    append_attempted = true;
+                    repository.append_batch(&events).await
+                }
                 Err(error) => Err(error),
             };
             match result {
@@ -940,3 +980,7 @@ fn audit_event_name_valid(event: &str) -> bool {
 #[cfg(test)]
 #[path = "../../tests/unit/adapters/audit.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/adapters/audit/recovery.rs"]
+mod recovery_tests;

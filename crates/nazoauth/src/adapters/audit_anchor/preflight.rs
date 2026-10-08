@@ -21,6 +21,19 @@ impl AuditAnchorPreflight {
         self.config.mode.is_required()
     }
 
+    /// Applies only before the first persistence attempt of explicit Telemetry.
+    /// Share the Required admission clock/threshold instead of inventing a TTL
+    /// or rewriting event time. Unknown/future clock state is not an expiry.
+    pub(crate) fn telemetry_event_expired(
+        &self,
+        occurred_at: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> bool {
+        self.is_required()
+            && age_seconds(now, occurred_at)
+                .is_ok_and(|age| age > duration_seconds(self.config.max_lag))
+    }
+
     pub(crate) fn ensure_fresh(&self, status: &SecurityAuditAnchorHealth) -> anyhow::Result<()> {
         if !self.is_required() {
             return Ok(());

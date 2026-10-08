@@ -159,8 +159,9 @@ impl SecurityStateMaintenanceRepository {
         connection: &mut AsyncPgConnection,
     ) -> Result<GenericCleanupCounts, RepositoryError> {
         sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
-            .get_result::<GenericCleanupCounts>(connection)
+            .load::<GenericCleanupCounts>(connection)
             .await
+            .and_then(single_cleanup_row)
             .map_err(map_error)
     }
 
@@ -169,8 +170,9 @@ impl SecurityStateMaintenanceRepository {
         connection: &mut AsyncPgConnection,
     ) -> Result<u64, RepositoryError> {
         let row = sql_query("SELECT public.nazo_cleanup_authorization_decisions() AS deleted")
-            .get_result::<DecisionCleanupCount>(connection)
+            .load::<DecisionCleanupCount>(connection)
             .await
+            .and_then(single_cleanup_row)
             .map_err(map_error)?;
         debug_assert!((0..=CLEANUP_BATCH_LIMIT).contains(&row.deleted));
         Ok(row.deleted.max(0) as u64)
@@ -183,8 +185,9 @@ impl SecurityStateMaintenanceRepository {
         let count = sql_query(
             "SELECT nazo_openid4vp_cleanup_expired_transactions() AS deleted_transactions",
         )
-        .get_result::<PresentationCleanupCount>(connection)
+        .load::<PresentationCleanupCount>(connection)
         .await
+        .and_then(single_cleanup_row)
         .map_err(map_error)?;
         debug_assert!((0..=CLEANUP_BATCH_LIMIT as i32).contains(&count.deleted_transactions));
         Ok(count.deleted_transactions.max(0) as u64)
@@ -551,8 +554,9 @@ impl SecurityStateMaintenanceRepository {
         )
         .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
         .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
-        .get_result::<CredentialExpiryCounts>(connection)
+        .load::<CredentialExpiryCounts>(connection)
         .await
+        .and_then(single_cleanup_row)
         .map_err(map_error)?;
         let mut counts = CredentialCleanupCounts {
             offers: expired.offers as u64,
@@ -720,6 +724,17 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             result
         })
     }
+}
+
+// These independent SELECTs perform writes. Consume the complete implicit
+// transaction before trusting its counts or returning the guarded connection.
+fn single_cleanup_row<T>(rows: Vec<T>) -> Result<T, diesel::result::Error> {
+    let [row]: [T; 1] = rows.try_into().map_err(|_: Vec<T>| {
+        diesel::result::Error::DeserializationError(
+            "security-state cleanup returned an unexpected row count".into(),
+        )
+    })?;
+    Ok(row)
 }
 
 fn map_error(error: diesel::result::Error) -> RepositoryError {

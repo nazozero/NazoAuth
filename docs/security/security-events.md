@@ -9,7 +9,7 @@ implements their storage. A structured log line alone is not a durable receipt.
 
 | Path | Guarantee |
 | --- | --- |
-| `audit_event` | Validates fields, logs `target="audit"`, then tries a bounded 4,096-entry in-process queue. The worker retries the oldest append from 100 ms up to 5 s indefinitely. Queue saturation/disconnection is reported as `target="audit.persistence"`, `persistence_status="not_queued"` — or `"dropped_required"` when the dropped event belongs to the required evidence class. Queued events can be lost on process exit before persistence. Required-class events emitted through this path additionally log `persistence_status="misrouted_required"` (once per event name per process): they should use `audit_event_required` or a transactional append instead. |
+| `audit_event` | Validates fields, logs `target="audit"`, then tries a bounded 4,096-entry in-process queue. Attempted batches retry intact from 100 ms up to 5 s. In Required anchor mode, explicit Telemetry that has never been submitted may instead expire before its first append, as specified below. Queue saturation/disconnection is reported as `target="audit.persistence"`, `persistence_status="not_queued"` — or `"dropped_required"` when the dropped event belongs to the required evidence class. Queued events can be lost on process exit before persistence. Required-class events emitted through this path additionally log `persistence_status="misrouted_required"` (once per event name per process): they should use `audit_event_required` or a transactional append instead. |
 | `audit_event_required` | Awaits ledger append before logging `persistence_status="durable"` and `event_id`; append failure propagates to the caller. This does not put a separate business mutation in the same transaction. |
 | Transactional repository append | Token issuance, refresh rotation/reuse handling, and tenant directory/resource operations append their owned audit event with the corresponding durable mutation in one database transaction. |
 | External anchor worker | Exports only committed ledger events through the durable outbox. Receiver acceptance, retry ordering, freshness, and remaining trust limits are specified in [audit anchoring](audit-anchor.md). |
@@ -30,6 +30,52 @@ Other issuance shapes retain the full storage preflight.
 Where the mutation and ledger do not share a transaction, the caller records a
 required `*_intent` before changing state and emits an outcome afterward. An
 intent proves admission to an attempt; it does not prove the mutation committed.
+
+## Telemetry expiry and recovery admission
+
+In Required anchor mode, the worker still checks live exporter health before
+appending. After that awaited check, it removes only explicit Telemetry whose
+original event age exceeds `AUDIT_ANCHOR_MAX_LAG_SECONDS`, using the same clock
+and seconds boundary as Required admission. This prevents old memory-only
+telemetry from recreating an unhealthy ledger immediately after recovery.
+
+Expiry is permitted only while the batch has **never** been submitted to the
+repository and has no Required completion waiter. The event allowlist remains
+the sole class authority: Required-class and unknown names survive even when
+misrouted onto the Telemetry channel. An append attempt latches the batch as
+non-discardable before entering the repository; every retry keeps its exact
+members, IDs, timestamps and payloads because an error does not prove rollback.
+Already persisted events and business retention are untouched. Empty filtered
+batches issue no append. Future/unknown clock state is not treated as expiry.
+
+Each discarded group emits `target="audit.persistence"`,
+`persistence_status="expired_unattempted_telemetry"` and `discarded_events`.
+Collectors must include this count separately from queue-full rejection and
+persistence success; no payload, tenant or credential is logged by the expiry
+record. A successful read and its initial audit log do not promise that its
+best-effort telemetry will eventually reach the ledger. Memory remains bounded
+by the existing 4,096 queue entries and at most 64 entries in the active batch.
+
+This does not relax Required freshness or promise instant recovery: existing
+persistent evidence, uncertain batches, unavailable storage, invalid checkpoints
+and receiver rejection still block the relevant operations. Recovery acceptance
+must check that *unattempted stale Telemetry* does not repeatedly re-close the
+gate after the mandatory backlog drains, not merely that a final drain succeeds.
+
+Optional and Disabled retain their existing no-health-gate policy. They do not
+guarantee bounded disk backlog during indefinite exporter failure or absence;
+Required-mode fault results must not be generalized to them. Deployments needing
+outage admission control must run the independent exporter with Required mode
+and monitor accepted rate, pending age, disk headroom and recovery. An age gate
+is not a universal byte quota, and no mode may discard Required evidence to
+manufacture a flat storage curve.
+
+The four independent cleanup count queries also consume their complete result
+streams before using deletion counts or returning the guarded connection. A
+late commit error, cancellation or disconnection cannot be reported as confirmed
+cleanup success. Categories retain their separate commit boundaries: an earlier
+category can already be committed when a later category fails. No new outer
+transaction, SQL round trip, retention deadline or queue is introduced.
 
 ## Structured HTTP/application events
 
@@ -72,8 +118,9 @@ Each definition also carries an evidence class: `required` marks security
 evidence whose durable persistence must not silently fail (intents, decisions,
 mutations, replay detections, issuance); `telemetry` marks best-effort
 operational signal. The class governs routing checks and the
-`misrouted_required`/`dropped_required` statuses above, not filtering — both
-classes reach the durable sink. Only these events are telemetry:
+`misrouted_required`/`dropped_required` statuses above. Only explicit Telemetry
+is eligible for the pre-persistence expiry below; Required and unknown names
+are never expired by that policy. Only these events are telemetry:
 `authorization_approved`, `authorization_denied`,
 `authorization_prompt_none_approved`, `ciba_authorization_approved`,
 `ciba_authorization_denied`, `ciba_authorization_started`,
