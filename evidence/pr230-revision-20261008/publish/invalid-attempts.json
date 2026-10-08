@@ -1,0 +1,53 @@
+[
+  {
+    "archive": "invalid-helper-image-p06-A1",
+    "verdict": "INVALID",
+    "reason": "RuntimeError: task command failed rc=1:  Image sha256:b86f9eb3c8db78b36f54afebac0ad7097acae3bbf65a78a6854938849bf481df Pulling \n Image sha256:b86f9eb3c8db78b36f54afebac0ad7097acae3bbf65a78a6854938849bf481df unknown: failed to resolve reference \"docker.io/library/sha256:b86f9eb3c8db78b36f54afebac0ad7097acae3bbf65a78a6854938849bf481df\": unexpected status from HEAD request to https://mirror.ccs.tencentyun.com/v2/library/sha256/manifests/b86f9eb3c8db78b36f54afebac0ad7097acae3bbf65a78a6854938849bf481",
+    "short_result_sha256": "e0e39b9026f087afc007a06d0012eeef669665e000dec5ab537ba879f0f798d1",
+    "cleanup": {
+      "label": "r230-p06-a1-20261008",
+      "key": "p06-A1",
+      "containers_remaining": [],
+      "cleanup_elapsed_s": 0.219,
+      "total_elapsed_s": 3.553,
+      "request_sha256_unchanged": true,
+      "verdict": "INVALID",
+      "error": null,
+      "cleanup_error": null
+    }
+  },
+  {
+    "archive": "invalid-generator-affinity-p03-B1",
+    "verdict": "INVALID",
+    "reason": "RuntimeError: CPU_AFFINITY_INVALID: main generator",
+    "short_result_sha256": "b08125d8c7a9ce08716fa0d05472da4f6a92632756c8c15c72707a0246440ea8",
+    "cleanup": {
+      "label": "r230-p03-b1-20261008",
+      "key": "p03-B1",
+      "containers_remaining": [],
+      "cleanup_elapsed_s": 23.035,
+      "total_elapsed_s": 122.066,
+      "request_sha256_unchanged": true,
+      "verdict": "INVALID",
+      "error": null,
+      "cleanup_error": null
+    }
+  },
+  {
+    "archive": "invalid-generator-affinity-p03-B1-retry",
+    "verdict": "INVALID",
+    "reason": "RuntimeError: CPU_AFFINITY_INVALID: main generator",
+    "short_result_sha256": "d8383dc9f06859fa6b52ad404f7a58f951d5d06c90c84ccaf2b38f218334738a",
+    "cleanup": {
+      "label": "r230-p03-b1-20261008",
+      "key": "p03-B1",
+      "containers_remaining": [],
+      "cleanup_elapsed_s": 22.292,
+      "total_elapsed_s": 95.412,
+      "request_sha256_unchanged": true,
+      "verdict": "INVALID",
+      "error": null,
+      "cleanup_error": null
+    }
+  }
+]

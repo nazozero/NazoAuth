@@ -1,0 +1,511 @@
+{
+  "source_sha": "7ef6f98d5988008b320468941767b96323aadc36",
+  "fixture": "Required, freshness/max_lag 10s, 200 Telemetry reads/s + 1 Required disclosure/s",
+  "phases": {
+    "healthy": [
+      0,
+      40
+    ],
+    "receiver_http500": [
+      40,
+      90
+    ],
+    "recovery": [
+      90,
+      135
+    ],
+    "permanent_rejection": [
+      135,
+      185
+    ],
+    "recovery_after_operator_unblock": [
+      185,
+      240
+    ],
+    "stop_and_drain": [
+      240,
+      400
+    ]
+  },
+  "provenance": {
+    "point": "r230-fault-d1-20261008",
+    "source_sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "app_image_ref": "sha256:072f08d9cd136b9f1633adf04106c69c5303aa242d495ef46cae02969f2102eb",
+    "app_image_id": "sha256:072f08d9cd136b9f1633adf04106c69c5303aa242d495ef46cae02969f2102eb",
+    "binary_path": "/usr/local/bin/nazoauth",
+    "binary_sha256": "e6d526f5076a8a52a70b8faf0f04d341595cf6240a9d05884e291c120140ee97",
+    "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "pg_max_wal_size": "8GB",
+    "pg_checkpoint_timeout": "5min",
+    "pg_checkpoint_completion_target": "0.9",
+    "pg_fsync": "on",
+    "pg_synchronous_commit": "on",
+    "pg_full_page_writes": "on",
+    "pg_shared_buffers": "128MB",
+    "pg_max_connections": "100",
+    "pg_track_io_timing": "on",
+    "applied_migrations_sha256": "3f056d89d04d1977470f757ef8f8bc2e5c50ae7ce1de0a2c6984c4b4abecaefd",
+    "app_image_revision": "7ef6f98d5988008b320468941767b96323aadc36",
+    "app_source_sha_file": "7ef6f98d5988008b320468941767b96323aadc36",
+    "source_sha_registered": true,
+    "source_sha_eq_image_revision": true,
+    "source_sha_eq_file": true,
+    "runner_image_ref": "sha256:e0c21edcb48eb60f31fc38abc6f2f91d2a450f02aa0f81082b12b5e57d3ccdd7",
+    "runner_image_id": "sha256:e0c21edcb48eb60f31fc38abc6f2f91d2a450f02aa0f81082b12b5e57d3ccdd7",
+    "runner_image_revision": "storage-fix-harness-20261007",
+    "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+    "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+    "k6_oauth_eq_workspace": true
+  },
+  "app_audit_configuration": {
+    "RUST_LOG": "warn,audit.persistence=debug",
+    "AUDIT_ANCHOR_FRESHNESS_SECONDS": "10",
+    "AUDIT_ANCHOR_MAX_LAG_SECONDS": "10",
+    "AUDIT_ANCHOR_MODE": "required",
+    "DATABASE_MAX_CONNECTIONS": "32"
+  },
+  "sampler_health": {
+    "ok": true,
+    "checks": {
+      "soak": {
+        "container": "sis-sampler-r230-fault-d1-20261008",
+        "running": true,
+        "meta_ok": true,
+        "detail": "ok"
+      },
+      "proc": {
+        "container": "sis-proc-r230-fault-d1-20261008",
+        "running": true,
+        "meta_ok": true,
+        "detail": "ok"
+      }
+    },
+    "real_sample_ok": true
+  },
+  "load_exit": 0,
+  "error": null,
+  "cleanup_error": null,
+  "drain": {
+    "pending": 0,
+    "last_sequence": 16912,
+    "anchor_sequence": 16912,
+    "drained": true,
+    "total": 0,
+    "exported_retained": 0
+  },
+  "audit_final": {
+    "receiver_state": {
+      "accepted": 695,
+      "checkpoint": {
+        "accepted_batches": 694,
+        "accepted_events": 16912,
+        "batch_digest": "96GryjrfRePdcbl9Nh6zqaUOmXNruhUD-R6fA7DYU44",
+        "checkpoint_kind": "batch",
+        "deployment_id": "01a119a6-6c8d-72d8-858c-75750b95898c",
+        "last_hash": "D9aREyi_uV0PGk1Si-4fbyt080sLnwkRuA5C37QyNFI",
+        "last_sequence": 16912,
+        "updated_at": "2026-10-08T04:01:58.621503066Z"
+      },
+      "duplicates": 1,
+      "fault": "none",
+      "rejected": 1,
+      "requests": 710,
+      "collected": true
+    },
+    "receiver_checkpoint": {
+      "deployment_id": "01a119a6-6c8d-72d8-858c-75750b95898c",
+      "checkpoint_kind": "batch",
+      "last_sequence": 16912,
+      "last_hash": "D9aREyi_uV0PGk1Si-4fbyt080sLnwkRuA5C37QyNFI",
+      "batch_digest": "96GryjrfRePdcbl9Nh6zqaUOmXNruhUD-R6fA7DYU44",
+      "accepted_batches": 694,
+      "accepted_events": 16912,
+      "updated_at": "2026-10-08T04:01:58.621503066Z",
+      "collected": true
+    },
+    "db": {
+      "collected": true,
+      "pending": 0,
+      "total": 0,
+      "exported_retained": 0,
+      "last_sequence": 16912,
+      "last_hash": "0fd6911328bfb95d0f1a4d528bee1f6f2b74f34b0b9f0911b80e42dfb4323452",
+      "anchor_deployment_id": "01a119a6-6c8d-72d8-858c-75750b95898c",
+      "anchor_sequence": 16912,
+      "anchor_hash": "0fd6911328bfb95d0f1a4d528bee1f6f2b74f34b0b9f0911b80e42dfb4323452"
+    }
+  },
+  "phase_results": [
+    {
+      "phase": "healthy",
+      "start": 0,
+      "end": 40,
+      "http": {
+        "telemetry:200": 7800,
+        "required:200": 39
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        1,
+        169,
+        325
+      ],
+      "anchor_first_last": [
+        0,
+        6868
+      ],
+      "oldest_pending_max_s": 1.625328
+    },
+    {
+      "phase": "http500_grace",
+      "start": 40,
+      "end": 60,
+      "http": {
+        "telemetry:200": 3999,
+        "required:200": 12,
+        "required:503": 8
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        156,
+        2207,
+        2207
+      ],
+      "anchor_first_last": [
+        7886,
+        7886
+      ],
+      "oldest_pending_max_s": 15.775724
+    },
+    {
+      "phase": "http500_unhealthy",
+      "start": 60,
+      "end": 90,
+      "http": {
+        "telemetry:200": 6001,
+        "required:503": 30
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        2207,
+        2207,
+        2207
+      ],
+      "anchor_first_last": [
+        7886,
+        7886
+      ],
+      "oldest_pending_max_s": 45.775574
+    },
+    {
+      "phase": "recovery",
+      "start": 90,
+      "end": 135,
+      "http": {
+        "required:503": 36,
+        "telemetry:200": 8999,
+        "required:200": 9
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        2207,
+        65,
+        2207
+      ],
+      "anchor_first_last": [
+        7886,
+        10746
+      ],
+      "oldest_pending_max_s": 76.566136
+    },
+    {
+      "phase": "permanent_rejection",
+      "start": 135,
+      "end": 185,
+      "http": {
+        "telemetry:200": 10001,
+        "required:503": 49,
+        "required:200": 1
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        0,
+        65,
+        65
+      ],
+      "anchor_first_last": [
+        10940,
+        10940
+      ],
+      "oldest_pending_max_s": 125.609302
+    },
+    {
+      "phase": "recovery_after_unblock",
+      "start": 185,
+      "end": 240,
+      "http": {
+        "required:503": 37,
+        "telemetry:200": 11000,
+        "required:200": 18
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        65,
+        64,
+        65
+      ],
+      "anchor_first_last": [
+        10940,
+        12558
+      ],
+      "oldest_pending_max_s": 172.604976
+    },
+    {
+      "phase": "stop_drain",
+      "start": 240,
+      "end": 401,
+      "http": {
+        "telemetry:200": 200,
+        "required:200": 1,
+        "required:503": 1
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        65,
+        0,
+        65
+      ],
+      "anchor_first_last": [
+        12687,
+        16912
+      ],
+      "oldest_pending_max_s": 214.916616
+    }
+  ],
+  "events": [
+    {
+      "kind": "fault_transition",
+      "seconds": 40.00508597888984,
+      "mode": "http_500",
+      "status": 200
+    },
+    {
+      "kind": "fault_transition",
+      "seconds": 90.01079691108316,
+      "mode": "none",
+      "status": 200
+    },
+    {
+      "kind": "fault_transition",
+      "seconds": 135.00430044298992,
+      "mode": "reject_permanent",
+      "status": 200
+    },
+    {
+      "kind": "fault_transition",
+      "seconds": 185.00438429391943,
+      "mode": "none",
+      "status": 200
+    },
+    {
+      "kind": "operator_unblock",
+      "seconds": 185.00788041995838,
+      "result": true
+    },
+    {
+      "kind": "load_stopped",
+      "seconds": 240.0321159788873
+    }
+  ],
+  "queue_accounting": {
+    "telemetry_http_200": 48000,
+    "required_http_200": 80,
+    "worker_persisted_events": 16911,
+    "telemetry_queue_full_rejections": 31169,
+    "inferred_unpersisted_accepted_events": 0,
+    "inference": "HTTP Telemetry reads each enqueue one event; Required 200 corresponds to one worker event; registration commits in business SQL. Counts are derived, not an internal queue gauge.",
+    "sampled_inferred_max": 4160,
+    "sampled_inferred_last": 0,
+    "inference_timing_limit": "HTTP completion and log timestamps can straddle sampling boundaries; this is accounting, not a direct internal gauge."
+  },
+  "app_rss_kb": {
+    "first": 41236,
+    "last": 51404,
+    "max": 51520
+  },
+  "storage": {
+    "first": {
+      "ts": 1791431744.333728,
+      "pending": 1,
+      "oldest_pending_s": 0.030246,
+      "pending_by_type": {
+        "dynamic_client_registered": 1
+      },
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "family_eligible": 0,
+      "family_live": 0,
+      "contract_orphan": 0,
+      "spent_eligible": 0,
+      "spent_retained": 0,
+      "anchor": 0,
+      "observed_at": 1791431742.435255,
+      "blocked": null,
+      "db_bytes": 12662463,
+      "tables": [
+        {
+          "relname": "security_audit_events",
+          "table_bytes": 16384,
+          "index_bytes": 57344,
+          "n_tup_ins": 1,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_token_issuances",
+          "table_bytes": 8192,
+          "index_bytes": 40960,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "security_audit_chain_entries",
+          "table_bytes": 8192,
+          "index_bytes": 24576,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_contracts",
+          "table_bytes": 8192,
+          "index_bytes": 16384,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_families",
+          "table_bytes": 8192,
+          "index_bytes": 57344,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_spent_tokens",
+          "table_bytes": 8192,
+          "index_bytes": 24576,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        }
+      ],
+      "locks": [
+        {
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "n": 4,
+          "xact_age_s": null
+        }
+      ]
+    },
+    "last": {
+      "ts": 1791432144.315135,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "pending_by_type": {},
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "family_eligible": 0,
+      "family_live": 0,
+      "contract_orphan": 0,
+      "spent_eligible": 0,
+      "spent_retained": 0,
+      "anchor": 16912,
+      "observed_at": 1791432142.794289,
+      "blocked": null,
+      "db_bytes": 14407359,
+      "tables": [
+        {
+          "relname": "security_audit_events",
+          "table_bytes": 24576,
+          "index_bytes": 598016,
+          "n_tup_ins": 16912,
+          "n_tup_del": 16912,
+          "n_dead_tup": 0,
+          "autovacuum_count": 6
+        },
+        {
+          "relname": "oauth_token_issuances",
+          "table_bytes": 8192,
+          "index_bytes": 40960,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "security_audit_chain_entries",
+          "table_bytes": 24576,
+          "index_bytes": 1048576,
+          "n_tup_ins": 16912,
+          "n_tup_del": 16912,
+          "n_dead_tup": 0,
+          "autovacuum_count": 7
+        },
+        {
+          "relname": "oauth_refresh_contracts",
+          "table_bytes": 8192,
+          "index_bytes": 16384,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_families",
+          "table_bytes": 8192,
+          "index_bytes": 57344,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_spent_tokens",
+          "table_bytes": 8192,
+          "index_bytes": 24576,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        }
+      ],
+      "locks": [
+        {
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "n": 7,
+          "xact_age_s": null
+        }
+      ]
+    },
+    "max_pending": 2207,
+    "max_oldest_pending_s": 214.916616
+  },
+  "checks": {
+    "load_completed": true,
+    "required_fail_closed_http500": true,
+    "queue_saturation_observed": true,
+    "worker_accounting_converged": true,
+    "pending_zero_last": true
+  }
+}

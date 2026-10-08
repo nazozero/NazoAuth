@@ -1,0 +1,18 @@
+{
+  "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+  "utc": "2026-10-08T02:47:16.869752+00:00",
+  "command": [
+    "cargo",
+    "build",
+    "--release",
+    "--locked",
+    "--package",
+    "nazoauth",
+    "--bin",
+    "nazoauth"
+  ],
+  "exit": 0,
+  "seconds": 0.8255754359997809,
+  "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-4.log",
+  "binary_sha256": "158015a12f8ca55358f341c0edf8a28f6a15c237e55277e388d7260b7a15ae90"
+}

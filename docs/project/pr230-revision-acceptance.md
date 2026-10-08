@@ -1,5 +1,7 @@
 # PR #230：审计修订与 agents 验收任务
 
+本轮实际运行、修复与未通过项见 [2026-10-08 验收报告](../../evidence/pr230-revision-20261008/publish/README.md)。该报告保留性能/存储失败和验证边界，本任务书不代表验收通过。
+
 ## 修订范围与证据边界
 
 仓库：`nazozero/NazoAuth`；PR：`https://github.com/nazozero/NazoAuth/pull/230`。

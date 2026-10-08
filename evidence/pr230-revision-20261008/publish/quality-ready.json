@@ -1,0 +1,166 @@
+{
+  "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+  "full_suite_source": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+  "full_suite_exit": 101,
+  "resolved_failure": "fixed shared client ID collided with grant left by previous suite; unique per-run client; all affected module tests repeated twice",
+  "gates": [
+    {
+      "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+      "utc": "2026-10-08T02:29:38.133510+00:00",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 2.3359478439670056,
+      "log": "evidence/pr230-revision-20261008/final-aaa5070f-0.log"
+    },
+    {
+      "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+      "utc": "2026-10-08T02:30:18.164083+00:00",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--keep-going",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 40.03034340380691,
+      "log": "evidence/pr230-revision-20261008/final-aaa5070f-1.log"
+    },
+    {
+      "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+      "utc": "2026-10-08T02:31:01.494980+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "--all-features",
+        "--locked",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "refresh_family_capacity",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 43.330660965060815,
+      "log": "evidence/pr230-revision-20261008/final-aaa5070f-2.log"
+    },
+    {
+      "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+      "utc": "2026-10-08T02:45:34.135015+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--all-features",
+        "--locked",
+        "--no-fail-fast",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 101,
+      "seconds": 872.6398059059866,
+      "log": "evidence/pr230-revision-20261008/final-aaa5070f-3.log"
+    }
+  ],
+  "affected_gates": [
+    {
+      "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+      "utc": "2026-10-08T02:45:40.093031+00:00",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 2.3378121061250567,
+      "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-0.log"
+    },
+    {
+      "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+      "utc": "2026-10-08T02:46:01.587725+00:00",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--keep-going",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 21.494428706122562,
+      "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-1.log"
+    },
+    {
+      "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+      "utc": "2026-10-08T02:47:12.245933+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "--all-features",
+        "--locked",
+        "-p",
+        "nazoauth",
+        "--lib",
+        "domain::authorization_decision_tests",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 70.65793296112679,
+      "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-2.log"
+    },
+    {
+      "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+      "utc": "2026-10-08T02:47:16.043887+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "--all-features",
+        "--locked",
+        "-p",
+        "nazoauth",
+        "--lib",
+        "domain::authorization_decision_tests",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 3.7976230329368263,
+      "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-3.log"
+    },
+    {
+      "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+      "utc": "2026-10-08T02:47:16.869752+00:00",
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "--package",
+        "nazoauth",
+        "--bin",
+        "nazoauth"
+      ],
+      "exit": 0,
+      "seconds": 0.8255754359997809,
+      "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-4.log",
+      "binary_sha256": "158015a12f8ca55358f341c0edf8a28f6a15c237e55277e388d7260b7a15ae90"
+    }
+  ],
+  "production_binary_equal": true
+}

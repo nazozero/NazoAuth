@@ -1,0 +1,55 @@
+{
+  "records": {
+    "A": {
+      "sha": "67f836f2b616e811ce9a20bb857a01ea9517b42b",
+      "utc": "2026-10-08T02:27:13.197863+00:00",
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "--package",
+        "nazoauth",
+        "--bin",
+        "nazoauth"
+      ],
+      "exit": 0,
+      "seconds": 163.78254401800223,
+      "log": "evidence/pr230-revision-20261008/build-67f836f2.log",
+      "binary_sha256": "f2f4ae9a6093395867c1ba26af68cd097feb19994d1859843dad8aa57f920006"
+    },
+    "B": {
+      "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+      "utc": "2026-10-08T02:47:16.869752+00:00",
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "--package",
+        "nazoauth",
+        "--bin",
+        "nazoauth"
+      ],
+      "exit": 0,
+      "seconds": 0.8255754359997809,
+      "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-4.log",
+      "binary_sha256": "158015a12f8ca55358f341c0edf8a28f6a15c237e55277e388d7260b7a15ae90"
+    }
+  },
+  "images": {
+    "A": "sha256:538da7e55278cf7c4939b81e0c20ae4a8705826de403df4dec67d9d648a638f0",
+    "B": "sha256:34352943341b25b0d1b230b55960efbb7d7386a67e6351bd8e5f2444cdc85ecc"
+  },
+  "runner": "sha256:e0c21edcb48eb60f31fc38abc6f2f91d2a450f02aa0f81082b12b5e57d3ccdd7",
+  "order": [
+    "p06-A1",
+    "p06-B1",
+    "p10-B1",
+    "p10-A1",
+    "p03-A1",
+    "p03-B1",
+    "p04-B1",
+    "p04-A1"
+  ]
+}

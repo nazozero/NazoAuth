@@ -1,0 +1,144 @@
+{
+  "utc": "2026-10-08T04:04:10.232375+00:00",
+  "task_project_containers": [
+    {
+      "project": "r230-p06-a1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p06-a1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p06-b1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p06-b1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p10-b1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p10-b1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p10-a1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p10-a1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p03-a1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p03-a1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p03-b1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p03-b1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p04-b1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p04-b1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p04-a1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-p04-a1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-fault-b1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-fault-b1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-sustained-b1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-sustained-b1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-fault-d1-20261008",
+      "label": "diag.owner",
+      "remaining": [],
+      "exit": 0
+    },
+    {
+      "project": "r230-fault-d1-20261008",
+      "label": "com.docker.compose.project",
+      "remaining": [],
+      "exit": 0
+    }
+  ],
+  "unit_fixture_states": {
+    "nazoauth-storage-fix-pg-20261007": "exited",
+    "nazoauth-storage-fix-vk-20261007": "exited",
+    "nazoauth-revision-minio-20261008": "exited"
+  },
+  "controller_stop_exit": 0,
+  "runner": "original authorized execution container retained idle; no build/test/load command running"
+}

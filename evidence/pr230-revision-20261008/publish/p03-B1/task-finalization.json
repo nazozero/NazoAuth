@@ -1,0 +1,16 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-r230-p03-b1-20261008",
+    "sis-proc-r230-p03-b1-20261008",
+    "sis-sampler-r230-p03-b1-20261008",
+    "sis-side-argon2-r230-p03-b1-20261008",
+    "sis-side-fapi-r230-p03-b1-20261008",
+    "sis-side-meta-r230-p03-b1-20261008",
+    "sis-side-refresh-r230-p03-b1-20261008"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

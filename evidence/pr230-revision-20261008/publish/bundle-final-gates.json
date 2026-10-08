@@ -1,0 +1,71 @@
+[
+  {
+    "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "utc": "2026-10-08T03:50:12.956275+00:00",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 3.6228764560073614,
+    "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-0.log"
+  },
+  {
+    "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "utc": "2026-10-08T03:50:46.719563+00:00",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--keep-going",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 33.762894892832264,
+    "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-1.log"
+  },
+  {
+    "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "utc": "2026-10-08T03:51:49.243659+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "http::admin::mtls_trust",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 62.523759180214256,
+    "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-2.log"
+  },
+  {
+    "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "utc": "2026-10-08T03:54:31.750686+00:00",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--package",
+      "nazoauth",
+      "--bin",
+      "nazoauth"
+    ],
+    "exit": 0,
+    "seconds": 162.50670513277873,
+    "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-3.log",
+    "binary_sha256": "e6d526f5076a8a52a70b8faf0f04d341595cf6240a9d05884e291c120140ee97"
+  }
+]
