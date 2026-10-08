@@ -1,0 +1,33 @@
+name: model-audit-snapshot
+
+on:
+  push:
+    branches: [refactor/exhaustive-model-audit-20261009]
+    paths: [.github/workflows/model-audit-snapshot.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  source-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Export the exact tracked source for the model audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nazo-model-audit
+          git rev-parse HEAD > /tmp/nazo-model-audit/source-sha.txt
+          git ls-tree -r --full-tree HEAD > /tmp/nazo-model-audit/tracked-files.txt
+          git archive --format=tar.gz --output=/tmp/nazo-model-audit/source.tar.gz HEAD
+          sha256sum /tmp/nazo-model-audit/source.tar.gz > /tmp/nazo-model-audit/source.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: model-audit-source-${{ github.sha }}
+          path: /tmp/nazo-model-audit/
+          retention-days: 1
+          if-no-files-found: error
