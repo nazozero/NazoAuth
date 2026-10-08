@@ -421,3 +421,5 @@ change. Do not combine bounds from different recipes. The old unqualified
 `search-state.json` is not imported automatically: reassess its archived points
 and retain valid published results, then request only missing new points.
 Historical reports remain tied to their original controller and configuration.
+
+P-256 performance fixtures encode `x`, `y`, and `d` as exactly 32 octets, including leading zero octets. Validate deterministic short-coordinate keys in the perf runner with `python -m unittest perf.tests.test_seed_jwk -v`; RSA integer encoding remains unchanged.

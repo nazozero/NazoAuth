@@ -97,14 +97,15 @@ def rsa_public_jwk(private_key: rsa.RSAPrivateKey, kid: str, alg: str = "RS256")
 
 def ec_public_jwk(private_key: ec.EllipticCurvePrivateKey, kid: str) -> dict[str, str]:
     numbers = private_key.public_key().public_numbers()
+    # EC coordinates have fixed curve width, unlike RSA Base64urlUInt fields.
     return {
         "kty": "EC",
         "kid": kid,
         "use": "sig",
         "alg": "ES256",
         "crv": "P-256",
-        "x": b64url_uint(numbers.x),
-        "y": b64url_uint(numbers.y),
+        "x": b64url(numbers.x.to_bytes(32, "big")),
+        "y": b64url(numbers.y.to_bytes(32, "big")),
     }
 
 
@@ -136,9 +137,9 @@ def ec_private_jwk(private_key: ec.EllipticCurvePrivateKey, kid: str) -> dict[st
         "use": "sig",
         "alg": "ES256",
         "crv": "P-256",
-        "x": b64url_uint(public.x),
-        "y": b64url_uint(public.y),
-        "d": b64url_uint(private.private_value),
+        "x": b64url(public.x.to_bytes(32, "big")),
+        "y": b64url(public.y.to_bytes(32, "big")),
+        "d": b64url(private.private_value.to_bytes(32, "big")),
     }
 
 
