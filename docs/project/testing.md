@@ -291,3 +291,9 @@ retirement under the declared observation setting; they do not establish a
 three-second lock-release bound under the production default or qualify physical
 commit-acknowledgement loss. The setting is confined to those test connections.
 See the [PostgreSQL connection-check documentation](https://www.postgresql.org/docs/18/runtime-config-connection.html#GUC-CLIENT-CONNECTION-CHECK-INTERVAL).
+
+`audit_bounded_reads` executes real finalize/ACK functions with stale pending
+and delivered-chain statistics. It asserts bounded logical buffer reads for a
+256-event batch and exact checkpoint/reclamation, independently of shared CPU
+scheduling. All seed rows and table options are transaction-local; it requires
+the isolated `NAZO_AUDIT_TEST_DATABASE_URL` like other audit integration tests.
