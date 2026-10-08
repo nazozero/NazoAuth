@@ -1,0 +1,549 @@
+{
+    "metrics": {
+        "err_classified": {
+            "count": 0,
+            "rate": 0
+        },
+        "err_classified{step:fapi_token_authorization_code}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed{step:authorize_decision}": {
+            "fails": 301,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "cap_m3_ms": {
+            "p(50)": 169,
+            "p(90)": 231.60000000000002,
+            "p(95)": 245.79999999999995,
+            "p(99)": 257.97,
+            "max": 260,
+            "min": 27,
+            "avg": 149.33333333333334,
+            "med": 169
+        },
+        "vus_max": {
+            "max": 32,
+            "value": 32,
+            "min": 32
+        },
+        "http_req_receiving": {
+            "p(95)": 0.1200852,
+            "p(99)": 0.14590700000000006,
+            "max": 3.08251,
+            "min": 0.02227,
+            "avg": 0.0801124066445182,
+            "med": 0.075879,
+            "p(50)": 0.075879,
+            "p(90)": 0.106916
+        },
+        "cap_iter_begin": {
+            "count": 301,
+            "rate": 2.0039631143245167
+        },
+        "cap_window_bucket_count": {
+            "value": 4,
+            "min": 4,
+            "max": 4
+        },
+        "cap_measure_ms": {
+            "p(90)": 456.1,
+            "p(95)": 605.1499999999991,
+            "p(99)": 922.31,
+            "max": 977,
+            "min": 27,
+            "avg": 242.94444444444446,
+            "med": 197.5,
+            "p(50)": 197.5
+        },
+        "err_classified{step:authorize}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:fapi_token_refresh}": {
+            "min": 4.478873,
+            "avg": 49.81050954817274,
+            "med": 42.255469,
+            "p(50)": 42.255469,
+            "p(90)": 79.336857,
+            "p(95)": 120.89047,
+            "p(99)": 216.414242,
+            "max": 335.481386,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "cap_window_measure_start_ms": {
+            "value": 1791481445625,
+            "min": 1791481445625,
+            "max": 1791481445625
+        },
+        "cap_measure_ops": {
+            "count": 270,
+            "rate": 1.797574886603387
+        },
+        "err_classified{step:fapi_token_refresh}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_tls_handshaking": {
+            "med": 0,
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "min": 0,
+            "avg": 0
+        },
+        "data_sent": {
+            "count": 2081252,
+            "rate": 13856.319732937305
+        },
+        "cap_m2_ops": {
+            "count": 121,
+            "rate": 0.8055798565889253
+        },
+        "http_reqs{step:par_fapi}": {
+            "count": 301,
+            "rate": 2.0039631143245167,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "cap_m2_iter_begin": {
+            "count": 120,
+            "rate": 0.7989221718237276
+        },
+        "cap_window_measure_end_ms": {
+            "value": 1791481580625,
+            "min": 1791481580625,
+            "max": 1791481580625
+        },
+        "cap_m1_iter_begin": {
+            "count": 120,
+            "rate": 0.7989221718237276
+        },
+        "http_req_failed{step:par_fapi}": {
+            "fails": 301,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "vus": {
+            "max": 2,
+            "value": 0,
+            "min": 0
+        },
+        "cap_m3_ops": {
+            "count": 30,
+            "rate": 0.1997305429559319
+        },
+        "http_req_failed{step:fapi_token_authorization_code}": {
+            "passes": 0,
+            "fails": 301,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "data_received": {
+            "count": 2238686,
+            "rate": 14904.465676261445
+        },
+        "cap_m3_iter_begin": {
+            "count": 30,
+            "rate": 0.1997305429559319
+        },
+        "http_req_duration{step:par_fapi}": {
+            "min": 1.262936,
+            "avg": 33.747778156146204,
+            "med": 21.017061,
+            "p(50)": 21.017061,
+            "p(90)": 74.020201,
+            "p(95)": 107.783174,
+            "p(99)": 171.438646,
+            "max": 229.674254,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "cap_m1_ms": {
+            "max": 977,
+            "min": 83,
+            "avg": 299.66386554621846,
+            "med": 223,
+            "p(50)": 223,
+            "p(90)": 641.0000000000002,
+            "p(95)": 755.8,
+            "p(99)": 950.8799999999998
+        },
+        "http_reqs{step:authorize_decision}": {
+            "count": 301,
+            "rate": 2.0039631143245167,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "cap_iter_begin_measure": {
+            "rate": 1.797574886603387,
+            "count": 270
+        },
+        "checks": {
+            "passes": 3010,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "cap_measure_success": {
+            "count": 270,
+            "rate": 1.797574886603387
+        },
+        "cap_window_measure_offset_ms": {
+            "value": 15000,
+            "min": 15000,
+            "max": 15000
+        },
+        "http_reqs{step:fapi_token_authorization_code}": {
+            "count": 301,
+            "rate": 2.0039631143245167,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "err_classified{step:par_fapi}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "iterations": {
+            "count": 301,
+            "rate": 2.0039631143245167
+        },
+        "http_req_failed": {
+            "fails": 1505,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "cap_m2_ms": {
+            "p(90)": 328,
+            "p(95)": 456,
+            "p(99)": 520.4,
+            "max": 644,
+            "min": 28,
+            "avg": 210.37190082644628,
+            "med": 191,
+            "p(50)": 191
+        },
+        "cap_m1_ops": {
+            "count": 119,
+            "rate": 0.7922644870585298
+        },
+        "http_req_connecting": {
+            "p(90)": 0.20789800000000003,
+            "p(95)": 0.2303958,
+            "p(99)": 1.6567272400000028,
+            "max": 5.227668,
+            "min": 0,
+            "avg": 0.07855580531561468,
+            "med": 0,
+            "p(50)": 0
+        },
+        "cap_window_bucket_ms": {
+            "value": 60000,
+            "min": 60000,
+            "max": 60000
+        },
+        "http_reqs{step:fapi_token_refresh}": {
+            "count": 301,
+            "rate": 2.0039631143245167,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(50)": 32.829692,
+            "p(90)": 92.71171560000003,
+            "p(95)": 127.3633676,
+            "p(99)": 224.17512740000012,
+            "max": 335.481386,
+            "min": 0.873983,
+            "avg": 45.568366288372076,
+            "med": 32.829692
+        },
+        "cap_iter_ms": {
+            "max": 978,
+            "min": 27,
+            "avg": 243.5,
+            "med": 197.5,
+            "p(50)": 197.5,
+            "p(90)": 456.2,
+            "p(95)": 606.1499999999991,
+            "p(99)": 923
+        },
+        "http_req_blocked": {
+            "med": 0.00469,
+            "p(50)": 0.00469,
+            "p(90)": 0.289488,
+            "p(95)": 0.32952999999999977,
+            "p(99)": 2.68827476,
+            "max": 8.453385,
+            "min": 0.00144,
+            "avg": 0.11923263588039858
+        },
+        "http_req_waiting": {
+            "p(50)": 32.687804,
+            "p(90)": 92.60122060000002,
+            "p(95)": 127.2283648,
+            "p(99)": 224.09458420000013,
+            "max": 335.377309,
+            "min": 0.824664,
+            "avg": 45.455231596677756,
+            "med": 32.687804
+        },
+        "http_req_duration{step:authorize}": {
+            "p(90)": 56.960723,
+            "p(95)": 80.72963,
+            "p(99)": 131.519612,
+            "max": 144.550349,
+            "min": 0.873983,
+            "avg": 24.977710468438556,
+            "med": 16.515808,
+            "p(50)": 16.515808,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_duration": {
+            "p(50)": 32.829692,
+            "p(90)": 92.71171560000003,
+            "p(95)": 127.3633676,
+            "p(99)": 224.17512740000012,
+            "max": 335.481386,
+            "min": 0.873983,
+            "avg": 45.568366288372076,
+            "med": 32.829692,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "cap_window_duration_ms": {
+            "value": 150000,
+            "min": 150000,
+            "max": 150000
+        },
+        "cap_iter_end": {
+            "count": 301,
+            "rate": 2.0039631143245167
+        },
+        "http_req_sending": {
+            "p(90)": 0.055871000000000004,
+            "p(95)": 0.063991,
+            "p(99)": 0.08685220000000002,
+            "max": 3.399514,
+            "min": 0.0079,
+            "avg": 0.03302228504983389,
+            "med": 0.020699,
+            "p(50)": 0.020699
+        },
+        "http_req_failed{step:fapi_token_refresh}": {
+            "passes": 0,
+            "fails": 301,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_duration{step:authorize_decision}": {
+            "max": 237.802136,
+            "min": 2.274075,
+            "avg": 40.534772392026596,
+            "med": 29.519626,
+            "p(50)": 29.519626,
+            "p(90)": 79.299748,
+            "p(95)": 110.784086,
+            "p(99)": 217.713587,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "cap_window_scenario_start_ms": {
+            "value": 1791481430625,
+            "min": 1791481430625,
+            "max": 1791481430625
+        },
+        "cap_window_clock_ok": {
+            "min": 1,
+            "max": 1,
+            "value": 1
+        },
+        "http_req_duration{step:fapi_token_authorization_code}": {
+            "min": 6.513573,
+            "avg": 78.77106087707635,
+            "med": 68.672175,
+            "p(50)": 68.672175,
+            "p(90)": 136.515155,
+            "p(95)": 189.26783,
+            "p(99)": 266.377941,
+            "max": 311.622351,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_reqs": {
+            "count": 1505,
+            "rate": 10.019815571622583
+        },
+        "http_reqs{step:authorize}": {
+            "count": 301,
+            "rate": 2.0039631143245167,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "cap_iter_begin_lw1": {
+            "rate": 1.8042325713685847,
+            "count": 271
+        },
+        "iteration_duration": {
+            "avg": 241.96181098671087,
+            "med": 197.389182,
+            "p(50)": 197.389182,
+            "p(90)": 436.009493,
+            "p(95)": 572.153685,
+            "p(99)": 922.223469,
+            "max": 977.568223,
+            "min": 26.75649
+        },
+        "err_classified{step:authorize_decision}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed{step:authorize}": {
+            "passes": 0,
+            "fails": 301,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        }
+    },
+    "measurement_contract": {
+        "divergent_vus": false,
+        "window_start_ms": 1791481445625,
+        "duration_ms": 150000,
+        "cap_measure_start_ms": 0,
+        "bucket_ms": 60000,
+        "bucket_count": 4,
+        "contract": "cap-scenario-window-v1",
+        "scenario_start_ms": 1791481430625,
+        "window_end_ms": 1791481580625,
+        "window_seconds": 135,
+        "measure_offset_ms": 15000,
+        "warmup_ms": 15000,
+        "scenario_clock_ok": 1
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "fapi PAR status is 201": {
+                    "name": "fapi PAR status is 201",
+                    "path": "::fapi PAR status is 201",
+                    "id": "1e260fa1e02404b7113d2904db68b6be",
+                    "passes": 301,
+                    "fails": 0
+                },
+                "fapi PAR request_uri returned": {
+                    "path": "::fapi PAR request_uri returned",
+                    "id": "b0a0b26725b4ae2aad2725b7606249ed",
+                    "passes": 301,
+                    "fails": 0,
+                    "name": "fapi PAR request_uri returned"
+                },
+                "authorize returns request id redirect": {
+                    "name": "authorize returns request id redirect",
+                    "path": "::authorize returns request id redirect",
+                    "id": "ce2c3629f8c1a416d100b43238a357f0",
+                    "passes": 301,
+                    "fails": 0
+                },
+                "authorization decision returns code redirect": {
+                    "name": "authorization decision returns code redirect",
+                    "path": "::authorization decision returns code redirect",
+                    "id": "da70d186de7fd2da290024065b9619b5",
+                    "passes": 301,
+                    "fails": 0
+                },
+                "authorization state roundtrips": {
+                    "fails": 0,
+                    "name": "authorization state roundtrips",
+                    "path": "::authorization state roundtrips",
+                    "id": "7e72d2315f2443560dcaf6c259f3ce22",
+                    "passes": 301
+                },
+                "fapi authorization_code token status is 200": {
+                    "passes": 301,
+                    "fails": 0,
+                    "name": "fapi authorization_code token status is 200",
+                    "path": "::fapi authorization_code token status is 200",
+                    "id": "45dd20891f55ee690d19f41416c550f1"
+                },
+                "fapi token is DPoP-bound": {
+                    "id": "724f75e04ed78c16752a5de544821f91",
+                    "passes": 301,
+                    "fails": 0,
+                    "name": "fapi token is DPoP-bound",
+                    "path": "::fapi token is DPoP-bound"
+                },
+                "fapi refresh token returned": {
+                    "path": "::fapi refresh token returned",
+                    "id": "299be183336945656a31e44ab7a5b98e",
+                    "passes": 301,
+                    "fails": 0,
+                    "name": "fapi refresh token returned"
+                },
+                "fapi logged-in DPoP refresh status is 200": {
+                    "id": "1ca03cd10269fbb0cfc3055bace53eaf",
+                    "passes": 301,
+                    "fails": 0,
+                    "name": "fapi logged-in DPoP refresh status is 200",
+                    "path": "::fapi logged-in DPoP refresh status is 200"
+                },
+                "fapi logged-in DPoP refresh returns DPoP token": {
+                    "name": "fapi logged-in DPoP refresh returns DPoP token",
+                    "path": "::fapi logged-in DPoP refresh returns DPoP token",
+                    "id": "18a4d1a5fd77eb1bd91ea023a4dcfc10",
+                    "passes": 301,
+                    "fails": 0
+                }
+            }
+    }
+}

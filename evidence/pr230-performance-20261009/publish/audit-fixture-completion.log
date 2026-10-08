@@ -1,0 +1,177 @@
+    Finished `test` profile [unoptimized] target(s) in 0.19s
+     Running tests/audit_bounded_reads.rs (target/debug/deps/audit_bounded_reads-5f79e092550d1327)
+
+running 1 test
+test exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale ... 
+thread 'exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale' (21829) panicked at crates/persistence-postgres/tests/audit_bounded_reads.rs:45:5:
+never seed an application database
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_bounded_reads`
+     Running tests/audit_chain_cutover.rs (target/debug/deps/audit_chain_cutover-a411a8a4e1d8355b)
+
+running 1 test
+test audit_cutover_preserves_history_and_moves_chain_authority_to_exporter ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s
+
+     Running tests/audit_commit_boundary.rs (target/debug/deps/audit_commit_boundary-ac6634436bdbcf27)
+
+running 4 tests
+test committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint ... 
+thread 'committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint' (21834) panicked at crates/persistence-postgres/tests/audit_commit_boundary.rs:53:9:
+never run fault injection against an application database
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect ... 
+thread 'every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect' (21837) panicked at crates/persistence-postgres/tests/audit_commit_boundary.rs:53:9:
+never run fault injection against an application database
+FAILED
+test first_data_row_is_not_a_commit_acknowledgement ... 
+thread 'first_data_row_is_not_a_commit_acknowledgement' (21840) panicked at crates/persistence-postgres/tests/audit_commit_boundary.rs:53:9:
+never run fault injection against an application database
+FAILED
+test fresh_audit_conflict_rolls_back_the_callers_business_transaction ... 
+thread 'fresh_audit_conflict_rolls_back_the_callers_business_transaction' (21843) panicked at crates/persistence-postgres/tests/audit_commit_boundary.rs:53:9:
+never run fault injection against an application database
+FAILED
+
+failures:
+
+failures:
+    committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint
+    every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect
+    first_data_row_is_not_a_commit_acknowledgement
+    fresh_audit_conflict_rolls_back_the_callers_business_transaction
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_commit_boundary`
+     Running tests/audit_ledger.rs (target/debug/deps/audit_ledger-81d1c08a9ba95da9)
+
+running 19 tests
+test audit_claim_is_bounded_without_planner_statistics ... pending=0 analyzed=false: explain chained prefix
+pending=0 analyzed=false: explain direct pending read
+pending=0 analyzed=false: execute claim function
+pending=0 analyzed=false claimed=0 elapsed=1.727296ms
+pending=0 analyzed=true: explain chained prefix
+pending=0 analyzed=true: explain direct pending read
+pending=0 analyzed=true: execute claim function
+pending=0 analyzed=true claimed=0 elapsed=634.188µs
+seeded 10000 pending rows in 82.522977ms
+pending=10000 analyzed=false: explain chained prefix
+pending=10000 analyzed=false: explain direct pending read
+pending=10000 analyzed=false: execute claim function
+pending=10000 analyzed=false claimed=256 elapsed=848.093µs
+pending=10000 analyzed=true: explain chained prefix
+pending=10000 analyzed=true: explain direct pending read
+pending=10000 analyzed=true: execute claim function
+pending=10000 analyzed=true claimed=256 elapsed=711.646µs
+seeded 1000000 pending rows in 8.519915302s
+pending=1000000 analyzed=false: explain chained prefix
+pending=1000000 analyzed=false: explain direct pending read
+pending=1000000 analyzed=false: execute claim function
+pending=1000000 analyzed=false claimed=256 elapsed=846.513µs
+pending=1000000 analyzed=true: explain chained prefix
+pending=1000000 analyzed=true: explain direct pending read
+pending=1000000 analyzed=true: execute claim function
+pending=1000000 analyzed=true claimed=256 elapsed=711.076µs
+seeded 15000000 pending rows in 177.391995333s
+pending=15000000 analyzed=false: explain chained prefix
+pending=15000000 analyzed=false: explain direct pending read
+pending=15000000 analyzed=false: execute claim function
+pending=15000000 analyzed=false claimed=256 elapsed=3.746537ms
+pending=15000000 analyzed=true: explain chained prefix
+pending=15000000 analyzed=true: explain direct pending read
+pending=15000000 analyzed=true: execute claim function
+pending=15000000 analyzed=true claimed=256 elapsed=744.315µs
+ok
+test audit_claim_survives_dead_prefix_and_autovacuum_recovers ... claim over dead prefix plan:
+Limit  (cost=0.12..24.37 rows=256 width=192) (actual time=0.102..0.215 rows=256.00 loops=1)
+  Buffers: shared hit=23
+  ->  Index Scan using idx_security_audit_events_pending_order on security_audit_events event  (cost=0.12..204.72 rows=2160 width=192) (actual time=0.101..0.198 rows=256.00 loops=1)
+        Index Searches: 1
+        Buffers: shared hit=23
+Planning:
+  Buffers: shared hit=74
+Planning Time: 0.282 ms
+Execution Time: 0.253 ms
+ok
+test audit_ledger_append_batch_commits_atomically ... ok
+test audit_ledger_append_is_chained_and_pending ... ok
+test audit_ledger_migration_is_append_only_and_has_durable_outbox ... ok
+test audit_ledger_rejects_invalid_events_and_enforces_batch_fencing ... ok
+test batch_delivery_migration_fences_one_batch_and_retires_per_event_state ... ok
+test bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans ... 
+thread 'bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans' (21897) panicked at crates/persistence-postgres/tests/audit_ledger.rs:948:9:
+claim index work must stay within the candidate bound:
+Index Scan using pending_order on security_audit_events (cost=0.0..1.0 rows=256 width=192) (actual time=0.0..0.1 rows=10000.00 loops=1)
+Execution Time: 1.0 ms
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans' (21897) panicked at crates/persistence-postgres/tests/audit_ledger.rs:948:9:
+claim index work must stay within the candidate bound:
+Index Scan using pending_order on security_audit_events (cost=0.0..1.0 rows=256 width=192) (actual time=0.0..0.1 rows=1.00 loops=257)
+Execution Time: 1.0 ms
+ok
+test bounded_claim_migration_materializes_identities_before_joining ... ok
+test delivery_scoped_retention_migration_reclaims_at_ack_and_drops_archive ... ok
+test each_successful_observation_refreshes_time_without_acknowledging_backlog ... ok
+test fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation ... ok
+test fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes ... ok
+test new_claim_budget_counts_escaped_json_wire_bytes_and_keeps_legal_singletons ... ok
+test new_claim_budget_exact_multi_event_fit_and_one_byte_overflow_have_no_chain_gap ... ok
+test pending_event_set_migration_moves_pending_identity_to_events ... ok
+test pending_set_cutover_guard_rejects_divergence_and_accepts_mirror ... ok
+test refresh_contract_ensure_migration_provides_single_call_reference ... ok
+test shared_anchor_migration_persists_checkpoint_without_a_local_file ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 244.67s
+
+     Running tests/audit_pending_upgrade.rs (target/debug/deps/audit_pending_upgrade-cf4c5fadbbbb8ec4)
+
+running 5 tests
+test pending_set_upgrade_from_empty_state ... ok
+test pending_set_upgrade_from_inflight_batch ... ok
+test pending_set_upgrade_from_mixed_backlog ... ok
+test pending_set_upgrade_from_unchained_backlog ... ok
+test pending_set_upgrade_rolls_back_on_divergence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.84s
+
+     Running tests/audit_preflight_roles.rs (target/debug/deps/audit_preflight_roles-00cf2e1f305f38d6)
+
+running 1 test
+test strict_preflight_checks_real_login_reachable_roles_and_columns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s
+
+     Running tests/security_state_commit_boundary.rs (target/debug/deps/security_state_commit_boundary-8ee755885b9914e5)
+
+running 1 test
+test cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded ... 
+thread 'cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded' (21944) panicked at crates/persistence-postgres/tests/security_state_commit_boundary.rs:80:5:
+never run cleanup fault injection against an application database
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p nazo-postgres --test security_state_commit_boundary`
+error: 3 targets failed:
+    `-p nazo-postgres --test audit_bounded_reads`
+    `-p nazo-postgres --test audit_commit_boundary`
+    `-p nazo-postgres --test security_state_commit_boundary`

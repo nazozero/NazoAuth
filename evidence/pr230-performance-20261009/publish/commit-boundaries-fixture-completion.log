@@ -1,0 +1,68 @@
+    Finished `test` profile [unoptimized] target(s) in 0.17s
+     Running tests/audit_bounded_reads.rs (target/debug/deps/audit_bounded_reads-5f79e092550d1327)
+
+running 1 test
+test exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale ... finalize: shared_blocks=5146; actual_plan=[{"Execution Time":11.823,"Plan":{"Actual Loops":1,"Actual Rows":1.0,"Actual Startup Time":11.813,"Actual Total Time":11.814,"Async Capable":false,"Disabled":false,"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Node Type":"Result","Parallel Aware":false,"Plan Rows":1,"Plan Width":8,"Shared Dirtied Blocks":7,"Shared Hit Blocks":5146,"Shared Read Blocks":0,"Shared Written Blocks":7,"Startup Cost":0.0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Total Cost":0.26},"Planning":{"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Shared Dirtied Blocks":0,"Shared Hit Blocks":0,"Shared Read Blocks":0,"Shared Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0},"Planning Time":0.026,"Triggers":[]}]
+ack: shared_blocks=6334; actual_plan=[{"Execution Time":22.663,"Plan":{"Actual Loops":1,"Actual Rows":1.0,"Actual Startup Time":22.657,"Actual Total Time":22.657,"Async Capable":false,"Disabled":false,"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Node Type":"Result","Parallel Aware":false,"Plan Rows":1,"Plan Width":1,"Shared Dirtied Blocks":0,"Shared Hit Blocks":6334,"Shared Read Blocks":0,"Shared Written Blocks":0,"Startup Cost":0.0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Total Cost":0.26},"Planning":{"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Shared Dirtied Blocks":0,"Shared Hit Blocks":0,"Shared Read Blocks":0,"Shared Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0},"Planning Time":0.023,"Triggers":[]}]
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.34s
+
+     Running tests/audit_commit_boundary.rs (target/debug/deps/audit_commit_boundary-ac6634436bdbcf27)
+
+running 4 tests
+test committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint ... proxy dropped committed ACK ReadyForQuery(I): caller Err, original backend 3015 disposed, checkpoint recovered, stale generation rejected, next batch ACK succeeded
+ok
+test every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect ... Genesis: late commit error propagated: unexpected repository error: revision late commit failure; backend=3021
+Genesis/raise: backend gone, replacement=3022, durable_changed=false
+Genesis: cancel at deferred commit, no early success, backend=3027
+Genesis/cancel: backend gone, replacement=3028, durable_changed=true
+Genesis: disconnect at deferred commit, no early success, backend=3032
+Genesis/disconnect: backend gone, replacement=3033, durable_changed=false
+Observe: late commit error propagated: unexpected repository error: revision late commit failure; backend=3038
+Observe/raise: backend gone, replacement=3039, durable_changed=false
+Observe: cancel at deferred commit, no early success, backend=3043
+Observe/cancel: backend gone, replacement=3044, durable_changed=true
+Observe: disconnect at deferred commit, no early success, backend=3049
+Observe/disconnect: backend gone, replacement=3050, durable_changed=false
+Singleton: late commit error propagated: unexpected repository error: revision late commit failure; backend=3054
+Singleton/raise: backend gone, replacement=3055, durable_changed=false
+Singleton: cancel at deferred commit, no early success, backend=3060
+Singleton/cancel: backend gone, replacement=3061, durable_changed=true
+Singleton: disconnect at deferred commit, no early success, backend=3065
+Singleton/disconnect: backend gone, replacement=3066, durable_changed=false
+Batch: late commit error propagated: unexpected repository error: revision late commit failure; backend=3071
+Batch/raise: backend gone, replacement=3072, durable_changed=false
+Batch: cancel at deferred commit, no early success, backend=3076
+Batch/cancel: backend gone, replacement=3077, durable_changed=true
+Batch: disconnect at deferred commit, no early success, backend=3082
+Batch/disconnect: backend gone, replacement=3083, durable_changed=false
+Ack: late commit error propagated: unexpected repository error: revision late commit failure; backend=3087
+Ack/raise: backend gone, replacement=3088, durable_changed=false
+Ack: cancel at deferred commit, no early success, backend=3093
+Ack/cancel: backend gone, replacement=3094, durable_changed=true
+Ack: disconnect at deferred commit, no early success, backend=3098
+Ack/disconnect: backend gone, replacement=3099, durable_changed=false
+Fail: late commit error propagated: unexpected repository error: revision late commit failure; backend=3104
+Fail/raise: backend gone, replacement=3105, durable_changed=false
+Fail: cancel at deferred commit, no early success, backend=3109
+Fail/cancel: backend gone, replacement=3110, durable_changed=true
+Fail: disconnect at deferred commit, no early success, backend=3115
+Fail/disconnect: backend gone, replacement=3116, durable_changed=false
+ok
+test first_data_row_is_not_a_commit_acknowledgement ... first DataRow=true, next result=23514 revision late commit failure; no durable event
+ok
+test fresh_audit_conflict_rolls_back_the_callers_business_transaction ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.89s
+
+     Running tests/security_state_commit_boundary.rs (target/debug/deps/security_state_commit_boundary-8ee755885b9914e5)
+
+running 1 test
+test cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded ... raise: no premature cleanup success, backend retired, recovery committed
+cancel: no premature cleanup success, backend retired, recovery committed
+disconnect: no premature cleanup success, backend retired, recovery committed
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.14s
+

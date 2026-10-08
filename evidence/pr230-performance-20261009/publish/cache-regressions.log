@@ -1,0 +1,16 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 38.31s
+     Running tests/authorization_decisions.rs (target/debug/deps/authorization_decisions-16a46009bc43ffdc)
+
+running 1 test
+test decision_prepared_shape_preserves_distinct_facts_and_replay_fences ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.21s
+
+     Running tests/query_counts.rs (target/debug/deps/query_counts-34af96b8353a7654)
+
+running 1 test
+test refresh_contract_prepared_shape_preserves_distinct_contracts ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.27s
+

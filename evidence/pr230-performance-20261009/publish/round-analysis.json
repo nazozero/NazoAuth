@@ -1,0 +1,6174 @@
+[
+  {
+    "key": "D1",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": true,
+    "scenario": "cap_authorization_code",
+    "app_cpus": 16,
+    "rate": 800,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [],
+    "verdict": "FAIL",
+    "success_ops_s": 699.15,
+    "latency_ms": {
+      "p50": 1147.0,
+      "p95": 2046.0,
+      "p99": 2263.519999999997
+    },
+    "started": 41949,
+    "successful": 41949,
+    "completed": 41949,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.8739375,
+    "dropped": 6051,
+    "drop_fraction": 0.126062,
+    "outcomes": {
+      "success": 41949
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {},
+    "all_load_common_window": {},
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "local_no_request_zero": true,
+      "expected_rejection_zero": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 11053.301,
+    "cpu_cores": {
+      "app": 2.07,
+      "postgres": 5.2
+    },
+    "window": {
+      "window_start_s": 1791476852.004,
+      "window_end_s": 1791476912.004,
+      "measure_started_exact": 41949,
+      "measure_completed_exact": 41949,
+      "measure_dropped_exact": 6051,
+      "measure_scheduled_observed": 48000,
+      "measure_drop_fraction": 0.126062,
+      "measure_outcomes": {
+        "success": 41949
+      },
+      "measure_outcome_sum": 41949,
+      "drops_pre_window": 0,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 48000,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 800.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 172.3,
+    "audit": {
+      "point": "pr230-perf-d1-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 152919,
+      "accepted_events_delta": 152919,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "ad8319e153a7e7860bb9f5f71d40ddeb17a6a0c15c5a0351f740e332e6a35ec8",
+        "journal_bytes": 159939046,
+        "batches": 1882,
+        "remote_path": "sis-rcv-pr230-perf-d1-20261009:/data/journal.jsonl",
+        "events_in_range": 152919,
+        "expected_in_range": 152919,
+        "by_event_type": {
+          "authorization_decision_committed": 53949,
+          "token_issued": 53949,
+          "refresh_family_capacity_retired": 45021
+        },
+        "token_issued_in_range": 53949,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 53949,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791476830.014081,
+      "end": 1791476914.042298,
+      "db_first": 12482239,
+      "db_last": 265655999,
+      "db_peak": 265655999,
+      "pending_peak": 852,
+      "oldest_pending_peak_s": 0.40089
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": -10,
+        "complete_samples": 397,
+        "p50_interval_ms": [
+          200,
+          500
+        ],
+        "p95_interval_ms": [
+          200,
+          500
+        ],
+        "p99_interval_ms": [
+          500,
+          1000
+        ],
+        "max_ms": 550.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          382,
+          15,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 6020,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2385.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          120,
+          2176,
+          2658,
+          1066,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 5434,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2495.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4370,
+          1064,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 7570,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 2038.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1710,
+          5835,
+          25,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 6722,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2234.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          534,
+          5800,
+          388,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 8585,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1523.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          48,
+          206,
+          223,
+          823,
+          4917,
+          2368,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 7221,
+        "p50_interval_ms": [
+          100,
+          200
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1477.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          488,
+          2262,
+          786,
+          332,
+          508,
+          1470,
+          1375,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "D2",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": true,
+    "scenario": "cap_authorization_code",
+    "app_cpus": 16,
+    "rate": 800,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [],
+    "verdict": "FAIL",
+    "success_ops_s": 543.65,
+    "latency_ms": {
+      "p50": 1679.0,
+      "p95": 2295.0,
+      "p99": 2386.0
+    },
+    "started": 32619,
+    "successful": 32619,
+    "completed": 32619,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.6795625,
+    "dropped": 15381,
+    "drop_fraction": 0.320437,
+    "outcomes": {
+      "success": 32619
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {},
+    "all_load_common_window": {},
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "local_no_request_zero": true,
+      "expected_rejection_zero": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 11121.689,
+    "cpu_cores": {
+      "app": 1.51,
+      "postgres": 3.91
+    },
+    "window": {
+      "window_start_s": 1791477892.663,
+      "window_end_s": 1791477952.663,
+      "measure_started_exact": 32619,
+      "measure_completed_exact": 32619,
+      "measure_dropped_exact": 15381,
+      "measure_scheduled_observed": 48000,
+      "measure_drop_fraction": 0.320437,
+      "measure_outcomes": {
+        "success": 32619
+      },
+      "measure_outcome_sum": 32619,
+      "drops_pre_window": 1019,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 48000,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 800.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 302.0,
+    "audit": {
+      "point": "pr230-perf-d2-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 121875,
+      "accepted_events_delta": 121875,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "bb552ae757b52c0c9e6882f471ca5d7b6959ea2d1a75ab4421ff6c603874d004",
+        "journal_bytes": 128162585,
+        "batches": 2186,
+        "remote_path": "sis-rcv-pr230-perf-d2-20261009:/data/journal.jsonl",
+        "events_in_range": 121875,
+        "expected_in_range": 121875,
+        "by_event_type": {
+          "authorization_decision_committed": 43601,
+          "token_issued": 43601,
+          "refresh_family_capacity_retired": 34673
+        },
+        "token_issued_in_range": 43601,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 43601,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791477871.258885,
+      "end": 1791478098.242139,
+      "db_first": 12490431,
+      "db_last": 115537599,
+      "db_peak": 214316735,
+      "pending_peak": 2529,
+      "oldest_pending_peak_s": 1.566796
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 3764,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2327.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          50,
+          3714,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 4457,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2488.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          75,
+          4382,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 5220,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2345.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2174,
+          3046,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 5974,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2124.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5692,
+          282,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 6453,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1768.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          6453,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 5952,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1989.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5952,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 799,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1664.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          799,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "D3",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": true,
+    "scenario": "cap_authorization_code",
+    "app_cpus": 16,
+    "rate": 800,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [],
+    "verdict": "FAIL",
+    "success_ops_s": 481.133,
+    "latency_ms": {
+      "p50": 1951.0,
+      "p95": 2807.0,
+      "p99": 2969.0
+    },
+    "started": 28868,
+    "successful": 28868,
+    "completed": 28868,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.6014166666666667,
+    "dropped": 19133,
+    "drop_fraction": 0.398596,
+    "outcomes": {
+      "success": 28868
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {},
+    "all_load_common_window": {},
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "local_no_request_zero": true,
+      "expected_rejection_zero": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 10958.323,
+    "cpu_cores": {
+      "app": 1.2,
+      "postgres": 3.29
+    },
+    "window": {
+      "window_start_s": 1791478257.688,
+      "window_end_s": 1791478317.688,
+      "measure_started_exact": 28868,
+      "measure_completed_exact": 28868,
+      "measure_dropped_exact": 19133,
+      "measure_scheduled_observed": 48001,
+      "measure_drop_fraction": 0.398596,
+      "measure_outcomes": {
+        "success": 28868
+      },
+      "measure_outcome_sum": 28868,
+      "drops_pre_window": 4352,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 48000,
+      "schedule_delta_vs_rational": 1,
+      "observed_schedule_rate": 800.017,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 165.9,
+    "audit": {
+      "point": "pr230-perf-d3-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 100620,
+      "accepted_events_delta": 100620,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "32842b84fbf5a4c6cfe1e08bd925a345239c713426e1115175e77f803177d0aa",
+        "journal_bytes": 106347598,
+        "batches": 2240,
+        "remote_path": "sis-rcv-pr230-perf-d3-20261009:/data/journal.jsonl",
+        "events_in_range": 100620,
+        "expected_in_range": 100620,
+        "by_event_type": {
+          "authorization_decision_committed": 36516,
+          "token_issued": 36516,
+          "refresh_family_capacity_retired": 27588
+        },
+        "token_issued_in_range": 36516,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 36516,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791478235.59381,
+      "end": 1791478320.452714,
+      "db_first": 12506815,
+      "db_last": 188741311,
+      "db_peak": 188741311,
+      "pending_peak": 1644,
+      "oldest_pending_peak_s": 1.933468
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 3694,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3152.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2110,
+          1584,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 3802,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2980.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3802,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 5023,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2952.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3283,
+          1740,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 4878,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2344.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2596,
+          2282,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 5041,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2261.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3659,
+          1382,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 5564,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2355.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4470,
+          1094,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 866,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 2074.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          859,
+          7,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "A06",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": false,
+    "scenario": "cap_authorization_code",
+    "app_cpus": 16,
+    "rate": 800,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [],
+    "verdict": "FAIL",
+    "success_ops_s": 455.55,
+    "latency_ms": {
+      "p50": 2122.0,
+      "p95": 2838.399999999998,
+      "p99": 2980.0
+    },
+    "started": 27333,
+    "successful": 27333,
+    "completed": 27333,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.5694375,
+    "dropped": 20667,
+    "drop_fraction": 0.430563,
+    "outcomes": {
+      "success": 27333
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {},
+    "all_load_common_window": {},
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "local_no_request_zero": true,
+      "expected_rejection_zero": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 10926.957,
+    "cpu_cores": {
+      "app": 1.35,
+      "postgres": 3.2
+    },
+    "window": {
+      "window_start_s": 1791479686.013,
+      "window_end_s": 1791479746.013,
+      "measure_started_exact": 27333,
+      "measure_completed_exact": 27333,
+      "measure_dropped_exact": 20667,
+      "measure_scheduled_observed": 48000,
+      "measure_drop_fraction": 0.430563,
+      "measure_outcomes": {
+        "success": 27333
+      },
+      "measure_outcome_sum": 27333,
+      "drops_pre_window": 3840,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 48000,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 800.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 177.7,
+    "audit": {
+      "point": "pr230-perf-a06-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 97554,
+      "accepted_events_delta": 97554,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "301c3db478ac91489bd0a7108b559fd9f0827a0477dd286cc618fcf4eea78835",
+        "journal_bytes": 103062495,
+        "batches": 1873,
+        "remote_path": "sis-rcv-pr230-perf-a06-20261009:/data/journal.jsonl",
+        "events_in_range": 97554,
+        "expected_in_range": 97554,
+        "by_event_type": {
+          "authorization_decision_committed": 35494,
+          "token_issued": 35494,
+          "refresh_family_capacity_retired": 26566
+        },
+        "token_issued_in_range": 35494,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 35494,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791479663.112531,
+      "end": 1791479756.235006,
+      "db_first": 12490431,
+      "db_last": 181581503,
+      "db_peak": 181581503,
+      "pending_peak": 149,
+      "oldest_pending_peak_s": 0.345865
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 3608,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3030.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          964,
+          2644,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 4129,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3134.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          349,
+          3780,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 4836,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2375.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2040,
+          2796,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 4715,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2438.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1025,
+          3690,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 4862,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2435.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1741,
+          3121,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 4642,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2580.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          776,
+          3866,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 541,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2280.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          133,
+          408,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "B06",
+    "source_sha": "101939f7095a9ea5822ff68580d9fedcd259e970",
+    "diagnostic_only": false,
+    "scenario": "cap_authorization_code",
+    "app_cpus": 16,
+    "rate": 800,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [],
+    "verdict": "FAIL",
+    "success_ops_s": 460.15,
+    "latency_ms": {
+      "p50": 2081.0,
+      "p95": 2824.0,
+      "p99": 2883.0
+    },
+    "started": 27609,
+    "successful": 27609,
+    "completed": 27609,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.5751875,
+    "dropped": 20391,
+    "drop_fraction": 0.424812,
+    "outcomes": {
+      "success": 27609
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {},
+    "all_load_common_window": {},
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "local_no_request_zero": true,
+      "expected_rejection_zero": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 10912.561,
+    "cpu_cores": {
+      "app": 1.26,
+      "postgres": 2.98
+    },
+    "window": {
+      "window_start_s": 1791479889.148,
+      "window_end_s": 1791479949.148,
+      "measure_started_exact": 27609,
+      "measure_completed_exact": 27609,
+      "measure_dropped_exact": 20391,
+      "measure_scheduled_observed": 48000,
+      "measure_drop_fraction": 0.424812,
+      "measure_outcomes": {
+        "success": 27609
+      },
+      "measure_outcome_sum": 27609,
+      "drops_pre_window": 4666,
+      "drops_post_window": 1,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 48000,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 800.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 175.2,
+    "audit": {
+      "point": "pr230-perf-b06-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 95901,
+      "accepted_events_delta": 95901,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "b302c940d315873a2de592be7d7bbf514748f57f132a5c3d9b415f79856ce35a",
+        "journal_bytes": 101253568,
+        "batches": 1574,
+        "remote_path": "sis-rcv-pr230-perf-b06-20261009:/data/journal.jsonl",
+        "events_in_range": 95901,
+        "expected_in_range": 95901,
+        "by_event_type": {
+          "authorization_decision_committed": 34943,
+          "token_issued": 34943,
+          "refresh_family_capacity_retired": 26015
+        },
+        "token_issued_in_range": 34943,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 34943,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791479866.038494,
+      "end": 1791479958.749884,
+      "db_first": 12482239,
+      "db_last": 180819647,
+      "db_peak": 180819647,
+      "pending_peak": 2118,
+      "oldest_pending_peak_s": 2.112952
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 3984,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2818.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2308,
+          1676,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 3674,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2982.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3674,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 5017,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2491.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3146,
+          1871,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 4735,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2511.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          774,
+          3961,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 4702,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2322.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1762,
+          2940,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 4907,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2461.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2074,
+          2833,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 590,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1860.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          590,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "B10",
+    "source_sha": "101939f7095a9ea5822ff68580d9fedcd259e970",
+    "diagnostic_only": false,
+    "scenario": "cap_revoke",
+    "app_cpus": 16,
+    "rate": 960,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [],
+    "verdict": "FAIL",
+    "success_ops_s": 410.917,
+    "latency_ms": {
+      "p50": 2415.0,
+      "p95": 2851.0,
+      "p99": 2993.0
+    },
+    "started": 24655,
+    "successful": 24655,
+    "completed": 24655,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.42803819444444446,
+    "dropped": 32945,
+    "drop_fraction": 0.571962,
+    "outcomes": {
+      "success": 24655
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {},
+    "all_load_common_window": {},
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "local_no_request_zero": true,
+      "expected_rejection_zero": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 10718.506,
+    "cpu_cores": {
+      "app": 1.34,
+      "postgres": 2.61
+    },
+    "window": {
+      "window_start_s": 1791480091.06,
+      "window_end_s": 1791480151.06,
+      "measure_started_exact": 24655,
+      "measure_completed_exact": 24655,
+      "measure_dropped_exact": 32945,
+      "measure_scheduled_observed": 57600,
+      "measure_drop_fraction": 0.571962,
+      "measure_outcomes": {
+        "success": 24655
+      },
+      "measure_outcome_sum": 24655,
+      "drops_pre_window": 8134,
+      "drops_post_window": 1,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 57600,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 960.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 175.2,
+    "audit": {
+      "point": "pr230-perf-b10-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 92763,
+      "accepted_events_delta": 92763,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "7e61ec1eed98e99a6b0e3e74ddd509c4483ecb8de5a6c0b1f7954d64e0a46611",
+        "journal_bytes": 93271623,
+        "batches": 2054,
+        "remote_path": "sis-rcv-pr230-perf-b10-20261009:/data/journal.jsonl",
+        "events_in_range": 92763,
+        "expected_in_range": 92763,
+        "by_event_type": {
+          "authorization_decision_committed": 30921,
+          "token_issued": 30921,
+          "token_revoked": 30921
+        },
+        "token_issued_in_range": 30921,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 30921,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791480068.791001,
+      "end": 1791480160.846175,
+      "db_first": 12490431,
+      "db_last": 154203839,
+      "db_peak": 154203839,
+      "pending_peak": 141,
+      "oldest_pending_peak_s": 0.273183
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 3319,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2838.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3319,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 3899,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3143.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3899,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 4269,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2857.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          325,
+          3944,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 4076,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2897.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          893,
+          3183,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 4108,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3042.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5,
+          4103,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 4353,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2600.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          703,
+          3650,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 631,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2459.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          182,
+          449,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "A10",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": false,
+    "scenario": "cap_revoke",
+    "app_cpus": 16,
+    "rate": 960,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [],
+    "verdict": "FAIL",
+    "success_ops_s": 447.0,
+    "latency_ms": {
+      "p50": 2159.0,
+      "p95": 2850.0,
+      "p99": 3004.6200000000026
+    },
+    "started": 26820,
+    "successful": 26820,
+    "completed": 26820,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.465625,
+    "dropped": 30780,
+    "drop_fraction": 0.534375,
+    "outcomes": {
+      "success": 26820
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {},
+    "all_load_common_window": {},
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "local_no_request_zero": true,
+      "expected_rejection_zero": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 11014.68,
+    "cpu_cores": {
+      "app": 1.54,
+      "postgres": 3.06
+    },
+    "window": {
+      "window_start_s": 1791480293.781,
+      "window_end_s": 1791480353.781,
+      "measure_started_exact": 26820,
+      "measure_completed_exact": 26820,
+      "measure_dropped_exact": 30780,
+      "measure_scheduled_observed": 57600,
+      "measure_drop_fraction": 0.534375,
+      "measure_outcomes": {
+        "success": 26820
+      },
+      "measure_outcome_sum": 26820,
+      "drops_pre_window": 7854,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 57600,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 960.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 175.5,
+    "audit": {
+      "point": "pr230-perf-a10-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 100098,
+      "accepted_events_delta": 100098,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "6bf098b2a9e9077c867f4f45df3f0dba2939c2498508a194b9430e0267e50c41",
+        "journal_bytes": 100603260,
+        "batches": 2098,
+        "remote_path": "sis-rcv-pr230-perf-a10-20261009:/data/journal.jsonl",
+        "events_in_range": 100098,
+        "expected_in_range": 100098,
+        "by_event_type": {
+          "authorization_decision_committed": 33366,
+          "token_issued": 33366,
+          "token_revoked": 33366
+        },
+        "token_issued_in_range": 33366,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 33366,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791480271.297489,
+      "end": 1791480362.517566,
+      "db_first": 12498623,
+      "db_last": 168769215,
+      "db_peak": 168769215,
+      "pending_peak": 248,
+      "oldest_pending_peak_s": 0.274399
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 3008,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3263.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          178,
+          2830,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 3656,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3047.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3656,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 4674,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2727.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          315,
+          4359,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 4691,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2629.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1737,
+          2954,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 5049,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2655.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2982,
+          2067,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 4916,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2930.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2665,
+          2251,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 826,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2413.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          377,
+          449,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "A03",
+    "verdict": "INVALID",
+    "invalid_reason": "full_sidecar_measurement_window_unavailable",
+    "point_error": "RuntimeError: CPU_AFFINITY_INVALID: main generator"
+  },
+  {
+    "key": "B03",
+    "verdict": "INVALID",
+    "invalid_reason": "full_sidecar_measurement_window_unavailable",
+    "point_error": "RuntimeError: CPU_AFFINITY_INVALID: sidecar meta"
+  },
+  {
+    "key": "B04",
+    "verdict": "INVALID",
+    "invalid_reason": "full_sidecar_measurement_window_unavailable",
+    "point_error": "RuntimeError: CPU_AFFINITY_INVALID: sidecar fapi"
+  },
+  {
+    "key": "A04",
+    "verdict": "INVALID",
+    "invalid_reason": "full_sidecar_measurement_window_unavailable",
+    "point_error": "RuntimeError: CPU_AFFINITY_INVALID: sidecar meta"
+  },
+  {
+    "key": "A06R",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": false,
+    "scenario": "cap_authorization_code",
+    "app_cpus": 16,
+    "rate": 800,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [],
+    "verdict": "FAIL",
+    "success_ops_s": 600.067,
+    "latency_ms": {
+      "p50": 1499.0,
+      "p95": 2401.0,
+      "p99": 2505.0
+    },
+    "started": 36004,
+    "successful": 36004,
+    "completed": 36004,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.7500833333333333,
+    "dropped": 11996,
+    "drop_fraction": 0.249917,
+    "outcomes": {
+      "success": 36004
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {},
+    "all_load_common_window": {},
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "local_no_request_zero": true,
+      "expected_rejection_zero": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 11231.273,
+    "cpu_cores": {
+      "app": 1.81,
+      "postgres": 4.48
+    },
+    "window": {
+      "window_start_s": 1791480954.705,
+      "window_end_s": 1791481014.705,
+      "measure_started_exact": 36004,
+      "measure_completed_exact": 36004,
+      "measure_dropped_exact": 11996,
+      "measure_scheduled_observed": 48000,
+      "measure_drop_fraction": 0.249917,
+      "measure_outcomes": {
+        "success": 36004
+      },
+      "measure_outcome_sum": 36004,
+      "drops_pre_window": 1128,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 48000,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 800.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 168.6,
+    "audit": {
+      "point": "pr230-perf-a06r-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 131703,
+      "accepted_events_delta": 131703,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "8ae8576a3ce679bfdd19302bc5ef7cd8bcd33d99b964834f42363c22bac056dd",
+        "journal_bytes": 138110930,
+        "batches": 1793,
+        "remote_path": "sis-rcv-pr230-perf-a06r-20261009:/data/journal.jsonl",
+        "events_in_range": 131703,
+        "expected_in_range": 131703,
+        "by_event_type": {
+          "authorization_decision_committed": 46877,
+          "token_issued": 46877,
+          "refresh_family_capacity_retired": 37949
+        },
+        "token_issued_in_range": 46877,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 46877,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791480931.817592,
+      "end": 1791481015.705513,
+      "db_first": 12482239,
+      "db_last": 237647551,
+      "db_peak": 237647551,
+      "pending_peak": 276,
+      "oldest_pending_peak_s": 0.352696
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 3965,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2458.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1638,
+          2327,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 4349,
+        "p50_interval_ms": [
+          2000,
+          5000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2644.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1517,
+          2832,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 6127,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2609.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4967,
+          1160,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 6534,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1862.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          33,
+          6501,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 7397,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1698.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3018,
+          4379,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 6920,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1977.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          503,
+          6417,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 712,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1333.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          34,
+          678,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "A03R",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": false,
+    "scenario": "cap_mixed",
+    "app_cpus": 1,
+    "rate": 400,
+    "vus": 64,
+    "users": 64,
+    "sidecars": [
+      {
+        "duration": "150s",
+        "max_vus": 8,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 1,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 8
+      },
+      {
+        "duration": "150s",
+        "max_vus": 16,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 13,
+        "scenario": "metadata_jwks",
+        "user_count": 16
+      },
+      {
+        "duration": "150s",
+        "max_vus": 32,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 2,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 32
+      },
+      {
+        "duration": "150s",
+        "max_vus": 64,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 38,
+        "scenario": "cap_refresh_token",
+        "user_count": 64
+      }
+    ],
+    "verdict": "FAIL",
+    "success_ops_s": 400.0,
+    "latency_ms": {
+      "p50": 10.0,
+      "p95": 57.0,
+      "p99": 97.0
+    },
+    "started": 24000,
+    "successful": 24000,
+    "completed": 24000,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 1.0,
+    "dropped": 0,
+    "drop_fraction": 0.0,
+    "outcomes": {
+      "success": 24000
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {
+      "argon2": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 6.032,
+          "p50": 8.582,
+          "p95": 360.961,
+          "p99": 402.585,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 1.0,
+          "successful_ops_s": 1.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481147.689,
+            "window_end_s": 1791481282.689,
+            "measure_started_exact": 135,
+            "measure_completed_exact": 135,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 135,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 135
+            },
+            "measure_outcome_sum": 135,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 135,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 1.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 476.6,
+          "gate_p99": 522.56,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 619,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/A03R/results/single/pr230-perf-a03r-20261009/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz"
+          },
+          "latency_gate": "existing_cold_login_k6_guardrails",
+          "rate_for_gate": 1.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 390.0,
+            "p95": 476.6,
+            "p99": 522.56
+          }
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 26.013,
+          "p50": 0.325,
+          "p95": 5.519,
+          "p99": 13.871,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 13.0,
+          "successful_ops_s": 13.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481151.174,
+            "window_end_s": 1791481286.174,
+            "measure_started_exact": 1755,
+            "measure_completed_exact": 1755,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 1755,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 1755
+            },
+            "measure_outcome_sum": 1755,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 1755,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 13.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 11.0,
+          "gate_p99": 24.460000000000036,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 21773,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/A03R/results/single/pr230-perf-a03r-20261009/meta/capacity-metadata-jwks.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 13.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 1.0,
+            "p95": 11.0,
+            "p99": 24.460000000000036
+          }
+        }
+      },
+      "fapi": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 10.0,
+          "p50": 6.115,
+          "p95": 35.345,
+          "p99": 62.998,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 2.0,
+          "successful_ops_s": 2.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481154.507,
+            "window_end_s": 1791481289.507,
+            "measure_started_exact": 270,
+            "measure_completed_exact": 270,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 270,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 270
+            },
+            "measure_outcome_sum": 270,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 270,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 2.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 116.54999999999998,
+          "gate_p99": 155.72000000000003,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 2388,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/A03R/results/single/pr230-perf-a03r-20261009/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 2.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 53.0,
+            "p95": 116.54999999999998,
+            "p99": 155.72000000000003
+          }
+        }
+      },
+      "refresh": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 39.711,
+          "p50": 12.151,
+          "p95": 54.834,
+          "p99": 75.953,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 38.0,
+          "successful_ops_s": 38.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481157.841,
+            "window_end_s": 1791481292.841,
+            "measure_started_exact": 5130,
+            "measure_completed_exact": 5130,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 5130,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 5130
+            },
+            "measure_outcome_sum": 5130,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 5130,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 38.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 64,
+            "refresh_update": 5701,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 56.0,
+          "gate_p99": 76.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 81675,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/A03R/results/single/pr230-perf-a03r-20261009/refresh/capacity-cap-refresh-token.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 38.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 12.0,
+            "p95": 56.0,
+            "p99": 76.0
+          }
+        }
+      }
+    },
+    "all_load_common_window": {
+      "seconds": 60.0,
+      "method": "contract",
+      "start_ms": 1791481188195,
+      "end_ms": 1791481248195
+    },
+    "main_verdict": "PASS",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "active_per_scope_le_10": true,
+      "spent_per_family_le_64": true,
+      "expired_backlog_zero": true,
+      "sidecars_complete": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 3309.273,
+    "cpu_cores": {
+      "app": 0.65,
+      "postgres": 1.09
+    },
+    "window": {
+      "window_start_s": 1791481188.195,
+      "window_end_s": 1791481248.195,
+      "measure_started_exact": 24000,
+      "measure_completed_exact": 24000,
+      "measure_dropped_exact": 0,
+      "measure_scheduled_observed": 24000,
+      "measure_drop_fraction": 0.0,
+      "measure_outcomes": {
+        "success": 24000
+      },
+      "measure_outcome_sum": 24000,
+      "drops_pre_window": 6,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 24000,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 400.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 246.6,
+    "audit": {
+      "point": "pr230-perf-a03r-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 55139,
+      "accepted_events_delta": 55139,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "33cd9740b80a0e738833762547be1ad091dc90d01b4028b886fa0c8eb68b4640",
+        "journal_bytes": 53818164,
+        "batches": 1960,
+        "remote_path": "sis-rcv-pr230-perf-a03r-20261009:/data/journal.jsonl",
+        "events_in_range": 55139,
+        "expected_in_range": 55139,
+        "by_event_type": {
+          "token_issued": 40318,
+          "authorization_decision_committed": 7773,
+          "refresh_family_capacity_retired": 6897,
+          "login_success": 151
+        },
+        "token_issued_in_range": 40318,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 40318,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791481123.364957,
+      "end": 1791481294.408941,
+      "db_first": 12490431,
+      "db_last": 60593855,
+      "db_peak": 61503167,
+      "pending_peak": 720,
+      "oldest_pending_peak_s": 1.867992
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": -10,
+        "complete_samples": 318,
+        "p50_interval_ms": [
+          5,
+          10
+        ],
+        "p95_interval_ms": [
+          20,
+          50
+        ],
+        "p99_interval_ms": [
+          50,
+          100
+        ],
+        "max_ms": 83.0,
+        "histogram": [
+          0,
+          8,
+          63,
+          90,
+          79,
+          63,
+          15,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 4002,
+        "p50_interval_ms": [
+          5,
+          10
+        ],
+        "p95_interval_ms": [
+          50,
+          100
+        ],
+        "p99_interval_ms": [
+          50,
+          100
+        ],
+        "max_ms": 169.0,
+        "histogram": [
+          0,
+          140,
+          885,
+          1026,
+          956,
+          755,
+          211,
+          29,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 4001,
+        "p50_interval_ms": [
+          10,
+          20
+        ],
+        "p95_interval_ms": [
+          50,
+          100
+        ],
+        "p99_interval_ms": [
+          50,
+          100
+        ],
+        "max_ms": 182.0,
+        "histogram": [
+          0,
+          87,
+          802,
+          1022,
+          972,
+          832,
+          251,
+          35,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 3997,
+        "p50_interval_ms": [
+          10,
+          20
+        ],
+        "p95_interval_ms": [
+          50,
+          100
+        ],
+        "p99_interval_ms": [
+          50,
+          100
+        ],
+        "max_ms": 167.0,
+        "histogram": [
+          0,
+          87,
+          782,
+          1023,
+          960,
+          861,
+          256,
+          28,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 4001,
+        "p50_interval_ms": [
+          10,
+          20
+        ],
+        "p95_interval_ms": [
+          50,
+          100
+        ],
+        "p99_interval_ms": [
+          100,
+          200
+        ],
+        "max_ms": 181.0,
+        "histogram": [
+          0,
+          101,
+          859,
+          971,
+          917,
+          859,
+          243,
+          51,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 3999,
+        "p50_interval_ms": [
+          10,
+          20
+        ],
+        "p95_interval_ms": [
+          50,
+          100
+        ],
+        "p99_interval_ms": [
+          100,
+          200
+        ],
+        "max_ms": 220.0,
+        "histogram": [
+          0,
+          94,
+          846,
+          1020,
+          937,
+          832,
+          230,
+          39,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 3682,
+        "p50_interval_ms": [
+          5,
+          10
+        ],
+        "p95_interval_ms": [
+          50,
+          100
+        ],
+        "p99_interval_ms": [
+          50,
+          100
+        ],
+        "max_ms": 160.0,
+        "histogram": [
+          0,
+          90,
+          873,
+          999,
+          761,
+          721,
+          212,
+          26,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "B03R",
+    "source_sha": "101939f7095a9ea5822ff68580d9fedcd259e970",
+    "diagnostic_only": false,
+    "scenario": "cap_mixed",
+    "app_cpus": 1,
+    "rate": 400,
+    "vus": 64,
+    "users": 64,
+    "sidecars": [
+      {
+        "duration": "150s",
+        "max_vus": 8,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 1,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 8
+      },
+      {
+        "duration": "150s",
+        "max_vus": 16,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 13,
+        "scenario": "metadata_jwks",
+        "user_count": 16
+      },
+      {
+        "duration": "150s",
+        "max_vus": 32,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 2,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 32
+      },
+      {
+        "duration": "150s",
+        "max_vus": 64,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 38,
+        "scenario": "cap_refresh_token",
+        "user_count": 64
+      }
+    ],
+    "verdict": "FAIL",
+    "success_ops_s": 396.6,
+    "latency_ms": {
+      "p50": 34.0,
+      "p95": 193.0,
+      "p99": 341.0
+    },
+    "started": 23796,
+    "successful": 23796,
+    "completed": 23796,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.9915,
+    "dropped": 204,
+    "drop_fraction": 0.0085,
+    "outcomes": {
+      "success": 23796
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {
+      "argon2": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 6.025,
+          "p50": 35.757,
+          "p95": 473.845,
+          "p99": 628.315,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 1.0,
+          "successful_ops_s": 1.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481437.039,
+            "window_end_s": 1791481572.039,
+            "measure_started_exact": 135,
+            "measure_completed_exact": 135,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 135,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 135
+            },
+            "measure_outcome_sum": 135,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 135,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 1.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 1017.6999999999999,
+          "gate_p99": 1485.1799999999998,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 478,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/B03R/results/single/pr230-perf-b03r-20261009/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz"
+          },
+          "latency_gate": "existing_cold_login_k6_guardrails",
+          "rate_for_gate": 1.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 590.0,
+            "p95": 1017.6999999999999,
+            "p99": 1485.1799999999998
+          }
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 26.0,
+          "p50": 3.139,
+          "p95": 18.871,
+          "p99": 29.677,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 13.0,
+          "successful_ops_s": 13.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481441.907,
+            "window_end_s": 1791481576.907,
+            "measure_started_exact": 1755,
+            "measure_completed_exact": 1755,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 1755,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 1755
+            },
+            "measure_outcome_sum": 1755,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 1755,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 13.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 34.0,
+          "gate_p99": 52.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 21775,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/B03R/results/single/pr230-perf-b03r-20261009/meta/capacity-metadata-jwks.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 13.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 8.0,
+            "p95": 34.0,
+            "p99": 52.0
+          }
+        }
+      },
+      "fapi": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 10.02,
+          "p50": 32.83,
+          "p95": 127.363,
+          "p99": 224.175,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 2.0,
+          "successful_ops_s": 2.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481445.625,
+            "window_end_s": 1791481580.625,
+            "measure_started_exact": 270,
+            "measure_completed_exact": 270,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 270,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 270
+            },
+            "measure_outcome_sum": 270,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 270,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 2.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 606.1499999999991,
+          "gate_p99": 923.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 2406,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/B03R/results/single/pr230-perf-b03r-20261009/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 2.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 197.5,
+            "p95": 606.1499999999991,
+            "p99": 923.0
+          }
+        }
+      },
+      "refresh": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 39.69,
+          "p50": 49.762,
+          "p95": 123.898,
+          "p99": 210.098,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 38.0,
+          "successful_ops_s": 38.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481449.809,
+            "window_end_s": 1791481584.809,
+            "measure_started_exact": 5130,
+            "measure_completed_exact": 5130,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 5130,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 5130
+            },
+            "measure_outcome_sum": 5130,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 5130,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 38.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 64,
+            "refresh_update": 5701,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 129.55000000000018,
+          "gate_p99": 219.1300000000001,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 81684,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/B03R/results/single/pr230-perf-b03r-20261009/refresh/capacity-cap-refresh-token.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 38.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 51.0,
+            "p95": 129.55000000000018,
+            "p99": 219.1300000000001
+          }
+        }
+      }
+    },
+    "all_load_common_window": {
+      "seconds": 60.0,
+      "method": "contract",
+      "start_ms": 1791481478588,
+      "end_ms": 1791481538588
+    },
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "active_per_scope_le_10": true,
+      "spent_per_family_le_64": true,
+      "expired_backlog_zero": true,
+      "sidecars_complete": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 3186.077,
+    "cpu_cores": {
+      "app": 0.66,
+      "postgres": 1.08
+    },
+    "window": {
+      "window_start_s": 1791481478.588,
+      "window_end_s": 1791481538.588,
+      "measure_started_exact": 23796,
+      "measure_completed_exact": 23796,
+      "measure_dropped_exact": 204,
+      "measure_scheduled_observed": 24000,
+      "measure_drop_fraction": 0.0085,
+      "measure_outcomes": {
+        "success": 23796
+      },
+      "measure_outcome_sum": 23796,
+      "drops_pre_window": 729,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 24000,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 400.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 275.4,
+    "audit": {
+      "point": "pr230-perf-b03r-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 54684,
+      "accepted_events_delta": 54684,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "4d79b380a81b94b943d11849f51b53592e459f5376b68978ef506229e6852293",
+        "journal_bytes": 53344287,
+        "batches": 1875,
+        "remote_path": "sis-rcv-pr230-perf-b03r-20261009:/data/journal.jsonl",
+        "events_in_range": 54684,
+        "expected_in_range": 54684,
+        "by_event_type": {
+          "token_issued": 39938,
+          "authorization_decision_committed": 7736,
+          "login_success": 151,
+          "refresh_family_capacity_retired": 6859
+        },
+        "token_issued_in_range": 39938,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 39938,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791481412.457738,
+      "end": 1791481592.319139,
+      "db_first": 12490431,
+      "db_last": 52238015,
+      "db_peak": 53515967,
+      "pending_peak": 358,
+      "oldest_pending_peak_s": 1.899494
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": -10,
+        "complete_samples": 153,
+        "p50_interval_ms": [
+          10,
+          20
+        ],
+        "p95_interval_ms": [
+          100,
+          200
+        ],
+        "p99_interval_ms": [
+          100,
+          200
+        ],
+        "max_ms": 141.0,
+        "histogram": [
+          0,
+          0,
+          5,
+          36,
+          44,
+          47,
+          13,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 3946,
+        "p50_interval_ms": [
+          20,
+          50
+        ],
+        "p95_interval_ms": [
+          100,
+          200
+        ],
+        "p99_interval_ms": [
+          200,
+          500
+        ],
+        "max_ms": 591.0,
+        "histogram": [
+          0,
+          1,
+          73,
+          334,
+          815,
+          1406,
+          711,
+          448,
+          147,
+          11,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 3925,
+        "p50_interval_ms": [
+          20,
+          50
+        ],
+        "p95_interval_ms": [
+          200,
+          500
+        ],
+        "p99_interval_ms": [
+          200,
+          500
+        ],
+        "max_ms": 665.0,
+        "histogram": [
+          0,
+          1,
+          34,
+          242,
+          678,
+          1632,
+          708,
+          392,
+          224,
+          14,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 3927,
+        "p50_interval_ms": [
+          20,
+          50
+        ],
+        "p95_interval_ms": [
+          100,
+          200
+        ],
+        "p99_interval_ms": [
+          200,
+          500
+        ],
+        "max_ms": 615.0,
+        "histogram": [
+          0,
+          1,
+          49,
+          266,
+          756,
+          1415,
+          718,
+          534,
+          178,
+          10,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 4006,
+        "p50_interval_ms": [
+          20,
+          50
+        ],
+        "p95_interval_ms": [
+          100,
+          200
+        ],
+        "p99_interval_ms": [
+          200,
+          500
+        ],
+        "max_ms": 462.0,
+        "histogram": [
+          0,
+          0,
+          43,
+          214,
+          734,
+          1609,
+          781,
+          442,
+          183,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 4005,
+        "p50_interval_ms": [
+          20,
+          50
+        ],
+        "p95_interval_ms": [
+          100,
+          200
+        ],
+        "p99_interval_ms": [
+          200,
+          500
+        ],
+        "max_ms": 374.0,
+        "histogram": [
+          0,
+          0,
+          68,
+          330,
+          786,
+          1575,
+          733,
+          354,
+          159,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 3834,
+        "p50_interval_ms": [
+          20,
+          50
+        ],
+        "p95_interval_ms": [
+          100,
+          200
+        ],
+        "p99_interval_ms": [
+          200,
+          500
+        ],
+        "max_ms": 541.0,
+        "histogram": [
+          0,
+          1,
+          50,
+          269,
+          674,
+          1486,
+          778,
+          391,
+          181,
+          4,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "B04R",
+    "source_sha": "101939f7095a9ea5822ff68580d9fedcd259e970",
+    "diagnostic_only": false,
+    "scenario": "cap_mixed",
+    "app_cpus": 16,
+    "rate": 1600,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [
+      {
+        "duration": "150s",
+        "max_vus": 8,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 8,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 8
+      },
+      {
+        "duration": "150s",
+        "max_vus": 16,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 200,
+        "scenario": "metadata_jwks",
+        "user_count": 16
+      },
+      {
+        "duration": "150s",
+        "max_vus": 32,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 30,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 32
+      },
+      {
+        "duration": "150s",
+        "max_vus": 64,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 600,
+        "scenario": "cap_refresh_token",
+        "user_count": 64
+      }
+    ],
+    "verdict": "FAIL",
+    "success_ops_s": 1071.383,
+    "latency_ms": {
+      "p50": 682.0,
+      "p95": 2526.0,
+      "p99": 2745.0
+    },
+    "started": 64283,
+    "successful": 64283,
+    "completed": 64283,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.6696145833333333,
+    "dropped": 31714,
+    "drop_fraction": 0.330364,
+    "outcomes": {
+      "success": 64283
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {
+      "argon2": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 18.95,
+          "p50": 282.664,
+          "p95": 1125.838,
+          "p99": 1389.321,
+          "dropped": 726,
+          "drop_fraction": 0.604496253122398,
+          "error_rate": 0.0,
+          "status": "target_miss",
+          "measured_ops_s": 3.119,
+          "successful_ops_s": 3.119,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481740.287,
+            "window_end_s": 1791481875.287,
+            "measure_started_exact": 421,
+            "measure_completed_exact": 421,
+            "measure_dropped_exact": 659,
+            "measure_scheduled_observed": 1080,
+            "measure_drop_fraction": 0.610185,
+            "measure_outcomes": {
+              "success": 421
+            },
+            "measure_outcome_sum": 421,
+            "drops_pre_window": 67,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 1080,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 8.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 5094.0,
+          "gate_p99": 5875.400000000001,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 7209,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/B04R/results/multi/pr230-perf-b04r-20261009/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz"
+          },
+          "load_generator_evidence": "absent",
+          "latency_gate": "existing_cold_login_k6_guardrails",
+          "rate_for_gate": 3.119,
+          "threshold_status_diagnostic": "target_miss",
+          "complete_operation_latency_ms": {
+            "p50": 901.0,
+            "p95": 5094.0,
+            "p99": 5875.400000000001
+          }
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 399.987,
+          "p50": 2.786,
+          "p95": 5.916,
+          "p99": 9.781,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 200.0,
+          "successful_ops_s": 200.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481743.506,
+            "window_end_s": 1791481878.506,
+            "measure_started_exact": 27000,
+            "measure_completed_exact": 27000,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 27000,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 27000
+            },
+            "measure_outcome_sum": 27000,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 27000,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 200.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 11.0,
+          "gate_p99": 17.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 604046,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/B04R/results/multi/pr230-perf-b04r-20261009/meta/capacity-metadata-jwks.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 200.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 6.0,
+            "p95": 11.0,
+            "p99": 17.0
+          }
+        }
+      },
+      "fapi": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 79.855,
+          "p50": 225.552,
+          "p95": 965.152,
+          "p99": 1195.404,
+          "dropped": 2100,
+          "drop_fraction": 0.4665629860031104,
+          "error_rate": 0.0,
+          "status": "target_miss",
+          "measured_ops_s": 16.081,
+          "successful_ops_s": 16.081,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481747.431,
+            "window_end_s": 1791481882.431,
+            "measure_started_exact": 2171,
+            "measure_completed_exact": 2171,
+            "measure_dropped_exact": 1879,
+            "measure_scheduled_observed": 4050,
+            "measure_drop_fraction": 0.463951,
+            "measure_outcomes": {
+              "success": 2171
+            },
+            "measure_outcome_sum": 2171,
+            "drops_pre_window": 221,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 4050,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 30.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 3483.5,
+          "gate_p99": 4005.4000000000015,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 54413,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/B04R/results/multi/pr230-perf-b04r-20261009/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz"
+          },
+          "load_generator_evidence": "absent",
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 16.081,
+          "threshold_status_diagnostic": "target_miss",
+          "complete_operation_latency_ms": {
+            "p50": 1686.0,
+            "p95": 3483.5,
+            "p99": 4005.4000000000015
+          }
+        }
+      },
+      "refresh": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 198.121,
+          "p50": 78.593,
+          "p95": 1052.915,
+          "p99": 1268.726,
+          "dropped": 60538,
+          "drop_fraction": 0.6726294971222861,
+          "error_rate": 0.0,
+          "status": "target_miss",
+          "measured_ops_s": 209.978,
+          "successful_ops_s": 209.978,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791481750.607,
+            "window_end_s": 1791481885.607,
+            "measure_started_exact": 28347,
+            "measure_completed_exact": 28347,
+            "measure_dropped_exact": 52653,
+            "measure_scheduled_observed": 81000,
+            "measure_drop_fraction": 0.650037,
+            "measure_outcomes": {
+              "success": 28347
+            },
+            "measure_outcome_sum": 28347,
+            "drops_pre_window": 7885,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 81000,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 600.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 64,
+            "refresh_update": 29464,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 1051.0,
+          "gate_p99": 1277.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 489993,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/B04R/results/multi/pr230-perf-b04r-20261009/refresh/capacity-cap-refresh-token.diag.jsonl.gz"
+          },
+          "load_generator_evidence": "absent",
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 209.978,
+          "threshold_status_diagnostic": "target_miss",
+          "complete_operation_latency_ms": {
+            "p50": 75.0,
+            "p95": 1051.0,
+            "p99": 1277.0
+          }
+        }
+      }
+    },
+    "all_load_common_window": {
+      "seconds": 60.0,
+      "method": "contract",
+      "start_ms": 1791481787447,
+      "end_ms": 1791481847447
+    },
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "active_per_scope_le_10": true,
+      "spent_per_family_le_64": true,
+      "expired_backlog_zero": true,
+      "sidecars_complete": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 3246.629,
+    "cpu_cores": {
+      "app": 1.77,
+      "postgres": 2.37
+    },
+    "window": {
+      "window_start_s": 1791481787.447,
+      "window_end_s": 1791481847.447,
+      "measure_started_exact": 64283,
+      "measure_completed_exact": 64283,
+      "measure_dropped_exact": 31714,
+      "measure_scheduled_observed": 95997,
+      "measure_drop_fraction": 0.330364,
+      "measure_outcomes": {
+        "success": 64283
+      },
+      "measure_outcome_sum": 64283,
+      "drops_pre_window": 39661,
+      "drops_post_window": 5,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 96000,
+      "schedule_delta_vs_rational": -3,
+      "observed_schedule_rate": 1599.95,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 273.6,
+    "audit": {
+      "point": "pr230-perf-b04r-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 155842,
+      "accepted_events_delta": 155842,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "0e51f070c5ee7efdc5bc62dbfacfd217861799aec1f48a5fa824e9c3487532c9",
+        "journal_bytes": 152967591,
+        "batches": 2120,
+        "remote_path": "sis-rcv-pr230-perf-b04r-20261009:/data/journal.jsonl",
+        "events_in_range": 155842,
+        "expected_in_range": 155842,
+        "by_event_type": {
+          "login_success": 475,
+          "authorization_decision_committed": 21934,
+          "token_issued": 120747,
+          "refresh_family_capacity_retired": 12686
+        },
+        "token_issued_in_range": 120747,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 120747,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791481713.712324,
+      "end": 1791481892.891958,
+      "db_first": 12474047,
+      "db_last": 158013119,
+      "db_peak": 158013119,
+      "pending_peak": 692,
+      "oldest_pending_peak_s": 1.565476
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": -10,
+        "complete_samples": 72,
+        "p50_interval_ms": [
+          200,
+          500
+        ],
+        "p95_interval_ms": [
+          200,
+          500
+        ],
+        "p99_interval_ms": [
+          500,
+          1000
+        ],
+        "max_ms": 508.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          69,
+          3,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 10794,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2966.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          19,
+          456,
+          3522,
+          4310,
+          1535,
+          952,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 9937,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3010.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2305,
+          4467,
+          1888,
+          1277,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 10244,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2821.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          58,
+          2838,
+          4343,
+          1703,
+          1302,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 10134,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2823.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          31,
+          183,
+          2703,
+          4182,
+          1721,
+          1314,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 11197,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2731.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          193,
+          3675,
+          4626,
+          1536,
+          1167,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 11445,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2755.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          195,
+          3869,
+          4666,
+          1407,
+          1308,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 460,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          1000,
+          2000
+        ],
+        "p99_interval_ms": [
+          1000,
+          2000
+        ],
+        "max_ms": 1752.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          209,
+          251,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "A04R",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": false,
+    "scenario": "cap_mixed",
+    "app_cpus": 16,
+    "rate": 1600,
+    "vus": 992,
+    "users": 992,
+    "sidecars": [
+      {
+        "duration": "150s",
+        "max_vus": 8,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 8,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 8
+      },
+      {
+        "duration": "150s",
+        "max_vus": 16,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 200,
+        "scenario": "metadata_jwks",
+        "user_count": 16
+      },
+      {
+        "duration": "150s",
+        "max_vus": 32,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 30,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 32
+      },
+      {
+        "duration": "150s",
+        "max_vus": 64,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 600,
+        "scenario": "cap_refresh_token",
+        "user_count": 64
+      }
+    ],
+    "verdict": "FAIL",
+    "success_ops_s": 978.9,
+    "latency_ms": {
+      "p50": 745.0,
+      "p95": 2608.0,
+      "p99": 3729.3499999999913
+    },
+    "started": 58734,
+    "successful": 58734,
+    "completed": 58734,
+    "unfinished": 0,
+    "success_fraction_of_started": 1.0,
+    "planned_success_fraction": 0.6118125,
+    "dropped": 37265,
+    "drop_fraction": 0.388181,
+    "outcomes": {
+      "success": 58734
+    },
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "sidecar_gates": {
+      "argon2": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 19.158,
+          "p50": 302.566,
+          "p95": 1092.914,
+          "p99": 1344.675,
+          "dropped": 720,
+          "drop_fraction": 0.5995004163197336,
+          "error_rate": 0.0,
+          "status": "target_miss",
+          "measured_ops_s": 3.222,
+          "successful_ops_s": 3.222,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791482033.562,
+            "window_end_s": 1791482168.562,
+            "measure_started_exact": 435,
+            "measure_completed_exact": 435,
+            "measure_dropped_exact": 645,
+            "measure_scheduled_observed": 1080,
+            "measure_drop_fraction": 0.597222,
+            "measure_outcomes": {
+              "success": 435
+            },
+            "measure_outcome_sum": 435,
+            "drops_pre_window": 75,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 1080,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 8.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 4554.299999999997,
+          "gate_p99": 5947.559999999991,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 7325,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/A04R/results/multi/pr230-perf-a04r-20261009/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz"
+          },
+          "load_generator_evidence": "absent",
+          "latency_gate": "existing_cold_login_k6_guardrails",
+          "rate_for_gate": 3.222,
+          "threshold_status_diagnostic": "target_miss",
+          "complete_operation_latency_ms": {
+            "p50": 1081.0,
+            "p95": 4554.299999999997,
+            "p99": 5947.559999999991
+          }
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 399.997,
+          "p50": 2.415,
+          "p95": 6.046,
+          "p99": 11.838,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 200.0,
+          "successful_ops_s": 200.0,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791482036.136,
+            "window_end_s": 1791482171.136,
+            "measure_started_exact": 27000,
+            "measure_completed_exact": 27000,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 27000,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 27000
+            },
+            "measure_outcome_sum": 27000,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 27000,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 200.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 12.0,
+          "gate_p99": 21.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 604031,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/A04R/results/multi/pr230-perf-a04r-20261009/meta/capacity-metadata-jwks.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 200.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 5.0,
+            "p95": 12.0,
+            "p99": 21.0
+          }
+        }
+      },
+      "fapi": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 79.916,
+          "p50": 236.564,
+          "p95": 943.278,
+          "p99": 1154.413,
+          "dropped": 2101,
+          "drop_fraction": 0.46678515885358807,
+          "error_rate": 0.0,
+          "status": "target_miss",
+          "measured_ops_s": 16.252,
+          "successful_ops_s": 16.252,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791482038.991,
+            "window_end_s": 1791482173.991,
+            "measure_started_exact": 2194,
+            "measure_completed_exact": 2194,
+            "measure_dropped_exact": 1856,
+            "measure_scheduled_observed": 4050,
+            "measure_drop_fraction": 0.458272,
+            "measure_outcomes": {
+              "success": 2194
+            },
+            "measure_outcome_sum": 2194,
+            "drops_pre_window": 245,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 4050,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 30.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 3207.3999999999996,
+          "gate_p99": 4435.14,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 54712,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/A04R/results/multi/pr230-perf-a04r-20261009/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz"
+          },
+          "load_generator_evidence": "absent",
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 16.252,
+          "threshold_status_diagnostic": "target_miss",
+          "complete_operation_latency_ms": {
+            "p50": 1875.5,
+            "p95": 3207.3999999999996,
+            "p99": 4435.14
+          }
+        }
+      },
+      "refresh": {
+        "verdict": "FAIL",
+        "metrics": {
+          "rps": 198.375,
+          "p50": 85.019,
+          "p95": 1011.826,
+          "p99": 1375.958,
+          "dropped": 60488,
+          "drop_fraction": 0.6720814213175409,
+          "error_rate": 0.0,
+          "status": "target_miss",
+          "measured_ops_s": 210.074,
+          "successful_ops_s": 210.074,
+          "window_seconds": 135.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791482042.49,
+            "window_end_s": 1791482177.49,
+            "measure_started_exact": 28360,
+            "measure_completed_exact": 28360,
+            "measure_dropped_exact": 52640,
+            "measure_scheduled_observed": 81000,
+            "measure_drop_fraction": 0.649877,
+            "measure_outcomes": {
+              "success": 28360
+            },
+            "measure_outcome_sum": 28360,
+            "drops_pre_window": 7848,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 81000,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 600.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 64,
+            "refresh_update": 29513,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 1015.0499999999993,
+          "gate_p99": 1396.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 489554,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr230-performance-20261009/A04R/results/multi/pr230-perf-a04r-20261009/refresh/capacity-cap-refresh-token.diag.jsonl.gz"
+          },
+          "load_generator_evidence": "absent",
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 210.074,
+          "threshold_status_diagnostic": "target_miss",
+          "complete_operation_latency_ms": {
+            "p50": 81.0,
+            "p95": 1015.0499999999993,
+            "p99": 1396.0
+          }
+        }
+      }
+    },
+    "all_load_common_window": {
+      "seconds": 60.0,
+      "method": "contract",
+      "start_ms": 1791482080194,
+      "end_ms": 1791482140194
+    },
+    "main_verdict": "FAIL",
+    "health": {
+      "app_affinity_verified": true,
+      "postgres_affinity_verified": true,
+      "valkey_affinity_verified": true,
+      "service_affinity_verified": true,
+      "generator_affinity_verified": true,
+      "point_completed": true,
+      "unexpected_zero": true,
+      "preparation_valid": true,
+      "prepare_sut_zero": true,
+      "oom_none": true,
+      "no_restarts": true,
+      "queue_full_zero": true,
+      "dropped_required_zero": true,
+      "db_outbox_drained": true,
+      "audit_reconciled": true,
+      "journal_contiguous": true,
+      "active_per_scope_le_10": true,
+      "spent_per_family_le_64": true,
+      "expired_backlog_zero": true,
+      "sidecars_complete": true,
+      "collector_copy_complete": true
+    },
+    "wal_bytes_per_success": 3266.453,
+    "cpu_cores": {
+      "app": 1.56,
+      "postgres": 2.07
+    },
+    "window": {
+      "window_start_s": 1791482080.194,
+      "window_end_s": 1791482140.194,
+      "measure_started_exact": 58734,
+      "measure_completed_exact": 58734,
+      "measure_dropped_exact": 37265,
+      "measure_scheduled_observed": 95999,
+      "measure_drop_fraction": 0.388181,
+      "measure_outcomes": {
+        "success": 58734
+      },
+      "measure_outcome_sum": 58734,
+      "drops_pre_window": 31543,
+      "drops_post_window": 1,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 96000,
+      "schedule_delta_vs_rational": -1,
+      "observed_schedule_rate": 1599.983,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "elapsed_s": 260.1,
+    "audit": {
+      "point": "pr230-perf-a04r-20261009",
+      "checks": {
+        "collected": true,
+        "fault_none": true,
+        "pending_zero": true,
+        "db_head_eq_anchor_seq": true,
+        "db_head_eq_anchor_hash": true,
+        "rcv_seq_eq_anchor": true,
+        "rcv_hash_eq_anchor": true,
+        "deployment_match": true,
+        "checkpoint_progress_valid": true,
+        "accepted_events_delta_eq": true,
+        "journal_collected": true,
+        "journal_clean": true,
+        "journal_range_eq_delta": true
+      },
+      "verdict": "PASS",
+      "checkpoint_advanced": true,
+      "empty_prefix_allowed": false,
+      "delta_events": 157779,
+      "accepted_events_delta": 157779,
+      "journal": {
+        "collected": true,
+        "journal_sha256": "51514d68d4ba773e863cda97f6e9257a00cb036e790a55c74132b17be8e5ca34",
+        "journal_bytes": 154726324,
+        "batches": 2073,
+        "remote_path": "sis-rcv-pr230-perf-a04r-20261009:/data/journal.jsonl",
+        "events_in_range": 157779,
+        "expected_in_range": 157779,
+        "by_event_type": {
+          "login_success": 481,
+          "authorization_decision_committed": 21997,
+          "token_issued": 122552,
+          "refresh_family_capacity_retired": 12749
+        },
+        "token_issued_in_range": 122552,
+        "malformed_lines": 0,
+        "foreign_deployment_batches": 0,
+        "sequence_gaps": 0,
+        "duplicate_sequences": 0,
+        "range_contiguous": true
+      },
+      "token_issued_delta": 122552,
+      "expected_issuances": null,
+      "token_issued_scope": "reported_only_no_clean_denominator"
+    },
+    "maintenance": null,
+    "storage_sampling": {
+      "start": 1791482009.431234,
+      "end": 1791482181.771064,
+      "db_first": 12490431,
+      "db_last": 155743935,
+      "db_peak": 155743935,
+      "pending_peak": 631,
+      "oldest_pending_peak_s": 0.594749
+    },
+    "histogram_bounds_ms": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "latency_time_buckets": [
+      {
+        "completion_offset_s": -10,
+        "complete_samples": 780,
+        "p50_interval_ms": [
+          200,
+          500
+        ],
+        "p95_interval_ms": [
+          200,
+          500
+        ],
+        "p99_interval_ms": [
+          200,
+          500
+        ],
+        "max_ms": 417.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          335,
+          445,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 0,
+        "complete_samples": 9282,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 4465.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          561,
+          2637,
+          3509,
+          1825,
+          750,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 10,
+        "complete_samples": 7921,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 4513.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          55,
+          925,
+          3019,
+          2704,
+          1218,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 20,
+        "complete_samples": 10375,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3036.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          120,
+          2645,
+          4899,
+          1187,
+          1524,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 30,
+        "complete_samples": 9973,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2831.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          58,
+          2141,
+          4745,
+          1572,
+          1457,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 40,
+        "complete_samples": 10762,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2746.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3068,
+          4958,
+          1309,
+          1427,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 50,
+        "complete_samples": 9415,
+        "p50_interval_ms": [
+          500,
+          1000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 3076.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          36,
+          1775,
+          4333,
+          1770,
+          1501,
+          0,
+          0
+        ]
+      },
+      {
+        "completion_offset_s": 60,
+        "complete_samples": 226,
+        "p50_interval_ms": [
+          1000,
+          2000
+        ],
+        "p95_interval_ms": [
+          2000,
+          5000
+        ],
+        "p99_interval_ms": [
+          2000,
+          5000
+        ],
+        "max_ms": 2321.0,
+        "histogram": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          117,
+          101,
+          0,
+          0
+        ]
+      }
+    ],
+    "bucket_boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  }
+]

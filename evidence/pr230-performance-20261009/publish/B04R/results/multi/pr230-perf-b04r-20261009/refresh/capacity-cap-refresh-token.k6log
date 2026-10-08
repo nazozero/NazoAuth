@@ -1,0 +1,1 @@
+time="2026-10-08T17:48:55Z" level=warning msg="Insufficient VUs, reached 64 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=cap_refresh_token

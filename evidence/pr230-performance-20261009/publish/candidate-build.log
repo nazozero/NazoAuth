@@ -1,0 +1,4 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+   Compiling nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+   Compiling nazoauth v0.2.16 (/src/crates/nazoauth)
+    Finished `release` profile [optimized] target(s) in 2m 55s

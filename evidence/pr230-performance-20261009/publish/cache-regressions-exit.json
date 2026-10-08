@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--locked", "--all-features", "-p", "nazo-postgres", "--test", "authorization_decisions", "--test", "query_counts", "prepared_shape", "--", "--nocapture"], "exit": 0, "seconds": 38.863353284075856}

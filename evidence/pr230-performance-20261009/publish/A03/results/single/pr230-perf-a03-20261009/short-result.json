@@ -1,0 +1,129 @@
+{
+  "name": "pr230-perf-a03-20261009",
+  "mode": "single",
+  "scenario": "cap_mixed",
+  "rate": 400,
+  "window_seconds": 60,
+  "app_cpus": 1,
+  "confirmation": false,
+  "point_path": "single/pr230-perf-a03-20261009/point.json",
+  "token_state": {
+    "collected": false
+  },
+  "verdict": "INVALID",
+  "metrics": {
+    "reason": "full_sidecar_measurement_window_unavailable",
+    "main_verdict": "INVALID",
+    "complete_operation_latency_ms": null,
+    "health_verdict": "INVALID",
+    "failed_health_checks": [
+      "service_affinity_verified",
+      "generator_affinity_verified",
+      "point_completed",
+      "unexpected_zero",
+      "oom_none",
+      "no_restarts",
+      "queue_full_zero",
+      "dropped_required_zero",
+      "db_outbox_drained",
+      "audit_reconciled",
+      "journal_contiguous",
+      "active_per_scope_le_10",
+      "spent_per_family_le_64",
+      "expired_backlog_zero",
+      "sidecars_complete"
+    ],
+    "health_evidence_collected": false,
+    "all_load_common_window": {},
+    "sidecar_gates": {
+      "argon2": {
+        "verdict": "INVALID",
+        "metrics": {
+          "reason": "no_summary",
+          "complete_operation_latency_ms": null
+        }
+      },
+      "meta": {
+        "verdict": "INVALID",
+        "metrics": {
+          "reason": "no_summary",
+          "complete_operation_latency_ms": null
+        }
+      },
+      "fapi": {
+        "verdict": "INVALID",
+        "metrics": {
+          "reason": "no_summary",
+          "complete_operation_latency_ms": null
+        }
+      },
+      "refresh": {
+        "verdict": "INVALID",
+        "metrics": {
+          "reason": "no_summary",
+          "complete_operation_latency_ms": null
+        }
+      }
+    }
+  },
+  "health": {
+    "app_affinity_verified": true,
+    "postgres_affinity_verified": true,
+    "valkey_affinity_verified": true,
+    "service_affinity_verified": false,
+    "generator_affinity_verified": false,
+    "point_completed": false,
+    "unexpected_zero": false,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "oom_none": false,
+    "no_restarts": false,
+    "queue_full_zero": false,
+    "dropped_required_zero": false,
+    "db_outbox_drained": false,
+    "audit_reconciled": false,
+    "journal_contiguous": false,
+    "active_per_scope_le_10": false,
+    "spent_per_family_le_64": false,
+    "expired_backlog_zero": false,
+    "sidecars_complete": false,
+    "collector_copy_complete": false
+  },
+  "maintenance": null,
+  "provenance_valid": true,
+  "token_state_verdict": "INVALID",
+  "cost": {
+    "wal_windowed": null,
+    "wal_per_success_bytes": null,
+    "wal_io_windowed": null,
+    "wal_writes_per_op": null,
+    "wal_fsyncs_per_op": null,
+    "wait_per_acq_ms": null,
+    "acquire_per_op_windowed": null,
+    "oom_killed": null,
+    "restart_count": null
+  },
+  "component_cpu_cores": {},
+  "audit": null,
+  "queue": null,
+  "collection_contract": "blackbox-db-v1",
+  "unverified_internal_gates": {
+    "queue_dropped_zero": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "pending_zero_post_drain": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "enqueued_eq_persisted": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    }
+  },
+  "elapsed_s": 49.6,
+  "original_verdict": "INVALID"
+}

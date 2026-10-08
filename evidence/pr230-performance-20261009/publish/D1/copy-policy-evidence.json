@@ -1,0 +1,307 @@
+{
+  "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791476827.5410678,
+      "container": "sis-sampler-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476827.5613065,
+      "container": "sis-proc-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476834.767081,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476834.9290216,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476840.3946705,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476840.5625174,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476845.8409677,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476845.9545305,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476851.2109857,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476851.4312584,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476856.8857431,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476856.968129,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476862.2568312,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476862.5284944,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476867.967609,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476868.3702555,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476873.8844736,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476874.0318663,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476879.475216,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476879.6777408,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476885.143161,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476885.31968,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476890.8519974,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476891.001447,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476896.3826363,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476896.5036774,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476901.836046,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476901.9561853,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476907.2811213,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476907.4699426,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476912.8738976,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476912.9615874,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476918.3227046,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476918.394985,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476918.454173,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476918.4807465,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476918.8936064,
+      "container": "sis-load-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476926.87959,
+      "container": "sis-sampler-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476926.9168801,
+      "container": "sis-sampler-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476937.4635143,
+      "container": "sis-proc-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476937.4842033,
+      "container": "sis-proc-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476948.532199,
+      "container": "sis-sampler-pr230-perf-d1-20261009"
+    },
+    {
+      "ts": 1791476948.6002476,
+      "container": "sis-proc-pr230-perf-d1-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791476827.434058,
+      "ts_end": 1791476827.4729607,
+      "elapsed_ms": 38.904,
+      "container": "sis-sampler-pr230-perf-d1-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791476827.472991,
+      "ts_end": 1791476827.5127144,
+      "elapsed_ms": 39.7244,
+      "container": "sis-proc-pr230-perf-d1-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791476827.56161,
+      "ts_end": 1791476827.5973616,
+      "elapsed_ms": 35.7519,
+      "container": "sis-sampler-pr230-perf-d1-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791476827.597385,
+      "ts_end": 1791476827.6338694,
+      "elapsed_ms": 36.4848,
+      "container": "sis-proc-pr230-perf-d1-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791476918.5018666,
+      "ts_end": 1791476918.569446,
+      "elapsed_ms": 67.58,
+      "container": "sis-load-pr230-perf-d1-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "73ad01ea1a451840f5d126ec9f58c4fc0b66469c68f7878182d13cdaddb04d97",
+        "owner": "pr230-perf-d1-20261009",
+        "running": false,
+        "checked_at": 1791476918.517432,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791476919.051789,
+      "ts_end": 1791476919.100102,
+      "elapsed_ms": 48.3132,
+      "container": "sis-sampler-pr230-perf-d1-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791476919.1001248,
+      "ts_end": 1791476919.2335403,
+      "elapsed_ms": 133.4159,
+      "container": "sis-proc-pr230-perf-d1-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791476937.3268783,
+      "ts_end": 1791476937.3970945,
+      "elapsed_ms": 70.2165,
+      "container": "sis-sampler-pr230-perf-d1-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "f878809c98ec0cf9486253e63c82810ea6fce72165c914022c27979a19515ece",
+        "owner": "pr230-perf-d1-20261009",
+        "running": false,
+        "checked_at": 1791476937.3534536,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791476947.863782,
+      "ts_end": 1791476948.065202,
+      "elapsed_ms": 201.4207,
+      "container": "sis-proc-pr230-perf-d1-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "911fbf27e195bdb85f9db89495554a0cb21cf2a8309499ce8cb77a98e8dcee9e",
+        "owner": "pr230-perf-d1-20261009",
+        "running": false,
+        "checked_at": 1791476947.8902252,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-pr230-perf-d1-20261009",
+    "sis-proc-pr230-perf-d1-20261009",
+    "sis-sampler-pr230-perf-d1-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-pr230-perf-d1-20261009",
+      "sis-proc-pr230-perf-d1-20261009",
+      "sis-sampler-pr230-perf-d1-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

@@ -1,0 +1,10 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 41.87s
+     Running tests/hotpath_statement_cache.rs (target/debug/deps/hotpath_statement_cache-3663f7bbc93b19d9)
+
+running 1 test
+test audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds ... HOTPATH_CACHE preflight=1 append=1 executions=6 distinct_events=3
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+

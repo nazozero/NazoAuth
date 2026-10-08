@@ -1,0 +1,2 @@
+968d889d93503c5447b5f81f5d55809b70ef8cf089ce7b5f6d1bc5c56243c01b  /src/evidence/pr230-performance-20261009/D1/bin/pinset
+{"utc": "2026-10-08T16:26:15.999495+00:00", "stage": "task-environment-setup", "pinset_sha256": "968d889d93503c5447b5f81f5d55809b70ef8cf089ce7b5f6d1bc5c56243c01b", "isolated_pinset_output": "pinned_tasks=1 failed_procs=0", "scripts_volume": "pr230-perf-d1-20261009-scripts", "pinbin_volume": "pr230-perf-d1-20261009-pinbin", "tls_volume": "pr230-perf-d1-20261009-audit-tls"}

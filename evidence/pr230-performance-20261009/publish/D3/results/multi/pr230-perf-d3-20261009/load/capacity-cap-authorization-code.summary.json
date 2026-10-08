@@ -1,0 +1,240 @@
+{
+  "profile": "capacity",
+  "scenario": "cap_authorization_code",
+  "elapsed_seconds": 79.958,
+  "status": "target_miss",
+  "k6_exit_code": 0,
+  "k6": {
+    "http_reqs": 146064,
+    "rps": 1905.044,
+    "error_rate": 0.0,
+    "iterations_completed": 36516,
+    "dropped_iterations": 23485,
+    "dropped_per_s": 306.304,
+    "drop_fraction": 0.39141,
+    "scheduled_estimate": 60001,
+    "latency_ms": {
+      "p50": 406.003,
+      "p95": 1073.308,
+      "p99": 1322.526
+    },
+    "full_run": {
+      "iterations_completed": 36516,
+      "dropped_iterations": 23485,
+      "drop_fraction": 0.39141,
+      "http_latency_ms": {
+        "p50": 406.003,
+        "p95": 1073.308,
+        "p99": 1322.526
+      }
+    },
+    "measure": {
+      "ops": 28868,
+      "ops_per_s": 481.133,
+      "ops_per_s_basis": "scenario_window",
+      "successful_ops_per_s": 481.133,
+      "errors": 0,
+      "outcomes": {
+        "success": 28868,
+        "expected_rejection": 0,
+        "local_no_request": 0,
+        "unexpected": 0,
+        "prepare_failed": 0,
+        "prepare_local_failed": 0,
+        "prepare_sut_failed": 0
+      },
+      "iterations": {
+        "measure_begins": 28868,
+        "legacy_rule_begins": 29195,
+        "late_vu_measured_only": 0,
+        "late_vu_fraction": 0.0,
+        "begins_total": 36516,
+        "ends_total": 36516
+      },
+      "subject_lifecycle": {
+        "initial_mint": 0,
+        "refresh_update": 0,
+        "expired_reauth": 0
+      },
+      "legacy_rule_ops": 29195,
+      "scheduled": 48000,
+      "started": 28868,
+      "completed": 28868,
+      "unfinished": 0,
+      "dropped": 19132,
+      "drop_fraction": 0.398583,
+      "schedule_delta": -19132,
+      "drop_lower_bound": 19132,
+      "drop_upper_bound": 19132,
+      "drop_fraction_upper": 0.398583,
+      "boundary_overshoot": 0,
+      "pre_measure_drops_estimate": 4352,
+      "cohort_problems": [],
+      "cohort_valid": true,
+      "latency_ms": {
+        "p50": 1951.0,
+        "p95": 2807.0,
+        "p99": 2969.0
+      },
+      "iteration_ms": {
+        "p50": 1951.0,
+        "p95": 2807.0,
+        "p99": 2969.0
+      },
+      "measurement_contract": {
+        "bucket_ms": 60000,
+        "bucket_count": 2,
+        "scenario_clock_ok": 1,
+        "divergent_vus": false,
+        "scenario_start_ms": 1791478242688,
+        "window_start_ms": 1791478257688,
+        "window_end_ms": 1791478317688,
+        "measure_offset_ms": 15000,
+        "cap_measure_start_ms": 0,
+        "contract": "cap-scenario-window-v1",
+        "window_seconds": 60,
+        "duration_ms": 75000,
+        "warmup_ms": 15000
+      },
+      "contract_problems": [],
+      "window_valid": true
+    }
+  },
+  "measurement_evidence": {
+    "window_valid": true,
+    "window_problems": [],
+    "parse_errors": 0,
+    "reader_error": null,
+    "lag_over_5s": 0,
+    "diag_overflow": false
+  },
+  "steps": [
+    {
+      "step": "authorize",
+      "http_reqs": 36516,
+      "rps": 476.261,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 342.881,
+        "p95": 542.004,
+        "p99": 589.965
+      }
+    },
+    {
+      "step": "authorize_decision",
+      "http_reqs": 36516,
+      "rps": 476.261,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 368.867,
+        "p95": 558.604,
+        "p99": 599.517
+      }
+    },
+    {
+      "step": "par_oidc",
+      "http_reqs": 36516,
+      "rps": 476.261,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 357.596,
+        "p95": 544.495,
+        "p99": 586.428
+      }
+    },
+    {
+      "step": "token_authorization_code",
+      "http_reqs": 36516,
+      "rps": 476.261,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 906.537,
+        "p95": 1299.676,
+        "p99": 1428.857
+      }
+    }
+  ],
+  "error_breakdown": [],
+  "postgres": {
+    "statement_calls": 2019917,
+    "total_statement_ms": 228037.93,
+    "mean_statement_ms": 0.113,
+    "rows": 2262031,
+    "database_bytes": 188741311,
+    "statements_per_http_request": 13.829
+  },
+  "collection_contract": "blackbox-db-v1",
+  "db_pool": null,
+  "application_pool_observation": {
+    "field": "application_pool",
+    "delta": null,
+    "status": "UNAVAILABLE",
+    "reason": "application performance collection removed"
+  },
+  "valkey": {
+    "keyspace_hits": 512288,
+    "keyspace_misses": 164,
+    "commands_processed": 1099024,
+    "expired_keys": 2,
+    "db0_keys": 36518
+  },
+  "containers": {
+    "by_container": {
+      "pr230-perf-d3-20261009-nazoauth-1": {
+        "service": "nazoauth",
+        "samples": 25,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "pr230-perf-d3-20261009-postgres-1": {
+        "service": "postgres",
+        "samples": 25,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "pr230-perf-d3-20261009-valkey-1": {
+        "service": "valkey",
+        "samples": 25,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    },
+    "by_service": {
+      "nazoauth": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "postgres": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "valkey": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    }
+  },
+  "load_model": {
+    "executor": "constant-arrival-rate",
+    "target_rate": 800,
+    "time_unit": "1s",
+    "duration": "75s",
+    "app_replicas": 1,
+    "observed_app_instances": 1
+  }
+}

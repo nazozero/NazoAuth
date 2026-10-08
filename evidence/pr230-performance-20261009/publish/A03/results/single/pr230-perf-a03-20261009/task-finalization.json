@@ -1,0 +1,19 @@
+{
+  "errors": [
+    {
+      "container": "sis-load-pr230-perf-a03-20261009",
+      "reason": "workload still running at finalization"
+    }
+  ],
+  "stopped": [
+    "sis-load-pr230-perf-a03-20261009"
+  ],
+  "terminal_captured": [
+    "sis-load-pr230-perf-a03-20261009",
+    "sis-proc-pr230-perf-a03-20261009",
+    "sis-sampler-pr230-perf-a03-20261009"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

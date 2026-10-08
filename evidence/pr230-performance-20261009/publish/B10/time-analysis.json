@@ -1,0 +1,245 @@
+{
+  "latency": [
+    {
+      "completion_offset_s": 0,
+      "complete_samples": 3319,
+      "p50_interval_ms": [
+        2000,
+        5000
+      ],
+      "p95_interval_ms": [
+        2000,
+        5000
+      ],
+      "p99_interval_ms": [
+        2000,
+        5000
+      ],
+      "max_ms": 2838.0,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3319,
+        0,
+        0
+      ]
+    },
+    {
+      "completion_offset_s": 10,
+      "complete_samples": 3899,
+      "p50_interval_ms": [
+        2000,
+        5000
+      ],
+      "p95_interval_ms": [
+        2000,
+        5000
+      ],
+      "p99_interval_ms": [
+        2000,
+        5000
+      ],
+      "max_ms": 3143.0,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3899,
+        0,
+        0
+      ]
+    },
+    {
+      "completion_offset_s": 20,
+      "complete_samples": 4269,
+      "p50_interval_ms": [
+        2000,
+        5000
+      ],
+      "p95_interval_ms": [
+        2000,
+        5000
+      ],
+      "p99_interval_ms": [
+        2000,
+        5000
+      ],
+      "max_ms": 2857.0,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        325,
+        3944,
+        0,
+        0
+      ]
+    },
+    {
+      "completion_offset_s": 30,
+      "complete_samples": 4076,
+      "p50_interval_ms": [
+        2000,
+        5000
+      ],
+      "p95_interval_ms": [
+        2000,
+        5000
+      ],
+      "p99_interval_ms": [
+        2000,
+        5000
+      ],
+      "max_ms": 2897.0,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        893,
+        3183,
+        0,
+        0
+      ]
+    },
+    {
+      "completion_offset_s": 40,
+      "complete_samples": 4108,
+      "p50_interval_ms": [
+        2000,
+        5000
+      ],
+      "p95_interval_ms": [
+        2000,
+        5000
+      ],
+      "p99_interval_ms": [
+        2000,
+        5000
+      ],
+      "max_ms": 3042.0,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        5,
+        4103,
+        0,
+        0
+      ]
+    },
+    {
+      "completion_offset_s": 50,
+      "complete_samples": 4353,
+      "p50_interval_ms": [
+        2000,
+        5000
+      ],
+      "p95_interval_ms": [
+        2000,
+        5000
+      ],
+      "p99_interval_ms": [
+        2000,
+        5000
+      ],
+      "max_ms": 2600.0,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        703,
+        3650,
+        0,
+        0
+      ]
+    },
+    {
+      "completion_offset_s": 60,
+      "complete_samples": 631,
+      "p50_interval_ms": [
+        2000,
+        5000
+      ],
+      "p95_interval_ms": [
+        2000,
+        5000
+      ],
+      "p99_interval_ms": [
+        2000,
+        5000
+      ],
+      "max_ms": 2459.0,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        182,
+        449,
+        0,
+        0
+      ]
+    }
+  ],
+  "storage": {
+    "start": 1791480068.791001,
+    "end": 1791480160.846175,
+    "db_first": 12490431,
+    "db_last": 154203839,
+    "db_peak": 154203839,
+    "pending_peak": 141,
+    "oldest_pending_peak_s": 0.273183
+  },
+  "boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+}

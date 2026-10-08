@@ -1,0 +1,39 @@
+{
+  "sample_count": 75,
+  "role_state_wait_observations": {
+    "nazoauth_perf_exporter": {
+      "('idle', 'Client', 'ClientRead')": 31,
+      "('active', None, None)": 28,
+      "('active', 'LWLock', 'WALWrite')": 3,
+      "('idle in transaction', 'Client', 'ClientRead')": 9,
+      "('idle in transaction', 'LWLock', 'WALWrite')": 1,
+      "('active', 'IO', 'WalSync')": 2,
+      "('idle in transaction', None, None)": 1
+    },
+    "nazoauth_perf_runtime": {
+      "('idle', 'Client', 'ClientRead')": 1008,
+      "('active', 'IO', 'WalSync')": 43,
+      "('active', 'LWLock', 'WALWrite')": 169,
+      "('active', None, None)": 264,
+      "('idle', None, None)": 57,
+      "('idle in transaction', 'Client', 'ClientRead')": 574,
+      "('active', 'Client', 'ClientRead')": 92,
+      "('idle in transaction', None, None)": 69,
+      "('idle in transaction', 'LWLock', 'WALWrite')": 6,
+      "('active', 'IO', 'SlruRead')": 1,
+      "('idle in transaction', 'IO', 'WalSync')": 1,
+      "('active', 'LWLock', 'BufferContent')": 16,
+      "('active', 'IO', 'DataFileWrite')": 1,
+      "('active', 'IO', 'WalWrite')": 1
+    },
+    "postgres": {
+      "('active', 'Lock', 'relation')": 2,
+      "('active', None, None)": 4,
+      "('active', 'Client', 'ClientRead')": 1
+    },
+    "null": {
+      "('active', None, None)": 2
+    }
+  },
+  "boundary": "counts are summed connection observations, not elapsed wait measurements; exporter/observer are separate"
+}
