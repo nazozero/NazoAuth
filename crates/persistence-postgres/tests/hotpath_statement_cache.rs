@@ -9,7 +9,9 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds() {
-    let url = std::env::var("NAZO_TEST_DATABASE_URL").expect("isolated PostgreSQL is required");
+    let url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("isolated PostgreSQL requires NAZO_TEST_DATABASE_URL or DATABASE_URL");
     run_pending_migrations(&url).await.unwrap();
     let pool = create_pool(&url, 1).unwrap();
     let repository = AuditLedgerRepository::new(pool.clone());
