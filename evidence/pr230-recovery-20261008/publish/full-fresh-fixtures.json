@@ -1,0 +1,19 @@
+{
+  "utc": "2026-10-08T14:21:31.631896+00:00",
+  "fixtures": [
+    {
+      "database": "oauth",
+      "preserved_old_database": "nazo_recovery_pre_full_20261008"
+    },
+    {
+      "database": "nazo_audit_test",
+      "preserved_old_database": "nazo_audit_test_pre_full_20261008"
+    },
+    {
+      "isolated_valkey_db": 0,
+      "keys_before": "296",
+      "preserved_snapshot": "/data/recovery-pre-full-20261008.rdb"
+    }
+  ],
+  "scope": "isolated unit-test PostgreSQL only; all performance databases separate; no application/load running"
+}

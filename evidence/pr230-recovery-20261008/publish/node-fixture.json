@@ -1,0 +1,9 @@
+{
+  "version": "v26.10.0",
+  "archive_url": "https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.xz",
+  "sha256": "ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022",
+  "matches_official_shasums": true,
+  "extract": "Python stdlib tarfile r:xz with data filter; shell tar failed because xz executable absent",
+  "exit": 0,
+  "utc": "2026-10-08T14:52:34.665016+00:00"
+}

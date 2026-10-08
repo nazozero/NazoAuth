@@ -1,0 +1,309 @@
+{
+  "sis-rcv-r230-recovery-fault-b1-20261008": {
+    "image": "sha256:d3ee681be4ae8d1438b1234267e49c02a54a651556b26c9a34edc3967e31ed51",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 194013,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-08T12:46:44.277075807Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/data",
+        "rw": true
+      },
+      {
+        "type": "volume",
+        "destination": "/run/anchor-tls",
+        "rw": false
+      }
+    ]
+  },
+  "sis-worker-r230-recovery-fault-b1-20261008": {
+    "image": "sha256:c6e736f0547f0e31d70d3dd55a3774213da390f99910c733f9691c8fa4b9c4f4",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 194301,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-08T12:46:45.254705437Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/run/anchor-tls",
+        "rw": false
+      }
+    ]
+  },
+  "r230-recovery-fault-b1-20261008-nazoauth-1": {
+    "image": "sha256:c6e736f0547f0e31d70d3dd55a3774213da390f99910c733f9691c8fa4b9c4f4",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 196568,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-08T12:46:57.20333433Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {
+      "DATABASE_MAX_CONNECTIONS": "32",
+      "RUST_LOG": "warn,audit.persistence=debug"
+    },
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/var/lib/nazo_oauth",
+        "rw": true
+      },
+      {
+        "type": "volume",
+        "destination": "/pinbin",
+        "rw": false
+      }
+    ]
+  },
+  "r230-recovery-fault-b1-20261008-postgres-1": {
+    "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 190569,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-08T12:46:19.429814499Z",
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "Health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-08T12:53:57.840742535Z",
+            "End": "2026-10-08T12:53:57.887445937Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-10-08T12:54:02.888796864Z",
+            "End": "2026-10-08T12:54:02.948157145Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-10-08T12:54:07.949130771Z",
+            "End": "2026-10-08T12:54:08.041901847Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-10-08T12:54:13.04257843Z",
+            "End": "2026-10-08T12:54:13.128006493Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-10-08T12:54:18.128800873Z",
+            "End": "2026-10-08T12:54:18.20420235Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          }
+        ]
+      }
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/var/lib/postgresql",
+        "rw": true
+      }
+    ]
+  },
+  "r230-recovery-fault-b1-20261008-valkey-1": {
+    "image": "sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 190567,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-08T12:46:19.433576949Z",
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "Health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-08T12:53:57.82180556Z",
+            "End": "2026-10-08T12:53:57.871805371Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          },
+          {
+            "Start": "2026-10-08T12:54:02.875813832Z",
+            "End": "2026-10-08T12:54:02.918741934Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          },
+          {
+            "Start": "2026-10-08T12:54:07.919597322Z",
+            "End": "2026-10-08T12:54:08.03427768Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          },
+          {
+            "Start": "2026-10-08T12:54:13.035681917Z",
+            "End": "2026-10-08T12:54:13.10942367Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          },
+          {
+            "Start": "2026-10-08T12:54:18.110349967Z",
+            "End": "2026-10-08T12:54:18.184831295Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          }
+        ]
+      }
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": []
+  },
+  "r230-recovery-fault-b1-20261008-migrate-1": {
+    "image": "sha256:c6e736f0547f0e31d70d3dd55a3774213da390f99910c733f9691c8fa4b9c4f4",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 190983,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-08T12:46:26.849685862Z",
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "Health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-08T12:54:11.883058659Z",
+            "End": "2026-10-08T12:54:11.944132363Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-08T12:54:13.944533117Z",
+            "End": "2026-10-08T12:54:14.024096636Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-08T12:54:16.025105947Z",
+            "End": "2026-10-08T12:54:16.199724594Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-08T12:54:18.200815283Z",
+            "End": "2026-10-08T12:54:18.256336536Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-08T12:54:20.256886047Z",
+            "End": "2026-10-08T12:54:20.317491071Z",
+            "ExitCode": 0,
+            "Output": ""
+          }
+        ]
+      }
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/var/lib/nazo_oauth",
+        "rw": true
+      }
+    ]
+  }
+}

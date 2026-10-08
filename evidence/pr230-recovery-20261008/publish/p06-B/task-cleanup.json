@@ -1,0 +1,11 @@
+{
+  "label": "r230-recovery-p06-b-20261008",
+  "key": "p06-B",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.325,
+  "total_elapsed_s": 186.923,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

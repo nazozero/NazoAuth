@@ -1,0 +1,296 @@
+{
+  "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+  "schedule": {
+    "faults": {
+      "40": "http_500",
+      "130": "none",
+      "190": "http_500",
+      "240": "none"
+    },
+    "unblock_at": [],
+    "stop_at": 310,
+    "observe_until": 430
+  },
+  "checks": {
+    "execution": true,
+    "sequence_contiguous": true,
+    "event_ids_unique": true,
+    "db_receiver_anchor_agree": true,
+    "pending_zero": true,
+    "worker_confirmations_match_receiver": true,
+    "required_delivered": true,
+    "queue_accounting_converged": true,
+    "sustained_recovery": false
+  },
+  "phases": [
+    {
+      "start": 0,
+      "end": 40,
+      "http": {
+        "telemetry:200": 7998,
+        "required:200": 40
+      },
+      "longest_consecutive_required_503": 0,
+      "ending_consecutive_required_200": 40,
+      "oldest_pending_max_s": 1.973086,
+      "pending_first_last": [
+        1,
+        27
+      ]
+    },
+    {
+      "start": 40,
+      "end": 130,
+      "http": {
+        "telemetry:200": 18002,
+        "required:200": 11,
+        "required:503": 79
+      },
+      "longest_consecutive_required_503": 79,
+      "ending_consecutive_required_200": 0,
+      "oldest_pending_max_s": 85.621581,
+      "pending_first_last": [
+        127,
+        2212
+      ]
+    },
+    {
+      "start": 130,
+      "end": 190,
+      "http": {
+        "telemetry:200": 12000,
+        "required:503": 41,
+        "required:200": 19
+      },
+      "longest_consecutive_required_503": 41,
+      "ending_consecutive_required_200": 19,
+      "oldest_pending_max_s": 125.620155,
+      "pending_first_last": [
+        2212,
+        5
+      ]
+    },
+    {
+      "start": 190,
+      "end": 240,
+      "http": {
+        "telemetry:200": 10000,
+        "required:200": 10,
+        "required:503": 40
+      },
+      "longest_consecutive_required_503": 40,
+      "ending_consecutive_required_200": 0,
+      "oldest_pending_max_s": 46.38071,
+      "pending_first_last": [
+        278,
+        2209
+      ]
+    },
+    {
+      "start": 240,
+      "end": 310,
+      "http": {
+        "required:503": 16,
+        "telemetry:200": 13998,
+        "required:200": 54
+      },
+      "longest_consecutive_required_503": 16,
+      "ending_consecutive_required_200": 54,
+      "oldest_pending_max_s": 61.380469,
+      "pending_first_last": [
+        2209,
+        319
+      ]
+    },
+    {
+      "start": 310,
+      "end": 431,
+      "http": {
+        "telemetry:200": 3,
+        "required:200": 1
+      },
+      "longest_consecutive_required_503": 0,
+      "ending_consecutive_required_200": 1,
+      "oldest_pending_max_s": 0.087412,
+      "pending_first_last": [
+        12,
+        0
+      ]
+    }
+  ],
+  "accounting": {
+    "telemetry_http200": 62001,
+    "required_http200": 135,
+    "queue_full": 0,
+    "expired_unattempted": 0,
+    "closed_export_unattempted": 35047,
+    "confirmed_worker_events": 27089,
+    "inferred_inflight_end": 0,
+    "receiver_unique_types": {
+      "dynamic_client_registered": 1,
+      "dynamic_client_configuration_read": 26954,
+      "mtls_trust_bundle_exported": 135
+    },
+    "duplicate_event_ids": 0,
+    "receiver_duplicate_envelope_requests": 0,
+    "http_drops": 0
+  },
+  "database_calls": [
+    {
+      "calls": 7933,
+      "datname": "oauth",
+      "dbid": "16384",
+      "q": "SELECT public.nazo_persist_security_audit_event(item.event_id, item.event_type, item.event_category, item.payload, item.occurred_at) AS changed FROM unnest($1, ",
+      "queryid": 6548916346283852479,
+      "rolname": "nazoauth_perf_runtime",
+      "rows": 26880,
+      "shared_blks_dirtied": 966,
+      "shared_blks_written": 968,
+      "stats_since": "2026-10-08T13:09:08.356254+00:00",
+      "toplevel": true,
+      "total_exec_time": 3900.839703999996,
+      "userid": "16385",
+      "wal_bytes": 19960804,
+      "wal_fpi": 5,
+      "wal_records": 107864,
+      "pre_calls": 0,
+      "delta_calls": 7933
+    },
+    {
+      "calls": 622,
+      "datname": "oauth",
+      "dbid": "16384",
+      "q": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+      "queryid": 7702997900265701813,
+      "rolname": "nazoauth_perf_exporter",
+      "rows": 622,
+      "shared_blks_dirtied": 0,
+      "shared_blks_written": 0,
+      "stats_since": "2026-10-08T13:09:08.937464+00:00",
+      "toplevel": true,
+      "total_exec_time": 1147.0577869999997,
+      "userid": "18731",
+      "wal_bytes": 6209888,
+      "wal_fpi": 31,
+      "wal_records": 109692,
+      "pre_calls": 0,
+      "delta_calls": 622
+    },
+    {
+      "calls": 210,
+      "datname": "oauth",
+      "dbid": "16384",
+      "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+      "queryid": 7937354421020446243,
+      "rolname": "nazoauth_perf_runtime",
+      "rows": 210,
+      "shared_blks_dirtied": 9,
+      "shared_blks_written": 7,
+      "stats_since": "2026-10-08T13:09:08.273832+00:00",
+      "toplevel": true,
+      "total_exec_time": 46.521891,
+      "userid": "16385",
+      "wal_bytes": 141626,
+      "wal_fpi": 0,
+      "wal_records": 842,
+      "pre_calls": 0,
+      "delta_calls": 210
+    },
+    {
+      "calls": 129,
+      "datname": "oauth",
+      "dbid": "16384",
+      "q": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+      "queryid": -793151951593613389,
+      "rolname": "nazoauth_perf_exporter",
+      "rows": 129,
+      "shared_blks_dirtied": 1,
+      "shared_blks_written": 0,
+      "stats_since": "2026-10-08T13:09:00.856656+00:00",
+      "toplevel": true,
+      "total_exec_time": 25.87249500000002,
+      "userid": "18731",
+      "wal_bytes": 21936,
+      "wal_fpi": 1,
+      "wal_records": 258,
+      "pre_calls": 1,
+      "delta_calls": 128
+    }
+  ],
+  "recovery_after_confirmed_drain": [
+    {
+      "from": 130,
+      "to": 190,
+      "pre_recovery_persisted_max_sequence": 10126,
+      "first_confirmed_healthy_sample_second": 175,
+      "active_observation_s": 15,
+      "required_statuses": {
+        "200": 15
+      },
+      "required_all_success_after_confirmed_drain": true
+    },
+    {
+      "from": 240,
+      "to": 310,
+      "pre_recovery_persisted_max_sequence": 16071,
+      "first_confirmed_healthy_sample_second": 260,
+      "active_observation_s": 50,
+      "required_statuses": {
+        "200": 50
+      },
+      "required_all_success_after_confirmed_drain": true
+    }
+  ],
+  "final": {
+    "receiver_state": {
+      "accepted": 623,
+      "checkpoint": {
+        "accepted_batches": 622,
+        "accepted_events": 27090,
+        "batch_digest": "CObrGKIh3Kvcdr_xt1riOLoiVUabNPCs7J4vWePyWyg",
+        "checkpoint_kind": "batch",
+        "deployment_id": "01a11ba1-288c-761e-bb29-6efcff54c387",
+        "last_hash": "NLhiCmFSGw5mrG4yjd8e4pMZw7WUkRWNP5L6bgE2S-I",
+        "last_sequence": 27090,
+        "updated_at": "2026-10-08T13:14:18.368257107Z"
+      },
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 645,
+      "collected": true
+    },
+    "receiver_checkpoint": {
+      "deployment_id": "01a11ba1-288c-761e-bb29-6efcff54c387",
+      "checkpoint_kind": "batch",
+      "last_sequence": 27090,
+      "last_hash": "NLhiCmFSGw5mrG4yjd8e4pMZw7WUkRWNP5L6bgE2S-I",
+      "batch_digest": "CObrGKIh3Kvcdr_xt1riOLoiVUabNPCs7J4vWePyWyg",
+      "accepted_batches": 622,
+      "accepted_events": 27090,
+      "updated_at": "2026-10-08T13:14:18.368257107Z",
+      "collected": true
+    },
+    "db": {
+      "collected": true,
+      "pending": 0,
+      "total": 0,
+      "exported_retained": 0,
+      "last_sequence": 27090,
+      "last_hash": "34b8620a61521b0e66ac6e328ddf1ee29319c3b59491158d3f92fa6e01364be2",
+      "anchor_deployment_id": "01a11ba1-288c-761e-bb29-6efcff54c387",
+      "anchor_sequence": 27090,
+      "anchor_hash": "34b8620a61521b0e66ac6e328ddf1ee29319c3b59491158d3f92fa6e01364be2"
+    }
+  },
+  "drain": {
+    "pending": 0,
+    "last_sequence": 27090,
+    "anchor_sequence": 27090,
+    "drained": true,
+    "total": 0,
+    "exported_retained": 0
+  },
+  "max_first_event_age_at_confirmation_s": 0.09002089500427246,
+  "boundary": "HTTP200 is produced best-effort input, not durability; business registration is separate. Remaining in-flight is an accounting inference, not an internal gauge. SQL stats count completed calls; health-gate retry logs are not append attempts."
+}

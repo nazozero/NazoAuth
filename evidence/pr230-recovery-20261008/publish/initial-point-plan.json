@@ -1,0 +1,440 @@
+[
+  {
+    "key": "fault-B1",
+    "template": "fault-H1",
+    "arm": "B",
+    "kind": "fault",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 200,
+    "duration": "240s",
+    "formal_seconds": 240,
+    "warmup_ms": 0,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "required",
+    "schedule": {
+      "faults": {
+        "40": "http_500",
+        "90": "none",
+        "135": "reject_permanent",
+        "185": "none"
+      },
+      "unblock_at": [
+        185
+      ],
+      "stop_at": 240,
+      "observe_until": 400
+    },
+    "request_sha256": "416450b96bbe87c44a0c331aad396eaf8af39d610ffcf07f742e7f4876ca096c"
+  },
+  {
+    "key": "fault-B2",
+    "template": "fault-H1",
+    "arm": "B",
+    "kind": "fault",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 200,
+    "duration": "310s",
+    "formal_seconds": 310,
+    "warmup_ms": 0,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "required",
+    "schedule": {
+      "faults": {
+        "40": "http_500",
+        "130": "none",
+        "190": "http_500",
+        "240": "none"
+      },
+      "unblock_at": [],
+      "stop_at": 310,
+      "observe_until": 430
+    },
+    "request_sha256": "f08bcb5b7a53060cdd7f578c5aaffe80c4518c7b1d2de93cbe0adbecc491c7c4"
+  },
+  {
+    "key": "policy-optional",
+    "template": "fault-H1",
+    "arm": "B",
+    "kind": "fault",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 200,
+    "duration": "55s",
+    "formal_seconds": 55,
+    "warmup_ms": 0,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "optional",
+    "schedule": {
+      "faults": {
+        "10": "http_500",
+        "35": "none"
+      },
+      "unblock_at": [],
+      "stop_at": 55,
+      "observe_until": 80
+    },
+    "request_sha256": "51eb86f81f696f85d76afa7c83ed77ef76b8c8802e5836f6842ad09a417704fe"
+  },
+  {
+    "key": "policy-disabled",
+    "template": "fault-H1",
+    "arm": "B",
+    "kind": "fault",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 200,
+    "duration": "55s",
+    "formal_seconds": 55,
+    "warmup_ms": 0,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "disabled",
+    "schedule": {
+      "faults": {
+        "10": "http_500",
+        "35": "none"
+      },
+      "unblock_at": [],
+      "stop_at": 55,
+      "observe_until": 80
+    },
+    "request_sha256": "9fc92ae6f0b05205ae9ff6bd38eabecbeab8ef3aa675b4b1c7efc40f76c1f12c"
+  },
+  {
+    "key": "p06-A",
+    "template": "p06-H1",
+    "arm": "A",
+    "kind": "standard",
+    "source_sha": "e13fcfd1292283f135906a31de987b533f002de8",
+    "rate": 800,
+    "duration": "75s",
+    "formal_seconds": 60,
+    "warmup_ms": 15000,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "disabled",
+    "schedule": null,
+    "request_sha256": "6ac5a2caec72fb468c934d6599a5b7a47072e93c647436cfe8454ac050368a2d"
+  },
+  {
+    "key": "p06-B",
+    "template": "p06-H1",
+    "arm": "B",
+    "kind": "standard",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 800,
+    "duration": "75s",
+    "formal_seconds": 60,
+    "warmup_ms": 15000,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "disabled",
+    "schedule": null,
+    "request_sha256": "ad03656c59f423fa70b4e6d36776ab62d6741aa94b55893b273c136c3eef9bc6"
+  },
+  {
+    "key": "p10-B",
+    "template": "p10-H1",
+    "arm": "B",
+    "kind": "standard",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 960,
+    "duration": "75s",
+    "formal_seconds": 60,
+    "warmup_ms": 15000,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "disabled",
+    "schedule": null,
+    "request_sha256": "4c8fe4dbd45afbaa5807f3bf1cb2318bad2f7198a022f10b4958f6b12c18743d"
+  },
+  {
+    "key": "p10-A",
+    "template": "p10-H1",
+    "arm": "A",
+    "kind": "standard",
+    "source_sha": "e13fcfd1292283f135906a31de987b533f002de8",
+    "rate": 960,
+    "duration": "75s",
+    "formal_seconds": 60,
+    "warmup_ms": 15000,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "disabled",
+    "schedule": null,
+    "request_sha256": "6508625f2092ccc5108bb33efb8f023cbdd60b37e1de9039ceb2c22a1a649b66"
+  },
+  {
+    "key": "p03-A",
+    "template": "p03-H2",
+    "arm": "A",
+    "kind": "standard",
+    "source_sha": "e13fcfd1292283f135906a31de987b533f002de8",
+    "rate": 400,
+    "duration": "120s",
+    "formal_seconds": 60,
+    "warmup_ms": 60000,
+    "pre_vus": 64,
+    "max_vus": 64,
+    "user_count": 64,
+    "sidecars": [
+      {
+        "duration": "150s",
+        "max_vus": 8,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 1,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 8
+      },
+      {
+        "duration": "150s",
+        "max_vus": 16,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 13,
+        "scenario": "metadata_jwks",
+        "user_count": 16
+      },
+      {
+        "duration": "150s",
+        "max_vus": 32,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 2,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 32
+      },
+      {
+        "duration": "150s",
+        "max_vus": 64,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 38,
+        "scenario": "cap_refresh_token",
+        "user_count": 64
+      }
+    ],
+    "app_mode": "disabled",
+    "schedule": null,
+    "request_sha256": "5299c51eca156188362c53b37b3cb4e98548eb0cfc3856c7becfae10383ed287"
+  },
+  {
+    "key": "p03-B",
+    "template": "p03-H2",
+    "arm": "B",
+    "kind": "standard",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 400,
+    "duration": "120s",
+    "formal_seconds": 60,
+    "warmup_ms": 60000,
+    "pre_vus": 64,
+    "max_vus": 64,
+    "user_count": 64,
+    "sidecars": [
+      {
+        "duration": "150s",
+        "max_vus": 8,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 1,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 8
+      },
+      {
+        "duration": "150s",
+        "max_vus": 16,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 13,
+        "scenario": "metadata_jwks",
+        "user_count": 16
+      },
+      {
+        "duration": "150s",
+        "max_vus": 32,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 2,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 32
+      },
+      {
+        "duration": "150s",
+        "max_vus": 64,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 38,
+        "scenario": "cap_refresh_token",
+        "user_count": 64
+      }
+    ],
+    "app_mode": "disabled",
+    "schedule": null,
+    "request_sha256": "d446e066a0a841baecfeae3679c40ee78f81bad2b1afe0236bfa05a974ac2ef6"
+  },
+  {
+    "key": "p04-B",
+    "template": "p04-H1",
+    "arm": "B",
+    "kind": "standard",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 1600,
+    "duration": "120s",
+    "formal_seconds": 60,
+    "warmup_ms": 60000,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [
+      {
+        "duration": "150s",
+        "max_vus": 8,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 8,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 8
+      },
+      {
+        "duration": "150s",
+        "max_vus": 16,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 200,
+        "scenario": "metadata_jwks",
+        "user_count": 16
+      },
+      {
+        "duration": "150s",
+        "max_vus": 32,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 30,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 32
+      },
+      {
+        "duration": "150s",
+        "max_vus": 64,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 600,
+        "scenario": "cap_refresh_token",
+        "user_count": 64
+      }
+    ],
+    "app_mode": "disabled",
+    "schedule": null,
+    "request_sha256": "0855a5bfc5c77442b977f8854fc78d3abd5943e3dc8865868b1ef5610c965c50"
+  },
+  {
+    "key": "p04-A",
+    "template": "p04-H1",
+    "arm": "A",
+    "kind": "standard",
+    "source_sha": "e13fcfd1292283f135906a31de987b533f002de8",
+    "rate": 1600,
+    "duration": "120s",
+    "formal_seconds": 60,
+    "warmup_ms": 60000,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [
+      {
+        "duration": "150s",
+        "max_vus": 8,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 8,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 8
+      },
+      {
+        "duration": "150s",
+        "max_vus": 16,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 200,
+        "scenario": "metadata_jwks",
+        "user_count": 16
+      },
+      {
+        "duration": "150s",
+        "max_vus": 32,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 30,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 32
+      },
+      {
+        "duration": "150s",
+        "max_vus": 64,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 600,
+        "scenario": "cap_refresh_token",
+        "user_count": 64
+      }
+    ],
+    "app_mode": "disabled",
+    "schedule": null,
+    "request_sha256": "72742ab254f87e18e85abc7d7bd48d09ea2d074d84f12c27204fe600ff71eb40"
+  },
+  {
+    "key": "sustained-A",
+    "template": "sustained-H2",
+    "arm": "A",
+    "kind": "sustained",
+    "source_sha": "e13fcfd1292283f135906a31de987b533f002de8",
+    "rate": 960,
+    "duration": "195s",
+    "formal_seconds": 180,
+    "warmup_ms": 15000,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "required",
+    "schedule": null,
+    "request_sha256": "b018f05bf8d2a315d7f5e9863ee816725c3fa8d0a3d7dfa2ee116e7f1b7a395a"
+  },
+  {
+    "key": "sustained-B",
+    "template": "sustained-H2",
+    "arm": "B",
+    "kind": "sustained",
+    "source_sha": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+    "rate": 960,
+    "duration": "195s",
+    "formal_seconds": 180,
+    "warmup_ms": 15000,
+    "pre_vus": 992,
+    "max_vus": 992,
+    "user_count": 992,
+    "sidecars": [],
+    "app_mode": "required",
+    "schedule": null,
+    "request_sha256": "9123b6b720d7a573fcdfea60dfdfaf1e1acc40a43b3dc337d3d585f569d7f73c"
+  }
+]

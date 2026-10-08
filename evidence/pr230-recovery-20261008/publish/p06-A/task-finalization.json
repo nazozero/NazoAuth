@@ -1,0 +1,12 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-r230-recovery-p06-a-20261008",
+    "sis-proc-r230-recovery-p06-a-20261008",
+    "sis-sampler-r230-recovery-p06-a-20261008"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

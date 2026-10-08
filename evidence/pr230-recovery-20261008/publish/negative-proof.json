@@ -1,0 +1,16 @@
+{
+  "recovery": {
+    "exit": 101,
+    "runtime_test_result": [
+      "test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 1455 filtered out; finished in 4.31s"
+    ],
+    "compiled_test_failure": true
+  },
+  "cleanup": {
+    "exit": 101,
+    "runtime_test_result": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s"
+    ],
+    "compiled_test_failure": true
+  }
+}

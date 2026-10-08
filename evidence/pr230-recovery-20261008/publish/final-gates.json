@@ -1,0 +1,277 @@
+[
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "static",
+    "command": [
+      "python",
+      "scripts/verify_static_contracts.py",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 11.982722555054352,
+    "utc": "2026-10-08T14:21:44.242041+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-static.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "dependency",
+    "command": [
+      "python",
+      "scripts/check_persistence_dependency_graph.py"
+    ],
+    "exit": 0,
+    "seconds": 2.996383174089715,
+    "utc": "2026-10-08T14:21:47.239053+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-dependency.log",
+    "log_sha256": "bfc5b1d04fb5024b9eade675d150ec56da271e3176d13491faa0105160753336"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "crypto",
+    "command": [
+      "python",
+      "scripts/check_crypto_boundary.py"
+    ],
+    "exit": 0,
+    "seconds": 1.527386181987822,
+    "utc": "2026-10-08T14:21:48.771690+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-crypto.log",
+    "log_sha256": "1f33e7862f460f65566fd4122e0d8bdc552b5902383e1eeeb9dee4797847134c"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "crypto-tests",
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts",
+      "-p",
+      "test_crypto_boundary.py"
+    ],
+    "exit": 0,
+    "seconds": 0.3074284188915044,
+    "utc": "2026-10-08T14:21:49.079720+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-crypto-tests.log",
+    "log_sha256": "02df857befc03d345d3c173801a43294515e05653798c8be6d696191aa16f375"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "perf-layout",
+    "command": [
+      "python",
+      "scripts/check_perf_results_layout.py"
+    ],
+    "exit": 0,
+    "seconds": 0.03032335196621716,
+    "utc": "2026-10-08T14:21:49.110644+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-perf-layout.log",
+    "log_sha256": "2c806217252d4609aa27e2874206a6d5d25af63c3e2729dc6db7c80304e8094a"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 3.392064506886527,
+    "utc": "2026-10-08T14:21:52.503317+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-fmt.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--keep-going",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 53.89953561197035,
+    "utc": "2026-10-08T14:22:46.403503+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-clippy.log",
+    "log_sha256": "b5b9f980ea2c43a3e6cda7976a5c33c4f77329191b167bf93f8dee44d4dca766"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "migration",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "migrations",
+      "pending_migrations_create_all_runtime_module_state_tables"
+    ],
+    "exit": 0,
+    "seconds": 6.476627346128225,
+    "utc": "2026-10-08T14:22:52.880846+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-migration.log",
+    "log_sha256": "9c13fa03ab823f3f36246601a07f6742413611ba86aeeb25db8e8fd9f9fcdfa6"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "workspace",
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--all-features",
+      "--locked",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "seconds": 1397.2685225319583,
+    "utc": "2026-10-08T14:46:10.149979+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-workspace.log",
+    "log_sha256": "2ca436e4d3950614923ab394e3de1215612ac44f9be7e5dd2906a00dd93cd954"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "perf-python",
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "perf.tests.test_blackbox_contract",
+      "perf.tests.test_capacity_window",
+      "perf.tests.test_capacity_producer",
+      "perf.tests.test_stream_cohort",
+      "perf.tests.test_single_instance_scaling",
+      "perf.tests.test_service_affinity",
+      "perf.tests.test_cnb_controller",
+      "perf.tests.test_pool_size_ab",
+      "perf.tests.test_issuance_maintenance",
+      "perf.tests.test_evidence_contract",
+      "perf.tests.test_audit_reconciliation",
+      "perf.tests.test_audit_pending_schema",
+      "perf.tests.test_current_capacity",
+      "perf.tests.test_short_baseline",
+      "perf.tests.test_checkpoint_measurement.WindowContractTest"
+    ],
+    "exit": 1,
+    "seconds": 1.9751829199958593,
+    "utc": "2026-10-08T14:46:12.128749+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-perf-python.log",
+    "log_sha256": "931367022282e8cd8400295b3f6520d4365c1b8d19978f8b8e899a78cb0a39b8"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "perf-python",
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "perf.tests.test_blackbox_contract",
+      "perf.tests.test_capacity_window",
+      "perf.tests.test_capacity_producer",
+      "perf.tests.test_stream_cohort",
+      "perf.tests.test_single_instance_scaling",
+      "perf.tests.test_service_affinity",
+      "perf.tests.test_cnb_controller",
+      "perf.tests.test_pool_size_ab",
+      "perf.tests.test_issuance_maintenance",
+      "perf.tests.test_evidence_contract",
+      "perf.tests.test_audit_reconciliation",
+      "perf.tests.test_audit_pending_schema",
+      "perf.tests.test_current_capacity",
+      "perf.tests.test_short_baseline",
+      "perf.tests.test_checkpoint_measurement.WindowContractTest"
+    ],
+    "exit": 0,
+    "seconds": 10.688747666077688,
+    "utc": "2026-10-08T14:48:22.351261+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-perf-python-retry.log",
+    "log_sha256": "3109974486d9eb8bf091ce0e428d035193c052e42a61e830432b59602027c6b3",
+    "reason": "Install exact CI-pinned orjson in the Python3.14 isolated runner after genuine missing-dependency failures; source unchanged"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "python-compile",
+    "command": [
+      "python",
+      "-m",
+      "compileall",
+      "-q",
+      "scripts",
+      "perf"
+    ],
+    "exit": 0,
+    "seconds": 0.1331315659917891,
+    "utc": "2026-10-08T14:53:04.789132+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-python-compile-complete.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fixture": "Python3.14.8,orjson3.12.0,Node26.10.0 and exact pinned performance k6 binary; no skipped producer tests accepted"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "perf-python",
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "-v",
+      "perf.tests.test_blackbox_contract",
+      "perf.tests.test_capacity_window",
+      "perf.tests.test_capacity_producer",
+      "perf.tests.test_stream_cohort",
+      "perf.tests.test_single_instance_scaling",
+      "perf.tests.test_service_affinity",
+      "perf.tests.test_cnb_controller",
+      "perf.tests.test_pool_size_ab",
+      "perf.tests.test_issuance_maintenance",
+      "perf.tests.test_evidence_contract",
+      "perf.tests.test_audit_reconciliation",
+      "perf.tests.test_audit_pending_schema",
+      "perf.tests.test_current_capacity",
+      "perf.tests.test_short_baseline",
+      "perf.tests.test_checkpoint_measurement.WindowContractTest"
+    ],
+    "exit": 0,
+    "seconds": 16.65917095215991,
+    "utc": "2026-10-08T14:53:21.449013+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-perf-python-complete.log",
+    "log_sha256": "4422c7303dcf6740f260d8a291b0af0c578bf9607e171dc333a6f8180db388ff",
+    "fixture": "Python3.14.8,orjson3.12.0,Node26.10.0 and exact pinned performance k6 binary; no skipped producer tests accepted"
+  },
+  {
+    "sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "label": "ignored-par",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "par_fapi2_rejects_shared_secret_client_auth_after_authentication",
+      "--",
+      "--ignored",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 1.4874825209844857,
+    "utc": "2026-10-08T14:56:21.798980+00:00",
+    "log": "/src/evidence/pr230-recovery-20261008/final-ignored-par.log",
+    "log_sha256": "65367761e687dee785f325fe913227974c4f83c9829112f89ad5f8488d9a11b9",
+    "fixtures": "CI=true plus nonempty isolated DATABASE_URL and VALKEY_URL"
+  }
+]

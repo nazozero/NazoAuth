@@ -1,0 +1,914 @@
+[
+  {
+    "point": "sustained-A",
+    "bins": [
+      {
+        "from_s": 0,
+        "n": 2552,
+        "p50": 2888.0,
+        "p95": 3121.45,
+        "p99": 3177.0,
+        "max": 3219,
+        "sched_interval_s": 5.232171297073364,
+        "runtime_s": 6.434064255,
+        "runnable_wait_s": 27.971732448,
+        "family_eligible": [
+          5237,
+          7089
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.254757,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3546
+        }
+      },
+      {
+        "from_s": 10,
+        "n": 3092,
+        "p50": 3057.0,
+        "p95": 3643.0,
+        "p99": 3713.09,
+        "max": 3760,
+        "sched_interval_s": 5.3032262325286865,
+        "runtime_s": 5.291417271,
+        "runnable_wait_s": 26.281591404,
+        "family_eligible": [
+          8742,
+          10219
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.22499,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 2206
+        }
+      },
+      {
+        "from_s": 20,
+        "n": 3503,
+        "p50": 2837.0,
+        "p95": 2971.0,
+        "p99": 3010.0,
+        "max": 3045,
+        "sched_interval_s": 5.280382394790649,
+        "runtime_s": 6.330280503,
+        "runnable_wait_s": 28.231160892,
+        "family_eligible": [
+          11630,
+          7874
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.23669,
+        "deletions_observed": {
+          "oauth_refresh_families": 5120,
+          "security_audit_events": 4148
+        }
+      },
+      {
+        "from_s": 30,
+        "n": 3528,
+        "p50": 2789.0,
+        "p95": 3004.6499999999996,
+        "p99": 3052.73,
+        "max": 3132,
+        "sched_interval_s": 5.29542088508606,
+        "runtime_s": 6.775292827,
+        "runnable_wait_s": 30.011851861,
+        "family_eligible": [
+          3716,
+          71
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.250857,
+        "deletions_observed": {
+          "oauth_refresh_families": 6020,
+          "security_audit_events": 3560
+        }
+      },
+      {
+        "from_s": 40,
+        "n": 3692,
+        "p50": 2843.0,
+        "p95": 3050.0,
+        "p99": 3112.0,
+        "max": 3156,
+        "sched_interval_s": 5.258963108062744,
+        "runtime_s": 6.348393154,
+        "runnable_wait_s": 30.038450771,
+        "family_eligible": [
+          1741,
+          3615
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.254989,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3604
+        }
+      },
+      {
+        "from_s": 50,
+        "n": 3439,
+        "p50": 2837.0,
+        "p95": 2988.0,
+        "p99": 3036.62,
+        "max": 3105,
+        "sched_interval_s": 5.23689341545105,
+        "runtime_s": 6.399010803,
+        "runnable_wait_s": 29.698805162,
+        "family_eligible": [
+          5465,
+          7351
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.227682,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3569
+        }
+      },
+      {
+        "from_s": 60,
+        "n": 3220,
+        "p50": 2730.0,
+        "p95": 3945.0499999999997,
+        "p99": 3999.0,
+        "max": 4066,
+        "sched_interval_s": 5.261996030807495,
+        "runtime_s": 5.380742076,
+        "runnable_wait_s": 32.937360028,
+        "family_eligible": [
+          9281,
+          10673
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.287145,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3713
+        }
+      },
+      {
+        "from_s": 70,
+        "n": 3517,
+        "p50": 2799.0,
+        "p95": 3819.2,
+        "p99": 3920.0,
+        "max": 3991,
+        "sched_interval_s": 5.280858993530273,
+        "runtime_s": 6.327943376,
+        "runnable_wait_s": 29.401399873,
+        "family_eligible": [
+          12497,
+          14360
+        ],
+        "decision_eligible": [
+          0,
+          1845
+        ],
+        "oldest_pending_s_max": 0.23499,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3584
+        }
+      },
+      {
+        "from_s": 80,
+        "n": 3672,
+        "p50": 2905.0,
+        "p95": 3128.0,
+        "p99": 3171.0,
+        "max": 3236,
+        "family_eligible": [
+          16155,
+          18008
+        ],
+        "decision_eligible": [
+          3720,
+          5349
+        ],
+        "oldest_pending_s_max": 0.28921,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3652
+        }
+      },
+      {
+        "from_s": 90,
+        "n": 3477,
+        "p50": 2773.0,
+        "p95": 2871.0,
+        "p99": 2911.24,
+        "max": 2960,
+        "sched_interval_s": 5.260030746459961,
+        "runtime_s": 6.61576699,
+        "runnable_wait_s": 29.595118697,
+        "family_eligible": [
+          19795,
+          19795
+        ],
+        "decision_eligible": [
+          7130,
+          7130
+        ],
+        "oldest_pending_s_max": 0.21865,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 0
+        }
+      },
+      {
+        "from_s": 100,
+        "n": 3453,
+        "p50": 2789.0,
+        "p95": 3487.0,
+        "p99": 3567.0,
+        "max": 3640,
+        "sched_interval_s": 5.277974367141724,
+        "runtime_s": 5.839679907,
+        "runnable_wait_s": 28.041311505,
+        "family_eligible": [
+          19651,
+          16194
+        ],
+        "decision_eligible": [
+          6982,
+          3278
+        ],
+        "oldest_pending_s_max": 0.307039,
+        "deletions_observed": {
+          "oauth_refresh_families": 4864,
+          "security_audit_events": 8100
+        }
+      },
+      {
+        "from_s": 110,
+        "n": 3704,
+        "p50": 2646.0,
+        "p95": 2882.0,
+        "p99": 2916.0,
+        "max": 2975,
+        "sched_interval_s": 5.304572343826294,
+        "runtime_s": 7.893383934,
+        "runnable_wait_s": 30.643324475,
+        "family_eligible": [
+          12474,
+          7627
+        ],
+        "decision_eligible": [
+          106,
+          19
+        ],
+        "oldest_pending_s_max": 0.225441,
+        "deletions_observed": {
+          "oauth_refresh_families": 6400,
+          "security_audit_events": 5850
+        }
+      },
+      {
+        "from_s": 120,
+        "n": 3720,
+        "p50": 2738.0,
+        "p95": 2904.0,
+        "p99": 2940.81,
+        "max": 2983,
+        "sched_interval_s": 5.265979290008545,
+        "runtime_s": 6.766973103,
+        "runnable_wait_s": 29.011921299,
+        "family_eligible": [
+          3900,
+          17
+        ],
+        "decision_eligible": [
+          6,
+          28
+        ],
+        "oldest_pending_s_max": 0.147727,
+        "deletions_observed": {
+          "oauth_refresh_families": 6179,
+          "security_audit_events": 5724
+        }
+      },
+      {
+        "from_s": 130,
+        "n": 3752,
+        "p50": 2763.0,
+        "p95": 3391.45,
+        "p99": 3520.0,
+        "max": 3573,
+        "sched_interval_s": 5.281889200210571,
+        "runtime_s": 7.082826295,
+        "runnable_wait_s": 26.287250746,
+        "family_eligible": [
+          1724,
+          3772
+        ],
+        "decision_eligible": [
+          1557,
+          3355
+        ],
+        "oldest_pending_s_max": 0.152183,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 4724
+        }
+      },
+      {
+        "from_s": 140,
+        "n": 4005,
+        "p50": 2596.0,
+        "p95": 2838.7999999999997,
+        "p99": 2872.96,
+        "max": 2917,
+        "sched_interval_s": 5.231741666793823,
+        "runtime_s": 7.437318398,
+        "runnable_wait_s": 27.791528997,
+        "family_eligible": [
+          5558,
+          7835
+        ],
+        "decision_eligible": [
+          5196,
+          7007
+        ],
+        "oldest_pending_s_max": 0.170139,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 4372
+        }
+      },
+      {
+        "from_s": 150,
+        "n": 3563,
+        "p50": 2720.0,
+        "p95": 2955.0,
+        "p99": 3014.76,
+        "max": 3072,
+        "sched_interval_s": 5.234889268875122,
+        "runtime_s": 6.396118993,
+        "runnable_wait_s": 30.988165877,
+        "family_eligible": [
+          9768,
+          11547
+        ],
+        "decision_eligible": [
+          8918,
+          10816
+        ],
+        "oldest_pending_s_max": 0.211109,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3464
+        }
+      },
+      {
+        "from_s": 160,
+        "n": 3628,
+        "p50": 2752.0,
+        "p95": 2940.0,
+        "p99": 2979.0,
+        "max": 3053,
+        "sched_interval_s": 5.237151861190796,
+        "runtime_s": 6.329006386,
+        "runnable_wait_s": 29.122439074,
+        "family_eligible": [
+          13504,
+          15263
+        ],
+        "decision_eligible": [
+          12413,
+          14210
+        ],
+        "oldest_pending_s_max": 0.284765,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3624
+        }
+      },
+      {
+        "from_s": 170,
+        "n": 3784,
+        "p50": 2532.0,
+        "p95": 2958.0,
+        "p99": 3009.17,
+        "max": 3103,
+        "sched_interval_s": 5.39386510848999,
+        "runtime_s": 6.433405634,
+        "runnable_wait_s": 29.77433674,
+        "family_eligible": [
+          17334,
+          19272
+        ],
+        "decision_eligible": [
+          15912,
+          17821
+        ],
+        "oldest_pending_s_max": 0.320793,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3665
+        }
+      },
+      {
+        "from_s": 180,
+        "n": 992,
+        "p50": 2332.5,
+        "p95": 2704.45,
+        "p99": 2778.09,
+        "max": 2827,
+        "family_eligible": [
+          20878,
+          14478
+        ],
+        "decision_eligible": [
+          19799,
+          14981
+        ],
+        "oldest_pending_s_max": 0,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 604
+        }
+      }
+    ],
+    "limits": "Intervals are sampled subsets of the same 10-second completion buckets; no causal attribution from correlation. security_audit_events deletion includes export cleanup and retained-decision GC."
+  },
+  {
+    "point": "sustained-B",
+    "bins": [
+      {
+        "from_s": 0,
+        "n": 2562,
+        "p50": 2900.0,
+        "p95": 3156.0,
+        "p99": 3200.39,
+        "max": 3310,
+        "sched_interval_s": 5.221909046173096,
+        "runtime_s": 5.858684372,
+        "runnable_wait_s": 28.190589281,
+        "family_eligible": [
+          5472,
+          7309
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.211141,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 4149
+        }
+      },
+      {
+        "from_s": 10,
+        "n": 3349,
+        "p50": 2849.0,
+        "p95": 3100.6,
+        "p99": 3176.0,
+        "max": 3255,
+        "sched_interval_s": 5.276762008666992,
+        "runtime_s": 6.555374408,
+        "runnable_wait_s": 30.505472485,
+        "family_eligible": [
+          9097,
+          11050
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.168496,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3615
+        }
+      },
+      {
+        "from_s": 20,
+        "n": 3751,
+        "p50": 2747.0,
+        "p95": 2920.0,
+        "p99": 2980.5,
+        "max": 3047,
+        "sched_interval_s": 5.220797777175903,
+        "runtime_s": 6.602133714,
+        "runnable_wait_s": 30.063542565,
+        "family_eligible": [
+          11655,
+          7413
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.221832,
+        "deletions_observed": {
+          "oauth_refresh_families": 5888,
+          "security_audit_events": 3766
+        }
+      },
+      {
+        "from_s": 30,
+        "n": 3895,
+        "p50": 2653.0,
+        "p95": 2881.0,
+        "p99": 2941.0,
+        "max": 3032,
+        "family_eligible": [
+          3071,
+          427
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.220253,
+        "deletions_observed": {
+          "oauth_refresh_families": 5764,
+          "security_audit_events": 4156
+        }
+      },
+      {
+        "from_s": 40,
+        "n": 3391,
+        "p50": 2839.0,
+        "p95": 2998.0,
+        "p99": 3034.1,
+        "max": 3089,
+        "sched_interval_s": 5.190973520278931,
+        "runtime_s": 6.429926005,
+        "runnable_wait_s": 29.961334159,
+        "family_eligible": [
+          2379,
+          4155
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.287808,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 4045
+        }
+      },
+      {
+        "from_s": 50,
+        "n": 3719,
+        "p50": 2679.0,
+        "p95": 2932.0,
+        "p99": 2972.0,
+        "max": 3022,
+        "sched_interval_s": 5.225229740142822,
+        "runtime_s": 6.587702748,
+        "runnable_wait_s": 29.160486818,
+        "family_eligible": [
+          6106,
+          8014
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.242162,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3728
+        }
+      },
+      {
+        "from_s": 60,
+        "n": 4470,
+        "p50": 2207.0,
+        "p95": 2840.0,
+        "p99": 2957.0,
+        "max": 3063,
+        "sched_interval_s": 5.217694282531738,
+        "runtime_s": 9.474908689,
+        "runnable_wait_s": 31.857808555,
+        "family_eligible": [
+          10202,
+          12495
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 0.246617,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 4545
+        }
+      },
+      {
+        "from_s": 70,
+        "n": 3572,
+        "p50": 2809.5,
+        "p95": 3033.45,
+        "p99": 3098.0,
+        "max": 3170,
+        "sched_interval_s": 5.196346998214722,
+        "runtime_s": 6.402222271,
+        "runnable_wait_s": 28.963116903,
+        "family_eligible": [
+          14286,
+          14286
+        ],
+        "decision_eligible": [
+          0,
+          0
+        ],
+        "oldest_pending_s_max": 1.847631,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 0
+        }
+      },
+      {
+        "from_s": 80,
+        "n": 3690,
+        "p50": 2784.0,
+        "p95": 2965.0,
+        "p99": 3008.2200000000003,
+        "max": 3078,
+        "sched_interval_s": 5.166430234909058,
+        "runtime_s": 6.39420717,
+        "runnable_wait_s": 28.073931549,
+        "family_eligible": [
+          16266,
+          18100
+        ],
+        "decision_eligible": [
+          2212,
+          4077
+        ],
+        "oldest_pending_s_max": 0.198409,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3627
+        }
+      },
+      {
+        "from_s": 90,
+        "n": 3597,
+        "p50": 2714.0,
+        "p95": 2930.0,
+        "p99": 2973.04,
+        "max": 3069,
+        "sched_interval_s": 5.210998296737671,
+        "runtime_s": 6.607737273,
+        "runnable_wait_s": 28.894767235,
+        "family_eligible": [
+          20042,
+          21918
+        ],
+        "decision_eligible": [
+          5587,
+          7427
+        ],
+        "oldest_pending_s_max": 0.200539,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3629
+        }
+      },
+      {
+        "from_s": 100,
+        "n": 3541,
+        "p50": 2751.0,
+        "p95": 2903.0,
+        "p99": 2941.0,
+        "max": 3036,
+        "sched_interval_s": 5.169479131698608,
+        "runtime_s": 6.401189791,
+        "runnable_wait_s": 30.270511677,
+        "family_eligible": [
+          20069,
+          16289
+        ],
+        "decision_eligible": [
+          5169,
+          1700
+        ],
+        "oldest_pending_s_max": 0.182094,
+        "deletions_observed": {
+          "oauth_refresh_families": 5888,
+          "security_audit_events": 9480
+        }
+      },
+      {
+        "from_s": 110,
+        "n": 3685,
+        "p50": 2790.0,
+        "p95": 2913.0,
+        "p99": 2943.16,
+        "max": 2991,
+        "sched_interval_s": 5.149194955825806,
+        "runtime_s": 6.513728835,
+        "runnable_wait_s": 26.948714585,
+        "family_eligible": [
+          12245,
+          8640
+        ],
+        "decision_eligible": [
+          6,
+          10
+        ],
+        "oldest_pending_s_max": 0.198998,
+        "deletions_observed": {
+          "oauth_refresh_families": 5632,
+          "security_audit_events": 5194
+        }
+      },
+      {
+        "from_s": 120,
+        "n": 3475,
+        "p50": 2777.0,
+        "p95": 3017.0,
+        "p99": 3056.0,
+        "max": 3118,
+        "sched_interval_s": 5.15597128868103,
+        "runtime_s": 6.266806662,
+        "runnable_wait_s": 28.016200619,
+        "family_eligible": [
+          4245,
+          30
+        ],
+        "decision_eligible": [
+          120,
+          47
+        ],
+        "oldest_pending_s_max": 0.237685,
+        "deletions_observed": {
+          "oauth_refresh_families": 5632,
+          "security_audit_events": 5336
+        }
+      },
+      {
+        "from_s": 130,
+        "n": 3669,
+        "p50": 2766.0,
+        "p95": 2938.0,
+        "p99": 2983.0,
+        "max": 3057,
+        "sched_interval_s": 5.189049959182739,
+        "runtime_s": 6.94968036,
+        "runnable_wait_s": 29.497140196,
+        "family_eligible": [
+          1757,
+          3645
+        ],
+        "decision_eligible": [
+          1824,
+          3468
+        ],
+        "oldest_pending_s_max": 0.28415,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 3695
+        }
+      },
+      {
+        "from_s": 140,
+        "n": 3770,
+        "p50": 2705.0,
+        "p95": 3035.0,
+        "p99": 3068.0,
+        "max": 3132,
+        "sched_interval_s": 5.229008197784424,
+        "runtime_s": 6.636031037,
+        "runnable_wait_s": 28.785261335,
+        "family_eligible": [
+          5637,
+          7484
+        ],
+        "decision_eligible": [
+          5394,
+          7270
+        ],
+        "oldest_pending_s_max": 0.214846,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 4163
+        }
+      },
+      {
+        "from_s": 150,
+        "n": 3303,
+        "p50": 2615.0,
+        "p95": 3268.7999999999993,
+        "p99": 3369.0,
+        "max": 3418,
+        "sched_interval_s": 5.224794864654541,
+        "runtime_s": 5.528202738,
+        "runnable_wait_s": 31.177200374,
+        "family_eligible": [
+          9589,
+          10559
+        ],
+        "decision_eligible": [
+          9351,
+          11274
+        ],
+        "oldest_pending_s_max": 0.239897,
+        "deletions_observed": {
+          "oauth_refresh_families": 256,
+          "security_audit_events": 3766
+        }
+      },
+      {
+        "from_s": 160,
+        "n": 3048,
+        "p50": 3498.0,
+        "p95": 3670.0,
+        "p99": 3715.53,
+        "max": 3830,
+        "family_eligible": [
+          7580,
+          4428
+        ],
+        "decision_eligible": [
+          8681,
+          5529
+        ],
+        "oldest_pending_s_max": 0.268352,
+        "deletions_observed": {
+          "oauth_refresh_families": 5376,
+          "security_audit_events": 8806
+        }
+      },
+      {
+        "from_s": 170,
+        "n": 2762,
+        "p50": 3671.0,
+        "p95": 4014.95,
+        "p99": 4073.39,
+        "max": 4122,
+        "sched_interval_s": 5.213009357452393,
+        "runtime_s": 5.090556332,
+        "runnable_wait_s": 29.692762026,
+        "family_eligible": [
+          502,
+          293
+        ],
+        "decision_eligible": [
+          2115,
+          268
+        ],
+        "oldest_pending_s_max": 0.248137,
+        "deletions_observed": {
+          "oauth_refresh_families": 2207,
+          "security_audit_events": 7084
+        }
+      },
+      {
+        "from_s": 180,
+        "n": 992,
+        "p50": 3596.0,
+        "p95": 3746.45,
+        "p99": 3792.1800000000003,
+        "max": 3820,
+        "sched_interval_s": 5.276844024658203,
+        "runtime_s": 1.377637476,
+        "runnable_wait_s": 8.230401931,
+        "family_eligible": [
+          1513,
+          1513
+        ],
+        "decision_eligible": [
+          2105,
+          4023
+        ],
+        "oldest_pending_s_max": 0,
+        "deletions_observed": {
+          "oauth_refresh_families": 0,
+          "security_audit_events": 105
+        }
+      }
+    ],
+    "limits": "Intervals are sampled subsets of the same 10-second completion buckets; no causal attribution from correlation. security_audit_events deletion includes export cleanup and retained-decision GC."
+  }
+]

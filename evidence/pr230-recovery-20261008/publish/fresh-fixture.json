@@ -1,0 +1,12 @@
+{
+  "utc": "2026-10-08T12:30:51.968918+00:00",
+  "reused_unit_database_snapshot_after_failure": {
+    "sampled_at": "2026-10-08T12:30:51.692807+00:00",
+    "spent": 98,
+    "expired_spent": 0,
+    "families": 49,
+    "audit_pending": 0
+  },
+  "fresh_targeted_database": "nazo_recovery_targeted_20261008",
+  "change": "new isolated unit fixture; no source/test assertions changed; performance stores untouched"
+}

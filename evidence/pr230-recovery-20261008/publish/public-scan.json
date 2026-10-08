@@ -1,0 +1,4 @@
+{
+  "scope": "Published artifact contents checked for private PEM keys, JWT-shaped bearer tokens and GitHub tokens; private env and raw receiver payload journals excluded by packaging whitelist",
+  "findings": []
+}

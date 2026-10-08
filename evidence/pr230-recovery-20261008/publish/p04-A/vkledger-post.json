@@ -1,0 +1,73 @@
+{
+ "census_exact": {
+  "oauth:client_assertion": 7422,
+  "oauth:dpop": 12370,
+  "oauth:jar": 24634,
+  "oauth:rate": 7,
+  "oauth:session": 1494,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 45928,
+  "evicted_keys": 0,
+  "expired_keys": 17,
+  "keyspace_hits": 564848,
+  "keyspace_misses": 1437,
+  "mem_fragmentation_ratio": 1.58,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 17536648,
+  "used_memory_rss": 27635712
+ },
+ "keys_seen": 45928,
+ "mem_bytes_sampled": {
+  "oauth:client_assertion": 128000,
+  "oauth:dpop": 116928,
+  "oauth:jar": 131200,
+  "oauth:rate": 1792,
+  "oauth:session": 183872,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:rate": 7,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "r230-recovery-p04-a-20261008",
+  "sample_per_cat": 400,
+  "sampled_at": 1791467947,
+  "scan_ms": 303,
+  "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+ },
+ "sampled_per_cat": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:rate": 7,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 45928,
+ "ttl_buckets_sampled": {
+  "oauth:client_assertion|1m+": 83,
+  "oauth:client_assertion|2m+": 137,
+  "oauth:client_assertion|3m+": 180,
+  "oauth:dpop|2m+": 69,
+  "oauth:dpop|3m+": 126,
+  "oauth:dpop|4m+": 159,
+  "oauth:dpop|5m+": 46,
+  "oauth:jar|1m+": 145,
+  "oauth:jar|2m+": 191,
+  "oauth:jar|3m+": 64,
+  "oauth:rate|0m+": 7,
+  "oauth:session|477m+": 295,
+  "oauth:session|478m+": 36,
+  "oauth:session|479m+": 69,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

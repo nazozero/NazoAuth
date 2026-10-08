@@ -1,0 +1,7 @@
+{
+  "A": "e13fcfd1292283f135906a31de987b533f002de8",
+  "B": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+  "diff_name_status": "M\tcrates/nazoauth/src/adapters/audit.rs\nM\tcrates/nazoauth/src/adapters/audit_anchor/preflight.rs\nM\tcrates/nazoauth/tests/unit/adapters/audit.rs\nA\tcrates/nazoauth/tests/unit/adapters/audit/recovery.rs\nM\tcrates/persistence-postgres/src/repositories/security_state.rs\nA\tcrates/persistence-postgres/tests/security_state_commit_boundary.rs\nA\tdocs/project/pr230-recovery-acceptance.md\nM\tdocs/security/security-events.md",
+  "tracked_worktree_status": "",
+  "source_commits": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac fix(audit): reject unattempted telemetry while export is unhealthy\n9d564e2bd4adc731027805db61876ca6dd5859b6 style: format recovery acceptance regressions"
+}

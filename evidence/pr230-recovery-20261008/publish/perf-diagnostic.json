@@ -1,0 +1,1157 @@
+[
+  {
+    "key": "p06-A",
+    "cpu": {
+      "app": 1.53,
+      "postgres": 3.45
+    },
+    "scheduler": {
+      "from": 1791465878.922976,
+      "to": 1791465931.7769203,
+      "seconds": 52.853944301605225,
+      "same_threads": 34,
+      "runtime_s": 82.060978553,
+      "runnable_wait_s": 293.390721765,
+      "timeslices": 1399024
+    },
+    "sql_observation_seconds": 110.80045318603516,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 42375,
+        "mean_ms": 0.9266847650501431,
+        "total_ms": 39268.26691899981
+      },
+      {
+        "query": "UPDATE oauth_refresh_families AS family SET revoked_at=CURRENT_TIMESTAMP WHERE family.tenant_id=$1 AND family.token_family_id=$2 AND family.revoked_at IS NULL A",
+        "role": "nazoauth_perf_runtime",
+        "calls": 33447,
+        "mean_ms": 0.7521483112685723,
+        "total_ms": 25157.104566999937
+      },
+      {
+        "query": "WITH ranked AS ( SELECT token_family_id, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, count(*) OVER () AS total FROM oauth_re",
+        "role": "nazoauth_perf_runtime",
+        "calls": 42375,
+        "mean_ms": 0.4705109976165111,
+        "total_ms": 19937.90352399966
+      },
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 75822,
+        "mean_ms": 0.24985132568383508,
+        "total_ms": 18944.227215999745
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 42375,
+        "mean_ms": 0.27841787509144605,
+        "total_ms": 11797.957457000028
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 42375,
+        "mean_ms": 0.270324090029502,
+        "total_ms": 11454.983315000145
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1577,
+        "mean_ms": 6.311877503487629,
+        "total_ms": 9953.830822999991
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1577,
+        "mean_ms": 5.198952808497146,
+        "total_ms": 8198.748579
+      },
+      {
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "role": "nazoauth_perf_runtime",
+        "calls": 42375,
+        "mean_ms": 0.19278031907964688,
+        "total_ms": 8169.066021000036
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 84750,
+        "mean_ms": 0.05693669640117919,
+        "total_ms": 4825.385019999936
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 84750,
+        "mean_ms": 0.054454726513274994,
+        "total_ms": 4615.038072000056
+      },
+      {
+        "query": "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 42375,
+        "mean_ms": 0.1061906282477869,
+        "total_ms": 4499.82787199997
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "p06-B",
+    "cpu": {
+      "app": 1.33,
+      "postgres": 3.26
+    },
+    "scheduler": {
+      "from": 1791466385.017848,
+      "to": 1791466436.7055552,
+      "seconds": 51.68770718574524,
+      "same_threads": 34,
+      "runtime_s": 68.707634207,
+      "runnable_wait_s": 283.932150405,
+      "timeslices": 1213550
+    },
+    "sql_observation_seconds": 102.08265399932861,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 37993,
+        "mean_ms": 0.9219524884847118,
+        "total_ms": 35027.74089499965
+      },
+      {
+        "query": "UPDATE oauth_refresh_families AS family SET revoked_at=CURRENT_TIMESTAMP WHERE family.tenant_id=$1 AND family.token_family_id=$2 AND family.revoked_at IS NULL A",
+        "role": "nazoauth_perf_runtime",
+        "calls": 29065,
+        "mean_ms": 0.859843722828144,
+        "total_ms": 24991.357804000007
+      },
+      {
+        "query": "WITH ranked AS ( SELECT token_family_id, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, count(*) OVER () AS total FROM oauth_re",
+        "role": "nazoauth_perf_runtime",
+        "calls": 37993,
+        "mean_ms": 0.5309965195693938,
+        "total_ms": 20174.150767999978
+      },
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 67058,
+        "mean_ms": 0.24920192965790797,
+        "total_ms": 16710.982998999993
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 37993,
+        "mean_ms": 0.2740205663938088,
+        "total_ms": 10410.863378999977
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 37993,
+        "mean_ms": 0.2696411348932704,
+        "total_ms": 10244.475638000022
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1760,
+        "mean_ms": 5.476453344886366,
+        "total_ms": 9638.557887000004
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1760,
+        "mean_ms": 4.227595334090907,
+        "total_ms": 7440.567787999996
+      },
+      {
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "role": "nazoauth_perf_runtime",
+        "calls": 37993,
+        "mean_ms": 0.1822530043955457,
+        "total_ms": 6924.338395999968
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 75986,
+        "mean_ms": 0.057407651633195264,
+        "total_ms": 4362.177816999975
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 75986,
+        "mean_ms": 0.05565018469191626,
+        "total_ms": 4228.634933999949
+      },
+      {
+        "query": "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 37993,
+        "mean_ms": 0.10913988590003362,
+        "total_ms": 4146.551684999978
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "p10-A",
+    "cpu": {
+      "app": 1.33,
+      "postgres": 2.43
+    },
+    "scheduler": {
+      "from": 1791466762.8281968,
+      "to": 1791466818.8519266,
+      "seconds": 56.02372980117798,
+      "same_threads": 34,
+      "runtime_s": 74.052386882,
+      "runnable_wait_s": 312.851740781,
+      "timeslices": 1548908
+    },
+    "sql_observation_seconds": 108.78570294380188,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31125,
+        "mean_ms": 0.9547185854779088,
+        "total_ms": 29715.61597299991
+      },
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 62250,
+        "mean_ms": 0.2536998816064262,
+        "total_ms": 15792.817630000032
+      },
+      {
+        "query": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"client_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31125,
+        "mean_ms": 0.3487106804176719,
+        "total_ms": 10853.619928000038
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31125,
+        "mean_ms": 0.2893100351807236,
+        "total_ms": 9004.774845000024
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31125,
+        "mean_ms": 0.279369191453816,
+        "total_ms": 8695.366084000023
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1462,
+        "mean_ms": 5.6421780704514415,
+        "total_ms": 8248.864339000007
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1462,
+        "mean_ms": 4.4689424302325556,
+        "total_ms": 6533.593832999996
+      },
+      {
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31125,
+        "mean_ms": 0.1825552335742969,
+        "total_ms": 5682.031644999991
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 93375,
+        "mean_ms": 0.05321421721017347,
+        "total_ms": 4968.877531999948
+      },
+      {
+        "query": "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31125,
+        "mean_ms": 0.12539859180722865,
+        "total_ms": 3903.031169999992
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 62250,
+        "mean_ms": 0.05741103452208733,
+        "total_ms": 3573.8368989999362
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31125,
+        "mean_ms": 0.06755694085140504,
+        "total_ms": 2102.709783999982
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "p10-B",
+    "cpu": {
+      "app": 1.22,
+      "postgres": 2.33
+    },
+    "scheduler": {
+      "from": 1791466572.055854,
+      "to": 1791466628.5219092,
+      "seconds": 56.466055154800415,
+      "same_threads": 34,
+      "runtime_s": 69.50395463,
+      "runnable_wait_s": 318.64028956,
+      "timeslices": 1506250
+    },
+    "sql_observation_seconds": 103.45526671409607,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 30069,
+        "mean_ms": 0.8873406179453944,
+        "total_ms": 26681.445041000065
+      },
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 60138,
+        "mean_ms": 0.23796831173301414,
+        "total_ms": 14310.938331000005
+      },
+      {
+        "query": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"client_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 30069,
+        "mean_ms": 0.3352729985366971,
+        "total_ms": 10081.323792999945
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 30069,
+        "mean_ms": 0.27179394243240507,
+        "total_ms": 8172.572054999988
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1797,
+        "mean_ms": 4.460235885920971,
+        "total_ms": 8015.043886999985
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 30069,
+        "mean_ms": 0.26600424550201146,
+        "total_ms": 7998.481657999982
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1797,
+        "mean_ms": 3.476766694490822,
+        "total_ms": 6247.749750000007
+      },
+      {
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "role": "nazoauth_perf_runtime",
+        "calls": 30069,
+        "mean_ms": 0.1740006958661752,
+        "total_ms": 5232.026924000022
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 90207,
+        "mean_ms": 0.052907578114780654,
+        "total_ms": 4772.633899000019
+      },
+      {
+        "query": "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 30069,
+        "mean_ms": 0.12136062492932849,
+        "total_ms": 3649.1926309999785
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 60138,
+        "mean_ms": 0.05891340498519993,
+        "total_ms": 3542.9343489999533
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda",
+        "role": "nazoauth_perf_runtime",
+        "calls": 30069,
+        "mean_ms": 0.06070854478033878,
+        "total_ms": 1825.445233000007
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "p03-A",
+    "cpu": {
+      "app": 0.65,
+      "postgres": 0.91
+    },
+    "scheduler": {
+      "from": 1791467006.703806,
+      "to": 1791467061.9372094,
+      "seconds": 55.23340344429016,
+      "same_threads": 5,
+      "runtime_s": 35.663352249,
+      "runnable_wait_s": 42.800143555,
+      "timeslices": 865369
+    },
+    "sql_observation_seconds": 186.97729349136353,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 47347,
+        "mean_ms": 0.2147732337634902,
+        "total_ms": 10168.86829899997
+      },
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 7803,
+        "mean_ms": 0.8042531623734464,
+        "total_ms": 6275.587426000002
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 2834,
+        "mean_ms": 1.9807240508115742,
+        "total_ms": 5613.371960000001
+      },
+      {
+        "query": "WITH presentation AS (\n             SELECT tenant_id, token_family_id, $4 AS priority, $5::bytea AS spent_digest, $6::uuid AS spent_member_id, $7::timestamptz A",
+        "role": "nazoauth_perf_runtime",
+        "calls": 13295,
+        "mean_ms": 0.3164244210605507,
+        "total_ms": 4206.862678000021
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 2834,
+        "mean_ms": 1.2923043281580806,
+        "total_ms": 3662.3904660000003
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 7803,
+        "mean_ms": 0.3075617953351271,
+        "total_ms": 2399.904688999997
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 48073,
+        "mean_ms": 0.04865622584402915,
+        "total_ms": 2339.050745000013
+      },
+      {
+        "query": "SELECT \"oauth_refresh_families\".\"tenant_id\", \"oauth_refresh_families\".\"token_family_id\", \"oauth_refresh_families\".\"client_id\", \"oauth_refresh_families\".\"user_id",
+        "role": "nazoauth_perf_runtime",
+        "calls": 12994,
+        "mean_ms": 0.1726201951669987,
+        "total_ms": 2243.026815999981
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_spent_tokens\" (\"tenant_id\", \"refresh_token_blake3\", \"token_family_id\", \"member_id\", \"successor_member_id\", \"spent_at\", \"expires_at\") ",
+        "role": "nazoauth_perf_runtime",
+        "calls": 12994,
+        "mean_ms": 0.1482707859011852,
+        "total_ms": 1926.6305920000004
+      },
+      {
+        "query": "UPDATE \"oauth_refresh_families\" SET \"current_member_id\" = $1, \"current_token_blake3\" = $2, \"current_audience\" = $3, \"current_issued_at\" = $4, \"current_expires_a",
+        "role": "nazoauth_perf_runtime",
+        "calls": 12994,
+        "mean_ms": 0.14003797598891796,
+        "total_ms": 1819.65346
+      },
+      {
+        "query": "SELECT pg_advisory_xact_lock($1)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 48520,
+        "mean_ms": 0.03108947811211979,
+        "total_ms": 1508.4614780000522
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 7803,
+        "mean_ms": 0.19132690260156346,
+        "total_ms": 1492.9238209999996
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "p03-B",
+    "cpu": {
+      "app": 0.65,
+      "postgres": 0.97
+    },
+    "scheduler": {
+      "from": 1791467285.7465706,
+      "to": 1791467340.4635127,
+      "seconds": 54.71694207191467,
+      "same_threads": 5,
+      "runtime_s": 35.610437387,
+      "runnable_wait_s": 43.330443198,
+      "timeslices": 900265
+    },
+    "sql_observation_seconds": 188.1595516204834,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 47399,
+        "mean_ms": 0.22289023297959745,
+        "total_ms": 10564.77415299994
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 2563,
+        "mean_ms": 3.205785693328138,
+        "total_ms": 8216.428732000018
+      },
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 7852,
+        "mean_ms": 0.838723291390727,
+        "total_ms": 6585.655283999989
+      },
+      {
+        "query": "WITH presentation AS (\n             SELECT tenant_id, token_family_id, $4 AS priority, $5::bytea AS spent_digest, $6::uuid AS spent_member_id, $7::timestamptz A",
+        "role": "nazoauth_perf_runtime",
+        "calls": 13302,
+        "mean_ms": 0.3429679255751025,
+        "total_ms": 4562.159346000013
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 2563,
+        "mean_ms": 1.4745371467030783,
+        "total_ms": 3779.23870699999
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 7852,
+        "mean_ms": 0.3242953293428421,
+        "total_ms": 2546.366925999996
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 48125,
+        "mean_ms": 0.050993098327273195,
+        "total_ms": 2454.0428570000227
+      },
+      {
+        "query": "SELECT \"oauth_refresh_families\".\"tenant_id\", \"oauth_refresh_families\".\"token_family_id\", \"oauth_refresh_families\".\"client_id\", \"oauth_refresh_families\".\"user_id",
+        "role": "nazoauth_perf_runtime",
+        "calls": 13002,
+        "mean_ms": 0.1855627446546659,
+        "total_ms": 2412.686805999966
+      },
+      {
+        "query": "SELECT pg_advisory_xact_lock($1)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 48684,
+        "mean_ms": 0.045953254724346485,
+        "total_ms": 2237.1882530000844
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_spent_tokens\" (\"tenant_id\", \"refresh_token_blake3\", \"token_family_id\", \"member_id\", \"successor_member_id\", \"spent_at\", \"expires_at\") ",
+        "role": "nazoauth_perf_runtime",
+        "calls": 13002,
+        "mean_ms": 0.16178300330718356,
+        "total_ms": 2103.5026090000006
+      },
+      {
+        "query": "UPDATE \"oauth_refresh_families\" SET \"current_member_id\" = $1, \"current_token_blake3\" = $2, \"current_audience\" = $3, \"current_issued_at\" = $4, \"current_expires_a",
+        "role": "nazoauth_perf_runtime",
+        "calls": 13002,
+        "mean_ms": 0.1517349526226738,
+        "total_ms": 1972.8578540000049
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"is_active\", \"oauth_clients\".\"access_token_epoch\", \"oauth_clients\".\"client_type\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\"",
+        "role": "nazoauth_perf_runtime",
+        "calls": 40273,
+        "mean_ms": 0.039655923348149186,
+        "total_ms": 1597.0630010000123
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "p04-A",
+    "cpu": {
+      "app": 1.89,
+      "postgres": 2.56
+    },
+    "scheduler": {
+      "from": 1791467843.1404805,
+      "to": 1791467897.102885,
+      "seconds": 53.96240448951721,
+      "same_threads": 42,
+      "runtime_s": 102.878081518,
+      "runnable_wait_s": 337.543553879,
+      "timeslices": 1081234
+    },
+    "sql_observation_seconds": 185.58366417884827,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 148342,
+        "mean_ms": 0.24186795064782587,
+        "total_ms": 35879.175534999784
+      },
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 24634,
+        "mean_ms": 0.9044216272631338,
+        "total_ms": 22279.522366000037
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 3369,
+        "mean_ms": 4.100191474621555,
+        "total_ms": 13813.54507800002
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 3369,
+        "mean_ms": 3.7291708610863745,
+        "total_ms": 12563.576630999996
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 157107,
+        "mean_ms": 0.05267943465918214,
+        "total_ms": 8276.307941000128
+      },
+      {
+        "query": "WITH presentation AS (\n             SELECT tenant_id, token_family_id, $4 AS priority, $5::bytea AS spent_digest, $6::uuid AS spent_member_id, $7::timestamptz A",
+        "role": "nazoauth_perf_runtime",
+        "calls": 52783,
+        "mean_ms": 0.1452514235265137,
+        "total_ms": 7666.805887999973
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 24634,
+        "mean_ms": 0.2933220630023519,
+        "total_ms": 7225.695699999937
+      },
+      {
+        "query": "UPDATE \"oauth_refresh_families\" SET \"current_member_id\" = $1, \"current_token_blake3\" = $2, \"current_audience\" = $3, \"current_issued_at\" = $4, \"current_expires_a",
+        "role": "nazoauth_perf_runtime",
+        "calls": 50309,
+        "mean_ms": 0.13472665248762666,
+        "total_ms": 6777.963160000009
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 24634,
+        "mean_ms": 0.25492834229114386,
+        "total_ms": 6279.9047840000385
+      },
+      {
+        "query": "DELETE FROM oauth_refresh_spent_tokens AS spent USING ( SELECT refresh_token_blake3 FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND token_family_id = $",
+        "role": "nazoauth_perf_runtime",
+        "calls": 50309,
+        "mean_ms": 0.12068800409469414,
+        "total_ms": 6071.692797999967
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"is_active\", \"oauth_clients\".\"access_token_epoch\", \"oauth_clients\".\"client_type\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\"",
+        "role": "nazoauth_perf_runtime",
+        "calls": 132473,
+        "mean_ms": 0.0391208324866186,
+        "total_ms": 5182.454041999826
+      },
+      {
+        "query": "SELECT EXISTS (SELECT $9 FROM access_token_revocations WHERE tenant_id = $1 AND access_token_jti_blake3 = $2) OR NOT EXISTS ( SELECT $10 FROM oauth_clients c LE",
+        "role": "nazoauth_perf_runtime",
+        "calls": 62518,
+        "mean_ms": 0.0776293390863447,
+        "total_ms": 4853.231021000098
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "p04-B",
+    "cpu": {
+      "app": 1.82,
+      "postgres": 2.45
+    },
+    "scheduler": {
+      "from": 1791467567.9914567,
+      "to": 1791467622.855899,
+      "seconds": 54.864442348480225,
+      "same_threads": 41,
+      "runtime_s": 99.869726397,
+      "runnable_wait_s": 335.104289995,
+      "timeslices": 1062706
+    },
+    "sql_observation_seconds": 187.479332447052,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 148028,
+        "mean_ms": 0.24309278479746835,
+        "total_ms": 35984.53874799964
+      },
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 24505,
+        "mean_ms": 0.88906997873903,
+        "total_ms": 21786.65982899993
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 3535,
+        "mean_ms": 4.063573609618104,
+        "total_ms": 14364.732709999998
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 3535,
+        "mean_ms": 3.599514551909481,
+        "total_ms": 12724.283941000014
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 156775,
+        "mean_ms": 0.0534662063339181,
+        "total_ms": 8382.16449800001
+      },
+      {
+        "query": "WITH presentation AS (\n             SELECT tenant_id, token_family_id, $4 AS priority, $5::bytea AS spent_digest, $6::uuid AS spent_member_id, $7::timestamptz A",
+        "role": "nazoauth_perf_runtime",
+        "calls": 53124,
+        "mean_ms": 0.14745626409908794,
+        "total_ms": 7833.466573999948
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 24505,
+        "mean_ms": 0.28687120204039895,
+        "total_ms": 7029.778805999977
+      },
+      {
+        "query": "UPDATE \"oauth_refresh_families\" SET \"current_member_id\" = $1, \"current_token_blake3\" = $2, \"current_audience\" = $3, \"current_issued_at\" = $4, \"current_expires_a",
+        "role": "nazoauth_perf_runtime",
+        "calls": 50640,
+        "mean_ms": 0.13721535837282797,
+        "total_ms": 6948.585748000009
+      },
+      {
+        "query": "DELETE FROM oauth_refresh_spent_tokens AS spent USING ( SELECT refresh_token_blake3 FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND token_family_id = $",
+        "role": "nazoauth_perf_runtime",
+        "calls": 50640,
+        "mean_ms": 0.12564097383491363,
+        "total_ms": 6362.4589150000265
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 24505,
+        "mean_ms": 0.25679867839216525,
+        "total_ms": 6292.851614000009
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"is_active\", \"oauth_clients\".\"access_token_epoch\", \"oauth_clients\".\"client_type\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\"",
+        "role": "nazoauth_perf_runtime",
+        "calls": 132270,
+        "mean_ms": 0.04137350340213049,
+        "total_ms": 5472.4732949998
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_spent_tokens\" (\"tenant_id\", \"refresh_token_blake3\", \"token_family_id\", \"member_id\", \"successor_member_id\", \"spent_at\", \"expires_at\") ",
+        "role": "nazoauth_perf_runtime",
+        "calls": 50640,
+        "mean_ms": 0.09542632942338067,
+        "total_ms": 4832.389321999997
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "sustained-A",
+    "cpu": {
+      "app": 1.24,
+      "postgres": 2.58
+    },
+    "scheduler": {
+      "from": 1791468294.0081592,
+      "to": 1791468473.1659102,
+      "seconds": 179.15775108337402,
+      "same_threads": 34,
+      "runtime_s": 222.167033421,
+      "runnable_wait_s": 995.016671307,
+      "timeslices": 5172520
+    },
+    "sql_observation_seconds": 323.44423365592957,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69807,
+        "mean_ms": 0.8683869057257857,
+        "total_ms": 60619.48472799992
+      },
+      {
+        "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+        "role": "nazoauth_perf_runtime",
+        "calls": 209421,
+        "mean_ms": 0.2821254607274372,
+        "total_ms": 59082.996111000626
+      },
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 139614,
+        "mean_ms": 0.25230253364275973,
+        "total_ms": 35224.965932000254
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 4774,
+        "mean_ms": 4.054242654168413,
+        "total_ms": 19354.954431000006
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69807,
+        "mean_ms": 0.2574085319380605,
+        "total_ms": 17968.91738900019
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69807,
+        "mean_ms": 0.2499496676264536,
+        "total_ms": 17448.236447999847
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 4774,
+        "mean_ms": 3.1840160433598634,
+        "total_ms": 15200.492590999987
+      },
+      {
+        "query": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"client_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69807,
+        "mean_ms": 0.1847369301072969,
+        "total_ms": 12895.930880000074
+      },
+      {
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69807,
+        "mean_ms": 0.17955014011488712,
+        "total_ms": 12533.856630999926
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 209421,
+        "mean_ms": 0.05351721001714309,
+        "total_ms": 11207.627639000122
+      },
+      {
+        "query": "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69807,
+        "mean_ms": 0.1255016024753957,
+        "total_ms": 8760.890363999948
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 139614,
+        "mean_ms": 0.03178109984671789,
+        "total_ms": 4437.086473999671
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "sustained-B",
+    "cpu": {
+      "app": 1.25,
+      "postgres": 2.57
+    },
+    "scheduler": {
+      "from": 1791468721.1859512,
+      "to": 1791468893.063991,
+      "seconds": 171.87803983688354,
+      "same_threads": 34,
+      "runtime_s": 214.860699482,
+      "runnable_wait_s": 967.613071542,
+      "timeslices": 4944343
+    },
+    "sql_observation_seconds": 323.92759680747986,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69847,
+        "mean_ms": 0.8500993307944605,
+        "total_ms": 59376.88795800068
+      },
+      {
+        "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+        "role": "nazoauth_perf_runtime",
+        "calls": 209541,
+        "mean_ms": 0.27637212899623276,
+        "total_ms": 57911.29228199961
+      },
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 139694,
+        "mean_ms": 0.24863345398513373,
+        "total_ms": 34732.60172099927
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 5214,
+        "mean_ms": 3.892730221710784,
+        "total_ms": 20296.69537600003
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69847,
+        "mean_ms": 0.25505515297722187,
+        "total_ms": 17814.837270000015
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69847,
+        "mean_ms": 0.24417985064498224,
+        "total_ms": 17055.230028000075
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 5214,
+        "mean_ms": 2.825744015343309,
+        "total_ms": 14733.429296000013
+      },
+      {
+        "query": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"client_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69847,
+        "mean_ms": 0.18052954324451842,
+        "total_ms": 12609.447006999879
+      },
+      {
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69847,
+        "mean_ms": 0.1756183732443774,
+        "total_ms": 12266.416516000028
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 209541,
+        "mean_ms": 0.05233977507027306,
+        "total_ms": 10967.328808000088
+      },
+      {
+        "query": "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 69847,
+        "mean_ms": 0.1179846182226879,
+        "total_ms": 8240.871629000081
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 139694,
+        "mean_ms": 0.030507339492029575,
+        "total_ms": 4261.692282999579
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  },
+  {
+    "key": "p06-diagnostic",
+    "cpu": {
+      "app": 1.21,
+      "postgres": 2.43
+    },
+    "scheduler": {
+      "from": 1791469155.7862415,
+      "to": 1791469213.3153634,
+      "seconds": 57.52912187576294,
+      "same_threads": 34,
+      "runtime_s": 69.687967959,
+      "runnable_wait_s": 340.793135223,
+      "timeslices": 1090887
+    },
+    "sql_observation_seconds": 116.31370544433594,
+    "top_sql": [
+      {
+        "query": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31172,
+        "mean_ms": 0.9821726780764776,
+        "total_ms": 30616.28672099996
+      },
+      {
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "role": "nazoauth_perf_runtime",
+        "calls": 53416,
+        "mean_ms": 0.2575012409577665,
+        "total_ms": 13754.686287000055
+      },
+      {
+        "query": "UPDATE oauth_refresh_families AS family SET revoked_at=CURRENT_TIMESTAMP WHERE family.tenant_id=$1 AND family.token_family_id=$2 AND family.revoked_at IS NULL A",
+        "role": "nazoauth_perf_runtime",
+        "calls": 22244,
+        "mean_ms": 0.5474587525624873,
+        "total_ms": 12177.672491999969
+      },
+      {
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31172,
+        "mean_ms": 0.29580371551392487,
+        "total_ms": 9220.793420000065
+      },
+      {
+        "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31172,
+        "mean_ms": 0.2822345882843566,
+        "total_ms": 8797.816585999964
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1483,
+        "mean_ms": 5.7012717376938635,
+        "total_ms": 8454.985987
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "role": "nazoauth_perf_exporter",
+        "calls": 1483,
+        "mean_ms": 4.398006314227918,
+        "total_ms": 6522.243364000002
+      },
+      {
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31172,
+        "mean_ms": 0.1939106234761967,
+        "total_ms": 6044.581955000003
+      },
+      {
+        "query": "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31172,
+        "mean_ms": 0.11853719315411272,
+        "total_ms": 3695.041385000002
+      },
+      {
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "role": "nazoauth_perf_runtime",
+        "calls": 62344,
+        "mean_ms": 0.05926804706146474,
+        "total_ms": 3695.0071259999577
+      },
+      {
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "role": "nazoauth_perf_runtime",
+        "calls": 62344,
+        "mean_ms": 0.055026898610930484,
+        "total_ms": 3430.5969669998503
+      },
+      {
+        "query": "WITH ranked AS ( SELECT token_family_id, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, count(*) OVER () AS total FROM oauth_re",
+        "role": "nazoauth_perf_runtime",
+        "calls": 31172,
+        "mean_ms": 0.06579084078660279,
+        "total_ms": 2050.8320889999823
+      }
+    ],
+    "pool_acquisition": null,
+    "boundary": "scheduler is measured only inside the owned application, no host attribution; SQL interval includes warmup/drain and is not a per-formal-op cost; null pool acquisition means unmeasured"
+  }
+]

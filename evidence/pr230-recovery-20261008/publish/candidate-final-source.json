@@ -1,0 +1,6 @@
+{
+  "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+  "requested_revision": "bea8a7e0dd608b91b94000003fe5370508979d99",
+  "initial_formatted_candidate": "9d564e2bd4adc731027805db61876ca6dd5859b6",
+  "test_before_commit": "B-fixed-recovery/B-fixed-audit executed with the identical subsequently committed working tree; full suite will run at fixed SHA"
+}
