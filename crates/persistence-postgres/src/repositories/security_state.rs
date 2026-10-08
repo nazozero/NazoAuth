@@ -30,13 +30,13 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{
     CleanupBatchResult, SecurityStateMaintenanceFuture, SecurityStateMaintenancePort,
 };
 
-use crate::{DbConnection, DbPool, get_conn};
+use crate::{DbConnection, DbPool, get_conn, pool::DiscardOnDrop};
 
 /// Per-category row budget per batch (matches the SQL function contract).
 const CLEANUP_BATCH_LIMIT: i64 = 256;
@@ -154,30 +154,36 @@ impl SecurityStateMaintenanceRepository {
         }
     }
 
-    async fn generic_cleanup(&self) -> Result<GenericCleanupCounts, RepositoryError> {
-        let mut connection = self.connection().await?;
+    async fn generic_cleanup(
+        &self,
+        connection: &mut AsyncPgConnection,
+    ) -> Result<GenericCleanupCounts, RepositoryError> {
         sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
-            .get_result::<GenericCleanupCounts>(&mut connection)
+            .get_result::<GenericCleanupCounts>(connection)
             .await
             .map_err(map_error)
     }
 
-    async fn decision_cleanup(&self) -> Result<u64, RepositoryError> {
-        let mut connection = self.connection().await?;
+    async fn decision_cleanup(
+        &self,
+        connection: &mut AsyncPgConnection,
+    ) -> Result<u64, RepositoryError> {
         let row = sql_query("SELECT public.nazo_cleanup_authorization_decisions() AS deleted")
-            .get_result::<DecisionCleanupCount>(&mut connection)
+            .get_result::<DecisionCleanupCount>(connection)
             .await
             .map_err(map_error)?;
         debug_assert!((0..=CLEANUP_BATCH_LIMIT).contains(&row.deleted));
         Ok(row.deleted.max(0) as u64)
     }
 
-    async fn presentation_cleanup(&self) -> Result<u64, RepositoryError> {
-        let mut connection = self.connection().await?;
+    async fn presentation_cleanup(
+        &self,
+        connection: &mut AsyncPgConnection,
+    ) -> Result<u64, RepositoryError> {
         let count = sql_query(
             "SELECT nazo_openid4vp_cleanup_expired_transactions() AS deleted_transactions",
         )
-        .get_result::<PresentationCleanupCount>(&mut connection)
+        .get_result::<PresentationCleanupCount>(connection)
         .await
         .map_err(map_error)?;
         debug_assert!((0..=CLEANUP_BATCH_LIMIT as i32).contains(&count.deleted_transactions));
@@ -187,8 +193,10 @@ impl SecurityStateMaintenanceRepository {
     /// Delete spent proofs at their own expiry. An expired proof's only
     /// reader — the token endpoint — returns `invalid_grant` whether the row
     /// is present or absent, so the row has no post-expiry authority.
-    async fn delete_expired_spent_proofs(&self) -> Result<(u64, bool), RepositoryError> {
-        let mut connection = self.connection().await?;
+    async fn delete_expired_spent_proofs(
+        &self,
+        connection: &mut AsyncPgConnection,
+    ) -> Result<(u64, bool), RepositoryError> {
         let deleted = sql_query(
             "WITH due AS ( \
                  SELECT tenant_id, refresh_token_blake3 \
@@ -203,7 +211,7 @@ impl SecurityStateMaintenanceRepository {
                AND target.refresh_token_blake3 = due.refresh_token_blake3",
         )
         .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
-        .execute(&mut connection)
+        .execute(connection)
         .await
         .map_err(map_error)?;
         Ok((deleted as u64, deleted as i64 >= CLEANUP_BATCH_LIMIT))
@@ -216,6 +224,7 @@ impl SecurityStateMaintenanceRepository {
     /// try-lock, so a just-rotated family is never reclaimed mid-commit.
     async fn delete_expired_refresh_families(
         &self,
+        connection: &mut AsyncPgConnection,
         proof_budget: i64,
     ) -> Result<(u64, u64, bool), RepositoryError> {
         #[derive(QueryableByName)]
@@ -225,7 +234,6 @@ impl SecurityStateMaintenanceRepository {
             #[diesel(sql_type = sql_types::Uuid)]
             token_family_id: uuid::Uuid,
         }
-        let mut connection = self.connection().await?;
         connection
             .build_transaction()
             .read_committed()
@@ -386,11 +394,13 @@ impl SecurityStateMaintenanceRepository {
     /// Delete unreferenced contracts under the parent UPDATE lock. Issuance
     /// creates the contract and family in one transaction, or holds KEY SHARE
     /// on an existing contract until its family reference commits.
-    async fn delete_orphan_refresh_contracts(&self) -> Result<(u64, bool), RepositoryError> {
-        // Wait for the process-local cursor before acquiring a pool lease.
+    async fn delete_orphan_refresh_contracts(
+        &self,
+        connection: &mut AsyncPgConnection,
+    ) -> Result<(u64, bool), RepositoryError> {
+        // The cursor only orders scans; the bounded batch already owns its lease.
         let mut cursor = self.contract_cursor.lock().await;
         let after = cursor.clone();
-        let mut connection = self.connection().await?;
         let (deleted, saturated, next) = connection
             .build_transaction()
             .read_committed()
@@ -489,10 +499,12 @@ impl SecurityStateMaintenanceRepository {
         Ok((deleted, saturated))
     }
 
-    async fn credential_cleanup(&self) -> Result<CredentialCleanupCounts, RepositoryError> {
+    async fn credential_cleanup(
+        &self,
+        connection: &mut AsyncPgConnection,
+    ) -> Result<CredentialCleanupCounts, RepositoryError> {
         let mut cursor = self.grant_cursor.lock().await;
         let after = cursor.clone();
-        let mut connection = self.connection().await?;
         // One statement handles the independent expiry categories. This also
         // avoids five empty round trips on deployments that have never enabled
         // credential issuance. Grants run afterwards, after child deletions are
@@ -539,7 +551,7 @@ impl SecurityStateMaintenanceRepository {
         )
         .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
         .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
-        .get_result::<CredentialExpiryCounts>(&mut connection)
+        .get_result::<CredentialExpiryCounts>(connection)
         .await
         .map_err(map_error)?;
         let mut counts = CredentialCleanupCounts {
@@ -648,47 +660,64 @@ impl SecurityStateMaintenanceRepository {
 impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
     fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
         Box::pin(async move {
-            let generic = self.generic_cleanup().await?;
-            let authorization_decisions = self.decision_cleanup().await?;
-            let (expired_proofs, expired_saturated) = self.delete_expired_spent_proofs().await?;
-            let proof_budget = CLEANUP_BATCH_LIMIT - expired_proofs as i64;
-            let (refresh_tokens, terminal_proofs, families_saturated) =
-                self.delete_expired_refresh_families(proof_budget).await?;
-            let spent_refresh_proofs = expired_proofs + terminal_proofs;
-            let (refresh_contracts, contracts_saturated) =
-                self.delete_orphan_refresh_contracts().await?;
-            let presentations = self.presentation_cleanup().await?;
-            let credentials = self.credential_cleanup().await?;
-            let saturated = authorization_decisions >= CLEANUP_BATCH_LIMIT as u64
-                || families_saturated
-                || expired_saturated
-                || contracts_saturated
-                || i64::from(generic.deleted_issuances) >= CLEANUP_BATCH_LIMIT
-                || i64::from(generic.deleted_access_token_revocations) >= CLEANUP_BATCH_LIMIT
-                || i64::from(generic.deleted_scim_audit_events) >= CLEANUP_BATCH_LIMIT
-                || i64::from(generic.deleted_backchannel_logout_deliveries) >= CLEANUP_BATCH_LIMIT
-                || i64::from(generic.deleted_scim_security_events) >= CLEANUP_BATCH_LIMIT
-                || presentations >= CLEANUP_BATCH_LIMIT as u64
-                || credentials.saturated;
-            Ok(CleanupBatchResult {
-                authorization_decisions,
-                issuances: generic.deleted_issuances.max(0) as u64,
-                refresh_tokens,
-                spent_refresh_proofs,
-                refresh_contracts,
-                revocations: generic.deleted_access_token_revocations.max(0) as u64,
-                scim_audit_events: generic.deleted_scim_audit_events.max(0) as u64,
-                logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
-                scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
-                presentations,
-                credential_offers: credentials.offers,
-                credential_nonces: credentials.nonces,
-                credential_access_grants: credentials.grants,
-                deferred_credentials: credentials.deferred,
-                credential_notifications: credentials.notifications,
-                credential_responses: credentials.responses,
-                saturated,
-            })
+            // One bounded batch owns one lease, while each category keeps its
+            // existing commit boundary. Requeueing between categories makes
+            // reclamation compete repeatedly with every admitted request and
+            // counts pool waiting time again in the worker's catch-up rest.
+            // Cancellation or a failed cleanup retires the lease.
+            let mut guard = DiscardOnDrop(Some(self.connection().await?));
+            let result = async {
+                let connection = &mut **guard.connection();
+                let generic = self.generic_cleanup(connection).await?;
+                let authorization_decisions = self.decision_cleanup(connection).await?;
+                let (expired_proofs, expired_saturated) =
+                    self.delete_expired_spent_proofs(connection).await?;
+                let proof_budget = CLEANUP_BATCH_LIMIT - expired_proofs as i64;
+                let (refresh_tokens, terminal_proofs, families_saturated) = self
+                    .delete_expired_refresh_families(connection, proof_budget)
+                    .await?;
+                let spent_refresh_proofs = expired_proofs + terminal_proofs;
+                let (refresh_contracts, contracts_saturated) =
+                    self.delete_orphan_refresh_contracts(connection).await?;
+                let presentations = self.presentation_cleanup(connection).await?;
+                let credentials = self.credential_cleanup(connection).await?;
+                let saturated = authorization_decisions >= CLEANUP_BATCH_LIMIT as u64
+                    || families_saturated
+                    || expired_saturated
+                    || contracts_saturated
+                    || i64::from(generic.deleted_issuances) >= CLEANUP_BATCH_LIMIT
+                    || i64::from(generic.deleted_access_token_revocations) >= CLEANUP_BATCH_LIMIT
+                    || i64::from(generic.deleted_scim_audit_events) >= CLEANUP_BATCH_LIMIT
+                    || i64::from(generic.deleted_backchannel_logout_deliveries)
+                        >= CLEANUP_BATCH_LIMIT
+                    || i64::from(generic.deleted_scim_security_events) >= CLEANUP_BATCH_LIMIT
+                    || presentations >= CLEANUP_BATCH_LIMIT as u64
+                    || credentials.saturated;
+                Ok(CleanupBatchResult {
+                    authorization_decisions,
+                    issuances: generic.deleted_issuances.max(0) as u64,
+                    refresh_tokens,
+                    spent_refresh_proofs,
+                    refresh_contracts,
+                    revocations: generic.deleted_access_token_revocations.max(0) as u64,
+                    scim_audit_events: generic.deleted_scim_audit_events.max(0) as u64,
+                    logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
+                    scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
+                    presentations,
+                    credential_offers: credentials.offers,
+                    credential_nonces: credentials.nonces,
+                    credential_access_grants: credentials.grants,
+                    deferred_credentials: credentials.deferred,
+                    credential_notifications: credentials.notifications,
+                    credential_responses: credentials.responses,
+                    saturated,
+                })
+            }
+            .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
         })
     }
 }
