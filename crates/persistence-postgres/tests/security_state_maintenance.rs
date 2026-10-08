@@ -2969,3 +2969,57 @@ async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_ato
         .await
         .unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bounded_batch_finishes_before_a_queued_connection_borrower() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let held = get_conn(&pool).await.unwrap();
+    let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
+    let mut cleanup = tokio::spawn(async move { maintenance.cleanup_batch().await });
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while pool.status().waiting != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("maintenance must be queued for the only connection");
+
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let borrower_pool = pool.clone();
+    let borrower = tokio::spawn(async move {
+        let connection = get_conn(&borrower_pool).await.unwrap();
+        let _ = released.await;
+        drop(connection);
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while pool.status().waiting != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the request must queue after maintenance");
+    drop(held);
+
+    // The bounded batch owns one lease. Rejoining the request queue between
+    // categories lets the later borrower strand an already admitted batch.
+    // This is pool contention with a real PostgreSQL connection, not a delay
+    // inserted into the cleanup implementation or a smaller retention TTL.
+    let result = tokio::time::timeout(std::time::Duration::from_secs(3), &mut cleanup).await;
+    let _ = release.send(());
+    borrower.await.unwrap();
+    if result.is_err() {
+        cleanup.abort();
+        let _ = cleanup.await;
+    }
+    result
+        .expect("an admitted bounded batch must not requeue between cleanup categories")
+        .expect("maintenance task must finish")
+        .expect("maintenance database work must succeed");
+}
