@@ -268,6 +268,10 @@ pub(crate) async fn admin_mtls_trust_bundle(
         Ok(admin) => admin,
         Err(response) => return response,
     };
+    // Required anchor admission must also precede read-only disclosure.
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
+        return response;
+    }
     match service
         .active_bundle(admin.principal.tenant.tenant_id, None)
         .await

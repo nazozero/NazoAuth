@@ -346,7 +346,26 @@ async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_fai
         .await
         .unwrap();
     let pool = create_pool(&database_url, 4).unwrap();
-    crate::test_support::initialize_audit_dependencies(&pool);
+    let unhealthy_anchor = std::env::var_os("NAZO_TEST_BUNDLE_UNHEALTHY_ANCHOR").is_some();
+    if unhealthy_anchor {
+        let preflight = crate::adapters::audit_anchor::AuditAnchorPreflight::new(
+            crate::adapters::audit_anchor::AuditAnchorPreflightConfig {
+                mode: crate::adapters::audit_anchor::config::AuditAnchorMode::Required,
+                deployment_id: Uuid::now_v7().to_string(),
+                freshness: std::time::Duration::from_secs(1),
+                max_lag: std::time::Duration::from_secs(1),
+            },
+        )
+        .unwrap();
+        crate::adapters::audit::install_persistent_audit_sink(
+            Arc::new(nazo_postgres::AuditLedgerRepository::new(pool.clone())),
+            false,
+            preflight,
+        )
+        .unwrap();
+    } else {
+        crate::test_support::initialize_audit_dependencies(&pool);
+    }
     let valkey =
         fred::prelude::Builder::from_config(fred::prelude::Config::from_url(&valkey_url).unwrap())
             .build()
@@ -417,6 +436,15 @@ async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_fai
     let success=futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
          let req=TestRequest::get().cookie(actix_web::cookie::Cookie::new(state.settings.session.session_cookie_name.clone(),sid.clone())).to_http_request();
          let response=super::super::admin_mtls_trust_bundle(sessions,service,req).await;
+         if unhealthy_anchor {
+             assert_eq!(response.status(),actix_web::http::StatusCode::SERVICE_UNAVAILABLE);
+             assert!(!response.headers().contains_key("content-disposition"));
+             let rows=sql_query("SELECT jsonb_agg(payload) AS value FROM security_audit_events WHERE event_type='mtls_trust_bundle_exported' AND payload->>'admin_user_id'=$1 HAVING count(*)>0")
+                 .bind::<Text,_>(admin.to_string()).load::<Evidence>(&mut connection).await.unwrap();
+             assert!(rows.is_empty(), "unhealthy anchor must reject before disclosure or event append");
+             println!("mTLS bundle HTTP: writable audit database plus unhealthy Required anchor -> 503/no attachment/no event");
+             return;
+         }
          assert_eq!(response.status(),actix_web::http::StatusCode::OK);
          assert!(response.headers().contains_key("content-disposition"));
          let rows=sql_query("SELECT jsonb_agg(payload) AS value FROM security_audit_events WHERE event_type='mtls_trust_bundle_exported' AND payload->>'admin_user_id'=$1")
@@ -438,4 +466,36 @@ async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_fai
     if let Err(error) = success {
         std::panic::resume_unwind(error);
     }
+}
+
+#[test]
+fn bundle_export_rejects_unhealthy_required_anchor_in_isolated_process() {
+    let configured = (std::env::var_os("NAZO_TEST_DATABASE_URL").is_some()
+        || std::env::var_os("DATABASE_URL").is_some())
+        && std::env::var_os("VALKEY_URL").is_some();
+    if !configured {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "real bundle test requires PostgreSQL and Valkey"
+        );
+        return;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("bundle_export_waits_for_real_required_audit_commit_and_rejects_late_failure")
+        .arg("--nocapture")
+        .arg("--test-threads=1")
+        .env("NAZO_TEST_BUNDLE_UNHEALTHY_ANCHOR", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("writable audit database plus unhealthy Required anchor"),
+        "child did not execute real database proof: {stdout}"
+    );
 }
