@@ -1038,13 +1038,13 @@ async fn authorization_decision_fails_closed_when_authorization_code_store_fails
         return;
     };
     let user = fixture.create_user("code-store-failure", "user", 0).await;
-    let client_id = "client-decision-code-store-failure";
-    fixture.insert_client(client_id, true).await;
+    let client_id = format!("client-decision-code-store-failure-{}", Uuid::now_v7());
+    fixture.insert_client(&client_id, true).await;
     let sid = format!("sid-code-store-failure-{}", Uuid::now_v7());
     fixture
         .store_session(&user, &sid, Utc::now().timestamp())
         .await;
-    let payload = consent_payload_for_user(client_id, user.id);
+    let payload = consent_payload_for_user(&client_id, user.id);
     fixture.store_consent_payload(&payload).await;
 
     let username = format!("decision_code_store_failure_{}", Uuid::now_v7().simple());
