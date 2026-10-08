@@ -1201,6 +1201,10 @@ async fn required_control_plane_cancelled_accepting_owner_releases_connection_an
         .execute(&mut blocker)
         .await
         .unwrap();
+    // Hold an independent peer before cancelling the owner. Borrowing again
+    // afterwards could accidentally make pool recycling release the lock.
+    let mut peer = get_conn(&f.pool).await.unwrap();
+    peer.batch_execute("SET lock_timeout = '3s'").await.unwrap();
     let repository = f.registry.clone();
     let command = f.approval(ControllerIdentityAction::Add);
     let audit = f.audit.clone();
@@ -1230,19 +1234,14 @@ async fn required_control_plane_cancelled_accepting_owner_releases_connection_an
         observed.is_ok(),
         "real actor lock wait must be observed before cancellation"
     );
-    let mut connection = tokio::time::timeout(std::time::Duration::from_secs(3), get_conn(&f.pool))
-        .await
-        .unwrap()
-        .unwrap();
-    let lock = sql_query("SELECT pg_try_advisory_xact_lock(hashtextextended($1,$2)) AS value")
+    // Socket close and backend rollback are asynchronous. Require PostgreSQL
+    // to grant the peer the lock within the same three-second observation
+    // bound, rather than racing one nonblocking try against disconnect.
+    sql_query("SELECT pg_advisory_xact_lock(hashtextextended($1,$2))")
         .bind::<Text, _>(&f.deployment)
         .bind::<BigInt, _>(nazo_postgres::DEPLOYMENT_IDENTITY_LOCK_SEED)
-        .get_result::<Waiting>(&mut connection)
+        .execute(&mut peer)
         .await
-        .unwrap();
-    assert!(
-        lock.value,
-        "discarded accepting connection releases its deployment lock"
-    );
+        .expect("discarded accepting connection releases its deployment lock");
     assert_eq!(snapshot(&f).await["canonical"].as_array().unwrap().len(), 0);
 }
