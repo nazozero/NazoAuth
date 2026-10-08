@@ -146,7 +146,20 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
 }
 
 pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
-    Ok(pool.get().await?)
+    let observation = tracing::enabled!(target: "persistence.pool", tracing::Level::TRACE)
+        .then(|| (std::time::Instant::now(), pool.status()));
+    let connection = pool.get().await;
+    if let Some((started, status)) = observation {
+        tracing::trace!(
+            target: "persistence.pool",
+            acquire_us = started.elapsed().as_micros() as u64,
+            available_before = status.available,
+            waiting_before = status.waiting,
+            success = connection.is_ok(),
+            "PostgreSQL connection acquisition completed"
+        );
+    }
+    Ok(connection?)
 }
 
 /// Performs a real database round trip used by readiness probes.

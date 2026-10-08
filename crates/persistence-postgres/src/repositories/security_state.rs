@@ -632,6 +632,12 @@ impl SecurityStateMaintenanceRepository {
         Ok(counts)
     }
 
+    #[tracing::instrument(
+        skip_all,
+        level = "trace",
+        target = "persistence.pool",
+        name = "security_state_maintenance"
+    )]
     async fn connection(&self) -> Result<DbConnection, RepositoryError> {
         get_conn(&self.pool)
             .await
