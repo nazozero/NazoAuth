@@ -73,13 +73,9 @@ impl AuditLedgerRepository {
         require_exporter: bool,
     ) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
-        let privileges = sql_query(
-            "SELECT policy_satisfied \
-             FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
-        )
-        .bind::<diesel::sql_types::Bool, _>(require_least_privilege)
-        .bind::<diesel::sql_types::Bool, _>(require_append)
-        .bind::<diesel::sql_types::Bool, _>(require_exporter)
+        let privileges = AuditPrivilegeQuery {
+            policy: &[require_least_privilege, require_append, require_exporter],
+        }
         .get_result::<AuditPrivilegePreflightRow>(&mut connection)
         .await
         .map_err(map_error)?;
@@ -366,12 +362,7 @@ async fn append_on_connection(
     // A function's first DataRow is not an implicit-transaction commit ACK.
     // Drain through statement completion so late database errors propagate.
     // Inside a business transaction, its owner still awaits the final COMMIT.
-    sql_query("SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed")
-        .bind::<diesel::sql_types::Uuid, _>(event.event_id)
-        .bind::<diesel::sql_types::Text, _>(&event.event_type)
-        .bind::<diesel::sql_types::Text, _>(&event.event_category)
-        .bind::<diesel::sql_types::Jsonb, _>(&event.payload)
-        .bind::<diesel::sql_types::Timestamptz, _>(event.occurred_at)
+    AuditAppendQuery { event }
         .load::<AuditMutationRow>(connection)
         .await
         .and_then(single_audit_mutation)
@@ -883,6 +874,68 @@ fn require_current_audit_mutation(changed: bool) -> Result<(), RepositoryError> 
 
 fn map_error(error: diesel::result::Error) -> RepositoryError {
     RepositoryError::Unexpected(error.to_string())
+}
+
+// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
+struct AuditPrivilegeQuery<'a> {
+    policy: &'a [bool; 3],
+}
+impl diesel::query_builder::QueryId for AuditPrivilegeQuery<'_> {
+    type QueryId = AuditPrivilegeQuery<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+impl diesel::query_builder::Query for AuditPrivilegeQuery<'_> {
+    type SqlType = diesel::sql_types::Untyped;
+}
+impl<Conn> diesel::RunQueryDsl<Conn> for AuditPrivilegeQuery<'_> {}
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditPrivilegeQuery<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql(
+            "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight(",
+        );
+        out.push_bind_param::<diesel::sql_types::Bool, _>(&self.policy[0])?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Bool, _>(&self.policy[1])?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Bool, _>(&self.policy[2])?;
+        out.push_sql(")");
+        Ok(())
+    }
+}
+
+// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
+struct AuditAppendQuery<'a> {
+    event: &'a SecurityAuditEvent,
+}
+impl diesel::query_builder::QueryId for AuditAppendQuery<'_> {
+    type QueryId = AuditAppendQuery<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+impl diesel::query_builder::Query for AuditAppendQuery<'_> {
+    type SqlType = diesel::sql_types::Untyped;
+}
+impl<Conn> diesel::RunQueryDsl<Conn> for AuditAppendQuery<'_> {}
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditAppendQuery<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql("SELECT public.nazo_persist_security_audit_event(");
+        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.event.event_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Text, _>(&self.event.event_type)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Text, _>(&self.event.event_category)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.event.payload)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.event.occurred_at)?;
+        out.push_sql(") AS changed");
+        Ok(())
+    }
 }
 
 #[cfg(test)]

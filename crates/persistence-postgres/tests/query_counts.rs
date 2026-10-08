@@ -2582,3 +2582,52 @@ async fn refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds() {
     );
     cleanup_seed(&url, tenant, &seed).await;
 }
+
+#[tokio::test]
+async fn refresh_contract_prepared_shape_preserves_distinct_contracts() {
+    let _serial = SERIAL.lock().await;
+    let url = database_url().expect("isolated PostgreSQL required");
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&url, tenant).await;
+    let pool = create_pool(&url, 1).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    for index in 0..2 {
+        let mut token = new_refresh_token(
+            &seed,
+            tenant.tenant_id.as_uuid(),
+            Uuid::now_v7(),
+            format!("cache-contract-{}", Uuid::now_v7()),
+            None,
+            None,
+        );
+        if index == 1 {
+            token.contract.scopes.push("profile".to_owned());
+        }
+        assert!(matches!(
+            repository
+                .commit_token_issuance(refresh_issuance(token).await)
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        ));
+    }
+    #[derive(diesel::QueryableByName)]
+    struct Count {
+        #[diesel(sql_type=sql_types::BigInt)]
+        count: i64,
+    }
+    let mut c = get_conn(&pool).await.unwrap();
+    let cached=sql_query("SELECT count(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE 'SELECT public.nazo_oauth_refresh_contract_ensure(%' AND generic_plans+custom_plans=2").get_result::<Count>(&mut c).await.unwrap().count;
+    assert_eq!(
+        cached, 1,
+        "one cached shape must execute both contract binds"
+    );
+    let distinct=sql_query("SELECT count(DISTINCT contract_blake3)::bigint AS count FROM oauth_refresh_families WHERE client_id=$1").bind::<sql_types::Uuid,_>(seed.client.id).get_result::<Count>(&mut c).await.unwrap().count;
+    assert_eq!(
+        distinct, 2,
+        "prepared execution must not reuse the first contract payload"
+    );
+    drop(c);
+    cleanup_seed(&url, tenant, &seed).await;
+}

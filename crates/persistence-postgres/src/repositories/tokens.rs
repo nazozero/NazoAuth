@@ -1285,12 +1285,13 @@ async fn persist_refresh_token_inner(
     // FOR KEY SHARE inside this transaction (the family foreign key can
     // never dangle against a concurrent reclaim); a missing key takes the
     // validated INSERT and a genuine create/reclaim race retries locally.
-    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(token.tenant_id)
-        .bind::<sql_types::Binary, _>(contract_blake3)
-        .bind::<sql_types::Jsonb, _>(contract_value)
-        .execute(connection)
-        .await?;
+    EnsureRefreshContractQuery {
+        tenant_id: token.tenant_id,
+        digest: contract_blake3,
+        contract: contract_value,
+    }
+    .execute(connection)
+    .await?;
     diesel::insert_into(oauth_refresh_families::table)
         .values((
             oauth_refresh_families::tenant_id.eq(token.tenant_id),
@@ -1678,6 +1679,36 @@ fn blake3_hex(value: &str) -> String {
 
 fn map_error(error: diesel::result::Error) -> RepositoryError {
     RepositoryError::Unexpected(error.to_string())
+}
+
+// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
+struct EnsureRefreshContractQuery<'a> {
+    tenant_id: Uuid,
+    digest: &'a [u8],
+    contract: &'a serde_json::Value,
+}
+impl diesel::query_builder::QueryId for EnsureRefreshContractQuery<'_> {
+    type QueryId = EnsureRefreshContractQuery<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+impl diesel::query_builder::Query for EnsureRefreshContractQuery<'_> {
+    type SqlType = diesel::sql_types::Untyped;
+}
+impl<Conn> diesel::RunQueryDsl<Conn> for EnsureRefreshContractQuery<'_> {}
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for EnsureRefreshContractQuery<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql("SELECT public.nazo_oauth_refresh_contract_ensure(");
+        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.tenant_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Binary, _>(self.digest)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Jsonb, _>(self.contract)?;
+        out.push_sql(")");
+        Ok(())
+    }
 }
 
 #[cfg(test)]

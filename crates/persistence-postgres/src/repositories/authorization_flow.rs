@@ -336,24 +336,11 @@ async fn execute_decision(
     connection: &mut diesel_async::AsyncPgConnection,
     input: &AuthorizationDecisionCommit,
 ) -> diesel::QueryResult<AuthorizationDecisionCommitResult> {
-    let rows = sql_query(
-        "SELECT public.nazo_commit_authorization_decision(\
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
-    )
-    .bind::<sql_types::Uuid, _>(input.tenant_id)
-    .bind::<sql_types::Uuid, _>(input.user_id)
-    .bind::<sql_types::Text, _>(&input.client_id)
-    .bind::<sql_types::Text, _>(&input.request_id)
-    .bind::<sql_types::Nullable<sql_types::Text>, _>(input.pushed_request_uri.as_deref())
-    .bind::<sql_types::Timestamptz, _>(input.valid_until)
-    .bind::<sql_types::Timestamptz, _>(input.retain_until)
-    .bind::<sql_types::Text, _>(input.decision.as_str())
-    .bind::<sql_types::Uuid, _>(input.event_id)
-    .bind::<sql_types::Timestamptz, _>(input.occurred_at)
-    .bind::<sql_types::Jsonb, _>(&input.audit_fields)
-    .bind::<sql_types::Jsonb, _>(serde_json::json!(input.scopes))
-    .bind::<sql_types::Jsonb, _>(serde_json::json!(input.resource_indicators))
-    .bind::<sql_types::Jsonb, _>(&input.authorization_details)
+    let rows = AuthorizationDecisionQuery {
+        input,
+        scopes: serde_json::json!(input.scopes),
+        resources: serde_json::json!(input.resource_indicators),
+    }
     .load::<DecisionOutcomeRow>(connection)
     .await?;
     let mut rows = rows.into_iter();
@@ -403,6 +390,60 @@ fn map_device_repository_error(error: RepositoryError) -> DeviceGrantPortError {
         RepositoryError::NotFound | RepositoryError::Unexpected(_) => {
             DeviceGrantPortError::Unexpected
         }
+    }
+}
+
+// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
+struct AuthorizationDecisionQuery<'a> {
+    input: &'a AuthorizationDecisionCommit,
+    scopes: serde_json::Value,
+    resources: serde_json::Value,
+}
+impl diesel::query_builder::QueryId for AuthorizationDecisionQuery<'_> {
+    type QueryId = AuthorizationDecisionQuery<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+impl diesel::query_builder::Query for AuthorizationDecisionQuery<'_> {
+    type SqlType = diesel::sql_types::Untyped;
+}
+impl<Conn> diesel::RunQueryDsl<Conn> for AuthorizationDecisionQuery<'_> {}
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuthorizationDecisionQuery<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql("SELECT public.nazo_commit_authorization_decision(");
+        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.input.tenant_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.input.user_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Text, _>(&self.input.client_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Text, _>(&self.input.request_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(
+            &self.input.pushed_request_uri,
+        )?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.valid_until)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.retain_until)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Text, _>(self.input.decision.as_str())?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.input.event_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.occurred_at)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.input.audit_fields)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.scopes)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.resources)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.input.authorization_details)?;
+        out.push_sql(") AS outcome");
+        Ok(())
     }
 }
 

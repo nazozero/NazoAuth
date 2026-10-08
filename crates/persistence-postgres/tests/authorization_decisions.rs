@@ -1478,3 +1478,34 @@ async fn audit_ack_samples_time_after_blocked_head_validation() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn decision_prepared_shape_preserves_distinct_facts_and_replay_fences() {
+    let url = database_url().expect("isolated PostgreSQL required");
+    nazo_postgres::run_pending_migrations(&url).await.unwrap();
+    let mut observer = AsyncPgConnection::establish(&url).await.unwrap();
+    let actor = fixture(&mut observer).await;
+    let pool = create_pool(url, 1).unwrap();
+    let repository = AuthorizationFlowRepository::new(pool.clone(), actor.tenant_id);
+    let first = decision(&actor, Kind::Approve);
+    let second = decision(&actor, Kind::Deny);
+    for input in [&first, &second] {
+        assert_eq!(
+            repository.commit_decision(input.clone()).await.unwrap(),
+            Outcome::Committed
+        );
+        assert_eq!(fact_count(&mut observer, input.event_id).await, 1);
+        assert_eq!(
+            repository.commit_decision(input.clone()).await.unwrap(),
+            Outcome::Conflict
+        );
+    }
+    assert_eq!(grant_count(&mut observer, &actor).await, 1);
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    let cached = sql_query("SELECT count(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE 'SELECT public.nazo_commit_authorization_decision(%' AND generic_plans+custom_plans=4")
+        .get_result::<CountRow>(&mut connection).await.unwrap().count;
+    assert_eq!(
+        cached, 1,
+        "one cached shape, four executions with distinct decision binds"
+    );
+}
