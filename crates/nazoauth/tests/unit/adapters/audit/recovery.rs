@@ -43,9 +43,7 @@ impl SecurityAuditLedger for RecoveryLedger {
         Box::pin(async { Ok(()) })
     }
 
-    fn anchor_health(
-        &self,
-    ) -> BoxFuture<'_, Result<SecurityAuditAnchorHealth, RepositoryError>> {
+    fn anchor_health(&self) -> BoxFuture<'_, Result<SecurityAuditAnchorHealth, RepositoryError>> {
         Box::pin(async move {
             self.health_calls.fetch_add(1, Ordering::SeqCst);
             if self.delay_health_once.swap(false, Ordering::SeqCst) {
@@ -126,8 +124,7 @@ fn telemetry_expiry_uses_required_lag_boundary_and_preserves_unknown_clock_state
     assert!(!gate.telemetry_event_expired(now + chrono::Duration::seconds(1), now));
     for mode in [AuditAnchorMode::Optional, AuditAnchorMode::Disabled] {
         assert!(
-            !preflight(mode, 10)
-                .telemetry_event_expired(now - chrono::Duration::hours(1), now)
+            !preflight(mode, 10).telemetry_event_expired(now - chrono::Duration::hours(1), now)
         );
     }
 }
@@ -139,9 +136,7 @@ async fn old_telemetry_backlog_cannot_re_poison_required_admission_after_recover
     let (sender, receiver) = mpsc::channel(AUDIT_QUEUE_CAPACITY);
     for _ in 0..130 {
         sender
-            .try_send(
-                event_at("login_success", Utc::now() - chrono::Duration::hours(1)).into(),
-            )
+            .try_send(event_at("login_success", Utc::now() - chrono::Duration::hours(1)).into())
             .unwrap();
     }
     let fresh = event_at("login_success", Utc::now());

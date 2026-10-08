@@ -128,7 +128,10 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
             .unwrap();
         if fault == "raise" {
             let result = maintenance.cleanup_batch().await;
-            assert!(result.is_err(), "a result row is not a committed cleanup count");
+            assert!(
+                result.is_err(),
+                "a result row is not a committed cleanup count"
+            );
             assert!(
                 result
                     .err()
@@ -144,7 +147,10 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
             let task_repository = maintenance.clone();
             let task = tokio::spawn(async move { task_repository.cleanup_batch().await });
             wait_backend(&mut observer, pid, true).await;
-            assert!(!task.is_finished(), "cleanup cannot succeed before final commit");
+            assert!(
+                !task.is_finished(),
+                "cleanup cannot succeed before final commit"
+            );
             if fault == "cancel" {
                 task.abort();
                 assert!(task.await.unwrap_err().is_cancelled());
