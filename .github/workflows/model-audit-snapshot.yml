@@ -9,25 +9,58 @@ permissions:
   contents: read
 
 jobs:
-  source-snapshot:
+  audit-inputs:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+        env:
+          POSTGRES_DB: model_audit
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-model-audit
+        options: >-
+          --health-cmd "pg_isready -U postgres -d model_audit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Export the exact tracked source for the model audit
+      - name: Capture the exact audit input identity
+        run: |
+          mkdir -p /tmp/nazo-model-audit/wheels
+          git rev-parse HEAD > /tmp/nazo-model-audit/source-sha.txt
+      - name: Download pinned offline parsers without adding production dependencies
+        run: >-
+          python3 -m pip download --dest /tmp/nazo-model-audit/wheels
+          --only-binary=:all: --python-version 3.13 --implementation cp --abi cp313
+          --platform manylinux2014_x86_64 --platform manylinux_2_28_x86_64
+          tree-sitter==0.25.2 tree-sitter-rust==0.24.2 pglast==8.4
+      - name: Apply every migration in the isolated PostgreSQL container
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/nazo-model-audit
-          git rev-parse HEAD > /tmp/nazo-model-audit/source-sha.txt
-          git ls-tree -r --full-tree HEAD > /tmp/nazo-model-audit/tracked-files.txt
-          git archive --format=tar.gz --output=/tmp/nazo-model-audit/source.tar.gz HEAD
-          sha256sum /tmp/nazo-model-audit/source.tar.gz > /tmp/nazo-model-audit/source.sha256
+          for migration in migrations/*/up.sql; do
+            printf '\n=== %s ===\n' "$migration" >> /tmp/nazo-model-audit/migrations.log
+            docker exec -i "$PG_CONTAINER" psql -X --single-transaction -v ON_ERROR_STOP=1 \
+              -U postgres -d model_audit < "$migration" >> /tmp/nazo-model-audit/migrations.log 2>&1
+          done
+          docker exec "$PG_CONTAINER" pg_dump -U postgres --schema-only --no-owner --no-privileges \
+            model_audit > /tmp/nazo-model-audit/current-schema.sql
+          docker exec "$PG_CONTAINER" psql -X -qAt -U postgres -d model_audit -c \
+            "SELECT jsonb_agg(to_jsonb(c) ORDER BY table_schema,table_name,ordinal_position) FROM information_schema.columns c WHERE table_schema NOT IN ('pg_catalog','information_schema')" \
+            > /tmp/nazo-model-audit/current-columns.json
+          docker exec "$PG_CONTAINER" psql -X -qAt -U postgres -d model_audit -c \
+            "SELECT jsonb_agg(jsonb_build_object('table',conrelid::regclass::text,'name',conname,'kind',contype,'definition',pg_get_constraintdef(oid)) ORDER BY conrelid::regclass::text,conname) FROM pg_constraint WHERE connamespace='public'::regnamespace" \
+            > /tmp/nazo-model-audit/current-constraints.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
         with:
-          name: model-audit-source-${{ github.sha }}
+          name: model-audit-inputs-${{ github.sha }}
           path: /tmp/nazo-model-audit/
           retention-days: 1
           if-no-files-found: error
