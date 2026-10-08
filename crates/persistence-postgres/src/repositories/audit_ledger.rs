@@ -118,13 +118,15 @@ impl AuditLedgerRepository {
     }
 
     pub async fn observe_anchor(&self, deployment_id: &str) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().await?;
-        let result = sql_query("SELECT public.nazo_observe_security_audit_anchor($1) AS changed")
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let changed = sql_query("SELECT public.nazo_observe_security_audit_anchor($1) AS changed")
             .bind::<diesel::sql_types::Text, _>(deployment_id)
-            .get_result::<AuditMutationRow>(&mut connection)
+            .load::<AuditMutationRow>(guard.connection())
             .await
+            .and_then(single_audit_mutation)
             .map_err(map_error)?;
-        require_current_audit_mutation(result.changed)
+        guard.return_to_pool();
+        require_current_audit_mutation(changed)
     }
 
     pub async fn record_genesis(
@@ -132,25 +134,23 @@ impl AuditLedgerRepository {
         deployment_id: &str,
         head_hash: &[u8],
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().await?;
-        let result =
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let changed =
             sql_query("SELECT public.nazo_record_security_audit_genesis($1, $2) AS changed")
                 .bind::<diesel::sql_types::Text, _>(deployment_id)
                 .bind::<diesel::sql_types::Binary, _>(head_hash)
-                .get_result::<AuditMutationRow>(&mut connection)
+                .load::<AuditMutationRow>(guard.connection())
                 .await
+                .and_then(single_audit_mutation)
                 .map_err(map_error)?;
-        require_current_audit_mutation(result.changed)
+        guard.return_to_pool();
+        require_current_audit_mutation(changed)
     }
 
     /// Persist an event atomically; the row is the pending delivery identity
     /// until the acknowledgement deletes it. The chain head is not touched.
     pub async fn append(&self, event: SecurityAuditEvent) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().await?;
-        append_on_connection(&mut connection, &event)
-            .await
-            .map(|_| ())
-            .map_err(map_error)
+        self.append_batch(std::slice::from_ref(&event)).await
     }
 
     /// Persist a queued batch in one checkout and one implicit transaction.
@@ -163,14 +163,15 @@ impl AuditLedgerRepository {
     pub async fn append_batch(&self, events: &[SecurityAuditEvent]) -> Result<(), RepositoryError> {
         match events.len() {
             0 => return Ok(()),
-            // Keep the established single-event path: one checkout, one
-            // autocommit, no extra transaction framing.
+            // A singleton still uses one statement, but must consume its
+            // complete result stream before acknowledging the implicit commit.
             1 => {
-                let mut connection = self.connection().await?;
-                return append_on_connection(&mut connection, &events[0])
+                let mut guard = DiscardOnDrop(Some(self.connection().await?));
+                append_on_connection(guard.connection(), &events[0])
                     .await
-                    .map(|_| ())
-                    .map_err(map_error);
+                    .map_err(map_error)?;
+                guard.return_to_pool();
+                return Ok(());
             }
             _ => {}
         }
@@ -195,7 +196,7 @@ impl AuditLedgerRepository {
         // The single statement already commits or rolls back every function
         // call together. Separate BEGIN/COMMIT round trips add no atomicity.
         // Keep the guard armed until the complete statement outcome is known.
-        let result = sql_query(
+        sql_query(
             "SELECT public.nazo_persist_security_audit_event(\
                     item.event_id, item.event_type, item.event_category, \
                     item.payload, item.occurred_at) AS changed \
@@ -209,12 +210,18 @@ impl AuditLedgerRepository {
         .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(occurred_ats)
         .load::<AuditMutationRow>(guard.connection())
         .await
-        .map(|_| ())
-        .map_err(map_error);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
-        result
+        .and_then(|rows| {
+            if rows.len() == events.len() {
+                Ok(())
+            } else {
+                Err(invariant_error(
+                    "security audit batch returned an unexpected row count",
+                ))
+            }
+        })
+        .map_err(map_error)?;
+        guard.return_to_pool();
+        Ok(())
     }
 
     /// Claim the single in-flight batch inside one exporter transaction. The
@@ -280,8 +287,8 @@ impl AuditLedgerRepository {
     /// proofs, deleting ordinary events, marking retained decisions exported,
     /// and advancing the anchor in one transaction.
     pub async fn ack_batch(&self, ack: SecurityAuditBatchAck) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().await?;
-        let result = sql_query(
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let changed = sql_query(
             "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
         )
         .bind::<diesel::sql_types::BigInt, _>(ack.generation)
@@ -291,10 +298,12 @@ impl AuditLedgerRepository {
         .bind::<diesel::sql_types::Binary, _>(&ack.last_hash)
         .bind::<diesel::sql_types::Binary, _>(&ack.batch_digest)
         .bind::<diesel::sql_types::Text, _>(&ack.deployment_id)
-        .get_result::<AuditMutationRow>(&mut connection)
+        .load::<AuditMutationRow>(guard.connection())
         .await
+        .and_then(single_audit_mutation)
         .map_err(map_error)?;
-        require_current_audit_mutation(result.changed)
+        guard.return_to_pool();
+        require_current_audit_mutation(changed)
     }
 
     /// Release the lease after a failed send/ack so the identical range is
@@ -307,17 +316,19 @@ impl AuditLedgerRepository {
         last_error: &str,
         blocked: bool,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().await?;
-        let result =
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let changed =
             sql_query("SELECT public.nazo_fail_security_audit_batch($1, $2, $3, $4) AS changed")
                 .bind::<diesel::sql_types::BigInt, _>(generation)
                 .bind::<diesel::sql_types::Timestamptz, _>(available_at)
                 .bind::<diesel::sql_types::Text, _>(last_error)
                 .bind::<diesel::sql_types::Bool, _>(blocked)
-                .get_result::<AuditMutationRow>(&mut connection)
+                .load::<AuditMutationRow>(guard.connection())
                 .await
+                .and_then(single_audit_mutation)
                 .map_err(map_error)?;
-        if result.changed {
+        guard.return_to_pool();
+        if changed {
             return Ok(());
         }
         Err(RepositoryError::Consistency(
@@ -352,15 +363,18 @@ async fn append_on_connection(
     event: &SecurityAuditEvent,
 ) -> Result<bool, diesel::result::Error> {
     validate_event_for_transaction(event)?;
+    // A function's first DataRow is not an implicit-transaction commit ACK.
+    // Drain through statement completion so late database errors propagate.
+    // Inside a business transaction, its owner still awaits the final COMMIT.
     sql_query("SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed")
         .bind::<diesel::sql_types::Uuid, _>(event.event_id)
         .bind::<diesel::sql_types::Text, _>(&event.event_type)
         .bind::<diesel::sql_types::Text, _>(&event.event_category)
         .bind::<diesel::sql_types::Jsonb, _>(&event.payload)
         .bind::<diesel::sql_types::Timestamptz, _>(event.occurred_at)
-        .get_result::<AuditMutationRow>(connection)
+        .load::<AuditMutationRow>(connection)
         .await
-        .map(|row| row.changed)
+        .and_then(single_audit_mutation)
 }
 
 /// Re-claim the committed in-flight batch. The identical sequence range and
@@ -752,6 +766,18 @@ impl From<SecurityAuditAnchorHealthRow> for SecurityAuditAnchorHealth {
 struct AuditMutationRow {
     #[diesel(sql_type = diesel::sql_types::Bool)]
     changed: bool,
+}
+
+// Validate the result shape only after `load` has consumed the entire stream.
+// `false` is still a valid idempotent append result; mutation callers decide
+// whether their operation instead requires a current generation/checkpoint.
+fn single_audit_mutation(rows: Vec<AuditMutationRow>) -> Result<bool, diesel::result::Error> {
+    match rows.as_slice() {
+        [row] => Ok(row.changed),
+        _ => Err(invariant_error(
+            "security audit mutation must return exactly one row",
+        )),
+    }
 }
 
 #[derive(QueryableByName)]

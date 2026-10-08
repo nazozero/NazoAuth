@@ -473,8 +473,10 @@ struct QueuedAuditEvent {
 /// Telemetry logs and tries its bounded channel without waiting. Standalone
 /// Required records use an independent bounded channel and await the batch's
 /// durable commit. Required failures return to the caller; Telemetry retries
-/// its own failed batch without delaying the Required channel. Audit inside a
-/// business transaction retains that transaction's fail-closed semantics.
+/// its own failed batch without delaying the Required channel. In Required
+/// anchor mode, Telemetry also waits for healthy export before appending, so
+/// an export outage fills the bounded channel rather than an unbounded ledger.
+/// Audit inside a business transaction retains its fail-closed semantics.
 pub(crate) fn install_persistent_audit_sink(
     repository: Arc<dyn SecurityAuditLedger>,
     require_least_privilege: bool,
@@ -498,7 +500,7 @@ pub(crate) fn install_persistent_audit_sink(
         repository: RequiredAuditRepository {
             repository: repository.clone(),
             require_least_privilege,
-            preflight,
+            preflight: preflight.clone(),
         },
     };
     if let Err(candidate) = PERSISTENT_AUDIT_SINK.set(candidate) {
@@ -518,43 +520,52 @@ pub(crate) fn install_persistent_audit_sink(
     tokio::spawn(run_audit_persist_worker(
         telemetry_receiver,
         repository.clone(),
+        Some(preflight),
     ));
-    tokio::spawn(run_audit_persist_worker(required_receiver, repository));
+    tokio::spawn(run_audit_persist_worker(required_receiver, repository, None));
     Ok(())
 }
 
-/// Bound both batch size and additional coalescing time. Standalone Required
-/// records wait for the committed batch; issuance audit stays in its transaction.
+/// Required batches collect only already queued records, without a timer.
+/// Only best-effort Telemetry may wait briefly to amortize its database writes.
 const AUDIT_PERSIST_BATCH_MAX: usize = 64;
 const AUDIT_PERSIST_COALESCE_WINDOW: Duration = Duration::from_millis(10);
 
-/// Drain one audit channel into the durable ledger. After the first event,
-/// collect arrivals until the fixed window ends, the batch is full or the
-/// channel closes; persist the batch in one transaction. Later arrivals do
-/// not extend the first event's deadline.
-/// Telemetry retries whole batches in order. A Required batch reports its first
-/// failure to every caller and continues; it never shares Telemetry's retry
-/// backlog. Split out of the
-/// sink installer so tests can drive it with their own channel and ledger.
+/// Drain one audit channel into the durable ledger. Required records start
+/// immediately and await the committed batch. Telemetry coalesces arrivals
+/// within a fixed window, then retries the same bounded batch in order.
+/// Required failures return to every caller without retry and never share
+/// Telemetry's export-health or persistence backlog.
 async fn run_audit_persist_worker(
     mut receiver: mpsc::Receiver<AuditPersistRequest>,
     repository: Arc<dyn SecurityAuditLedger>,
+    telemetry_preflight: Option<AuditAnchorPreflight>,
 ) {
+    let telemetry_preflight = telemetry_preflight.filter(AuditAnchorPreflight::is_required);
     while let Some(first) = receiver.recv().await {
+        let required = first.completion.is_some();
         let mut batch = vec![first];
-        let coalesce = tokio::time::sleep(AUDIT_PERSIST_COALESCE_WINDOW);
-        tokio::pin!(coalesce);
-        while batch.len() < AUDIT_PERSIST_BATCH_MAX {
-            tokio::select! {
-                biased;
-                _ = &mut coalesce => break,
-                event = receiver.recv() => match event {
-                    Some(event) => batch.push(event),
-                    None => break,
-                },
+        if required {
+            while batch.len() < AUDIT_PERSIST_BATCH_MAX {
+                match receiver.try_recv() {
+                    Ok(event) => batch.push(event),
+                    Err(_) => break,
+                }
+            }
+        } else {
+            let coalesce = tokio::time::sleep(AUDIT_PERSIST_COALESCE_WINDOW);
+            tokio::pin!(coalesce);
+            while batch.len() < AUDIT_PERSIST_BATCH_MAX {
+                tokio::select! {
+                    biased;
+                    _ = &mut coalesce => break,
+                    event = receiver.recv() => match event {
+                        Some(event) => batch.push(event),
+                        None => break,
+                    },
+                }
             }
         }
-        let required = batch[0].completion.is_some();
         debug_assert!(
             batch
                 .iter()
@@ -579,7 +590,29 @@ async fn run_audit_persist_worker(
         let batch_len = events.len() as u64;
         let mut retry_delay = Duration::from_millis(100);
         loop {
-            match repository.append_batch(&events).await {
+            // Reuse the configured live-health gate, not a new disk queue or
+            // a cached authorization decision. A stalled Telemetry batch stays
+            // in memory; the existing try_send boundary rejects excess work.
+            let readiness = match &telemetry_preflight {
+                Some(preflight) if !required => match repository.anchor_health().await {
+                    Ok(health) => preflight.ensure_fresh(&health).map_err(|error| {
+                        tracing::warn!(
+                            target: "audit.persistence",
+                            %error,
+                            persistence_status = "waiting_for_export",
+                            "telemetry persistence is waiting for healthy audit export"
+                        );
+                        nazo_identity::ports::RepositoryError::Unavailable
+                    }),
+                    Err(error) => Err(error),
+                },
+                _ => Ok(()),
+            };
+            let result = match readiness {
+                Ok(()) => repository.append_batch(&events).await,
+                Err(error) => Err(error),
+            };
+            match result {
                 Ok(()) => {
                     let first_event_id = events[0].event_id;
                     for (event, completion) in events.into_iter().zip(completions) {

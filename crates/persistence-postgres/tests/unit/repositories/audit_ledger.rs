@@ -94,3 +94,21 @@ fn payload_byte_count_matches_compact_json_and_exact_limit() {
         assert_eq!(validate_payload_size(&event(payload)).is_ok(), extra == 0);
     }
 }
+
+#[test]
+fn completed_single_mutation_preserves_insert_and_idempotent_replay_results() {
+    assert!(single_audit_mutation(vec![AuditMutationRow { changed: true }]).unwrap());
+    assert!(!single_audit_mutation(vec![AuditMutationRow { changed: false }]).unwrap());
+}
+
+#[test]
+fn completed_single_mutation_rejects_missing_or_extra_rows() {
+    assert!(single_audit_mutation(Vec::new()).is_err());
+    assert!(
+        single_audit_mutation(vec![
+            AuditMutationRow { changed: true },
+            AuditMutationRow { changed: false },
+        ])
+        .is_err()
+    );
+}

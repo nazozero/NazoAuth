@@ -437,6 +437,8 @@ mod queue_persistence {
         batches: Mutex<Vec<Vec<Uuid>>>,
         fail_next: AtomicU64,
         fail_next_batch: AtomicU64,
+        health: Mutex<Option<SecurityAuditAnchorHealth>>,
+        health_calls: AtomicU64,
     }
 
     impl FakeLedger {
@@ -448,6 +450,8 @@ mod queue_persistence {
                 batches: Mutex::new(Vec::new()),
                 fail_next: AtomicU64::new(0),
                 fail_next_batch: AtomicU64::new(0),
+                health: Mutex::new(None),
+                health_calls: AtomicU64::new(0),
             }
         }
     }
@@ -463,22 +467,13 @@ mod queue_persistence {
         fn anchor_health(
             &self,
         ) -> BoxFuture<'_, Result<SecurityAuditAnchorHealth, RepositoryError>> {
-            Box::pin(async {
-                Ok(SecurityAuditAnchorHealth {
-                    head_sequence: 0,
-                    head_hash: vec![0; 32],
-                    pending_exists: false,
-                    pending_estimate: 0,
-                    pending_orphan_exists: false,
-                    oldest_pending_occurred_at: None,
-                    last_exported_sequence: None,
-                    last_exported_hash: None,
-                    last_exported_occurred_at: None,
-                    last_exported_at: None,
-                    deployment_id: None,
-                    observed_at: None,
-                    batch: None,
-                })
+            Box::pin(async move {
+                self.health_calls.fetch_add(1, AtomicOrdering::Relaxed);
+                self.health
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .ok_or(RepositoryError::Unavailable)
             })
         }
 
@@ -522,7 +517,7 @@ mod queue_persistence {
     async fn worker_persists_a_single_event_after_bounded_coalescing() {
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let event = telemetry_event();
         let id = event.event_id;
         sender.send(event.into()).await.unwrap();
@@ -547,7 +542,7 @@ mod queue_persistence {
     async fn worker_coalesces_arrivals_without_extending_the_first_event_deadline() {
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let first = telemetry_event();
         let second = telemetry_event();
         let third = telemetry_event();
@@ -589,7 +584,7 @@ mod queue_persistence {
             } else {
                 Some(sender)
             };
-            let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+            let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
             tokio::task::yield_now().await;
             assert_eq!(*ledger.batches.lock().unwrap(), vec![expected]);
             drop(sender);
@@ -602,7 +597,7 @@ mod queue_persistence {
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
         ledger.fail_next_batch.store(1, AtomicOrdering::Relaxed);
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let first = telemetry_event();
         let second = telemetry_event();
         let (id_first, id_second) = (first.event_id, second.event_id);
@@ -625,7 +620,7 @@ mod queue_persistence {
     async fn full_telemetry_queue_keeps_accepted_events_and_rejects_excess() {
         let (sender, receiver) = mpsc::channel(4);
         let ledger = Arc::new(FakeLedger::new());
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         for _ in 0..4 {
             enqueue_into_sink(&sender, "login_success", telemetry_event());
         }
@@ -646,51 +641,49 @@ mod queue_persistence {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn required_records_wait_for_the_coalesced_batch_commit() {
-        let (sender, receiver) = mpsc::channel(8);
-        let fake = Arc::new(FakeLedger::new());
-        let (release, commit) = oneshot::channel();
-        *fake.commit_gate.lock().unwrap() = Some(commit);
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, fake.clone()));
-        let first_event =
-            prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap();
-        let second_event =
-            prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap();
-        let expected = vec![first_event.event_id, second_event.event_id];
-        let first_sender = sender.clone();
-        let first = tokio::spawn(async move {
-            append_required_via(&first_sender, "authorization_decision_intent", first_event).await
-        });
-        tokio::task::yield_now().await;
-        tokio::time::advance(Duration::from_millis(3)).await;
-        let second_sender = sender.clone();
-        let second = tokio::spawn(async move {
-            append_required_via(
-                &second_sender,
-                "authorization_decision_intent",
-                second_event,
-            )
-            .await
-        });
-        tokio::task::yield_now().await;
-        tokio::time::advance(Duration::from_millis(6)).await;
-        tokio::task::yield_now().await;
-        assert!(!first.is_finished() && !second.is_finished());
-        assert_eq!(fake.batch_attempts.load(AtomicOrdering::Relaxed), 0);
-        tokio::time::advance(Duration::from_millis(1)).await;
-        tokio::task::yield_now().await;
-        assert_eq!(fake.batch_attempts.load(AtomicOrdering::Relaxed), 1);
-        assert!(
-            !first.is_finished() && !second.is_finished(),
-            "starting a batch is not a commit acknowledgement"
-        );
-        assert!(fake.appended.lock().unwrap().is_empty());
-        release.send(()).unwrap();
-        first.await.unwrap().unwrap();
-        second.await.unwrap().unwrap();
-        assert_eq!(*fake.batches.lock().unwrap(), vec![expected]);
-        drop(sender);
-        worker.await.unwrap();
+    async fn required_records_start_immediately_but_wait_for_batch_commit() {
+        for count in [1, 2] {
+            let (sender, receiver) = mpsc::channel(8);
+            let fake = Arc::new(FakeLedger::new());
+            let (release, commit) = oneshot::channel();
+            *fake.commit_gate.lock().unwrap() = Some(commit);
+            let mut expected = Vec::new();
+            let mut pending = Vec::new();
+            // Queue before starting the worker: batching must not depend on
+            // an arbitrary scheduler order or waiting for future arrivals.
+            for _ in 0..count {
+                let event =
+                    prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap();
+                expected.push(event.event_id);
+                let (completion, persisted) = oneshot::channel();
+                sender
+                    .try_send(AuditPersistRequest {
+                        event,
+                        completion: Some(completion),
+                    })
+                    .unwrap();
+                pending.push(persisted);
+            }
+            let started = tokio::time::Instant::now();
+            let worker = tokio::spawn(run_audit_persist_worker(receiver, fake.clone(), None));
+            tokio::task::yield_now().await;
+            assert_eq!(tokio::time::Instant::now(), started);
+            assert_eq!(fake.batch_attempts.load(AtomicOrdering::Relaxed), 1);
+            for persisted in &mut pending {
+                assert!(matches!(
+                    persisted.try_recv(),
+                    Err(oneshot::error::TryRecvError::Empty)
+                ));
+            }
+            assert!(fake.appended.lock().unwrap().is_empty());
+            release.send(()).unwrap();
+            for persisted in pending {
+                persisted.await.unwrap().unwrap();
+            }
+            assert_eq!(*fake.batches.lock().unwrap(), vec![expected]);
+            drop(sender);
+            worker.await.unwrap();
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -698,24 +691,26 @@ mod queue_persistence {
         let (sender, receiver) = mpsc::channel(8);
         let fake = Arc::new(FakeLedger::new());
         fake.fail_next_batch.store(1, AtomicOrdering::Relaxed);
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, fake.clone()));
         let mut pending = Vec::new();
         for _ in 0..2 {
-            let sender = sender.clone();
-            pending.push(tokio::spawn(async move {
-                append_required_via(
-                    &sender,
-                    "authorization_decision_intent",
-                    prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap(),
-                )
-                .await
-            }));
+            let (completion, persisted) = oneshot::channel();
+            sender
+                .try_send(AuditPersistRequest {
+                    event: prepare_event(
+                        "authorization_decision_intent",
+                        serde_json::Map::new(),
+                    )
+                    .unwrap(),
+                    completion: Some(completion),
+                })
+                .unwrap();
+            pending.push(persisted);
         }
-        tokio::task::yield_now().await;
-        tokio::time::advance(AUDIT_PERSIST_COALESCE_WINDOW).await;
-        for call in pending {
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, fake.clone(), None));
+        for persisted in pending {
             assert!(
-                call.await
+                persisted
+                    .await
                     .unwrap()
                     .unwrap_err()
                     .to_string()
@@ -738,6 +733,89 @@ mod queue_persistence {
         assert_eq!(fake.appended.lock().unwrap().len(), 1);
         drop(sender);
         worker.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unhealthy_export_stalls_telemetry_in_memory_without_blocking_the_required_worker() {
+        use super::transactional_readiness::{healthy_anchor, preflight};
+        use crate::adapters::audit_anchor::config::AuditAnchorMode;
+
+        for unavailable in [true, false] {
+            let (sender, receiver) = mpsc::channel(4);
+            let ledger = Arc::new(FakeLedger::new());
+            if !unavailable {
+                let mut stale = healthy_anchor();
+                stale.observed_at = Some(Utc::now() - chrono::Duration::seconds(3600));
+                *ledger.health.lock().unwrap() = Some(stale);
+            }
+            let first = telemetry_event();
+            let mut expected = vec![first.event_id];
+            sender.try_send(first.into()).unwrap();
+            let worker = tokio::spawn(run_audit_persist_worker(
+                receiver,
+                ledger.clone(),
+                Some(preflight(AuditAnchorMode::Required)),
+            ));
+            tokio::task::yield_now().await;
+            tokio::time::advance(AUDIT_PERSIST_COALESCE_WINDOW).await;
+            tokio::task::yield_now().await;
+            assert!(ledger.health_calls.load(AtomicOrdering::Relaxed) > 0);
+            assert_eq!(ledger.batch_attempts.load(AtomicOrdering::Relaxed), 0);
+            for _ in 0..4 {
+                let event = telemetry_event();
+                expected.push(event.event_id);
+                sender.try_send(event.into()).unwrap();
+            }
+            assert_eq!(sender.capacity(), 0);
+            assert!(matches!(
+                sender.try_send(telemetry_event().into()),
+                Err(mpsc::error::TrySendError::Full(_))
+            ));
+
+            // This exercises worker independence, not the caller's separate
+            // fail-closed Required anchor preflight (covered below).
+            let (required_sender, required_receiver) = mpsc::channel(2);
+            let required_worker = tokio::spawn(run_audit_persist_worker(
+                required_receiver,
+                ledger.clone(),
+                None,
+            ));
+            let required =
+                prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap();
+            let required_id = required.event_id;
+            append_required_via(&required_sender, "authorization_decision_intent", required)
+                .await
+                .unwrap();
+            assert_eq!(*ledger.appended.lock().unwrap(), vec![required_id]);
+            drop(required_sender);
+            required_worker.await.unwrap();
+
+            *ledger.health.lock().unwrap() = Some(healthy_anchor());
+            drop(sender);
+            tokio::time::timeout(Duration::from_secs(5), worker)
+                .await
+                .expect("the accepted bounded backlog must resume after export recovers")
+                .unwrap();
+            expected.insert(0, required_id);
+            assert_eq!(*ledger.appended.lock().unwrap(), expected);
+            assert_eq!(ledger.batch_attempts.load(AtomicOrdering::Relaxed), 3);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn optional_and_disabled_telemetry_keep_their_existing_no_health_gate_policy() {
+        use super::transactional_readiness::preflight;
+        use crate::adapters::audit_anchor::config::AuditAnchorMode;
+
+        for mode in [AuditAnchorMode::Optional, AuditAnchorMode::Disabled] {
+            let (sender, receiver) = mpsc::channel(2);
+            let ledger = Arc::new(FakeLedger::new());
+            sender.try_send(telemetry_event().into()).unwrap();
+            drop(sender);
+            run_audit_persist_worker(receiver, ledger.clone(), Some(preflight(mode))).await;
+            assert_eq!(ledger.health_calls.load(AtomicOrdering::Relaxed), 0);
+            assert_eq!(ledger.appended.lock().unwrap().len(), 1);
+        }
     }
 
     #[tokio::test]
@@ -788,7 +866,7 @@ mod queue_persistence {
     async fn burst_events_persist_in_bounded_batches() {
         let (sender, receiver) = mpsc::channel(256);
         let ledger = Arc::new(FakeLedger::new());
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let mut ids = Vec::new();
         for _ in 0..130 {
             let event = telemetry_event();
@@ -830,7 +908,7 @@ mod queue_persistence {
         // Fail the first two batch attempts: the first batch must be retried
         // intact and nothing behind it may overtake.
         ledger.fail_next_batch.store(2, AtomicOrdering::Relaxed);
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let mut ids = Vec::new();
         for _ in 0..80 {
             let event = telemetry_event();
@@ -960,7 +1038,7 @@ mod transactional_readiness {
         }
     }
 
-    fn preflight(mode: AuditAnchorMode) -> AuditAnchorPreflight {
+    pub(super) fn preflight(mode: AuditAnchorMode) -> AuditAnchorPreflight {
         AuditAnchorPreflight::new(AuditAnchorPreflightConfig {
             mode,
             deployment_id: "test-deployment".to_owned(),
@@ -970,7 +1048,7 @@ mod transactional_readiness {
         .expect("test anchor preflight config is valid")
     }
 
-    fn healthy_anchor() -> SecurityAuditAnchorHealth {
+    pub(super) fn healthy_anchor() -> SecurityAuditAnchorHealth {
         SecurityAuditAnchorHealth {
             head_sequence: 7,
             head_hash: vec![0xAA; 32],

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context as _;
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use nazo_persistence::{
     SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditExporter,
 };
@@ -102,9 +102,17 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
     };
 
     if let Some(exported) = AnchorCheckpoint::from_snapshot(&snapshot) {
-        if let Err(error) = repository
-            .observe_anchor(&config.preflight.deployment_id)
-            .await
+        // Observe once after startup to validate the database binding. Then
+        // reuse the committed timestamp: successful ACK already refreshes it.
+        // Idle/busy/failed export still maintains the heartbeat; a foreign
+        // deployment must never bypass the database identity check.
+        let interval = std::cmp::min(config.poll_interval, config.preflight.freshness / 2);
+        if (last_anchored.is_none()
+            || snapshot.deployment_id.as_deref() != Some(config.preflight.deployment_id.as_str())
+            || observation_due(snapshot.observed_at, Utc::now(), interval))
+            && let Err(error) = repository
+                .observe_anchor(&config.preflight.deployment_id)
+                .await
         {
             tracing::warn!(target: "audit.anchor", error_kind = %error_kind(&error), "audit anchor observation could not be persisted");
             return IterationOutcome::Retry(retry_delay(1));
@@ -266,6 +274,15 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
     }
 }
 
+fn observation_due(
+    observed_at: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+    interval: Duration,
+) -> bool {
+    observed_at
+        .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))
+}
+
 /// Release the committed batch lease so the identical range is re-claimed
 /// after the backoff. A stale generation means another exporter owns the
 /// batch now, which is safe to ignore.
@@ -311,3 +328,7 @@ pub(super) fn batch_lag_seconds(batch: &SecurityAuditBatch) -> i64 {
 fn error_kind<T>(_error: &T) -> &'static str {
     "external_error"
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/adapters/audit_anchor/worker.rs"]
+mod tests;
