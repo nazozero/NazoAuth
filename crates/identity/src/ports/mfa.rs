@@ -9,18 +9,6 @@ pub type MfaHashFuture<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, MfaHashError>> + Send + 'a>>;
 
 #[derive(Clone, Eq, PartialEq)]
-pub struct TotpCredential {
-    pub secret_base32: String,
-    pub last_used_step: Option<i64>,
-}
-
-impl std::fmt::Debug for TotpCredential {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("TotpCredential([REDACTED])")
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
 pub struct TotpEnrollment {
     pub secret_base32: String,
     pub confirmed: bool,
@@ -115,19 +103,6 @@ pub trait MfaRepositoryPort: Send + Sync {
         code: &'a str,
         timestamp: i64,
     ) -> RepositoryFuture<'a, TotpVerificationOutcome>;
-
-    fn totp_credential<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpCredential>>;
-
-    fn compare_and_set_totp_step<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        step: i64,
-    ) -> RepositoryFuture<'a, bool>;
 
     fn backup_code_candidates(
         &self,

@@ -70,8 +70,8 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
         user_id: Some(uuid::Uuid::now_v7()),
         contract_key: [2; 32],
         contract_audiences: vec!["original-resource".to_owned()],
-        scopes: serde_json::json!(["openid", "offline_access"]),
-        audience: serde_json::json!(["narrowed-resource"]),
+        scopes: serde_json::from_value(serde_json::json!(["openid", "offline_access"])).unwrap(),
+        audience: serde_json::from_value(serde_json::json!(["narrowed-resource"])).unwrap(),
         authorization_details: serde_json::json!([{"type": "account_information"}]),
         issued_at: now,
         expires_at: now + chrono::Duration::minutes(5),
@@ -104,7 +104,7 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
     };
     let expected = RefreshContract {
         subject: token.subject.clone(),
-        scopes: crate::string_array_values(&token.scopes),
+        scopes: token.scopes.clone(),
         audiences: token.contract_audiences.clone(),
         authorization_details: token.authorization_details.clone(),
         authentication_context: token.authentication_context.clone(),

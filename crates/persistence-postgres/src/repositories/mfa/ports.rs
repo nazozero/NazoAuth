@@ -3,7 +3,7 @@ use nazo_identity::{
     TenantId, UserId,
     ports::{
         BackupCodeCandidate, EncodedSecretHash, MfaRepositoryPort, RepositoryFuture,
-        TotpCredential, TotpEnrollment, TotpVerificationOutcome,
+        TotpEnrollment, TotpVerificationOutcome,
     },
 };
 
@@ -96,24 +96,6 @@ impl MfaRepositoryPort for MfaRepository {
         })
     }
 
-    fn totp_credential<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpCredential>> {
-        Box::pin(async move { self.totp_credential(tenant_id, user_id).await })
-    }
-    fn compare_and_set_totp_step<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        step: i64,
-    ) -> RepositoryFuture<'a, bool> {
-        Box::pin(async move {
-            self.compare_and_set_totp_step(tenant_id, user_id, step)
-                .await
-        })
-    }
     fn backup_code_candidates(
         &self,
         tenant_id: TenantId,

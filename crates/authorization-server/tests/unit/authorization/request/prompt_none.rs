@@ -187,7 +187,7 @@ fn prompt_none_payload() -> ConsentPayload {
         signed_authorization_response_required: Some(false),
         session_management_allowed: Some(false),
         authorization_code_ttl_seconds: Some(60),
-        issued_at: now,
+
         expires_at: now + Duration::seconds(60),
     }
 }
@@ -216,6 +216,7 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
         session_id: Some(&session_id),
         user_agent: None,
     };
+    let before_issue = Utc::now();
     let result =
         futures_executor::block_on(issue_authorization_code_without_interaction_with_context(
             &application.context(),
@@ -258,7 +259,8 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
         stored.userinfo_claim_requests.names(),
         payload.userinfo_claim_requests.names()
     );
-    assert_eq!((stored.expires_at - stored.issued_at).num_seconds(), 60);
+    assert!(stored.expires_at >= before_issue + Duration::seconds(60));
+    assert!(stored.expires_at <= Utc::now() + Duration::seconds(60));
     assert_eq!(
         fixture.ports.calls(),
         [
@@ -299,7 +301,7 @@ fn pushed_prompt_none_fixture() -> (
         params: std::collections::HashMap::from([("state".into(), "original-state".into())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: payload.issued_at,
+        issued_at: Utc::now(),
         expires_at: par_expires_at,
     };
     payload.pushed_request_uri = Some(uri.clone());

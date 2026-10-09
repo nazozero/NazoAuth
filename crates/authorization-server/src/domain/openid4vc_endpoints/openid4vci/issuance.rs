@@ -266,7 +266,6 @@ impl ServerCredentialIssuerOperations {
                                     })?,
                                 subject_claims: payload.dataset.clone(),
                                 holder_binding: serde_json::from_value(holder_binding).ok(),
-                                selectively_disclosable_claims: Vec::new(),
                             },
                             issued_at: payload.issued_at,
                             expires_at: payload.expires_at,

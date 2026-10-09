@@ -437,7 +437,7 @@ async fn mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_f
 
 use chrono::{DateTime, Utc};
 use nazo_identity::ports::{
-    BackupCodeCandidate, RepositoryFuture, TotpCredential, TotpEnrollment, TotpVerificationOutcome,
+    BackupCodeCandidate, RepositoryFuture, TotpEnrollment, TotpVerificationOutcome,
 };
 
 struct UnknownMfaCommitAck {
@@ -530,23 +530,6 @@ impl MfaRepositoryPort for UnknownMfaCommitAck {
         timestamp: i64,
     ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
         MfaRepositoryPort::verify_and_consume_totp(&self.inner, tenant_id, user_id, code, timestamp)
-    }
-
-    fn totp_credential<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpCredential>> {
-        MfaRepositoryPort::totp_credential(&self.inner, tenant_id, user_id)
-    }
-
-    fn compare_and_set_totp_step<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        step: i64,
-    ) -> RepositoryFuture<'a, bool> {
-        MfaRepositoryPort::compare_and_set_totp_step(&self.inner, tenant_id, user_id, step)
     }
 
     fn backup_code_candidates(

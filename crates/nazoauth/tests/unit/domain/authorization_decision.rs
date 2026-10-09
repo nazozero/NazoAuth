@@ -182,7 +182,7 @@ fn consent_payload_for_user(client_id: &str, user_id: Uuid) -> ConsentPayload {
         signed_authorization_response_required: None,
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
-        issued_at: now,
+
         expires_at: now + Duration::seconds(60),
     }
 }

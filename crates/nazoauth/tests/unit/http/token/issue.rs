@@ -655,7 +655,7 @@ fn set_refresh_authority_for_issue(
         audiences: issue.audiences.clone(),
         authorization_details: issue.authorization_details.clone(),
         authentication_context: nazo_auth::RefreshTokenAuthenticationContext {
-            version: 1,
+            version: nazo_auth::RefreshTokenAuthenticationContext::CURRENT_VERSION,
             issuer: state.settings.endpoint.issuer.to_string(),
             audience: client.client_id.clone(),
             auth_time: issue.auth_time.unwrap_or(1_700_000_000),

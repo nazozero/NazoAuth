@@ -679,8 +679,10 @@ fn token_from_current(
         user_id: family.user_id,
         contract_key: digest32(&family.contract_blake3)?,
         contract_audiences: contract.audiences,
-        scopes: Value::Array(contract.scopes.into_iter().map(Value::String).collect()),
-        audience: family.current_audience,
+        scopes: contract.scopes,
+        audience: serde_json::from_value(family.current_audience).map_err(|_| {
+            RepositoryError::Consistency("refresh audience must be a string array".into())
+        })?,
         authorization_details: contract.authorization_details,
         issued_at: family.current_issued_at,
         expires_at: family.current_expires_at,
@@ -713,8 +715,8 @@ fn token_from_spent(
         user_id: family.user_id,
         contract_key: digest32(&family.contract_blake3)?,
         contract_audiences: contract.audiences.clone(),
-        scopes: Value::Array(contract.scopes.into_iter().map(Value::String).collect()),
-        audience: Value::Array(contract.audiences.into_iter().map(Value::String).collect()),
+        scopes: contract.scopes,
+        audience: contract.audiences,
         authorization_details: contract.authorization_details,
         // The member's own issuance time is not retained; `spent_at` is the
         // last instant the member was the family's current token.

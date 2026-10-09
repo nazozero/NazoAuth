@@ -8,7 +8,6 @@ use nazo_auth::ValidatedClientAssertion;
 
 use crate::domain::client_policy::audiences_allowed;
 use crate::domain::client_policy::is_subset;
-use crate::domain::client_policy::json_array_to_strings;
 use crate::domain::client_policy::parse_scope;
 
 use crate::contracts::request_facts::DpopErrorContext;
@@ -101,7 +100,7 @@ pub fn refresh_token_audiences(
     token: &TokenRow,
     form: &TokenForm,
 ) -> Result<Vec<String>, RefreshAudienceError> {
-    let original_audiences = json_array_to_strings(&token.audience);
+    let original_audiences = token.audience.clone();
     if original_audiences.is_empty() {
         return Err(RefreshAudienceError::MissingOriginal);
     }
@@ -201,7 +200,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let original_scopes = json_array_to_strings(&token.scopes);
+    let original_scopes = token.scopes.clone();
     if client.client_type == "public"
         && client.require_dpop_bound_tokens
         && !client.require_mtls_bound_tokens

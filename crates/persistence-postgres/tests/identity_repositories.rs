@@ -615,7 +615,7 @@ async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
         .begin_totp_enrollment(
             tenant.tenant_id,
             user_id,
-            "JBSWY3DPEHPK3PXP".to_owned(),
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
             "test".to_owned(),
         )
         .await
@@ -632,11 +632,26 @@ async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
     .await
     .unwrap();
     drop(connection);
+    let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", 42).unwrap();
     let (left, right) = tokio::join!(
-        repository.compare_and_set_totp_step(tenant.tenant_id, user_id, 42),
-        repository.compare_and_set_totp_step(tenant.tenant_id, user_id, 42)
+        repository.verify_and_consume_totp(
+            tenant.tenant_id,
+            user_id,
+            &code,
+            42 * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS
+        ),
+        repository.verify_and_consume_totp(
+            tenant.tenant_id,
+            user_id,
+            &code,
+            42 * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS
+        )
     );
-    assert_ne!(left.unwrap(), right.unwrap());
+    use nazo_identity::ports::TotpVerificationOutcome::{Accepted, Replay};
+    assert!(matches!(
+        (left.unwrap(), right.unwrap()),
+        (Accepted(_), Replay) | (Replay, Accepted(_))
+    ));
     let events = identity_security_events(&pool, user_id).await;
     assert_eq!(events.len(), 2);
     assert!(
@@ -987,7 +1002,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     );
     assert!(
         trait_repository
-            .totp_credential(other_tenant, user_id)
+            .totp_enrollment(other_tenant, user_id)
             .await
             .unwrap()
             .is_none()
@@ -1056,7 +1071,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         )
     );
     let credential = trait_repository
-        .totp_credential(tenant.tenant_id, user_id)
+        .totp_enrollment(tenant.tenant_id, user_id)
         .await
         .unwrap()
         .expect("confirmed TOTP credential should be readable");
@@ -1102,17 +1117,30 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             .unwrap(),
         nazo_identity::ports::TotpVerificationOutcome::Replay
     );
-    assert!(
+    let later_code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", step + 2).unwrap();
+    assert!(matches!(
         trait_repository
-            .compare_and_set_totp_step(tenant.tenant_id, user_id, step + 2)
+            .verify_and_consume_totp(
+                tenant.tenant_id,
+                user_id,
+                &later_code,
+                (step + 2) * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS
+            )
             .await
-            .unwrap()
-    );
-    assert!(
-        !trait_repository
-            .compare_and_set_totp_step(tenant.tenant_id, user_id, step + 2)
+            .unwrap(),
+        nazo_identity::ports::TotpVerificationOutcome::Accepted(_)
+    ));
+    assert_eq!(
+        trait_repository
+            .verify_and_consume_totp(
+                tenant.tenant_id,
+                user_id,
+                &later_code,
+                (step + 2) * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS
+            )
             .await
-            .unwrap()
+            .unwrap(),
+        nazo_identity::ports::TotpVerificationOutcome::Replay
     );
 
     let candidates = trait_repository
@@ -1261,7 +1289,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .unwrap();
     assert!(
         trait_repository
-            .totp_credential(tenant.tenant_id, user_id)
+            .totp_enrollment(tenant.tenant_id, user_id)
             .await
             .unwrap()
             .is_none()

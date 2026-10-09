@@ -410,7 +410,6 @@ fn consent(user_id: Uuid, request_uri: Option<&str>) -> ConsentPayload {
         signed_authorization_response_required: None,
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
-        issued_at,
         expires_at: issued_at + Duration::minutes(10),
     }
 }
@@ -830,7 +829,6 @@ fn decision_input(
     let tenant_id = Uuid::from_u128(1);
     let mut payload = consent(Uuid::from_u128(10), par);
     payload.request_id = request_id.into();
-    payload.issued_at = now;
     payload.expires_at = now + Duration::minutes(5);
     let code = (kind != AuthorizationDecisionKind::Deny).then(|| {
         prepare_authorization_code(AuthorizationApprovalInput {
@@ -978,7 +976,7 @@ fn successful_commit_binds_exact_prepared_code_before_publication() {
         let expected_digest = blake3::hash(&serde_json::to_vec(&prepared.payload).unwrap())
             .to_hex()
             .to_string();
-        let issued_at = prepared.payload.issued_at;
+        let expires_at = prepared.payload.expires_at;
         assert!(
             store.0.stored_code.lock().unwrap().is_none(),
             "preparation is not publication"
@@ -999,8 +997,7 @@ fn successful_commit_binds_exact_prepared_code_before_publication() {
         assert_eq!(payload.nonce.as_deref(), Some("nonce-1"));
         assert_eq!(payload.dpop_jkt.as_deref(), Some("jkt"));
         assert_eq!(payload.pkce.challenge(), Some("challenge"));
-        assert_eq!(payload.issued_at, issued_at);
-        assert_eq!(payload.expires_at, issued_at + Duration::seconds(60));
+        assert_eq!(payload.expires_at, expires_at);
         let state = repository.0.decisions.lock().unwrap();
         assert_eq!(state.grant_writes, 1);
         assert_eq!(state.facts.len(), 1);

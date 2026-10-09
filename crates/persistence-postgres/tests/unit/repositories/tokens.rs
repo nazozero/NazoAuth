@@ -188,7 +188,7 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() 
     let current = token_from_current(family.clone(), contract).unwrap();
     assert_eq!(current.contract_audiences, ["resource://a", "resource://b"]);
     assert_eq!(current.contract_audiences.as_ptr(), original_allocation);
-    assert_eq!(current.audience, serde_json::json!(["resource://a"]));
+    assert_eq!(current.audience, ["resource://a"]);
     assert_eq!(current.id_token_sid.as_deref(), Some("generation-sid"));
     let spent = SpentRefreshTokenRow {
         refresh_token_blake3: vec![7; 32],
@@ -201,11 +201,8 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() 
         restored.contract_audiences,
         ["resource://a", "resource://b"]
     );
-    assert_eq!(
-        restored.audience,
-        serde_json::json!(["resource://a", "resource://b"])
-    );
-    restored.audience[0] = serde_json::json!("changed");
+    assert_eq!(restored.audience, ["resource://a", "resource://b"]);
+    restored.audience[0] = "changed".into();
     assert_eq!(
         restored.contract_audiences,
         ["resource://a", "resource://b"]
@@ -285,4 +282,23 @@ fn new_family_requires_current_encoding_and_nonblank_generation_sid() {
         token_mut(&mut invalid).id_token_sid = Some(sid.into());
         assert!(validate_refresh_commit(&invalid).is_err());
     }
+}
+
+#[test]
+fn current_refresh_audience_rejects_malformed_json_instead_of_dropping_values() {
+    let contract = valid_refresh_token().contract().clone();
+    for audience in [
+        serde_json::json!(null),
+        serde_json::json!("resource"),
+        serde_json::json!(["resource", 1]),
+        serde_json::json!({"resource": true}),
+    ] {
+        let mut family = ownership_family(&contract);
+        family.current_audience = audience;
+        assert!(
+            matches!(token_from_current(family, contract.clone()), Err(RepositoryError::Consistency(message)) if message.contains("string array"))
+        );
+    }
+    let current = token_from_current(ownership_family(&contract), contract).unwrap();
+    assert_eq!(current.audience, ["resource://a"]);
 }

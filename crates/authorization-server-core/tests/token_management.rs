@@ -472,6 +472,16 @@ fn ownership_refresh_introspection_preserves_scope_output() {
             "\u{7b7e}\u{540d}  read",
         ),
     ] {
+        // Corrupt persisted arrays are rejected by the adapter before core
+        // introspection. Valid string arrays preserve order and whitespace.
+        let parsed = serde_json::from_value::<Vec<String>>(scopes.clone());
+        if !scopes
+            .as_array()
+            .is_some_and(|items| items.iter().all(serde_json::Value::is_string))
+        {
+            assert!(parsed.is_err());
+            continue;
+        }
         let token = RefreshToken {
             id_token_sid: None,
             id: Uuid::from_u128(1),
@@ -482,8 +492,8 @@ fn ownership_refresh_introspection_preserves_scope_output() {
             user_id: None,
             contract_key: [2; 32],
             contract_audiences: vec!["resource".into()],
-            scopes,
-            audience: serde_json::json!(["resource"]),
+            scopes: parsed.unwrap(),
+            audience: serde_json::from_value(serde_json::json!(["resource"])).unwrap(),
             authorization_details: serde_json::json!([]),
             issued_at: now - chrono::Duration::minutes(1),
             expires_at: now + chrono::Duration::hours(1),

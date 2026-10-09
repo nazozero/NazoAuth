@@ -1067,7 +1067,7 @@ where
             return Ok(TokenInspection::Inactive);
         }
         Ok(TokenInspection::ActiveRefresh {
-            scope: json_scope_string(&token.scopes),
+            scope: token.scopes.join(" "),
             client_id: resource_server.client_id.clone(),
             expires_at: token.expires_at.timestamp(),
             issued_at: token.issued_at.timestamp(),
@@ -1163,26 +1163,6 @@ where
     ) -> Result<String, TokenPortError> {
         self.signer.sign_introspection_response(input).await
     }
-}
-
-fn json_scope_string(value: &Value) -> String {
-    let Some(values) = value.as_array() else {
-        return String::new();
-    };
-    let (bytes, count) = values
-        .iter()
-        .filter_map(Value::as_str)
-        .fold((0, 0usize), |(bytes, count), scope| {
-            (bytes + scope.len(), count + 1)
-        });
-    let mut scope = String::with_capacity(bytes + count.saturating_sub(1));
-    for (index, value) in values.iter().filter_map(Value::as_str).enumerate() {
-        if index != 0 {
-            scope.push(' ');
-        }
-        scope.push_str(value);
-    }
-    scope
 }
 
 fn access_token_type(claims: &Claims) -> &'static str {

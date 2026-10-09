@@ -232,7 +232,7 @@ pub fn prepare_authorization_code(
         pkce: consent.pkce.clone(),
         dpop_jkt: consent.dpop_jkt.clone(),
         mtls_x5t_s256: consent.mtls_x5t_s256.clone(),
-        issued_at: input.issued_at,
+
         expires_at: input.issued_at
             + Duration::seconds(input.code_ttl_seconds.try_into().unwrap_or(i64::MAX)),
     };

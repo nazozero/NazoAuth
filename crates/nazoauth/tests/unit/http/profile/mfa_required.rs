@@ -20,7 +20,7 @@ use nazo_identity::{
     ports::{
         BackupCodeCandidate, EncodedSecretHash, MfaAttemptThrottleDecision, MfaAttemptThrottlePort,
         MfaHashError, MfaHashFuture, MfaRepositoryPort, MfaSecretHashPort, RepositoryError,
-        RepositoryFuture, SessionAccountPort, SessionStorePort, TotpCredential, TotpEnrollment,
+        RepositoryFuture, SessionAccountPort, SessionStorePort, TotpEnrollment,
         TotpVerificationOutcome,
     },
     session::SessionRecord,
@@ -162,23 +162,6 @@ impl MfaRepositoryPort for UnknownMfaCommitAck {
         timestamp: i64,
     ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
         MfaRepositoryPort::verify_and_consume_totp(&self.inner, tenant_id, user_id, code, timestamp)
-    }
-
-    fn totp_credential<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpCredential>> {
-        MfaRepositoryPort::totp_credential(&self.inner, tenant_id, user_id)
-    }
-
-    fn compare_and_set_totp_step<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        step: i64,
-    ) -> RepositoryFuture<'a, bool> {
-        MfaRepositoryPort::compare_and_set_totp_step(&self.inner, tenant_id, user_id, step)
     }
 
     fn backup_code_candidates(

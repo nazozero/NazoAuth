@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::*;
 use crate::{
     AccountIdentity, Principal, TenantContext, UserId, UserProfile, UserRole,
-    ports::{BackupCodeCandidate, MfaHashFuture, RepositoryFuture, TotpCredential, TotpEnrollment},
+    ports::{BackupCodeCandidate, MfaHashFuture, RepositoryFuture, TotpEnrollment},
 };
 
 struct ConfirmRepository(Mutex<TotpVerificationOutcome>);
@@ -57,23 +57,6 @@ impl MfaRepositoryPort for ConfirmRepository {
         _code: &'a str,
         _timestamp: i64,
     ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
-        unreachable!()
-    }
-
-    fn totp_credential<'a>(
-        &'a self,
-        _tenant_id: crate::TenantId,
-        _user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpCredential>> {
-        unreachable!()
-    }
-
-    fn compare_and_set_totp_step<'a>(
-        &'a self,
-        _tenant_id: crate::TenantId,
-        _user_id: UserId,
-        _step: i64,
-    ) -> RepositoryFuture<'a, bool> {
         unreachable!()
     }
 

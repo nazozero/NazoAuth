@@ -296,7 +296,7 @@ async fn rotation_narrows_and_reorders_current_audience_without_replacing_origin
         source = lookup(&url, &raw).await;
         assert_eq!(source.contract_key, original_key);
         assert_eq!(source.contract_audiences, vec![A, B]);
-        assert_eq!(source.audience, json!(audiences));
+        assert_eq!(source.audience, audiences);
         let after = state(&mut connection, source.token_family_id).await;
         assert_eq!(after.contract, original.contract);
         assert_eq!(
@@ -1022,7 +1022,7 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
     let after = state(&mut connection, source.token_family_id).await;
     assert_eq!(current.contract_key, source.contract_key);
     assert_eq!(current.contract_audiences, vec![A, B]);
-    assert_eq!(current.audience, json!([A]));
+    assert_eq!(current.audience, [A]);
     assert_eq!(after.contract, before.contract);
     assert_eq!(
         after.family["contract_blake3"],

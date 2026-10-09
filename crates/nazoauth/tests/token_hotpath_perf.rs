@@ -850,7 +850,7 @@ async fn seed_codes(
                 pkce: (Some(pkce_s256(PKCE_VERIFIER))).into(),
                 dpop_jkt: None,
                 mtls_x5t_s256: None,
-                issued_at: now,
+
                 expires_at: now + chrono::Duration::seconds(CODE_TTL_SECONDS),
             },
         };

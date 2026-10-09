@@ -222,7 +222,7 @@ async fn mfa_repository_key_requirement_precedes_database_access() {
     let tenant_id = TenantId::new(Uuid::now_v7()).expect("tenant id is valid");
     let user_id = UserId::new(Uuid::now_v7()).expect("user id is valid");
 
-    let error = repository.totp_credential(tenant_id, user_id).await;
+    let error = repository.totp_enrollment(tenant_id, user_id).await;
     assert!(
         matches!(error, Err(RepositoryError::Consistency(message)) if message.contains("not configured"))
     );

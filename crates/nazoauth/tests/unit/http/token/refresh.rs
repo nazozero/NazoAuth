@@ -5,7 +5,6 @@ use actix_web::http::StatusCode;
 use nazo_auth::TokenRepositoryPort;
 use nazo_auth::ValidatedClientAssertion;
 use nazo_oauth_server::contracts::token_forms::TokenForm;
-use nazo_oauth_server::domain::client_policy::json_array_to_strings;
 use nazo_oauth_server::domain::oauth::RefreshTokenPolicy;
 use nazo_oauth_server::domain::rows::ClientRow;
 use nazo_oauth_server::domain::rows::TokenRow;
@@ -283,13 +282,13 @@ async fn insert_refresh_token_row(
         "refresh fixture authentication context must be a complete v1 value"
     );
     assert!(
-        !json_array_to_strings(&token.audience).is_empty(),
+        !token.audience.clone().is_empty(),
         "refresh fixture must carry an explicit non-empty audience"
     );
     let persisted = nazo_auth::RefreshContract {
         subject: token.subject.clone(),
-        scopes: json_array_to_strings(&token.scopes),
-        audiences: json_array_to_strings(&token.audience),
+        scopes: token.scopes.clone(),
+        audiences: token.audience.clone(),
         authorization_details: token.authorization_details.clone(),
         authentication_context: authentication_context.clone(),
     }
@@ -358,7 +357,7 @@ async fn insert_refresh_token_row(
     .bind::<SqlUuid, _>(token.client_id)
     .bind::<Nullable<SqlUuid>, _>(token.user_id)
     .bind::<diesel::sql_types::Binary, _>(&token_blake3)
-    .bind::<Jsonb, _>(token.audience.clone())
+    .bind::<Jsonb, _>(json!(token.audience))
     .bind::<Timestamptz, _>(token.issued_at)
     .bind::<Timestamptz, _>(token.expires_at)
     .bind::<Nullable<Text>, _>(token.id_token_sid.as_deref())
@@ -703,8 +702,8 @@ fn token_row_with_refresh_context(
         user_id: Some(Uuid::now_v7()),
         contract_key: [0; 32],
         contract_audiences: vec!["resource://default".to_owned()],
-        scopes: json!(["openid", "offline_access"]),
-        audience: json!(["resource://default"]),
+        scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
+        audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
         authorization_details: json!([]),
         issued_at,
         expires_at: issued_at + Duration::days(30),
@@ -871,7 +870,7 @@ async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_const
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
@@ -910,7 +909,11 @@ async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_const
 #[test]
 fn refresh_token_audience_request_defaults_to_refresh_token_audience() {
     let mut token = token_row();
-    token.audience = json!(["https://api.example/one", "https://api.example/two"]);
+    token.audience = serde_json::from_value(json!([
+        "https://api.example/one",
+        "https://api.example/two"
+    ]))
+    .unwrap();
     let form = refresh_form_without_token();
 
     assert_eq!(
@@ -925,7 +928,11 @@ fn refresh_token_audience_request_defaults_to_refresh_token_audience() {
 #[test]
 fn refresh_token_audience_request_may_only_narrow_original_audience() {
     let mut token = token_row();
-    token.audience = json!(["https://api.example/one", "https://api.example/two"]);
+    token.audience = serde_json::from_value(json!([
+        "https://api.example/one",
+        "https://api.example/two"
+    ]))
+    .unwrap();
     let mut form = refresh_form_without_token();
     form.audiences = vec!["https://api.example/two".to_owned()];
 
@@ -938,7 +945,7 @@ fn refresh_token_audience_request_may_only_narrow_original_audience() {
 #[test]
 fn refresh_token_audience_request_rejects_expansion() {
     let mut token = token_row();
-    token.audience = json!(["https://api.example/one"]);
+    token.audience = serde_json::from_value(json!(["https://api.example/one"])).unwrap();
     let mut form = refresh_form_without_token();
     form.audiences = vec!["https://api.example/two".to_owned()];
 
@@ -951,7 +958,7 @@ fn refresh_token_audience_request_rejects_expansion() {
 #[test]
 fn refresh_token_audience_rejects_missing_persisted_binding() {
     let mut token = token_row();
-    token.audience = json!([]);
+    token.audience = serde_json::from_value(json!([])).unwrap();
 
     assert_eq!(
         refresh_token_audiences(&token, &refresh_form_without_token()),
@@ -1091,7 +1098,7 @@ async fn refresh_grant_rejects_unknown_expired_and_wrong_client_tokens() {
 
     let mut expired = token_row_for_client(&state, &client);
     expired.client_id = client.id;
-    expired.scopes = json!(["accounts", "offline_access"]);
+    expired.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     expired.subject = client.client_id.clone();
     expired.user_id = None;
     expired.issued_at = Utc::now() - Duration::minutes(5);
@@ -1125,7 +1132,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     let mut reused = token_row_for_client(&state, &client);
     reused.client_id = client.id;
     reused.token_family_id = family_id;
-    reused.scopes = json!(["accounts", "offline_access"]);
+    reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     reused.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
@@ -1135,7 +1142,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
     active_sibling.token_family_id = family_id;
-    active_sibling.scopes = json!(["accounts", "offline_access"]);
+    active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     active_sibling.subject = client.client_id.clone();
     active_sibling.user_id = None;
     active_sibling.dpop_jkt = None;
@@ -1206,7 +1213,7 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     let mut reused = token_row_for_client(&state, &client);
     reused.client_id = client.id;
     reused.token_family_id = family_id;
-    reused.scopes = json!(["accounts", "offline_access"]);
+    reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     reused.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
@@ -1215,7 +1222,7 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
     active_sibling.token_family_id = family_id;
-    active_sibling.scopes = json!(["accounts", "offline_access"]);
+    active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     active_sibling.subject = client.client_id.clone();
     active_sibling.user_id = None;
     active_sibling.dpop_jkt = None;
@@ -1295,7 +1302,7 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
@@ -1306,7 +1313,7 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
     successor.token_family_id = family_id;
-    successor.scopes = json!(["accounts", "offline_access"]);
+    successor.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     successor.subject = client.client_id.clone();
     successor.user_id = None;
     successor.dpop_jkt = None;
@@ -1368,7 +1375,7 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
@@ -1438,7 +1445,7 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
 
     let mut original = token_row_for_client(&state, &client);
     original.token_family_id = family_id;
-    original.scopes = json!(["accounts", "offline_access"]);
+    original.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     original.subject = client.client_id.clone();
     original.user_id = None;
     original.dpop_jkt = None;
@@ -1591,7 +1598,7 @@ async fn sequential_unbound_replay_after_first_commit_fails_closed() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
@@ -1743,7 +1750,7 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
         let mut revoked = token_row_for_client(&state, &client);
         revoked.client_id = client.id;
         revoked.token_family_id = family_id;
-        revoked.scopes = json!(["accounts", "offline_access"]);
+        revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
         revoked.subject = client.client_id.clone();
         revoked.user_id = None;
         revoked.dpop_jkt = Some(format!("lost-shape-{shape}-dpop-jkt"));
@@ -1843,7 +1850,7 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = Some("expected-jkt".to_owned());
@@ -2040,7 +2047,7 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
@@ -2139,7 +2146,7 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
         let mut revoked = token_row_for_client(&state, &client);
         revoked.client_id = client.id;
         revoked.token_family_id = family_id;
-        revoked.scopes = json!(["accounts", "offline_access"]);
+        revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
         revoked.subject = client.client_id.clone();
         revoked.user_id = None;
         revoked.dpop_jkt = Some(format!("lost-{label}-dpop-jkt"));
@@ -2200,7 +2207,7 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
@@ -2260,7 +2267,7 @@ async fn concurrent_refresh_replay_yields_one_success_and_one_invalid_grant() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
@@ -2313,7 +2320,7 @@ async fn refresh_grant_rejects_tokens_for_inactive_users_without_openid_scope() 
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = Some(user_id);
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.subject = user_id.to_string();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2349,7 +2356,7 @@ async fn refresh_grant_accepts_tokens_for_active_users_without_openid_scope() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = Some(user_id);
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.subject = user_id.to_string();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2389,7 +2396,7 @@ async fn refresh_grant_rejects_unbound_refresh_tokens_for_dpop_required_clients(
     token.client_id = client.id;
     token.user_id = None;
     token.subject = client.client_id.clone();
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2427,7 +2434,7 @@ async fn refresh_grant_rejects_public_dpop_required_clients_with_unbound_refresh
     token.client_id = client.id;
     token.user_id = None;
     token.subject = client.client_id.clone();
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2463,7 +2470,7 @@ async fn refresh_grant_rejects_dpop_bound_refresh_token_without_proof() {
     token.client_id = client.id;
     token.user_id = None;
     token.subject = client.client_id.clone();
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = Some("stored-dpop-jkt".to_owned());
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2498,7 +2505,7 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
     no_offline.client_id = client.id;
     no_offline.subject = client.client_id.clone();
     no_offline.user_id = None;
-    no_offline.scopes = json!(["accounts"]);
+    no_offline.scopes = serde_json::from_value(json!(["accounts"])).unwrap();
     no_offline.dpop_jkt = None;
     let no_offline_raw = "refresh-token-no-offline-access";
     insert_refresh_token_row(&state, no_offline_raw, &no_offline, None, None).await;
@@ -2514,7 +2521,7 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
     scope_token.client_id = client.id;
     scope_token.subject = client.client_id.clone();
     scope_token.user_id = None;
-    scope_token.scopes = json!(["accounts", "offline_access"]);
+    scope_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     scope_token.dpop_jkt = None;
     let scope_raw = "refresh-token-invalid-scope";
     insert_refresh_token_row(&state, scope_raw, &scope_token, None, None).await;
@@ -2532,7 +2539,7 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
     audience_token.client_id = client.id;
     audience_token.subject = client.client_id.clone();
     audience_token.user_id = None;
-    audience_token.scopes = json!(["accounts", "offline_access"]);
+    audience_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     audience_token.dpop_jkt = None;
     insert_refresh_token_row(&state, audience_raw, &audience_token, None, None).await;
     let mut audience_form = refresh_form_without_token();
@@ -2559,7 +2566,7 @@ async fn refresh_grant_rejects_mtls_bound_tokens_without_matching_verified_certi
     token.client_id = client.id;
     token.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = Some("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_owned());
 
@@ -2617,7 +2624,7 @@ async fn refresh_grant_requires_verified_certificate_when_client_policy_demands_
     token.client_id = client.id;
     token.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2652,7 +2659,7 @@ async fn refresh_grant_accepts_existing_mtls_bound_token_with_matching_certifica
     token.client_id = client.id;
     token.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = Some(thumbprint.to_owned());
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2711,7 +2718,7 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
     token.client_id = client.id;
     token.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2907,7 +2914,7 @@ async fn ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_
         };
         token.dpop_jkt = None;
         token.mtls_x5t_s256 = None;
-        token.scopes = json!(["openid", "offline_access"]);
+        token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
         if private {
             let mut c = get_conn(&state.diesel_db).await.unwrap();
             sql_query(
@@ -2967,7 +2974,7 @@ async fn oidc_refresh_fixture(state: &TestInfrastructure) -> (ClientRow, TokenRo
     token.subject = user.to_string();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
-    token.scopes = json!(["openid", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
     let raw = format!("oidc-refresh-review-{}", Uuid::now_v7());
     insert_refresh_token_row(state, &raw, &token, None, None).await;
     (client, token, raw)

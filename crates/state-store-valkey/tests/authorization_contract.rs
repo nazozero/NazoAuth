@@ -51,7 +51,7 @@ fn code_payload(code_id: &str) -> CodePayload {
         pkce: (None).into(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
+
         expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
     }
 }
@@ -84,7 +84,7 @@ fn consent_payload(request_id: &str, user_id: uuid::Uuid) -> ConsentPayload {
         signed_authorization_response_required: None,
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
+
         expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
     }
 }

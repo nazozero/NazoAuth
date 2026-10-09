@@ -77,7 +77,7 @@ fn consent() -> ConsentPayload {
         signed_authorization_response_required: None,
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
-        issued_at: now,
+
         expires_at: now + chrono::Duration::minutes(5),
     }
 }
@@ -117,7 +117,7 @@ fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
                     params: HashMap::new(),
                     dpop_jkt: None,
                     mtls_x5t_s256: None,
-                    issued_at: payload.issued_at,
+                    issued_at: chrono::Utc::now(),
                     expires_at: retain_until,
                 };
                 payload.pushed_request_uri = Some("par".into());

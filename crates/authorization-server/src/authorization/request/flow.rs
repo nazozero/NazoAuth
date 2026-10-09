@@ -526,7 +526,7 @@ pub(crate) async fn authorize_request_with_context(
         signed_authorization_response_required: Some(signed_response_required),
         session_management_allowed: Some(client_policy.session_management),
         authorization_code_ttl_seconds: Some(authorization_code_ttl_seconds),
-        issued_at: now,
+
         expires_at: now + Duration::seconds(authorization_code_ttl_seconds as i64),
     };
     if normalized.prompt.none {

@@ -112,7 +112,7 @@ fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
         pkce: (Some("challenge".to_owned())).into(),
         dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
         mtls_x5t_s256: None,
-        issued_at: Utc::now(),
+
         expires_at: Utc::now() + Duration::minutes(5),
     }
 }

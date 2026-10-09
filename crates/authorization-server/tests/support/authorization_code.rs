@@ -29,7 +29,7 @@ pub(super) fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
         pkce: (Some("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned())).into(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: now,
+
         expires_at: now + Duration::seconds(300),
     }
 }

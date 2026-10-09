@@ -96,7 +96,7 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
         signed_authorization_response_required: None,
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
-        issued_at: Utc::now(),
+
         expires_at: Utc::now() + Duration::minutes(5),
     }
 }

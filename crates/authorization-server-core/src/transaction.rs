@@ -53,7 +53,7 @@ pub struct ConsentPayload {
     pub session_management_allowed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authorization_code_ttl_seconds: Option<u64>,
-    pub issued_at: DateTime<Utc>,
+
     pub expires_at: DateTime<Utc>,
 }
 
@@ -106,7 +106,7 @@ pub struct CodePayload {
     pub dpop_jkt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mtls_x5t_s256: Option<String>,
-    pub issued_at: DateTime<Utc>,
+
     pub expires_at: DateTime<Utc>,
 }
 
