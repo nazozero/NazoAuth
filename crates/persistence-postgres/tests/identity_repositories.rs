@@ -286,7 +286,6 @@ async fn fixture_mfa_generation(
             tenant_id,
             user_id,
             "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
-            "confirmed fixture".to_owned(),
         )
         .await
         .unwrap();
@@ -633,7 +632,6 @@ async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
             tenant.tenant_id,
             user_id,
             nazo_identity::mfa::base32_encode(&secret),
-            "test".to_owned(),
         )
         .await
         .unwrap();
@@ -700,12 +698,7 @@ async fn totp_verification_classification_and_audit_are_atomic_and_replay_safe()
     let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", STEP).unwrap();
     let repository = mfa_repository(pool.clone());
     repository
-        .begin_totp_enrollment(
-            tenant.tenant_id,
-            user_id,
-            SECRET.to_owned(),
-            "test".to_owned(),
-        )
+        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET.to_owned())
         .await
         .unwrap();
     let mut connection = get_conn(&pool).await.unwrap();
@@ -774,7 +767,6 @@ async fn failed_totp_enrollment_confirmation_is_durably_audited_without_state_ch
             tenant.tenant_id,
             user_id,
             "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
-            "test".to_owned(),
         )
         .await
         .unwrap();
@@ -817,12 +809,7 @@ async fn concurrent_totp_enrollment_confirmation_has_one_audited_winner() {
     const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
     let repository = mfa_repository(pool.clone());
     repository
-        .begin_totp_enrollment(
-            tenant.tenant_id,
-            user_id,
-            SECRET.to_owned(),
-            "concurrent enrollment".to_owned(),
-        )
+        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET.to_owned())
         .await
         .unwrap();
     let step = chrono::Utc::now().timestamp() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
@@ -928,6 +915,24 @@ async fn backup_code_is_consumed_once_atomically() {
             event.outcome == "replay" && event.reason_code == "backup_code_replay"
         })
     );
+    #[derive(QueryableByName)]
+    struct Remaining {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        count: i64,
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    let remaining =
+        sql_query("SELECT count(*)::bigint AS count FROM user_mfa_backup_codes WHERE id=$1")
+            .bind::<SqlUuid, _>(candidate_id)
+            .get_result::<Remaining>(&mut connection)
+            .await
+            .unwrap()
+            .count;
+    assert_eq!(
+        remaining, 0,
+        "an atomically consumed backup verifier has no remaining consumer"
+    );
+    drop(connection);
     cleanup(&pool, user_id).await;
 }
 
@@ -1028,21 +1033,11 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     );
 
     trait_repository
-        .begin_totp_enrollment(
-            tenant.tenant_id,
-            user_id,
-            secret_base32.clone(),
-            "first label".to_owned(),
-        )
+        .begin_totp_enrollment(tenant.tenant_id, user_id, secret_base32.clone())
         .await
         .unwrap();
     trait_repository
-        .begin_totp_enrollment(
-            tenant.tenant_id,
-            user_id,
-            secret_base32.clone(),
-            "replacement label".to_owned(),
-        )
+        .begin_totp_enrollment(tenant.tenant_id, user_id, secret_base32.clone())
         .await
         .unwrap();
     let enrollment = trait_repository
@@ -1751,18 +1746,8 @@ async fn mfa_backup_code_bounds_and_enrollment_conflict_are_explicit() {
         .unwrap();
     drop(connection);
     let (left, right) = tokio::join!(
-        repository.begin_totp_enrollment(
-            tenant.tenant_id,
-            user_id,
-            "JBSWY3DPEHPK3PXP".into(),
-            "first".into()
-        ),
-        repository.begin_totp_enrollment(
-            tenant.tenant_id,
-            user_id,
-            "GEZDGNBVGY3TQOJQ".into(),
-            "second".into()
-        )
+        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "JBSWY3DPEHPK3PXP".into(),),
+        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "GEZDGNBVGY3TQOJQ".into(),)
     );
     assert!(
         left.is_ok() || right.is_ok(),
@@ -3776,4 +3761,68 @@ fn test_passkey(id: &[u8], counter: u32) -> passkey_auth::PasskeyCredential {
         transports: vec!["internal".into()],
         aaguid: [0; 16],
     }
+}
+
+#[tokio::test]
+async fn backup_verifier_consumption_rolls_back_with_its_audit_failure() {
+    use diesel_async::SimpleAsyncConnection;
+    let (pool, tenant, user_id) = database_fixture().await.expect("real PostgreSQL required");
+    let repository = mfa_repository(pool.clone());
+    let hash = Argon2::default()
+        .hash_password_with_salt(b"ABCD-EFGH", b"0123456789abcdef")
+        .unwrap()
+        .to_string();
+    repository
+        .replace_backup_code_hashes(
+            tenant.tenant_id,
+            user_id,
+            fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
+            vec![hash],
+        )
+        .await
+        .unwrap();
+    let before = repository
+        .backup_code_candidates(tenant.tenant_id, user_id)
+        .await
+        .unwrap();
+    let candidate = before[0].id;
+    let name = format!("backup_audit_{}", Uuid::now_v7().simple());
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture audit failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON identity_security_events FOR EACH ROW WHEN (NEW.actor_id='{}'::uuid) EXECUTE FUNCTION {name}();",user_id.as_uuid())).await.unwrap();
+    let failed = repository
+        .consume_backup_code_candidate(tenant.tenant_id, user_id, candidate)
+        .await;
+    connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON identity_security_events; DROP FUNCTION {name}();"
+        ))
+        .await
+        .unwrap();
+    assert!(
+        failed.is_err(),
+        "audit failure must fail the entire consumption"
+    );
+    let after = repository
+        .backup_code_candidates(tenant.tenant_id, user_id)
+        .await
+        .unwrap();
+    assert_eq!(before.len(), after.len());
+    assert_eq!(before[0].id, after[0].id);
+    assert_eq!(before[0].hash.as_str(), after[0].hash.as_str());
+    assert!(
+        repository
+            .consume_backup_code_candidate(tenant.tenant_id, user_id, candidate)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        repository
+            .backup_code_candidates(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    drop(connection);
+    cleanup(&pool, user_id).await;
 }

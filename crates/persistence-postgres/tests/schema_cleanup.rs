@@ -344,7 +344,7 @@ async fn retained_composite_fks_reject_cross_tenant_children_and_parent_mutation
 }
 
 #[tokio::test]
-async fn remembered_device_compaction_preserves_facts_and_blocks_lossy_downgrade() {
+async fn remembered_device_compaction_roundtrip_preserves_security_facts() {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("isolated PostgreSQL required");
@@ -401,7 +401,6 @@ async fn remembered_device_compaction_preserves_facts_and_blocks_lossy_downgrade
     for statement in [
         "INSERT INTO user_mfa_remembered_devices SELECT * FROM user_mfa_remembered_devices",
         "INSERT INTO user_mfa_remembered_devices(tenant_id,user_id,token_hash,expires_at) VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001',repeat('c',64),now()+interval '1 day')",
-        down,
     ] {
         connection
             .batch_execute("SAVEPOINT rejected")
@@ -409,18 +408,72 @@ async fn remembered_device_compaction_preserves_facts_and_blocks_lossy_downgrade
             .unwrap();
         assert!(
             connection.batch_execute(statement).await.is_err(),
-            "uniqueness, tenant FK and populated downgrade remain fail-closed"
+            "uniqueness and tenant FK remain enforced"
         );
         connection
             .batch_execute("ROLLBACK TO SAVEPOINT rejected")
             .await
             .unwrap();
     }
-    connection
-        .batch_execute("DELETE FROM user_mfa_remembered_devices")
-        .await
-        .unwrap();
     connection.batch_execute(down).await.unwrap();
     connection.batch_execute(up).await.unwrap();
+    let roundtrip = sql_query("SELECT to_jsonb(d) AS value FROM user_mfa_remembered_devices d")
+        .get_result::<Facts>(&mut connection)
+        .await
+        .unwrap()
+        .value;
+    assert_eq!(
+        before, roundtrip,
+        "rollback must preserve usable credentials rather than require deleting them"
+    );
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
+#[tokio::test]
+async fn backup_verifier_compaction_preserves_live_credentials_and_never_revives_spent_codes() {
+    let url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("isolated PostgreSQL required");
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("backup_compaction_{}", Uuid::now_v7().simple());
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema},pg_catalog;"
+        ))
+        .await
+        .unwrap();
+    connection.batch_execute("CREATE TABLE user_totp_credentials(id UUID PRIMARY KEY,tenant_id UUID,user_id UUID,secret_ciphertext BYTEA,secret_key_id TEXT,confirmed_at TIMESTAMPTZ,last_used_step BIGINT,label VARCHAR(200) NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now()); INSERT INTO user_totp_credentials SELECT uuidv7(),uuidv7(),uuidv7(),decode('012345','hex'),'fixture-key',now(),123,'unused-label',now(),now(); CREATE TABLE user_mfa_backup_codes (id UUID PRIMARY KEY,tenant_id UUID NOT NULL,user_id UUID NOT NULL,code_hash VARCHAR(255) NOT NULL,used_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now()); CREATE INDEX ix_user_mfa_backup_codes_tenant_user_active ON user_mfa_backup_codes(tenant_id,user_id) WHERE used_at IS NULL; INSERT INTO user_mfa_backup_codes SELECT uuidv7(),uuidv7(),uuidv7(),'retained-verifier',NULL,now(); INSERT INTO user_mfa_backup_codes SELECT uuidv7(),uuidv7(),uuidv7(),'spent-verifier',now(),now();").await.unwrap();
+    #[derive(diesel::QueryableByName)]
+    struct Facts {
+        #[diesel(sql_type=diesel::sql_types::Jsonb)]
+        value: serde_json::Value,
+    }
+    let before=sql_query("SELECT to_jsonb(b)-'used_at'-'created_at' AS value FROM user_mfa_backup_codes b WHERE used_at IS NULL").get_result::<Facts>(&mut connection).await.unwrap().value;
+    let original_totp=sql_query("SELECT to_jsonb(t)-'label'-'created_at'-'updated_at' AS value FROM user_totp_credentials t").get_result::<Facts>(&mut connection).await.unwrap().value;
+    let up = include_str!("../../../migrations/20261010000300_compact_mfa_credentials/up.sql");
+    let down = include_str!("../../../migrations/20261010000300_compact_mfa_credentials/down.sql");
+    for statement in [up, down, up] {
+        connection.batch_execute(statement).await.unwrap();
+        let retained_totp=sql_query("SELECT to_jsonb(t)-'label'-'created_at'-'updated_at' AS value FROM user_totp_credentials t").get_result::<Facts>(&mut connection).await.unwrap().value;
+        assert_eq!(
+            original_totp, retained_totp,
+            "generation, owner, protected secret, confirmation and replay step survive every migration direction"
+        );
+        let rows = sql_query(
+            "SELECT to_jsonb(b)-'used_at'-'created_at' AS value FROM user_mfa_backup_codes b",
+        )
+        .load::<Facts>(&mut connection)
+        .await
+        .unwrap();
+        assert_eq!(
+            rows.len(),
+            1,
+            "spent credentials must never be reconstructed on downgrade"
+        );
+        assert_eq!(
+            rows[0].value, before,
+            "live identity, verifier and owner stay exact across upgrade and downgrade"
+        );
+    }
     connection.batch_execute("ROLLBACK").await.unwrap();
 }

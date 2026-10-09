@@ -1,11 +1,6 @@
--- Removed historical UUID/timestamp values cannot be reconstructed truthfully.
--- Refuse rollback while security rows exist; never invent metadata or delete
--- valid remembered-device credentials to make a downgrade succeed.
-DO $$ BEGIN
-    IF EXISTS (SELECT 1 FROM user_mfa_remembered_devices) THEN
-        RAISE EXCEPTION 'remembered-device compaction rollback requires an empty table';
-    END IF;
-END $$;
+-- Restore unused adapter metadata without changing any credential fact.
+-- These new surrogate IDs/timestamps are not the original historical values;
+-- neither field is consumed by the old runtime or referenced by other rows.
 DROP INDEX ix_user_mfa_remembered_devices_expiry;
 ALTER TABLE user_mfa_remembered_devices DROP CONSTRAINT user_mfa_remembered_devices_pkey;
 ALTER TABLE user_mfa_remembered_devices

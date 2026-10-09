@@ -91,9 +91,8 @@ impl MfaRepositoryPort for UnknownMfaCommitAck {
         tenant_id: TenantId,
         user_id: UserId,
         secret: String,
-        label: String,
     ) -> RepositoryFuture<'_, ()> {
-        MfaRepositoryPort::begin_totp_enrollment(&self.inner, tenant_id, user_id, secret, label)
+        MfaRepositoryPort::begin_totp_enrollment(&self.inner, tenant_id, user_id, secret)
     }
 
     fn verify_and_confirm_totp<'a>(
@@ -473,7 +472,6 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
             tenant.tenant_id,
             user,
             "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
-            "HTTP formal fixture".to_owned(),
         )
         .await
         .unwrap();

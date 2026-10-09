@@ -59,8 +59,10 @@ remembered-device UUID and creation timestamp, promotes the existing tenant/toke
 unique key, and adds an expiry index for the global sweep. The number of indexes
 is not reduced: the unused UUID index is replaced by the useful expiry index.
 Existing heap tuples are not rewritten merely by dropping columns; no immediate
-filesystem shrink is promised. The reverse migration refuses a populated table
-rather than inventing historical UUIDs/timestamps or deleting valid credentials.
+filesystem shrink is promised. The reverse migration regenerates only unused adapter UUID/timestamp metadata;
+it preserves the original token, owner, user-agent binding and deadline without
+requiring deletion of usable credentials. Regenerated metadata is not represented
+as the original history.
 Apply the schema and matching application together.
 
 `20261010000200_reclaim_expired_identity_approvals` gives expired approval bodies
@@ -75,3 +77,15 @@ batches continue inside the existing 30-second catch-up budget; unfinished histo
 is retried after elapsed work time rather than waiting a fresh hour. Locked rows
 are skipped and remain eligible for later passes. These limits do not by themselves
 prove the collector keeps pace at every workload.
+
+
+`20261010000300_compact_mfa_credentials` removes already-used backup verifiers
+and their unused creation/consumption columns. New consumption is a conditional
+DELETE in the existing transaction with its audit append; an absent candidate
+rejects reuse, and failed audit append rolls the deletion back. Live candidate
+IDs and tenant/user ownership are unchanged. This needs no cleanup queue or TTL.
+TOTP's unread persisted label and generic creation/update timestamps are removed;
+the enrollment response still renders its label directly from issuer/account.
+Protected secret, key identity, credential generation, confirmation and replay
+step remain. Rollback reconstructs only unused metadata and never resurrects
+consumed backup verifiers.

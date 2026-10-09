@@ -21,12 +21,8 @@ impl MfaRepositoryPort for MfaRepository {
         tenant_id: TenantId,
         user_id: UserId,
         secret: String,
-        label: String,
     ) -> RepositoryFuture<'_, ()> {
-        Box::pin(async move {
-            self.begin_totp_enrollment(tenant_id, user_id, secret, label)
-                .await
-        })
+        Box::pin(async move { self.begin_totp_enrollment(tenant_id, user_id, secret).await })
     }
 
     fn verify_and_confirm_totp<'a>(

@@ -9,6 +9,7 @@ This review separates a model's responsibility from its top-level field count. T
 - A redeemed VCI offer clears the unread encrypted grant body and TX-code verifier in the same conditional consume update. It retains the consumption fact, original expiry, code digest and authorization metadata. A stale snapshot in a weaker store must not revive a one-use credential; no KV move is made without that guarantee.
 - Timestamp validity and physical retention are independent. Single-use receipts are filtered by their safety deadline at read. Exported decision payload is compacted only by the existing authenticated acknowledgement transaction; structured replay fences and business retention survive. SCIM history with 180-day retention is reclaimed hourly, while the existing bounded protocol-state worker retains its 60-second cadence.
 
+- Used backup verifiers leave in the original consumption/audit transaction. The unused `used_at`/`created_at` fields disappear; missing candidates already reject reuse. TOTP removes its write-only label and generic timestamps; the label stays in the enrollment response, while secret protection, confirmation and replay state remain.
 - Remembered MFA devices use their existing tenant/token identity; unused UUID/creation-time fields are removed. Expired devices and controller approvals have an hourly reclamation owner. Original security deadlines, MFA-generation transactions and independent audit evidence remain intact.
 - Refresh issuance no longer stores a second copy of the original ID Token SID. The source authority already distinguishes a non-refresh issuance from a refresh whose original SID was absent. This removes a possible contradictory representation without a new wrapper or query.
 
@@ -48,6 +49,10 @@ The normal form is one authority per fact, not one database for every short-live
 Offer consumption precedes grant issuance in separate commits; it was incorrectly described as one transaction in the earlier catalogue. Nevertheless, current access-grant identity is newly generated and does not durably fence an offer identity. Moving the offer alone to a store that can restore an earlier unconsumed value would permit another valid redemption. A short TTL does not solve that failure mode. Retaining its compact consumed state is the shorter correct change here.
 
 Required evidence is never replaced by Telemetry HTTP success. Acknowledgement compaction does not reduce safety TTLs or imply that physical PostgreSQL files shrink immediately. Logical retained rows, expired eligible backlog, dead tuples and reusable high-water allocation must be reported separately in performance evidence.
+
+MFA's single-use boundary is not a storage-history requirement: deletion and audit
+remain atomic for backup codes. TOTP still records and rejects a previously accepted
+step, as required by [RFC 6238 section 5.2](https://www.rfc-editor.org/rfc/rfc6238.html#section-5.2).
 
 ## Normative references
 

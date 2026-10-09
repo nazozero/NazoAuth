@@ -91,11 +91,8 @@ diesel::table! {
         user_id -> Uuid,
         secret_ciphertext -> Binary,
         secret_key_id -> Varchar,
-        label -> Varchar,
         confirmed_at -> Nullable<Timestamptz>,
         last_used_step -> Nullable<Int8>,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
     }
 }
 
@@ -105,8 +102,6 @@ diesel::table! {
         tenant_id -> Uuid,
         user_id -> Uuid,
         code_hash -> Varchar,
-        used_at -> Nullable<Timestamptz>,
-        created_at -> Timestamptz,
     }
 }
 

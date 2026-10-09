@@ -191,7 +191,10 @@ Targeted suites with their own entry points:
   multi-batch expiry of idle remembered devices, an independently locked row,
   expired consumed/unconsumed controller approvals and live-state preservation.
   `schema_cleanup` additionally checks remembered-device fact preservation,
-  natural-key uniqueness, tenant FK retention and refusal of lossy downgrade.
+  natural-key uniqueness, tenant FK retention and populated rollback preserving
+  credential facts. MFA compaction checks that live verifiers survive upgrade/
+  downgrade, spent codes never revive, and audit failure restores the verifier
+  deleted by a failed consumption transaction.
 - `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real
   spawned `nazoauth server` dispatcher against isolated PostgreSQL and Valkey.
 - `crates/nazoauth/tests/token_hotpath_perf.rs` is the opt-in hot-path

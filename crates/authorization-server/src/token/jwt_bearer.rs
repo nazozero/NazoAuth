@@ -331,7 +331,6 @@ pub async fn token_jwt_bearer_with_service(
             acr: None,
             userinfo_claim_requests: (Vec::new()).into(),
             id_token_claim_requests: (Vec::new()).into(),
-
             include_refresh: false,
             refresh_token_policy: RefreshTokenPolicy::NoRefresh,
             dpop_jkt: sender.dpop_jkt,

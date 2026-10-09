@@ -153,7 +153,6 @@ pub async fn token_device_code_with_service(
                     acr: None,
                     userinfo_claim_requests: (Vec::new()).into(),
                     id_token_claim_requests: (Vec::new()).into(),
-
                     include_refresh: true,
                     refresh_token_policy: RefreshTokenPolicy::IssueNew,
                     refresh_token_dpop_jkt: sender.dpop_jkt.clone(),
