@@ -51,11 +51,17 @@ pub struct SendCodeRequest {
     email: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct RegisterRequest {
     email: String,
     verification_code: String,
     password: String,
+}
+
+impl std::fmt::Debug for RegisterRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RegisterRequest([REDACTED])")
+    }
 }
 
 /// Sends a registration verification code without exposing account existence.

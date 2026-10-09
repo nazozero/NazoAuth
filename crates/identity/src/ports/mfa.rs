@@ -88,17 +88,29 @@ impl MfaTotpKeyRing {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TotpCredential {
     pub secret_base32: String,
     pub last_used_step: Option<i64>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for TotpCredential {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TotpCredential([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct TotpEnrollment {
     pub secret_base32: String,
     pub confirmed: bool,
     pub last_used_step: Option<i64>,
+}
+
+impl std::fmt::Debug for TotpEnrollment {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TotpEnrollment([REDACTED])")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

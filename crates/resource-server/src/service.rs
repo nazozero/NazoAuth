@@ -17,11 +17,17 @@ pub enum AccessTokenScheme {
     Dpop,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct ProtectedResourceAuthorizationRequest<'a> {
     pub access_token: &'a str,
     pub scheme: AccessTokenScheme,
     pub dpop_proof: Option<&'a str>,
+}
+
+impl std::fmt::Debug for ProtectedResourceAuthorizationRequest<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ProtectedResourceAuthorizationRequest([REDACTED])")
+    }
 }
 
 /// Transport-verified request information. Certificate thumbprints must only

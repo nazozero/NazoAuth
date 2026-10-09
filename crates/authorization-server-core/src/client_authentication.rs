@@ -132,7 +132,7 @@ pub enum ClientAuthenticationPolicyError {
     PublicClientCredentialsForbidden,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum ClientAuthenticationRequirement<'a> {
     PublicClient,
     ClientSecret {
@@ -145,6 +145,12 @@ pub enum ClientAuthenticationRequirement<'a> {
     MutualTls {
         method: ClientAuthenticationMethod,
     },
+}
+
+impl std::fmt::Debug for ClientAuthenticationRequirement<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ClientAuthenticationRequirement([REDACTED])")
+    }
 }
 
 /// Select the single built-in authentication operation after validating the complete credential

@@ -26,7 +26,7 @@ const TENANT_PREFIX: &str = "avatars";
 
 /// All S3-compatible object-store connection details.  This concrete adapter
 /// deliberately does not leak S3 SDK values through the server or domain.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct S3AvatarObjectStoreConfig {
     pub endpoint: String,
@@ -36,6 +36,12 @@ pub struct S3AvatarObjectStoreConfig {
     pub secret_key: String,
     #[serde(default = "default_path_style")]
     pub path_style: bool,
+}
+
+impl std::fmt::Debug for S3AvatarObjectStoreConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("S3AvatarObjectStoreConfig([REDACTED])")
+    }
 }
 
 fn default_path_style() -> bool {

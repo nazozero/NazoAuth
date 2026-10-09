@@ -63,7 +63,7 @@ pub(crate) struct SpentRefreshTokenRow {
     pub(crate) expires_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, diesel::QueryableByName)]
+#[derive(Clone, diesel::QueryableByName)]
 pub(crate) struct BackchannelLogoutDeliveryRow {
     #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) id: Uuid,
@@ -75,4 +75,10 @@ pub(crate) struct BackchannelLogoutDeliveryRow {
     pub(crate) attempts: i32,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
     pub(crate) expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for BackchannelLogoutDeliveryRow {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("BackchannelLogoutDeliveryRow([REDACTED])")
+    }
 }

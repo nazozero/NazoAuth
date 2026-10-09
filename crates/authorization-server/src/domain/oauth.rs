@@ -77,11 +77,17 @@ pub struct TokenIssue {
     pub native_sso: Option<NativeSsoTokenBinding>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NativeSsoTokenBinding {
     pub device_secret: String,
     pub ds_hash: String,
     pub sid: String,
+}
+
+impl std::fmt::Debug for NativeSsoTokenBinding {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("NativeSsoTokenBinding([REDACTED])")
+    }
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@ pub enum AccessTokenScheme {
     Dpop,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CredentialRequestContext {
     pub bearer_token: String,
     pub access_token_scheme: AccessTokenScheme,
@@ -27,6 +27,12 @@ pub struct CredentialRequestContext {
     pub mtls_x5t_s256: Option<String>,
     pub request_url: String,
     pub method: &'static str,
+}
+
+impl std::fmt::Debug for CredentialRequestContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CredentialRequestContext([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,13 +95,19 @@ pub struct PreAuthorizedTokenRequest {
     pub mtls_x5t_s256: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub struct PreAuthorizedTokenResponse {
     pub access_token: String,
     pub token_type: String,
     pub expires_in: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub authorization_details: Vec<serde_json::Value>,
+}
+
+impl std::fmt::Debug for PreAuthorizedTokenResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PreAuthorizedTokenResponse([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]

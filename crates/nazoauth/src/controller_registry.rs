@@ -358,13 +358,19 @@ impl From<ControllerRegistryError> for ControllerRegistryServiceError {
 }
 
 /// One issued approval as surfaced to the approving administrator.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IssuedApprovalView {
     /// Single-use bearer token; shown exactly once, never logged or stored.
     pub token: String,
     pub action: ControllerIdentityAction,
     pub action_sha256: String,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for IssuedApprovalView {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("IssuedApprovalView([REDACTED])")
+    }
 }
 
 /// Service facade over the registry repository.  Cheap to clone.

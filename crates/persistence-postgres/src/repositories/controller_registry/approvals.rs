@@ -196,7 +196,7 @@ pub(crate) async fn consume_approval_on_connection(
 
 /// One issued approval as returned to the administrator.  The plaintext token
 /// exists exactly once — in this return value — and is never logged or stored.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IssuedIdentityApproval {
     pub approval_id: Uuid,
     pub action: ControllerIdentityAction,
@@ -204,6 +204,12 @@ pub struct IssuedIdentityApproval {
     pub action_sha256: String,
     pub token: String,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for IssuedIdentityApproval {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("IssuedIdentityApproval([REDACTED])")
+    }
 }
 
 impl ControllerRegistryRepository {

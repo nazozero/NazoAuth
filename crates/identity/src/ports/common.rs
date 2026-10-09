@@ -39,8 +39,14 @@ impl std::fmt::Display for RepositoryError {
 
 impl std::error::Error for RepositoryError {}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct EncodedSecretHash(String);
+
+impl std::fmt::Debug for EncodedSecretHash {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("EncodedSecretHash([REDACTED])")
+    }
+}
 
 impl EncodedSecretHash {
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityModelError> {

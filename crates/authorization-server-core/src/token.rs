@@ -222,7 +222,7 @@ pub struct LostResponseRetry {
     pub retry_started_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct NewRefreshToken {
     pub raw_token: String,
     /// Identity of this generation. Assigned by issuance so the parent
@@ -241,6 +241,12 @@ pub struct NewRefreshToken {
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
     pub client_attestation_jkt: Option<String>,
+}
+
+impl std::fmt::Debug for NewRefreshToken {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("NewRefreshToken([REDACTED])")
+    }
 }
 
 /// The original contract has one owner in either issuance path. A preserved
@@ -294,7 +300,7 @@ pub enum RefreshTokenPersistResult {
     RotationConflict,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct BackchannelLogoutDelivery {
     pub id: Uuid,
     pub logout_uri: String,
@@ -303,7 +309,13 @@ pub struct BackchannelLogoutDelivery {
     pub expires_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for BackchannelLogoutDelivery {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("BackchannelLogoutDelivery([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct PendingBackchannelLogoutDelivery {
     pub tenant_id: Uuid,
     pub client_id: Uuid,
@@ -311,6 +323,12 @@ pub struct PendingBackchannelLogoutDelivery {
     pub logout_uri: String,
     pub logout_token: String,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for PendingBackchannelLogoutDelivery {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PendingBackchannelLogoutDelivery([REDACTED])")
+    }
 }
 
 #[cfg(test)]

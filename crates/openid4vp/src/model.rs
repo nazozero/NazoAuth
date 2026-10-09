@@ -194,7 +194,7 @@ pub struct DirectPostJwtResponse {
     pub response: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
 pub struct PresentationTransaction {
     pub id: Uuid,
     pub client_id_prefix: ClientIdPrefix,
@@ -204,16 +204,18 @@ pub struct PresentationTransaction {
     pub request: AuthorizationRequest,
     pub request_object: Option<String>,
     pub request_uri: Option<String>,
-    #[serde(skip)]
     pub openid4vc_trust_policy_binding_id: Option<Uuid>,
-    #[serde(skip)]
     pub openid4vc_trust_policy_resource_id: Option<String>,
-    #[serde(skip)]
     pub openid4vc_trust_policy_digest: Option<String>,
-    #[serde(skip)]
     pub response_encryption_private_key: Option<Vec<u8>>,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for PresentationTransaction {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PresentationTransaction([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

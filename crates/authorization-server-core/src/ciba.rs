@@ -38,7 +38,7 @@ pub struct CibaRequestState {
     pub ping_notification: Option<CibaPingNotification>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CibaPingNotification {
     /// Populated atomically by the state-store adapter when the auth_req_id is
     /// persisted. It is the only value emitted in the ping JSON body.
@@ -52,6 +52,12 @@ pub struct CibaPingNotification {
     pub attempts: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_attempt_at: Option<i64>,
+}
+
+impl std::fmt::Debug for CibaPingNotification {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CibaPingNotification([REDACTED])")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -105,10 +111,16 @@ impl std::error::Error for CibaStatePortError {}
 /// The comparison value is intentionally backend-neutral. The retention
 /// deadline travels with the same snapshot so an adapter can reject a
 /// replacement that would silently extend or shorten the request lifetime.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CibaStateVersion {
     comparison_token: String,
     retention_expires_at: i64,
+}
+
+impl std::fmt::Debug for CibaStateVersion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CibaStateVersion([REDACTED])")
+    }
 }
 
 impl CibaStateVersion {

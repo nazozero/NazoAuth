@@ -91,7 +91,7 @@ pub(crate) struct SubjectClaimsRow {
     pub(crate) phone_number_verified: bool,
 }
 
-#[derive(Clone, Debug, Queryable, Selectable)]
+#[derive(Clone, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::users)]
 pub(crate) struct AuthenticationIdentityRow {
     pub(crate) id: Uuid,
@@ -106,6 +106,12 @@ pub(crate) struct AuthenticationIdentityRow {
     pub(crate) email_verified: bool,
     pub(crate) role: String,
     pub(crate) admin_level: i32,
+}
+
+impl std::fmt::Debug for AuthenticationIdentityRow {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AuthenticationIdentityRow([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Queryable, Selectable)]

@@ -66,7 +66,7 @@ impl RegisteredLogoutClient {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IdempotentBackchannelLogoutDelivery {
     pub operation_key: String,
     pub tenant_id: Uuid,
@@ -75,6 +75,12 @@ pub struct IdempotentBackchannelLogoutDelivery {
     pub logout_uri: String,
     pub logout_token: String,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for IdempotentBackchannelLogoutDelivery {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("IdempotentBackchannelLogoutDelivery([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

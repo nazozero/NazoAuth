@@ -48,8 +48,14 @@ pub struct SessionRecord {
 }
 
 /// Opaque identifier for a browser login session.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct SessionId(Box<str>);
+
+impl std::fmt::Debug for SessionId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SessionId([REDACTED])")
+    }
+}
 
 impl SessionId {
     #[must_use]
@@ -79,8 +85,14 @@ impl From<String> for SessionId {
 ///
 /// Storage adapters may preserve their exact serialized representation here;
 /// domain callers cannot interpret or mutate it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SessionVersion(Box<[u8]>);
+
+impl std::fmt::Debug for SessionVersion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SessionVersion([REDACTED])")
+    }
+}
 
 impl SessionVersion {
     #[doc(hidden)]
@@ -195,10 +207,16 @@ pub enum SessionResolution {
     Invalidated,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SessionRotation {
     session_id: SessionId,
     csrf_token: Box<str>,
+}
+
+impl std::fmt::Debug for SessionRotation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SessionRotation([REDACTED])")
+    }
 }
 
 impl SessionRotation {

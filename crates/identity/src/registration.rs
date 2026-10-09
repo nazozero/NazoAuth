@@ -17,10 +17,16 @@ pub struct RegistrationServiceConfig {
     pub code_ttl_seconds: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum SendVerificationCodeOutcome {
     Suppressed,
     Sent { code: String },
+}
+
+impl std::fmt::Debug for SendVerificationCodeOutcome {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SendVerificationCodeOutcome([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,11 +39,17 @@ pub enum SendVerificationCodeError {
     Delivery(RepositoryError),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RegisterLocalAccountInput {
     pub email: String,
     pub verification_code: String,
     pub password: String,
+}
+
+impl std::fmt::Debug for RegisterLocalAccountInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RegisterLocalAccountInput([REDACTED])")
+    }
 }
 
 /// Minimal identity projection returned to the public registration transport.

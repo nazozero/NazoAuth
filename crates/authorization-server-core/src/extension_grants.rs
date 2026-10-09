@@ -185,7 +185,7 @@ pub(crate) fn classify_jwt_bearer_replay(
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct TokenExchangeRequestInput<'a> {
     pub subject_token: Option<&'a str>,
     pub subject_token_type: Option<&'a str>,
@@ -194,6 +194,12 @@ pub struct TokenExchangeRequestInput<'a> {
     pub requested_token_type: Option<&'a str>,
     pub scope: Option<&'a str>,
     pub audiences: &'a [String],
+}
+
+impl std::fmt::Debug for TokenExchangeRequestInput<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TokenExchangeRequestInput([REDACTED])")
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -209,13 +215,19 @@ pub struct TokenExchangePolicy<'a> {
     pub now: i64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TokenExchangeAdmission<'a> {
     pub subject_token: &'a str,
     pub actor_token: Option<&'a str>,
     pub requested_scope: Option<&'a str>,
     pub audiences: Vec<String>,
     pub issued_token_type: String,
+}
+
+impl std::fmt::Debug for TokenExchangeAdmission<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TokenExchangeAdmission([REDACTED])")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

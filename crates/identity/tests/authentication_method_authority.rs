@@ -62,3 +62,22 @@ fn real_session_metadata_rejects_empty_evidence_and_invalid_time_or_sid() {
         1_001
     ));
 }
+
+#[test]
+fn totp_credentials_do_not_expose_seeds_in_debug_output() {
+    use nazo_identity::ports::{TotpCredential, TotpEnrollment};
+    let seed = "JBSWY3DPEHPK3PXP";
+    let credential = TotpCredential {
+        secret_base32: seed.to_owned(),
+        last_used_step: Some(42),
+    };
+    let enrollment = TotpEnrollment {
+        secret_base32: seed.to_owned(),
+        confirmed: false,
+        last_used_step: None,
+    };
+    for output in [format!("{credential:?}"), format!("{enrollment:#?}")] {
+        assert!(!output.contains(seed));
+        assert!(output.contains("[REDACTED]"));
+    }
+}

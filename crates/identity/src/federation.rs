@@ -23,7 +23,7 @@ pub fn normalize_federation_token(value: &str) -> Option<String> {
     .then_some(value.to_owned())
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OidcFederationState {
     /// Legacy state can deserialize, but an unbound callback can never consume it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,7 +36,13 @@ pub struct OidcFederationState {
     pub created_at: i64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+impl std::fmt::Debug for OidcFederationState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("OidcFederationState([REDACTED])")
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SocialFederationState {
     /// Legacy state can deserialize, but an unbound callback can never consume it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,17 +52,35 @@ pub struct SocialFederationState {
     pub created_at: i64,
 }
 
-#[derive(Clone, Debug)]
+impl std::fmt::Debug for SocialFederationState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SocialFederationState([REDACTED])")
+    }
+}
+
+#[derive(Clone)]
 pub struct OidcFederationStart {
     pub state: String,
     pub nonce: String,
     pub pkce_verifier: String,
 }
 
-#[derive(Clone, Debug)]
+impl std::fmt::Debug for OidcFederationStart {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("OidcFederationStart([REDACTED])")
+    }
+}
+
+#[derive(Clone)]
 pub struct SocialFederationStart {
     pub state: String,
     pub pkce_verifier: String,
+}
+
+impl std::fmt::Debug for SocialFederationStart {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SocialFederationStart([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug)]

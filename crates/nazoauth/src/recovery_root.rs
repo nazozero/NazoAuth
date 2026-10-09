@@ -98,12 +98,18 @@ impl From<RecoveryRotationError> for RecoveryRootServiceError {
 }
 
 /// One issued approval as surfaced to the approving administrator.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IssuedRotationApprovalView {
     /// Single-use bearer token; shown exactly once, never logged or stored.
     pub token: String,
     pub action_sha256: String,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for IssuedRotationApprovalView {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("IssuedRotationApprovalView([REDACTED])")
+    }
 }
 
 /// Service facade over the recovery repository.  Cheap to clone.

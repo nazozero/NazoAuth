@@ -83,11 +83,17 @@ pub enum AuthorizationCodeTransitionResult {
     Failed,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IssuedAccessToken {
     pub token: String,
     pub jti: String,
     pub expires_at: i64,
+}
+
+impl std::fmt::Debug for IssuedAccessToken {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("IssuedAccessToken([REDACTED])")
+    }
 }
 
 /// The storage contract for a token issuance. Fresh grants commit only their

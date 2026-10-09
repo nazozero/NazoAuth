@@ -23,7 +23,7 @@ pub enum DpopNoncePolicy {
     Optional,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct DpopProofRequest<'a> {
     pub proof: Option<&'a str>,
     pub method: &'a str,
@@ -32,6 +32,12 @@ pub struct DpopProofRequest<'a> {
     pub target_uris: &'a [&'a str],
     pub access_token: Option<&'a str>,
     pub expected_jkt: Option<&'a str>,
+}
+
+impl std::fmt::Debug for DpopProofRequest<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("DpopProofRequest([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

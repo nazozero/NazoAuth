@@ -466,7 +466,7 @@ pub fn parse_user_authorization_decision(value: &str) -> Option<UserAuthorizatio
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct AuthorizationResponsePolicyInput<'a> {
     pub issuer: &'a str,
     pub redirect_uri: &'a str,
@@ -481,6 +481,12 @@ pub struct AuthorizationResponsePolicyInput<'a> {
     pub session_management_available: bool,
 }
 
+impl std::fmt::Debug for AuthorizationResponsePolicyInput<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AuthorizationResponsePolicyInput([REDACTED])")
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlainAuthorizationResponse {
     pub redirect_uri: String,
@@ -488,7 +494,7 @@ pub struct PlainAuthorizationResponse {
     pub issue_session_state: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct JarmAuthorizationResponse {
     pub redirect_uri: String,
     pub issuer: String,
@@ -497,6 +503,12 @@ pub struct JarmAuthorizationResponse {
     pub error: Option<String>,
     pub state: Option<String>,
     pub ttl_seconds: i64,
+}
+
+impl std::fmt::Debug for JarmAuthorizationResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("JarmAuthorizationResponse([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

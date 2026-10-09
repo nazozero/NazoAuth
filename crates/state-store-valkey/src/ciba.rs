@@ -169,7 +169,7 @@ pub struct CibaStore {
     connection: ValkeyConnection,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 pub struct CibaPingDelivery {
     pub auth_req_id_hash: String,
     pub auth_req_id: String,
@@ -177,6 +177,12 @@ pub struct CibaPingDelivery {
     pub client_notification_token: String,
     pub attempts: u32,
     pub expires_at: i64,
+}
+
+impl std::fmt::Debug for CibaPingDelivery {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CibaPingDelivery([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -243,9 +243,15 @@ pub enum DeviceStateReplacement<V> {
 }
 
 /// Opaque compare-and-swap token for a persisted device authorization.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct DeviceStateVersion {
     comparison_token: String,
+}
+
+impl std::fmt::Debug for DeviceStateVersion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("DeviceStateVersion([REDACTED])")
+    }
 }
 
 impl DeviceStateVersion {

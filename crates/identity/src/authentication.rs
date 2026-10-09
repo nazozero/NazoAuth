@@ -27,7 +27,7 @@ pub struct RememberedMfaProof {
     pub user_agent_hash: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct AuthenticatePasswordInput {
     pub email: String,
     pub password: String,
@@ -37,19 +37,37 @@ pub struct AuthenticatePasswordInput {
     pub now: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for AuthenticatePasswordInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AuthenticatePasswordInput([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct LoginSuccess {
     pub session_id: String,
     pub csrf_token: String,
     pub session: SessionRecord,
 }
 
+impl std::fmt::Debug for LoginSuccess {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("LoginSuccess([REDACTED])")
+    }
+}
+
 /// Minimal password-login projection exposed to the HTTP transport.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PasswordLoginResult {
     pub session_id: String,
     pub csrf_token: String,
     pub mfa_required: bool,
+}
+
+impl std::fmt::Debug for PasswordLoginResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PasswordLoginResult([REDACTED])")
+    }
 }
 
 impl From<LoginSuccess> for PasswordLoginResult {

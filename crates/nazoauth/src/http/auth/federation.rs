@@ -573,10 +573,16 @@ fn federation_session_response(
     )
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 struct OidcCallbackInput {
     state_token: String,
     code: String,
+}
+
+impl std::fmt::Debug for OidcCallbackInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("OidcCallbackInput([REDACTED])")
+    }
 }
 
 fn validate_oidc_callback_input(

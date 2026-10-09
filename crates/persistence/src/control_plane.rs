@@ -188,13 +188,19 @@ impl std::fmt::Display for CommitWithApprovalError {
 
 impl std::error::Error for CommitWithApprovalError {}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IssuedIdentityApproval {
     pub approval_id: Uuid,
     pub action: ControllerIdentityAction,
     pub action_sha256: String,
     pub token: String,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for IssuedIdentityApproval {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("IssuedIdentityApproval([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

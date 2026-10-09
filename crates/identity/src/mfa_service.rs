@@ -33,24 +33,42 @@ impl MfaVerificationProof {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TotpEnrollmentStart {
     pub secret_base32: String,
     pub otpauth_uri: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for TotpEnrollmentStart {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TotpEnrollmentStart([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct PreparedTotpConfirmation {
     code: String,
     backup_codes: Vec<String>,
     hashes: Vec<EncodedSecretHash>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for PreparedTotpConfirmation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PreparedTotpConfirmation([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub enum TotpConfirmationOutcome {
     Accepted { backup_codes: Vec<String> },
     Invalid,
     Replay,
+}
+
+impl std::fmt::Debug for TotpConfirmationOutcome {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TotpConfirmationOutcome([REDACTED])")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
