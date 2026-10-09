@@ -102,6 +102,10 @@ shared audit fixture must retain its own runtime with its pool. Pure logic
 tests should pass the configuration they use instead of constructing unrelated
 database infrastructure.
 
+Hot-path PostgreSQL reads complete on the pool owner runtime and return owned row data.
+`read_connection_ownership` uses a real database lock and an independent observer
+to check that completed reads release pool capacity before a delayed caller resumes.
+
 The workspace suite requires isolated PostgreSQL and Valkey, a separate audit
 test database (`NAZO_AUDIT_TEST_DATABASE_URL`), and the S3-compatible fixture
 configured with `NAZO_TEST_S3_*`. Copy the workflow's other fixture settings,

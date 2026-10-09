@@ -62,16 +62,20 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    users::table
+                        .find(user_id.as_uuid())
+                        .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                        .select(PublicAccountRow::as_select())
+                        .first(connection)
+                        .await
+                        .optional()
+                })
+            })
             .await
-            .map_err(|_| RepositoryError::Unavailable)?;
-        users::table
-            .find(user_id.as_uuid())
-            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-            .select(PublicAccountRow::as_select())
-            .first(&mut connection)
-            .await
-            .optional()
+            .map_err(|_| RepositoryError::Unavailable)?
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
             .map(PublicAccount::try_from)
             .transpose()
@@ -83,16 +87,20 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Option<Principal>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    users::table
+                        .find(user_id.as_uuid())
+                        .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                        .select(PrincipalRow::as_select())
+                        .first(connection)
+                        .await
+                        .optional()
+                })
+            })
             .await
-            .map_err(|_| RepositoryError::Unavailable)?;
-        users::table
-            .find(user_id.as_uuid())
-            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-            .select(PrincipalRow::as_select())
-            .first(&mut connection)
-            .await
-            .optional()
+            .map_err(|_| RepositoryError::Unavailable)?
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
             .map(identity::principal_row)
             .transpose()
@@ -105,36 +113,42 @@ impl UserRepository {
         user_id: UserId,
         token_subject: &str,
     ) -> Result<Option<(SubjectClaims, i64, bool)>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let token_subject = token_subject.to_owned();
+        let snapshot = self
+            .pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    // Claims, their epoch and private-subject ownership must share one
+                    // snapshot. Do not filter by owner: a different owner is a collision,
+                    // not a missing binding. Public subjects need no binding lookup.
+                    let private_subject = token_subject != user_id.as_uuid().to_string();
+                    let bound_user = oauth_subject_bindings::table
+                        .filter(oauth_subject_bindings::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(
+                            oauth_subject_bindings::subject
+                                .eq(token_subject)
+                                .and::<_, sql_types::Bool>(private_subject),
+                        )
+                        .select(oauth_subject_bindings::user_id)
+                        .single_value();
+                    users::table
+                        .find(user_id.as_uuid())
+                        .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(users::is_active.eq(true))
+                        .select((
+                            SubjectClaimsRow::as_select(),
+                            users::access_token_epoch,
+                            bound_user,
+                        ))
+                        .first::<(SubjectClaimsRow, i64, Option<Uuid>)>(connection)
+                        .await
+                        .optional()
+                        .map_err(|error| RepositoryError::Unexpected(error.to_string()))
+                })
+            })
             .await
-            .map_err(|_| RepositoryError::Unavailable)?;
-        // Claims, their epoch and private-subject ownership must share one
-        // snapshot. Do not filter by owner: a different owner is a collision,
-        // not a missing binding. Public subjects need no binding lookup.
-        let private_subject = token_subject != user_id.as_uuid().to_string();
-        let bound_user = oauth_subject_bindings::table
-            .filter(oauth_subject_bindings::tenant_id.eq(tenant_id.as_uuid()))
-            .filter(
-                oauth_subject_bindings::subject
-                    .eq(token_subject)
-                    .and::<_, sql_types::Bool>(private_subject),
-            )
-            .select(oauth_subject_bindings::user_id)
-            .single_value();
-        let snapshot = users::table
-            .find(user_id.as_uuid())
-            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-            .filter(users::is_active.eq(true))
-            .select((
-                SubjectClaimsRow::as_select(),
-                users::access_token_epoch,
-                bound_user,
-            ))
-            .first::<(SubjectClaimsRow, i64, Option<Uuid>)>(&mut connection)
-            .await
-            .optional()
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-        drop(connection);
+            .map_err(|_| RepositoryError::Unavailable)??;
+
         snapshot
             .map(|(row, epoch, bound_user)| prepare_subject_claims(row, epoch, bound_user))
             .transpose()

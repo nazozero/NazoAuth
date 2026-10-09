@@ -29,6 +29,36 @@ pub struct DbPool {
     pub(crate) runtime: tokio::runtime::Handle,
 }
 
+impl DbPool {
+    /// Complete a read on the runtime that drives its connection. Return only
+    /// owned row data, so a delayed request task cannot retain the pool slot.
+    /// Dropping the caller aborts the owner and discards an unfinished query's
+    /// physical connection instead of returning it with work still in flight.
+    pub(crate) async fn read<T, F>(&self, query: F) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+        F: for<'a> FnOnce(&'a mut AsyncPgConnection) -> futures_util::future::BoxFuture<'a, T>
+            + Send
+            + 'static,
+    {
+        let pool = self.clone();
+        let mut operation = tokio::task::JoinSet::new();
+        operation.spawn_on(
+            async move {
+                let mut guard = DiscardOnDrop(Some(get_conn(&pool).await?));
+                let result = query(guard.connection()).await;
+                guard.return_to_pool();
+                Ok::<T, anyhow::Error>(result)
+            },
+            &self.runtime,
+        );
+        operation
+            .join_next()
+            .await
+            .expect("read task was registered")?
+    }
+}
+
 impl std::ops::Deref for DbPool {
     type Target = Pool<AsyncPgConnection>;
 
