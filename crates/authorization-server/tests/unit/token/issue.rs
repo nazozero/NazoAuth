@@ -88,7 +88,7 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
             .map(nazo_auth::OidcClaimRequest::named)
             .collect::<Vec<_>>())
         .into(),
-        refresh_id_token_sid: None,
+
         include_refresh: false,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
         dpop_jkt: None,
@@ -218,32 +218,6 @@ fn id_token_sid_request_object_also_allows_session_sid() {
     assert_eq!(
         id_token_session_sid(&client, &issue, false),
         Some("op-session-sid")
-    );
-}
-
-#[test]
-fn refresh_id_token_sid_contract_distinguishes_presence_and_original_omission() {
-    let client = client_with_grants(&["authorization_code"]);
-    let mut issue = token_issue_with_sid(Vec::new());
-    issue.refresh_id_token_sid = Some(Some("native-sso-sid".to_owned()));
-    assert_eq!(
-        id_token_session_sid(&client, &issue, false),
-        Some("native-sso-sid")
-    );
-
-    issue.refresh_id_token_sid = Some(None);
-    assert_eq!(id_token_session_sid(&client, &issue, false), None);
-}
-
-#[test]
-fn refresh_without_id_token_preserves_the_original_sid_contract() {
-    let mut issue = token_issue_with_sid(Vec::new());
-    issue.refresh_id_token_sid = Some(Some("original-sid".to_owned()));
-
-    assert_eq!(persisted_id_token_sid(&issue, None), Some("original-sid"));
-    assert_eq!(
-        persisted_id_token_sid(&issue, Some("new-sid")),
-        Some("new-sid")
     );
 }
 

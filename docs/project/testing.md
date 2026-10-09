@@ -187,7 +187,11 @@ Targeted suites with their own entry points:
   host cases need both isolated PostgreSQL and Valkey; semantic ACK injection
   does not substitute for physical failover evidence.
 - `crates/persistence-postgres/tests/security_state_maintenance.rs` covers
-  the bounded maintenance pass against the same isolated database.
+  the bounded maintenance pass against the same isolated database, including
+  multi-batch expiry of idle remembered devices, an independently locked row,
+  expired consumed/unconsumed controller approvals and live-state preservation.
+  `schema_cleanup` additionally checks remembered-device fact preservation,
+  natural-key uniqueness, tenant FK retention and refusal of lossy downgrade.
 - `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real
   spawned `nazoauth server` dispatcher against isolated PostgreSQL and Valkey.
 - `crates/nazoauth/tests/token_hotpath_perf.rs` is the opt-in hot-path

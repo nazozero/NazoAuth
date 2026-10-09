@@ -9,6 +9,9 @@ This review separates a model's responsibility from its top-level field count. T
 - A redeemed VCI offer clears the unread encrypted grant body and TX-code verifier in the same conditional consume update. It retains the consumption fact, original expiry, code digest and authorization metadata. A stale snapshot in a weaker store must not revive a one-use credential; no KV move is made without that guarantee.
 - Timestamp validity and physical retention are independent. Single-use receipts are filtered by their safety deadline at read. Exported decision payload is compacted only by the existing authenticated acknowledgement transaction; structured replay fences and business retention survive. SCIM history with 180-day retention is reclaimed hourly, while the existing bounded protocol-state worker retains its 60-second cadence.
 
+- Remembered MFA devices use their existing tenant/token identity; unused UUID/creation-time fields are removed. Expired devices and controller approvals have an hourly reclamation owner. Original security deadlines, MFA-generation transactions and independent audit evidence remain intact.
+- Refresh issuance no longer stores a second copy of the original ID Token SID. The source authority already distinguishes a non-refresh issuance from a refresh whose original SID was absent. This removes a possible contradictory representation without a new wrapper or query.
+
 ## Large models and decisions
 
 Counts below describe the pre-change direct fields, not bytes or database columns.
@@ -22,7 +25,7 @@ Counts below describe the pre-change direct fields, not bytes or database column
 | `ClientMetadata` | 31 | Borrowed view shared by create/patch validation, not an independently stored authority. mTLS selection already has a focused validator. Splitting the borrow list has no proven storage benefit. |
 | `OAuthClientRecord` | 59 | Adapter-only SQL projection. It decodes into client registration plus tenant/runtime identity. Projection width does not require multiple queries or tables. Credentials are not added to the runtime metadata boundary. |
 | `RefreshToken` | 20 | Original grant and mutable current generation were flattened together. Compose `RefreshContract`; preserve original vs current audience, sender binding and SID distinctions. |
-| `TokenIssue` | 28 | Request-local candidate signing input plus its durable refresh source. The signed result and original authority are different responsibilities, checked by `refresh_issue_matches_source`. Keep that comparison: a narrower AT audience or stronger AT binding must not rewrite the original RT authority. No field is removed merely because its value often equals the source. This review does not claim this input is a fully unrepresentable-state API. |
+| `TokenIssue` | 28 | Request-local candidate signing input plus its durable refresh source. The signed result and original authority are different responsibilities, checked by `refresh_issue_matches_source`. Keep that comparison: a narrower AT audience or stronger AT binding must not rewrite the original RT authority. The redundant `refresh_id_token_sid` copy is removed: signing and persistence read `refresh_authority.id_token_sid` directly, including original omission. Remaining output/source comparisons still protect the distinct signed AT and durable RT facts. No field is removed merely because its value often equals the source. This review does not claim this input is a fully unrepresentable-state API. |
 | `ConsentPayload` | 27 | One expiring consent continuation, with client policy snapshots and PAR linkage. Consent decision and authorization-code redemption are separate phases; code state must not retain all consent UI fields. Existing separate `CodePayload` is retained. |
 | `CodePayload` | 20 | One expiring redeemable grant, PKCE, sender and authentication constraints. KV owns the preparation/consumption lifecycle; a separate minimal durable receipt links the completed issuance for replay handling. |
 | `Claims` | 20 | Access-token wire claims. Issuer, tenant, user identity, external subject and revocation epochs have different consumers. Do not remove signed security context to reduce struct size. |
@@ -55,3 +58,22 @@ The specifications define protocol behavior rather than a required database prod
 - [Valkey replication](https://valkey.io/topics/replication/) does not promise strong consistency merely from acknowledgements to replicas. TTL is not a substitute for the acknowledged-write failure contract.
 
 Test commands and measured results belong to the accompanying acceptance evidence; this design document alone is not a performance or storage PASS.
+
+
+## Follow-up review boundaries
+
+A compact field encoding is different from deleting a security fact. Replay marker
+keys currently use hexadecimal digests. Changing the key derivation while accepted
+markers remain live makes old markers invisible; mixed-version writers compound
+that problem. This review retains the existing namespace and TTL rather than
+adding a permanent dual-write/read mechanism solely to save key bytes. It does
+not call that representation a proven byte-minimum. Replay bodies already contain
+only a presence marker; their required receiving window must not be shortened to
+make a memory graph look smaller.
+
+Controller recovery allocation proofs have no independent expiring replay identity:
+removing their old challenge records can make a captured allocation proof reusable.
+Completed challenges additionally carry an idempotent recovery result. These are
+actual callers of retained state, unlike expired random approval tokens, whose
+absence always rejects. Reworking that protocol would require the independently
+owned controller contract and cannot be inferred from the shared word “challenge”.

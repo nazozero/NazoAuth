@@ -357,7 +357,7 @@ fn ciba_token_issue(
         acr: ciba.acr,
         userinfo_claim_requests: (Vec::new()).into(),
         id_token_claim_requests: (Vec::new()).into(),
-        refresh_id_token_sid: None,
+
         include_refresh: true,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
         dpop_jkt: dpop_jkt.clone(),

@@ -358,7 +358,6 @@ pub async fn token_refresh_with_service(
         },
         None => refresh_token_policy(client, &token),
     };
-    let refresh_id_token_sid = Some(token.id_token_sid.clone());
     let refresh_authority = token.authority();
     issue_token_response(
         issuance,
@@ -382,7 +381,6 @@ pub async fn token_refresh_with_service(
             acr: authentication_context.acr,
             userinfo_claim_requests: authentication_context.userinfo_claim_requests,
             id_token_claim_requests: authentication_context.id_token_claim_requests,
-            refresh_id_token_sid,
             include_refresh: true,
             refresh_token_policy,
             dpop_jkt: dpop_jkt.clone(),

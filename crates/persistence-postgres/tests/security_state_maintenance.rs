@@ -3171,3 +3171,118 @@ async fn protocol_cleanup_leaves_history_until_history_scope_and_preserves_reten
         );
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn expired_remembered_devices_are_reclaimed_without_user_activity() {
+    let url = database_url().expect("real PostgreSQL fixture required");
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (owner, mut connection) = fixture(&url).await;
+    let prefix = Uuid::now_v7().simple().to_string();
+    sql_query("INSERT INTO user_mfa_remembered_devices (tenant_id, user_id, token_hash, expires_at) SELECT $1, $2, $3 || md5(i::text), CASE WHEN i < 260 THEN now()-interval '1 day' ELSE now()+interval '1 day' END FROM generate_series(0,261) i")
+        .bind::<SqlUuid,_>(SYSTEM_TENANT).bind::<SqlUuid,_>(owner.user_id)
+        .bind::<Text,_>(&prefix).execute(&mut connection).await.unwrap();
+    let count = async |connection: &mut AsyncPgConnection| {
+        sql_query(
+            "SELECT count(*)::bigint AS count FROM user_mfa_remembered_devices WHERE user_id=$1",
+        )
+        .bind::<SqlUuid, _>(owner.user_id)
+        .get_result::<CountRow>(connection)
+        .await
+        .unwrap()
+        .count
+    };
+    let maintenance = SecurityStateMaintenanceRepository::new(create_pool(&url, 2).unwrap());
+    maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::ProtocolState)
+        .await
+        .unwrap();
+    assert_eq!(
+        count(&mut connection).await,
+        262,
+        "short-period cleanup must leave low-frequency state alone"
+    );
+    let mut held = AsyncPgConnection::establish(&url).await.unwrap();
+    held.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT token_hash FROM user_mfa_remembered_devices WHERE user_id=$1 AND token_hash=$2 FOR UPDATE")
+        .bind::<SqlUuid,_>(owner.user_id).bind::<Text,_>(format!("{prefix}cfcd208495d565ef66e7dff9f98764da"))
+        .execute(&mut held).await.unwrap();
+    let batch = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        maintenance.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory),
+    )
+    .await
+    .expect("cleanup must skip the locked expired row")
+    .unwrap();
+    assert!(
+        batch.saturated,
+        "expired devices must participate in bounded catch-up"
+    );
+    assert_eq!(
+        count(&mut connection).await,
+        6,
+        "one batch reclaims exactly 256 expired devices without another login"
+    );
+    maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
+    assert_eq!(
+        count(&mut connection).await,
+        3,
+        "locked expired and both unexpired records survive"
+    );
+    held.batch_execute("COMMIT").await.unwrap();
+    maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
+    assert_eq!(
+        count(&mut connection).await,
+        2,
+        "next batch must reclaim the formerly locked expired record"
+    );
+    let retained = sql_query("SELECT count(*)::bigint AS count FROM user_mfa_remembered_devices WHERE user_id=$1 AND expires_at > now()")
+        .bind::<SqlUuid,_>(owner.user_id).get_result::<CountRow>(&mut connection).await.unwrap().count;
+    assert_eq!(retained, 2, "cleanup never shortens safety deadlines");
+}
+
+#[tokio::test]
+async fn expired_identity_approvals_are_reclaimed_but_live_single_use_fences_remain() {
+    let url = database_url().expect("real PostgreSQL fixture required");
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (_, mut connection) = fixture(&url).await;
+    let deployment = format!("approval-cleanup-{}", Uuid::now_v7());
+    sql_query("INSERT INTO controller_identity_approvals(approval_id,deployment_id,action,action_sha256,admin_user_id,token_hash,expires_at,consumed_at,created_at) SELECT uuidv7(),$1,'bind',repeat('a',64),uuidv7(),md5($1)||md5(i::text),CASE WHEN i<260 THEN now()-interval '1 day' ELSE now()+interval '1 day' END, CASE WHEN i%2=0 THEN now()-interval '2 days'+interval '1 minute' ELSE NULL END,now()-interval '2 days' FROM generate_series(0,261) i")
+        .bind::<Text,_>(&deployment).execute(&mut connection).await.unwrap();
+    let count = async |connection: &mut AsyncPgConnection| {
+        sql_query("SELECT count(*)::bigint AS count FROM controller_identity_approvals WHERE deployment_id=$1")
+            .bind::<Text,_>(&deployment).get_result::<CountRow>(connection).await.unwrap().count
+    };
+    let maintenance = SecurityStateMaintenanceRepository::new(create_pool(&url, 2).unwrap());
+    maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::ProtocolState)
+        .await
+        .unwrap();
+    assert_eq!(count(&mut connection).await, 262);
+    maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
+    assert_eq!(
+        count(&mut connection).await,
+        6,
+        "expired approval bodies have no remaining authorization use"
+    );
+    maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
+    assert_eq!(
+        count(&mut connection).await,
+        2,
+        "both live pending and live consumed approvals retain their original lifetime"
+    );
+    let retained=sql_query("SELECT count(*)::bigint AS count FROM controller_identity_approvals WHERE deployment_id=$1 AND expires_at>now()")
+        .bind::<Text,_>(&deployment).get_result::<CountRow>(&mut connection).await.unwrap().count;
+    assert_eq!(retained, 2);
+}

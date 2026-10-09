@@ -342,3 +342,85 @@ async fn retained_composite_fks_reject_cross_tenant_children_and_parent_mutation
     }
     connection.batch_execute("ROLLBACK").await.unwrap();
 }
+
+#[tokio::test]
+async fn remembered_device_compaction_preserves_facts_and_blocks_lossy_downgrade() {
+    let url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("isolated PostgreSQL required");
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("remembered_compaction_{}", Uuid::now_v7().simple());
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema},pg_catalog;"
+        ))
+        .await
+        .unwrap();
+    connection.batch_execute(r#"
+        CREATE TABLE users (id UUID NOT NULL, tenant_id UUID NOT NULL, PRIMARY KEY(id,tenant_id));
+        CREATE TABLE user_mfa_remembered_devices (
+            id UUID PRIMARY KEY DEFAULT uuidv7(), tenant_id UUID NOT NULL, user_id UUID NOT NULL,
+            token_hash VARCHAR(64) NOT NULL, user_agent_hash VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            CONSTRAINT fk_user_mfa_remembered_devices_user_tenant FOREIGN KEY(user_id,tenant_id) REFERENCES users(id,tenant_id));
+        CREATE UNIQUE INDEX ux_user_mfa_remembered_devices_tenant_token ON user_mfa_remembered_devices(tenant_id,token_hash);
+        CREATE INDEX ix_user_mfa_remembered_devices_tenant_user_active ON user_mfa_remembered_devices(tenant_id,user_id,expires_at);
+        CREATE FUNCTION nazo_oauth_cleanup_expired_security_state(boolean) RETURNS void LANGUAGE sql AS 'SELECT';
+        INSERT INTO users VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002');
+        INSERT INTO user_mfa_remembered_devices(tenant_id,user_id,token_hash,user_agent_hash,expires_at)
+        SELECT tenant_id,id,repeat('a',64),repeat('b',64),now()+interval '1 day' FROM users;
+    "#).await.unwrap();
+    #[derive(diesel::QueryableByName)]
+    struct Facts {
+        #[diesel(sql_type=diesel::sql_types::Jsonb)]
+        value: serde_json::Value,
+    }
+    let before = sql_query(
+        "SELECT to_jsonb(d)-'id'-'created_at' AS value FROM user_mfa_remembered_devices d",
+    )
+    .get_result::<Facts>(&mut connection)
+    .await
+    .unwrap()
+    .value;
+    let up = include_str!(
+        "../../../migrations/20261010000100_compact_remembered_device_retention/up.sql"
+    );
+    let down = include_str!(
+        "../../../migrations/20261010000100_compact_remembered_device_retention/down.sql"
+    );
+    connection.batch_execute(up).await.unwrap();
+    let after = sql_query("SELECT to_jsonb(d) AS value FROM user_mfa_remembered_devices d")
+        .get_result::<Facts>(&mut connection)
+        .await
+        .unwrap()
+        .value;
+    assert_eq!(
+        before, after,
+        "migration preserves every retained security fact and original expiry"
+    );
+    for statement in [
+        "INSERT INTO user_mfa_remembered_devices SELECT * FROM user_mfa_remembered_devices",
+        "INSERT INTO user_mfa_remembered_devices(tenant_id,user_id,token_hash,expires_at) VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001',repeat('c',64),now()+interval '1 day')",
+        down,
+    ] {
+        connection
+            .batch_execute("SAVEPOINT rejected")
+            .await
+            .unwrap();
+        assert!(
+            connection.batch_execute(statement).await.is_err(),
+            "uniqueness, tenant FK and populated downgrade remain fail-closed"
+        );
+        connection
+            .batch_execute("ROLLBACK TO SAVEPOINT rejected")
+            .await
+            .unwrap();
+    }
+    connection
+        .batch_execute("DELETE FROM user_mfa_remembered_devices")
+        .await
+        .unwrap();
+    connection.batch_execute(down).await.unwrap();
+    connection.batch_execute(up).await.unwrap();
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}

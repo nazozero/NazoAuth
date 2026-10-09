@@ -885,3 +885,51 @@ async fn slot_mutations_return_the_stored_rows_in_three_data_queries() {
         vec![revoked]
     );
 }
+
+#[tokio::test]
+async fn reclaimed_expired_approval_still_cannot_authorize_a_controller() {
+    let (url, repository) = isolated_repository("reclaimed")
+        .await
+        .expect("isolated PostgreSQL required");
+    let now = Utc::now();
+    let digest = "a".repeat(64);
+    let issued = repository
+        .issue_identity_approval(
+            "reclaimed",
+            ControllerIdentityAction::Bind,
+            &digest,
+            Uuid::now_v7(),
+            now - Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS + 1),
+        )
+        .await
+        .unwrap();
+    let attempt = async || {
+        repository
+            .commit_slot_creation(
+                &issued.token,
+                ControllerIdentityAction::Bind,
+                &digest,
+                slot_input("reclaimed", "must-not-exist", 31),
+                None,
+                now,
+            )
+            .await
+    };
+    assert!(matches!(
+        attempt().await,
+        Err(CommitWithApprovalError::Approval(
+            nazo_postgres::IdentityApprovalError::Expired
+        ))
+    ));
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    connection
+        .batch_execute("SELECT * FROM nazo_oauth_cleanup_expired_security_state(true)")
+        .await
+        .unwrap();
+    assert!(matches!(
+        attempt().await,
+        Err(CommitWithApprovalError::Approval(
+            nazo_postgres::IdentityApprovalError::UnknownToken
+        ))
+    ));
+}

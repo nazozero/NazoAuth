@@ -9,8 +9,8 @@ This inventory classifies all 58 tables in the merged-source catalog and the act
 |责任|模型|保留原因 / 回收边界|源码|
 |---|---|---|---|
 |身份与组织的权威事实|`tenants`, `realms`, `organizations`, `users`, `external_identity_links`, `oauth_subject_bindings`, `user_client_grants`, `oauth_clients`, `client_access_requests`|长期 PG；按业务变更或所有者删除，不因 TTL 自动丢失。|`crates/persistence-postgres/src/repositories/authorization.rs`|
-|长期凭据与管理授权|`user_totp_credentials`, `user_mfa_backup_codes`, `user_mfa_remembered_devices`, `user_passkey_credentials`, `scim_tokens`|PG；MFA 代际、防重放消费、凭据撤销及用户/租户关系。remembered expiry 在使用时校验，不能绕开凭据代际。|`crates/persistence-postgres/src/repositories/mfa.rs`|
-|控制与恢复工作流|`controller_registry_slots`, `controller_identity_approvals`, `controller_recovery_roots`, `controller_recovery_root_key_history`, `controller_recovery_challenges`, `admin_provision_receipts`, `recovery_invalidations`|PG；批准、已消费挑战、恢复结果与管理变更存在原子/重试契约。带期限不等于缓存。|`crates/persistence-postgres/src/repositories/recovery_root.rs`|
+|长期凭据与管理授权|`user_totp_credentials`, `user_mfa_backup_codes`, `user_mfa_remembered_devices`, `user_passkey_credentials`, `scim_tokens`|PG；MFA 代际、防重放消费、凭据撤销及用户/租户关系。remembered expiry 在使用时校验，不能绕开凭据代际；过期记录由小时历史回收，不再依赖该用户再次登录。记录以 tenant/token digest 为身份，不另存无消费者 UUID/创建时间。|`crates/persistence-postgres/src/repositories/mfa.rs`|
+|控制与恢复工作流|`controller_registry_slots`, `controller_identity_approvals`, `controller_recovery_roots`, `controller_recovery_root_key_history`, `controller_recovery_challenges`, `admin_provision_receipts`, `recovery_invalidations`|PG；审批消费与管理变更共同提交；审批原十分钟到期后按小时回收，独立 Required 审计不受影响。恢复挑战另有分配 nonce 防重放及已完成回执重试契约，不能按审批 TTL 一并删除。|`crates/persistence-postgres/src/repositories/recovery_root.rs`|
 |租户、配置、密钥与运行时事实|`tenant_directory_control_operations`, `tenant_resource_states`, `tenant_resource_control_operations`, `tenant_resource_bindings`, `tenant_runtime_bindings`, `tenant_runtime_directory_state`, `tenant_signing_keysets`, `runtime_module_desired_states`, `runtime_module_instance_states`, `runtime_module_state_events`|PG；版本、控制操作回执与签名密钥跨重启保留。失活/过期判定不由清理触发。|`crates/persistence-postgres/src/repositories/runtime_modules.rs`|
 |信任配置与凭据数据集|`openid4vc_trust_policies`, `openid4vc_trust_policy_clients`, `openid4vci_credential_datasets`, `openid4vci_credential_dataset_events`, `oauth_client_mtls_trust_anchor_events`, `oauth_client_mtls_trust_anchor_requests`|PG；配置/审批/事件是权威事实，依租户和版本约束。|`crates/persistence-postgres/src/repositories/openid4vc.rs`|
 |有限保留的事务安全凭据|`oauth_refresh_contracts`, `oauth_refresh_families`, `oauth_refresh_spent_tokens`, `oauth_token_issuances`, `access_token_revocations`|PG 例外；保留窗口可能短，但与原子发行、刷新、撤销、重放处理同事务。不是长期业务档案，也不是可丢缓存。不得迁移消费标记单独跨库提交。|`crates/persistence-postgres/src/repositories/token_issuance.rs`|
@@ -45,8 +45,33 @@ Model placement is not changed merely to satisfy a storage label. The existing i
 
 ## Physical reclamation cadence
 
-No worker writes an “expired” status to make a credential invalid. Every use must enforce its timestamp and security predicates even when the row still exists. The single maintenance worker selects `ProtocolState` on its normal 60-second interval and `IncludingHistory` initially and after an hour has elapsed since a completed history cycle. The latter additionally reclaims SCIM audit history only after its unchanged 180-day retention. Both retain the existing bounded batches, database cutoff, lock rules, cancellation behavior and catch-up budget. Failures or incomplete catch-up do not defer unfinished history for an hour.
+No worker writes an “expired” status to make a credential invalid. Every use must enforce its timestamp and security predicates even when the row still exists. The single maintenance worker selects `ProtocolState` on its normal 60-second interval and `IncludingHistory` initially and after an hour has elapsed since a completed history cycle. The latter additionally reclaims SCIM audit history only after its unchanged 180-day retention, expired MFA remembered devices, and expired controller identity approvals. Both retain the existing bounded batches, database cutoff, lock rules, cancellation behavior and catch-up budget. Failures or incomplete catch-up do not defer unfinished history for an hour.
 
 The earlier 10-second interval experiment is not used. Conversely, a one-hour interval is not applied to high-rate protocol receipts: it would increase their expired resident population without shortening any safety obligation. Required evidence is never discarded by a timer before acknowledgement. Optional/Disabled audit exports are not promised bounded disk use during an indefinite receiver outage.
 
 TTL moves physical expiry into Valkey; it does not remove the logical live-state cost or make asynchronous replication durable. Local memory is appropriate for request values and reconstructible projections, not a replacement for shared one-use or revocation authority. At rate λ and necessary retention T, approximately λ×T records can be legitimate live state. Expired eligible backlog, retained live records, dead tuples waiting for vacuum and reusable physical high-water space must be measured separately.
+
+
+## Compact retention migration
+
+`20261010000100_compact_remembered_device_retention` removes only the unused
+remembered-device UUID and creation timestamp, promotes the existing tenant/token
+unique key, and adds an expiry index for the global sweep. The number of indexes
+is not reduced: the unused UUID index is replaced by the useful expiry index.
+Existing heap tuples are not rewritten merely by dropping columns; no immediate
+filesystem shrink is promised. The reverse migration refuses a populated table
+rather than inventing historical UUIDs/timestamps or deleting valid credentials.
+Apply the schema and matching application together.
+
+`20261010000200_reclaim_expired_identity_approvals` gives expired approval bodies
+an hourly reclamation path. Both unused and consumed approvals remain through their
+original expiry. A reclaimed token returns the existing unknown-token rejection;
+before reclamation it may return expired or replayed. Neither path authorizes a
+mutation. This is not a new audit-retention policy: independent Required events and
+signed checkpoints retain their original lifecycle.
+
+256 is a per-category transaction batch limit, not an hourly quota. Saturated
+batches continue inside the existing 30-second catch-up budget; unfinished history
+is retried after elapsed work time rather than waiting a fresh hour. Locked rows
+are skipped and remain eligible for later passes. These limits do not by themselves
+prove the collector keeps pace at every workload.

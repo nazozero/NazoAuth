@@ -111,13 +111,11 @@ diesel::table! {
 }
 
 diesel::table! {
-    user_mfa_remembered_devices (id) {
-        id -> Uuid,
+    user_mfa_remembered_devices (tenant_id, token_hash) {
         tenant_id -> Uuid,
         user_id -> Uuid,
         token_hash -> Varchar,
         user_agent_hash -> Nullable<Varchar>,
-        created_at -> Timestamptz,
         expires_at -> Timestamptz,
     }
 }

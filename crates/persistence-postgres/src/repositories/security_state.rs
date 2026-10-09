@@ -103,6 +103,10 @@ struct GenericCleanupCounts {
     deleted_backchannel_logout_deliveries: i32,
     #[diesel(sql_type = sql_types::Integer)]
     deleted_scim_security_events: i32,
+    #[diesel(sql_type = sql_types::Integer)]
+    deleted_remembered_mfa_devices: i32,
+    #[diesel(sql_type = sql_types::Integer)]
+    deleted_identity_approvals: i32,
 }
 
 #[derive(QueryableByName)]
@@ -700,6 +704,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                     || i64::from(generic.deleted_backchannel_logout_deliveries)
                         >= CLEANUP_BATCH_LIMIT
                     || i64::from(generic.deleted_scim_security_events) >= CLEANUP_BATCH_LIMIT
+                    || i64::from(generic.deleted_remembered_mfa_devices) >= CLEANUP_BATCH_LIMIT
+                    || i64::from(generic.deleted_identity_approvals) >= CLEANUP_BATCH_LIMIT
                     || presentations >= CLEANUP_BATCH_LIMIT as u64
                     || credentials.saturated;
                 Ok(CleanupBatchResult {
@@ -710,6 +716,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                     refresh_contracts,
                     revocations: generic.deleted_access_token_revocations.max(0) as u64,
                     scim_audit_events: generic.deleted_scim_audit_events.max(0) as u64,
+                    remembered_mfa_devices: generic.deleted_remembered_mfa_devices.max(0) as u64,
+                    identity_approvals: generic.deleted_identity_approvals.max(0) as u64,
                     logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
                     scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
                     presentations,

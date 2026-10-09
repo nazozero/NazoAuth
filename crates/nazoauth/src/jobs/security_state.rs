@@ -45,6 +45,8 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             + counts.spent_refresh_proofs
                             + counts.refresh_contracts
                             + counts.revocations
+                            + counts.remembered_mfa_devices
+                            + counts.identity_approvals
                             + counts.scim_audit_events
                             + counts.logout_deliveries
                             + counts.scim_security_events
@@ -64,6 +66,8 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             refresh_contracts = counts.refresh_contracts,
                             revocations = counts.revocations,
                             scim_audit_events = counts.scim_audit_events,
+                            remembered_mfa_devices = counts.remembered_mfa_devices,
+                            identity_approvals = counts.identity_approvals,
                             logout_deliveries = counts.logout_deliveries,
                             scim_security_events = counts.scim_security_events,
                             presentations = counts.presentations,

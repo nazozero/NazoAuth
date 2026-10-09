@@ -77,7 +77,7 @@ async fn snapshot(
         'credential',(SELECT to_jsonb(t) FROM user_totp_credentials t WHERE tenant_id=$1 AND user_id=$2), \
         'enabled',(SELECT mfa_enabled FROM users WHERE tenant_id=$1 AND id=$2), \
         'backups',(SELECT COALESCE(jsonb_agg(to_jsonb(b) ORDER BY id),'[]'::jsonb) FROM user_mfa_backup_codes b WHERE tenant_id=$1 AND user_id=$2), \
-        'remembered',(SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY id),'[]'::jsonb) FROM user_mfa_remembered_devices d WHERE tenant_id=$1 AND user_id=$2)) AS value")
+        'remembered',(SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY token_hash),'[]'::jsonb) FROM user_mfa_remembered_devices d WHERE tenant_id=$1 AND user_id=$2)) AS value")
         .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
         .bind::<SqlUuid, _>(user.as_uuid())
         .get_result::<Snapshot>(&mut connection).await.unwrap().value

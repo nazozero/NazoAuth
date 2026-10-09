@@ -532,7 +532,7 @@ pub async fn token_exchange(
             acr: None,
             userinfo_claim_requests: (Vec::new()).into(),
             id_token_claim_requests: (Vec::new()).into(),
-            refresh_id_token_sid: None,
+
             include_refresh: false,
             refresh_token_policy: RefreshTokenPolicy::NoRefresh,
             dpop_jkt,
