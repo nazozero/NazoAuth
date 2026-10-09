@@ -1,7 +1,7 @@
 use crate::rows::identity::{
     AuthenticationIdentityRow, ExternalIdentityLinkRow, ExternalIdentityLinkSummaryRow,
     PasskeyCredentialRow, PasskeyCredentialSummaryRow, PrincipalRow, PublicAccountRow,
-    SubjectClaimsRow, UserRow,
+    SubjectClaimsRow,
 };
 use nazo_identity::{
     AccountIdentity, AuthenticationIdentity, IdentityModelError, LoginIdentity, OrganizationId,
@@ -16,25 +16,6 @@ impl From<IdentityModelError> for ConversionError {
         Self(error.to_string())
     }
 }
-impl TryFrom<UserRow> for Principal {
-    type Error = ConversionError;
-    fn try_from(row: UserRow) -> Result<Self, Self::Error> {
-        principal(&row)
-    }
-}
-
-fn principal(row: &UserRow) -> Result<Principal, ConversionError> {
-    principal_parts(
-        row.id,
-        row.tenant_id,
-        row.realm_id,
-        row.organization_id,
-        &row.role,
-        row.admin_level,
-        row.is_active,
-    )
-}
-
 fn principal_parts(
     id: uuid::Uuid,
     tenant_id: uuid::Uuid,
@@ -77,15 +58,6 @@ pub(crate) fn principal_row(row: PrincipalRow) -> Result<Principal, ConversionEr
         row.admin_level,
         row.is_active,
     )
-}
-
-fn account(row: &UserRow) -> AccountIdentity {
-    AccountIdentity {
-        username: row.username.clone(),
-        email: row.email.clone(),
-        email_verified: row.email_verified,
-        mfa_enabled: row.mfa_enabled,
-    }
 }
 
 pub(crate) fn authentication_identity(
@@ -212,44 +184,6 @@ pub(crate) fn active_subject_claims(
         phone_number_verified: row.phone_number_verified,
         updated_at: row.updated_at.timestamp(),
     })
-}
-
-impl TryFrom<UserRow> for PublicAccount {
-    type Error = ConversionError;
-
-    fn try_from(row: UserRow) -> Result<Self, Self::Error> {
-        let principal = principal(&row)?;
-        Ok(Self {
-            principal,
-            account: account(&row),
-            profile: UserProfile {
-                display_name: row.display_name,
-                avatar_url: row.avatar_url,
-                given_name: row.given_name,
-                family_name: row.family_name,
-                middle_name: row.middle_name,
-                nickname: row.nickname,
-                profile_url: row.profile_url,
-                website_url: row.website_url,
-                gender: row.gender,
-                birthdate: row.birthdate,
-                zoneinfo: row.zoneinfo,
-                locale: row.locale,
-                address: PostalAddress {
-                    formatted: row.address_formatted,
-                    street_address: row.address_street_address,
-                    locality: row.address_locality,
-                    region: row.address_region,
-                    postal_code: row.address_postal_code,
-                    country: row.address_country,
-                },
-                phone_number: row.phone_number,
-                phone_number_verified: row.phone_number_verified,
-            },
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-        })
-    }
 }
 
 pub(crate) fn passkey(

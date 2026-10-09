@@ -14,6 +14,7 @@ pub fn valid_authentication_metadata(
     auth_time > 0
         && auth_time <= now.saturating_add(30)
         && !amr.is_empty()
+        && amr.iter().all(|method| !method.trim().is_empty())
         && oidc_sid.is_some_and(|sid| !sid.trim().is_empty())
 }
 

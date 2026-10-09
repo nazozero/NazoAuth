@@ -2,15 +2,14 @@ use super::*;
 use chrono::Utc;
 use uuid::Uuid;
 
-fn user_row() -> UserRow {
-    UserRow {
+fn user_row() -> PublicAccountRow {
+    PublicAccountRow {
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         realm_id: Uuid::now_v7(),
         organization_id: Uuid::now_v7(),
         username: "user".into(),
         email: "user@example.test".into(),
-        password_hash: "hash".into(),
         is_active: true,
         mfa_enabled: false,
         created_at: Utc::now(),
@@ -41,7 +40,7 @@ fn user_row() -> UserRow {
     }
 }
 
-fn authentication_row(row: UserRow) -> AuthenticationIdentityRow {
+fn authentication_row(row: PublicAccountRow) -> AuthenticationIdentityRow {
     AuthenticationIdentityRow {
         id: row.id,
         tenant_id: row.tenant_id,
@@ -49,7 +48,7 @@ fn authentication_row(row: UserRow) -> AuthenticationIdentityRow {
         organization_id: row.organization_id,
         username: row.username,
         email: row.email,
-        password_hash: row.password_hash,
+        password_hash: "hash".into(),
         is_active: row.is_active,
         mfa_enabled: row.mfa_enabled,
         email_verified: row.email_verified,
@@ -58,7 +57,7 @@ fn authentication_row(row: UserRow) -> AuthenticationIdentityRow {
     }
 }
 
-fn subject_claims_row(row: UserRow) -> SubjectClaimsRow {
+fn subject_claims_row(row: PublicAccountRow) -> SubjectClaimsRow {
     SubjectClaimsRow {
         id: row.id,
         tenant_id: row.tenant_id,
@@ -111,10 +110,10 @@ fn subject_claims_uses_full_persisted_user_invariant() {
 
 #[test]
 fn persisted_blank_password_hash_is_rejected() {
-    let mut row = user_row();
+    let mut row = authentication_row(user_row());
     row.password_hash = "   ".to_owned();
 
-    let error = authentication_identity(authentication_row(row)).unwrap_err();
+    let error = authentication_identity(row).unwrap_err();
 
     assert_eq!(error.0, "password hash must not be blank");
 }

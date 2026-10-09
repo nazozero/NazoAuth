@@ -9,7 +9,7 @@
 //! ```
 //!
 //! ```compile_fail
-//! use nazo_postgres::rows::identity::UserRow;
+//! use nazo_postgres::rows::identity::PublicAccountRow;
 //! ```
 
 mod convert;

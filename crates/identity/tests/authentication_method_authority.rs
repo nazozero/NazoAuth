@@ -1,60 +1,64 @@
-use nazo_identity::{AuthMethod, AuthenticationContext, IdentityModelError};
-use serde_json::json;
+use nazo_identity::{
+    UserId,
+    session::{SessionRecord, recent_interactive_mfa, valid_authentication_metadata},
+};
 
 #[test]
-fn local_authentication_serializes_only_one_method_representation() {
-    let context = AuthenticationContext::new(
+fn session_amr_preserves_unknown_evidence_without_inventing_federation() {
+    let mut session = SessionRecord::new(
+        UserId::new(uuid::Uuid::now_v7()).unwrap(),
         1_700_000_000,
-        [
-            AuthMethod::Password,
-            AuthMethod::RememberedMfa,
-            AuthMethod::Password,
-        ],
-    )
-    .unwrap();
-    let encoded = serde_json::to_value(&context).unwrap();
-
-    assert_eq!(context.amr(), ["password", "remembered_mfa", "mfa"]);
-    assert!(context.has_mfa());
-    assert_eq!(encoded["amr"], json!(context.amr()));
-    assert!(encoded.get("methods").is_none());
-    assert_eq!(encoded.as_object().unwrap().len(), 3);
+        vec!["pwd".into(), "hwk".into(), "vendor:custom".into()],
+        false,
+        Some("sid-original".into()),
+    );
+    session.add_amr("pwd");
+    assert_eq!(session.amr(), ["pwd", "hwk", "vendor:custom"]);
+    assert!(!recent_interactive_mfa(
+        session.auth_time(),
+        session.amr(),
+        1_700_000_001
+    ));
+    assert_eq!(session.oidc_sid(), Some("sid-original"));
+    assert!(valid_authentication_metadata(
+        session.auth_time(),
+        session.amr(),
+        session.oidc_sid(),
+        1_700_000_001
+    ));
 }
 
 #[test]
-fn persisted_amr_preserves_unknown_values_without_inventing_federation() {
-    let context = AuthenticationContext::from_amr(
-        1_700_000_000,
-        ["pwd", "hwk", "vendor:custom", "pwd"],
-        "sid-original",
-        1_700_000_001,
-    )
-    .unwrap();
-
-    assert_eq!(context.amr(), ["pwd", "hwk", "vendor:custom"]);
-    assert!(!context.has_mfa());
-    assert_eq!(
-        serde_json::to_value(&context).unwrap(),
-        json!({
-            "auth_time": 1_700_000_000,
-            "oidc_sid": "sid-original",
-            "amr": ["pwd", "hwk", "vendor:custom"],
-        })
-    );
-}
-
-#[test]
-fn single_method_authority_keeps_existing_metadata_validation() {
-    assert_eq!(
-        AuthenticationContext::from_amr(1_000, ["", " "], "sid", 1_001),
-        Err(IdentityModelError::EmptyAuthenticationMethods)
-    );
-    assert_eq!(
-        AuthenticationContext::from_amr(1_032, ["pwd"], "sid", 1_001),
-        Err(IdentityModelError::FutureAuthenticationTime)
-    );
-    assert_eq!(
-        AuthenticationContext::new(1_000, std::iter::empty()),
-        Err(IdentityModelError::EmptyAuthenticationMethods)
-    );
+fn real_session_metadata_rejects_empty_evidence_and_invalid_time_or_sid() {
+    for amr in [
+        vec![],
+        vec!["".into()],
+        vec![" ".into()],
+        vec!["pwd".into(), "".into()],
+    ] {
+        assert!(!valid_authentication_metadata(
+            1_000,
+            &amr,
+            Some("sid"),
+            1_001
+        ));
+    }
+    assert!(!valid_authentication_metadata(
+        0,
+        &["pwd".into()],
+        Some("sid"),
+        1_001
+    ));
+    assert!(!valid_authentication_metadata(
+        1_032,
+        &["pwd".into()],
+        Some("sid"),
+        1_001
+    ));
+    assert!(!valid_authentication_metadata(
+        1_000,
+        &["pwd".into()],
+        Some(" "),
+        1_001
+    ));
 }
