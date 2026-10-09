@@ -1,0 +1,37 @@
+{
+  "window": {
+    "window_start_s": 1791560897.713,
+    "window_end_s": 1791561272.713,
+    "measure_started_exact": 223943,
+    "measure_completed_exact": 223943,
+    "measure_dropped_exact": 1057,
+    "measure_scheduled_observed": 225000,
+    "measure_drop_fraction": 0.004698,
+    "measure_outcomes": {
+      "success": 223943
+    },
+    "measure_outcome_sum": 223943,
+    "drops_pre_window": 162,
+    "drops_post_window": 0,
+    "drops_pending_unclassified": 0,
+    "pending_drops_overflow": false,
+    "valid": true,
+    "problems": [],
+    "rational_planned_arrivals": 225000,
+    "schedule_delta_vs_rational": 0,
+    "observed_schedule_rate": 600.0,
+    "cohort_source": "k6_stream_exact",
+    "late_vu_fraction": 0.0
+  },
+  "drop_buckets_30s_including_pre_window": {
+    "-30": 162,
+    "0": 335,
+    "30": 67,
+    "60": 237,
+    "90": 136,
+    "120": 198,
+    "150": 75,
+    "300": 9
+  },
+  "note": "Timestamp buckets include pre-window drops and boundary seconds; exact acceptance uses measure cohort."
+}

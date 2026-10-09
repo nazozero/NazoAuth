@@ -1,0 +1,164 @@
+[
+  {
+    "from_s": 0,
+    "to_s": 120,
+    "samples": [
+      {
+        "ts": 1791560941.521324,
+        "wal_wait_connections": 1,
+        "oldest_tx_s": 0.000949
+      },
+      {
+        "ts": 1791560951.529436,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.00205
+      },
+      {
+        "ts": 1791560961.54233,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.001904
+      },
+      {
+        "ts": 1791560971.563825,
+        "wal_wait_connections": 31,
+        "oldest_tx_s": 0.006471
+      },
+      {
+        "ts": 1791560981.569894,
+        "wal_wait_connections": 5,
+        "oldest_tx_s": 0.004327
+      },
+      {
+        "ts": 1791560991.541821,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.003488
+      },
+      {
+        "ts": 1791561001.561732,
+        "wal_wait_connections": 7,
+        "oldest_tx_s": 0.005165
+      },
+      {
+        "ts": 1791561011.567486,
+        "wal_wait_connections": 11,
+        "oldest_tx_s": 0.007464
+      },
+      {
+        "ts": 1791561021.616217,
+        "wal_wait_connections": 5,
+        "oldest_tx_s": 0.004522
+      },
+      {
+        "ts": 1791561031.635831,
+        "wal_wait_connections": 0,
+        "oldest_tx_s": 0.002899
+      },
+      {
+        "ts": 1791561041.649219,
+        "wal_wait_connections": 1,
+        "oldest_tx_s": 0.002691
+      },
+      {
+        "ts": 1791561051.644524,
+        "wal_wait_connections": 0,
+        "oldest_tx_s": 0.002239
+      }
+    ]
+  },
+  {
+    "from_s": 120,
+    "to_s": 300,
+    "samples": [
+      {
+        "ts": 1791561061.668331,
+        "wal_wait_connections": 1,
+        "oldest_tx_s": 0.002779
+      },
+      {
+        "ts": 1791561071.637758,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.002493
+      },
+      {
+        "ts": 1791561081.624495,
+        "wal_wait_connections": 5,
+        "oldest_tx_s": 0.002439
+      },
+      {
+        "ts": 1791561091.644378,
+        "wal_wait_connections": 3,
+        "oldest_tx_s": 0.002735
+      },
+      {
+        "ts": 1791561101.678025,
+        "wal_wait_connections": 3,
+        "oldest_tx_s": 0.002908
+      },
+      {
+        "ts": 1791561111.621363,
+        "wal_wait_connections": 4,
+        "oldest_tx_s": 0.002988
+      },
+      {
+        "ts": 1791561121.639595,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.002725
+      },
+      {
+        "ts": 1791561131.617137,
+        "wal_wait_connections": 3,
+        "oldest_tx_s": 0.002371
+      },
+      {
+        "ts": 1791561141.631703,
+        "wal_wait_connections": 0,
+        "oldest_tx_s": 0.001774
+      },
+      {
+        "ts": 1791561151.70884,
+        "wal_wait_connections": 6,
+        "oldest_tx_s": 0.004032
+      },
+      {
+        "ts": 1791561161.660434,
+        "wal_wait_connections": 1,
+        "oldest_tx_s": 0.003136
+      },
+      {
+        "ts": 1791561171.601906,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.002182
+      },
+      {
+        "ts": 1791561181.627191,
+        "wal_wait_connections": 4,
+        "oldest_tx_s": 0.004137
+      },
+      {
+        "ts": 1791561191.621447,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.003385
+      },
+      {
+        "ts": 1791561201.624351,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.00108
+      },
+      {
+        "ts": 1791561211.676045,
+        "wal_wait_connections": 3,
+        "oldest_tx_s": 0.002219
+      },
+      {
+        "ts": 1791561221.662369,
+        "wal_wait_connections": 9,
+        "oldest_tx_s": 0.003676
+      },
+      {
+        "ts": 1791561231.645647,
+        "wal_wait_connections": 2,
+        "oldest_tx_s": 0.000896
+      }
+    ]
+  }
+]

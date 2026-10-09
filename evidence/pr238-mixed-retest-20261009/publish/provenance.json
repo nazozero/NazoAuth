@@ -1,0 +1,20 @@
+{
+  "checkout_head": "7fec5ac1513e4c421ee9c1d89d058a1174eea375",
+  "tested_source": "e8242c44aab842e1828b471413905f74b4132325",
+  "binary_sha256": "54751a8fe9a7edc5cbac9d4826f8367d8a1a91d5044104b778f138de4e242a4b",
+  "only_request_changes": {
+    "status": {
+      "before": "AUTHORIZED_SAME_CANDIDATE_REVERIFICATION",
+      "after": "USER_REQUESTED_IDENTICAL_MIXED_RETEST"
+    },
+    "name": {
+      "before": "pr238-reverify-mix300-20261009",
+      "after": "pr238-mixed-retest-20261009"
+    },
+    "replicate": {
+      "before": 2,
+      "after": 3
+    }
+  },
+  "previous_evidence": "/workspace/evidence/pr238-reverify-20261009"
+}

@@ -1,0 +1,11 @@
+{
+  "source_sha": "e8242c44aab842e1828b471413905f74b4132325",
+  "binary_sha256": "54751a8fe9a7edc5cbac9d4826f8367d8a1a91d5044104b778f138de4e242a4b",
+  "images": {
+    "app": "sha256:80ebcfdf2e97cb5c05bc4fc53845691e7eb8f8be7cf15e75916154728ecad82d",
+    "receiver": "sha256:818338b1cdb264a49d7df19b2c55b72df4b54264b50fcf44e7ddfe358bc4b210",
+    "keyset": "sha256:a7abf7f55519fe2474bcf04c72d10bbe8ce065bd67329455e0be0275dadf83ee",
+    "load": "sha256:f25de2323ea071dcb0a6ca55d8215a879541588b069a59cb25fbfffc3311b1b2",
+    "controller": "sha256:81f3720043ebd9a18b85f6e27af9c17abb0c733b316d5f0bf30f146470d62692"
+  }
+}

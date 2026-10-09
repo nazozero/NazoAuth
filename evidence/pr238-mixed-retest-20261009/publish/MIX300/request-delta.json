@@ -1,0 +1,14 @@
+{
+  "status": {
+    "before": "AUTHORIZED_SAME_CANDIDATE_REVERIFICATION",
+    "after": "USER_REQUESTED_IDENTICAL_MIXED_RETEST"
+  },
+  "name": {
+    "before": "pr238-reverify-mix300-20261009",
+    "after": "pr238-mixed-retest-20261009"
+  },
+  "replicate": {
+    "before": 2,
+    "after": 3
+  }
+}
