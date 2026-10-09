@@ -1,0 +1,9 @@
+{
+  "ts": 1791516881.5308368,
+  "scenario": "cap_refresh_token",
+  "profile": "capacity",
+  "run_id": "r230-repair-bread04-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791516881.528,
+  "state_ready_run_id": "r230-repair-bread04-20261009"
+}

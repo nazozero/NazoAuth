@@ -1,0 +1,27 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+error[E0616]: field `pool` of struct `OAuthClientRepository` is private
+  --> crates/persistence-postgres/src/repositories/clients/query.rs:53:14
+   |
+53 |         self.pool
+   |              ^^^^ private field
+
+error[E0616]: field `pool` of struct `OAuthClientRepository` is private
+  --> crates/persistence-postgres/src/repositories/clients/query.rs:77:14
+   |
+77 |         self.pool
+   |              ^^^^ private field
+
+error[E0616]: field `pool` of struct `OAuthClientRepository` is private
+   --> crates/persistence-postgres/src/repositories/clients/query.rs:236:14
+    |
+236 |         self.pool
+    |              ^^^^ private field
+
+error[E0616]: field `pool` of struct `OAuthClientRepository` is private
+   --> crates/persistence-postgres/src/repositories/clients/query.rs:288:14
+    |
+288 |         self.pool
+    |              ^^^^ private field
+
+For more information about this error, try `rustc --explain E0616`.
+error: could not compile `nazo-postgres` (lib) due to 4 previous errors

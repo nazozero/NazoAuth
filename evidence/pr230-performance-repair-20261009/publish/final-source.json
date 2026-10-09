@@ -1,0 +1,9 @@
+{
+  "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+  "baseline_sha": "5005b39182f42c53537ed45ce21a72db7db92af5",
+  "baseline_underlying_source": "3da0734de491a380b315fc2fb2827f4043c04823",
+  "candidate_binary_sha256": "1511cd33e1f3ea8586fce9e29109e8107048e9e9ef5b8b114155fbe60f873fd7",
+  "baseline_binary_sha256": "7b199250bb8fb82f8fee2b084d465081b9ddd8532c703f8216a2776ebebaa35d",
+  "tracked_tree_clean": true,
+  "diagnostic_overlay_removed": true
+}

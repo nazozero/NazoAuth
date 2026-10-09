@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--locked", "-p", "nazo-postgres", "--test", "read_connection_ownership", "--", "--nocapture"], "exit": 0, "seconds": 30.35821189498529}

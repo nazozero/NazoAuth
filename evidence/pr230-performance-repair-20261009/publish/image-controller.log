@@ -1,0 +1,58 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load remote build context
+#1 DONE 0.0s
+
+#2 copy /context /
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/nazoauth-perf-keyset:20261009
+#3 DONE 0.0s
+
+#4 [1/2] FROM docker.io/library/nazoauth-perf-keyset:20261009@sha256:2fd9f6f3b1a215a9bc3eb01fd32added19ce0db5fb4e00aa4e0736d6bcc1a1af
+#4 resolve docker.io/library/nazoauth-perf-keyset:20261009@sha256:2fd9f6f3b1a215a9bc3eb01fd32added19ce0db5fb4e00aa4e0736d6bcc1a1af 0.0s done
+#4 DONE 0.1s
+
+#5 [2/2] RUN apk add --no-cache gcc musl-dev git docker-cli docker-cli-compose
+#5 3.575 ( 1/26) Installing docker-cli (29.8.2-r0)
+#5 5.487 ( 2/26) Installing docker-cli-compose (5.1.4-r1)
+#5 7.696 ( 3/26) Installing libgcc (15.2.0-r5)
+#5 8.004 ( 4/26) Installing jansson (2.15.0-r0)
+#5 8.257 ( 5/26) Installing libstdc++ (15.2.0-r5)
+#5 8.645 ( 6/26) Installing binutils (2.45.1-r1)
+#5 9.389 ( 7/26) Installing libgcc-static (15.2.0-r5)
+#5 10.01 ( 8/26) Installing libgomp (15.2.0-r5)
+#5 11.59 ( 9/26) Installing libatomic (15.2.0-r5)
+#5 11.84 (10/26) Installing gmp (6.3.0-r4)
+#5 12.16 (11/26) Installing isl26 (0.26-r2)
+#5 12.56 (12/26) Installing mpfr4 (4.2.2-r0)
+#5 12.86 (13/26) Installing mpc1 (1.3.1-r1)
+#5 13.17 (14/26) Installing gcc (15.2.0-r5)
+#5 63.88 (15/26) Installing brotli-libs (1.2.0-r1)
+#5 64.60 (16/26) Installing c-ares (1.34.8-r0)
+#5 64.98 (17/26) Installing libunistring (1.4.2-r0)
+#5 66.32 (18/26) Installing libidn2 (2.3.8-r0)
+#5 66.69 (19/26) Installing nghttp2-libs (1.70.0-r0)
+#5 67.01 (20/26) Installing libpsl (0.21.5-r3)
+#5 67.33 (21/26) Installing libcurl (8.22.0-r0)
+#5 68.00 (22/26) Installing libexpat (2.8.5-r0)
+#5 68.32 (23/26) Installing pcre2 (10.49-r0)
+#5 68.96 (24/26) Installing git (2.54.0-r0)
+#5 74.38 (25/26) Installing git-init-template (2.54.0-r0)
+#5 74.66 (26/26) Installing musl-dev (1.2.6-r2)
+#5 80.53 Executing busybox-1.37.0-r31.trigger
+#5 80.55 OK: 277.2 MiB in 57 packages
+#5 DONE 81.0s
+
+#6 exporting to image
+#6 exporting layers
+#6 exporting layers 13.0s done
+#6 exporting manifest sha256:fbb5a22acb5b5e7ba8af7c1550b3b816118d9908063d4055af52717f2b72a5d9 0.0s done
+#6 exporting config sha256:e035adba139a4f8cd5bd5d8c82b77b35bb86b5b89110133e6e59635f911ffdce 0.0s done
+#6 exporting attestation manifest sha256:dbc5af82fb7f3019625bec8599185cd4cd3246958316f177887ac7889a47212b 0.0s done
+#6 exporting manifest list sha256:3a9c07abd2c2d64c8ec20037abfc8ac424a5e82043ab7cf53827959da01e33f7 0.0s done
+#6 naming to docker.io/library/nazoauth-perf-controller:20261009
+#6 naming to docker.io/library/nazoauth-perf-controller:20261009 done
+#6 unpacking to docker.io/library/nazoauth-perf-controller:20261009
+#6 unpacking to docker.io/library/nazoauth-perf-controller:20261009 1.3s done
+#6 DONE 14.4s

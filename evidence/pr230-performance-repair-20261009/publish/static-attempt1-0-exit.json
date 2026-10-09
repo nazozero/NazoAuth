@@ -1,0 +1,1 @@
+{"command": ["docker", "exec", "-w", "/src", "nazoauth-perf-controller-20261009", "python", "scripts/verify_static_contracts.py", "--check"], "exit": 0, "seconds": 6.416013101115823}

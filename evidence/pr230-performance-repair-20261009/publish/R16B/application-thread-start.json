@@ -1,0 +1,315 @@
+{
+  "tasks": [
+    {
+      "pid": 1,
+      "tid": 1,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "nazoauth",
+      "starttime_ticks": 212728667
+    },
+    {
+      "pid": 1,
+      "tid": 7,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 8,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 9,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 10,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 11,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 12,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 13,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 14,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 15,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 16,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 17,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 18,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 20,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 21,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 22,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728703
+    },
+    {
+      "pid": 1,
+      "tid": 25,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 212728709
+    },
+    {
+      "pid": 1,
+      "tid": 34,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 35,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 36,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 37,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 38,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 39,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 40,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 41,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 42,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 43,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 44,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 45,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 46,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 47,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 48,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 49,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729140
+    },
+    {
+      "pid": 1,
+      "tid": 50,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111-126",
+      "name": "actix-server",
+      "starttime_ticks": 212729158
+    }
+  ],
+  "complete": true,
+  "read_errors": [],
+  "confirmed_gone": [],
+  "collector_exit": 0,
+  "round_trip_ms": 94.3612
+}

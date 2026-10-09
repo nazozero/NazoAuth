@@ -1,0 +1,1087 @@
+{
+  "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791516592.268716,
+      "container": "sis-sampler-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516592.2833946,
+      "container": "sis-proc-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516609.6218321,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516609.69204,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516609.7630334,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516609.8322542,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516609.8989239,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516609.9679995,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516615.2864032,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516615.3594768,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516615.4295316,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516615.4894729,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516615.5541854,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516615.6171837,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516620.7690916,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516620.838399,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516620.8979692,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516620.9638162,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516621.0308218,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516621.0942833,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516626.2542048,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516626.3294542,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516626.3985813,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516626.466709,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516626.527142,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516626.5900414,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516631.7412987,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516631.8110402,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516631.916477,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516632.0033927,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516632.070084,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516632.1328182,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516637.2984734,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516637.3641284,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516637.427208,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516637.4913316,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516637.5556107,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516637.6231153,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516642.8133497,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516642.8882298,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516642.9520805,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516643.0277045,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516643.0955825,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516643.1691852,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516648.7659059,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516648.8343725,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516648.900933,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516648.9750617,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516649.0412362,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516649.1093576,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516654.270563,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516654.3421073,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516654.4120562,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516654.4814377,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516654.6954496,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516654.7621293,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516659.932263,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516660.0053349,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516660.0805585,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516660.1480768,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516660.2183886,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516660.2868657,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516665.4500647,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516665.5250418,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516665.5923467,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516665.6614647,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516665.7344818,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516665.8035476,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516671.0211344,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516671.0879107,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516671.1646986,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516671.238124,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516671.313063,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516671.3928692,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516676.558196,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516676.627735,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516676.6947877,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516676.7703073,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516676.8438838,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516676.913272,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516682.0733466,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516682.1511412,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516682.2184966,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516682.2860894,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516682.3587708,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516682.4281492,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516687.5991426,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516687.6699398,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516687.7376375,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516687.8109906,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516687.8810787,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516687.9544454,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516693.1152704,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516693.1846185,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516693.3372993,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516693.409134,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516693.4878883,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516693.5665326,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516698.7366786,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516698.8834224,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516698.95232,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516699.0265365,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516699.0996065,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516699.1714842,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516704.3346553,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516704.418261,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516704.4950042,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516704.5734942,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516704.6596005,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516704.7288406,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516709.9093583,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516709.9805725,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516710.0571012,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516710.1961236,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516710.2714243,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516710.3565397,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516715.675824,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516715.7553432,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516715.8252127,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516715.902494,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516715.9792233,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516716.050493,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516721.2154534,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516721.2878237,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516721.359408,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516721.4282358,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516721.4968972,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516721.5684419,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516726.7815094,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516726.7967384,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516726.8664253,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516726.9344478,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.0155473,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.084075,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.1009848,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.115647,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.4381897,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.4527187,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.5227861,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.5932453,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.669423,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516727.7436278,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516733.4118881,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516733.42966,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516733.5015264,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516733.7782416,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516734.022097,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516734.1378236,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516739.338408,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516739.3564193,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516739.4287674,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516739.5014164,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516739.5722394,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516739.6486206,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516744.8295515,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516744.8448038,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516744.9145968,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516744.987804,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516745.0638943,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516745.1376052,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516750.3121889,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516750.3259888,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516750.3961995,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516750.4679377,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516750.5397658,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516750.6155677,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516755.7967405,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516755.811529,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516755.8269465,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516756.532498,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516756.5495057,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516756.624056,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516756.6998994,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516756.7147777,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516756.7906308,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516756.8055568,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.0042763,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.0284703,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.047533,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.0623612,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.1341326,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.207566,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.2212472,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.2947958,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.3086357,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.561597,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.5857453,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.606326,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.6203911,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.6994905,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516757.7745285,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516762.9940858,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.0141945,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.036746,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.0510192,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.0647817,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.081186,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.0961556,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.1719499,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.1868918,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.3870742,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.4096832,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.4345062,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.4585655,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.4741864,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.4902582,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.504712,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.6033878,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516763.6188354,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516764.0372605,
+      "container": "sis-load-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516764.059142,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516764.0828242,
+      "container": "sis-side-meta-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516764.1052804,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516764.126136,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516770.589848,
+      "container": "sis-sampler-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516770.602619,
+      "container": "sis-sampler-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516781.5967653,
+      "container": "sis-proc-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516781.6118572,
+      "container": "sis-proc-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516792.7883303,
+      "container": "sis-sampler-r230-repair-bread03-20261009"
+    },
+    {
+      "ts": 1791516792.8118865,
+      "container": "sis-proc-r230-repair-bread03-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791516592.20249,
+      "ts_end": 1791516592.2278743,
+      "elapsed_ms": 25.385,
+      "container": "sis-sampler-r230-repair-bread03-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791516592.2278974,
+      "ts_end": 1791516592.2521148,
+      "elapsed_ms": 24.218,
+      "container": "sis-proc-r230-repair-bread03-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791516592.283616,
+      "ts_end": 1791516592.3049207,
+      "elapsed_ms": 21.3047,
+      "container": "sis-sampler-r230-repair-bread03-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791516592.3049364,
+      "ts_end": 1791516592.3275611,
+      "elapsed_ms": 22.6251,
+      "container": "sis-proc-r230-repair-bread03-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791516727.1302078,
+      "ts_end": 1791516727.2360656,
+      "elapsed_ms": 105.8574,
+      "container": "sis-load-r230-repair-bread03-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "5c9bd98dccedcb2bd6046b6139fe710031bdda6ba0f765838cfc37488b514bce",
+        "owner": "r230-repair-bread03-20261009",
+        "running": false,
+        "checked_at": 1791516727.1437707,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791516756.7316294,
+      "ts_end": 1791516756.775428,
+      "elapsed_ms": 43.7987,
+      "container": "sis-side-argon2-r230-repair-bread03-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "8baaf591a924b6cee812dc3e196fbab857bd4f8e865bb34a69a5fb5af9f287dc",
+        "owner": "r230-repair-bread03-20261009",
+        "running": false,
+        "checked_at": 1791516756.7459724,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791516757.2354453,
+      "ts_end": 1791516757.2789562,
+      "elapsed_ms": 43.5113,
+      "container": "sis-side-meta-r230-repair-bread03-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "53561ad82ac583ce9a55e6efc9104421ece4dac44c491c354aff571a64ded1a2",
+        "owner": "r230-repair-bread03-20261009",
+        "running": false,
+        "checked_at": 1791516757.2499654,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791516763.1162677,
+      "ts_end": 1791516763.1560647,
+      "elapsed_ms": 39.7969,
+      "container": "sis-side-fapi-r230-repair-bread03-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "6fe3cd15481598ae65c5d2a890db3d86ed8ecf33054ca39137a2b5c6fee5c964",
+        "owner": "r230-repair-bread03-20261009",
+        "running": false,
+        "checked_at": 1791516763.1312633,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791516763.519687,
+      "ts_end": 1791516763.587602,
+      "elapsed_ms": 67.9151,
+      "container": "sis-side-refresh-r230-repair-bread03-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "b7b41f1fae6dba36d9721cba02680f6bcd3e4be7084fbb6a6181e44c3be85029",
+        "owner": "r230-repair-bread03-20261009",
+        "running": false,
+        "checked_at": 1791516763.5339482,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791516764.543932,
+      "ts_end": 1791516764.57047,
+      "elapsed_ms": 26.5384,
+      "container": "sis-sampler-r230-repair-bread03-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791516764.570493,
+      "ts_end": 1791516764.5951083,
+      "elapsed_ms": 24.6156,
+      "container": "sis-proc-r230-repair-bread03-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791516781.499378,
+      "ts_end": 1791516781.5483656,
+      "elapsed_ms": 48.9875,
+      "container": "sis-sampler-r230-repair-bread03-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "0ba2a834dc9a93cfe52a7f1b724938dd814a8ad81271ccc2b7aa124dd3df3443",
+        "owner": "r230-repair-bread03-20261009",
+        "running": false,
+        "checked_at": 1791516781.5179396,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791516792.377356,
+      "ts_end": 1791516792.4547508,
+      "elapsed_ms": 77.3947,
+      "container": "sis-proc-r230-repair-bread03-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "cb1ea7054276826b710a41348a3477d3fa8cb7f48e477b2c7767c94ed1da0414",
+        "owner": "r230-repair-bread03-20261009",
+        "running": false,
+        "checked_at": 1791516792.3929913,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-r230-repair-bread03-20261009",
+    "sis-proc-r230-repair-bread03-20261009",
+    "sis-sampler-r230-repair-bread03-20261009",
+    "sis-side-argon2-r230-repair-bread03-20261009",
+    "sis-side-fapi-r230-repair-bread03-20261009",
+    "sis-side-meta-r230-repair-bread03-20261009",
+    "sis-side-refresh-r230-repair-bread03-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-r230-repair-bread03-20261009",
+      "sis-proc-r230-repair-bread03-20261009",
+      "sis-sampler-r230-repair-bread03-20261009",
+      "sis-side-argon2-r230-repair-bread03-20261009",
+      "sis-side-fapi-r230-repair-bread03-20261009",
+      "sis-side-meta-r230-repair-bread03-20261009",
+      "sis-side-refresh-r230-repair-bread03-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

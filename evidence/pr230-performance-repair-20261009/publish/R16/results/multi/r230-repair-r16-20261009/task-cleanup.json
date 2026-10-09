@@ -1,0 +1,11 @@
+{
+  "label": "r230-repair-r16-20261009",
+  "key": "R16",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 24.86,
+  "total_elapsed_s": 232.477,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

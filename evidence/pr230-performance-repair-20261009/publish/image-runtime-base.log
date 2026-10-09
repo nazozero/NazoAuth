@@ -1,0 +1,110 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load remote build context
+#1 DONE 0.0s
+
+#2 copy /context /
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+#3 DONE 0.4s
+
+#4 [1/3] FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+#4 resolve docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a 0.0s done
+#4 DONE 0.0s
+
+#5 [2/3] RUN apt-get update     && apt-get install -y --no-install-recommends         ca-certificates         gzip=1.13-1+deb13u1         libpcre2-8-0=10.46-1~deb13u3         libsqlite3-0=3.46.1-7+deb13u2         perl-base=5.40.1-6+deb13u1     && groupadd --gid 10001 nazoauth     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nazoauth     && rm -rf /var/lib/apt/lists/*
+#5 1.253 Get:1 http://deb.debian.org/debian trixie InRelease [140 kB]
+#5 1.451 Get:2 http://deb.debian.org/debian trixie-updates InRelease [47.3 kB]
+#5 1.516 Get:3 http://deb.debian.org/debian-security trixie-security InRelease [43.4 kB]
+#5 1.586 Get:4 http://deb.debian.org/debian trixie/main amd64 Packages [9678 kB]
+#5 3.692 Get:5 http://deb.debian.org/debian trixie-updates/main amd64 Packages [4412 B]
+#5 3.742 Get:6 http://deb.debian.org/debian-security trixie-security/main amd64 Packages [265 kB]
+#5 4.372 Fetched 10.2 MB in 3s (3106 kB/s)
+#5 4.372 Reading package lists...
+#5 4.965 Reading package lists...
+#5 5.879 Building dependency tree...
+#5 6.099 Reading state information...
+#5 6.461 gzip is already the newest version (1.13-1+deb13u1).
+#5 6.461 gzip set to manually installed.
+#5 6.461 libsqlite3-0 is already the newest version (3.46.1-7+deb13u2).
+#5 6.461 libsqlite3-0 set to manually installed.
+#5 6.461 perl-base is already the newest version (5.40.1-6+deb13u1).
+#5 6.461 perl-base set to manually installed.
+#5 6.461 The following NEW packages will be installed:
+#5 6.463   ca-certificates openssl
+#5 6.465 The following packages will be upgraded:
+#5 6.466   libpcre2-8-0 libssl3t64 openssl-provider-legacy
+#5 6.683 3 upgraded, 2 newly installed, 0 to remove and 1 not upgraded.
+#5 6.683 Need to get 4744 kB of archives.
+#5 6.683 After this operation, 2982 kB of additional disk space will be used.
+#5 6.683 Get:1 http://deb.debian.org/debian-security trixie-security/main amd64 libpcre2-8-0 amd64 10.46-1~deb13u3 [299 kB]
+#5 6.970 Get:2 http://deb.debian.org/debian-security trixie-security/main amd64 openssl-provider-legacy amd64 3.5.7-1~deb13u3 [316 kB]
+#5 7.049 Get:3 http://deb.debian.org/debian-security trixie-security/main amd64 libssl3t64 amd64 3.5.7-1~deb13u3 [2458 kB]
+#5 7.552 Get:4 http://deb.debian.org/debian-security trixie-security/main amd64 openssl amd64 3.5.7-1~deb13u3 [1508 kB]
+#5 7.848 Get:5 http://deb.debian.org/debian trixie/main amd64 ca-certificates all 20250419 [162 kB]
+#5 8.048 debconf: unable to initialize frontend: Dialog
+#5 8.048 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#5 8.048 debconf: falling back to frontend: Readline
+#5 8.048 debconf: unable to initialize frontend: Readline
+#5 8.048 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8, <STDIN> line 5.)
+#5 8.048 debconf: falling back to frontend: Teletype
+#5 8.050 debconf: unable to initialize frontend: Teletype
+#5 8.050 debconf: (This frontend requires a controlling tty.)
+#5 8.050 debconf: falling back to frontend: Noninteractive
+#5 8.636 Preconfiguring packages ...
+#5 8.727 Fetched 4744 kB in 1s (3403 kB/s)
+#5 8.872 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 4951 files and directories currently installed.)
+#5 8.876 Preparing to unpack .../libpcre2-8-0_10.46-1~deb13u3_amd64.deb ...
+#5 8.912 Unpacking libpcre2-8-0:amd64 (10.46-1~deb13u3) over (10.46-1~deb13u2) ...
+#5 8.950 Setting up libpcre2-8-0:amd64 (10.46-1~deb13u3) ...
+#5 9.077 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 4951 files and directories currently installed.)
+#5 9.084 Preparing to unpack .../openssl-provider-legacy_3.5.7-1~deb13u3_amd64.deb ...
+#5 9.148 Unpacking openssl-provider-legacy (3.5.7-1~deb13u3) over (3.5.7-1~deb13u2) ...
+#5 9.269 Setting up openssl-provider-legacy (3.5.7-1~deb13u3) ...
+#5 9.327 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 4951 files and directories currently installed.)
+#5 9.331 Preparing to unpack .../libssl3t64_3.5.7-1~deb13u3_amd64.deb ...
+#5 9.344 Unpacking libssl3t64:amd64 (3.5.7-1~deb13u3) over (3.5.7-1~deb13u2) ...
+#5 9.666 Setting up libssl3t64:amd64 (3.5.7-1~deb13u3) ...
+#5 9.760 Selecting previously unselected package openssl.
+#5 9.760 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 4951 files and directories currently installed.)
+#5 9.763 Preparing to unpack .../openssl_3.5.7-1~deb13u3_amd64.deb ...
+#5 9.768 Unpacking openssl (3.5.7-1~deb13u3) ...
+#5 9.878 Selecting previously unselected package ca-certificates.
+#5 9.878 Preparing to unpack .../ca-certificates_20250419_all.deb ...
+#5 9.880 Unpacking ca-certificates (20250419) ...
+#5 10.01 Setting up openssl (3.5.7-1~deb13u3) ...
+#5 10.06 Setting up ca-certificates (20250419) ...
+#5 10.27 debconf: unable to initialize frontend: Dialog
+#5 10.27 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#5 10.27 debconf: falling back to frontend: Readline
+#5 10.27 debconf: unable to initialize frontend: Readline
+#5 10.27 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8.)
+#5 10.27 debconf: falling back to frontend: Teletype
+#5 10.30 debconf: unable to initialize frontend: Teletype
+#5 10.30 debconf: (This frontend requires a controlling tty.)
+#5 10.30 debconf: falling back to frontend: Noninteractive
+#5 13.39 Updating certificates in /etc/ssl/certs...
+#5 16.33 150 added, 0 removed; done.
+#5 16.40 Processing triggers for libc-bin (2.41-12+deb13u4) ...
+#5 16.55 Processing triggers for ca-certificates (20250419) ...
+#5 16.55 Updating certificates in /etc/ssl/certs...
+#5 18.29 0 added, 0 removed; done.
+#5 18.29 Running hooks in /etc/ca-certificates/update.d...
+#5 18.29 done.
+#5 DONE 18.7s
+
+#6 [3/3] WORKDIR /app
+#6 DONE 0.0s
+
+#7 exporting to image
+#7 exporting layers
+#7 exporting layers 0.6s done
+#7 exporting manifest sha256:e436fceddd2524ff85b1c97425a1df54e7b35f4568bd2f5c6db1c8c01a293a1e 0.0s done
+#7 exporting config sha256:f38613a8a0444d75eb53acda8b52b13324982eb7d055f053589e3e97c46a9ae4 0.0s done
+#7 exporting attestation manifest sha256:c2fefdcbcca2e6004147c4acbffea59720c845fcb0410c2073623ceb68887af7 0.0s done
+#7 exporting manifest list sha256:b3396d02831c9955bc16b2e215490e2f3b6dbccb976101630d9451a14d925bab 0.0s done
+#7 naming to docker.io/library/nazoauth-perf-runtime-base:20261009 done
+#7 unpacking to docker.io/library/nazoauth-perf-runtime-base:20261009
+#7 unpacking to docker.io/library/nazoauth-perf-runtime-base:20261009 0.2s done
+#7 DONE 0.8s

@@ -1,0 +1,9 @@
+{
+  "ts": 1791514090.5975325,
+  "scenario": "cap_authorization_code",
+  "profile": "capacity",
+  "run_id": "r230-repair-r16b-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791514090.593,
+  "state_ready_run_id": "r230-repair-r16b-20261009"
+}

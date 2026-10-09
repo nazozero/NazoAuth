@@ -1,0 +1,416 @@
+[
+  {
+    "key": "BREAD",
+    "buckets": [
+      {
+        "offset_s": 0,
+        "samples": 7998,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 40.0
+      },
+      {
+        "offset_s": 10,
+        "samples": 8001,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 51.0
+      },
+      {
+        "offset_s": 20,
+        "samples": 8003,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 49.0
+      },
+      {
+        "offset_s": 30,
+        "samples": 8000,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 41.0
+      },
+      {
+        "offset_s": 40,
+        "samples": 7999,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 38.0
+      },
+      {
+        "offset_s": 50,
+        "samples": 7815,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 69.0
+      }
+    ],
+    "storage": {
+      "start": 1791515689.334752,
+      "end": 1791515777.01468,
+      "db_first": 12498623,
+      "db_last": 253195967,
+      "db_peak": 253195967,
+      "pending_peak": 110,
+      "oldest_pending_peak_s": 0.035712
+    },
+    "boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "AREAD",
+    "buckets": [
+      {
+        "offset_s": 0,
+        "samples": 7999,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 51.0
+      },
+      {
+        "offset_s": 10,
+        "samples": 8002,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 57.0
+      },
+      {
+        "offset_s": 20,
+        "samples": 8000,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 53.0
+      },
+      {
+        "offset_s": 30,
+        "samples": 7999,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 45.0
+      },
+      {
+        "offset_s": 40,
+        "samples": 8002,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 40.0
+      },
+      {
+        "offset_s": 50,
+        "samples": 7893,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 38.0
+      }
+    ],
+    "storage": {
+      "start": 1791515884.411405,
+      "end": 1791515966.09736,
+      "db_first": 12515007,
+      "db_last": 247830207,
+      "db_peak": 247830207,
+      "pending_peak": 74,
+      "oldest_pending_peak_s": 0.021852
+    },
+    "boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "BREAD2",
+    "buckets": [
+      {
+        "offset_s": 0,
+        "samples": 7998,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 47.0
+      },
+      {
+        "offset_s": 10,
+        "samples": 8002,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 42.0
+      },
+      {
+        "offset_s": 20,
+        "samples": 8001,
+        "p99_interval_ms": [
+          50,
+          100
+        ],
+        "max_ms": 77.0
+      },
+      {
+        "offset_s": 30,
+        "samples": 8000,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 52.0
+      },
+      {
+        "offset_s": 40,
+        "samples": 7999,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 42.0
+      },
+      {
+        "offset_s": 50,
+        "samples": 7936,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 47.0
+      }
+    ],
+    "storage": {
+      "start": 1791516072.99525,
+      "end": 1791516290.318022,
+      "db_first": 12506815,
+      "db_last": 240252607,
+      "db_peak": 250418879,
+      "pending_peak": 860,
+      "oldest_pending_peak_s": 0.164383
+    },
+    "boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "BREAD03",
+    "buckets": [
+      {
+        "offset_s": 0,
+        "samples": 4001,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 38.0
+      },
+      {
+        "offset_s": 10,
+        "samples": 4000,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 45.0
+      },
+      {
+        "offset_s": 20,
+        "samples": 3999,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 42.0
+      },
+      {
+        "offset_s": 30,
+        "samples": 3999,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 39.0
+      },
+      {
+        "offset_s": 40,
+        "samples": 4002,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 39.0
+      },
+      {
+        "offset_s": 50,
+        "samples": 3843,
+        "p99_interval_ms": [
+          100,
+          200
+        ],
+        "max_ms": 256.0
+      }
+    ],
+    "storage": {
+      "start": 1791516595.855761,
+      "end": 1791516759.250849,
+      "db_first": 12531391,
+      "db_last": 62912191,
+      "db_peak": 62912191,
+      "pending_peak": 893,
+      "oldest_pending_peak_s": 1.949402
+    },
+    "boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "BREAD04",
+    "buckets": [
+      {
+        "offset_s": 0,
+        "samples": 15999,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 62.0
+      },
+      {
+        "offset_s": 10,
+        "samples": 15997,
+        "p99_interval_ms": [
+          50,
+          100
+        ],
+        "max_ms": 160.0
+      },
+      {
+        "offset_s": 20,
+        "samples": 16000,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 78.0
+      },
+      {
+        "offset_s": 30,
+        "samples": 16006,
+        "p99_interval_ms": [
+          10,
+          20
+        ],
+        "max_ms": 36.0
+      },
+      {
+        "offset_s": 40,
+        "samples": 15998,
+        "p99_interval_ms": [
+          10,
+          20
+        ],
+        "max_ms": 53.0
+      },
+      {
+        "offset_s": 50,
+        "samples": 15270,
+        "p99_interval_ms": [
+          10,
+          20
+        ],
+        "max_ms": 45.0
+      }
+    ],
+    "storage": {
+      "start": 1791516869.163886,
+      "end": 1791517035.536271,
+      "db_first": 12515007,
+      "db_last": 209352383,
+      "db_peak": 225900223,
+      "pending_peak": 490,
+      "oldest_pending_peak_s": 0.565432
+    },
+    "boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  },
+  {
+    "key": "BREAD10",
+    "buckets": [
+      {
+        "offset_s": 0,
+        "samples": 9596,
+        "p99_interval_ms": [
+          50,
+          100
+        ],
+        "max_ms": 112.0
+      },
+      {
+        "offset_s": 10,
+        "samples": 9604,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 50.0
+      },
+      {
+        "offset_s": 20,
+        "samples": 9602,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 48.0
+      },
+      {
+        "offset_s": 30,
+        "samples": 9596,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 73.0
+      },
+      {
+        "offset_s": 40,
+        "samples": 9600,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 91.0
+      },
+      {
+        "offset_s": 50,
+        "samples": 9256,
+        "p99_interval_ms": [
+          20,
+          50
+        ],
+        "max_ms": 49.0
+      }
+    ],
+    "storage": {
+      "start": 1791516405.272149,
+      "end": 1791516487.901972,
+      "db_first": 12498623,
+      "db_last": 300906175,
+      "db_peak": 300906175,
+      "pending_peak": 109,
+      "oldest_pending_peak_s": 0.032234
+    },
+    "boundary": "Full stream cap_iter_ms histograms, grouped by completion-time 10-second buckets (one-second input resolution); quantiles are bucket intervals [lower,upper), not exact values. All formal cohort completions reconcile. Sampled diagnostic raw points cannot estimate unbiased quantiles. Formal whole-window exact gates and exact drops remain the harness result; per-second drop series retained separately. Finite VUs and drops can flatten latency."
+  }
+]

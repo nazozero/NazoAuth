@@ -1,0 +1,315 @@
+{
+  "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791515685.8552604,
+      "container": "sis-sampler-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515685.871716,
+      "container": "sis-proc-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515693.413429,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515693.4755158,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515698.6547987,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515698.7484381,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515703.915967,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515703.9803448,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515709.2302065,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515709.294203,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515714.4552765,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515714.5212324,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515719.694698,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515719.7606184,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515724.9344802,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515725.004467,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515730.17514,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515730.3176234,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515735.4867227,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515735.5530443,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515740.7257922,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515740.792144,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515745.9625807,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515746.0290387,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515751.1970024,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515751.2660742,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515756.4339926,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515756.5002868,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515761.6714182,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515761.7474804,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515766.9194818,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515766.9874227,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515772.144299,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515772.2037141,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515777.5469186,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515777.873205,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515778.1955469,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515778.2093148,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515778.9002266,
+      "container": "sis-load-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515787.1067739,
+      "container": "sis-sampler-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515787.1209292,
+      "container": "sis-sampler-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515797.6180508,
+      "container": "sis-proc-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515797.6326027,
+      "container": "sis-proc-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515809.2513766,
+      "container": "sis-sampler-r230-repair-bread-20261009"
+    },
+    {
+      "ts": 1791515809.2728872,
+      "container": "sis-proc-r230-repair-bread-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791515685.7889445,
+      "ts_end": 1791515685.8141654,
+      "elapsed_ms": 25.2215,
+      "container": "sis-sampler-r230-repair-bread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791515685.8141868,
+      "ts_end": 1791515685.8386045,
+      "elapsed_ms": 24.4187,
+      "container": "sis-proc-r230-repair-bread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791515685.871943,
+      "ts_end": 1791515685.8940647,
+      "elapsed_ms": 22.1218,
+      "container": "sis-sampler-r230-repair-bread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791515685.8940778,
+      "ts_end": 1791515685.916458,
+      "elapsed_ms": 22.3805,
+      "container": "sis-proc-r230-repair-bread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791515778.2269394,
+      "ts_end": 1791515778.2756248,
+      "elapsed_ms": 48.6855,
+      "container": "sis-load-r230-repair-bread-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "d94a18ba1c312ef98738fd089fc9e2db6e843fd21b99e7e43a4546bbf9c6ee7f",
+        "owner": "r230-repair-bread-20261009",
+        "running": false,
+        "checked_at": 1791515778.243248,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791515779.5473974,
+      "ts_end": 1791515779.5738363,
+      "elapsed_ms": 26.4391,
+      "container": "sis-sampler-r230-repair-bread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791515779.5738642,
+      "ts_end": 1791515779.6050375,
+      "elapsed_ms": 31.1737,
+      "container": "sis-proc-r230-repair-bread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791515797.5028224,
+      "ts_end": 1791515797.5609102,
+      "elapsed_ms": 58.0882,
+      "container": "sis-sampler-r230-repair-bread-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "1420bc6810e858d8309c47e232a37656f1e755a4326ad8355ec9df204a38e1d0",
+        "owner": "r230-repair-bread-20261009",
+        "running": false,
+        "checked_at": 1791515797.5172856,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791515808.9157805,
+      "ts_end": 1791515808.9588344,
+      "elapsed_ms": 43.0537,
+      "container": "sis-proc-r230-repair-bread-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "91461175d0c513c560a22a56e51bf1027b4559d816795e5330aa258aec530da4",
+        "owner": "r230-repair-bread-20261009",
+        "running": false,
+        "checked_at": 1791515808.9313316,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-r230-repair-bread-20261009",
+    "sis-proc-r230-repair-bread-20261009",
+    "sis-sampler-r230-repair-bread-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-r230-repair-bread-20261009",
+      "sis-proc-r230-repair-bread-20261009",
+      "sis-sampler-r230-repair-bread-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

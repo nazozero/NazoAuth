@@ -1,0 +1,35 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load remote build context
+#1 DONE 0.1s
+
+#2 copy /context /
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/nazoauth-perf-runtime-base:20261009
+#3 DONE 0.0s
+
+#4 [1/4] FROM docker.io/library/nazoauth-perf-runtime-base:20261009@sha256:b3396d02831c9955bc16b2e215490e2f3b6dbccb976101630d9451a14d925bab
+#4 resolve docker.io/library/nazoauth-perf-runtime-base:20261009@sha256:b3396d02831c9955bc16b2e215490e2f3b6dbccb976101630d9451a14d925bab 0.0s done
+#4 DONE 0.1s
+
+#5 [2/4] COPY --chmod=0755 nazoauth /usr/local/bin/nazoauth
+#5 DONE 0.0s
+
+#6 [3/4] COPY source-sha /etc/nazoauth-source-sha
+#6 DONE 0.0s
+
+#7 [4/4] COPY env.yaml /app/.env.yaml
+#7 DONE 0.1s
+
+#8 exporting to image
+#8 exporting layers
+#8 exporting layers 1.4s done
+#8 exporting manifest sha256:96b6eee4fb64e2d43076b5a7dfead4348252010b05055a0175396ac34e7b27d0 0.0s done
+#8 exporting config sha256:f55dd33613c6fded2eb53ead2f39742cb7dc5bfc091ec43e05aac7fa93ce93d2 done
+#8 exporting attestation manifest sha256:7a8123716a327596d57c9cede1cf6b64f17f6ba041f2d7bc5f5b02e88998ea42 0.0s done
+#8 exporting manifest list sha256:9fcd3f96be7c7a57ea29ee3bf873bd4b00966ffd863a0daf8000c03b17c1772f 0.0s done
+#8 naming to docker.io/library/nazoauth-perf-baseline:20261009 done
+#8 unpacking to docker.io/library/nazoauth-perf-baseline:20261009
+#8 unpacking to docker.io/library/nazoauth-perf-baseline:20261009 0.3s done
+#8 DONE 1.8s

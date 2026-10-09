@@ -1,0 +1,29 @@
+{
+  "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+  "baseline_sha": "5005b39182f42c53537ed45ce21a72db7db92af5",
+  "changed_files": [
+    "crates/persistence-postgres/src/pool.rs",
+    "crates/persistence-postgres/src/repositories/clients/base.rs",
+    "crates/persistence-postgres/src/repositories/clients/query.rs",
+    "crates/persistence-postgres/src/repositories/users.rs",
+    "crates/persistence-postgres/tests/read_connection_ownership.rs",
+    "docs/project/testing.md"
+  ],
+  "review": {
+    "connection_owner": "Hot-path read query and pool return run on existing pool runtime; caller receives owned data; no new pool or batching queue.",
+    "cancellation": "Dropping caller aborts owner JoinSet; existing DiscardOnDrop retires an unfinished physical connection. Independent PostgreSQL observation verifies backend disappearance before replacement check.",
+    "tenant_and_identity": "Same SQL projections, tenant predicates, active flags, secret equality, epoch and private subject binding snapshot. Domain validation executes after connection return.",
+    "write_boundaries": "No changes to transactions, commit acknowledgement, ordered principal/family locks, single-use fence, revocation or Required audit completion.",
+    "retention_and_export": "No changes to safety TTLs, audit append/retry queues, signed checkpoint/ACK, exporter or maintenance scheduling.",
+    "explicit_limits": "Read lifetime regression is deterministic; severe historical capacity loss is not exclusively attributable to it because unchanged A subsequently passed 800 ops/s. Shared infrastructure mechanism is unproven; no host probes."
+  },
+  "tests": [
+    "read_connection_ownership",
+    "identity_repositories",
+    "oauth_client_dcr",
+    "auth_repositories",
+    "query_counts",
+    "audit_commit_boundary",
+    "security_state_commit_boundary"
+  ]
+}

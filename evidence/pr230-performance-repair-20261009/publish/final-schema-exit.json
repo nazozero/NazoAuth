@@ -1,0 +1,1 @@
+{"source_sha": "ef89417c9377ea765878b24d7b034a189638dee3", "command": ["cargo", "test", "--locked", "--all-features", "-p", "nazo-postgres", "--test", "migrations", "pending_migrations_create_all_runtime_module_state_tables", "--", "--exact", "--nocapture"], "exit": 0, "seconds": 26.54043409321457}

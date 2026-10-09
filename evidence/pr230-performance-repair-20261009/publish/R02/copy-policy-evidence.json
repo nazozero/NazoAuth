@@ -1,0 +1,299 @@
+{
+  "source_sha": "5005b39182f42c53537ed45ce21a72db7db92af5",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791513869.851079,
+      "container": "sis-sampler-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513869.9408457,
+      "container": "sis-proc-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513880.4723814,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513880.854643,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513886.2062988,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513886.4505126,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513892.0961127,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513892.574981,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513898.1089678,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513898.2609386,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513903.9590504,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513904.2837744,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513909.8729553,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513910.1439502,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513915.660037,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513915.9110796,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513921.4029765,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513921.8323462,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513927.614676,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513927.8739676,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513933.422295,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513933.660217,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513939.1219587,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513939.6032743,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513945.2749379,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513945.4024272,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513950.9717834,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513951.1540065,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513956.7719467,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513956.9623613,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513963.2884629,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513963.4049964,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513963.4285228,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513963.4544332,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513964.0216103,
+      "container": "sis-load-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513974.4434247,
+      "container": "sis-sampler-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513974.627127,
+      "container": "sis-sampler-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513985.928874,
+      "container": "sis-proc-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513985.96079,
+      "container": "sis-proc-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513997.3534834,
+      "container": "sis-sampler-r230-repair-r02-20261009"
+    },
+    {
+      "ts": 1791513997.3947277,
+      "container": "sis-proc-r230-repair-r02-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791513869.5389829,
+      "ts_end": 1791513869.6108434,
+      "elapsed_ms": 71.8619,
+      "container": "sis-sampler-r230-repair-r02-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791513869.610892,
+      "ts_end": 1791513869.7075825,
+      "elapsed_ms": 96.6918,
+      "container": "sis-proc-r230-repair-r02-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791513869.9412813,
+      "ts_end": 1791513870.0614293,
+      "elapsed_ms": 120.1478,
+      "container": "sis-sampler-r230-repair-r02-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791513870.0614593,
+      "ts_end": 1791513870.1729429,
+      "elapsed_ms": 111.4839,
+      "container": "sis-proc-r230-repair-r02-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791513963.47548,
+      "ts_end": 1791513963.5405052,
+      "elapsed_ms": 65.025,
+      "container": "sis-load-r230-repair-r02-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "ee72d8ceaf29b470b0c727902b7c68f8cd59411112d77f8070fc90f7fe8cc49b",
+        "owner": "r230-repair-r02-20261009",
+        "running": false,
+        "checked_at": 1791513963.503711,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791513964.3077319,
+      "ts_end": 1791513964.3437371,
+      "elapsed_ms": 36.0053,
+      "container": "sis-sampler-r230-repair-r02-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791513964.3437593,
+      "ts_end": 1791513964.3889976,
+      "elapsed_ms": 45.239,
+      "container": "sis-proc-r230-repair-r02-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791513985.6560748,
+      "ts_end": 1791513985.75269,
+      "elapsed_ms": 96.6155,
+      "container": "sis-sampler-r230-repair-r02-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "38d7e0743d22296bb1691c2f7e7cffd397669c83e43e8368750721f0bfdbeb1e",
+        "owner": "r230-repair-r02-20261009",
+        "running": false,
+        "checked_at": 1791513985.674392,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791513996.865143,
+      "ts_end": 1791513996.9394293,
+      "elapsed_ms": 74.2869,
+      "container": "sis-proc-r230-repair-r02-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "02411e864e6b4daa718d450fe490443d7ba72972cf8ce36cb0babb77b485187c",
+        "owner": "r230-repair-r02-20261009",
+        "running": false,
+        "checked_at": 1791513996.8890195,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-r230-repair-r02-20261009",
+    "sis-proc-r230-repair-r02-20261009",
+    "sis-sampler-r230-repair-r02-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-r230-repair-r02-20261009",
+      "sis-proc-r230-repair-r02-20261009",
+      "sis-sampler-r230-repair-r02-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}
