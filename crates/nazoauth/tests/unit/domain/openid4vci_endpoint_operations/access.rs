@@ -27,8 +27,8 @@ async fn access_rejects_signed_token_for_different_tenant_before_revocation_look
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         })
         .await
@@ -71,8 +71,8 @@ async fn access_rejects_signed_token_with_another_audience_before_state_access()
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         })
         .await
@@ -115,8 +115,8 @@ async fn access_fails_closed_when_revocation_state_is_unavailable() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         })
         .await

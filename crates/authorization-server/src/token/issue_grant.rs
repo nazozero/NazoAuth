@@ -359,6 +359,18 @@ pub async fn issue_token_response(
     } else {
         None
     };
+    let sender_constraint = nazo_auth::validate_sender_constraint(
+        issue.dpop_jkt.as_deref(),
+        issue.mtls_x5t_s256.as_deref(),
+    )
+    .map_err(|_| {
+        OAuthEndpointError::token(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Multiple sender constraints are not allowed.",
+            false,
+        )
+    })?;
     let issued_access_token = match token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
             authorization_id: Some(authorization_id),
@@ -380,8 +392,8 @@ pub async fn issue_token_response(
             userinfo_claims: &issue.userinfo_claims,
             userinfo_claim_requests: &issue.userinfo_claim_requests,
             ttl_seconds: context.config.access_token_ttl_seconds,
-            dpop_jkt: issue.dpop_jkt.as_deref(),
-            mtls_x5t_s256: issue.mtls_x5t_s256.as_deref(),
+            sender_constraint,
+
             actor: issue.actor.as_ref(),
         })
         .await

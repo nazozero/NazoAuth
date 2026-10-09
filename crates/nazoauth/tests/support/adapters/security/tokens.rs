@@ -38,10 +38,9 @@ pub(super) fn validate_access_token_sender_constraint(
     dpop_jkt: Option<&str>,
     mtls_x5t_s256: Option<&str>,
 ) -> nazo_crypto::Result<()> {
-    if dpop_jkt.is_some() && mtls_x5t_s256.is_some() {
-        return Err(nazo_crypto::CryptoError::InvalidToken);
-    }
-    Ok(())
+    nazo_auth::validate_sender_constraint(dpop_jkt, mtls_x5t_s256)
+        .map(|_| ())
+        .map_err(|_| nazo_crypto::CryptoError::InvalidToken)
 }
 
 pub(crate) async fn make_jwt(
@@ -69,8 +68,12 @@ pub(crate) async fn make_jwt(
             userinfo_claims: input.userinfo_claims,
             userinfo_claim_requests: input.userinfo_claim_requests,
             ttl: input.ttl,
-            dpop_jkt: input.dpop_jkt,
-            mtls_x5t_s256: input.mtls_x5t_s256,
+            sender_constraint: nazo_auth::validate_sender_constraint(
+                input.dpop_jkt,
+                input.mtls_x5t_s256,
+            )
+            .expect("fixture has one sender binding"),
+
             actor: input.actor,
         },
         now,

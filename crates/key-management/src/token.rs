@@ -50,8 +50,8 @@ impl TokenSignerPort for KeyManager {
                     userinfo_claims: input.userinfo_claims,
                     userinfo_claim_requests: input.userinfo_claim_requests,
                     ttl: input.ttl_seconds,
-                    dpop_jkt: input.dpop_jkt,
-                    mtls_x5t_s256: input.mtls_x5t_s256,
+                    sender_constraint: input.sender_constraint,
+
                     actor: input.actor,
                 },
                 now,

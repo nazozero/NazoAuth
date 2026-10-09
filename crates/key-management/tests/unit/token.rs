@@ -21,8 +21,8 @@ fn access_input(authorization_details: &serde_json::Value) -> AccessTokenSignInp
         userinfo_claims: &[],
         userinfo_claim_requests: &[],
         ttl_seconds: 300,
-        dpop_jkt: None,
-        mtls_x5t_s256: None,
+        sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
         actor: None,
     }
 }
@@ -575,6 +575,37 @@ async fn ownership_signed_introspection_payload_matches_original_bytes_and_algor
                 .unwrap()
                 .claims,
             old
+        );
+    }
+}
+
+#[tokio::test]
+async fn signing_preserves_each_single_sender_binding() {
+    use nazo_auth::AppliedSenderConstraint;
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+    let details = json!([]);
+    for (binding, expected) in [
+        (AppliedSenderConstraint::Bearer, None),
+        (
+            AppliedSenderConstraint::Dpop("holder-jkt"),
+            Some(json!({"jkt":"holder-jkt"})),
+        ),
+        (
+            AppliedSenderConstraint::MutualTls("certificate-thumbprint"),
+            Some(json!({"x5t#S256":"certificate-thumbprint"})),
+        ),
+    ] {
+        let mut input = access_input(&details);
+        input.sender_constraint = binding;
+        let signed = manager.sign_access_token(input).await.unwrap();
+        let claims = manager
+            .decode_access_token("https://issuer.example", &signed.token)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            claims.cnf.map(|cnf| serde_json::to_value(cnf).unwrap()),
+            expected
         );
     }
 }

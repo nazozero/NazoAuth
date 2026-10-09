@@ -320,8 +320,8 @@ pub struct AccessTokenSignInput<'a> {
     pub userinfo_claims: &'a [String],
     pub userinfo_claim_requests: &'a [OidcClaimRequest],
     pub ttl_seconds: i64,
-    pub dpop_jkt: Option<&'a str>,
-    pub mtls_x5t_s256: Option<&'a str>,
+    pub sender_constraint: crate::AppliedSenderConstraint<'a>,
+
     pub actor: Option<&'a Value>,
 }
 
@@ -967,7 +967,6 @@ where
         &self,
         input: AccessTokenSignInput<'_>,
     ) -> Result<IssuedAccessToken, TokenPortError> {
-        validate_sender_constraint(input.dpop_jkt, input.mtls_x5t_s256)?;
         self.signer.sign_access_token(input).await
     }
 
@@ -1194,14 +1193,18 @@ fn access_token_type(claims: &Claims) -> &'static str {
     }
 }
 
-pub fn validate_sender_constraint(
-    dpop_jkt: Option<&str>,
-    mtls_x5t_s256: Option<&str>,
-) -> Result<(), TokenPortError> {
-    if dpop_jkt.is_some() && mtls_x5t_s256.is_some() {
-        return Err(TokenPortError::InvalidSenderConstraint);
-    }
-    Ok(())
+pub fn validate_sender_constraint<'a>(
+    dpop_jkt: Option<&'a str>,
+    mtls_x5t_s256: Option<&'a str>,
+) -> Result<crate::AppliedSenderConstraint<'a>, TokenPortError> {
+    crate::apply_sender_constraint(
+        crate::SenderConstraintPolicy::BearerAllowed,
+        crate::PresentedSenderConstraint {
+            dpop_jkt,
+            mtls_x5t_s256,
+        },
+    )
+    .map_err(|_| TokenPortError::InvalidSenderConstraint)
 }
 
 #[cfg(test)]

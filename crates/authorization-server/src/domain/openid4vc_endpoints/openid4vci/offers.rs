@@ -54,6 +54,17 @@ impl ServerCredentialIssuerOperations {
             // sender bindings arrive verified and attestation material was
             // consumed exactly once on the authenticated path.
             let dpop_jkt = request.dpop_jkt;
+            let sender_constraint = nazo_auth::validate_sender_constraint(
+                dpop_jkt.as_deref(),
+                request.mtls_x5t_s256.as_deref(),
+            )
+            .map_err(|_| {
+                vci_error(
+                    400,
+                    "invalid_request",
+                    "Multiple sender constraints are not allowed.",
+                )
+            })?;
             let client_id = request
                 .client_id
                 .as_deref()
@@ -130,8 +141,8 @@ impl ServerCredentialIssuerOperations {
                     userinfo_claims: &[],
                     userinfo_claim_requests: &[],
                     ttl_seconds: (authorization.expires_at - Utc::now()).num_seconds().max(1),
-                    dpop_jkt: dpop_jkt.as_deref(),
-                    mtls_x5t_s256: request.mtls_x5t_s256.as_deref(),
+                    sender_constraint,
+
                     actor: None,
                 })
                 .await

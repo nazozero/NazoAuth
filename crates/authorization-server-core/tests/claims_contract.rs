@@ -61,8 +61,8 @@ fn token_claim_constructors_are_locked_to_complete_reviewed_shapes() {
             userinfo_claims: &userinfo_claims,
             userinfo_claim_requests: &userinfo_claim_requests,
             ttl: 300,
-            dpop_jkt: Some("thumbprint-jkt"),
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Dpop("thumbprint-jkt"),
+
             actor: Some(&actor),
         },
         1_000,
@@ -379,8 +379,8 @@ fn access_token_claims_follow_jwt_profile_for_user_subjects() {
             userinfo_claims: &["email".to_owned()],
             userinfo_claim_requests: &[],
             ttl: 300,
-            dpop_jkt: Some("thumbprint-jkt"),
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Dpop("thumbprint-jkt"),
+
             actor: None,
         },
         1_000,
@@ -429,8 +429,10 @@ fn access_token_claims_keep_client_credentials_subject_separate() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 120,
-            dpop_jkt: None,
-            mtls_x5t_s256: Some("certificate-thumbprint"),
+            sender_constraint: nazo_auth::AppliedSenderConstraint::MutualTls(
+                "certificate-thumbprint",
+            ),
+
             actor: None,
         },
         2_000,
@@ -474,8 +476,8 @@ fn access_token_without_sender_constraints_does_not_emit_cnf() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 120,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         2_000,

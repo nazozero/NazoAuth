@@ -40,8 +40,8 @@ fn access_token_claims_includes_all_required_jwt_fields() {
             userinfo_claims: &["email".to_owned(), "name".to_owned()],
             userinfo_claim_requests: &[],
             ttl: 3600,
-            dpop_jkt: Some("dpop-thumbprint"),
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Dpop("dpop-thumbprint"),
+
             actor: None,
         },
         1_000_000,
@@ -94,8 +94,8 @@ fn access_token_claims_include_user_id_only_for_public_user_subject() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 3600,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         1_000_000,
@@ -128,8 +128,8 @@ fn access_token_claims_client_credentials_omits_user_id() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 120,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         2_000_000,
@@ -162,8 +162,8 @@ fn access_token_claims_cnf_is_none_when_sender_constraints_are_absent() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -174,35 +174,10 @@ fn access_token_claims_cnf_is_none_when_sender_constraints_are_absent() {
 }
 
 #[test]
-fn access_token_claims_cnf_is_none_when_both_dpop_and_mtls_are_present() {
-    let claims = access_token_claims(
-        "https://issuer.example",
-        AccessTokenClaimsInput {
-            authorization_id: None,
-            client_epoch: None,
-            user_epoch: None,
-            tenant_id: DEFAULT_TENANT_ID,
-            subject: "user-1",
-            user_id: None,
-            subject_type: "client",
-            client_id: "client-1",
-            audiences: &["resource://default".to_owned()],
-            scopes: &["read".to_owned()],
-            authorization_details: &json!([]),
-            userinfo_claims: &[],
-            userinfo_claim_requests: &[],
-            ttl: 60,
-            dpop_jkt: Some("dpop-jkt"),
-            mtls_x5t_s256: Some("mtls-x5t"),
-            actor: None,
-        },
-        0,
-        "jti-bothcnf",
-    );
-
-    assert!(
-        claims.cnf.is_none(),
-        "cnf must be omitted when both DPoP and mTLS are supplied (ambiguous binding)"
+fn access_token_claims_reject_ambiguous_sender_binding_before_construction() {
+    assert_eq!(
+        nazo_auth::validate_sender_constraint(Some("dpop-jkt"), Some("mtls-x5t")),
+        Err(nazo_auth::TokenPortError::InvalidSenderConstraint),
     );
 }
 
@@ -225,8 +200,10 @@ fn access_token_claims_cnf_with_mtls_x5t_only() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: Some("mtls-cert-thumbprint"),
+            sender_constraint: nazo_auth::AppliedSenderConstraint::MutualTls(
+                "mtls-cert-thumbprint",
+            ),
+
             actor: None,
         },
         0,
@@ -262,8 +239,8 @@ fn access_token_claims_multiple_audiences_produces_json_array() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -300,8 +277,8 @@ fn access_token_claims_single_audience_is_json_string_not_array() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -331,8 +308,8 @@ fn access_token_claims_empty_audience_is_empty_json_array() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -361,8 +338,8 @@ fn access_token_claims_zero_ttl_produces_exp_equal_to_iat() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 0,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         500,
@@ -398,8 +375,8 @@ fn access_token_claims_scope_is_sorted_alphabetically() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -429,8 +406,8 @@ fn access_token_claims_empty_scope_is_empty_string() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -459,8 +436,8 @@ fn access_token_claims_empty_authorization_details_is_empty_array() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -503,8 +480,8 @@ fn access_token_claims_carries_userinfo_claim_requests() {
             userinfo_claims: &[],
             userinfo_claim_requests: &requests,
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,

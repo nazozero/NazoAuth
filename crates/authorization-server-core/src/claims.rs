@@ -100,8 +100,8 @@ pub struct AccessTokenClaimsInput<'a> {
     pub userinfo_claims: &'a [String],
     pub userinfo_claim_requests: &'a [OidcClaimRequest],
     pub ttl: i64,
-    pub dpop_jkt: Option<&'a str>,
-    pub mtls_x5t_s256: Option<&'a str>,
+    pub sender_constraint: crate::AppliedSenderConstraint<'a>,
+
     pub actor: Option<&'a Value>,
 }
 
@@ -130,16 +130,16 @@ pub fn access_token_claims(
         iat: now,
         nbf: now,
         exp: now + input.ttl,
-        cnf: match (input.dpop_jkt, input.mtls_x5t_s256) {
-            (Some(jkt), None) => Some(ConfirmationClaims {
+        cnf: match input.sender_constraint {
+            crate::AppliedSenderConstraint::Dpop(jkt) => Some(ConfirmationClaims {
                 jkt: Some(jkt.to_owned()),
                 x5t_s256: None,
             }),
-            (None, Some(x5t_s256)) => Some(ConfirmationClaims {
+            crate::AppliedSenderConstraint::MutualTls(x5t_s256) => Some(ConfirmationClaims {
                 jkt: None,
                 x5t_s256: Some(x5t_s256.to_owned()),
             }),
-            _ => None,
+            crate::AppliedSenderConstraint::Bearer => None,
         },
         act: input.actor.cloned(),
         userinfo_claims: input.userinfo_claims.to_vec(),

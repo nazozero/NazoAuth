@@ -80,8 +80,9 @@ async fn signed_policy_access_token(
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
-            dpop_jkt,
-            mtls_x5t_s256,
+            sender_constraint: nazo_auth::validate_sender_constraint(dpop_jkt, mtls_x5t_s256)
+                .expect("fixture has one sender binding"),
+
             actor: None,
         })
         .await
@@ -165,8 +166,8 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         })
         .await
@@ -340,8 +341,8 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         })
         .await
@@ -605,8 +606,8 @@ async fn live_access_rejects_missing_and_inactive_uuid_subjects() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         })
         .await
@@ -742,8 +743,8 @@ async fn live_access_fails_closed_when_subject_state_is_unavailable() {
             userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         })
         .await
