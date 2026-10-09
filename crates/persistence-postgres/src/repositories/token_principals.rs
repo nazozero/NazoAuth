@@ -13,17 +13,6 @@ use crate::schema::oauth_subject_bindings;
 // Security-only projections of the existing tables. The full client projection
 // already has 64 columns; these reads do not need that profile/configuration data.
 diesel::table! {
-    #[sql_name = "oauth_clients"]
-    client_principals (id) {
-        id -> Uuid,
-        tenant_id -> Uuid,
-        is_active -> Bool,
-        access_token_epoch -> BigInt,
-        client_type -> Text,
-    }
-}
-
-diesel::table! {
     #[sql_name = "users"]
     user_principals (id) {
         id -> Uuid,
@@ -33,11 +22,7 @@ diesel::table! {
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(
-    client_principals,
-    user_principals,
-    oauth_subject_bindings,
-);
+diesel::allow_tables_to_appear_in_same_query!(user_principals, oauth_subject_bindings,);
 
 pub(super) async fn snapshot(
     connection: &mut AsyncPgConnection,
@@ -87,45 +72,62 @@ pub(super) async fn lock_and_recheck(
     connection: &mut AsyncPgConnection,
     input: &CommitTokenIssuance,
 ) -> diesel::QueryResult<Result<String, CommitTokenIssuanceResult>> {
-    let client = client_principals::table
-        .filter(client_principals::tenant_id.eq(input.tenant_id))
-        .filter(client_principals::id.eq(input.client_id))
-        .select((
-            client_principals::is_active,
-            client_principals::access_token_epoch,
-            client_principals::client_type,
-        ))
-        .for_share()
-        .first::<(bool, i64, String)>(connection)
-        .await
-        .optional()?;
-    let Some((active, epoch, client_type)) = client else {
-        return Ok(Err(CommitTokenIssuanceResult::ClientInactive));
-    };
-    if !active || epoch != input.principal_state.client_epoch {
-        return Ok(Err(CommitTokenIssuanceResult::ClientInactive));
+    #[derive(QueryableByName)]
+    struct Fence {
+        #[diesel(sql_type = sql_types::Text)]
+        outcome: String,
+        #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
+        client_type: Option<String>,
     }
-    if let Some(user_id) = input.user_id {
-        let user = user_principals::table
-            .filter(user_principals::tenant_id.eq(input.tenant_id))
-            .filter(user_principals::id.eq(user_id))
-            .select((
-                user_principals::is_active,
-                user_principals::access_token_epoch,
-            ))
-            .for_share()
-            .first::<(bool, i64)>(connection)
-            .await
-            .optional()?;
-        if !user.is_some_and(|(active, epoch)| {
-            active && Some(epoch) == input.principal_state.user_epoch
-        }) {
-            return Ok(Err(CommitTokenIssuanceResult::SubjectInactive));
-        }
+    let rows = PrincipalFence(input).load::<Fence>(connection).await?;
+    let mut rows = rows.into_iter();
+    let row = rows
+        .next()
+        .filter(|_| rows.next().is_none())
+        .ok_or_else(|| {
+            diesel::result::Error::DeserializationError(
+                "invalid principal fence cardinality".into(),
+            )
+        })?;
+    match (row.outcome.as_str(), row.client_type) {
+        ("ok", Some(client_type)) => Ok(Ok(client_type)),
+        ("client_inactive", None) => Ok(Err(CommitTokenIssuanceResult::ClientInactive)),
+        ("subject_inactive", None) => Ok(Err(CommitTokenIssuanceResult::SubjectInactive)),
+        _ => Err(diesel::result::Error::DeserializationError(
+            "invalid principal fence outcome".into(),
+        )),
     }
-    // The same client lock protects the returned classification until commit.
-    // Authentication-class changes invalidate old refresh authority atomically.
-    Ok(Ok(client_type))
+}
+
+struct PrincipalFence<'a>(&'a CommitTokenIssuance);
+impl diesel::query_builder::QueryId for PrincipalFence<'_> {
+    type QueryId = PrincipalFence<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+impl diesel::query_builder::Query for PrincipalFence<'_> {
+    type SqlType = sql_types::Untyped;
+}
+impl<Conn> diesel::RunQueryDsl<Conn> for PrincipalFence<'_> {}
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PrincipalFence<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql("SELECT outcome, client_type FROM public.nazo_lock_token_principals(");
+        out.push_bind_param::<sql_types::Uuid, _>(&self.0.tenant_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Uuid, _>(&self.0.client_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::BigInt, _>(&self.0.principal_state.client_epoch)?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Nullable<sql_types::Uuid>, _>(&self.0.user_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Nullable<sql_types::BigInt>, _>(
+            &self.0.principal_state.user_epoch,
+        )?;
+        out.push_sql(")");
+        Ok(())
+    }
 }
 
 #[derive(QueryableByName)]

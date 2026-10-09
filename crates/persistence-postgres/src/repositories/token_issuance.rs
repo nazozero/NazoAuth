@@ -620,9 +620,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                         .connection()
                         .transaction::<CommitTokenIssuanceResult, CommitTransactionError, _>(
                             async |connection| {
-                                diesel::sql_query("SET LOCAL lock_timeout = '2s'")
-                                    .execute(connection)
-                                    .await?;
                                 let client_type = match
                                     super::token_principals::lock_and_recheck(connection, &input)
                                         .await?

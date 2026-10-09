@@ -156,7 +156,7 @@ New refresh-family creation executes its scope lock, family lock, capacity retir
 contract reference fence and insertion in one invoker-rights database function inside
 the caller's transaction. Each retired family still appends its own Required audit
 fact. The transaction owner remains responsible for confirmed commit before success;
-the function neither commits independently nor changes retention deadlines.
+the function neither commits independently nor changes retention deadlines. The principal fence similarly sets the transaction-local lock timeout, then locks and rechecks the client followed by the user in one call; the timeout remains active for the later receipt and family locks.
 
 
 The [token issuance repository](../../crates/persistence-postgres/src/repositories/token_issuance.rs)

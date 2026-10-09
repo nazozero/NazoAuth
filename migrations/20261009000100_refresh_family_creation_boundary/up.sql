@@ -73,7 +73,7 @@ BEGIN
                 retired_source := to_jsonb(v_revoked);
             END IF;
             IF NOT public.nazo_persist_security_audit_event(
-                gen_random_uuid(), 'refresh_family_capacity_retired', 'token_lifecycle',
+                uuidv7(), 'refresh_family_capacity_retired', 'token_lifecycle',
                 jsonb_build_object(
                     'schema_version', p_audit_schema, 'tenant_id', p_tenant,
                     'issuance_id', p_issuance, 'event_category', 'token_lifecycle',

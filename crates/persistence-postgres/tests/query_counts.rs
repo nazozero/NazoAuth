@@ -886,9 +886,8 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         Some("qc-parent-dpop".to_owned()),
     ))
     .await;
-    // Preserve keeps the same six statements: timeout, two principal SHARE
-    // reads, shared family advisory, family SHARE read, and Required audit.
-    // Changing lock modes removes reader serialization, not a SQL round trip.
+    // Preserve uses four statements: the ordered principal SHARE
+    // fence, shared family advisory, family SHARE read, and Required audit.
     let mut preserved = child.clone();
     preserved.issuance_id = Uuid::now_v7();
     preserved.access_token_jti = preserved.issuance_id.to_string();
@@ -905,7 +904,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         result.expect("preserve should commit"),
         CommitTokenIssuanceResult::Committed
     );
-    assert_eq!(delta.data_queries, 6);
+    assert_eq!(delta.data_queries, 4);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(delta.family_contract_cache_queries, 1);
@@ -926,7 +925,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         result.expect("second-family preserve should commit"),
         CommitTokenIssuanceResult::Committed
     );
-    assert_eq!(delta.data_queries, 6);
+    assert_eq!(delta.data_queries, 4);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(
@@ -941,10 +940,8 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         result.expect("rotation should commit"),
         CommitTokenIssuanceResult::Committed
     );
-    // 10 data statements inside the single commit transaction:
-    //   SET LOCAL lock_timeout
-    //   SELECT is_active FROM oauth_clients .. FOR SHARE
-    //   SELECT is_active FROM users .. FOR SHARE          (user_id is Some)
+    // 8 data statements inside the single commit transaction:
+    //   SELECT nazo_lock_token_principals (timeout, then client/user FOR SHARE)
     //   SELECT pg_advisory_xact_lock(grant scope)
     //   SELECT pg_advisory_xact_lock(family)
     //   SELECT oauth_refresh_families                      (current member check)
@@ -954,7 +951,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     //   SELECT nazo_persist_security_audit_event(..)       (token_issued)
     // Rotation writes one narrow family UPDATE plus one compact spent proof —
     // the immutable contract is never rewritten.
-    assert_eq!(delta.data_queries, 10);
+    assert_eq!(delta.data_queries, 8);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_clean(delta);
@@ -2689,7 +2686,69 @@ async fn new_family_capacity_transition_has_bounded_round_trips_and_complete_evi
         "NEW_FAMILY_ROUND_TRIPS counts={counts:?} confirmed_commits=13 live=10 retired=3 issued_audit=13 retired_audit=3"
     );
     assert!(
-        counts.iter().all(|n| *n <= 5),
+        counts.iter().all(|n| *n <= 3),
         "new-family creation must not add client round trips for each locked capacity retirement: {counts:?}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn principal_fence_timeout_covers_later_locks_and_resets_at_transaction_end() {
+    use diesel_async::SimpleAsyncConnection as _;
+    let _serial = SERIAL.lock().await;
+    let url = database_url().expect("isolated PostgreSQL required");
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&url, tenant).await;
+    let input = refresh_issuance(new_refresh_token(
+        &seed,
+        tenant.tenant_id.as_uuid(),
+        Uuid::now_v7(),
+        format!("timeout-{}", Uuid::now_v7()),
+        None,
+        None,
+    ))
+    .await;
+    let pool = create_pool(&url, 1).unwrap();
+    let mut c = get_conn(&pool).await.unwrap();
+    #[derive(diesel::QueryableByName)]
+    struct Setting {
+        #[diesel(sql_type=sql_types::Text)]
+        value: String,
+    }
+    let before = sql_query("SELECT current_setting('lock_timeout') AS value")
+        .get_result::<Setting>(&mut c)
+        .await
+        .unwrap()
+        .value;
+    c.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT * FROM public.nazo_lock_token_principals($1,$2,$3,$4,$5)")
+        .bind::<sql_types::Uuid, _>(input.tenant_id)
+        .bind::<sql_types::Uuid, _>(input.client_id)
+        .bind::<sql_types::BigInt, _>(input.principal_state.client_epoch)
+        .bind::<sql_types::Nullable<sql_types::Uuid>, _>(input.user_id)
+        .bind::<sql_types::Nullable<sql_types::BigInt>, _>(input.principal_state.user_epoch)
+        .execute(&mut c)
+        .await
+        .unwrap();
+    let after_call = sql_query("SELECT current_setting('lock_timeout') AS value")
+        .get_result::<Setting>(&mut c)
+        .await
+        .unwrap()
+        .value;
+    assert_eq!(
+        after_call, "2s",
+        "later receipt and family locks retain the timeout"
+    );
+    c.batch_execute("ROLLBACK").await.unwrap();
+    let after_transaction = sql_query("SELECT current_setting('lock_timeout') AS value")
+        .get_result::<Setting>(&mut c)
+        .await
+        .unwrap()
+        .value;
+    assert_eq!(
+        after_transaction, before,
+        "the next pool borrower inherits no local setting"
+    );
+    drop(c);
+    cleanup_seed(&url, tenant, &seed).await;
 }
