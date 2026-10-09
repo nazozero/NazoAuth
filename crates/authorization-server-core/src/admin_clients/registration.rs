@@ -1,6 +1,9 @@
 use uuid::Uuid;
 
-use super::helpers::{sector_identifier_host_for_redirects, trim_optional_string, trim_string_vec};
+use super::helpers::{
+    sector_identifier_host_for_redirects, trim_optional_string, trim_string_vec,
+    validate_subject_type,
+};
 use super::policy::{
     AdminClientPolicy, ClientSecurityPolicyContext, validate_composable_security_policy,
 };
@@ -79,6 +82,7 @@ where
         crypto,
     )?;
     let subject_type = request.subject_type.unwrap_or_else(|| "public".to_owned());
+    validate_subject_type(&subject_type)?;
     let redirect_uris = request.redirect_uris;
     let (sector_identifier_uri, sector_identifier_host) = pairwise_subject(
         &subject_type,

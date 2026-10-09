@@ -1,5 +1,15 @@
 use super::errors::AdminClientError;
 
+pub(super) fn validate_subject_type(value: &str) -> Result<(), AdminClientError> {
+    if matches!(value, "public" | "pairwise") {
+        Ok(())
+    } else {
+        Err(AdminClientError::InvalidRequest(
+            "subject_type 必须是 public 或 pairwise".to_owned(),
+        ))
+    }
+}
+
 pub(super) fn trim_optional_string(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_owned())

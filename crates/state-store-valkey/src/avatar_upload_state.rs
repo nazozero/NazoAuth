@@ -6,8 +6,6 @@ use nazo_identity::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{Error, ValkeyConnection, command, keys};
-
 const CLAIM_SCRIPT: &str = r#"
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 'missing' end
@@ -30,7 +28,9 @@ if not generation or generation < 0 then return 'corrupt' end
 generation = generation + 1
 local ownership_token = tostring(generation)
 state['claim_generation'] = generation
-state['ownership_token'] = ownership_token
+-- The returned token is a projection of the generation, not another authority.
+-- Remove the redundant member when reclaiming a record written by an older version.
+state['ownership_token'] = nil
 state['lease_until'] = tonumber(ARGV[2])
 redis.call('SET', KEYS[1], cjson.encode(state), 'KEEPTTL')
 if state['status'] == 'pending' then
@@ -59,7 +59,8 @@ if tonumber(state['expires_at'] or 0) <= now then
   return 'rejected'
 end
 if state['user_id'] ~= ARGV[1]
-  or state['ownership_token'] ~= ARGV[2]
+  or type(state['claim_generation']) ~= 'number'
+  or tostring(state['claim_generation']) ~= ARGV[2]
   or (tonumber(state['lease_until']) or 0) <= now then
   return 'rejected'
 end
@@ -71,6 +72,7 @@ if state['status'] == 'publishing' then
 end
 if state['status'] ~= 'pending' then return 'rejected' end
 state['status'] = 'publishing'
+state['ownership_token'] = nil
 state['staged_version'] = ARGV[3]
 state['final_object_id'] = ARGV[4]
 redis.call('SET', KEYS[1], cjson.encode(state), 'KEEPTTL')
@@ -94,16 +96,20 @@ if state['status'] == 'completed' then
   return 'rejected'
 end
 if state['status'] ~= 'publishing'
-  or state['ownership_token'] ~= ARGV[2]
+  or type(state['claim_generation']) ~= 'number'
+  or tostring(state['claim_generation']) ~= ARGV[2]
   or (tonumber(state['lease_until']) or 0) <= now then
   return 'rejected'
 end
-state['status'] = 'completed'
-state['final_object_id'] = ARGV[3]
-state['staged_version'] = nil
-state['ownership_token'] = nil
-state['lease_until'] = nil
-redis.call('SET', KEYS[1], cjson.encode(state), 'KEEPTTL')
+-- Terminal retries need only the owner, original deadline and published result.
+-- Preparation and lease fields no longer have a consumer after completion.
+local completed = {
+  status = 'completed',
+  user_id = state['user_id'],
+  expires_at = state['expires_at'],
+  final_object_id = ARGV[3]
+}
+redis.call('SET', KEYS[1], cjson.encode(completed), 'KEEPTTL')
 return 'applied'
 "#;
 
@@ -119,7 +125,8 @@ if tonumber(state['expires_at'] or 0) <= now then
 end
 if state['user_id'] ~= ARGV[1]
   or (state['status'] ~= 'pending' and state['status'] ~= 'publishing')
-  or state['ownership_token'] ~= ARGV[2]
+  or type(state['claim_generation']) ~= 'number'
+  or tostring(state['claim_generation']) ~= ARGV[2]
   or (tonumber(state['lease_until']) or 0) <= now then
   return 'rejected'
 end
@@ -129,6 +136,10 @@ redis.call('SET', KEYS[1], cjson.encode(state), 'KEEPTTL')
 return 'applied'
 "#;
 
+use crate::{Error, ValkeyConnection, command, keys};
+
+/// Initial authorization only. Later-stage fields are installed by their
+/// owning atomic transition, never serialized as unused placeholders.
 #[derive(Clone, Debug, Serialize)]
 struct AvatarUploadWireState {
     status: &'static str,
@@ -139,10 +150,6 @@ struct AvatarUploadWireState {
     staging_object_id: String,
     expires_at: i64,
     claim_generation: u64,
-    ownership_token: Option<String>,
-    lease_until: Option<i64>,
-    staged_version: Option<String>,
-    final_object_id: Option<String>,
 }
 
 impl From<&AvatarUploadAuthorization> for AvatarUploadWireState {
@@ -156,10 +163,6 @@ impl From<&AvatarUploadAuthorization> for AvatarUploadWireState {
             staging_object_id: value.staging_object_id.clone(),
             expires_at: value.expires_at.timestamp(),
             claim_generation: 0,
-            ownership_token: None,
-            lease_until: None,
-            staged_version: None,
-            final_object_id: None,
         }
     }
 }
