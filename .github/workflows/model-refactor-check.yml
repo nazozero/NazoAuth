@@ -7,6 +7,10 @@ on:
       - .github/workflows/model-refactor-check.yml
       - .github/model-refactor-stage-*.py
 
+concurrency:
+  group: model-refactor-check-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -46,29 +50,48 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for script in .github/model-refactor-stage-{a,b,c}.py; do
+          for script in .github/model-refactor-stage-{a,b,c,d}.py; do
             echo "=== $script ===" | tee -a /tmp/model-refactor-check/transform.log
             python3 "$script" 2>&1 | tee -a /tmp/model-refactor-check/transform.log
           done
           cargo fmt --all
           git add crates migrations
           git diff --cached --check
-          git diff --cached --stat > /tmp/model-refactor-check/diff-stat.txt
-          git diff --cached --binary > /tmp/model-refactor-check/source.patch
-          git diff --cached --name-only -z | tar --null -T - -czf /tmp/model-refactor-check/changed-source.tar.gz
       - name: Compile every workspace target and feature
         shell: bash
         run: |
           set -euo pipefail
           rustc --version --verbose > /tmp/model-refactor-check/compiler.txt
           cargo check --workspace --all-targets --all-features --locked --keep-going 2>&1 | tee /tmp/model-refactor-check/cargo-check.log
+      - name: Apply compiler-provided mechanical lint fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --workspace --all-targets --all-features --locked --fix --allow-dirty --allow-staged 2>&1 | tee /tmp/model-refactor-check/clippy-fix.log
+          cargo fmt --all
+          cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings 2>&1 | tee /tmp/model-refactor-check/clippy-check.log
+      - name: Check claim-selection compatibility and malformed-input regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p nazo-auth --all-features --locked --test claim_selection 2>&1 | tee /tmp/model-refactor-check/claim-selection-test.log
+      - name: Capture the exact candidate source and diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add crates migrations
+          git diff --cached --check
+          git diff --cached --stat > /tmp/model-refactor-check/diff-stat.txt
+          git diff --cached --binary > /tmp/model-refactor-check/source.patch
+          git diff --cached --name-only -z | tar --null -T - -czf /tmp/model-refactor-check/changed-source.tar.gz
       - name: Create a source commit object without advancing any branch
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          git rm -- .github/model-refactor-stage-a.py .github/model-refactor-stage-b.py .github/model-refactor-stage-c.py \
+          git rm -- .github/model-refactor-stage-{a,b,c,d}.py \
             .github/workflows/model-audit-snapshot.yml .github/workflows/model-audit-types.yml .github/workflows/model-refactor-check.yml
           python3 - <<'PY'
           import json, os, subprocess, urllib.request
@@ -107,8 +130,8 @@ jobs:
           commit = post('/git/commits', {'message': 'refactor(model): remove dead projections and duplicate OIDC claim state',
                       'tree': tree['sha'], 'parents': [parent]})
           result = {'parent_sha': parent, 'commit_sha': commit['sha'], 'tree_sha': tree['sha'], 'paths': len(entries),
-                    'validation': 'cargo check --workspace --all-targets --all-features --locked --keep-going',
-                    'branch_updated': False, 'tests_executed': False}
+                    'checks': ['all-target/all-feature cargo check', 'all-target/all-feature Clippy -D warnings', 'claim_selection regression tests'],
+                    'branch_updated': False, 'full_workspace_tests_executed': False}
           Path('/tmp/model-refactor-check/candidate-commit.json').write_text(json.dumps(result, indent=2))
           print(json.dumps(result, indent=2))
           PY
