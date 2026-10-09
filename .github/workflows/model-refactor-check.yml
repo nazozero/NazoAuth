@@ -1,0 +1,121 @@
+name: model-refactor-check
+
+on:
+  push:
+    branches: [refactor/exhaustive-model-audit-20261009]
+    paths:
+      - .github/workflows/model-refactor-check.yml
+      - .github/model-refactor-stage-*.py
+
+permissions:
+  contents: write
+
+jobs:
+  check-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_TERM_COLOR: never
+      RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the isolated branch and unchanged input source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/refactor/exhaustive-model-audit-20261009
+          git diff --exit-code 7d7ed5fddc5c91201bcac94553a6e72836d471d7 -- crates migrations
+          mkdir -p /tmp/model-refactor-check
+          git rev-parse HEAD > /tmp/model-refactor-check/parent-sha.txt
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: model-audit-pr236
+          cache-on-failure: true
+      - name: Install native build and one-off parser dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+          python3 -m pip install tree-sitter==0.25.2 tree-sitter-rust==0.24.2
+      - name: Apply the reviewed deterministic source transformations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in .github/model-refactor-stage-{a,b,c}.py; do
+            echo "=== $script ===" | tee -a /tmp/model-refactor-check/transform.log
+            python3 "$script" 2>&1 | tee -a /tmp/model-refactor-check/transform.log
+          done
+          cargo fmt --all
+          git add crates migrations
+          git diff --cached --check
+          git diff --cached --stat > /tmp/model-refactor-check/diff-stat.txt
+          git diff --cached --binary > /tmp/model-refactor-check/source.patch
+          git diff --cached --name-only -z | tar --null -T - -czf /tmp/model-refactor-check/changed-source.tar.gz
+      - name: Compile every workspace target and feature
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version --verbose > /tmp/model-refactor-check/compiler.txt
+          cargo check --workspace --all-targets --all-features --locked --keep-going 2>&1 | tee /tmp/model-refactor-check/cargo-check.log
+      - name: Create a source commit object without advancing any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -- .github/model-refactor-stage-a.py .github/model-refactor-stage-b.py .github/model-refactor-stage-c.py \
+            .github/workflows/model-audit-snapshot.yml .github/workflows/model-audit-types.yml .github/workflows/model-refactor-check.yml
+          python3 - <<'PY'
+          import json, os, subprocess, urllib.request
+          from pathlib import Path
+          def git(*args):
+              return subprocess.check_output(['git', *args]).decode().strip()
+          parent = git('rev-parse', 'HEAD')
+          assert parent == os.environ['GITHUB_SHA']
+          assert os.environ['GITHUB_REF'] == 'refs/heads/refactor/exhaustive-model-audit-20261009'
+          entries = []
+          names = subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z']).decode().split('\0')
+          for name in filter(None, names):
+              path = Path(name)
+              entry = {'path': name, 'mode': '100644', 'type': 'blob'}
+              if path.exists():
+                  assert name.startswith(('crates/', 'migrations/')), name
+                  entry['mode'] = git('ls-files', '--stage', '--', name).split()[0]
+                  entry['content'] = path.read_text()
+              else:
+                  assert name.startswith('.github/model-refactor-stage-') or name in {
+                      '.github/workflows/model-audit-snapshot.yml',
+                      '.github/workflows/model-audit-types.yml',
+                      '.github/workflows/model-refactor-check.yml',
+                  }, name
+                  entry['sha'] = None
+              entries.append(entry)
+          def post(endpoint, payload):
+              url = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + endpoint
+              request = urllib.request.Request(url, data=json.dumps(payload).encode(), method='POST', headers={
+                  'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                  'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json',
+              })
+              with urllib.request.urlopen(request, timeout=90) as response:
+                  return json.load(response)
+          tree = post('/git/trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': entries})
+          commit = post('/git/commits', {'message': 'refactor(model): remove dead projections and duplicate OIDC claim state',
+                      'tree': tree['sha'], 'parents': [parent]})
+          result = {'parent_sha': parent, 'commit_sha': commit['sha'], 'tree_sha': tree['sha'], 'paths': len(entries),
+                    'validation': 'cargo check --workspace --all-targets --all-features --locked --keep-going',
+                    'branch_updated': False, 'tests_executed': False}
+          Path('/tmp/model-refactor-check/candidate-commit.json').write_text(json.dumps(result, indent=2))
+          print(json.dumps(result, indent=2))
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: model-refactor-check-${{ github.sha }}
+          path: /tmp/model-refactor-check/
+          retention-days: 2
+          if-no-files-found: error
