@@ -1,0 +1,69 @@
+{
+  "user_mfa_remembered_devices": {
+    "before": {
+      "rows": 10000,
+      "avg_tuple_bytes": 224.0,
+      "heap_bytes": 2367488,
+      "index_bytes": 1933312,
+      "total_bytes": 4300800,
+      "dropped_slots": 1,
+      "exit": 0,
+      "source_attribute_count": 8
+    },
+    "after": {
+      "rows": 10000,
+      "avg_tuple_bytes": 200.0,
+      "heap_bytes": 2072576,
+      "index_bytes": 1679360,
+      "total_bytes": 3751936,
+      "dropped_slots": 3,
+      "exit": 0,
+      "source_attribute_count": 8
+    }
+  },
+  "user_mfa_backup_codes": {
+    "before": {
+      "rows": 10000,
+      "avg_tuple_bytes": 184.0,
+      "heap_bytes": 1933312,
+      "index_bytes": 974848,
+      "total_bytes": 2908160,
+      "dropped_slots": 0,
+      "exit": 0,
+      "source_attribute_count": 6
+    },
+    "after": {
+      "rows": 10000,
+      "avg_tuple_bytes": 170.0,
+      "heap_bytes": 1851392,
+      "index_bytes": 974848,
+      "total_bytes": 2826240,
+      "dropped_slots": 2,
+      "exit": 0,
+      "source_attribute_count": 6
+    }
+  },
+  "user_totp_credentials": {
+    "before": {
+      "rows": 10000,
+      "avg_tuple_bytes": 221.0,
+      "heap_bytes": 2375680,
+      "index_bytes": 1384448,
+      "total_bytes": 3760128,
+      "dropped_slots": 1,
+      "exit": 0,
+      "source_attribute_count": 11
+    },
+    "after": {
+      "rows": 10000,
+      "avg_tuple_bytes": 173.0,
+      "heap_bytes": 1859584,
+      "index_bytes": 1384448,
+      "total_bytes": 3244032,
+      "dropped_slots": 4,
+      "exit": 0,
+      "source_attribute_count": 11
+    }
+  },
+  "method": "10000 new rows in transaction-local tables preserving actual pg_attribute order including dropped slots, defaults, nullability, types and index definitions from old and final migrated schema; no manual vacuum. Layout-only fixture, not immediate shrink of pre-existing tuples."
+}

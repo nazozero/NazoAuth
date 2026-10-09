@@ -1,0 +1,27 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "-i",
+    "nazo-storage-pg-20261010",
+    "psql",
+    "-X",
+    "-qAt",
+    "-U",
+    "postgres",
+    "-d",
+    "oauth_final",
+    "-v",
+    "ON_ERROR_STOP=1"
+  ],
+  "sql": "BEGIN; CREATE TEMP TABLE measured (LIKE user_totp_credentials INCLUDING ALL); INSERT INTO measured SELECT * FROM user_totp_credentials; UPDATE user_totp_credentials SET secret_ciphertext=secret_ciphertext; SELECT json_build_object('rows',count(*),'actual_new_avg',avg(pg_column_size(a)),'like_avg',avg(pg_column_size(b)),'min_extra',min(pg_column_size(a)-pg_column_size(b)),'max_extra',max(pg_column_size(a)-pg_column_size(b))) FROM user_totp_credentials a JOIN measured b USING (id); ROLLBACK;",
+  "exit": 0,
+  "result": {
+    "rows": 7,
+    "actual_new_avg": 177.85714285714286,
+    "like_avg": 169.85714285714286,
+    "min_extra": 8,
+    "max_extra": 8
+  },
+  "boundary": "No-value-change UPDATE in isolated test DB, fully rolled back; validates new tuple layout, not natural cleanup."
+}

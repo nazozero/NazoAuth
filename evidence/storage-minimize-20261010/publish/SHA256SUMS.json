@@ -1,5 +1,6 @@
 {
-  "REPORT.md": "924323d2c98c6933590265af0ffffc732e3657a09ee937ee6a2d7d8ee9526e6b",
+  "REPORT.md": "6103c9e9efe8c5d1bf94161fbd7b977d7ede995f91bed23df0a8331cc067c000",
+  "actual-totp-layout-probe.json": "c95ab7c3a20878460bcc8c1a28c8d14e0c843ab1859fbebb21d18129da36460b",
   "approval-reject-exit.json": "bc8baac8b28770f96a83293534416e159dd3fc492b5707a3ca7669da46fc6f5d",
   "approval-reject.log": "a116ae310ba6793a42ea742b66f743ee47995c62396edd05ffdf73f2fe4eb9d2",
   "build.json": "c9b0a16240e2ea1fc1da74b2c438ce448a901d1ba84af8d46c5795cad84a2601",
@@ -85,6 +86,9 @@
   "negative-backup.log": "0dbf67ee5d4f38f047c32ad1012dc446c509802f9cb2a9a126fb85a3cd257567",
   "negative-mfa-exit.json": "ece793da5be7b02848fc7db36eca63cde1821411c180fd3c3f422e0b73c68f84",
   "negative-mfa.log": "e557e8bc3b0232f9d08bc9f645450772a19a83790fb3ea69eb68f460fc7aca76",
+  "physical-footprint.py": "40c23aaa62ad4e77923f4006f8715072cdb317e5c75273cde423f1ce7ef7c85e",
+  "physical-row-footprint.json": "45ab5fa5db8a30b70b4787e6f3c3713a50e368f7a011645bc53214e299482a24",
+  "physical-slot-probe.json": "64f82b0c21e7f20dfba054e9fe16cb636a607e7419e0874ff0c5b31bde8a3f9f",
   "quality-run.py": "706be3d9bff0b33773da6653fde41034d3e70c5e8694bf14789139a69367723c",
   "remembered-row-footprint.json": "05f7fc5c6db2d1a688fe428d1378ee64a8bee2754ca25fed84ca444c1ef6518d",
   "remembered-row-footprint.sql": "4a1356e9679ffdc932e17c250447fcb33ad6411045a91a22edc8f7d185227731",
@@ -94,7 +98,13 @@
   "table-inventory-provenance.json": "724994be7e86f1898aa133be9af0aacdf7fcbd34d7e42732aa03abca1bf471c8",
   "tables.jsonl": "2fb8d5c2638c707cfb8eaaa681bfd0667ab032b8dd73a9963fb9c8e12dbabcb9",
   "user_mfa_backup_codes-after-footprint.sql": "f68260bc5b6439fea4cf6d59e274bce574db50c837e24ce0c3f00d169ee0cb32",
+  "user_mfa_backup_codes-after-physical-footprint.sql": "3154ce952f0e10739022796d272f615ff169290063672b9962bfee174371b18b",
   "user_mfa_backup_codes-before-footprint.sql": "f68260bc5b6439fea4cf6d59e274bce574db50c837e24ce0c3f00d169ee0cb32",
+  "user_mfa_backup_codes-before-physical-footprint.sql": "30308ec751563e183b40d88dbe50f6c2a1a7074ebc81f9717e922124b2685e90",
+  "user_mfa_remembered_devices-after-physical-footprint.sql": "bf46d26cdb2c6a359d0fb1ec6a9b2d2e7918350e17d45e87130c95080eb7d43d",
+  "user_mfa_remembered_devices-before-physical-footprint.sql": "455b2c8bb754001b77942d51765ec8beaa81017f2549099813fe24b94ef0035b",
   "user_totp_credentials-after-footprint.sql": "a0b549a27909168839c6a70766096383fe899735ccc7e8a80ba122afb3fe4235",
-  "user_totp_credentials-before-footprint.sql": "b9011e0490ad2e22ae2eb768d3b38039df3d228b552412f4eea59daa8d542967"
+  "user_totp_credentials-after-physical-footprint.sql": "9f61f31fc6e141e25f745ecfc829d418b4e43824277d74aafc6bef97e51dabab",
+  "user_totp_credentials-before-footprint.sql": "b9011e0490ad2e22ae2eb768d3b38039df3d228b552412f4eea59daa8d542967",
+  "user_totp_credentials-before-physical-footprint.sql": "06855a1a03b11351d35f84224c4e8e1d469fabbd238a8f6a56b0b37fd8485499"
 }
