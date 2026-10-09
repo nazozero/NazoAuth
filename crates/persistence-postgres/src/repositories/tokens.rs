@@ -31,6 +31,9 @@ use super::access_token_revocation::{
     NewAccessTokenRevocation, access_token_revocation_deadline, upsert_access_token_revocations,
 };
 
+#[path = "tokens/create_family.rs"]
+mod create_family;
+
 pub(crate) const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 60;
 
 /// Adapter-local lookup after the public string tenant boundary is parsed.
@@ -1071,6 +1074,15 @@ async fn persist_refresh_token_inner(
             authority.family_id,
         ),
     };
+    if let RefreshTokenCommit::IssueNew { token, .. } = refresh {
+        let prepared = prepared_contract.ok_or_else(|| {
+            deserialization_error(RepositoryError::Consistency(
+                "new refresh family has no prepared contract".to_owned(),
+            ))
+        })?;
+        return create_family::create(connection, token, prepared, issuance_id, native_sso_source)
+            .await;
+    }
     // Preserve owns no capacity mutation and never acquires scope after family.
     // Rotation and creation retain the established scope -> family order.
     if refresh.token().is_some() {
@@ -1229,94 +1241,11 @@ async fn persist_refresh_token_inner(
         return Ok((RefreshTokenPersistResult::Inserted, None));
     }
 
-    let RefreshTokenCommit::IssueNew { token, .. } = refresh else {
-        unreachable!("existing refresh source returned above");
-    };
-    let prepared_contract = prepared_contract.ok_or_else(|| {
-        deserialization_error(RepositoryError::Consistency(
-            "new refresh family has no prepared contract".to_owned(),
-        ))
-    })?;
-    let contract_blake3 = &prepared_contract.contract_blake3;
-    let contract_value = &prepared_contract.contract_value;
-    let token_blake3 = blake3::hash(token.raw_token.as_bytes());
-    // New family issuance: a same-named family is a collision compromise,
-    // then the (tenant, user, client) active-family cap retires the
-    // deterministically oldest live families before the insert.
-    // Only existence matters here. Do not fetch/decode the current member,
-    // audience and sender bindings for a new family; rotation above still
-    // reads those authoritative facts under the same locks.
-    // Do not retain a named prepared plan for this miss-heavy probe. A plan
-    // chosen while the family table is empty can keep a sequential scan as
-    // issuance grows the table, until statistics invalidate it. SqlQuery is
-    // uncached, so this primary-key lookup is planned against the current size.
-    #[derive(diesel::QueryableByName)]
-    struct FamilyPresence {
-        #[diesel(sql_type = sql_types::Bool)]
-        present: bool,
-    }
-    if sql_query(
-        "SELECT EXISTS (SELECT 1 FROM oauth_refresh_families \
-         WHERE tenant_id = $1 AND token_family_id = $2) AS present",
-    )
-    .bind::<sql_types::Uuid, _>(token.tenant_id)
-    .bind::<sql_types::Uuid, _>(token.family_id)
-    .get_result::<FamilyPresence>(connection)
-    .await?
-    .present
-    {
-        compromise_family(connection, token.tenant_id, token.family_id).await?;
-        return Ok((RefreshTokenPersistResult::RotationConflict, None));
-    }
-    let retired_native_source = if let Some(user_id) = token.user_id {
-        retire_families_over_cap(
-            connection,
-            token.tenant_id,
-            user_id,
-            token.client_id,
-            issuance_id,
-            native_sso_source,
-        )
-        .await?
-    } else {
-        None
-    };
-    // One narrow call references the contract: an existing key is locked
-    // FOR KEY SHARE inside this transaction (the family foreign key can
-    // never dangle against a concurrent reclaim); a missing key takes the
-    // validated INSERT and a genuine create/reclaim race retries locally.
-    EnsureRefreshContractQuery {
-        tenant_id: token.tenant_id,
-        digest: contract_blake3,
-        contract: contract_value,
-    }
-    .execute(connection)
-    .await?;
-    diesel::insert_into(oauth_refresh_families::table)
-        .values((
-            oauth_refresh_families::tenant_id.eq(token.tenant_id),
-            oauth_refresh_families::token_family_id.eq(token.family_id),
-            oauth_refresh_families::client_id.eq(token.client_id),
-            oauth_refresh_families::user_id.eq(token.user_id),
-            oauth_refresh_families::contract_blake3.eq(contract_blake3.clone()),
-            oauth_refresh_families::current_member_id.eq(token.member_id),
-            oauth_refresh_families::current_token_blake3.eq(token_blake3.as_bytes().to_vec()),
-            oauth_refresh_families::current_audience.eq(serde_json::json!(token.audiences)),
-            oauth_refresh_families::current_issued_at.eq(token.issued_at),
-            oauth_refresh_families::current_expires_at.eq(token.expires_at),
-            oauth_refresh_families::current_id_token_sid.eq(token.id_token_sid.clone()),
-            oauth_refresh_families::dpop_jkt.eq(token.dpop_jkt.clone()),
-            oauth_refresh_families::mtls_x5t_s256.eq(token.mtls_x5t_s256.clone()),
-            oauth_refresh_families::client_attestation_jkt.eq(token.client_attestation_jkt.clone()),
-            oauth_refresh_families::created_at.eq(token.issued_at),
-        ))
-        .execute(connection)
-        .await?;
-    Ok((RefreshTokenPersistResult::Inserted, retired_native_source))
+    unreachable!("new family and existing refresh source returned above");
 }
 
 /// Locked facts from this transaction's successful source-family retirement.
-#[derive(diesel::QueryableByName)]
+#[derive(diesel::QueryableByName, serde::Deserialize)]
 pub(super) struct RetiredNativeSsoSource {
     #[diesel(sql_type = sql_types::Uuid)]
     pub tenant_id: Uuid,
@@ -1328,95 +1257,6 @@ pub(super) struct RetiredNativeSsoSource {
     pub source_client_id: String,
     #[diesel(sql_type = sql_types::Timestamptz)]
     pub expires_at: DateTime<Utc>,
-}
-
-/// Enforce `MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE` inside the grant-scope
-/// advisory lock. Live families beyond the nine newest are retired oldest
-/// first (by `current_issued_at`, then family id) by setting `revoked_at`;
-/// each retirement emits a Required audit event in the same transaction.
-/// Bounded maintenance later drains the family's spent proofs and row.
-async fn retire_families_over_cap(
-    connection: &mut AsyncPgConnection,
-    tenant_id: Uuid,
-    user_id: Uuid,
-    client_id: Uuid,
-    issuance_id: Uuid,
-    native_sso_source: Option<&nazo_auth::NativeSsoSourceFence>,
-) -> diesel::QueryResult<Option<RetiredNativeSsoSource>> {
-    #[derive(diesel::QueryableByName)]
-    struct LiveFamilyId {
-        #[diesel(sql_type = sql_types::Uuid)]
-        token_family_id: Uuid,
-    }
-    // Keep the nine newest live families so the pending insert lands at the
-    // cap; everything older is retired. Ordered access makes the set
-    // deterministic under identical timestamps.
-    let victims = sql_query(
-        "WITH ranked AS ( \
-             SELECT token_family_id, \
-                    row_number() OVER ( \
-                        ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, \
-                    count(*) OVER () AS total \
-             FROM oauth_refresh_families \
-             WHERE tenant_id = $1 AND user_id = $2 AND client_id = $3 \
-               AND revoked_at IS NULL AND reuse_detected_at IS NULL \
-               AND current_expires_at > CURRENT_TIMESTAMP \
-         ) SELECT token_family_id FROM ranked WHERE rn <= total - $4",
-    )
-    .bind::<sql_types::Uuid, _>(tenant_id)
-    .bind::<sql_types::Uuid, _>(user_id)
-    .bind::<sql_types::Uuid, _>(client_id)
-    .bind::<sql_types::BigInt, _>(MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE - 1)
-    .load::<LiveFamilyId>(connection)
-    .await?;
-    let mut retired_native_source = None;
-    for victim in victims {
-        lock_refresh_family(connection, victim.token_family_id).await?;
-        let revoked = sql_query(
-            "UPDATE oauth_refresh_families AS family SET revoked_at=CURRENT_TIMESTAMP \
-             WHERE family.tenant_id=$1 AND family.token_family_id=$2 \
-               AND family.revoked_at IS NULL AND family.reuse_detected_at IS NULL \
-               AND family.current_expires_at>CURRENT_TIMESTAMP \
-             RETURNING family.tenant_id, family.user_id, family.token_family_id, \
-                       family.current_expires_at AS expires_at, \
-                       (SELECT client.client_id FROM oauth_clients AS client \
-                        WHERE client.tenant_id=family.tenant_id AND client.id=family.client_id) AS source_client_id",
-        )
-        .bind::<sql_types::Uuid,_>(tenant_id)
-        .bind::<sql_types::Uuid,_>(victim.token_family_id)
-        .get_result::<RetiredNativeSsoSource>(connection).await.optional()?;
-        let Some(revoked) = revoked else {
-            continue;
-        };
-        if native_sso_source.is_some_and(|source| source.family_id == revoked.token_family_id) {
-            // The proof comes only from this successful UPDATE RETURNING; its
-            // row lock is held until the destination transaction commits.
-            retired_native_source = Some(revoked);
-        }
-        // Unreferenced contracts are reclaimed by maintenance after its grace.
-        append_fresh_security_audit_on_connection(
-            connection,
-            &SecurityAuditEvent {
-                event_id: Uuid::now_v7(),
-                event_type: "refresh_family_capacity_retired".to_owned(),
-                event_category: "token_lifecycle".to_owned(),
-                payload: serde_json::json!({
-                    "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
-                    "tenant_id": tenant_id,
-                    "issuance_id": issuance_id,
-                    "event_category": "token_lifecycle",
-                    "token_family_id": victim.token_family_id,
-                    "client_id": client_id,
-                    "user_id": user_id,
-                    "reason": "active_family_cap",
-                    "max_active_families": MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE,
-                }),
-                occurred_at: Utc::now(),
-            },
-        )
-        .await?;
-    }
-    Ok(retired_native_source)
 }
 
 /// Resolve a presented digest to its family: current member first, then the
@@ -1500,6 +1340,14 @@ pub(super) async fn lock_refresh_grant_scope(
     user_id: Option<Uuid>,
     client_id: Uuid,
 ) -> diesel::QueryResult<()> {
+    diesel::sql_query("SELECT pg_advisory_xact_lock($1)")
+        .bind::<sql_types::BigInt, _>(refresh_grant_scope_lock_key(tenant_id, user_id, client_id))
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
+fn refresh_grant_scope_lock_key(tenant_id: Uuid, user_id: Option<Uuid>, client_id: Uuid) -> i64 {
     let mut hasher = blake3::Hasher::new_derive_key("nazo.refresh-grant-advisory-lock.v1");
     hasher.update(tenant_id.as_bytes());
     match user_id {
@@ -1512,16 +1360,11 @@ pub(super) async fn lock_refresh_grant_scope(
         }
     }
     hasher.update(client_id.as_bytes());
-    let key = i64::from_be_bytes(
+    i64::from_be_bytes(
         hasher.finalize().as_bytes()[..8]
             .try_into()
             .expect("BLAKE3 output contains eight bytes"),
-    );
-    diesel::sql_query("SELECT pg_advisory_xact_lock($1)")
-        .bind::<diesel::sql_types::BigInt, _>(key)
-        .execute(connection)
-        .await?;
-    Ok(())
+    )
 }
 
 /// Family compromise is one row, one fact: idempotent on repeat conflict.
@@ -1679,36 +1522,6 @@ fn blake3_hex(value: &str) -> String {
 
 fn map_error(error: diesel::result::Error) -> RepositoryError {
     RepositoryError::Unexpected(error.to_string())
-}
-
-// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
-struct EnsureRefreshContractQuery<'a> {
-    tenant_id: Uuid,
-    digest: &'a [u8],
-    contract: &'a serde_json::Value,
-}
-impl diesel::query_builder::QueryId for EnsureRefreshContractQuery<'_> {
-    type QueryId = EnsureRefreshContractQuery<'static>;
-    const HAS_STATIC_QUERY_ID: bool = true;
-}
-impl diesel::query_builder::Query for EnsureRefreshContractQuery<'_> {
-    type SqlType = diesel::sql_types::Untyped;
-}
-impl<Conn> diesel::RunQueryDsl<Conn> for EnsureRefreshContractQuery<'_> {}
-impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for EnsureRefreshContractQuery<'_> {
-    fn walk_ast<'b>(
-        &'b self,
-        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
-    ) -> diesel::QueryResult<()> {
-        out.push_sql("SELECT public.nazo_oauth_refresh_contract_ensure(");
-        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.tenant_id)?;
-        out.push_sql(", ");
-        out.push_bind_param::<diesel::sql_types::Binary, _>(self.digest)?;
-        out.push_sql(", ");
-        out.push_bind_param::<diesel::sql_types::Jsonb, _>(self.contract)?;
-        out.push_sql(")");
-        Ok(())
-    }
 }
 
 #[cfg(test)]

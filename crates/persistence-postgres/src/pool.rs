@@ -269,6 +269,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_record_security_audit_genesis(TEXT, BYTEA), \
                          public.nazo_security_audit_shared_anchor_health(), \
                          public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN), \
+                         public.nazo_create_refresh_family(UUID, UUID, UUID, UUID, BYTEA, JSONB, UUID, BYTEA, JSONB, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, UUID, UUID, TEXT), \
                          public.nazo_oauth_refresh_contract_ensure(UUID, BYTEA, JSONB) \
                      FROM {quoted_role};\
                      GRANT EXECUTE ON FUNCTION \
@@ -276,6 +277,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
                          public.nazo_cleanup_authorization_decisions(), \
                          public.nazo_access_request_required_approval_matches(UUID, UUID, UUID, UUID, TEXT, TEXT), \
+                         public.nazo_create_refresh_family(UUID, UUID, UUID, UUID, BYTEA, JSONB, UUID, BYTEA, JSONB, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, UUID, UUID, TEXT), \
                          public.nazo_oauth_refresh_contract_ensure(UUID, BYTEA, JSONB), \
                          public.nazo_security_audit_shared_anchor_health(), \
                          public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \

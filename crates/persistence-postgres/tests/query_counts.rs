@@ -2618,7 +2618,7 @@ async fn refresh_contract_prepared_shape_preserves_distinct_contracts() {
         count: i64,
     }
     let mut c = get_conn(&pool).await.unwrap();
-    let cached=sql_query("SELECT count(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE 'SELECT public.nazo_oauth_refresh_contract_ensure(%' AND generic_plans+custom_plans=2").get_result::<Count>(&mut c).await.unwrap().count;
+    let cached=sql_query("SELECT count(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE 'SELECT outcome, retired_source FROM public.nazo_create_refresh_family(%' AND generic_plans+custom_plans=2").get_result::<Count>(&mut c).await.unwrap().count;
     assert_eq!(
         cached, 1,
         "one cached shape must execute both contract binds"
@@ -2630,4 +2630,66 @@ async fn refresh_contract_prepared_shape_preserves_distinct_contracts() {
     );
     drop(c);
     cleanup_seed(&url, tenant, &seed).await;
+}
+
+#[tokio::test]
+async fn new_family_capacity_transition_has_bounded_round_trips_and_complete_evidence() {
+    let _serial = SERIAL.lock().await;
+    let url = database_url().expect("isolated PostgreSQL required");
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&url, tenant).await;
+    let (pool, counter) = instrumented_pool(&url).await;
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let mut families = Vec::new();
+    let mut counts = Vec::new();
+    for _ in 0..13 {
+        let family_id = Uuid::now_v7();
+        families.push(family_id);
+        let input = refresh_issuance(new_refresh_token(
+            &seed,
+            tenant.tenant_id.as_uuid(),
+            family_id,
+            format!("bounded-create-{}", Uuid::now_v7()),
+            None,
+            None,
+        ))
+        .await;
+        let (outcome, delta) = measure(&counter, repository.commit_token_issuance(input)).await;
+        assert_eq!(outcome.unwrap(), CommitTokenIssuanceResult::Committed);
+        assert_clean(delta);
+        assert_eq!((delta.begins, delta.commits), (1, 1));
+        counts.push(delta.data_queries);
+    }
+    #[derive(diesel::QueryableByName)]
+    struct Facts {
+        #[diesel(sql_type=sql_types::Array<sql_types::Uuid>)]
+        retired: Vec<Uuid>,
+        #[diesel(sql_type=sql_types::BigInt)]
+        live: i64,
+        #[diesel(sql_type=sql_types::BigInt)]
+        retire_events: i64,
+        #[diesel(sql_type=sql_types::BigInt)]
+        issued_events: i64,
+    }
+    let mut c = get_conn(&pool).await.unwrap();
+    let facts = sql_query("SELECT         ARRAY(SELECT token_family_id FROM oauth_refresh_families WHERE tenant_id=$1 AND client_id=$2 AND revoked_at IS NOT NULL ORDER BY current_issued_at, token_family_id) AS retired,         (SELECT count(*) FROM oauth_refresh_families WHERE tenant_id=$1 AND client_id=$2 AND revoked_at IS NULL) AS live,         (SELECT count(*) FROM security_audit_events WHERE event_type='refresh_family_capacity_retired' AND payload->>'client_id'=$2::text AND payload->>'tenant_id'=$1::text) AS retire_events,         (SELECT count(*) FROM security_audit_events WHERE event_type='token_issued' AND payload->>'client_id'=$3 AND payload->>'tenant_id'=$1::text) AS issued_events")
+        .bind::<sql_types::Uuid,_>(tenant.tenant_id.as_uuid())
+        .bind::<sql_types::Uuid,_>(seed.client.id)
+        .bind::<sql_types::Text,_>(&seed.client.client_id)
+        .get_result::<Facts>(&mut c).await.unwrap();
+    assert_eq!(facts.retired, families[..3]);
+    assert_eq!(
+        (facts.live, facts.retire_events, facts.issued_events),
+        (10, 3, 13)
+    );
+    drop(c);
+    cleanup_seed(&url, tenant, &seed).await;
+    eprintln!(
+        "NEW_FAMILY_ROUND_TRIPS counts={counts:?} confirmed_commits=13 live=10 retired=3 issued_audit=13 retired_audit=3"
+    );
+    assert!(
+        counts.iter().all(|n| *n <= 5),
+        "new-family creation must not add client round trips for each locked capacity retirement: {counts:?}"
+    );
 }

@@ -1379,6 +1379,14 @@ async fn public_retention_upgrade_invalidates_unprovable_history_without_revivin
     for migration in &migrations[..cutover] {
         apply_migration(&mut connection, migration).await;
     }
+    // The current repository uses this invoker-only creation boundary. Install
+    // its function on the genuine preceding tables; it changes neither their
+    // schema nor replay-retention data, so the historical cutover stays real.
+    let creation = migrations
+        .iter()
+        .find(|path| path.file_name().unwrap() == "20261009000100_refresh_family_creation_boundary")
+        .expect("family creation boundary migration must exist");
+    apply_migration(&mut connection, creation).await;
     // Populate the genuine preceding schema. No proof count can distinguish a
     // fresh family from one whose old opaque-token associations were trimmed.
     let public = seed_fixture(&mut connection).await;

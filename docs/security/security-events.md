@@ -152,6 +152,13 @@ unlisted or unknown event name is treated as required, never as telemetry.
 
 ## Repository-owned events and separate stores
 
+New refresh-family creation executes its scope lock, family lock, capacity retirement,
+contract reference fence and insertion in one invoker-rights database function inside
+the caller's transaction. Each retired family still appends its own Required audit
+fact. The transaction owner remains responsible for confirmed commit before success;
+the function neither commits independently nor changes retention deadlines.
+
+
 The [token issuance repository](../../crates/persistence-postgres/src/repositories/token_issuance.rs)
 writes `token_issued` and `refresh_reuse_detected` with its
 issuance/tenant identity. One committed issuance produces exactly one durable
