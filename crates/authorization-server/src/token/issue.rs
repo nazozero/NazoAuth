@@ -166,11 +166,10 @@ fn id_token_session_sid<'a>(
     if client_session_sid_enabled(frontchannel_logout, client) {
         return issue.oidc_sid.as_deref();
     }
-    let requested = issue.id_token_claims.iter().any(|claim| claim == "sid")
-        || issue
-            .id_token_claim_requests
-            .iter()
-            .any(|request| request.name == "sid");
+    let requested = issue
+        .id_token_claim_requests
+        .iter()
+        .any(|request| request.name == "sid");
     requested.then_some(issue.oidc_sid.as_deref()).flatten()
 }
 

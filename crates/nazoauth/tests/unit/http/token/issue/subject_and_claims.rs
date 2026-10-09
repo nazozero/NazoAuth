@@ -365,12 +365,13 @@ async fn refresh_issue_rejects_missing_essential_id_token_claims() {
     issue.user_id = Some(user_id);
     issue.subject = user_id.to_string();
     issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
-    issue.id_token_claim_requests = vec![OidcClaimRequest {
+    issue.id_token_claim_requests = (vec![OidcClaimRequest {
         name: "department".to_owned(),
         essential: true,
         value: None,
         values: Vec::new(),
-    }];
+    }])
+    .into();
 
     set_refresh_authority_for_issue(&state, &client, &mut issue);
 

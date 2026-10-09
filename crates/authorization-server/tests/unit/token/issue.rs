@@ -83,10 +83,12 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
         amr: vec!["password".to_owned()],
         oidc_sid: Some("op-session-sid".to_owned()),
         acr: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims,
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: ((id_token_claims)
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
         refresh_id_token_sid: None,
         include_refresh: false,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
@@ -251,7 +253,7 @@ fn essential_id_token_claim_requests_match_protocol_claim_values() {
     let client = client_with_grants(&["authorization_code"]);
     let mut issue = token_issue_with_sid(Vec::new());
     issue.acr = Some("urn:example:loa:2".to_owned());
-    issue.id_token_claim_requests = vec![
+    issue.id_token_claim_requests = (vec![
         OidcClaimRequest {
             name: "auth_time".to_owned(),
             essential: true,
@@ -282,7 +284,8 @@ fn essential_id_token_claim_requests_match_protocol_claim_values() {
             value: None,
             values: vec![json!("engineering"), json!("security")],
         },
-    ];
+    ])
+    .into();
     let extra_claims = json!({"department": "engineering"});
 
     assert!(refreshed_id_token_essential_claims_satisfied(

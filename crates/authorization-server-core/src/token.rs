@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::OidcClaimRequest;
-
 /// Versioned authentication and claim contract carried by a refresh family.
 ///
 /// OIDC Core 12.2 preserves the original issuer, subject, audience and
@@ -27,18 +25,19 @@ pub struct RefreshTokenAuthenticationContext {
     /// refresh-time reader exists, so persistence strips it (the audit ledger
     /// is the durable record of the authorization request).
     pub nonce: Option<String>,
-    pub userinfo_claims: Vec<String>,
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
-    pub id_token_claims: Vec<String>,
-    pub id_token_claim_requests: Vec<OidcClaimRequest>,
+    #[serde(flatten)]
+    pub userinfo_claim_requests: crate::UserinfoClaimRequests,
+    #[serde(flatten)]
+    pub id_token_claim_requests: crate::IdTokenClaimRequests,
 }
 
 impl RefreshTokenAuthenticationContext {
-    pub const CURRENT_VERSION: u16 = 1;
+    /// Version 2 encodes each authorized claim exactly once. Version 1 is read-only legacy.
+    pub const CURRENT_VERSION: u16 = 2;
 
     #[must_use]
     pub const fn is_supported_version(&self) -> bool {
-        self.version == Self::CURRENT_VERSION
+        matches!(self.version, 1 | Self::CURRENT_VERSION)
     }
 
     #[must_use]

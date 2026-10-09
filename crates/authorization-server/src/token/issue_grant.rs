@@ -389,7 +389,6 @@ pub async fn issue_token_response(
             audiences: &issue.audiences,
             scopes: &issue.scopes,
             authorization_details: &issue.authorization_details,
-            userinfo_claims: &issue.userinfo_claims,
             userinfo_claim_requests: &issue.userinfo_claim_requests,
             ttl_seconds: context.config.access_token_ttl_seconds,
             sender_constraint,
@@ -437,7 +436,6 @@ pub async fn issue_token_response(
     let mut refresh_token_family_id = None;
     let mut issued_id_token_sid = None;
     if issue_includes_openid {
-        let sector_identifier_host = client.sector_identifier_host.as_deref();
         let id_token_claim_scopes = issue
             .refresh_authority
             .as_ref()
@@ -450,9 +448,7 @@ pub async fn issue_token_response(
             &loaded_claims.claims,
             id_token_claim_scopes,
             &issue.subject,
-            &issue.id_token_claims,
             &issue.id_token_claim_requests,
-            sector_identifier_host,
         ));
         if let Some(native_sso) = issue.native_sso.as_ref() {
             let claims = user_claims.get_or_insert_with(|| json!({}));

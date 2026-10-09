@@ -166,10 +166,16 @@ fn prompt_none_payload() -> ConsentPayload {
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("oidc-session".to_owned()),
         acr: None,
-        userinfo_claims: vec!["email".to_owned()],
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: vec!["sid".to_owned()],
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        id_token_claim_requests: ((vec!["sid".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
         code_challenge: Some(crate::crypto::pkce_s256(
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~",
         )),
@@ -243,9 +249,15 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
     assert_eq!(stored.scopes, payload.scopes);
     assert_eq!(stored.nonce, payload.nonce);
     assert_eq!(stored.oidc_sid, payload.oidc_sid);
-    assert_eq!(stored.id_token_claims, vec!["sid"]);
-    assert_eq!(stored.id_token_claims, payload.id_token_claims);
-    assert_eq!(stored.userinfo_claims, payload.userinfo_claims);
+    assert_eq!(stored.id_token_claim_requests.names(), vec!["sid"]);
+    assert_eq!(
+        stored.id_token_claim_requests.names(),
+        payload.id_token_claim_requests.names()
+    );
+    assert_eq!(
+        stored.userinfo_claim_requests.names(),
+        payload.userinfo_claim_requests.names()
+    );
     assert_eq!((stored.expires_at - stored.issued_at).num_seconds(), 60);
     assert_eq!(
         fixture.ports.calls(),

@@ -1,7 +1,7 @@
 use super::RefreshTokenAuthenticationContext;
 
 #[test]
-fn authentication_context_accepts_only_the_current_version() {
+fn authentication_context_accepts_current_and_retained_legacy_versions() {
     let context = RefreshTokenAuthenticationContext {
         version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
         issuer: "https://issuer.example".to_owned(),
@@ -12,12 +12,23 @@ fn authentication_context_accepts_only_the_current_version() {
         id_token_sid: Some("sid".to_owned()),
         acr: Some("1".to_owned()),
         nonce: Some("nonce".to_owned()),
-        userinfo_claims: vec!["email".to_owned()],
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: vec!["email".to_owned()],
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(crate::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        id_token_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(crate::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
     };
     assert!(context.is_well_formed());
+    let legacy = RefreshTokenAuthenticationContext {
+        version: 1,
+        ..context.clone()
+    };
+    assert!(legacy.is_well_formed());
     let unsupported = RefreshTokenAuthenticationContext {
         version: RefreshTokenAuthenticationContext::CURRENT_VERSION + 1,
         ..context
@@ -78,10 +89,16 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
             id_token_sid: Some("current-id-token-sid".to_owned()),
             acr: Some("1".to_owned()),
             nonce: Some("first-response-nonce".to_owned()),
-            userinfo_claims: vec!["email".to_owned()],
-            userinfo_claim_requests: Vec::new(),
-            id_token_claims: vec!["email".to_owned()],
-            id_token_claim_requests: Vec::new(),
+            userinfo_claim_requests: ((vec!["email".to_owned()])
+                .into_iter()
+                .map(crate::OidcClaimRequest::named)
+                .collect::<Vec<_>>())
+            .into(),
+            id_token_claim_requests: ((vec!["email".to_owned()])
+                .into_iter()
+                .map(crate::OidcClaimRequest::named)
+                .collect::<Vec<_>>())
+            .into(),
         },
     };
     let expected = RefreshContract {

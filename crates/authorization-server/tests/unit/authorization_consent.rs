@@ -19,10 +19,16 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("sid-secret".to_owned()),
         acr: Some("urn:mace:incommon:iap:silver".to_owned()),
-        userinfo_claims: vec!["email".to_owned()],
-        userinfo_claim_requests: vec![],
-        id_token_claims: vec!["auth_time".to_owned()],
-        id_token_claim_requests: vec![],
+        userinfo_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        id_token_claim_requests: ((vec!["auth_time".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
         code_challenge: Some("challenge-material".to_owned()),
         code_challenge_method: Some("S256".to_owned()),
         dpop_jkt: Some("dpop-binding".to_owned()),

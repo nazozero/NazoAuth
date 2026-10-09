@@ -138,7 +138,6 @@ impl ServerCredentialIssuerOperations {
                     audiences: std::slice::from_ref(&self.issuer),
                     scopes: &[],
                     authorization_details: &Value::Array(authorization_details.clone()),
-                    userinfo_claims: &[],
                     userinfo_claim_requests: &[],
                     ttl_seconds: (authorization.expires_at - Utc::now()).num_seconds().max(1),
                     sender_constraint,

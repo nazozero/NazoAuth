@@ -76,6 +76,25 @@ async fn token_principal_epochs_survive_reactivation_and_bindings_are_tenant_own
 }
 
 #[test]
+fn migration_versions_are_unique_across_merged_branches() {
+    let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let mut versions = std::collections::BTreeMap::new();
+    for entry in std::fs::read_dir(migrations).unwrap() {
+        let entry = entry.unwrap();
+        if !entry.file_type().unwrap().is_dir() || !entry.path().join("up.sql").is_file() {
+            continue;
+        }
+        let name = entry.file_name().into_string().unwrap();
+        let version = name.split('_').next().unwrap().to_owned();
+        let previous = versions.insert(version.clone(), name.clone());
+        assert!(
+            previous.is_none(),
+            "migration version {version} is shared by {previous:?} and {name}"
+        );
+    }
+}
+
+#[test]
 fn embedded_migration_head_tracks_latest_directory() {
     let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let latest = std::fs::read_dir(&migrations)

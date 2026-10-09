@@ -53,8 +53,7 @@ fn access_claims(tenant_id: Uuid) -> Claims {
         exp: 1_700_000_100,
         cnf: None,
         act: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
     }
 }
 

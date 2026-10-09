@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{OidcClaimRequest, deserialize_authorization_details, empty_authorization_details};
+use crate::{deserialize_authorization_details, empty_authorization_details};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ConsentPayload {
@@ -33,14 +33,10 @@ pub struct ConsentPayload {
     pub oidc_sid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acr: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_token_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_token_claim_requests: Vec<OidcClaimRequest>,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub userinfo_claim_requests: crate::UserinfoClaimRequests,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub id_token_claim_requests: crate::IdTokenClaimRequests,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_challenge: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -102,14 +98,10 @@ pub struct CodePayload {
     pub oidc_sid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acr: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_token_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_token_claim_requests: Vec<OidcClaimRequest>,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub userinfo_claim_requests: crate::UserinfoClaimRequests,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub id_token_claim_requests: crate::IdTokenClaimRequests,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_challenge: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

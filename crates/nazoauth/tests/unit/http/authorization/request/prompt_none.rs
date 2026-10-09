@@ -581,7 +581,7 @@ async fn prompt_none_issues_single_use_authorization_code_without_user_interacti
             assert_eq!(payload.scopes, vec!["openid", "profile"]);
             assert_eq!(payload.nonce.as_deref(), Some("nonce-1"));
             assert_eq!(payload.oidc_sid, Some(format!("oidc-{}", fixture.sid)));
-            assert_eq!(payload.id_token_claims, vec!["name"]);
+            assert_eq!(payload.id_token_claim_requests.names(), vec!["name"]);
         }
         _ => panic!("prompt=none creates a pending code"),
     }

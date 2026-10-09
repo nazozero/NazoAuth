@@ -200,7 +200,7 @@ fn refresh_token_for(input: &CommitTokenIssuance) -> nazo_auth::RefreshTokenComm
             authorization_details: serde_json::json!([]),
             subject: input.subject.clone(),
             authentication_context: nazo_auth::RefreshTokenAuthenticationContext {
-                version: 1,
+                version: nazo_auth::RefreshTokenAuthenticationContext::CURRENT_VERSION,
                 issuer: "https://issuer.example".to_owned(),
                 audience: "resource".to_owned(),
                 auth_time: 1,
@@ -209,10 +209,8 @@ fn refresh_token_for(input: &CommitTokenIssuance) -> nazo_auth::RefreshTokenComm
                 id_token_sid: None,
                 acr: None,
                 nonce: None,
-                userinfo_claims: vec![],
-                userinfo_claim_requests: vec![],
-                id_token_claims: vec![],
-                id_token_claim_requests: vec![],
+                userinfo_claim_requests: (vec![]).into(),
+                id_token_claim_requests: (vec![]).into(),
             },
         }
         .persisted(),

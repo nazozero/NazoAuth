@@ -37,8 +37,10 @@ fn access_token_claims_includes_all_required_jwt_fields() {
             audiences: &audiences,
             scopes: &scopes,
             authorization_details: &ad,
-            userinfo_claims: &["email".to_owned(), "name".to_owned()],
-            userinfo_claim_requests: &[],
+            userinfo_claim_requests: &(["email".to_owned(), "name".to_owned()])
+                .into_iter()
+                .map(nazo_auth::OidcClaimRequest::named)
+                .collect::<Vec<_>>(),
             ttl: 3600,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Dpop("dpop-thumbprint"),
 
@@ -67,7 +69,10 @@ fn access_token_claims_includes_all_required_jwt_fields() {
     assert_eq!(cnf.jkt.as_deref(), Some("dpop-thumbprint"));
     assert!(cnf.x5t_s256.is_none());
 
-    assert_eq!(claims.userinfo_claims, vec!["email", "name"]);
+    assert_eq!(
+        claims.userinfo_claim_requests.names(),
+        vec!["email", "name"]
+    );
 }
 
 #[test]
@@ -91,7 +96,6 @@ fn access_token_claims_include_user_id_only_for_public_user_subject() {
             audiences: &audiences,
             scopes: &scopes,
             authorization_details: &ad,
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 3600,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -125,7 +129,6 @@ fn access_token_claims_client_credentials_omits_user_id() {
             audiences: &["resource://api".to_owned()],
             scopes: &scopes,
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 120,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -159,7 +162,6 @@ fn access_token_claims_cnf_is_none_when_sender_constraints_are_absent() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -197,7 +199,6 @@ fn access_token_claims_cnf_with_mtls_x5t_only() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::MutualTls(
@@ -236,7 +237,6 @@ fn access_token_claims_multiple_audiences_produces_json_array() {
             audiences: &audiences,
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -274,7 +274,6 @@ fn access_token_claims_single_audience_is_json_string_not_array() {
             audiences: &audiences,
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -305,7 +304,6 @@ fn access_token_claims_empty_audience_is_empty_json_array() {
             audiences: &audiences,
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -335,7 +333,6 @@ fn access_token_claims_zero_ttl_produces_exp_equal_to_iat() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 0,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -372,7 +369,6 @@ fn access_token_claims_scope_is_sorted_alphabetically() {
             audiences: &["resource://default".to_owned()],
             scopes: &scopes,
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -403,7 +399,6 @@ fn access_token_claims_empty_scope_is_empty_string() {
             audiences: &["resource://default".to_owned()],
             scopes: &scopes,
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -433,7 +428,6 @@ fn access_token_claims_empty_authorization_details_is_empty_array() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -477,7 +471,6 @@ fn access_token_claims_carries_userinfo_claim_requests() {
             audiences: &["resource://default".to_owned()],
             scopes: &["openid".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &requests,
             ttl: 60,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,

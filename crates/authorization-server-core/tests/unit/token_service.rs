@@ -30,8 +30,7 @@ fn access_claims(confirmation: Option<ConfirmationClaims>) -> Claims {
         exp: 2,
         cnf: confirmation,
         act: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
     }
 }
 

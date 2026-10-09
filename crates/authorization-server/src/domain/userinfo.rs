@@ -183,9 +183,7 @@ impl ServerUserinfoOperations {
             &subject_claims,
             &scopes,
             &claims.sub,
-            &claims.userinfo_claims,
             &claims.userinfo_claim_requests,
-            None,
         );
         let response_encryption_configured = client.userinfo_encrypted_response_alg.is_some()
             || client.userinfo_encrypted_response_enc.is_some();

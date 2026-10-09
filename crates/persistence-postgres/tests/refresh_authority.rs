@@ -100,10 +100,8 @@ fn contract(fixture: &Fixture) -> RefreshContract {
             id_token_sid: None,
             acr: None,
             nonce: None,
-            userinfo_claims: Vec::new(),
-            userinfo_claim_requests: Vec::new(),
-            id_token_claims: Vec::new(),
-            id_token_claim_requests: Vec::new(),
+            userinfo_claim_requests: (Vec::new()).into(),
+            id_token_claim_requests: (Vec::new()).into(),
         },
     }
 }
@@ -984,7 +982,15 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
     .bind::<sql_types::Timestamptz, _>(token.issued_at)
     .bind::<sql_types::Timestamptz, _>(token.expires_at)
     .bind::<sql_types::Text, _>(&original_contract.subject)
-    .bind::<sql_types::Jsonb, _>(serde_json::to_value(context).unwrap())
+    .bind::<sql_types::Jsonb, _>({
+        // Historical fixture: encode the actual pre-cutover version, not the
+        // current compact Rust writer. Only the migration computes its key.
+        let mut legacy = serde_json::to_value(context).unwrap();
+        legacy["version"] = json!(1);
+        legacy["userinfo_claims"] = json!([]);
+        legacy["id_token_claims"] = json!([]);
+        legacy
+    })
     .execute(&mut connection).await.unwrap();
     // Run the entire original migration, including table creation and the real
     // dual-MD5 upgrade DO block, followed by every append-only migration to head.
@@ -1392,8 +1398,16 @@ async fn public_retention_upgrade_invalidates_unprovable_history_without_revivin
             .expect("current repository boundary migration must exist");
         apply_migration(&mut connection, boundary).await;
     }
-    // Populate the genuine preceding schema. No proof count can distinguish a
-    // fresh family from one whose old opaque-token associations were trimmed.
+    // Only the unrelated claim-encoding validator is brought forward so the
+    // current writer can seed this fixture. All retention tables/functions
+    // remain at the genuine pre-retention-cutover state under test.
+    let compact = migrations
+        .iter()
+        .find(|path| path.file_name().unwrap() == "20261009000300_compact_oidc_claim_selections")
+        .unwrap();
+    apply_migration(&mut connection, compact).await;
+    // No proof count can distinguish a fresh family from one whose old
+    // opaque-token associations were trimmed.
     let public = seed_fixture(&mut connection).await;
     make_public(&mut connection, public.client_id).await;
     let (old_raw, old) = issue_at(&url, &public, Utc::now()).await;

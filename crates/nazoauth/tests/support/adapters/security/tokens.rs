@@ -21,7 +21,6 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) audiences: &'a [String],
     pub(crate) scopes: &'a [String],
     pub(crate) authorization_details: &'a Value,
-    pub(crate) userinfo_claims: &'a [String],
     pub(crate) userinfo_claim_requests: &'a [OidcClaimRequest],
     pub(crate) ttl: i64,
     pub(crate) dpop_jkt: Option<&'a str>,
@@ -65,7 +64,6 @@ pub(crate) async fn make_jwt(
             audiences: input.audiences,
             scopes: input.scopes,
             authorization_details: input.authorization_details,
-            userinfo_claims: input.userinfo_claims,
             userinfo_claim_requests: input.userinfo_claim_requests,
             ttl: input.ttl,
             sender_constraint: nazo_auth::validate_sender_constraint(

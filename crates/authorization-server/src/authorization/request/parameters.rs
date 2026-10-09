@@ -1,5 +1,3 @@
-use nazo_auth::OidcClaimRequest;
-
 use std::collections::HashMap;
 
 pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
@@ -38,13 +36,6 @@ pub(crate) fn authorization_duplicate_parameters() -> Vec<&'static str> {
 
 pub(super) fn reauth_nonce_parameter() -> &'static str {
     REAUTH_NONCE_PARAMETER
-}
-
-pub(super) fn claim_request_names(requests: &[OidcClaimRequest]) -> Vec<String> {
-    requests
-        .iter()
-        .map(|request| request.name.clone())
-        .collect()
 }
 
 pub(super) fn preserve_verified_dpop_binding(

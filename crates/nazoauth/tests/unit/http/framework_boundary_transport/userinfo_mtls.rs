@@ -421,7 +421,6 @@ mod real_userinfo_contract {
                 audiences: &["resource://default".to_owned()],
                 scopes: &["openid".to_owned()],
                 authorization_details: &json!([]),
-                userinfo_claims: &[],
                 userinfo_claim_requests: &[],
                 ttl: 300,
                 dpop_jkt: None,

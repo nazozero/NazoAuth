@@ -112,10 +112,8 @@ fn refresh_authentication_context(
         id_token_sid: None,
         acr: None,
         nonce: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: (Vec::new()).into(),
     }
 }
 
@@ -3248,7 +3246,7 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
     float_child
         .contract
         .authentication_context
-        .userinfo_claim_requests = vec![claim_for(json!(1))];
+        .userinfo_claim_requests = (vec![claim_for(json!(1))]).into();
     let float_input = refresh_issuance(float_child).await;
     let incoming_context = serde_json::to_value(
         float_input
@@ -3323,12 +3321,13 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
     shape_child
         .contract
         .authentication_context
-        .userinfo_claim_requests = vec![nazo_auth::OidcClaimRequest {
+        .userinfo_claim_requests = (vec![nazo_auth::OidcClaimRequest {
         name: "claim".to_owned(),
         essential: false,
         value: None,
         values: vec![json!(1)],
-    }];
+    }])
+    .into();
     let (result, losing) = commit_refresh(&database_url, shape_child).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
     assert_rotation_conflict_facts(
@@ -3366,7 +3365,7 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
     equal_child
         .contract
         .authentication_context
-        .userinfo_claim_requests = vec![claim_for(json!(1))];
+        .userinfo_claim_requests = (vec![claim_for(json!(1))]).into();
     let (result, _) = commit_refresh(&database_url, equal_child).await;
     assert_eq!(result, CommitTokenIssuanceResult::Committed);
     let state = sql_query(

@@ -18,7 +18,6 @@ fn access_input(authorization_details: &serde_json::Value) -> AccessTokenSignInp
         audiences: &[],
         scopes: &[],
         authorization_details,
-        userinfo_claims: &[],
         userinfo_claim_requests: &[],
         ttl_seconds: 300,
         sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,

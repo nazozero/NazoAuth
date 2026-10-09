@@ -20,9 +20,9 @@ use super::{
     AuthorizationRequestContext, AuthorizationResponseClientPolicy, AuthorizationResponseRedirect,
     apply_request_object_with_context, authorization_login_query,
     authorization_login_url_with_context, authorization_oauth_error_redirect,
-    authorization_response_redirect_with_context, claim_request_names,
-    consume_reauth_nonce_with_context, credential_configuration_ids,
-    is_pushed_authorization_request_uri, issue_authorization_code_without_interaction_with_context,
+    authorization_response_redirect_with_context, consume_reauth_nonce_with_context,
+    credential_configuration_ids, is_pushed_authorization_request_uri,
+    issue_authorization_code_without_interaction_with_context,
     outer_request_uri_parameters_match_pushed, preserve_verified_dpop_binding,
     runtime_authorization_capability_error,
 };
@@ -516,10 +516,8 @@ pub(crate) async fn authorize_request_with_context(
         amr: session.amr,
         oidc_sid: Some(session.oidc_sid),
         acr: normalized.acr,
-        userinfo_claims: claim_request_names(&normalized.requested_claims.userinfo),
-        userinfo_claim_requests: normalized.requested_claims.userinfo,
-        id_token_claims: claim_request_names(&normalized.requested_claims.id_token),
-        id_token_claim_requests: normalized.requested_claims.id_token,
+        userinfo_claim_requests: (normalized.requested_claims.userinfo).into(),
+        id_token_claim_requests: (normalized.requested_claims.id_token).into(),
         code_challenge: normalized.code_challenge,
         code_challenge_method: normalized.code_challenge_method,
         dpop_jkt,
@@ -535,10 +533,10 @@ pub(crate) async fn authorize_request_with_context(
     if normalized.prompt.none {
         if !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
             &payload.scopes,
-            &payload.userinfo_claims,
+            &payload.userinfo_claim_requests,
         ) || !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
             &payload.scopes,
-            &payload.id_token_claims,
+            &payload.id_token_claim_requests,
         ) {
             return authorization_oauth_error_redirect(
                 context,

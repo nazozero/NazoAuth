@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub use nazo_auth::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
-    OidcClaimRequest, PreparedTokenSubject, PushedAuthorizationRequest,
+    PreparedTokenSubject, PushedAuthorizationRequest,
 };
 
 /// token 签发函数所需的归一化输入。
@@ -45,10 +45,8 @@ pub struct TokenIssue {
     pub amr: Vec<String>,
     pub oidc_sid: Option<String>,
     pub acr: Option<String>,
-    pub userinfo_claims: Vec<String>,
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
-    pub id_token_claims: Vec<String>,
-    pub id_token_claim_requests: Vec<OidcClaimRequest>,
+    pub userinfo_claim_requests: nazo_auth::UserinfoClaimRequests,
+    pub id_token_claim_requests: nazo_auth::IdTokenClaimRequests,
     /// `None` means this is not a refresh issuance. `Some(None)` records that
     /// the original ID Token omitted `sid`; `Some(Some(value))` preserves the
     /// exact SID emitted by the original ID Token (including Native SSO).

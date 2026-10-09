@@ -678,10 +678,8 @@ fn refresh_authentication_context(
         id_token_sid: None,
         acr: None,
         nonce: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: (Vec::new()).into(),
     }
 }
 

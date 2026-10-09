@@ -15,10 +15,16 @@ fn openid_issue() -> TokenIssue {
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("original-sid".to_owned()),
         acr: Some("1".to_owned()),
-        userinfo_claims: vec!["email".to_owned()],
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: vec!["email".to_owned()],
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        id_token_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
         refresh_id_token_sid: None,
         include_refresh: true,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
@@ -57,7 +63,7 @@ fn refresh_authentication_context_preserves_original_claim_contract_on_scope_nar
     assert_eq!(context.oidc_sid.as_deref(), Some("original-sid"));
     assert_eq!(context.acr.as_deref(), Some("1"));
     assert_eq!(context.nonce.as_deref(), Some("original-nonce"));
-    assert_eq!(context.id_token_claims, vec!["email"]);
+    assert_eq!(context.id_token_claim_requests.names(), vec!["email"]);
 }
 
 #[test]
@@ -421,9 +427,13 @@ fn ownership_refresh_borrowed_context_rejects_each_contract_field_difference() {
             6 => context.id_token_sid = Some("not-persisted".into()),
             7 => context.acr = Some("different".into()),
             8 => context.nonce = Some("not-persisted".into()),
-            9 => context.userinfo_claims.push("profile".into()),
+            9 => context
+                .userinfo_claim_requests
+                .push(nazo_auth::OidcClaimRequest::named("profile")),
             10 => context.userinfo_claim_requests.push(request),
-            11 => context.id_token_claims.push("profile".into()),
+            11 => context
+                .id_token_claim_requests
+                .push(nazo_auth::OidcClaimRequest::named("profile")),
             12 => context.id_token_claim_requests.push(request),
             _ => unreachable!(),
         }

@@ -50,6 +50,19 @@ pub struct OidcClaimRequest {
     pub values: Vec<Value>,
 }
 
+impl OidcClaimRequest {
+    /// An explicit request with no additional value constraint.
+    #[must_use]
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            essential: false,
+            value: None,
+            values: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Claims {
     /// Issuer-owned authorization instance. Old tokens remain token-bound.
@@ -79,10 +92,8 @@ pub struct Claims {
     pub cnf: Option<ConfirmationClaims>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub act: Option<Value>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub userinfo_claim_requests: crate::UserinfoClaimRequests,
 }
 
 pub struct AccessTokenClaimsInput<'a> {
@@ -97,7 +108,6 @@ pub struct AccessTokenClaimsInput<'a> {
     pub audiences: &'a [String],
     pub scopes: &'a [String],
     pub authorization_details: &'a Value,
-    pub userinfo_claims: &'a [String],
     pub userinfo_claim_requests: &'a [OidcClaimRequest],
     pub ttl: i64,
     pub sender_constraint: crate::AppliedSenderConstraint<'a>,
@@ -142,8 +152,7 @@ pub fn access_token_claims(
             crate::AppliedSenderConstraint::Bearer => None,
         },
         act: input.actor.cloned(),
-        userinfo_claims: input.userinfo_claims.to_vec(),
-        userinfo_claim_requests: input.userinfo_claim_requests.to_vec(),
+        userinfo_claim_requests: (input.userinfo_claim_requests.to_vec()).into(),
     }
 }
 

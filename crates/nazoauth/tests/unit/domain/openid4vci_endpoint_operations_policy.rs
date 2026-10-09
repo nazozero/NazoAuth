@@ -77,7 +77,6 @@ async fn signed_policy_access_token(
             audiences: std::slice::from_ref(&fixture.issuer.issuer),
             scopes: &[],
             authorization_details: &authorization_details,
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
             sender_constraint: nazo_auth::validate_sender_constraint(dpop_jkt, mtls_x5t_s256)
@@ -163,7 +162,6 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
             audiences: std::slice::from_ref(&fixture.issuer.issuer),
             scopes: &[],
             authorization_details: &Value::Array(Vec::new()),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -338,7 +336,6 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
                 &fixture.issuer.issuer,
                 "unit-live-pairwise-access"
             )]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -603,7 +600,6 @@ async fn live_access_rejects_missing_and_inactive_uuid_subjects() {
             audiences: std::slice::from_ref(&fixture.issuer.issuer),
             scopes: &[],
             authorization_details: &authorization_details,
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
@@ -740,7 +736,6 @@ async fn live_access_fails_closed_when_subject_state_is_unavailable() {
                 &fixture.issuer.issuer,
                 "unit-live-subject-outage"
             )]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl_seconds: 300,
             sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,

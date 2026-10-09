@@ -323,7 +323,6 @@ pub struct AccessTokenSignInput<'a> {
     pub audiences: &'a [String],
     pub scopes: &'a [String],
     pub authorization_details: &'a Value,
-    pub userinfo_claims: &'a [String],
     pub userinfo_claim_requests: &'a [OidcClaimRequest],
     pub ttl_seconds: i64,
     pub sender_constraint: crate::AppliedSenderConstraint<'a>,

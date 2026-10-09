@@ -199,20 +199,27 @@ fn authorization_code_token_issue_creates_native_sso_binding_for_device_sso_scop
 fn authorization_code_token_issue_preserves_requested_oidc_claims_and_acr() {
     let mut payload = code_payload(true);
     payload.acr = Some("urn:example:acr:phishing-resistant".to_owned());
-    payload.userinfo_claims = vec!["name".to_owned(), "email".to_owned()];
-    payload.userinfo_claim_requests = vec![OidcClaimRequest {
-        name: "email".to_owned(),
-        essential: true,
-        value: Some(json!("alice@example.com")),
-        values: Vec::new(),
-    }];
-    payload.id_token_claims = vec!["auth_time".to_owned(), "sid".to_owned()];
-    payload.id_token_claim_requests = vec![OidcClaimRequest {
-        name: "acr".to_owned(),
-        essential: true,
-        value: Some(json!("urn:example:acr:phishing-resistant")),
-        values: Vec::new(),
-    }];
+    payload.userinfo_claim_requests = (vec![
+        OidcClaimRequest::named("name"),
+        OidcClaimRequest {
+            name: "email".to_owned(),
+            essential: true,
+            value: Some(json!("alice@example.com")),
+            values: Vec::new(),
+        },
+    ])
+    .into();
+    payload.id_token_claim_requests = (vec![
+        OidcClaimRequest::named("auth_time"),
+        OidcClaimRequest::named("sid"),
+        OidcClaimRequest {
+            name: "acr".to_owned(),
+            essential: true,
+            value: Some(json!("urn:example:acr:phishing-resistant")),
+            values: Vec::new(),
+        },
+    ])
+    .into();
 
     let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
         payload,
@@ -230,14 +237,17 @@ fn authorization_code_token_issue_preserves_requested_oidc_claims_and_acr() {
         issue.acr.as_deref(),
         Some("urn:example:acr:phishing-resistant")
     );
-    assert_eq!(issue.userinfo_claims, vec!["name", "email"]);
-    assert_eq!(issue.userinfo_claim_requests.len(), 1);
-    assert_eq!(issue.userinfo_claim_requests[0].name, "email");
-    assert!(issue.userinfo_claim_requests[0].essential);
-    assert_eq!(issue.id_token_claims, vec!["auth_time", "sid"]);
-    assert_eq!(issue.id_token_claim_requests.len(), 1);
-    assert_eq!(issue.id_token_claim_requests[0].name, "acr");
-    assert!(issue.id_token_claim_requests[0].essential);
+    assert_eq!(issue.userinfo_claim_requests.names(), vec!["name", "email"]);
+    assert_eq!(issue.userinfo_claim_requests.len(), 2);
+    assert_eq!(issue.userinfo_claim_requests[1].name, "email");
+    assert!(issue.userinfo_claim_requests[1].essential);
+    assert_eq!(
+        issue.id_token_claim_requests.names(),
+        vec!["auth_time", "sid", "acr"]
+    );
+    assert_eq!(issue.id_token_claim_requests.len(), 3);
+    assert_eq!(issue.id_token_claim_requests[2].name, "acr");
+    assert!(issue.id_token_claim_requests[2].essential);
 }
 
 #[test]

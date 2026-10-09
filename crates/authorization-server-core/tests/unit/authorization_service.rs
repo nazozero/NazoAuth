@@ -392,10 +392,16 @@ fn consent(user_id: Uuid, request_uri: Option<&str>) -> ConsentPayload {
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("sid-1".to_owned()),
         acr: Some("1".to_owned()),
-        userinfo_claims: vec!["name".to_owned()],
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: vec!["email".to_owned()],
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: ((vec!["name".to_owned()])
+            .into_iter()
+            .map(crate::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        id_token_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(crate::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
         code_challenge: Some("challenge".to_owned()),
         code_challenge_method: Some("S256".to_owned()),
         dpop_jkt: Some("jkt".to_owned()),

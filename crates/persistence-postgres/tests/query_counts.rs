@@ -254,10 +254,8 @@ fn refresh_context(client_public_id: &str) -> RefreshTokenAuthenticationContext 
         id_token_sid: None,
         acr: None,
         nonce: None,
-        userinfo_claims: vec![],
-        userinfo_claim_requests: vec![],
-        id_token_claims: vec![],
-        id_token_claim_requests: vec![],
+        userinfo_claim_requests: (vec![]).into(),
+        id_token_claim_requests: (vec![]).into(),
     }
 }
 

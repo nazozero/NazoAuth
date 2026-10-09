@@ -35,10 +35,8 @@ pub(super) fn refresh_authentication_context(
         id_token_sid: id_token_sid.map(ToOwned::to_owned),
         acr: issue.acr.clone(),
         nonce: issue.nonce.clone(),
-        userinfo_claims: issue.userinfo_claims.clone(),
-        userinfo_claim_requests: issue.userinfo_claim_requests.clone(),
-        id_token_claims: issue.id_token_claims.clone(),
-        id_token_claim_requests: issue.id_token_claim_requests.clone(),
+        userinfo_claim_requests: (issue.userinfo_claim_requests.clone()).into(),
+        id_token_claim_requests: (issue.id_token_claim_requests.clone()).into(),
     };
     context.is_well_formed().then_some(context)
 }
@@ -87,9 +85,9 @@ pub(super) fn refresh_issue_matches_source(
         && context.id_token_sid.is_none()
         && context.acr == issue.acr
         && context.nonce.is_none()
-        && context.userinfo_claims == issue.userinfo_claims
+
         && context.userinfo_claim_requests == issue.userinfo_claim_requests
-        && context.id_token_claims == issue.id_token_claims
+
         && context.id_token_claim_requests == issue.id_token_claim_requests
         && nazo_auth::is_subset(&issue.scopes, &source.contract.scopes)
         && !issue.audiences.is_empty()

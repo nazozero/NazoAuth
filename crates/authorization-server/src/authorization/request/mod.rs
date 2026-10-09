@@ -11,7 +11,7 @@ use super::{
 };
 pub(super) use parameters::authorization_duplicate_parameters;
 use parameters::{
-    authorization_login_query, authorization_login_url_for_frontend, claim_request_names,
+    authorization_login_query, authorization_login_url_for_frontend,
     outer_request_uri_parameters_match_pushed, preserve_verified_dpop_binding,
     reauth_nonce_parameter,
 };

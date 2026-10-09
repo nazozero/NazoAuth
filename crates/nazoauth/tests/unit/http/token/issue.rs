@@ -574,10 +574,12 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
         amr: vec!["password".to_owned()],
         oidc_sid: Some("op-session-sid".to_owned()),
         acr: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims,
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: ((id_token_claims)
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
         refresh_id_token_sid: None,
         include_refresh: false,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
@@ -609,10 +611,8 @@ pub(in crate::http::token) fn token_issue_without_openid() -> TokenIssue {
         amr: vec!["password".to_owned()],
         oidc_sid: None,
         acr: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: (Vec::new()).into(),
         refresh_id_token_sid: None,
         include_refresh: true,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
@@ -664,10 +664,8 @@ fn set_refresh_authority_for_issue(
             id_token_sid: None,
             acr: issue.acr.clone(),
             nonce: None,
-            userinfo_claims: issue.userinfo_claims.clone(),
-            userinfo_claim_requests: issue.userinfo_claim_requests.clone(),
-            id_token_claims: issue.id_token_claims.clone(),
-            id_token_claim_requests: issue.id_token_claim_requests.clone(),
+            userinfo_claim_requests: (issue.userinfo_claim_requests.clone()).into(),
+            id_token_claim_requests: (issue.id_token_claim_requests.clone()).into(),
         },
     }
     .persisted();

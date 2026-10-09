@@ -209,9 +209,15 @@ fn claims_parameter_extracts_supported_user_claim_names() {
     )]))
     .unwrap();
 
-    assert_eq!(claim_request_names(&requested.userinfo), vec!["name"]);
+    assert_eq!(
+        nazo_auth::UserinfoClaimRequests::from(requested.userinfo.clone()).names(),
+        vec!["name"]
+    );
     assert!(requested.userinfo[0].essential);
-    assert_eq!(claim_request_names(&requested.id_token), vec!["email"]);
+    assert_eq!(
+        nazo_auth::UserinfoClaimRequests::from(requested.id_token.clone()).names(),
+        vec!["email"]
+    );
     assert!(requested.id_token[0].essential);
     assert_eq!(
         requested.acr.and_then(|request| request.value),
@@ -229,7 +235,7 @@ fn claims_parameter_accepts_value_values_and_null_requests() {
     .unwrap();
 
     assert_eq!(
-        claim_request_names(&requested.userinfo),
+        nazo_auth::UserinfoClaimRequests::from(requested.userinfo.clone()).names(),
         vec!["email", "name", "phone_number"]
     );
     let email = requested
@@ -248,7 +254,7 @@ fn claims_parameter_accepts_value_values_and_null_requests() {
         vec![json!("+15555550000"), json!("+15555550001")]
     );
     assert_eq!(
-        claim_request_names(&requested.id_token),
+        nazo_auth::UserinfoClaimRequests::from(requested.id_token.clone()).names(),
         vec!["email_verified"]
     );
     assert!(!requested.id_token[0].essential);

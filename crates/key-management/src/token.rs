@@ -47,7 +47,6 @@ impl TokenSignerPort for KeyManager {
                     audiences: input.audiences,
                     scopes: input.scopes,
                     authorization_details: input.authorization_details,
-                    userinfo_claims: input.userinfo_claims,
                     userinfo_claim_requests: input.userinfo_claim_requests,
                     ttl: input.ttl_seconds,
                     sender_constraint: input.sender_constraint,

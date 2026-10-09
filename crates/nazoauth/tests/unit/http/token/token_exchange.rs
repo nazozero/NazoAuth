@@ -130,8 +130,7 @@ fn claims(client_id: &str, audience: Value, scope: &str) -> Claims {
         exp: Utc::now().timestamp() + 300,
         cnf: None,
         act: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
     }
 }
 
