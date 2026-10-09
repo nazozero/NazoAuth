@@ -605,17 +605,34 @@ async fn user_lookup_is_tenant_scoped() {
     cleanup(&pool, user_id).await;
 }
 
+// Keep neighboring accepted-window codes distinct so random fixture keys cannot
+// turn the intended replay/step assertion into a six-digit TOTP collision.
+fn random_totp_secret(step: i64) -> [u8; 20] {
+    loop {
+        let secret = rand::random::<[u8; 20]>();
+        let mut codes: Vec<_> = (step - 1..=step + 3)
+            .map(|value| nazo_identity::mfa::totp_for_step(&secret, value).unwrap())
+            .collect();
+        codes.sort_unstable();
+        codes.dedup();
+        if codes.len() == 5 {
+            return secret;
+        }
+    }
+}
+
 #[tokio::test]
 async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
     };
     let repository = mfa_repository(pool.clone());
+    let secret = random_totp_secret(42);
     repository
         .begin_totp_enrollment(
             tenant.tenant_id,
             user_id,
-            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
+            nazo_identity::mfa::base32_encode(&secret),
             "test".to_owned(),
         )
         .await
@@ -632,7 +649,7 @@ async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
     .await
     .unwrap();
     drop(connection);
-    let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", 42).unwrap();
+    let code = nazo_identity::mfa::totp_for_step(&secret, 42).unwrap();
     let (left, right) = tokio::join!(
         repository.verify_and_consume_totp(
             tenant.tenant_id,
@@ -988,7 +1005,9 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
     };
-    const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    let step = 1_234_567_i64;
+    let secret = random_totp_secret(step);
+    let secret_base32 = nazo_identity::mfa::base32_encode(&secret);
     let repository = mfa_repository(pool.clone());
     let other_tenant = TenantId::new(Uuid::now_v7()).unwrap();
     let trait_repository: &dyn MfaRepositoryPort = &repository;
@@ -1012,7 +1031,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .begin_totp_enrollment(
             tenant.tenant_id,
             user_id,
-            SECRET.to_owned(),
+            secret_base32.clone(),
             "first label".to_owned(),
         )
         .await
@@ -1021,7 +1040,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .begin_totp_enrollment(
             tenant.tenant_id,
             user_id,
-            SECRET.to_owned(),
+            secret_base32.clone(),
             "replacement label".to_owned(),
         )
         .await
@@ -1031,10 +1050,9 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .await
         .unwrap()
         .expect("the pending encrypted enrollment should be readable");
-    assert_eq!(enrollment.secret_base32, SECRET);
+    assert_eq!(enrollment.secret_base32, secret_base32);
     assert!(!enrollment.confirmed);
 
-    let step = 1_234_567_i64;
     let timestamp = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     let invalid_hashes = (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
         .map(|index| EncodedSecretHash::new(format!("invalid-{index}")).unwrap())
@@ -1057,7 +1075,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .await
         .unwrap();
 
-    let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", step).unwrap();
+    let code = nazo_identity::mfa::totp_for_step(&secret, step).unwrap();
     let hashes = (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
         .map(|index| EncodedSecretHash::new(format!("backup-{index}")).unwrap())
         .collect();
@@ -1075,7 +1093,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .await
         .unwrap()
         .expect("confirmed TOTP credential should be readable");
-    assert_eq!(credential.secret_base32, SECRET);
+    assert_eq!(credential.secret_base32, secret_base32);
     assert_eq!(credential.last_used_step, Some(step));
     assert_eq!(
         trait_repository
@@ -1100,7 +1118,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         nazo_identity::ports::TotpVerificationOutcome::Invalid
     );
     let next_timestamp = (step + 1) * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
-    let next_code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", step + 1).unwrap();
+    let next_code = nazo_identity::mfa::totp_for_step(&secret, step + 1).unwrap();
     assert_eq!(
         trait_repository
             .verify_and_consume_totp(tenant.tenant_id, user_id, &next_code, next_timestamp)
@@ -1117,7 +1135,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             .unwrap(),
         nazo_identity::ports::TotpVerificationOutcome::Replay
     );
-    let later_code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", step + 2).unwrap();
+    let later_code = nazo_identity::mfa::totp_for_step(&secret, step + 2).unwrap();
     assert!(matches!(
         trait_repository
             .verify_and_consume_totp(

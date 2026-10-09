@@ -36,7 +36,7 @@ fn row(access: &CredentialAccess, id: Uuid, ciphertext: Vec<u8>) -> DeferredRow 
 fn retained_ciphertext_is_decoded_only_at_adapter_boundary() {
     let access = access();
     let id = Uuid::now_v7();
-    let key = [42; 32];
+    let key = rand::random::<[u8; 32]>();
     // Existing persisted JSON shape, encrypted with the unchanged nonce/AAD envelope.
     let legacy = serde_json::json!({
         "dataset": {"given_name":"Ada"}, "status": null,
@@ -51,7 +51,7 @@ fn retained_ciphertext_is_decoded_only_at_adapter_boundary() {
     assert_eq!(serde_json::to_value(actual.payload).unwrap(), legacy);
     assert!(
         row(&access, id, ciphertext.clone())
-            .into_domain(access.clone(), &[43; 32])
+            .into_domain(access.clone(), &rand::random::<[u8; 32]>())
             .is_err()
     );
     assert!(

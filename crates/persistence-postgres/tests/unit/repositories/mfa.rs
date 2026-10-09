@@ -14,7 +14,8 @@ use nazo_identity::mfa::MFA_BACKUP_CODE_COUNT;
 use uuid::Uuid;
 
 fn single_key_ring() -> MfaTotpKeyRing {
-    let current = MfaTotpKey::new("current", [0x11; 32]).expect("current key is valid");
+    let current =
+        MfaTotpKey::new("current", rand::random::<[u8; 32]>()).expect("current key is valid");
     MfaTotpKeyRing::new(current, None).expect("key ring is valid")
 }
 
@@ -26,7 +27,7 @@ fn protected_with_key(
     plaintext: &[u8],
 ) -> Vec<u8> {
     let cipher = Aes256Gcm::new_from_slice(key.key()).expect("key is valid");
-    let nonce = [0x44; TOTP_NONCE_LEN];
+    let nonce = rand::random::<[u8; TOTP_NONCE_LEN]>();
     let ciphertext = cipher
         .encrypt(
             (&nonce).into(),
@@ -82,8 +83,10 @@ fn totp_envelope_authenticates_secret_and_identity_binding() {
 fn totp_secret_validation_rejects_malformed_rows_and_uses_previous_keys() {
     let tenant_id = TenantId::new(Uuid::now_v7()).expect("tenant id is valid");
     let user_id = UserId::new(Uuid::now_v7()).expect("user id is valid");
-    let current = MfaTotpKey::new("current", [0x11; 32]).expect("current key is valid");
-    let previous = MfaTotpKey::new("previous", [0x22; 32]).expect("previous key is valid");
+    let current =
+        MfaTotpKey::new("current", rand::random::<[u8; 32]>()).expect("current key is valid");
+    let previous =
+        MfaTotpKey::new("previous", rand::random::<[u8; 32]>()).expect("previous key is valid");
     let key_ring = MfaTotpKeyRing::new(current.clone(), Some(previous.clone()))
         .expect("rotating key ring is valid");
 
