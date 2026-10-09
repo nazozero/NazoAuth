@@ -85,16 +85,19 @@ impl AuthMethod {
 
 /// Validated authentication state. It is intentionally not deserializable;
 /// persisted AMR data must enter through [`AuthenticationContext::from_amr`].
+/// AMR is the sole stored method representation: local [`AuthMethod`] values
+/// are construction inputs, not a second mutable interpretation of that evidence.
+/// Unknown AMR values retain their original meaning instead of being classified
+/// as a federated authentication method.
 ///
 /// ```compile_fail
 /// let _: nazo_identity::AuthenticationContext =
-///     serde_json::from_str(r#"{"auth_time":0,"methods":[],"oidc_sid":"","amr":["tampered"]}"#)
+///     serde_json::from_str(r#"{"auth_time":0,"oidc_sid":"","amr":["tampered"]}"#)
 ///         .unwrap();
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AuthenticationContext {
     pub auth_time: i64,
-    pub methods: Vec<AuthMethod>,
     pub oidc_sid: String,
     amr: Vec<String>,
 }
@@ -117,7 +120,6 @@ impl AuthenticationContext {
         }
         Ok(Self {
             auth_time,
-            methods,
             oidc_sid: uuid::Uuid::now_v7().to_string(),
             amr,
         })
@@ -146,13 +148,8 @@ impl AuthenticationContext {
         if oidc_sid.is_empty() {
             return Err(IdentityModelError::EmptyOidcSid);
         }
-        let methods = normalized_amr
-            .iter()
-            .map(|value| method_from_amr(value))
-            .collect();
         Ok(Self {
             auth_time,
-            methods,
             oidc_sid: oidc_sid.to_owned(),
             amr: normalized_amr,
         })
@@ -187,17 +184,6 @@ fn deduplicate_methods(methods: impl IntoIterator<Item = AuthMethod>) -> Vec<Aut
 fn push_unique(values: &mut Vec<String>, value: &str) {
     if !value.trim().is_empty() && !values.iter().any(|existing| existing == value) {
         values.push(value.to_owned());
-    }
-}
-
-fn method_from_amr(value: &str) -> AuthMethod {
-    match value {
-        "password" | "pwd" => AuthMethod::Password,
-        "passkey" => AuthMethod::Passkey,
-        "otp" => AuthMethod::Totp,
-        "recovery_code" => AuthMethod::BackupCode,
-        "remembered_mfa" => AuthMethod::RememberedMfa,
-        other => AuthMethod::Federated(other.to_owned()),
     }
 }
 
