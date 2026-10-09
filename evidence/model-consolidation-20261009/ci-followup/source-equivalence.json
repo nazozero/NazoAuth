@@ -1,0 +1,11 @@
+{
+  "final_source_sha": "e195844aad31a4cb8796dd751d94424e5e4413cb",
+  "runtime_performance_source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+  "prior_report_sha": "894a3f119cfdaab519f79481f5844e5921ed8313",
+  "changed_paths_since_report": [
+    "crates/persistence-postgres/tests/identity_repositories.rs",
+    "crates/persistence-postgres/tests/unit/repositories/deferred_payload.rs",
+    "crates/persistence-postgres/tests/unit/repositories/mfa.rs"
+  ],
+  "scope": "Only test fixtures changed; all production Rust, SQL migrations, dependencies, feature flags and runtime configuration are byte-identical to the performance-tested source. No performance rerun is claimed."
+}

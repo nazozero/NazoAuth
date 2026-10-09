@@ -1,0 +1,69 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 27.42s
+     Running tests/identity_repositories.rs (target/debug/deps/identity_repositories-0a866e020d3508b2)
+
+running 61 tests
+test access_request_boundary_has_no_server_diesel_or_forwarding_support_layer ... ok
+test active_subject_id_by_tenant_id_returns_the_live_principal_subject ... ok
+test active_subject_id_fails_closed_on_corrupt_principal_rows ... ok
+test active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users ... ok
+test active_subject_id_read_projects_only_the_seven_principal_columns ... ok
+test admin_partial_update_validates_final_role_level_before_commit ... ok
+test admin_user_page_is_tenant_scoped_at_the_query_boundary ... ok
+test admin_user_required::admin_user_required_current_actor_context_and_hierarchy_denials_commit_no_success ... ok
+test admin_user_required::admin_user_required_hidden_committed_ack_returns_no_account_receipt ... ok
+test admin_user_required::admin_user_required_ledger_failure_rolls_back_create_patch_and_noop_outcome ... ok
+test admin_user_required::admin_user_required_ports_have_no_bare_mutation_fallback ... ok
+test application_projection_filters_mixed_scope_elements ... ok
+test authentication_snapshot_matches_the_split_client_and_salt_reads ... ok
+test authorized_admin_update_serializes_hierarchy_and_audit_in_one_transaction ... ok
+test backup_code_batch_replacement_clears_empty_and_rolls_back_invalid_batches ... ok
+test backup_code_is_consumed_once_atomically ... ok
+test client_registration_keeps_plaintext_out_of_protocol_core_and_postgres ... ok
+test client_secret_comparison_returns_only_salt_and_database_equality ... ok
+test concurrent_federated_create_is_idempotent_with_one_connection_and_tenant_scoped ... ok
+test concurrent_totp_enrollment_confirmation_has_one_audited_winner ... ok
+test failed_totp_enrollment_confirmation_is_durably_audited_without_state_change ... ok
+test federated_unique_conflict_recovery_returns_current_inactive_account ... ok
+test identity_claim_boundaries_use_narrow_single_snapshot_reads ... ok
+test identity_display_projections_preserve_metadata_and_tenant_user_scope ... ok
+test inactive_account_has_no_issuable_subject_claims ... ok
+test mfa_backup_code_bounds_and_enrollment_conflict_are_explicit ... ok
+test mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_device ... ok
+test mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe ... ok
+test mfa_generation::mfa_clear_committed_unknown_retry_cannot_clear_formal_g2 ... ok
+test mfa_generation::mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_field ... ok
+test mfa_generation::mfa_clear_generation_lock_orders_formal_g2_install_after_commit ... ok
+test mfa_generation::mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes ... ok
+test mfa_generation::mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_code_disclosure ... ok
+test mfa_generation::mfa_disable_required_ledger_failure_rolls_back_current_generation_and_dependents ... ok
+test mfa_generation::mfa_regeneration_required_ledger_and_inactive_actor_preserve_exact_old_backups ... ok
+test mfa_generation::mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier ... ok
+test mfa_generation_fences_late_remember_and_regeneration_after_clear_and_reenrollment ... ok
+test mfa_two_consumed_backup_proofs_regenerate_serially_without_generation_lock_cycle ... ok
+test oauth_client_persistence_contract_distinguishes_lifetimes_from_character_literals ... ok
+test oauth_client_persistence_contract_ignores_documentation_and_cfg_test_items ... ok
+test oauth_client_persistence_contract_keeps_scanning_after_cfg_test_items ... ok
+test oauth_client_persistence_contract_rejects_aliases_declarations_imports_and_raw_sql ... ok
+test oauth_client_persistence_contract_skips_cfg_test_items_with_const_generics ... ok
+test oauth_client_queries_cross_the_persistence_port_without_a_server_postgres_dependency ... ok
+test oauth_client_repository_keeps_records_private_and_returns_domain_clients ... ok
+test passkey_and_federation_uniqueness_are_typed_conflicts ... ok
+test passkey_counter_update_is_monotonic_compare_and_set ... ok
+test profile_update_cannot_restore_stale_phone_verification ... ok
+test profile_update_persists_only_the_typed_profile_projection ... ok
+test repositories_accept_validated_tenant_and_user_ids ... ok
+test scim_replace_returns_domain_claims_from_one_transaction ... ok
+test seed_upsert_is_atomic_and_preserves_unmanaged_client_state ... ok
+test seed_upsert_persists_jarm_algorithm_on_insert_and_conflict_update ... ok
+test server_has_no_identity_rows_or_identity_diesel_queries ... ok
+test server_mfa_verification_does_not_query_migrated_tables_directly ... ok
+test subject_claims_reject_invalid_persisted_role_invariant ... ok
+test system_tenant_admin_outcomes_preserve_cross_tenant_audit_and_rollback ... ok
+test totp_enrollment_orders_cross_store_changes_for_safe_recovery ... ok
+test totp_last_step_compare_and_set_has_one_concurrent_winner ... ok
+test totp_verification_classification_and_audit_are_atomic_and_replay_safe ... ok
+test user_lookup_is_tenant_scoped ... ok
+
+test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.04s
+

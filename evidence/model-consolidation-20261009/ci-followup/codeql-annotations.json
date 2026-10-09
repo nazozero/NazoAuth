@@ -1,0 +1,74 @@
+[
+  {
+    "path": "crates/persistence-postgres/tests/identity_repositories.rs",
+    "blob_href": "https://github.com/nazozero/NazoAuth/blob/894a3f119cfdaab519f79481f5844e5921ed8313/crates/persistence-postgres/tests/identity_repositories.rs",
+    "start_line": 635,
+    "start_column": 50,
+    "end_line": 635,
+    "end_column": 73,
+    "annotation_level": "failure",
+    "title": "Hard-coded cryptographic value",
+    "message": "This hard-coded value is used as [a key](1).",
+    "raw_details": null
+  },
+  {
+    "path": "crates/persistence-postgres/tests/identity_repositories.rs",
+    "blob_href": "https://github.com/nazozero/NazoAuth/blob/894a3f119cfdaab519f79481f5844e5921ed8313/crates/persistence-postgres/tests/identity_repositories.rs",
+    "start_line": 1120,
+    "start_column": 56,
+    "end_line": 1120,
+    "end_column": 79,
+    "annotation_level": "failure",
+    "title": "Hard-coded cryptographic value",
+    "message": "This hard-coded value is used as [a key](1).",
+    "raw_details": null
+  },
+  {
+    "path": "crates/persistence-postgres/tests/unit/repositories/deferred_payload.rs",
+    "blob_href": "https://github.com/nazozero/NazoAuth/blob/894a3f119cfdaab519f79481f5844e5921ed8313/crates/persistence-postgres/tests/unit/repositories/deferred_payload.rs",
+    "start_line": 39,
+    "start_column": 15,
+    "end_line": 39,
+    "end_column": 23,
+    "annotation_level": "failure",
+    "title": "Hard-coded cryptographic value",
+    "message": "This hard-coded value is used as [a key](1).\nThis hard-coded value is used as [a key](2).\nThis hard-coded value is used as [a key](3).\nThis hard-coded value is used as [a key](4).",
+    "raw_details": null
+  },
+  {
+    "path": "crates/persistence-postgres/tests/unit/repositories/deferred_payload.rs",
+    "blob_href": "https://github.com/nazozero/NazoAuth/blob/894a3f119cfdaab519f79481f5844e5921ed8313/crates/persistence-postgres/tests/unit/repositories/deferred_payload.rs",
+    "start_line": 54,
+    "start_column": 43,
+    "end_line": 54,
+    "end_column": 51,
+    "annotation_level": "failure",
+    "title": "Hard-coded cryptographic value",
+    "message": "This hard-coded value is used as [a key](1).\nThis hard-coded value is used as [a key](2).",
+    "raw_details": null
+  },
+  {
+    "path": "crates/persistence-postgres/tests/unit/repositories/mfa.rs",
+    "blob_href": "https://github.com/nazozero/NazoAuth/blob/894a3f119cfdaab519f79481f5844e5921ed8313/crates/persistence-postgres/tests/unit/repositories/mfa.rs",
+    "start_line": 85,
+    "start_column": 46,
+    "end_line": 85,
+    "end_column": 56,
+    "annotation_level": "failure",
+    "title": "Hard-coded cryptographic value",
+    "message": "This hard-coded value is used as [a key](1).",
+    "raw_details": null
+  },
+  {
+    "path": "crates/persistence-postgres/tests/unit/repositories/mfa.rs",
+    "blob_href": "https://github.com/nazozero/NazoAuth/blob/894a3f119cfdaab519f79481f5844e5921ed8313/crates/persistence-postgres/tests/unit/repositories/mfa.rs",
+    "start_line": 86,
+    "start_column": 48,
+    "end_line": 86,
+    "end_column": 58,
+    "annotation_level": "failure",
+    "title": "Hard-coded cryptographic value",
+    "message": "This hard-coded value is used as [a key](1).",
+    "raw_details": null
+  }
+]
