@@ -10,6 +10,7 @@ pub struct CatalogDurations {
     pub authorization_code: Duration,
     pub refresh_token: Duration,
     pub session: Duration,
+    pub presentation_transaction: Duration,
     pub scim_security_events: Duration,
 }
 
@@ -17,6 +18,7 @@ pub struct CatalogDurations {
 pub struct ModuleCatalog {
     specs: BTreeMap<ModuleId, ModuleSpec>,
     runtime_disable_blocked: BTreeSet<ModuleId>,
+    unavailable: BTreeSet<ModuleId>,
 }
 
 impl ModuleCatalog {
@@ -51,7 +53,10 @@ impl ModuleCatalog {
             // already exist. Their Valkey TTL is the bounded drain deadline.
             (ModuleId::SessionManagement, drain(durations.session)),
             (ModuleId::Openid4vciIssuer, drain(durations.refresh_token)),
-            (ModuleId::Openid4vpVerifier, drain(durations.session)),
+            (
+                ModuleId::Openid4vpVerifier,
+                drain(durations.presentation_transaction),
+            ),
         ];
         let specs: Vec<_> = policies
             .into_iter()
@@ -65,7 +70,31 @@ impl ModuleCatalog {
         Ok(Self {
             specs: specs.into_iter().map(|spec| (spec.id, spec)).collect(),
             runtime_disable_blocked: BTreeSet::new(),
+            unavailable: BTreeSet::new(),
         })
+    }
+
+    #[must_use]
+    pub fn with_constructed_availability(
+        mut self,
+        availability: impl IntoIterator<Item = (ModuleId, bool)>,
+    ) -> Self {
+        for (module_id, constructed) in availability {
+            if !constructed {
+                self.unavailable.insert(module_id);
+            }
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn is_available(&self, module_id: ModuleId) -> bool {
+        !self.unavailable.contains(&module_id)
+    }
+
+    #[must_use]
+    pub fn effective_enabled(&self, module_id: ModuleId, desired_enabled: bool) -> bool {
+        desired_enabled && self.is_available(module_id)
     }
 
     #[must_use]
@@ -108,7 +137,9 @@ impl ModuleCatalog {
 
     #[must_use]
     pub fn effective_disable_policy(&self, module_id: ModuleId) -> Option<DisablePolicy> {
-        if self.runtime_disable_blocked(module_id) {
+        if !self.is_available(module_id) {
+            Some(DisablePolicy::Immediate)
+        } else if self.runtime_disable_blocked(module_id) {
             Some(DisablePolicy::NotRuntimeDisableable)
         } else {
             self.spec(module_id).map(|spec| spec.disable_policy)

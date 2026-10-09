@@ -72,7 +72,7 @@ fn admin_user_json_omits_password_hash_and_tenant_context() {
 #[test]
 fn client_json_exposes_protocol_metadata_without_client_secret_hash() {
     let client = client_row();
-    let value = client_json(client.clone());
+    let value = client_json(&client);
 
     assert_eq!(value["client_id"], "client-1");
     assert_eq!(value["client_name"], "Client One");
@@ -123,7 +123,7 @@ fn domain_client_string_arrays_are_preserved_in_admin_views() {
     let mut client = client_row();
     client.redirect_uris = vec!["https://client.example/callback".to_owned()];
 
-    let value = client_json(client);
+    let value = client_json(&client);
     assert_eq!(
         value["redirect_uris"],
         json!(["https://client.example/callback"]),

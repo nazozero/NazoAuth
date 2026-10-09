@@ -196,3 +196,22 @@ impl TestAuthorizationDependencies {
         self.fixture.endpoint()
     }
 }
+
+struct UnavailableTestSecurityAudit;
+impl nazo_oauth_server::ports::audit::SecurityAudit for UnavailableTestSecurityAudit {
+    fn ensure_storage(&self) -> nazo_oauth_server::ports::audit::AuditFuture<'_> {
+        Box::pin(async { anyhow::bail!("fixture audit dependency unavailable") })
+    }
+    fn record(&self, _: &str, _: serde_json::Map<String, serde_json::Value>) {}
+    fn record_required<'a>(
+        &'a self,
+        _: &'a str,
+        _: serde_json::Map<String, serde_json::Value>,
+    ) -> nazo_oauth_server::ports::audit::AuditFuture<'a> {
+        self.ensure_storage()
+    }
+}
+pub(crate) fn unavailable_security_audit()
+-> &'static dyn nazo_oauth_server::ports::audit::SecurityAudit {
+    &UnavailableTestSecurityAudit
+}

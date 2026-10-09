@@ -168,6 +168,14 @@ fn expanded_par_policy(client: &ClientRow, fapi2: bool) -> ExpandedParAdmissionP
         client_type: &client.client_type,
         redirect_uris: &client.redirect_uris,
         allowed_audiences: &client.allowed_audiences,
+        allowed_scopes: &client.scopes,
+        capabilities: nazo_auth::AuthorizationCapabilityPolicy {
+            authorization_details: true,
+            jarm: true,
+            native_sso: true,
+            form_post: !fapi2,
+        },
+        signed_authorization_response_required: false,
         pkce_required: true,
         fapi2_requires_explicit_redirect_uri: fapi2,
     }
@@ -222,7 +230,9 @@ fn pushed_authorization_request_resources_reject_unregistered_target() {
 
     assert_eq!(
         validate_expanded_par_admission(&params, expanded_par_policy(&client, false)),
-        Err(ParAdmissionError::ResourceNotAllowed)
+        Err(ParAdmissionError::Authorization(
+            nazo_auth::AuthorizationPolicyError::InvalidTarget
+        ))
     );
 }
 
@@ -792,7 +802,9 @@ fn par_rejects_explicit_unsupported_response_type() {
     params.insert("response_type".to_owned(), "code id_token".to_owned());
     assert_eq!(
         validate_expanded_par_admission(&params, expanded_par_policy(&client, false)),
-        Err(ParAdmissionError::UnsupportedResponseType)
+        Err(ParAdmissionError::Authorization(
+            nazo_auth::AuthorizationPolicyError::UnsupportedResponseType
+        ))
     );
 }
 
@@ -1386,7 +1398,8 @@ async fn par_persists_mtls_thumbprint_for_sender_constrained_request_uri() {
         .load_par(request_uri)
         .await
         .expect("PAR payload should be readable")
-        .expect("PAR payload should be persisted");
+        .expect("PAR payload should be persisted")
+        .payload;
     assert_eq!(
         stored.mtls_x5t_s256.as_deref(),
         Some(certificate.thumbprint.as_str()),
@@ -1461,7 +1474,8 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
         .load_par(request_uri)
         .await
         .expect("PAR payload should be readable")
-        .expect("PAR payload should be persisted");
+        .expect("PAR payload should be persisted")
+        .payload;
     assert!(
         !stored.params.contains_key("client_secret"),
         "PAR storage must not retain client authentication secret material"

@@ -6,7 +6,8 @@ use nazo_auth::{BackchannelLogoutDelivery, MAX_CIBA_LOGOUT_URI_BYTES};
 use nazo_persistence::BackchannelLogoutDeliveryStore;
 use std::sync::Arc;
 use url::Url;
-const DELIVERY_BATCH_SIZE: i64 = 20;
+/// Claim limit, also used by hosts to detect a potentially non-empty backlog.
+pub const DELIVERY_BATCH_SIZE: usize = 20;
 const DELIVERY_CONCURRENCY: usize = 8;
 const LOCK_TIMEOUT_SECONDS: i32 = 300;
 const ERROR_MAX_CHARS: usize = 512;
@@ -40,7 +41,7 @@ impl BackchannelLogoutWorker {
     pub async fn process_due_batch(&self) -> anyhow::Result<usize> {
         let deliveries = self
             .deliveries
-            .claim_due(DELIVERY_BATCH_SIZE, LOCK_TIMEOUT_SECONDS)
+            .claim_due(DELIVERY_BATCH_SIZE as i64, LOCK_TIMEOUT_SECONDS)
             .await
             .context("failed to claim back-channel logout deliveries")?;
         let processed = deliveries.len();

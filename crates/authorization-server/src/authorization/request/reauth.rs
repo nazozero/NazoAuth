@@ -47,7 +47,7 @@ async fn issue_reauth_nonce(
     context: &AuthorizationRequestContext<'_>,
 ) -> Result<String, OAuthEndpointError> {
     let nonce = random_urlsafe_token();
-    let started_at = Utc::now().timestamp();
+    let started_at = Utc::now().timestamp_micros();
     context
         .service
         .store_reauth_nonce(&nonce, started_at, REAUTH_NONCE_TTL_SECONDS)

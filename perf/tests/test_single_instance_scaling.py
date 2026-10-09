@@ -51,6 +51,8 @@ def metric_record(**overrides) -> dict:
         "outcome_local_no_request": 0,
         "outcome_unexpected": 0,
         "outcome_prepare_failed": 0,
+        "outcome_prepare_local_failed": 0,
+        "outcome_prepare_sut_failed": 0,
         "wal_delta_bytes": 5_000_000.0,
         "wal_per_success_bytes": 47.619,
         "oom_killed": False,
@@ -266,6 +268,7 @@ class Phase3GateTest(unittest.TestCase):
         b["audit_log_scan"] = {
             "collected": True, "queue_full": 0, "dropped_required": 0}
         b["sidecar_terminal_complete"] = True
+        b["issuance_maintenance"] = {"status": "PASS", "pass": True}
         b["refresh_invariants"] = {
             "max_active_per_scope": 3,
             "spent_max_per_family": 12,

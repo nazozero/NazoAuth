@@ -5,9 +5,7 @@
 //! 在同一个数据库事务内原子完成。明文审批令牌只在签发响应中出现一次，
 //! 永不写入日志或审计载荷；任何载荷都不存在可携带 Recovery Secret 的字段。
 
-use crate::http::admin::{
-    persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
     require_admin_with_recent_mfa_or_forbidden_with_handles,
@@ -17,8 +15,10 @@ use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies, json_response, oauth_error};
-use nazo_oauth_server::ports::audit::audit_fields;
+use nazo_oauth_server::crypto::blake3_hex;
+use nazo_persistence::control_plane::AdminIdentityAudit;
 use nazo_persistence::control_plane::{IdentityApprovalError, RecoveryRotationError};
 use std::collections::HashMap;
 
@@ -89,6 +89,7 @@ pub(crate) async fn admin_recovery_root(
 pub(crate) async fn admin_recovery_root_approval(
     admin_sessions: Data<AdminSessionHandles>,
     recovery: Data<RecoveryRootService>,
+    client_ip_config: Data<ClientIpConfig>,
     req: HttpRequest,
     Json(body): Json<RecoveryRootChangeRequest>,
 ) -> HttpResponse {
@@ -101,33 +102,24 @@ pub(crate) async fn admin_recovery_root_approval(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     match recovery
-        .issue_rotation_approval(admin.id(), &body, Utc::now())
+        .issue_rotation_approval_with_required_audit(
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+            &body,
+            Utc::now(),
+        )
         .await
     {
         Ok(issued) => {
             // Durable evidence that a fresh-MFA administrator approved this
             // exact rotation digest.  The plaintext token is never audited.
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "controller_recovery_root_rotation_approved",
-                audit_fields(&[
-                    ("actor_user_id", serde_json::json!(admin.id().to_string())),
-                    ("deployment_id", serde_json::json!(body.deployment_id)),
-                    ("action", serde_json::json!("recovery-root-rotate")),
-                    ("action_sha256", serde_json::json!(issued.action_sha256)),
-                    (
-                        "expires_at",
-                        serde_json::json!(issued.expires_at.to_rfc3339()),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
             json_response(serde_json::json!({
                 "approval_token": issued.token,
                 "action": "recovery-root-rotate",
@@ -147,6 +139,7 @@ pub(crate) async fn admin_recovery_root_approval(
 pub(crate) async fn admin_recovery_root_rotate(
     admin_sessions: Data<AdminSessionHandles>,
     recovery: Data<RecoveryRootService>,
+    client_ip_config: Data<ClientIpConfig>,
     req: HttpRequest,
     Json(body): Json<RotateRecoveryRootBody>,
 ) -> HttpResponse {
@@ -157,7 +150,7 @@ pub(crate) async fn admin_recovery_root_rotate(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let change = RecoveryRootChangeRequest {
@@ -166,36 +159,29 @@ pub(crate) async fn admin_recovery_root_rotate(
         kid: body.kid.clone(),
     };
     match recovery
-        .commit_rotation(&body.approval_token, &change, Utc::now())
+        .commit_rotation_with_required_audit(
+            &body.approval_token,
+            &change,
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+        )
         .await
     {
-        Ok(root) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "controller_recovery_root_rotated",
-                audit_fields(&[
-                    ("actor_user_id", serde_json::json!(admin.id().to_string())),
-                    ("deployment_id", serde_json::json!(root.deployment_id)),
-                    ("generation", serde_json::json!(root.generation)),
-                    ("recovery_kid", serde_json::json!(root.recovery_kid)),
-                    ("kdf", serde_json::json!(root.kdf)),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
-            json_response(serde_json::json!({
-                "recovery_root": {
-                    "deployment_id": root.deployment_id,
-                    "recovery_kid": root.recovery_kid,
-                    "kdf": root.kdf,
-                    "generation": root.generation,
-                    "created_at": root.created_at.to_rfc3339(),
-                    "updated_at": root.updated_at.to_rfc3339(),
-                },
-                "previous_generation_invalid": true,
-            }))
-        }
+        Ok(root) => json_response(serde_json::json!({
+            "recovery_root": {
+                "deployment_id": root.deployment_id,
+                "recovery_kid": root.recovery_kid,
+                "kdf": root.kdf,
+                "generation": root.generation,
+                "created_at": root.created_at.to_rfc3339(),
+                "updated_at": root.updated_at.to_rfc3339(),
+            },
+            "previous_generation_invalid": true,
+        })),
         Err(error) => service_error_response(error),
     }
 }
@@ -264,3 +250,7 @@ fn rotation_error_response(error: RecoveryRotationError) -> HttpResponse {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/http/admin/recovery_root.rs"]
+mod tests;

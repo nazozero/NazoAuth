@@ -92,7 +92,13 @@ fn requested_prompt(q: &HashMap<String, String>) -> Result<PromptDirectives, ()>
 
 fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Option<String>), ()> {
     normalize_pkce_case(q, false)
-        .map(|normalized| (normalized.code_challenge, normalized.code_challenge_method))
+        .map(|normalized| {
+            let method = normalized
+                .code_challenge
+                .as_ref()
+                .map(|_| "S256".to_owned());
+            (normalized.code_challenge, method)
+        })
         .map_err(|_| ())
 }
 
@@ -131,10 +137,13 @@ fn session_requires_reauthentication(
     now: i64,
 ) -> bool {
     authorization_session_decision(
-        Some(AuthorizationSession { auth_time }),
+        Some(AuthorizationSession {
+            auth_time,
+            auth_time_micros: Some(auth_time * 1_000_000),
+        }),
         prompt,
         max_age,
-        reauth_started_at,
+        reauth_started_at.map(|t| t * 1_000_000),
         now,
     ) != AuthorizationSessionDecision::Continue
 }
@@ -206,9 +215,15 @@ fn claims_parameter_extracts_supported_user_claim_names() {
     )]))
     .unwrap();
 
-    assert_eq!(claim_request_names(&requested.userinfo), vec!["name"]);
+    assert_eq!(
+        nazo_auth::UserinfoClaimRequests::from(requested.userinfo.clone()).names(),
+        vec!["name"]
+    );
     assert!(requested.userinfo[0].essential);
-    assert_eq!(claim_request_names(&requested.id_token), vec!["email"]);
+    assert_eq!(
+        nazo_auth::UserinfoClaimRequests::from(requested.id_token.clone()).names(),
+        vec!["email"]
+    );
     assert!(requested.id_token[0].essential);
     assert_eq!(
         requested.acr.and_then(|request| request.value),
@@ -226,7 +241,7 @@ fn claims_parameter_accepts_value_values_and_null_requests() {
     .unwrap();
 
     assert_eq!(
-        claim_request_names(&requested.userinfo),
+        nazo_auth::UserinfoClaimRequests::from(requested.userinfo.clone()).names(),
         vec!["email", "name", "phone_number"]
     );
     let email = requested
@@ -245,7 +260,7 @@ fn claims_parameter_accepts_value_values_and_null_requests() {
         vec![json!("+15555550000"), json!("+15555550001")]
     );
     assert_eq!(
-        claim_request_names(&requested.id_token),
+        nazo_auth::UserinfoClaimRequests::from(requested.id_token.clone()).names(),
         vec!["email_verified"]
     );
     assert!(!requested.id_token[0].essential);
@@ -376,7 +391,7 @@ fn max_age_zero_and_prompt_directives_require_reauthentication() {
             ..PromptDirectives::default()
         },
         None,
-        1_001,
+        1_002,
         Some(1_001),
         1_006,
     ));
@@ -406,7 +421,7 @@ fn max_age_zero_and_prompt_directives_require_reauthentication() {
             ..PromptDirectives::default()
         },
         None,
-        1_001,
+        1_002,
         Some(1_001),
         1_006,
     ));
@@ -824,17 +839,78 @@ fn reauth_nonce_consume_failure_removes_untrusted_nonce() {
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 #[test]
 fn unverified_request_object_routing_extracts_only_parseable_signed_payloads() {
+    use crate::authorization::jar::prepare_par_request_object_client_id;
+
     let keys = nazo_key_management::KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
     let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","kid":"routing-only"}"#);
     let payload = URL_SAFE_NO_PAD.encode(json!({"client_id": "routed-client"}).to_string());
     let object = format!("{header}.{payload}.not-a-real-signature");
 
-    assert_eq!(
-        unverified_request_object_client_id(&keys, &object).as_deref(),
-        Some("routed-client")
-    );
-    assert!(unverified_request_object_client_id(&keys, "broken").is_none());
-    assert!(unverified_request_object_client_id(&keys, "a.b.c.d.e").is_none());
+    let mut parameters = query(&[("request", &object)]);
+    assert!(prepare_par_request_object_client_id(&keys, &mut parameters).is_none());
+    assert_eq!(parameters["client_id"], "routed-client");
+    for invalid in ["broken", "a.b.c.d.e"] {
+        let mut parameters = query(&[("request", invalid)]);
+        assert!(prepare_par_request_object_client_id(&keys, &mut parameters).is_none());
+        assert!(!parameters.contains_key("client_id"));
+    }
+}
+
+#[test]
+fn authorize_requires_outer_client_id_before_jar_or_par_lookup() {
+    use crate::authorization::AuthorizationRequestFacts;
+    use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision};
+
+    futures_executor::block_on(async {
+        let fixture = authorization_fixture::Fixture::new(Ok(None), Ok(None));
+        fixture
+            .snapshots
+            .compare_and_publish(
+                ModuleRevision::new(1),
+                ActiveModuleSnapshot {
+                    revision: ModuleRevision::new(2),
+                    accepting: [ModuleId::RequestObjects].into(),
+                    draining: Default::default(),
+                },
+            )
+            .unwrap();
+        let application = fixture.make_application();
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","kid":"routing-only"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(json!({"client_id": "routed-client"}).to_string());
+        let signed = format!("{header}.{payload}.not-a-real-signature");
+        for (parameter, value) in [
+            ("request", signed.as_str()),
+            ("request", "a.b.c.d.e"),
+            (
+                "request_uri",
+                "urn:ietf:params:oauth:request_uri:stored-par",
+            ),
+        ] {
+            let mut parameters = query(&[(parameter, value)]);
+            let result = application
+                .authorize(
+                    &AuthorizationRequestFacts {
+                        source_ip: "192.0.2.1",
+                        session_id: None,
+                        user_agent: None,
+                    },
+                    &mut parameters,
+                )
+                .await;
+            let error = match result {
+                Err(error) => error,
+                Ok(_) => panic!("missing outer client_id must fail"),
+            };
+            let OAuthEndpointError::Json(fields) = error else {
+                panic!("JSON error expected");
+            };
+            assert_eq!(fields.status, StatusCode::BAD_REQUEST);
+            assert_eq!(fields.error, "invalid_request");
+            assert_eq!(fields.description, "缺少 client_id.");
+            assert!(!parameters.contains_key("client_id"));
+            assert!(fixture.ports.calls().is_empty());
+        }
+    });
 }
 
 #[test]
@@ -852,7 +928,7 @@ fn request_object_jwks_failure_is_server_error_without_using_persisted_fallback(
         client.registration.client_id = "remote-jar-client".into();
         client.registration.jwks_uri = Some("https://localhost:1/jwks".into());
         client.registration.jwks = Some(json!({"keys":[{"kid":"persisted"}]}));
-        let response = apply_request_object_with_context(&context, &mut outer, &mut client)
+        let response = apply_request_object_with_context(&context, &mut outer, &mut client, None)
             .await
             .expect_err("unavailable remote JWK source must reject the request object");
         let OAuthEndpointError::Json(fields) = response else {
@@ -945,5 +1021,230 @@ fn attested_clients_enforce_their_pushed_request_policy_before_login() {
             assert!(!response.contains_key("code"));
             assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
         }
+    });
+}
+
+#[test]
+fn protocol_max_age_zero_application_uses_existing_one_use_reauthentication_nonce() {
+    use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
+    use nazo_identity::SessionId;
+    futures_executor::block_on(async {
+        let fixture = authorization_fixture::Fixture::new(
+            Ok(Some(authorization_fixture::client(true))),
+            Ok(Some(authorization_fixture::session())),
+        );
+        fixture
+            .ports
+            .record_consent_writes
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let app = fixture.make_application();
+        let sid = SessionId::new("max-age-session");
+        let facts = AuthorizationRequestFacts {
+            source_ip: "192.0.2.1",
+            session_id: Some(&sid),
+            user_agent: None,
+        };
+        let parameters = query(&[
+            ("client_id", "client-1"),
+            ("redirect_uri", "https://client.example/callback"),
+            ("response_type", "code"),
+            ("scope", "openid"),
+            ("max_age", "0"),
+            (
+                "code_challenge",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            ),
+            ("code_challenge_method", "S256"),
+        ]);
+        let AuthorizationOutcome::Redirect { location } = app
+            .authorize(&facts, &mut parameters.clone())
+            .await
+            .unwrap()
+        else {
+            panic!("max_age=0 must redirect to fresh authentication");
+        };
+        let login = url::Url::parse(&location).unwrap();
+        assert_eq!(login.path(), "/auth");
+        let next = login
+            .query_pairs()
+            .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
+            .unwrap();
+        let resumed_url = url::Url::parse(&format!("https://issuer.example{next}")).unwrap();
+        let resumed: HashMap<String, String> = resumed_url.query_pairs().into_owned().collect();
+        let nonce = resumed
+            .get(reauth_nonce_parameter())
+            .expect("fresh login must carry the existing completion nonce")
+            .clone();
+        assert!(
+            fixture
+                .ports
+                .reauth_nonces
+                .lock()
+                .unwrap()
+                .contains_key(&nonce)
+        );
+        assert!(fixture.ports.consent.lock().unwrap().is_none());
+        assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+        *fixture.ports.session.lock().unwrap() = Ok(Some(authorization_fixture::session()));
+        let AuthorizationOutcome::Redirect { location } =
+            app.authorize(&facts, &mut resumed.clone()).await.unwrap()
+        else {
+            panic!("completed fresh authentication must continue");
+        };
+        assert_eq!(url::Url::parse(&location).unwrap().path(), "/consent");
+        assert!(
+            !fixture
+                .ports
+                .reauth_nonces
+                .lock()
+                .unwrap()
+                .contains_key(&nonce)
+        );
+        assert_eq!(
+            fixture
+                .ports
+                .calls()
+                .iter()
+                .filter(|call| **call == "store_consent")
+                .count(),
+            1
+        );
+        assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+        let AuthorizationOutcome::Redirect { location } =
+            app.authorize(&facts, &mut resumed.clone()).await.unwrap()
+        else {
+            panic!("replayed completion nonce must demand fresh authentication");
+        };
+        assert_eq!(url::Url::parse(&location).unwrap().path(), "/auth");
+        let mut forged = parameters.clone();
+        forged.insert(
+            reauth_nonce_parameter().into(),
+            "untrusted-completion-nonce".into(),
+        );
+        let AuthorizationOutcome::Redirect { location } =
+            app.authorize(&facts, &mut forged).await.unwrap()
+        else {
+            panic!("untrusted completion nonce must demand fresh authentication");
+        };
+        assert_eq!(url::Url::parse(&location).unwrap().path(), "/auth");
+        assert_eq!(
+            fixture
+                .ports
+                .calls()
+                .iter()
+                .filter(|call| **call == "store_consent")
+                .count(),
+            1
+        );
+        assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn protocol_same_second_old_session_cannot_complete_reauthentication() {
+    use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
+    use nazo_identity::{
+        SessionId,
+        session::{SessionRecord, SessionSnapshot, SessionVersion},
+    };
+    futures_executor::block_on(async {
+        let mut observed = Vec::new();
+        for directive in [
+            ("max_age", "0"),
+            ("prompt", "login"),
+            ("prompt", "select_account"),
+        ] {
+            let fixture = authorization_fixture::Fixture::new(
+                Ok(Some(authorization_fixture::client(true))),
+                Ok(Some(authorization_fixture::session())),
+            );
+            fixture
+                .ports
+                .record_consent_writes
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let app = fixture.make_application();
+            let sid = SessionId::new("unchanged-old-session");
+            let facts = AuthorizationRequestFacts {
+                source_ip: "192.0.2.1",
+                session_id: Some(&sid),
+                user_agent: None,
+            };
+            let parameters = query(&[
+                ("client_id", "client-1"),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("scope", "openid"),
+                directive,
+                (
+                    "code_challenge",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                ),
+                ("code_challenge_method", "S256"),
+            ]);
+            let mut same_second = None;
+            for _ in 0..4 {
+                let authenticated_at = chrono::Utc::now();
+                let auth_time = authenticated_at.timestamp();
+                let mut old_record = SessionRecord::new(
+                    authorization_fixture::account().user_id(),
+                    auth_time,
+                    vec!["pwd".into()],
+                    false,
+                    Some("unchanged-oidc-session".into()),
+                );
+                old_record.record_authentication_at(authenticated_at);
+                let old = SessionSnapshot::new(
+                    old_record,
+                    SessionVersion::from_storage(
+                        b"unchanged-old-version".to_vec().into_boxed_slice(),
+                    ),
+                );
+                *fixture.ports.session.lock().unwrap() = Ok(Some(old.clone()));
+                let AuthorizationOutcome::Redirect { location } = app
+                    .authorize(&facts, &mut parameters.clone())
+                    .await
+                    .unwrap()
+                else {
+                    panic!("first request must demand fresh authentication");
+                };
+                let login = url::Url::parse(&location).unwrap();
+                assert_eq!(login.path(), "/auth");
+                let next = login
+                    .query_pairs()
+                    .find_map(|(k, v)| (k == "next").then_some(v.into_owned()))
+                    .unwrap();
+                let resumed_url =
+                    url::Url::parse(&format!("https://issuer.example{next}")).unwrap();
+                let resumed: HashMap<String, String> =
+                    resumed_url.query_pairs().into_owned().collect();
+                let nonce = &resumed[reauth_nonce_parameter()];
+                let started = fixture.ports.reauth_nonces.lock().unwrap()[nonce];
+                if started / 1_000_000 == auth_time {
+                    same_second = Some((old, resumed));
+                    break;
+                }
+            }
+            let (old, mut resumed) = same_second
+                .expect("fixture must exercise equal-second authentication and challenge");
+            assert_eq!(
+                *fixture.ports.session.lock().unwrap(),
+                Ok(Some(old.clone()))
+            );
+            // No login, credential verification, or session replacement occurs between calls.
+            let AuthorizationOutcome::Redirect { location } =
+                app.authorize(&facts, &mut resumed).await.unwrap()
+            else {
+                panic!("unchanged old session must redirect to authentication");
+            };
+            assert_eq!(*fixture.ports.session.lock().unwrap(), Ok(Some(old)));
+            observed.push((
+                directive,
+                url::Url::parse(&location).unwrap().path().to_owned(),
+            ));
+        }
+        assert!(
+            observed.iter().all(|(_, path)| path == "/auth"),
+            "old-session outcomes: {observed:?}"
+        );
     });
 }

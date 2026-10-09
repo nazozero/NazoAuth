@@ -880,7 +880,6 @@ fn environment_overrides_yaml_by_allowlist() {
             ),
             ("VALKEY_COMMAND_TIMEOUT_MS".to_owned(), "1000".to_owned()),
             ("DATABASE_MAX_CONNECTIONS".to_owned(), "24".to_owned()),
-            ("PERF_METRICS_ENABLED".to_owned(), "true".to_owned()),
             ("UNKNOWN_ENV".to_owned(), "ignored".to_owned()),
             ("PATH".to_owned(), "/usr/bin".to_owned()),
         ])
@@ -900,7 +899,6 @@ fn environment_overrides_yaml_by_allowlist() {
     );
     assert_eq!(source.string("VALKEY_COMMAND_TIMEOUT_MS", ""), "1000");
     assert_eq!(source.string("DATABASE_MAX_CONNECTIONS", ""), "24");
-    assert_eq!(source.string("PERF_METRICS_ENABLED", ""), "true");
     assert!(source.get("UNKNOWN_ENV").is_none());
     assert!(source.get("PATH").is_none());
 }
@@ -1124,7 +1122,6 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "PASSKEY_STRICT_BASE64",
             "PASSWORD_HASH_MAX_CONCURRENCY",
             "PASSWORD_HASH_QUEUE_TIMEOUT_MS",
-            "PERF_METRICS_ENABLED",
             "PUBLIC_BASE_URL",
             "PROTECTED_RESOURCE_IDENTIFIER",
             "RATE_LIMIT_WINDOW_SECONDS",

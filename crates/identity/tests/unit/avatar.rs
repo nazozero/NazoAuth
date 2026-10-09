@@ -281,7 +281,10 @@ struct ScriptedDirectStorage {
     delete_staging: Result<(), AvatarStorageError>,
     delete_final: Result<(), AvatarStorageError>,
     publish_calls: Arc<AtomicUsize>,
+    read_staged_calls: Arc<AtomicUsize>,
+    published_content_types: Arc<Mutex<Vec<AvatarContentType>>>,
     delete_staging_calls: Arc<AtomicUsize>,
+    delete_final_calls: Arc<AtomicUsize>,
 }
 
 impl Default for ScriptedDirectStorage {
@@ -305,7 +308,10 @@ impl Default for ScriptedDirectStorage {
             delete_staging: Ok(()),
             delete_final: Ok(()),
             publish_calls: Arc::new(AtomicUsize::new(0)),
+            read_staged_calls: Arc::new(AtomicUsize::new(0)),
+            published_content_types: Arc::new(Mutex::new(Vec::new())),
             delete_staging_calls: Arc::new(AtomicUsize::new(0)),
+            delete_final_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -326,6 +332,7 @@ impl AvatarDirectUploadPort for ScriptedDirectStorage {
         _staging_object_id: &'a str,
         _max_bytes: usize,
     ) -> AvatarStorageFuture<'a, AvatarStagedObject> {
+        self.read_staged_calls.fetch_add(1, Ordering::Relaxed);
         let result = self.staged.clone();
         Box::pin(async move { result })
     }
@@ -335,9 +342,13 @@ impl AvatarDirectUploadPort for ScriptedDirectStorage {
         _staging_object_id: &'a str,
         _expected_version: &'a str,
         _final_object_id: &'a str,
-        _content_type: AvatarContentType,
+        content_type: AvatarContentType,
     ) -> AvatarStorageFuture<'a, ()> {
         self.publish_calls.fetch_add(1, Ordering::Relaxed);
+        self.published_content_types
+            .lock()
+            .unwrap()
+            .push(content_type);
         let result = self.publish.clone();
         Box::pin(async move { result })
     }
@@ -357,6 +368,7 @@ impl AvatarDirectUploadPort for ScriptedDirectStorage {
     }
 
     fn delete_final<'a>(&'a self, _final_object_id: &'a str) -> AvatarStorageFuture<'a, ()> {
+        self.delete_final_calls.fetch_add(1, Ordering::Relaxed);
         let result = self.delete_final.clone();
         Box::pin(async move { result })
     }
@@ -1336,4 +1348,100 @@ async fn direct_avatar_read_and_delete_preserve_repository_and_storage_boundarie
         service.delete(&with_avatar).await,
         Err(DeleteAvatarError::Overview(RepositoryError::Unavailable))
     );
+}
+
+#[test]
+fn pending_validates_and_hashes_once_and_drops_bytes_before_recording() {
+    let source = include_str!("../../src/avatar.rs");
+    let pending = source
+        .split("AvatarUploadClaim::Pending {")
+        .nth(1)
+        .unwrap()
+        .split("AvatarUploadClaim::Publishing {")
+        .next()
+        .unwrap();
+    assert_eq!(pending.matches("AvatarContentType::detect(").count(), 1);
+    assert_eq!(pending.matches("final_object_id(").count(), 1);
+    assert!(
+        pending.find("drop(staged.bytes)").unwrap() < pending.find(".record_candidate(").unwrap()
+    );
+    let validated = source
+        .split("match validated_content_type {")
+        .nth(1)
+        .unwrap()
+        .split("self.storage")
+        .next()
+        .unwrap();
+    let pending_mime = validated.split("None =>").next().unwrap();
+    assert!(!pending_mime.contains("final_object_id("));
+    assert!(!pending_mime.contains("AvatarContentType::detect("));
+    assert!(validated.contains("staged.version != staged_version"));
+    assert!(validated.contains("final_object_id("));
+    assert!(validated.contains("AvatarContentType::detect("));
+}
+
+#[tokio::test]
+async fn pending_reads_once_and_keeps_validated_mime_while_candidate_failures_never_publish() {
+    let account = direct_account();
+    for recorded in [Ok(true), Ok(false), Err(RepositoryError::Unavailable)] {
+        let storage = ScriptedDirectStorage::default();
+        let reads = Arc::clone(&storage.read_staged_calls);
+        let publishes = Arc::clone(&storage.publish_calls);
+        let mimes = Arc::clone(&storage.published_content_types);
+        let mut state = ScriptedDirectState::pending(upload_authorization(
+            &account,
+            chrono::Utc::now() + chrono::Duration::minutes(5),
+        ));
+        state.record_candidate = recorded.clone();
+        let service = scripted_direct_service(
+            &account,
+            storage,
+            state,
+            Ok(0),
+            AvatarRepositoryResult::Update,
+        );
+        let result = service.complete_upload(&account, "upload-scripted").await;
+        assert_eq!(reads.load(Ordering::Relaxed), 1);
+        match recorded {
+            Ok(true) => {
+                result.unwrap();
+                assert_eq!(publishes.load(Ordering::Relaxed), 1);
+                assert_eq!(*mimes.lock().unwrap(), vec![AvatarContentType::Png]);
+            }
+            Ok(false) => {
+                assert_eq!(result, Err(DirectAvatarUploadError::ConcurrentChange));
+                assert_eq!(publishes.load(Ordering::Relaxed), 0);
+            }
+            Err(error) => {
+                assert_eq!(result, Err(DirectAvatarUploadError::State(error)));
+                assert_eq!(publishes.load(Ordering::Relaxed), 0);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes() {
+    let account = direct_account();
+    for outcome in [
+        AvatarRepositoryResult::Conflict,
+        AvatarRepositoryResult::Error(RepositoryError::Unavailable),
+    ] {
+        let storage = ScriptedDirectStorage::default();
+        let deleted = Arc::clone(&storage.delete_final_calls);
+        let published = Arc::clone(&storage.publish_calls);
+        let state = ScriptedDirectState::pending(upload_authorization(
+            &account,
+            chrono::Utc::now() + chrono::Duration::minutes(5),
+        ));
+        let service = scripted_direct_service(&account, storage, state, Ok(0), outcome);
+        assert!(
+            service
+                .complete_upload(&account, "upload-scripted")
+                .await
+                .is_err()
+        );
+        assert_eq!(published.load(Ordering::Relaxed), 1);
+        assert_eq!(deleted.load(Ordering::Relaxed), 0);
+    }
 }

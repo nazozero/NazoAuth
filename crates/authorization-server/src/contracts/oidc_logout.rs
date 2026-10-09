@@ -3,12 +3,18 @@ use std::{future::Future, pin::Pin};
 pub type OidcLogoutFuture<'a> =
     Pin<Box<dyn Future<Output = Result<OidcLogoutSuccess, OidcLogoutError>> + Send + 'a>>;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct OidcLogoutRequest {
     pub id_token_hint: Option<String>,
     pub client_id: Option<String>,
     pub post_logout_redirect_uri: Option<String>,
     pub state: Option<String>,
+}
+
+impl std::fmt::Debug for OidcLogoutRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("OidcLogoutRequest([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

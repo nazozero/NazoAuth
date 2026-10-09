@@ -14,7 +14,6 @@ pub enum ClaimPathSegment {
 pub type ClaimPath = Vec<ClaimPathSegment>;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ClaimsQuery {
     pub path: ClaimPath,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -26,7 +25,6 @@ pub struct ClaimsQuery {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct TrustedAuthority {
     #[serde(rename = "type")]
     pub authority_type: String,
@@ -34,7 +32,6 @@ pub struct TrustedAuthority {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct CredentialQuery {
     pub id: String,
     pub format: CredentialFormat,
@@ -53,7 +50,6 @@ pub struct CredentialQuery {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct CredentialSetOption {
     pub options: Vec<Vec<String>>,
     #[serde(default = "required_by_default")]
@@ -71,7 +67,6 @@ const fn required_by_default() -> bool {
 pub type CredentialSetQuery = CredentialSetOption;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct DcqlQuery {
     pub credentials: Vec<CredentialQuery>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,6 +77,9 @@ impl DcqlQuery {
     pub fn validate(&self) -> Result<(), DcqlError> {
         if self.credentials.is_empty() {
             return Err(DcqlError::MissingCredentials);
+        }
+        if self.credential_sets.as_ref().is_some_and(Vec::is_empty) {
+            return Err(DcqlError::InvalidCredentialSet);
         }
         let mut ids = std::collections::BTreeSet::new();
         for credential in &self.credentials {
@@ -115,6 +113,36 @@ impl DcqlQuery {
                 })
             {
                 return Err(DcqlError::InvalidClaimSet);
+            }
+            let meta = credential
+                .meta
+                .as_ref()
+                .and_then(Value::as_object)
+                .ok_or(DcqlError::InvalidMetadata)?;
+            // Empty metadata retains the existing unconstrained profile.
+            // Unknown properties remain ignored; a malformed known property
+            // cannot be reinterpreted as an omitted constraint.
+            match credential.format {
+                CredentialFormat::SdJwtVc => {
+                    if meta.get("vct_values").is_some_and(|value| {
+                        value.as_array().is_none_or(|values| {
+                            values.is_empty()
+                                || values
+                                    .iter()
+                                    .any(|value| value.as_str().is_none_or(str::is_empty))
+                        })
+                    }) {
+                        return Err(DcqlError::InvalidMetadata);
+                    }
+                }
+                CredentialFormat::MsoMdoc => {
+                    if meta
+                        .get("doctype_value")
+                        .is_some_and(|value| value.as_str().is_none_or(str::is_empty))
+                    {
+                        return Err(DcqlError::InvalidMetadata);
+                    }
+                }
             }
         }
         if let Some(sets) = &self.credential_sets {
@@ -151,4 +179,6 @@ pub enum DcqlError {
     InvalidClaimSet,
     #[error("DCQL credential set references are invalid")]
     InvalidCredentialSet,
+    #[error("DCQL metadata must be an object with correctly typed known constraints")]
+    InvalidMetadata,
 }

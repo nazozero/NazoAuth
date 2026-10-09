@@ -193,8 +193,13 @@ def postgres_metric(result: dict[str, Any], metric: str) -> float:
     return float(result.get("postgres", {}).get(metric, 0))
 
 
-def db_pool_metric(result: dict[str, Any], metric: str) -> float:
-    return float(result.get("db_pool", {}).get(metric, 0))
+def db_pool_metric(result: dict[str, Any], metric: str) -> float | None:
+    value = (result.get("db_pool") or {}).get(metric)
+    return float(value) if value is not None else None
+
+def db_pool_cell(result: dict[str, Any], metric: str) -> str:
+    value = db_pool_metric(result, metric)
+    return f"{value:.3f}" if value is not None else "UNAVAILABLE"
 
 
 def valkey_hit_rate(result: dict[str, Any]) -> float:
@@ -305,8 +310,8 @@ def write_report(results: list[dict[str, Any]], *, duration: str, report_path: P
                 f"{service_metric(result, 'valkey', 'cpu_percent_avg'):.3f}",
                 f"{postgres_metric(result, 'mean_statement_ms'):.3f}",
                 f"{postgres_metric(result, 'statements_per_http_request'):.3f}",
-                f"{db_pool_metric(result, 'wait_ms_avg'):.3f}",
-                f"{db_pool_metric(result, 'wait_ms_max_observed_process_lifetime'):.3f}",
+                db_pool_cell(result, "wait_ms_avg"),
+                db_pool_cell(result, "wait_ms_max_observed_process_lifetime"),
                 f"{valkey_hit_rate(result):.6f}",
                 result.get("valkey", {}).get("keyspace_hits", 0),
                 result.get("valkey", {}).get("keyspace_misses", 0),
@@ -541,12 +546,8 @@ def skipped_after_threshold_failure_point(*, scenario: str, rate: int, duration:
                 "mean_statement_ms": 0,
                 "statements_per_http_request": 0,
             },
-            "db_pool": {
-                "acquire_count": 0,
-                "wait_ms_total": 0,
-                "wait_ms_avg": 0,
-                "wait_ms_max_observed_process_lifetime": 0,
-            },
+            "db_pool": None,
+            "application_pool_observation": {"status": "UNAVAILABLE", "value": None},
             "valkey": {
                 "keyspace_hits": 0,
                 "keyspace_misses": 0,

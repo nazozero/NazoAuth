@@ -10,7 +10,7 @@ async fn controller_slot_list_has_one_control_tenant_route_and_no_admin_get_alia
         App::new()
             .app_data(web::Data::new(context))
             .app_data(web::Data::new(ControlTenantId::new(context.tenant_id)))
-            .configure(|cfg| configure(cfg, &settings, false)),
+            .configure(|cfg| configure(cfg, &settings)),
     )
     .await;
 
@@ -46,7 +46,7 @@ async fn retired_bootstrap_admin_endpoint_stays_unreachable() {
         App::new()
             .app_data(web::Data::new(context))
             .app_data(web::Data::new(ControlTenantId::new(context.tenant_id)))
-            .configure(|cfg| configure(cfg, &settings, false)),
+            .configure(|cfg| configure(cfg, &settings)),
     )
     .await;
 
@@ -59,4 +59,16 @@ async fn retired_bootstrap_admin_endpoint_stays_unreachable() {
             "the retired public bootstrap-admin surface must not come back"
         );
     }
+}
+
+#[actix_web::test]
+async fn retired_perf_collection_endpoint_is_unreachable() {
+    let settings = Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    let app = test::init_service(App::new().configure(|cfg| configure(cfg, &settings))).await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get().uri("/__perf/metrics").to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

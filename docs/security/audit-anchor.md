@@ -1,15 +1,16 @@
 # External audit-ledger anchoring
 
 Committed security events enter the append-only `security_audit_events`
-ledger and its durable outbox. Application emission is not always synchronous;
+ledger, whose rows are also the pending-delivery set until acknowledgement.
+Application emission is not always synchronous;
 see [Security Events](security-events.md) for queue loss, required append, and
 transactional producer boundaries. An independent `nazoauth audit-anchor-worker`
-(or equivalent sidecar) claims that outbox in bounded batches and sends one
+(or equivalent sidecar) claims the pending set in bounded batches and sends one
 signed batch checkpoint per claim to `AUDIT_ANCHOR_URL` over HTTPS. The
 exporter assigns sequence and BLAKE3 hashes to committed events in immutable
 `security_audit_chain_entries`, atomically with its bounded batch claim (at
 most 256 events and at most `AUDIT_ANCHOR_MAX_ENVELOPE_BYTES` wire bytes). A
-business transaction writes the event and outbox without locking the global
+business transaction writes only the event without locking the global
 chain head. Retries reuse the identical committed batch: the chain-state row
 pins the sequence range, member content digest, generation, and lease. The
 server process does not run this exporter and does not receive its database
@@ -44,16 +45,19 @@ The receiver must recompute every BLAKE3 event hash and the batch digest
 before accepting a checkpoint. The event hash input is `nazo.audit.v1\0`,
 big-endian sequence, previous hash, UUID bytes, length-prefixed UTF-8 event
 type and category, big-endian microsecond timestamp, and length-prefixed
-PostgreSQL `jsonb::text` payload. Sequence and timestamp are signed 64-bit
+persisted UTF-8 `payload_canonical` bytes. Sequence and timestamp are signed 64-bit
 integers; lengths are unsigned 64-bit byte counts, all big-endian. The batch
 digest input is `nazo.audit.batch.v1\0`, deployment id, first and last
 sequence, event count, previous hash, last hash, and each member event hash in
 order. Hashes are 32 raw bytes and the event UUID is 16 raw bytes. The JSON
-wire envelope encodes hashes as unpadded base64url. A receiver must reproduce
-PostgreSQL `jsonb::text` representation, including whitespace and key
-ordering; hashing arbitrary reserialized JSON is not equivalent. The
-[persistence crate](../../crates/persistence/src/audit_chain.rs) owns this
-encoding. The receiver independently validates deployment identity, sequence
+wire envelope encodes hashes as unpadded base64url. A receiver hashes the exact
+`payload_canonical` string carried by the envelope, without parsing and
+reserializing its JSON. The ledger adapter owns the stored representation;
+the PostgreSQL adapter uses `jsonb::text`, including its whitespace and key
+ordering. Retained events and claimed batches must keep those original bytes
+through upgrades or adapter changes. The
+[persistence crate](../../crates/persistence/src/audit_chain.rs) owns the shared
+hash framing; it does not impose a database text encoder. The receiver independently validates deployment identity, sequence
 continuity, previous hash, event content, batch digest, and duplicate
 consistency.
 
@@ -68,9 +72,11 @@ acceptance; `duplicate` acknowledges an already-persisted identical batch; a
 `rejected` receipt with `permanent=true` blocks the batch until an operator
 runs `nazo_unblock_security_audit_batch()`, while a transient rejection or any
 missing/invalid receipt reschedules it. Acknowledgement deletes the batch's
-outbox, chain-entry, and event rows in the same transaction that advances
-the anchor checkpoint — the accepted checkpoint is the durable evidence, so
-no delivered row is retained and no separate sweeper reclaims it.
+chain-entry rows and ordinary event rows in the same transaction that advances
+the anchor checkpoint. Committed authorization-decision facts are marked
+exported instead: they are still business consumption fences until their
+retention deadline closes. Bounded security-state maintenance then reclaims
+only facts that are both exported and no longer needed by the business.
 Transport and transient failures are rescheduled with bounded backoff. Claim,
 acknowledgement, and failure release are fenced by the batch generation, so an
 expired or stale worker cannot mutate a newer claim. The response body is
@@ -86,6 +92,21 @@ UUID, sequence zero, identical previous/event hashes, and Unix epoch time; it
 is a checkpoint, not a fabricated security event.
 
 The worker records its observation and every externally accepted checkpoint in the shared audit chain state. Event acknowledgement and checkpoint advancement are one database operation. In `AUDIT_ANCHOR_MODE=required`, high-impact management preflight requires a recent worker observation, a valid deployment checkpoint, and oldest pending event age within `AUDIT_ANCHOR_MAX_LAG_SECONDS`. A bounded backlog is allowed, including committed events not yet chained. With no backlog the checkpoint must equal the chain head; historical delivery latency does not keep a recovered deployment unavailable. An empty ledger records its signed, externally accepted genesis checkpoint before required mode becomes ready. No instance-local health file is used.
+A durable batch acknowledgement also refreshes the worker observation. After
+locking the chain head and validating the full batch, it samples the database's
+real clock once before mutation. Retained decision export time, checkpoint
+acceptance time and worker observation share this ACK operation timestamp; it
+does not represent the exact transaction commit time. An ACK delayed behind an
+observation therefore samples its time after that observation's lock is released.
+Every successful background observation updates its timestamp from the database's
+real clock, including idle polls after a recent acknowledgement. Required mode
+therefore supports a positive freshness limit shorter than the former 30-second
+write throttle, such as a 10-second limit with a 5-second healthy poll. Choose
+the freshness limit to cover poll and scheduling delays. Observation does not
+acknowledge pending events or replace the signed receiver receipt; committed
+business consumption fences retain their own retention boundary. Request
+admission reads health and does not add observation writes.
+
 `optional` and `disabled` do not read exporter health on management admission;
 the durable writer availability check still applies. `disabled` is an explicit
 development setting and provides no protection against a privileged local
@@ -103,8 +124,7 @@ not.
 
 Delivery is the retention boundary. The acknowledgement transaction that
 advances the durable anchor also removes the batch's rows from
-`security_audit_event_outbox`, `security_audit_chain_entries`, and
-`security_audit_events`. The receiver already holds the complete, verified,
+`security_audit_chain_entries` and `security_audit_events`. The receiver already holds the complete, verified,
 independently persisted history, so the OLTP database keeps no second copy
 and there is no archival sweep: delivered audit state is bounded by the
 in-flight batch, not by a clock.
@@ -115,10 +135,14 @@ path accepts `last_sequence = anchor_sequence` as a fully delivered head
 while still demanding the head row whenever undelivered entries exist.
 Health reporting treats that state as `chain_valid` with no orphans.
 
-Only undelivered state is retained: pending events — unchained, or chained
-but unacknowledged — stay in the hot tables and fail closed. The append-only
-triggers still reject direct UPDATE/DELETE on the ledger; the
-acknowledgement function is the only permitted delete path and is gated by
+Undelivered events — unchained, or chained but unacknowledged — stay in the
+pending set and fail closed. Exported authorization-decision facts remain
+outside that set until their business retention ends. Both pending claim and
+the authoritative chain-append entry point reject exported facts, so retained
+facts cannot be chained a second time. The append-only triggers reject direct
+mutation; the narrow ACK metadata transition cannot alter fact identity,
+payload or retention. Acknowledgement and bounded retained-fact cleanup are
+controlled delete paths, gated by
 the transaction-local `nazo.audit_reclaim` permit inside its own
 transaction — application roles hold no DELETE privilege on any ledger
 table.
@@ -134,7 +158,7 @@ Recommended production separation:
   `NAZOAUTH_MIGRATION_RUNTIME_ROLE` naming the server-writer role; migration
   resets that role's direct `public` schema/table/sequence privileges, grants
   application DML, and grants only ledger append/check-availability functions;
-* give the worker exporter role only chain assignment and outbox claim/ack/health rights;
+* give the worker exporter role only chain assignment and pending-claim/ack/health rights;
 * provide the worker `AUDIT_ANCHOR_DATABASE_URL` and `AUDIT_ANCHOR_TOKEN` (or
   its secret-file form), while the server receives only the deployment identity;
 * use the [ledger role provisioning runbook](../operations/security-audit-ledger-roles.md)
@@ -182,8 +206,13 @@ observations, a mismatched deployment, invalid checkpoints, or excessive oldest
 pending age. It gates callers of management preflight; it is not a promise that
 every HTTP response waits for its own external checkpoint.
 
-After database restore, reconcile the local chain and outbox with the receiver's
+After database restore, reconcile the local chain and pending events with the receiver's
 already accepted deployment sequence before resuming export. Do not erase the
 receiver's history or reset deployment identity merely to make a fork appear
 continuous. Database ownership can rewrite unanchored local state; only
 independently protected receiver history survives that boundary.
+
+
+New batch claims count the exact escaped JSON envelope using the same borrowed Serde wire view as delivery. Each candidate event is serialized once for sizing; the header and comma bytes complete the count. A single legal event up to the 64 KiB canonical payload limit may use the finite 135168-byte singleton exception. The configured normal batch limit applies to new claims.
+
+Committed, in-flight and imported historical batches retain their original membership, range, digest and retry bytes, including batches above the new limit. They are not split or dropped during delivery. Receivers requiring a uniform strict limit must drain those batches before switching that policy; a historical batch may otherwise remain rejected. Batch and genesis receipt bodies are bounded by the configured envelope byte limit using both declared length and actual chunk bytes before buffer extension.

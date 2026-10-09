@@ -68,7 +68,10 @@ unchanged. A repeated import after success reports that material already exists.
 
 Fresh installations initialize the complete aggregate through tenant bootstrap
 or the existing tenant key-generation operation. Normal server startup reads
-it and does not create certificate files.
+it and does not create certificate files. Tenant key-generation results carry
+the kid, revision and certificate chain from their selected or applied generation,
+including an existing concurrent winner. A later rotation may supersede that
+generation but cannot mix its fields into the completed generation result.
 
 Before 0.5.0, historical release formats are not supported or converted.
 Retaining prior IACA records during normal key rotation serves credentials
@@ -92,3 +95,13 @@ reviewed before repeating the operation. Neither command modifies other tenants.
 Back up the database and wrapping root together. Restarting an instance requires
 no local mdoc directory. Deployment validation must still exercise cross-instance
 issuance, verification, rotation, and recovery against the actual shared stores.
+
+CRL issuance reads one fresh, authenticated tenant generation and extracts only
+the selected IACA bundle and revocation snapshot. It retains schema, seal and
+public/private projection binding and revocation structure validation, without
+preparing unrelated JWT signers or request-object RSA keys. The selected DS,
+issuer fingerprint/contact, status, serial and revocation time remain checked;
+the crypto signer matches the IACA private key to the certificate and signs
+using that same prepared key. Historical IACA records remain available. CRL
+numbers retain the existing wall-clock-derived behavior and are not evidence
+of persistent uniqueness.

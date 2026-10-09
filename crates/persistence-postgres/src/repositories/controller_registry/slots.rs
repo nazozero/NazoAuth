@@ -71,7 +71,6 @@ pub struct StoredControllerSlot {
     pub slot_index: i16,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
-    pub last_used_at: Option<DateTime<Utc>>,
     pub status: ControllerSlotStatus,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -208,8 +207,6 @@ struct SlotRow {
     issued_at: DateTime<Utc>,
     #[diesel(sql_type = Timestamptz)]
     expires_at: DateTime<Utc>,
-    #[diesel(sql_type = Nullable<Timestamptz>)]
-    last_used_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = Varchar)]
     status: String,
     #[diesel(sql_type = Nullable<Timestamptz>)]
@@ -233,7 +230,6 @@ impl TryFrom<SlotRow> for StoredControllerSlot {
             slot_index: row.slot_index,
             issued_at: row.issued_at,
             expires_at: row.expires_at,
-            last_used_at: row.last_used_at,
             status: ControllerSlotStatus::from_str(&row.status)
                 .ok_or_else(|| anyhow::anyhow!("stored controller slot has unknown status"))?,
             revoked_at: row.revoked_at,
@@ -268,16 +264,10 @@ impl TryFrom<AdmittedRow> for AdmittedController {
     }
 }
 
-#[derive(QueryableByName)]
-struct CountRow {
-    #[diesel(sql_type = BigInt)]
-    count: i64,
-}
-
 macro_rules! slot_columns {
     () => {
         "deployment_id, controller_id, label, kid, public_key, \
-         slot_index, issued_at, expires_at, last_used_at, status, revoked_at, \
+         slot_index, issued_at, expires_at, status, revoked_at, \
          created_at, updated_at"
     };
 }
@@ -414,24 +404,6 @@ fn lowest_free_slot_index(active: &[StoredControllerSlot]) -> Option<i16> {
         .find(|index| !active.iter().any(|slot| slot.slot_index == *index))
 }
 
-async fn read_slot_row(
-    connection: &mut AsyncPgConnection,
-    deployment_id: &str,
-    controller_id: &str,
-) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    sql_query(format!(
-        "SELECT {} FROM controller_registry_slots \
-         WHERE deployment_id = $1 AND controller_id = $2",
-        slot_columns!()
-    ))
-    .bind::<Varchar, _>(deployment_id)
-    .bind::<Varchar, _>(controller_id)
-    .get_result::<SlotRow>(connection)
-    .await?
-    .try_into()
-    .map_err(transport)
-}
-
 /// Insert one new active slot under the held advisory lock, picking the lowest
 /// free index.  The partial unique active-slot index is the hard backstop for
 /// any path that could bypass the lock.
@@ -448,12 +420,14 @@ pub(crate) async fn insert_slot_on_connection(
         ));
     };
     let controller_id = Uuid::now_v7().to_string();
-    let inserted = sql_query(
+    let rows = sql_query(format!(
         "INSERT INTO controller_registry_slots
             (deployment_id, controller_id, label, kid, public_key, slot_index,
-             issued_at, expires_at, last_used_at, status, revoked_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, 'active', NULL, $7, $7)",
-    )
+             issued_at, expires_at, status, revoked_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NULL, $7, $7)
+         RETURNING {}",
+        slot_columns!()
+    ))
     .bind::<Varchar, _>(&slot.deployment_id)
     .bind::<Varchar, _>(&controller_id)
     .bind::<Varchar, _>(&slot.label)
@@ -462,24 +436,32 @@ pub(crate) async fn insert_slot_on_connection(
     .bind::<SmallInt, _>(slot_index)
     .bind::<Timestamptz, _>(now)
     .bind::<Timestamptz, _>(now + Duration::seconds(CONTROLLER_KEY_TTL_SECONDS))
-    .execute(connection)
-    .await;
-    if let Err(error) = inserted {
-        // Under the per-deployment advisory lock the only reachable unique
-        // violation on this path is the per-deployment kid backstop.
-        return Err(map_insert_conflict(error));
-    }
-    read_slot_row(connection, &slot.deployment_id, &controller_id).await
+    .load::<SlotRow>(connection)
+    .await
+    .map_err(map_slot_conflict)?;
+    one_written_slot(rows)
 }
 
-fn map_insert_conflict(error: QueryError) -> ControllerRegistryError {
+fn one_written_slot(
+    mut rows: Vec<SlotRow>,
+) -> Result<StoredControllerSlot, ControllerRegistryError> {
+    if rows.len() != 1 {
+        return Err(transport(anyhow::anyhow!(
+            "slot mutation returned an invalid authority row count"
+        )));
+    }
+    rows.pop()
+        .expect("one fully received slot row")
+        .try_into()
+        .map_err(transport)
+}
+
+fn map_slot_conflict(error: QueryError) -> ControllerRegistryError {
     match &error {
-        QueryError::DatabaseError(kind, _) => {
-            if matches!(kind, diesel::result::DatabaseErrorKind::UniqueViolation) {
-                ControllerRegistryError::DuplicateKid
-            } else {
-                transport(error)
-            }
+        QueryError::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, info)
+            if info.constraint_name() == Some("ux_controller_registry_slots_deployment_kid") =>
+        {
+            ControllerRegistryError::DuplicateKid
         }
         _ => transport(error),
     }
@@ -496,25 +478,15 @@ pub(super) async fn rotate_slot_on_connection(
     if current.status == ControllerSlotStatus::Revoked {
         return Err(ControllerRegistryError::AlreadyRevoked);
     }
-    let conflict = sql_query(
-        "SELECT count(*) AS count FROM controller_registry_slots
-         WHERE deployment_id = $1 AND kid = $2 AND controller_id <> $3",
-    )
-    .bind::<Varchar, _>(&rotation.deployment_id)
-    .bind::<Varchar, _>(&rotation.kid)
-    .bind::<Varchar, _>(&rotation.controller_id)
-    .get_result::<CountRow>(connection)
-    .await?;
-    if conflict.count > 0 {
-        return Err(ControllerRegistryError::DuplicateKid);
-    }
-    sql_query(
+    let rows = sql_query(format!(
         "UPDATE controller_registry_slots
          SET label = $3, kid = $4, public_key = $5,
              issued_at = $6, expires_at = $7,
-             last_used_at = NULL, updated_at = $6
-         WHERE deployment_id = $1 AND controller_id = $2",
-    )
+             updated_at = $6
+         WHERE deployment_id = $1 AND controller_id = $2
+         RETURNING {}",
+        slot_columns!()
+    ))
     .bind::<Varchar, _>(&rotation.deployment_id)
     .bind::<Varchar, _>(&rotation.controller_id)
     .bind::<Varchar, _>(&rotation.label)
@@ -522,9 +494,10 @@ pub(super) async fn rotate_slot_on_connection(
     .bind::<Binary, _>(&rotation.public_key[..])
     .bind::<Timestamptz, _>(now)
     .bind::<Timestamptz, _>(now + Duration::seconds(CONTROLLER_KEY_TTL_SECONDS))
-    .execute(connection)
-    .await?;
-    load_slot_for_update(connection, &rotation.deployment_id, &rotation.controller_id).await
+    .load::<SlotRow>(connection)
+    .await
+    .map_err(map_slot_conflict)?;
+    one_written_slot(rows)
 }
 
 pub(super) async fn revoke_slot_on_connection(
@@ -538,17 +511,19 @@ pub(super) async fn revoke_slot_on_connection(
     if current.status == ControllerSlotStatus::Revoked {
         return Err(ControllerRegistryError::AlreadyRevoked);
     }
-    sql_query(
+    let rows = sql_query(format!(
         "UPDATE controller_registry_slots
          SET status = 'revoked', revoked_at = $3, updated_at = $3
-         WHERE deployment_id = $1 AND controller_id = $2",
-    )
+         WHERE deployment_id = $1 AND controller_id = $2
+         RETURNING {}",
+        slot_columns!()
+    ))
     .bind::<Varchar, _>(deployment_id)
     .bind::<Varchar, _>(controller_id)
     .bind::<Timestamptz, _>(now)
-    .execute(connection)
+    .load::<SlotRow>(connection)
     .await?;
-    load_slot_for_update(connection, deployment_id, controller_id).await
+    one_written_slot(rows)
 }
 
 impl ControllerRegistryRepository {
@@ -722,7 +697,6 @@ pub(crate) fn contract_slot(slot: StoredControllerSlot) -> contract::StoredContr
         slot_index: slot.slot_index,
         issued_at: slot.issued_at,
         expires_at: slot.expires_at,
-        last_used_at: slot.last_used_at,
         status: contract_status(slot.status),
         revoked_at: slot.revoked_at,
         created_at: slot.created_at,

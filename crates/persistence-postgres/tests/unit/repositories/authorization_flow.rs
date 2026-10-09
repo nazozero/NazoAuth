@@ -76,16 +76,25 @@ async fn fixed_tenant_adapter_rejects_cross_tenant_grant_writes_before_database_
     let user_id = Uuid::now_v7();
     let client_id = Uuid::now_v7();
 
+    let now = chrono::Utc::now();
     assert_eq!(
-        AuthorizationRepositoryPort::upsert_grant(
+        AuthorizationRepositoryPort::commit_decision(
             &repository,
-            GrantWrite {
+            AuthorizationDecisionCommit {
                 tenant_id: Uuid::now_v7(),
                 user_id,
-                client_id,
-                scopes: &scopes,
-                resource_indicators: &resources,
-                authorization_details: &details,
+                client_id: "public-client".to_owned(),
+                request_id: "request".to_owned(),
+                pushed_request_uri: None,
+                valid_until: now + chrono::Duration::minutes(5),
+                retain_until: now + chrono::Duration::minutes(10),
+                decision: AuthorizationDecisionKind::Deny,
+                event_id: Uuid::now_v7(),
+                occurred_at: now,
+                audit_fields: serde_json::json!({}),
+                scopes: scopes.clone(),
+                resource_indicators: resources.clone(),
+                authorization_details: details.clone(),
             }
         )
         .await,

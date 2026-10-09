@@ -135,7 +135,6 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
                 holder_binding: Some(HolderBinding::Jwk {
                     jwk: json!({"kty":"EC","crv":"P-256","x":URL_SAFE_NO_PAD.encode(point.x().unwrap()),"y":URL_SAFE_NO_PAD.encode(point.y().unwrap())}),
                 }),
-                selectively_disclosable_claims: Vec::new(),
             },
             issued_at,
             expires_at: issued_at + Duration::minutes(10),

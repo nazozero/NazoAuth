@@ -42,7 +42,7 @@ fn clients_list_response(
         "total": total,
         "page": page,
         "page_size": page_size,
-        "items": clients.into_iter().map(client_json).collect::<Vec<_>>(),
+        "items": clients.iter().map(client_json).collect::<Vec<_>>(),
     }))
 }
 

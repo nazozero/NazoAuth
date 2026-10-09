@@ -7,6 +7,7 @@ use nazo_identity::{
 };
 use uuid::Uuid;
 
+use crate::pool::DiscardOnDrop;
 use crate::{DbPool, get_conn};
 
 const MAX_ACTIVE_TRUST_ANCHORS_PER_CLIENT: i64 = 8;
@@ -105,6 +106,72 @@ fn map_request_row(row: RequestRow) -> Result<MtlsTrustAnchorRequest, Repository
         resolved_at: row.resolved_at,
         revoked_at: row.revoked_at,
     })
+}
+
+// The complete result stream and transaction commit have succeeded before
+// exposing this view; a RETURNING row alone is not a commit acknowledgement.
+fn committed_request_view(
+    mut rows: Vec<RequestRow>,
+) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
+    if rows.len() > 1 {
+        return Err(RepositoryError::Consistency(
+            "trust mutation returned multiple views".to_owned(),
+        ));
+    }
+    rows.pop()
+        .ok_or(RepositoryError::Conflict)
+        .and_then(map_request_row)
+}
+
+#[derive(QueryableByName)]
+struct TrustAcceptanceTime {
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    observed_at: DateTime<Utc>,
+}
+
+enum TrustMutationError {
+    Database(diesel::result::Error),
+    Projection(RepositoryError),
+}
+
+impl From<diesel::result::Error> for TrustMutationError {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Database(error)
+    }
+}
+
+impl TrustMutationError {
+    fn into_repository(self) -> RepositoryError {
+        match self {
+            Self::Database(error) => map_error(error),
+            Self::Projection(error) => error,
+        }
+    }
+}
+
+async fn append_admin_trust_outcome(
+    connection: &mut AsyncPgConnection,
+    tenant_id: TenantId,
+    request_id: Uuid,
+    actor: UserId,
+    event_type: &str,
+) -> Result<(), diesel::result::Error> {
+    crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(
+        connection,
+        &nazo_persistence::SecurityAuditEvent {
+            event_id: Uuid::now_v7(),
+            event_type: event_type.to_owned(),
+            event_category: "trust_lifecycle".to_owned(),
+            payload: serde_json::json!({
+                "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                "event_category": "trust_lifecycle", "tenant_id": tenant_id.as_uuid(),
+                "request_id": request_id, "admin_user_id": actor.as_uuid(),
+                "outcome": "success",
+            }),
+            occurred_at: Utc::now(),
+        },
+    )
+    .await
 }
 
 const REQUEST_PROJECTION: &str = "
@@ -331,37 +398,52 @@ impl MtlsTrustAnchorRepository {
         status: MtlsTrustAnchorStatus,
         note: Option<String>,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
-        let mut connection = self.connection().await?;
-        let updated = connection
-            .transaction::<Option<Uuid>, diesel::result::Error, _>(async |connection| {
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let result = guard
+            .connection()
+            .transaction::<MtlsTrustAnchorRequest, TrustMutationError, _>(async |connection| {
                 acquire_tenant_trust_lock(connection, tenant_id).await?;
-                sql_query(
-                    "WITH admin_actor AS (
-                 SELECT id FROM users
-                 WHERE tenant_id = $1 AND id = $3 AND is_active = TRUE
-                   AND role = 'admin' AND admin_level > 0
-             ), updated AS (
+                // Sample admission time after the current actor, request and
+                // requested client locks, so a lock wait cannot extend validity.
+                let mut locked = sql_query(
+                    "SELECT r.id FROM oauth_client_mtls_trust_anchor_requests r
+                     JOIN users a ON a.tenant_id = r.tenant_id AND a.id = $3
+                     JOIN oauth_clients c ON c.tenant_id = r.tenant_id AND c.id = r.client_id
+                     WHERE r.tenant_id = $1 AND r.id = $2 AND r.status = 0
+                       AND r.user_id <> $3 AND r.source = 'admin-session'
+                       AND a.is_active = TRUE AND a.role = 'admin' AND a.admin_level > 0
+                       AND ($4 <> 1 OR c.is_active = TRUE)
+                     FOR UPDATE OF r FOR SHARE OF a, c",
+                )
+                .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
+                .bind::<sql_types::Uuid, _>(id)
+                .bind::<sql_types::Uuid, _>(actor.as_uuid())
+                .bind::<sql_types::SmallInt, _>(status.code())
+                .load::<IdRow>(connection)
+                .await?;
+                if locked.len() != 1 || locked.pop().map(|row| row.id) != Some(id) {
+                    return Err(TrustMutationError::Projection(RepositoryError::Conflict));
+                }
+                let observed_at = sql_query("SELECT clock_timestamp() AS observed_at")
+                    .get_result::<TrustAcceptanceTime>(connection)
+                    .await?
+                    .observed_at;
+                let updated = sql_query(format!(
+                    "WITH updated AS (
              UPDATE oauth_client_mtls_trust_anchor_requests
              SET status = $4, admin_note = $5, resolved_by_user_id = $3,
-                 resolved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 resolved_at = $8, updated_at = $8
              WHERE tenant_id = $1 AND id = $2 AND status = 0 AND user_id <> $3
                AND source = 'admin-session'
-               AND EXISTS (SELECT 1 FROM admin_actor)
                AND ($4 <> 1 OR (
-                   not_before <= CURRENT_TIMESTAMP AND not_after > CURRENT_TIMESTAMP
-                   AND EXISTS (
-                       SELECT 1 FROM oauth_clients requested_client
-                       WHERE requested_client.tenant_id = $1
-                         AND requested_client.id = oauth_client_mtls_trust_anchor_requests.client_id
-                         AND requested_client.is_active = TRUE
-                   )
+                   not_before <= $8 AND not_after > $8
                    AND (
                        EXISTS (
                            SELECT 1
                            FROM oauth_client_mtls_trust_anchor_requests existing
                            WHERE existing.tenant_id = $1 AND existing.status = 1
-                             AND existing.not_before <= CURRENT_TIMESTAMP
-                             AND existing.not_after > CURRENT_TIMESTAMP
+                             AND existing.not_before <= $8
+                             AND existing.not_after > $8
                              AND existing.certificate_sha256 =
                                  oauth_client_mtls_trust_anchor_requests.certificate_sha256
                        )
@@ -372,8 +454,8 @@ impl MtlsTrustAnchorRepository {
                              ON active_client.id = active.client_id
                             AND active_client.tenant_id = active.tenant_id
                            WHERE active.tenant_id = $1 AND active.status = 1
-                             AND active.not_before <= CURRENT_TIMESTAMP
-                             AND active.not_after > CURRENT_TIMESTAMP
+                             AND active.not_before <= $8
+                             AND active.not_after > $8
                              AND active_client.is_active = TRUE
                        ) < $6
                    )
@@ -381,13 +463,13 @@ impl MtlsTrustAnchorRepository {
                        SELECT COUNT(*)
                        FROM oauth_client_mtls_trust_anchor_requests active
                        WHERE active.tenant_id = $1 AND active.status = 1
-                         AND active.not_before <= CURRENT_TIMESTAMP
-                         AND active.not_after > CURRENT_TIMESTAMP
+                         AND active.not_before <= $8
+                         AND active.not_after > $8
                          AND active.client_id =
                              oauth_client_mtls_trust_anchor_requests.client_id
                    ) < $7
                ))
-             RETURNING id, tenant_id, resolved_by_user_id
+             RETURNING *
              ), recorded AS (
                  INSERT INTO oauth_client_mtls_trust_anchor_events (
                      tenant_id, request_id, actor_user_id, action, note
@@ -395,8 +477,12 @@ impl MtlsTrustAnchorRepository {
                  SELECT tenant_id, id, resolved_by_user_id, $4, $5 FROM updated
                  RETURNING request_id
              )
-             SELECT request_id AS id FROM recorded",
-                )
+             SELECT {REQUEST_PROJECTION}
+              FROM updated r
+              JOIN recorded event ON event.request_id = r.id
+              JOIN users u ON u.id = r.user_id AND u.tenant_id = r.tenant_id
+              JOIN oauth_clients c ON c.id = r.client_id AND c.tenant_id = r.tenant_id"
+                ))
                 .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
                 .bind::<sql_types::Uuid, _>(id)
                 .bind::<sql_types::Uuid, _>(actor.as_uuid())
@@ -404,20 +490,31 @@ impl MtlsTrustAnchorRepository {
                 .bind::<sql_types::Nullable<sql_types::Text>, _>(note)
                 .bind::<sql_types::BigInt, _>(MAX_ACTIVE_TRUST_ANCHORS_PER_TENANT)
                 .bind::<sql_types::BigInt, _>(MAX_ACTIVE_TRUST_ANCHORS_PER_CLIENT)
-                .get_result::<IdRow>(connection)
-                .await
-                .optional()
-                .map(|row| row.map(|row| row.id))
+                .bind::<sql_types::Timestamptz, _>(observed_at)
+                .load::<RequestRow>(connection)
+                .await?;
+                let view =
+                    committed_request_view(updated).map_err(TrustMutationError::Projection)?;
+                append_admin_trust_outcome(
+                    connection,
+                    tenant_id,
+                    id,
+                    actor,
+                    if status == MtlsTrustAnchorStatus::Approved {
+                        "mtls_trust_anchor_approved"
+                    } else {
+                        "mtls_trust_anchor_rejected"
+                    },
+                )
+                .await?;
+                Ok(view)
             })
             .await
-            .map_err(map_error)?;
-        if updated.is_none() {
-            return Err(RepositoryError::Conflict);
+            .map_err(TrustMutationError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
         }
-        drop(connection);
-        self.by_id(tenant_id, id).await?.ok_or_else(|| {
-            RepositoryError::Consistency("resolved trust request is missing".to_owned())
-        })
+        result
     }
 
     pub async fn revoke(
@@ -427,12 +524,17 @@ impl MtlsTrustAnchorRepository {
         actor: UserId,
         note: String,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
-        let mut connection = self.connection().await?;
-        let updated = sql_query(
-            "WITH admin_actor AS (
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let result = guard
+            .connection()
+            .transaction::<MtlsTrustAnchorRequest, TrustMutationError, _>(async |connection| {
+                acquire_tenant_trust_lock(connection, tenant_id).await?;
+                let updated = sql_query(format!(
+                    "WITH admin_actor AS (
                  SELECT id FROM users
                  WHERE tenant_id = $1 AND id = $3 AND is_active = TRUE
                    AND role = 'admin' AND admin_level > 0
+                 FOR SHARE
              ), updated AS (
              UPDATE oauth_client_mtls_trust_anchor_requests
              SET status = 3, admin_note = $4, revoked_by_user_id = $3,
@@ -440,7 +542,7 @@ impl MtlsTrustAnchorRepository {
              WHERE tenant_id = $1 AND id = $2 AND status = 1
                AND source = 'admin-session'
                AND EXISTS (SELECT 1 FROM admin_actor)
-             RETURNING id, tenant_id, revoked_by_user_id
+             RETURNING *
              ), recorded AS (
                  INSERT INTO oauth_client_mtls_trust_anchor_events (
                      tenant_id, request_id, actor_user_id, action, note
@@ -448,24 +550,36 @@ impl MtlsTrustAnchorRepository {
                  SELECT tenant_id, id, revoked_by_user_id, 3, $4 FROM updated
                  RETURNING request_id
              )
-             SELECT request_id AS id FROM recorded",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
-        .bind::<sql_types::Uuid, _>(id)
-        .bind::<sql_types::Uuid, _>(actor.as_uuid())
-        .bind::<sql_types::Text, _>(note)
-        .get_result::<IdRow>(&mut connection)
-        .await
-        .optional()
-        .map(|row| row.map(|row| row.id))
-        .map_err(map_error)?;
-        if updated.is_none() {
-            return Err(RepositoryError::Conflict);
+             SELECT {REQUEST_PROJECTION}
+              FROM updated r
+              JOIN recorded event ON event.request_id = r.id
+              JOIN users u ON u.id = r.user_id AND u.tenant_id = r.tenant_id
+              JOIN oauth_clients c ON c.id = r.client_id AND c.tenant_id = r.tenant_id"
+                ))
+                .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
+                .bind::<sql_types::Uuid, _>(id)
+                .bind::<sql_types::Uuid, _>(actor.as_uuid())
+                .bind::<sql_types::Text, _>(note)
+                .load::<RequestRow>(connection)
+                .await?;
+                let view =
+                    committed_request_view(updated).map_err(TrustMutationError::Projection)?;
+                append_admin_trust_outcome(
+                    connection,
+                    tenant_id,
+                    id,
+                    actor,
+                    "mtls_trust_anchor_revoked",
+                )
+                .await?;
+                Ok(view)
+            })
+            .await
+            .map_err(TrustMutationError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
         }
-        drop(connection);
-        self.by_id(tenant_id, id).await?.ok_or_else(|| {
-            RepositoryError::Consistency("revoked trust request is missing".to_owned())
-        })
+        result
     }
 
     pub async fn active_bundle(

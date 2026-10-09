@@ -1,8 +1,8 @@
 use super::*;
 use crate::config::ConfigSource;
 use nazo_oauth_server::ports::transient_state::{
-    CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome, CibaPingFinishResult,
-    TransientStateFuture,
+    CibaPingClaimBatch, CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome,
+    CibaPingFinishResult, TransientStateFuture,
 };
 use std::collections::BTreeSet;
 
@@ -14,8 +14,13 @@ impl CibaPingDeliveryPort for EmptyDeliveries {
         _now: i64,
         _lock_until: i64,
         _limit: usize,
-    ) -> TransientStateFuture<'_, Vec<CibaPingDelivery>> {
-        Box::pin(async { Ok(Vec::new()) })
+    ) -> TransientStateFuture<'_, CibaPingClaimBatch> {
+        Box::pin(async {
+            Ok(CibaPingClaimBatch {
+                scanned: 0,
+                deliveries: Vec::new(),
+            })
+        })
     }
 
     fn finish<'a>(

@@ -1,4 +1,7 @@
-use super::helpers::{all_same_host, sector_identifier_host_for_redirects, trim_optional_string};
+use super::helpers::{
+    all_same_host, sector_identifier_host_for_redirects, trim_optional_string,
+    validate_subject_type,
+};
 use super::policy::{
     AdminClientPolicy, ClientSecurityPolicyContext, validate_composable_security_policy,
 };
@@ -67,8 +70,10 @@ where
     if let Some(value) = request.backchannel_authentication_request_signing_alg {
         client.backchannel_authentication_request_signing_alg = trim_optional_string(Some(value));
     }
-    if let Some(value) = request.backchannel_user_code_parameter {
-        client.backchannel_user_code_parameter = value;
+    if request.backchannel_user_code_parameter == Some(true) {
+        return Err(AdminClientError::InvalidRequest(
+            "backchannel_user_code_parameter=true 不受支持".into(),
+        ));
     }
     if let Some(value) = request.backchannel_logout_uri {
         client.backchannel_logout_uri = trim_optional_string(Some(value));
@@ -161,6 +166,7 @@ where
     let new_subject_type = request
         .subject_type
         .unwrap_or_else(|| client.subject_type.clone());
+    validate_subject_type(&new_subject_type)?;
     let requested_sector_identifier_uri = match request.sector_identifier_uri {
         Some(_) if client.sector_identifier_uri.is_some() => {
             return Err(AdminClientError::InvalidRequest(

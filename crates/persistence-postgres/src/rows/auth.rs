@@ -6,7 +6,7 @@ use uuid::Uuid;
 /// current generation. The immutable contract payload lives in
 /// `RefreshContractRow`; rotated generations only leave `SpentRefreshTokenRow`
 /// proofs.
-#[derive(Debug, diesel::Queryable, diesel::QueryableByName, diesel::Selectable)]
+#[derive(Clone, Debug, diesel::Queryable, diesel::QueryableByName, diesel::Selectable)]
 #[diesel(table_name = crate::schema::oauth_refresh_families)]
 pub(crate) struct RefreshFamilyRow {
     #[diesel(sql_type = diesel::sql_types::Uuid)]
@@ -56,8 +56,6 @@ pub(crate) struct SpentRefreshTokenRow {
     #[diesel(sql_type = diesel::sql_types::Binary)]
     pub(crate) refresh_token_blake3: Vec<u8>,
     #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) token_family_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) member_id: Uuid,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
     pub(crate) spent_at: DateTime<Utc>,
@@ -65,7 +63,7 @@ pub(crate) struct SpentRefreshTokenRow {
     pub(crate) expires_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, diesel::QueryableByName)]
+#[derive(Clone, diesel::QueryableByName)]
 pub(crate) struct BackchannelLogoutDeliveryRow {
     #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) id: Uuid,
@@ -77,4 +75,10 @@ pub(crate) struct BackchannelLogoutDeliveryRow {
     pub(crate) attempts: i32,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
     pub(crate) expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for BackchannelLogoutDeliveryRow {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("BackchannelLogoutDeliveryRow([REDACTED])")
+    }
 }

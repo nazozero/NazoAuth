@@ -133,7 +133,7 @@ fn client_attestation_draft_07_accepts_optional_time_claims_and_binds_instance_k
         client_instance_key_thumbprint(&instance_jwk).expect("instance JWK thumbprint")
     );
     assert_eq!(validated.replay_id, "fresh-proof");
-    assert_eq!(validated.replay_ttl_seconds, 300);
+    assert_eq!(validated.replay_window.expires_at(), now + 301);
 }
 
 #[test]
@@ -383,4 +383,77 @@ fn client_attestation_validate_for_client_uses_static_trust_when_client_is_unbou
             .expect("static trust fallback should validate");
         assert_eq!(validated.client_id, "wallet-client");
     });
+}
+
+#[test]
+fn client_attestation_replay_marker_outlives_every_accepted_iat_second() {
+    let (validator, attestation, _, _, instance_key, now) = valid_client_attestation_fixture();
+    for (offset, expected_ttl) in [(-300, 1), (-299, 2), (0, 301), (60, 361)] {
+        let proof = signed_client_attestation_jwt(
+            &json!({
+                "iss": "wallet-client",
+                "aud": "https://issuer.example",
+                "iat": now + offset,
+                "jti": "window-boundary-proof",
+            }),
+            &instance_key,
+            "oauth-client-attestation-pop+jwt",
+            Algorithm::ES256,
+            None,
+        );
+        let accepted = validator
+            .validate(&attestation, &proof, "https://issuer.example", now)
+            .expect("accepted iat boundary");
+        assert_eq!(accepted.replay_window.expires_at() - now, expected_ttl);
+        let marker_expires_at = accepted.replay_window.expires_at();
+        assert!(
+            validator
+                .validate(
+                    &attestation,
+                    &proof,
+                    "https://issuer.example",
+                    marker_expires_at - 1,
+                )
+                .is_ok()
+        );
+        assert!(
+            validator
+                .validate(
+                    &attestation,
+                    &proof,
+                    "https://issuer.example",
+                    marker_expires_at,
+                )
+                .is_err(),
+            "the same proof must be expired when its replay marker can disappear"
+        );
+    }
+}
+
+#[test]
+fn client_attestation_one_second_node_difference_does_not_change_owner_window() {
+    let (validator, attestation, _, _, instance_key, now) = valid_client_attestation_fixture();
+    let iat = now + 61;
+    let proof = signed_client_attestation_jwt(
+        &json!({"iss":"wallet-client", "aud":"https://issuer.example", "iat":iat, "jti":"node-difference"}),
+        &instance_key,
+        "oauth-client-attestation-pop+jwt",
+        Algorithm::ES256,
+        None,
+    );
+    let fast = validator
+        .validate(&attestation, &proof, "https://issuer.example", now + 1)
+        .unwrap();
+    assert!(
+        validator
+            .validate(&attestation, &proof, "https://issuer.example", now)
+            .is_err()
+    );
+    let end = fast.replay_window.expires_at();
+    let slow = validator
+        .validate(&attestation, &proof, "https://issuer.example", end - 1)
+        .unwrap();
+    assert_eq!(fast.replay_window, slow.replay_window);
+    assert!(slow.replay_window.accepts(end - 1));
+    assert!(!slow.replay_window.accepts(end));
 }

@@ -26,15 +26,18 @@ const EMAIL_CLAIMS: &[&str] = &["email", "email_verified"];
 const ADDRESS_CLAIMS: &[&str] = &["address"];
 const PHONE_CLAIMS: &[&str] = &["phone_number", "phone_number_verified"];
 
-pub fn user_claims_are_covered_by_scopes(scopes: &[String], requested_claims: &[String]) -> bool {
+pub fn user_claims_are_covered_by_scopes(
+    scopes: &[String],
+    requested_claims: &[OidcClaimRequest],
+) -> bool {
     requested_claims.iter().all(|claim| {
-        let required_scope = if PROFILE_CLAIMS.contains(&claim.as_str()) {
+        let required_scope = if PROFILE_CLAIMS.contains(&claim.name.as_str()) {
             "profile"
-        } else if EMAIL_CLAIMS.contains(&claim.as_str()) {
+        } else if EMAIL_CLAIMS.contains(&claim.name.as_str()) {
             "email"
-        } else if ADDRESS_CLAIMS.contains(&claim.as_str()) {
+        } else if ADDRESS_CLAIMS.contains(&claim.name.as_str()) {
             "address"
-        } else if PHONE_CLAIMS.contains(&claim.as_str()) {
+        } else if PHONE_CLAIMS.contains(&claim.name.as_str()) {
             "phone"
         } else {
             return false;
@@ -47,9 +50,7 @@ pub fn oidc_user_claims(
     user: &nazo_identity::SubjectClaims,
     scopes: &[String],
     subject: &str,
-    requested_claims: &[String],
     requested_claim_requests: &[OidcClaimRequest],
-    _sector_identifier_host: Option<&str>,
 ) -> Value {
     let mut claims = json!({"sub": subject});
     let has_profile_scope = scopes.iter().any(|scope| scope == "profile");
@@ -59,7 +60,6 @@ pub fn oidc_user_claims(
 
     if claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "preferred_username",
         &json!(user.preferred_username),
@@ -69,7 +69,6 @@ pub fn oidc_user_claims(
     let name = user_display_name(user);
     if claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "name",
         &json!(name),
@@ -78,7 +77,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "given_name",
         user.given_name.as_deref(),
@@ -87,7 +85,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "family_name",
         user.family_name.as_deref(),
@@ -96,7 +93,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "middle_name",
         user.middle_name.as_deref(),
@@ -105,7 +101,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "nickname",
         user.nickname.as_deref(),
@@ -114,7 +109,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "profile",
         user.profile.as_deref(),
@@ -123,7 +117,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "picture",
         user.picture.as_deref(),
@@ -132,7 +125,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "website",
         user.website.as_deref(),
@@ -141,7 +133,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "gender",
         user.gender.as_deref(),
@@ -150,7 +141,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "birthdate",
         user.birthdate.as_deref(),
@@ -159,7 +149,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "zoneinfo",
         user.zoneinfo.as_deref(),
@@ -168,7 +157,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "locale",
         user.locale.as_deref(),
@@ -178,7 +166,6 @@ pub fn oidc_user_claims(
     let updated_at = json!(user.updated_at);
     if claim_allowed(
         has_profile_scope,
-        requested_claims,
         requested_claim_requests,
         "updated_at",
         &updated_at,
@@ -188,7 +175,6 @@ pub fn oidc_user_claims(
 
     if claim_allowed(
         has_email_scope,
-        requested_claims,
         requested_claim_requests,
         "email",
         &json!(user.email),
@@ -197,7 +183,6 @@ pub fn oidc_user_claims(
     }
     if claim_allowed(
         has_email_scope,
-        requested_claims,
         requested_claim_requests,
         "email_verified",
         &json!(user.email_verified),
@@ -208,7 +193,6 @@ pub fn oidc_user_claims(
     if let Some(address) = address
         && claim_allowed(
             has_address_scope,
-            requested_claims,
             requested_claim_requests,
             "address",
             &address,
@@ -218,7 +202,6 @@ pub fn oidc_user_claims(
     }
     if optional_string_claim_allowed(
         has_phone_scope,
-        requested_claims,
         requested_claim_requests,
         "phone_number",
         user.phone_number.as_deref(),
@@ -227,7 +210,6 @@ pub fn oidc_user_claims(
     }
     if claim_allowed(
         has_phone_scope,
-        requested_claims,
         requested_claim_requests,
         "phone_number_verified",
         &json!(user.phone_number_verified),
@@ -263,24 +245,12 @@ fn optional_string_claim(claims: &mut Value, name: &str, value: Option<&str>) {
     }
 }
 
-fn requested_claim(requested_claims: &[String], name: &str) -> bool {
-    requested_claims.iter().any(|claim| claim == name)
-}
-
-fn claim_requested(
-    requested_claims: &[String],
-    requested_claim_requests: &[OidcClaimRequest],
-    name: &str,
-) -> bool {
-    requested_claim(requested_claims, name)
-        || requested_claim_requests
-            .iter()
-            .any(|request| request.name == name)
+fn claim_requested(requests: &[OidcClaimRequest], name: &str) -> bool {
+    requests.iter().any(|request| request.name == name)
 }
 
 fn claim_allowed(
     scope_allowed: bool,
-    requested_claims: &[String],
     requested_claim_requests: &[OidcClaimRequest],
     name: &str,
     actual: &Value,
@@ -291,15 +261,11 @@ fn claim_allowed(
     {
         return claim_value_matches_request(request, actual);
     }
-    if requested_claim(requested_claims, name) {
-        return true;
-    }
-    scope_allowed && !claim_requested(requested_claims, requested_claim_requests, name)
+    scope_allowed
 }
 
 fn optional_string_claim_allowed(
     scope_allowed: bool,
-    requested_claims: &[String],
     requested_claim_requests: &[OidcClaimRequest],
     name: &str,
     actual: Option<&str>,
@@ -309,7 +275,6 @@ fn optional_string_claim_allowed(
     };
     claim_allowed(
         scope_allowed,
-        requested_claims,
         requested_claim_requests,
         name,
         &json!(actual),
@@ -336,36 +301,23 @@ pub fn oidc_id_token_user_claims(
     user: &nazo_identity::SubjectClaims,
     scopes: &[String],
     subject: &str,
-    requested_claims: &[String],
     requested_claim_requests: &[OidcClaimRequest],
-    sector_identifier_host: Option<&str>,
 ) -> Value {
-    let mut claims = oidc_user_claims(
-        user,
-        scopes,
-        subject,
-        requested_claims,
-        requested_claim_requests,
-        sector_identifier_host,
-    );
+    let mut claims = oidc_user_claims(user, scopes, subject, requested_claim_requests);
     if let Some(object) = claims.as_object_mut() {
-        if !claim_requested(requested_claims, requested_claim_requests, "email") {
+        if !claim_requested(requested_claim_requests, "email") {
             object.remove("email");
         }
-        if !claim_requested(requested_claims, requested_claim_requests, "email_verified") {
+        if !claim_requested(requested_claim_requests, "email_verified") {
             object.remove("email_verified");
         }
-        if !claim_requested(requested_claims, requested_claim_requests, "address") {
+        if !claim_requested(requested_claim_requests, "address") {
             object.remove("address");
         }
-        if !claim_requested(requested_claims, requested_claim_requests, "phone_number") {
+        if !claim_requested(requested_claim_requests, "phone_number") {
             object.remove("phone_number");
         }
-        if !claim_requested(
-            requested_claims,
-            requested_claim_requests,
-            "phone_number_verified",
-        ) {
+        if !claim_requested(requested_claim_requests, "phone_number_verified") {
             object.remove("phone_number_verified");
         }
     }

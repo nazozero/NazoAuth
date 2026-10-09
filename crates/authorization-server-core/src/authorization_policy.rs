@@ -52,7 +52,6 @@ pub struct AuthorizationProfilePolicy {
 pub struct NormalizedAuthorizationRequest {
     pub response_mode: Option<String>,
     pub code_challenge: Option<String>,
-    pub code_challenge_method: Option<String>,
     pub prompt: PromptDirectives,
     pub max_age: Option<i64>,
     pub requested_claims: RequestedClaims,
@@ -118,13 +117,13 @@ pub fn normalize_authorization_request(
     }
 
     let scopes = parse_scope(parameters.get("scope").map(String::as_str).unwrap_or(""));
-    let (code_challenge, code_challenge_method) = match (
+    let code_challenge = match (
         parameters.get("code_challenge").map(String::as_str),
         parameters.get("code_challenge_method").map(String::as_str),
     ) {
-        (None, None) => (None, None),
+        (None, None) => None,
         (Some(challenge), Some("S256")) if is_valid_pkce_value(challenge) => {
-            (Some(challenge.to_owned()), Some("S256".to_owned()))
+            Some(challenge.to_owned())
         }
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
     };
@@ -172,7 +171,6 @@ pub fn normalize_authorization_request(
     Ok(NormalizedAuthorizationRequest {
         response_mode,
         code_challenge,
-        code_challenge_method,
         prompt,
         max_age,
         requested_claims,
@@ -377,6 +375,8 @@ fn acr_value_is_baseline(value: &Value) -> Result<bool, AuthorizationPolicyError
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AuthorizationSession {
     pub auth_time: i64,
+    /// Authentication-event timestamp in Unix microseconds; absent for legacy sessions.
+    pub auth_time_micros: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -391,10 +391,11 @@ pub fn authorization_session_decision(
     session: Option<AuthorizationSession>,
     prompt: PromptDirectives,
     max_age: Option<i64>,
-    reauthentication_started_at: Option<i64>,
+    reauthentication_started_at_micros: Option<i64>,
     now: i64,
 ) -> AuthorizationSessionDecision {
-    let fresh_authentication = prompt.login || prompt.select_account;
+    // OIDC max_age=0 follows the same one-use reauthentication completion as prompt=login.
+    let fresh_authentication = prompt.login || prompt.select_account || max_age == Some(0);
     let Some(session) = session else {
         return if prompt.none {
             AuthorizationSessionDecision::LoginRequired
@@ -405,11 +406,17 @@ pub fn authorization_session_decision(
         };
     };
     let prompt_requires_fresh_login = fresh_authentication
-        && reauthentication_started_at.is_none_or(|started_at| session.auth_time < started_at);
+        && !reauthentication_started_at_micros.is_some_and(|started_at| {
+            session.auth_time_micros.is_some_and(|authenticated_at| {
+                started_at > 0
+                    && authenticated_at > started_at
+                    && authenticated_at / 1_000_000 == session.auth_time
+                    && session.auth_time <= now
+            })
+        });
     let max_age_expired = match max_age {
-        Some(0) => true,
+        Some(0) | None => false,
         Some(max_age) => now.saturating_sub(session.auth_time) > max_age,
-        None => false,
     };
     if prompt_requires_fresh_login || max_age_expired {
         if prompt.none {
@@ -457,7 +464,7 @@ pub fn parse_user_authorization_decision(value: &str) -> Option<UserAuthorizatio
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct AuthorizationResponsePolicyInput<'a> {
     pub issuer: &'a str,
     pub redirect_uri: &'a str,
@@ -472,6 +479,12 @@ pub struct AuthorizationResponsePolicyInput<'a> {
     pub session_management_available: bool,
 }
 
+impl std::fmt::Debug for AuthorizationResponsePolicyInput<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AuthorizationResponsePolicyInput([REDACTED])")
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlainAuthorizationResponse {
     pub redirect_uri: String,
@@ -479,7 +492,7 @@ pub struct PlainAuthorizationResponse {
     pub issue_session_state: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct JarmAuthorizationResponse {
     pub redirect_uri: String,
     pub issuer: String,
@@ -488,6 +501,12 @@ pub struct JarmAuthorizationResponse {
     pub error: Option<String>,
     pub state: Option<String>,
     pub ttl_seconds: i64,
+}
+
+impl std::fmt::Debug for JarmAuthorizationResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("JarmAuthorizationResponse([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -1,4 +1,5 @@
 use super::*;
+use nazo_auth::OidcClaimRequest;
 
 fn query(values: &[(&str, &str)]) -> HashMap<String, String> {
     values
@@ -39,8 +40,15 @@ fn claim_request_names_preserve_normalized_order() {
         },
     ];
 
-    assert_eq!(claim_request_names(&requests), ["email", "name"]);
-    assert!(claim_request_names(&[]).is_empty());
+    assert_eq!(
+        nazo_auth::UserinfoClaimRequests::from(requests.clone()).names(),
+        ["email", "name"]
+    );
+    assert!(
+        nazo_auth::UserinfoClaimRequests::default()
+            .names()
+            .is_empty()
+    );
 }
 
 #[test]

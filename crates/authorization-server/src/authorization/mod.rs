@@ -135,5 +135,5 @@ pub(crate) fn permits_existing_module_transaction(
         nazo_auth::CapabilityAdmission::ExistingTransaction,
     )
 }
-use jar::{apply_request_object_with_context, unverified_request_object_client_id};
+use jar::apply_request_object_with_context;
 use par::is_pushed_authorization_request_uri;

@@ -279,20 +279,55 @@ fn source_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
 }
 
 #[test]
-fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
-    // This is a source-level architecture guard for the fail-closed ordering
-    // around mutations. Runtime audit serialization is exercised above; this
-    // guard prevents a future refactor from moving the required intent behind
-    // a state change without pretending to be a protocol E2E test.
+fn high_impact_state_changes_have_durable_audit_boundaries() {
+    // Source-level guards keep authorization publication behind its atomic
+    // repository commit, and retain the distinct intent boundaries for device
+    // and CIBA flows. These assertions are not protocol or persistence E2E tests.
     let authorization =
         include_str!("../../../../authorization-server/src/domain/authorization_decision.rs");
-    assert_source_order(authorization, ".ensure_storage()", "preview_user_decision(");
-    assert_source_order(authorization, "preview_user_decision(", "record_required(");
-    assert_source_order(authorization, "record_required(", "consume_user_decision(");
+    assert_source_order(
+        authorization,
+        ".ensure_transactional_ready()",
+        "preview_user_decision(",
+    );
+    assert_source_order(authorization, "preview_user_decision(", "commit_decision(");
+    assert_source_order(
+        authorization,
+        "AuthorizationDecisionCommitResult::Committed => {}",
+        ".discard_decision_material(&command.request_id, &preview)",
+    );
+    assert!(!authorization.contains(".record_required("));
+    assert!(!authorization.contains("authorization_approved"));
+    assert!(!authorization.contains("authorization_denied"));
+    let service =
+        include_str!("../../../../authorization-server-core/src/authorization_service.rs");
+    let commit = source_body(
+        service,
+        "    pub async fn commit_decision(",
+        "    /// Loads and validates a consent",
+    )
+    .split_whitespace()
+    .collect::<String>();
+    assert_source_order(
+        &commit,
+        "self.repository.commit_decision(input).await?",
+        "self.state.store_authorization_code(",
+    );
+    assert!(commit.contains("result==AuthorizationDecisionCommitResult::Committed"));
+    let prompt_none =
+        include_str!("../../../../authorization-server/src/authorization/request/prompt_none.rs")
+            .split_whitespace()
+            .collect::<String>();
+    assert_source_order(
+        &prompt_none,
+        "ifresult!=AuthorizationDecisionCommitResult::Committed{",
+        ".discard_pushed_authorization_request(uri,version)",
+    );
+    assert!(!prompt_none.contains(".record_required("));
     assert!(authorization.contains("AuthorizationDecisionError::AuditUnavailable"));
 
     let device = include_str!("../../../../authorization-server/src/token/device.rs");
-    assert_source_order(device, ".ensure_storage()", "record_required(");
+    assert_source_order(device, ".ensure_transactional_ready()", "record_required(");
     assert_source_order(device, "record_required(", "let result = match decision {");
     assert!(device.contains("设备授权审计无法持久化."));
 
@@ -302,7 +337,11 @@ fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
         "async fn prepare_ciba_decision_intent(",
         "async fn set_ciba_request_decision(",
     );
-    assert_source_order(ciba_intent, ".ensure_storage()", ".record_required(");
+    assert_source_order(
+        ciba_intent,
+        ".ensure_transactional_ready()",
+        ".record_required(",
+    );
     let ciba_browser = source_body(
         ciba,
         "pub async fn decide(",
@@ -392,19 +431,27 @@ mod queue_persistence {
     use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
     struct FakeLedger {
+        commit_gate: Mutex<Option<oneshot::Receiver<()>>>,
+        batch_attempts: AtomicU64,
         appended: Mutex<Vec<Uuid>>,
         batches: Mutex<Vec<Vec<Uuid>>>,
         fail_next: AtomicU64,
         fail_next_batch: AtomicU64,
+        health: Mutex<Option<SecurityAuditAnchorHealth>>,
+        health_calls: AtomicU64,
     }
 
     impl FakeLedger {
         fn new() -> Self {
             Self {
+                commit_gate: Mutex::new(None),
+                batch_attempts: AtomicU64::new(0),
                 appended: Mutex::new(Vec::new()),
                 batches: Mutex::new(Vec::new()),
                 fail_next: AtomicU64::new(0),
                 fail_next_batch: AtomicU64::new(0),
+                health: Mutex::new(None),
+                health_calls: AtomicU64::new(0),
             }
         }
     }
@@ -420,22 +467,13 @@ mod queue_persistence {
         fn anchor_health(
             &self,
         ) -> BoxFuture<'_, Result<SecurityAuditAnchorHealth, RepositoryError>> {
-            Box::pin(async {
-                Ok(SecurityAuditAnchorHealth {
-                    head_sequence: 0,
-                    head_hash: vec![0; 32],
-                    pending_exists: false,
-                    pending_estimate: 0,
-                    pending_orphan_exists: false,
-                    oldest_pending_occurred_at: None,
-                    last_exported_sequence: None,
-                    last_exported_hash: None,
-                    last_exported_occurred_at: None,
-                    last_exported_at: None,
-                    deployment_id: None,
-                    observed_at: None,
-                    batch: None,
-                })
+            Box::pin(async move {
+                self.health_calls.fetch_add(1, AtomicOrdering::Relaxed);
+                self.health
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .ok_or(RepositoryError::Unavailable)
             })
         }
 
@@ -455,6 +493,11 @@ mod queue_persistence {
             events: &'a [SecurityAuditEvent],
         ) -> BoxFuture<'a, Result<(), RepositoryError>> {
             Box::pin(async move {
+                self.batch_attempts.fetch_add(1, AtomicOrdering::Relaxed);
+                let gate = { self.commit_gate.lock().unwrap().take() };
+                if let Some(gate) = gate {
+                    gate.await.expect("test must release the commit barrier");
+                }
                 if self.fail_next_batch.load(AtomicOrdering::Relaxed) > 0 {
                     self.fail_next_batch.fetch_sub(1, AtomicOrdering::Relaxed);
                     return Err(RepositoryError::Unavailable);
@@ -467,35 +510,17 @@ mod queue_persistence {
         }
     }
 
-    // The queue counters are process-global atomics, so tests that assert on
-    // their deltas must not overlap.
-    static COUNTER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
     fn telemetry_event() -> QueuedAuditEvent {
         prepare_event("login_success", serde_json::Map::new()).unwrap()
     }
-
-    fn counters() -> (u64, u64, u64, u64, u64, u64) {
-        (
-            AUDIT_QUEUE_ENQUEUED.load(Ordering::Relaxed),
-            AUDIT_QUEUE_PERSISTED.load(Ordering::Relaxed),
-            AUDIT_QUEUE_DROPPED.load(Ordering::Relaxed),
-            AUDIT_PERSIST_BATCHES.load(Ordering::Relaxed),
-            AUDIT_PERSIST_BATCH_EVENTS.load(Ordering::Relaxed),
-            AUDIT_PERSIST_MAX_BATCH.load(Ordering::Relaxed),
-        )
-    }
-
     #[tokio::test]
-    async fn worker_persists_a_single_event_immediately_without_batching() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
+    async fn worker_persists_a_single_event_after_bounded_coalescing() {
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
-        let (e0, p0, _, b0, be0, _) = counters();
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let event = telemetry_event();
         let id = event.event_id;
-        sender.send(event).await.unwrap();
+        sender.send(event.into()).await.unwrap();
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if ledger.appended.lock().unwrap().contains(&id) {
@@ -505,32 +530,79 @@ mod queue_persistence {
             }
         })
         .await
-        .expect("a single queued event must persist without waiting to batch");
+        .expect("a lone queued event must persist within the bounded coalescing window");
         drop(sender);
         tokio::time::timeout(Duration::from_secs(5), worker)
             .await
             .expect("worker must finish after the sender closes")
             .unwrap();
-        let (e1, p1, _, b1, be1, m1) = counters();
-        assert_eq!(p1 - p0, 1);
-        assert_eq!(b1 - b0, 1);
-        assert_eq!(be1 - be0, 1);
-        assert!(m1 >= 1);
-        let _ = (e0, e1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn worker_coalesces_arrivals_without_extending_the_first_event_deadline() {
+        let (sender, receiver) = mpsc::channel(8);
+        let ledger = Arc::new(FakeLedger::new());
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
+        let first = telemetry_event();
+        let second = telemetry_event();
+        let third = telemetry_event();
+        let expected = vec![first.event_id, second.event_id, third.event_id];
+
+        sender.send(first.into()).await.unwrap();
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(3)).await;
+        sender.send(second.into()).await.unwrap();
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(3)).await;
+        sender.send(third.into()).await.unwrap();
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(3)).await;
+        tokio::task::yield_now().await;
+        assert!(ledger.batches.lock().unwrap().is_empty());
+
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(*ledger.batches.lock().unwrap(), vec![expected]);
+        drop(sender);
+        worker.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn full_or_closed_batch_flushes_without_waiting_for_the_window() {
+        for (count, close) in [(AUDIT_PERSIST_BATCH_MAX, false), (1, true)] {
+            let (sender, receiver) = mpsc::channel(AUDIT_PERSIST_BATCH_MAX);
+            let ledger = Arc::new(FakeLedger::new());
+            let mut expected = Vec::new();
+            for _ in 0..count {
+                let event = telemetry_event();
+                expected.push(event.event_id);
+                sender.send(event.into()).await.unwrap();
+            }
+            let sender = if close {
+                drop(sender);
+                None
+            } else {
+                Some(sender)
+            };
+            let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
+            tokio::task::yield_now().await;
+            assert_eq!(*ledger.batches.lock().unwrap(), vec![expected]);
+            drop(sender);
+            worker.await.unwrap();
+        }
     }
 
     #[tokio::test]
     async fn worker_retries_failed_append_then_preserves_order() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
-        ledger.fail_next.store(1, AtomicOrdering::Relaxed);
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
+        ledger.fail_next_batch.store(1, AtomicOrdering::Relaxed);
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let first = telemetry_event();
         let second = telemetry_event();
         let (id_first, id_second) = (first.event_id, second.event_id);
-        sender.send(first).await.unwrap();
-        sender.send(second).await.unwrap();
+        sender.send(first.into()).await.unwrap();
+        sender.send(second.into()).await.unwrap();
         drop(sender);
         tokio::time::timeout(Duration::from_secs(10), worker)
             .await
@@ -545,15 +617,14 @@ mod queue_persistence {
     }
 
     #[tokio::test]
-    async fn queue_counters_reconcile_enqueue_persist_drop_and_pending() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
+    async fn full_telemetry_queue_keeps_accepted_events_and_rejects_excess() {
         let (sender, receiver) = mpsc::channel(4);
         let ledger = Arc::new(FakeLedger::new());
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
-        let (e0, p0, d0, _, _, _) = counters();
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         for _ in 0..4 {
             enqueue_into_sink(&sender, "login_success", telemetry_event());
         }
+        assert_eq!(sender.capacity(), 0, "accepted events filled the channel");
         // Channel is full: the next two sends must drop, not block.
         enqueue_into_sink(&sender, "login_success", telemetry_event());
         enqueue_into_sink(&sender, "login_success", telemetry_event());
@@ -562,44 +633,289 @@ mod queue_persistence {
             .await
             .unwrap()
             .unwrap();
-        let (e1, p1, d1, _, _, _) = counters();
-        // Counters are process-global; only deltas belong to this test.
-        assert_eq!(e1 - e0, 4, "four successful try_send calls");
-        assert_eq!(d1 - d0, 2, "two queue_full rejections");
-        assert_eq!(p1 - p0, 4, "each enqueued event persisted");
+        assert_eq!(
+            ledger.appended.lock().unwrap().len(),
+            4,
+            "only accepted events reach the ledger"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn required_records_start_immediately_but_wait_for_batch_commit() {
+        for count in [1, 2, AUDIT_PERSIST_BATCH_MAX] {
+            let (sender, receiver) = mpsc::channel(AUDIT_PERSIST_BATCH_MAX);
+            let fake = Arc::new(FakeLedger::new());
+            let (release, commit) = oneshot::channel();
+            *fake.commit_gate.lock().unwrap() = Some(commit);
+            let mut expected = Vec::new();
+            let mut pending = Vec::new();
+            // Queue before starting the worker: batching must not depend on
+            // an arbitrary scheduler order or waiting for future arrivals.
+            for _ in 0..count {
+                let event =
+                    prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap();
+                expected.push(event.event_id);
+                let (completion, persisted) = oneshot::channel();
+                sender
+                    .try_send(AuditPersistRequest {
+                        event,
+                        completion: Some(completion),
+                    })
+                    .unwrap();
+                pending.push(persisted);
+            }
+            let started = tokio::time::Instant::now();
+            let worker = tokio::spawn(run_audit_persist_worker(receiver, fake.clone(), None));
+            tokio::task::yield_now().await;
+            assert_eq!(tokio::time::Instant::now(), started);
+            assert_eq!(fake.batch_attempts.load(AtomicOrdering::Relaxed), 1);
+            for persisted in &mut pending {
+                assert!(matches!(
+                    persisted.try_recv(),
+                    Err(oneshot::error::TryRecvError::Empty)
+                ));
+            }
+            assert!(fake.appended.lock().unwrap().is_empty());
+            release.send(()).unwrap();
+            for persisted in pending {
+                persisted.await.unwrap().unwrap();
+            }
+            assert_eq!(*fake.batches.lock().unwrap(), vec![expected]);
+            drop(sender);
+            worker.await.unwrap();
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn required_batch_failure_is_returned_without_retry_and_later_calls_can_commit() {
+        let (sender, receiver) = mpsc::channel(8);
+        let fake = Arc::new(FakeLedger::new());
+        fake.fail_next_batch.store(1, AtomicOrdering::Relaxed);
+        let mut pending = Vec::new();
+        for _ in 0..2 {
+            let (completion, persisted) = oneshot::channel();
+            sender
+                .try_send(AuditPersistRequest {
+                    event: prepare_event("authorization_decision_intent", serde_json::Map::new())
+                        .unwrap(),
+                    completion: Some(completion),
+                })
+                .unwrap();
+            pending.push(persisted);
+        }
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, fake.clone(), None));
+        for persisted in pending {
+            assert!(
+                persisted
+                    .await
+                    .unwrap()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("append failed")
+            );
+        }
+        assert!(fake.appended.lock().unwrap().is_empty());
+        append_required_via(
+            &sender,
+            "authorization_decision_intent",
+            prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fake.batch_attempts.load(AtomicOrdering::Relaxed),
+            2,
+            "a failed Required batch must not retry"
+        );
+        assert_eq!(fake.appended.lock().unwrap().len(), 1);
+        drop(sender);
+        worker.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unhealthy_export_discards_unattempted_telemetry_without_blocking_the_required_worker()
+    {
+        use super::transactional_readiness::{healthy_anchor, preflight};
+        use crate::adapters::audit_anchor::config::AuditAnchorMode;
+
+        for fault in [
+            "unavailable",
+            "stale",
+            "lag",
+            "blocked",
+            "deployment",
+            "checkpoint",
+        ] {
+            let (sender, receiver) = mpsc::channel(AUDIT_QUEUE_CAPACITY);
+            let ledger = Arc::new(FakeLedger::new());
+            if fault != "unavailable" {
+                let mut health = healthy_anchor();
+                match fault {
+                    "stale" => {
+                        health.observed_at = Some(Utc::now() - chrono::Duration::seconds(3600))
+                    }
+                    "lag" => {
+                        health.pending_exists = true;
+                        health.oldest_pending_occurred_at =
+                            Some(Utc::now() - chrono::Duration::seconds(3600));
+                    }
+                    "blocked" => {
+                        health.batch = Some(nazo_persistence::SecurityAuditBatchLease {
+                            first_sequence: 1,
+                            last_sequence: 3,
+                            event_count: 3,
+                            generation: 1,
+                            attempts: 1,
+                            available_at: None,
+                            locked_until: None,
+                            last_error: None,
+                            blocked_reason: Some("receiver rejected event".to_owned()),
+                        })
+                    }
+                    "deployment" => health.deployment_id = Some("foreign".into()),
+                    "checkpoint" => health.last_exported_hash = Some(vec![0xBB; 32]),
+                    _ => unreachable!(),
+                }
+                *ledger.health.lock().unwrap() = Some(health);
+            }
+            let admission = RequiredAuditRepository {
+                repository: ledger.clone(),
+                require_least_privilege: false,
+                preflight: preflight(AuditAnchorMode::Required),
+            };
+            assert!(
+                ensure_transactional_audit_ready_via(&admission)
+                    .await
+                    .is_err()
+            );
+            for _ in 0..130 {
+                sender.try_send(telemetry_event().into()).unwrap();
+            }
+            drop(sender);
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                run_audit_persist_worker(
+                    receiver,
+                    ledger.clone(),
+                    Some(preflight(AuditAnchorMode::Required)),
+                ),
+            )
+            .await
+            .expect("unattempted telemetry must leave memory while export is unhealthy");
+            assert!(ledger.health_calls.load(AtomicOrdering::Relaxed) > 0);
+            assert_eq!(ledger.batch_attempts.load(AtomicOrdering::Relaxed), 0);
+
+            // This exercises worker independence, not the caller's separate
+            // fail-closed Required anchor preflight (covered below).
+            let (required_sender, required_receiver) = mpsc::channel(2);
+            let required_worker = tokio::spawn(run_audit_persist_worker(
+                required_receiver,
+                ledger.clone(),
+                None,
+            ));
+            let required =
+                prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap();
+            let required_id = required.event_id;
+            append_required_via(&required_sender, "authorization_decision_intent", required)
+                .await
+                .unwrap();
+            assert_eq!(*ledger.appended.lock().unwrap(), vec![required_id]);
+            drop(required_sender);
+            required_worker.await.unwrap();
+
+            *ledger.health.lock().unwrap() = Some(healthy_anchor());
+            let (sender, receiver) = mpsc::channel(1);
+            let fresh = telemetry_event();
+            let fresh_id = fresh.event_id;
+            sender.try_send(fresh.into()).unwrap();
+            drop(sender);
+            run_audit_persist_worker(
+                receiver,
+                ledger.clone(),
+                Some(preflight(AuditAnchorMode::Required)),
+            )
+            .await;
+            assert_eq!(
+                *ledger.appended.lock().unwrap(),
+                vec![required_id, fresh_id]
+            );
+            assert_eq!(ledger.batch_attempts.load(AtomicOrdering::Relaxed), 2);
+            println!(
+                "{fault}: unattempted Telemetry discarded, Required worker independent, fresh event persisted after recovery"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn optional_and_disabled_telemetry_keep_their_existing_no_health_gate_policy() {
+        use super::transactional_readiness::preflight;
+        use crate::adapters::audit_anchor::config::AuditAnchorMode;
+
+        for mode in [AuditAnchorMode::Optional, AuditAnchorMode::Disabled] {
+            let (sender, receiver) = mpsc::channel(2);
+            let ledger = Arc::new(FakeLedger::new());
+            sender.try_send(telemetry_event().into()).unwrap();
+            drop(sender);
+            run_audit_persist_worker(receiver, ledger.clone(), Some(preflight(mode))).await;
+            assert_eq!(ledger.health_calls.load(AtomicOrdering::Relaxed), 0);
+            assert_eq!(ledger.appended.lock().unwrap().len(), 1);
+        }
     }
 
     #[tokio::test]
-    async fn required_append_uses_the_direct_ledger_path_not_the_queue() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
-        let fake = Arc::new(FakeLedger::new());
-        let ledger: Arc<dyn SecurityAuditLedger> = fake.clone();
-        let (e0, _, d0, _, _, _) = counters();
-        let queued = prepare_event("token_issued", serde_json::Map::new()).unwrap();
-        append_required_via(&ledger, "token_issued", queued)
+    async fn required_records_fail_closed_on_full_closed_or_stopped_channel() {
+        let (sender, receiver) = mpsc::channel(1);
+        let (completion, _persisted) = oneshot::channel();
+        sender
+            .try_send(AuditPersistRequest {
+                event: telemetry_event(),
+                completion: Some(completion),
+            })
+            .unwrap();
+        let error = append_required_via(
+            &sender,
+            "authorization_decision_intent",
+            prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("queue_full"));
+        drop(receiver);
+        let error = append_required_via(
+            &sender,
+            "authorization_decision_intent",
+            prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("sink_closed"));
+
+        let (sender, mut receiver) = mpsc::channel(1);
+        let call = tokio::spawn(async move {
+            append_required_via(
+                &sender,
+                "authorization_decision_intent",
+                prepare_event("authorization_decision_intent", serde_json::Map::new()).unwrap(),
+            )
             .await
-            .expect("required append should succeed");
-        let (e1, _, d1, _, _, _) = counters();
-        assert_eq!(e1 - e0, 0, "required evidence must not enter the queue");
-        assert_eq!(d1 - d0, 0);
-        assert!(
-            fake.batches.lock().unwrap().is_empty(),
-            "required append must not go through append_batch"
-        );
+        });
+        let request = receiver.recv().await.unwrap();
+        assert!(!call.is_finished());
+        drop(request);
+        let error = call.await.unwrap().unwrap_err();
+        assert!(error.to_string().contains("stopped before commit"));
     }
 
     #[tokio::test]
     async fn burst_events_persist_in_bounded_batches() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(256);
         let ledger = Arc::new(FakeLedger::new());
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
-        let (e0, p0, _, b0, be0, _) = counters();
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let mut ids = Vec::new();
         for _ in 0..130 {
             let event = telemetry_event();
             ids.push(event.event_id);
-            sender.send(event).await.unwrap();
+            sender.send(event.into()).await.unwrap();
         }
         drop(sender);
         tokio::time::timeout(Duration::from_secs(10), worker)
@@ -627,29 +943,21 @@ mod queue_persistence {
         let mut expected = ids.clone();
         expected.sort();
         assert_eq!(sorted, expected);
-        let (e1, p1, _, b1, be1, m1) = counters();
-        let _ = (e0, e1);
-        assert_eq!(p1 - p0, 130);
-        assert_eq!(be1 - be0, 130);
-        assert_eq!(b1 - b0, batches.len() as u64);
-        assert!(m1 <= AUDIT_PERSIST_BATCH_MAX as u64);
     }
 
     #[tokio::test]
     async fn failed_batch_is_retried_whole_and_blocks_later_batches() {
-        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(16);
         let ledger = Arc::new(FakeLedger::new());
         // Fail the first two batch attempts: the first batch must be retried
         // intact and nothing behind it may overtake.
         ledger.fail_next_batch.store(2, AtomicOrdering::Relaxed);
-        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
-        let (e0, p0, _, _, _, _) = counters();
+        let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone(), None));
         let mut ids = Vec::new();
         for _ in 0..80 {
             let event = telemetry_event();
             ids.push(event.event_id);
-            sender.send(event).await.unwrap();
+            sender.send(event.into()).await.unwrap();
         }
         drop(sender);
         tokio::time::timeout(Duration::from_secs(15), worker)
@@ -661,9 +969,6 @@ mod queue_persistence {
         // In-order persistence: batch contents concat in enqueue order.
         let persisted: Vec<Uuid> = batches.iter().flatten().copied().collect();
         assert_eq!(persisted, ids);
-        let (_, p1, _, _, _, _) = counters();
-        assert_eq!(p1 - p0, 80, "persisted only counts successful batches");
-        let _ = e0;
     }
 }
 
@@ -777,7 +1082,7 @@ mod transactional_readiness {
         }
     }
 
-    fn preflight(mode: AuditAnchorMode) -> AuditAnchorPreflight {
+    pub(super) fn preflight(mode: AuditAnchorMode) -> AuditAnchorPreflight {
         AuditAnchorPreflight::new(AuditAnchorPreflightConfig {
             mode,
             deployment_id: "test-deployment".to_owned(),
@@ -787,7 +1092,7 @@ mod transactional_readiness {
         .expect("test anchor preflight config is valid")
     }
 
-    fn healthy_anchor() -> SecurityAuditAnchorHealth {
+    pub(super) fn healthy_anchor() -> SecurityAuditAnchorHealth {
         SecurityAuditAnchorHealth {
             head_sequence: 7,
             head_hash: vec![0xAA; 32],
@@ -986,7 +1291,7 @@ mod transactional_readiness {
         // The production entry point consults the process-global sink; when
         // bootstrap never installed it the call must fail rather than let a
         // commit probe reach a missing ledger.
-        if REQUIRED_AUDIT_REPOSITORY.get().is_some() {
+        if PERSISTENT_AUDIT_SINK.get().is_some() {
             // Another test already installed it in this process; the unwrap
             // branch is covered by startup ordering instead.
             return;
@@ -1031,5 +1336,30 @@ mod transactional_readiness {
             .await
             .expect("default delegates to ensure_storage");
         assert_eq!(audit.calls.load(AtomicOrdering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn refresh_family_security_revocation_is_registered_required_evidence() {
+    assert_eq!(
+        audit_event_category("refresh_family_security_revoked"),
+        Some("token_lifecycle")
+    );
+    assert!(audit_event_is_required("refresh_family_security_revoked"));
+    assert!(prepare_event("refresh_family_security_revoked", serde_json::Map::new()).is_ok());
+}
+
+#[test]
+fn administrative_mutation_events_are_registered_required_evidence() {
+    for name in [
+        "system_tenant_admin_updated",
+        "controller_recovery_root_rotation_approved",
+        "controller_recovery_root_rotated",
+    ] {
+        assert_eq!(audit_event_category(name), Some("administration"));
+        assert!(audit_event_is_required(name));
+        let prepared = prepare_event(name, audit_fields(&[("actor_user_id", json!("actor"))]))
+            .expect("real administrative handlers must have a registered event");
+        assert_eq!(prepared.event_type, name);
     }
 }

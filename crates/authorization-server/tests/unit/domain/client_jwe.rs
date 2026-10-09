@@ -193,3 +193,85 @@ fn public_p256_jwk(key: PublicKey) -> Value {
         "y": URL_SAFE_NO_PAD.encode(point.y().expect("uncompressed P-256 point has y")),
     })
 }
+
+#[test]
+fn ownership_introspection_signs_then_encrypts_without_changing_inner_jwt() {
+    use nazo_auth::{IntrospectionSignInput, TokenSignerPort};
+    use nazo_crypto::jwt::{Algorithm, Validation, VerificationKey};
+    futures_executor::block_on(async {
+        let manager = nazo_key_management::KeyManager::for_test_with_auxiliary(Algorithm::PS256);
+        let body = json!({"active": true, "aud": ["a", "a", "\u{7b7e}\u{540d}"]});
+        for requested in [None, Some("PS256")] {
+            let signed = manager
+                .sign_introspection_response(IntrospectionSignInput {
+                    issuer: "https://issuer.example",
+                    audience: "client",
+                    body: &body,
+                    signing_algorithm: requested,
+                })
+                .await
+                .unwrap();
+            let header = nazo_crypto::jwt::decode_header(&signed).unwrap();
+            let algorithm = if requested.is_some() {
+                Algorithm::PS256
+            } else {
+                Algorithm::EdDSA
+            };
+            assert_eq!(header.alg, algorithm);
+            assert_eq!(header.typ.as_deref(), Some("token-introspection+jwt"));
+            let snapshot = manager.snapshot();
+            let jwk = &snapshot
+                .verification_key(header.kid.as_deref().unwrap())
+                .unwrap()
+                .public_jwk;
+            let verification = match algorithm {
+                Algorithm::PS256 => VerificationKey::from_rsa_components(
+                    jwk["n"].as_str().unwrap(),
+                    jwk["e"].as_str().unwrap(),
+                )
+                .unwrap(),
+                Algorithm::EdDSA => {
+                    VerificationKey::from_ed_components(jwk["x"].as_str().unwrap()).unwrap()
+                }
+                _ => unreachable!(),
+            };
+            let mut validation = Validation::new(algorithm);
+            validation.required_spec_claims.remove("exp");
+            validation.set_issuer(&["https://issuer.example"]);
+            validation.set_audience(&["client"]);
+            for alg in ["ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW"] {
+                let recipient = SecretKey::generate();
+                let mut public = public_p256_jwk(recipient.public_key());
+                public["kid"] = json!("enc");
+                public["use"] = json!("enc");
+                public["alg"] = json!(alg);
+                let jwks = json!({"keys": [public]});
+                let key = client_jwe_key(Some(&jwks), Some(alg), Some("A256GCM"), "introspection")
+                    .unwrap()
+                    .unwrap();
+                let encrypted =
+                    encrypt_compact_jwe(&key, signed.as_bytes(), JwePayloadKind::NestedJwt)
+                        .unwrap();
+                let protected: Value = serde_json::from_slice(
+                    &URL_SAFE_NO_PAD
+                        .decode(encrypted.split('.').next().unwrap())
+                        .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(protected["cty"], "JWT");
+                assert_eq!(protected["alg"], alg);
+                assert_eq!(protected["kid"], "enc");
+                let inner = decrypt_ecdh_compact_jwe(&encrypted, &recipient);
+                assert_eq!(inner, signed.as_bytes());
+                let claims = nazo_crypto::jwt::decode::<Value>(
+                    std::str::from_utf8(&inner).unwrap(),
+                    &verification,
+                    &validation,
+                )
+                .unwrap()
+                .claims;
+                assert_eq!(claims["token_introspection"], body);
+            }
+        }
+    });
+}

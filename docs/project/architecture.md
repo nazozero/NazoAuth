@@ -112,7 +112,11 @@ Each `ModuleId` declares:
 An administrator PATCH changes only desired state and returns `202 Accepted`.
 The UI must show the request as pending until actual state and revision confirm
 completion. Desired state is durable; actual state is reconciled by each
-server instance.
+server instance. Each one-second reconciliation pass reads the tenant's desired
+state and this instance's actual state in one PostgreSQL snapshot. The snapshot
+only skips already-settled modules whose dependency and admission checks still
+hold; modules requiring action retain fresh reads and the revision-fenced state
+machine. No durable snapshot is cached between passes.
 
 Every asynchronous transition carries the desired-state revision. The worker
 revalidates that revision before publishing an active snapshot, before
@@ -152,33 +156,155 @@ storage; repositories are injected only into flows that query them.
 
 ## Token Issuance and Security State
 
-Token issuance commits through `TokenIssuanceRepository` against one durable
-fence: the `oauth_token_issuances` table. Two modes exist:
+Token issuance commits through `TokenIssuanceRepository`. Its two modes retain
+only state required by their semantics:
 
-- `Fresh` inserts unconditionally — one statement, no fence row content, no
-  request digest, and no stored response.
-- `SingleUse` inserts under a partial unique index on the 32-byte BLAKE3
-  `single_use_key_blake3` fence column and re-checks the verified grant
-  deadline inside the same transaction. The commit reports `Committed`,
-  `AlreadyUsed`, `GrantExpired`, `ClientInactive`, `SubjectInactive`, or
-  `RotationConflict`; a `GrantExpired` result means the transaction rolled
-  back and its connection returns to the pool.
+- `Fresh` creates no `oauth_token_issuances` row. Refresh rotation/family
+  changes, a first non-public subject binding when needed, and Required audit
+  commit together. PreserveExisting also carries and locks its source family
+  through commit, even though it writes no new refresh member. The refresh
+  commit enum owns one original contract: new-family creation or an existing
+  source with an optional replacement. Current AT/RT selections never rebuild
+  that immutable contract. A client-credentials issuance ordinarily writes only audit.
+- `SingleUse` retains a compact receipt under the 32-byte BLAKE3 grant fence,
+  with the issued JTI, acceptance deadline and optional refresh family needed
+  for replay handling. New receipts do not store user ownership. Grant expiry
+  is rechecked in the transaction; expiry rolls it back and returns the healthy
+  connection to the pool.
 
-The generic issuance path accepts no `Idempotency-Key`, persists no request
-digest, and stores no encrypted response envelope; there is no generic
-response replay or recovery. One-time consumption remains atomic where the
-protocol requires it — authorization codes, device authorization, JWT Bearer
-assertions, and CIBA consume through the state store — and refresh-token
-rotation keeps its family reuse protection and the bounded lost-response
-recovery. DPoP and mTLS sender constraints and the tenant/client/subject/user
-final checks run inside the commit transaction; the security audit event
-commits with the issuance row.
+Every issuance reuses the access-token epoch read in the request's client
+authentication snapshot; a later subject read never replaces that version. Its fixed salt/epoch projection preserves prepared-query
+reuse while reading current values on every request. OIDC issuance with a public
+subject also reuses the user epoch returned with the active subject claims in
+`PreparedTokenSubject`. This
+request-local snapshot belongs to the authorization core; its security version
+is not serialized into the public subject claims. Non-OIDC user issuance reads only its user epoch and exact subject binding
+in one narrow snapshot before signing. The commit
+locks client then user and rechecks activity and these exact epochs. A
+concurrent deactivate/reactivate cycle cannot admit an older signed snapshot.
+Principal deactivation increments its epoch in the same database row update;
+reactivation never resets it. Online token validation combines individual JTI
+revocation with current principal activity and signed epoch checks in one read.
+The offline signature verifier retains its existing offline-only guarantee.
 
-Access-token ownership is read from PostgreSQL: user-facing and credential
-flows resolve the issuing user through `oauth_token_issuances` rather than a
-Valkey JTI-to-subject projection, keeping the durable store the single source
-of truth. OpenID4VC preauthorized issuance keeps its own storage and is not
-mixed into the generic issuance fence.
+`DbPool` records its creating runtime as the connection I/O owner. The issuance
+transaction executes on that same runtime, so its sequential statements do not
+repeatedly wake the HTTP worker runtime. Pure contract preparation still happens
+before checkout. The request owns the transaction task through `JoinSet`:
+cancellation aborts it, and `DiscardOnDrop` removes the physical connection unless
+commit or rollback was confirmed. This preserves the transaction's lock order,
+atomic audit append and rollback behavior without creating another runtime.
+
+The audit adapter batches up to 64 events for at most 10 ms from the first
+arrival; full batches and closed channels flush immediately. Standalone
+Required records have a separate bounded channel and wait for the batch's
+successful durable commit before callers continue. Queue saturation, channel
+closure, worker termination and append failure return errors. Failed Required
+batches report their first error without retrying or blocking subsequent
+batches; caller cancellation never turns an unconfirmed append into success.
+Other cross-store Required intents still precede their destructive mutations.
+System tenant administrator changes register Required evidence and commit the
+canonical `system_tenant_admin_updated` ledger event in the same PostgreSQL
+transaction as the target role change. Its target tenant and explicit actor
+source come from locked account facts; the HTTP adapter supplies only the
+source IP hash. Tenant-local identity events omit a cross-tenant actor, while
+the atomic ledger retains the complete actor and target attribution. The HTTP
+handler preserves the audit preflight and does not append the outcome again.
+Recovery Root approval and rotation retain their registered Required evidence
+paths; their separate transactions are not made atomic by event registration.
+
+PAR and consent are immutable preparation material. Their cache deletion is
+post-commit cleanup, not authorization or cancellation authority. Explicit
+approval, denial, and prompt-none compete for the same durable consumption
+identities; prompt-none does not increment explicit approval counters. The
+code and its payload are prepared in memory and bound to the fact. Only an
+affirmative durable result permits code storage/publication. An unknown result
+fails closed. A later code-store or response failure leaves a committed,
+possibly undelivered decision; it never frees the fence or compensates the
+grant, and retries do not promise recovery of the original response.
+
+The audit guarantee covers committed decisions, including committed denials.
+A crash before a decision takes effect need not preserve an attempted-decision
+record. Chain construction and export derive from the same immutable fact;
+export ACK cannot delete a fact before its business retention closes. No new
+outbox or second audit copy is introduced. The concrete adapter's pending
+indexes, retention cleanup, and chain entry checks own this lifecycle.
+
+Telemetry retains its independent queue, FIFO whole-batch retry and overflow
+behavior. Its counters exclude Required records. Both channels reuse the same
+batch worker implementation, existing runtime, pool and ledger transaction;
+a retrying Telemetry batch cannot block the Required channel. Bootstrap installs
+their senders and readiness repository together in one process-lifetime owner.
+
+Public subjects carry their existing user identity. Pairwise/non-public
+subjects resolve through `oauth_subject_bindings`, keyed by tenant and subject;
+repeated issuance reuses the relation without writing it again. Existing `sub`
+values and internal-user confidentiality are unchanged. Bindings end with their
+owning user, not with individual token expiry. Epoch-less tokens retain legacy
+JTI revocation and issuance-based ownership during the remaining acceptance
+window. Old records drain under their existing retention policy. Principal-wide
+revocation enumerates only these legacy records and the separately owned
+OpenID4VC preauthorized grants; new SingleUse receipts are excluded.
+
+OIDC token preparation reads the active subject claims, their user epoch and
+ownership of the exact token subject in one snapshot. The request-local
+`PreparedTokenSubject` carries that checked subject and binding result; shared
+issuance validates tenant, user and token-subject identity before reusing it.
+It retains the authenticated client epoch and the claims snapshot's user epoch,
+never refreshing an epoch independently of the claims it endorses. The final
+principal locks, epoch checks and first-binding collision check remain mandatory.
+Public subjects require no binding lookup; non-OIDC issuance retains its narrow
+principal snapshot without reading a profile.
+
+Authorization-code issuance uses a separate typed mode with one stable code
+identity and independent versioned holder evidence. PostgreSQL commits its fence,
+refresh family and Required audit together. Cache Busy, Failed, Missing or Consumed
+states never authorize a new identity or revocation by themselves. A fresh replay
+must meet the original possession requirements retained by the durable receipt;
+dependency errors fail closed. Historical exact-request receipts are lookup-only.
+Payload versioning and a new-write schema constraint require a coordinated upgrade;
+see [authorization-code redemption](../protocol/authorization-code-redemption.md).
+
+Client-attestation PoP carries a verified absolute acceptance window through a
+dedicated authorization state port. The core owns its age/skew policy; the
+Valkey adapter owns atomic owner-clock acceptance and NX consumption. Token and
+PAR use the same replay key and deadline. Unknown consumption rejects the
+request before publication. Clock continuity, preserved replay markers and
+coordinated upgrades remain deployment requirements; see
+[client-attestation replay](../protocol/client-attestation-replay.md).
+
+Device and CIBA SingleUse identities depend only on the immutable device code
+or `auth_req_id`; tenant and client fences remain PostgreSQL-owned. Sender
+proofs are still validated and constrain the issued tokens, but cannot create
+another consumption identity. CIBA Approved polling returns an owned snapshot
+and preserves the original TTL. Precommit failures remain retryable; only the
+successful issuance transaction consumes the grant. An explicit authorization
+deadline still uses the store-clock CAS before returning Approved. Healthy
+postcommit replay returns `invalid_grant` without recovering the original
+response or revoking another holder's tokens. A dependency outage can still
+return 503 before replay detection.
+
+This change alters the persisted Device/CIBA fence key format. Deployments
+must drain old token requests and expire or invalidate pending old Device/CIBA
+authorizations before switching to the new implementation. Old sender-derived
+receipts must not be mixed with the new code-only identities. No compatibility
+recovery layer or production state cleanup is performed by this change.
+
+CIBA's retry boundary follows [CIBA Core §10.1 and §10.1.1](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0-final.html):
+503 permits retry; an `auth_req_id` becomes invalid after successful redemption.
+
+The generic path accepts no `Idempotency-Key`, stores no request digest or
+response envelope, and implements no generic response recovery. Authorization
+code, device, JWT Bearer and CIBA atomic consumption, refresh-family reuse and
+bounded lost-response recovery, DPoP/mTLS binding, tenant isolation and Required
+audit remain mandatory. OpenID4VC preauthorized issuance keeps its own storage.
+
+OpenID4VC preauthorized transaction-code verification uses the host's shared,
+bounded password verifier. The repository releases its read connection before
+waiting for Argon2, then conditionally consumes the unchanged offer in one
+statement. That write rechecks the database clock, tenant, code, verifier and
+authorization snapshot; concurrent requests still have exactly one winner.
+Verifier saturation returns storage unavailable rather than an invalid code.
 
 Expired security state is reclaimed by a bounded host-owned worker: each
 server process runs one maintenance worker, each batch is capped per
@@ -233,3 +359,269 @@ Use the commands and isolated service prerequisites in
 [testing.md](testing.md#verification). Choose validation for the changed
 boundary; source checks do not establish deployment, conformance, or load-test
 results. Historical reports apply only to their recorded revisions.
+
+The new refresh-family collision probe deliberately uses an uncached parameterized query: a named plan selected for an empty family table can retain a sequential scan after rapid growth. It still checks only the tenant/family primary key before any retirement or insertion; collision compromise and audit semantics are unchanged. Other typed principal and lock queries retain prepared-plan reuse.
+
+### Shared session authority
+
+Identity `SessionService` owns browser-session resolution, invalidation and
+version-checked RP membership updates. The authorization-server resolver adapts
+its result without maintaining a second storage/validation algorithm. Both
+interactive and successful silent OIDC authorization bind the RP to the current
+OP session before returning an authorization code; a missing session or failed
+binding cannot return the code. A committed decision is not undone by a later
+session-binding or response failure.
+
+High-impact administration uses one identity-owned interactive-MFA predicate:
+`mfa` plus `otp` or `recovery_code`, with an authentication age from zero through
+300 seconds inclusive. Future authentication times do not count as completed
+step-ups. The separate 30-second clock allowance for ordinary session metadata
+is unchanged; endpoint-specific administrator levels remain separate policy.
+
+Token-management authentication rejects an inactive requesting client immediately
+after its authentication snapshot, before key resolution, cryptographic proof
+validation or assertion consumption. Introspection and revocation share this
+requester gate; the token issuer's own activity checks remain separate.
+
+
+Native SSO exchange carries a separate family-level source fence into the
+final destination issuance transaction. After destination writes and capacity
+retirement, a source `FOR SHARE NOWAIT` lock rechecks tenant, user, source client,
+revocation, reuse and both family/device-secret expiry using a fresh clock, and
+holds through required audit and commit. Normal source member rotation remains
+valid. Busy source locks return retryable dependency failure; invalid sources
+roll back every destination write. Same-client capacity transfer accepts only
+the exact active source retired by this transaction's successful UPDATE
+RETURNING, with its original expiry and owner preserved under the row lock.
+A device secret prepared before a failed commit cannot authorize an exchange
+without its committed refresh family; its existing expiry bounds cache residue.
+
+Host binding selects one immutable tenant runtime graph for request data and
+CORS policy. Dynamic CORS uses that request's selected settings, including
+synchronous preflight admission; missing selection denies the origin. Runtime
+replacement affects subsequent requests without changing an in-flight policy.
+
+Profile updates retain phone verification only when the current database row
+is verified and its phone equals the newly stored phone, with nullable equality.
+A stale profile snapshot cannot restore verification after a concurrent change.
+
+Registration sends use one attempt owner for the email and peer cooldowns and
+stored code. Code publication atomically checks the current email reservation
+owner before SET EX, so a delayed hash cannot overwrite a later sender's code.
+Cleanup compares that owner atomically, so a late SMTP failure
+cannot remove a later sender's state. Cooldown durations and code expiry are
+unchanged. This changes transient email-code records from raw hashes to owned
+records: drain pending registration sends/codes before switching writers; old
+unbound records fail closed without a compatibility fallback.
+
+Tenant graph retirement synchronously aborts both module reconciliation and
+CIBA ping loops before awaiting either join. Dropping the final lifecycle owner
+also aborts still-owned loops; retained snapshots delay that final drop. Signing
+key refresh uses its existing cooperative shutdown and completes current writes.
+
+Credential issuance enforces the batch limit on validated holder bindings after
+proof expansion and before nonce claiming. A configuration without proof types
+and holder-binding methods issues its unbound credential without a proof nonce;
+stray proofs remain invalid. The same rules apply to deferred preparation.
+
+### Federation browser ownership
+
+OIDC/social HTTP owns canonical browser-seed cookies and their secure/dev
+attributes. Identity owns domain-separated tenant-and-seed hashing and passes
+the expected digest through `FederationStatePort`. The Valkey adapter owns
+atomic matching take: nonowners preserve raw state and expiry; only the matching
+browser removes it before the existing typed and protocol checks. Callback
+never rotates or clears the seed, so established-cookie flows can run in
+parallel. Deployment cutover and the cold-start race are documented in
+[external federation](../features/federation.md#browser-binding-and-callback-state).
+
+### Short authentication validity boundaries
+
+Passkey login uses the configured pending MFA session TTL until MFA is satisfied; remembered MFA and users without MFA retain the full session TTL. The login cookie and response presentation remain consistent with password login.
+
+CIBA request validity starts after the mandatory audit intent and replay reservations complete. Creation and approval or denial enforce the original authorization expiry in the state-store atomic command, independently of the longer retention TTL. Expired-state cleanup retains its existing deletion semantics.
+
+### Runtime construction and independent transitions
+
+VCI and VP availability is immutable for each constructed tenant graph. Their desired history is retained, but an absent service has Disabled actual state, no request admission or advertisement, and cannot be enabled without constructing a new graph. Unavailable children do not block their dependencies. VP drain duration is the configured transaction TTL clamped to at least 30 seconds, independent of browser session TTL.
+
+The tenant reconciler owns at most one transition future per module. A retained planning future reads joined desired and instance facts once per tick while other transitions continue, so a long stored-transaction drain does not hold up unrelated modules. Dropping the tenant worker drops all its owned planning and transition futures. Closing admission drains leases from every retained generation of that module, and SCIM remains enabled while its security-event child is draining.
+
+### Resource token presentation
+
+The shared Actix extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.
+
+MFA verification retains the confirmed TOTP credential row UUID as the generation proof. Remembered-device insertion takes a key-share lock on that exact row; backup-code regeneration takes an update lock on it after hashing. A retired generation cannot publish a remember cookie, replace a new generation’s codes, or disable a new enrollment. Disabling carries the already consumed factor proof and source-IP hash to `clear_mfa_state_if_current_with_required_audit`; the adapter atomically checks that exact confirmed generation before clearing its dependent state, without consuming a second factor. Clearing MFA uses READ COMMITTED and orders writes TOTP → backup codes → remembered devices → user; enrollment confirmation follows the same order. An unavailable clear ACK
+can follow a committed effect; it must not be interpreted as proof that the old
+generation remains active. Retrying that consumed proof after a formal new
+generation is installed returns stale-proof rejection and preserves all of the
+new generation's credential, flag, backup codes and remembered devices.
+
+Credential revocation’s scoped unknown-status exemption follows the successfully authenticated path anchor DER. Scoped anchors are considered before global anchors during the same path validation; an unrelated loaded or attached scoped certificate supplies no exemption. Known revocation and missing/stale required snapshots remain failures.
+
+Local avatar upload synchronizes the candidate and its directory lineage through the configured storage root only. Deployment must precreate and durably provision that root and its parent entry before serving uploads; per-upload code does not claim durability or read permissions for unrelated OS ancestors.
+
+MFA profile operations classify active or pending MFA state from one validated
+session snapshot and check the account once. An active session with no pending
+challenge returns the existing challenge-missing response without clearing
+cookies; inactive or corrupt sessions are invalidated, while dependency failures
+retain the browser session and return its unavailable response.
+
+
+## Access-request credential delivery
+
+Approval stages one immutable attempt if the delivery key is absent, with an
+absolute disclosure deadline and private secret-generation binding. A competing
+attempt cannot replace it. The PostgreSQL approval still creates the client and
+resolves Pending in one transaction. Known non-commit conflicts may retire only
+the producer's exact unpublished version; uncertain acknowledgements retain the
+original attempt until its deadline.
+
+Recovery verifies the actual Approved request, owner, active approved client and
+current secret generation, and validates the staged issued secret against its
+binding. It publishes only the exact existing stage and preserves its original
+expiry. Missing, changed, consumed or expired stages cannot be recreated by a
+late publisher or recovery. Consumption retains current approval matching and
+the exact version take. Storage metadata is never part of the disclosed payload.
+
+An access-delivery consumer that sees an unpublished stage returns an invalid
+delivery response without retiring the stage. PostgreSQL approval can precede
+exact Valkey publication; the original producer retains that publication attempt
+and its original TTL. Committed wrong-owner/material checks and exact one-time
+consumption still apply. The live requester/publisher barrier regression checks
+the stage is retained, publication succeeds and only one secret is disclosed.
+
+## HTTP Signature Body Evidence
+
+`nazo-http-signatures::BodyDigest` owns a validated or generated field value and
+borrows the exact immutable body for its lifetime. Request verification and
+response preparation may reuse it only for the same slice and field value, after
+the ordinary unique-header checks. Evidence does not authorize a request or
+replace signature coverage, cryptographic verification, sender binding, time or
+replay checks. A changed body or field rejects reuse. Received response
+verification always checks its actual body without supplied evidence.
+
+The Actix FAPI endpoint keeps one request-local digest result for its captured
+immutable body, including a failed result, and uses one generated digest for its
+outgoing response. Error response linkage preserves the existing omission of an
+invalid request digest. This removes repeated body hashes on the normal path;
+it is a source-level operation count, not a measured latency or throughput claim.
+
+
+MFA disable uses a purpose-specific identity port which accepts the exact
+confirmed generation and commits its dependent deletes, active-account update,
+and canonical Required `mfa_disabled` event together. The application preserves
+the dynamic audit readiness check before consuming the factor and does not
+append the outcome after the effect. The adapter retains the established lock
+order and discards its physical connection on error or cancellation; successful
+results follow the transaction ACK. A missing required capability fails closed
+before any clear. The ordinary repository clear remains available for fixture
+setup/cleanup and is not the profile operation's accepting contract. Real PG
+fixture source checks append-failure rollback and a committed-but-unknown
+response retaining one canonical event while an old proof cannot clear a formal
+new enrollment; these are source additions pending execution, not ACK-loss or
+failover qualification.
+
+
+Access-request approval and rejection use neutral purpose ports whose default
+is Unavailable before any effect. The PG owner locks Pending and the current
+tenant/realm/organization principals, checks the active administrator, commits
+the client/request change and canonical Required outcome together, and returns
+the committed view only after the full ACK. Its connection is discarded on
+error/cancellation. Approval records the canonical event UUID on the business
+row in the same transaction; the reference holds no copied payload or secret.
+Historical approvals without that reference cannot activate a staged delivery.
+The precise recovery predicate is a restricted SECURITY DEFINER boolean API
+joining that exact reference, tenant/requester/request/client, approver, active
+client and secret generation. Runtime audit-table reads remain forbidden.
+Normal publication follows the Required transaction ACK. An Unknown response
+retains the same stage and original expiry; recovery checks the same owner and
+does not create another client, secret or audit event. Valkey stage/publish is
+an independent recovery contract, not a transaction shared with PostgreSQL.
+Dynamic audit-health preflight remains on initial decisions and recovery.
+The applicant's one-time consumption uses the same Required evidence predicate;
+historical Approved rows alone do not authorize secret disclosure there either.
+Real PG append-failure rollback, runtime-privilege and committed-Unknown
+fixtures are source additions pending exact-candidate execution.
+
+MFA confirmation and backup-code regeneration use purpose-specific Required
+repository capabilities. Their existing PostgreSQL owner locks the pending or
+proved generation, preserves dependent-state lock order, and rechecks the active
+self principal before appending the canonical successful outcome in that same
+commit. Backup codes and a newly rotated session cookie are disclosed only after
+the owner's full acknowledgement. Error or unknown completion retains no public
+rotation receipt and discards the unpublished session; the owner connection is
+physically discarded on cancellation or unconfirmed transaction completion.
+Legacy bare methods remain explicit fixture/setup capabilities and are never a
+fallback from the Required production profile path. Attempt audit records retain
+their existing purpose; they do not replace the committed mutation outcome.
+
+管理员客户端创建和更新由专用 Required 端口进入现有 PostgreSQL insert/CAS owner。owner 在客户端 authority 后锁定同 tenant/realm/organization 的当前管理员事实，并将 `client_created`/`client_updated` canonical outcome 与实际返回的客户端行一起提交；写入、审计或最终 ACK 失败不返回成功视图和一次性客户端 secret。不支持该 capability 的适配器在变更前返回 unavailable，不回退到 bare setup 端口。DCR 继续使用同一 insert body 和其原有 dynamic registration outcome；管理路径不在效果提交后另写 Required 审计。
+
+管理员用户创建和 patch 通过专用 Required capability 进入现有用户创建/层级修改 owner，使用同一 tenant/realm/organization 的当前 actor/target 事实。创建共享完整返回行的 insert body；patch 保持排序行锁与 `authorize_admin_update` 的唯一层级权限策略、既有拒绝结果和租户内 identity event。成功和 no-op 的 `admin_user_created`/`admin_user_updated` canonical outcome 基于实际返回账户，在同一事务最终 ACK 后才允许 HTTP 成功视图；canonical 写失败同时回滚账户和 identity event，Unknown 不返回账户 receipt。无该 capability 的适配器不回退 bare setup 方法。
+
+Administrative controller approval, slot create/rotate/revoke, and proactive recovery-root approval/rotation use explicit Required purpose commands. Existing validation and mutation owners remain authoritative: current active administrator in the exact tenant/realm/organization is locked through canonical outcome and commit ACK; returned slot/root rows supply the outcome. Approval issuance drains its actual returned binding before publishing a token. Creation keeps its initial root atomic; rotation/revocation preserve exact single-use approval binding and existing deployment locks. Errors or cancellation discard the accepting connection. Unsupported purpose capabilities fail without bare mutation. HTTP performs transactional readiness and presents only the accepted owner result. Signed break-glass challenges, allocation proofs and independent offline recovery retain their existing authority and do not acquire an admin requirement. New real PostgreSQL rollback, current-actor, hidden actual committed ACK and cancellation fixtures require independent execution; hidden ACK is not evidence of physical network loss.
+
+
+### Request-local refresh and logout verification projections
+
+Refresh presentation lookup uses one typed PostgreSQL statement snapshot for
+current-or-spent identity, immutable contract and optional direct successor.
+Holder verification uses the original presentation; successor projection errors
+are considered after that verification. Final token issuance still owns its
+principal and family locks, expected member/digest, original spent edge, expiry,
+sender bindings, canonical audit and commit ACK.
+
+The RP logout-hint verifier uses prepared verification material from the current
+KeyManager generation, checks its algorithm and retirement, and returns typed
+subject/audience/SID plus the original expiry. The logout application and core
+still apply issuer, client audience and current/recent session policy. No JWT
+backend parsing semantics or public metadata cache has changed. JWKS construction
+moves its already prepared public Value array into the document; signing-key
+private-member stripping and the separate encryption-key projection remain.
+
+These R05/R10 changes and their new source fixtures require exact-candidate CNB
+format, compile and regression validation before acceptance.
+
+### Registration and request representation ownership
+
+Prepared registration now separates its undisclosed secret into a Drop owner.
+Administrative create and DCR consume the validated registration into their
+actual write input. DCR replacement and tenant-resource preparation move the
+registration too. Readiness rejection, persistence failure and cancellation keep
+the secret guarded; administrative/DCR response plaintext is taken only after
+the accepting write acknowledges commit. The borrowed setup helper retains its
+metadata copy because its caller keeps the input. Explicit creation transactions
+still own the complete returned projection, Required outcome and commit ACK.
+
+Token dispatch and token-management authentication select a borrowed credential
+view over live framework-neutral request facts. Source precedence and malformed
+Basic scheme presence remain facts, and registered client policy and proof keep
+authority. PAR/CIBA prepared commands retain their owning credential copy because
+they execute after the transport preparation call returns. HTTP message-signature
+capture borrows unique request header values and normalized names while the outer
+handler holds the request and body; no request extension guard crosses a port.
+The signature-fields command and response header map still own data required by
+their independent consumers. Remote JWKS still copies its shared cached document
+into the owning mutable client registration DTO; changing only the resolver port
+would move that copy into the consumer. Current account and tenant-trust decisions
+remain fresh authority reads, and Bytes/DER Arc clones remain shared storage.
+
+Operator presentation holds private immutable original compact segments, decoded
+operation and canonical bytes. Request hashing and the later admitted-key signature
+verification use that same presentation; signature verification checks the original
+signed segments and canonical equality before consuming it into the operation.
+Independent public verifier policy and error order remain checked. Journal result
+wire preparation validates once before terminal publication and its failpoint;
+the terminal journal binding is checked separately. Independent journal checkpoint
+helpers reread/recover durable state and keep safe-file checks and fsynced phases;
+they do not share a guaranteed lock-held API lifetime. Terminal publication still
+precedes stdout, and a recovered result remains validated on the public wire path.
+
+Refresh issuance retains its source consistency guard because TokenIssue fields
+remain publicly mutable, including signer claims, narrowed scope/audience and
+nested SID/binding state. The original authentication context survives successor
+replacement. Final family/member/expiry locks and actual persisted contract
+content remain authoritative; a content-reference key does not authenticate an
+otherwise mutable payload. These ownership reductions require exact-candidate
+format, compiler, lint and regression validation before acceptance.

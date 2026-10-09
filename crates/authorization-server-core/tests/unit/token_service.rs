@@ -11,6 +11,9 @@ use super::{
 
 fn access_claims(confirmation: Option<ConfirmationClaims>) -> Claims {
     Claims {
+        authorization_id: None,
+        client_epoch: None,
+        user_epoch: None,
         iss: "https://issuer.example".to_owned(),
         sub: "subject".to_owned(),
         tenant_id: uuid::Uuid::nil().to_string(),
@@ -27,8 +30,7 @@ fn access_claims(confirmation: Option<ConfirmationClaims>) -> Claims {
         exp: 2,
         cnf: confirmation,
         act: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
     }
 }
 
@@ -126,4 +128,47 @@ fn token_inspection_builds_exact_rfc7662_documents() {
             "cnf": {"jkt": "thumbprint"},
         })
     );
+}
+
+#[test]
+fn token_inspection_preserves_owned_audience_and_confirmation_shapes() {
+    for audience in [json!(null), json!(["resource://a", "resource://签名"])] {
+        for cnf in [
+            None,
+            Some(ConfirmationClaims {
+                jkt: None,
+                x5t_s256: None,
+            }),
+            Some(ConfirmationClaims {
+                jkt: None,
+                x5t_s256: Some("certificate-thumbprint".to_owned()),
+            }),
+        ] {
+            let expected_cnf = cnf
+                .as_ref()
+                .map(|value| serde_json::to_value(value).unwrap());
+            let document = TokenInspection::ActiveAccess {
+                scope: String::new(),
+                client_id: "client".to_owned(),
+                token_type: "Bearer",
+                expires_at: 20,
+                issued_at: 10,
+                not_before: 10,
+                subject: "subject\"\n签名".to_owned(),
+                audience: audience.clone(),
+                issuer: "https://issuer.example".to_owned(),
+                jti: "jti".to_owned(),
+                cnf,
+            }
+            .into_document();
+            assert_eq!(document["aud"], audience);
+            assert_eq!(document["scope"], json!(""));
+            assert_eq!(document["sub"], json!("subject\"\n签名"));
+            assert_eq!(document.get("cnf"), expected_cnf.as_ref());
+            assert_eq!(
+                document.as_object().unwrap().len(),
+                11 + usize::from(expected_cnf.is_some())
+            );
+        }
+    }
 }

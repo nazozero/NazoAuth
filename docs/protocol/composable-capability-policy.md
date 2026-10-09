@@ -136,6 +136,22 @@ After migration, runtime module administration is the only authority. The
 default-policy table, `inherit`, and the removed stable-module `ENABLE_*` flags
 do not exist as runtime inputs.
 
+## Runtime transition completion
+
+Desired state remains the durable authority for admission. Every enable,
+disable, drain, and already-disabled completion aligns admission with the latest
+desired revision, including stale work and failed or uncertain persistence.
+Publication is followed by revision validation; a changed intent is read again.
+Missing or unavailable state closes admission and remains an error. A stopped
+or uncertain lifecycle cannot reopen until a later reconciliation initializes
+it. Closed snapshot generations continue rejecting delayed lease acquisition.
+
+Discarded work is recorded through a separate state-preserving observation
+operation. Its event describes unchanged actual state, including absent state;
+it never writes desired or instance state or marks a revision applied. Failed
+observation persistence does not skip admission compensation. Both errors are
+retained when the operation and compensation fail.
+
 ## Discovery semantics
 
 Discovery publishes the union of currently active server capabilities.

@@ -47,7 +47,7 @@ fn external_signature_verification_accepts_signature_bound_to_active_public_jwk(
         jsonwebtoken::Algorithm::EdDSA,
         signing_input,
         &signature,
-        &public_jwk,
+        &decoding_key_from_public_jwk(&public_jwk, jsonwebtoken::Algorithm::EdDSA).unwrap(),
     )
     .expect("matching external signature should verify locally");
 }
@@ -63,30 +63,12 @@ fn external_signature_verification_rejects_signature_that_does_not_match_input()
         jsonwebtoken::Algorithm::EdDSA,
         b"header.tampered_claims",
         &signature,
-        &public_jwk,
+        &decoding_key_from_public_jwk(&public_jwk, jsonwebtoken::Algorithm::EdDSA).unwrap(),
     )
     .expect_err("external signer output must be checked against the exact signing input");
 
     assert!(
         matches!(error, nazo_crypto::CryptoError::InvalidSignature),
-        "unexpected verification error: {error}"
-    );
-}
-
-#[test]
-fn external_signature_verification_rejects_unusable_active_public_jwk() {
-    let error = verify_external_jwt_signature(
-        &external_signing_key(),
-        "external-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        b"header.claims",
-        b"fake-signature",
-        &json!({"kty": "oct", "k": "not-a-public-signing-key"}),
-    )
-    .expect_err("external signer verification must fail closed without usable public JWK");
-
-    assert!(
-        matches!(error, nazo_crypto::CryptoError::InvalidKey),
         "unexpected verification error: {error}"
     );
 }
@@ -177,6 +159,8 @@ fn external_signer_output_is_verified_against_exact_message() {
     let kid = "external-kid";
     let (private_key, public_jwk) = eddsa_fixture(kid);
     let signature = sign_input(&private_key, "expected");
+    let decoding_key =
+        decoding_key_from_public_jwk(&public_jwk, jsonwebtoken::Algorithm::EdDSA).unwrap();
     let external = ExternalSigningKey {
         key_ref: "kms://test/key".to_owned(),
         signer: Arc::new(crate::test_support::FixedExternalKeySigner(signature)),
@@ -186,7 +170,7 @@ fn external_signer_output_is_verified_against_exact_message() {
             &external,
             kid,
             jsonwebtoken::Algorithm::EdDSA,
-            &public_jwk,
+            &decoding_key,
             b"expected",
         ))
         .is_ok()
@@ -196,7 +180,7 @@ fn external_signer_output_is_verified_against_exact_message() {
             &external,
             kid,
             jsonwebtoken::Algorithm::EdDSA,
-            &public_jwk,
+            &decoding_key,
             b"tampered",
         )),
         Err(SignError::SigningFailed)
@@ -211,7 +195,7 @@ fn external_signer_output_is_verified_against_exact_message() {
             &empty,
             kid,
             jsonwebtoken::Algorithm::EdDSA,
-            &public_jwk,
+            &decoding_key,
             b"expected",
         )),
         Err(SignError::SigningFailed)

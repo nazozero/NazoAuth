@@ -57,11 +57,11 @@ pub(super) fn oidc_authorization_url(
 }
 
 pub(super) async fn exchange_oidc_code(
+    client: &reqwest::Client,
     provider: &OidcFederationSettings,
     code: &str,
     verifier: &str,
 ) -> anyhow::Result<OidcTokenResponse> {
-    let client = super::federation_http_client()?;
     let body = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("grant_type", "authorization_code")
         .append_pair("code", code)
@@ -81,8 +81,10 @@ pub(super) async fn exchange_oidc_code(
     super::federation_json_response(response).await
 }
 
-pub(super) async fn fetch_oidc_jwks(provider: &OidcFederationSettings) -> anyhow::Result<Value> {
-    let client = super::federation_http_client()?;
+pub(super) async fn fetch_oidc_jwks(
+    client: &reqwest::Client,
+    provider: &OidcFederationSettings,
+) -> anyhow::Result<Value> {
     let response = client.get(&provider.jwks_url).send().await?;
     let value = super::federation_json_response::<Value>(response).await?;
     if value.get("keys").and_then(Value::as_array).is_none() {

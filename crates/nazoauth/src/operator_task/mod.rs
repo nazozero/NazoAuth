@@ -45,10 +45,7 @@ use std::{
 use anyhow::{Context as _, bail};
 use chrono::Utc;
 use fs2::FileExt as _;
-use nazo_operator_protocol::{
-    ControlOperation, MAX_COMPACT_JWS_BYTES, encode_control_result,
-    verify_control_operation_signature,
-};
+use nazo_operator_protocol::{ControlOperation, MAX_COMPACT_JWS_BYTES};
 
 mod admission;
 mod control_journal;
@@ -80,11 +77,28 @@ pub trait OperatorPersistence: Send + Sync {
 
     fn admin_clients(&self) -> Arc<dyn nazo_auth::AdminClientRepositoryPort>;
 
+    /// Recover a committed exact outcome before composing fresh mutation capabilities.
+    /// The adapter owns hash, tenant, operation and stored-outcome validation.
+    fn tenant_resource_control_outcome<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        deployment_id: &'a str,
+        operation_id: uuid::Uuid,
+        request_hash: &'a str,
+        operation: nazo_persistence::tenant_resources::TenantResourceAction,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<
+            Option<nazo_persistence::tenant_resources::ControlTenantResourceOutcome>,
+            nazo_persistence::tenant_resources::TenantResourceExecutorError,
+        >,
+    >;
+
     fn tenant_resource_executor(
         &self,
         tenant: nazo_identity::TenantContext,
         data_encryption_key: Option<[u8; 32]>,
-        preparation: Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>,
+        preparation: Option<Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>>,
     ) -> Arc<dyn nazo_persistence::tenant_resources::TenantResourceExecutorPort>;
 
     fn tenant_directory_executor(
@@ -143,18 +157,19 @@ pub async fn run(persistence: Arc<dyn OperatorPersistence>) -> anyhow::Result<()
     // execution so only one one-shot process ever drives one state directory.
     // A pre-admission lock timeout is transport failure, not an authoritative
     // outcome: ctl preserves intent and retries.
-    let _task_lock = acquire_task_lock(lock).await?;
+    let task_lock = acquire_task_lock(lock).await?;
 
     let outcome = execute_compact(&state_directory, compact, persistence.as_ref()).await;
+    drop(task_lock);
 
-    // Bounded retention cleanup rides at the tail of the one-shot entry (E03
-    // note): terminal results stay recoverable for thirty days, after which
-    // the next successful operator run deletes them.  Housekeeping must never
-    // fail an executed operation, so its errors are swallowed here.
+    // Retention walks one directory round in bounded batches after releasing
+    // the business lock. Each old terminal candidate is rechecked under its
+    // own non-blocking task lock before deletion. Housekeeping must never fail
+    // an executed operation, so its errors are swallowed here.
     if outcome.is_ok() {
         let cutoff =
             Utc::now().timestamp() - control_journal::CONTROL_JOURNAL_COMPLETED_RETENTION_SECONDS;
-        let _ = control_journal::cleanup_completed_before(&state_directory, cutoff);
+        let _ = control_journal::cleanup_completed_before(&state_directory, cutoff).await;
     }
 
     outcome
@@ -169,11 +184,8 @@ async fn execute_compact(
 ) -> anyhow::Result<()> {
     // (1) Parse schema/size/closed enum before any authority is consulted.
     let presented = reject(admission::present(compact), RejectionClass::Request)?;
-    let request_hash = reject(
-        nazo_operator_protocol::control_operation_request_hash(&presented)
-            .map_err(anyhow::Error::new),
-        RejectionClass::Request,
-    )?;
+    let request_hash = presented.request_hash();
+    let operation = presented.operation();
 
     // Resume-first: an accepted journal record owns authorization for this
     // exact canonical request (same id + same hash implies byte-equal
@@ -181,12 +193,12 @@ async fn execute_compact(
     // signature check, or key lifecycle evaluation (05 §5).  A different hash
     // under the same id is the permanent OPERATION_ID_CONFLICT.
     let snapshot =
-        control_journal::accepted_snapshot(state_directory, &presented.operation_id, &request_hash)
+        control_journal::accepted_snapshot(state_directory, &operation.operation_id, &request_hash)
             .map_err(map_journal_error)?;
     if let Some(snapshot) = snapshot {
         return journaled_execution(
             state_directory,
-            &presented,
+            operation,
             &request_hash,
             &snapshot,
             persistence,
@@ -199,8 +211,8 @@ async fn execute_compact(
     let repository = persistence.controller_registry();
     let admitted = match admission::admit_controller(
         repository.as_ref(),
-        &presented.deployment_id,
-        &presented.kid,
+        &operation.deployment_id,
+        &operation.kid,
         Utc::now(),
     )
     .await
@@ -216,12 +228,12 @@ async fn execute_compact(
         }
     };
 
-    // (3) Signature over the canonical bytes through the single frozen
-    // verifier API; it re-validates header, encoding, envelope policy, and
-    // key binding.  The verified operation replaces the pre-parsed one from
-    // here on, so there is no parse/verify TOCTOU gap.
+    // (3) Consume the immutable presentation through the protocol verifier.
+    // It checks header/key binding, canonical equality and the real signature
+    // over the original compact segments without parsing/hash work again.
     let verified = reject(
-        verify_control_operation_signature(compact, &admitted.kid, &admitted.verifying_key)
+        presented
+            .verify(&admitted.kid, &admitted.verifying_key)
             .map_err(anyhow::Error::new),
         RejectionClass::Authorization,
     )?;
@@ -293,7 +305,7 @@ async fn journaled_execution(
     .await
     .map_err(map_journal_error)?;
     let bytes = reject(
-        encode_control_result(&outcome.result).map_err(anyhow::Error::new),
+        outcome.into_stdout().map_err(anyhow::Error::new),
         RejectionClass::Request,
     )?;
     print!("{}", String::from_utf8_lossy(&bytes));

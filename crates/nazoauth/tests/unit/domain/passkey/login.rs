@@ -18,7 +18,7 @@ use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use ed25519_dalek::{Signer, SigningKey};
-use fred::interfaces::ClientLike;
+use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
@@ -49,20 +49,43 @@ async fn remember_mfa_device(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(nazo_oauth_server::crypto::blake3_hex);
-    nazo_identity::MfaService::new(
-        Arc::new(nazo_postgres::MfaRepository::new(state.diesel_db.clone())),
-        Arc::new(ServerMfaSecretHasher),
+    let key = nazo_postgres::MfaTotpKey::new("passkey-remember-fixture", rand::random()).unwrap();
+    let repository = Arc::new(nazo_postgres::MfaRepository::with_totp_key_ring(
+        state.diesel_db.clone(),
+        Some(nazo_postgres::MfaTotpKeyRing::new(key, None).unwrap()),
+    ));
+    let service = nazo_identity::MfaService::new(repository, Arc::new(ServerMfaSecretHasher));
+    let enrollment = service
+        .begin_totp(user, "Passkey fixture")
+        .await
+        .map_err(|error| anyhow::anyhow!("MFA fixture enrollment: {error:?}"))?;
+    let mut connection = get_conn(&state.diesel_db).await?;
+    sql_query("UPDATE user_totp_credentials SET confirmed_at=CURRENT_TIMESTAMP WHERE tenant_id=$1 AND user_id=$2")
+        .bind::<SqlUuid,_>(user.tenant().tenant_id.as_uuid()).bind::<SqlUuid,_>(user.user_id().as_uuid()).execute(&mut connection).await?;
+    drop(connection);
+    let now = Utc::now().timestamp();
+    let secret = nazo_identity::mfa::base32_decode(&enrollment.secret_base32).unwrap();
+    let code = nazo_identity::mfa::totp_for_step(
+        &secret,
+        now / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS,
     )
-    .remember_device(
-        user,
-        user_agent_hash,
-        chrono::Utc::now()
-            + chrono::Duration::seconds(
-                i64::try_from(MFA_REMEMBERED_TTL_SECONDS).expect("MFA TTL fits i64"),
-            ),
-    )
-    .await
-    .map_err(|error| anyhow::anyhow!("failed to remember MFA device: {error:?}"))
+    .unwrap();
+    let proof = service
+        .verify_factor(user, &code, now)
+        .await
+        .map_err(|error| anyhow::anyhow!("MFA fixture verification: {error:?}"))?
+        .expect("actual confirmed TOTP proof");
+    service
+        .remember_device(
+            user,
+            &proof,
+            user_agent_hash,
+            Utc::now()
+                + chrono::Duration::seconds(i64::try_from(MFA_REMEMBERED_TTL_SECONDS).unwrap()),
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to remember MFA device: {error:?}"))?
+        .ok_or_else(|| anyhow::anyhow!("fixture credential generation disappeared"))
 }
 
 #[test]
@@ -285,6 +308,8 @@ impl LivePasskeyFixture {
             ("SESSION_COOKIE_NAME", "nazo_session_test"),
             ("CSRF_COOKIE_NAME", "nazo_csrf_test"),
             ("AUTH_RATE_LIMIT_MAX_REQUESTS", "100000"),
+            ("SESSION_TTL_SECONDS", "30"),
+            ("PENDING_MFA_SESSION_TTL_SECONDS", "1"),
         ]);
         let settings = Settings::from_config(&config).expect("test settings should load");
         let mut valkey_builder = ValkeyBuilder::from_config(
@@ -373,6 +398,16 @@ impl LivePasskeyFixture {
         .expect("session lookup should succeed")
         .expect("session should be present");
         serde_json::from_str(&raw).expect("session payload should deserialize")
+    }
+
+    async fn session_ttl(&self, sid: &str) -> i64 {
+        self.state
+            .valkey
+            .ttl(nazo_valkey::test_support::state_storage_key(format!(
+                "oauth:session:{sid}"
+            )))
+            .await
+            .expect("session TTL lookup should succeed")
     }
 
     fn register_credential(
@@ -644,6 +679,11 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
         finish_response.headers().contains_key(header::SET_COOKIE),
         "successful passkey login must establish bound cookies"
     );
+    let session_id = session_cookie_value(
+        &finish_response,
+        &fixture.state.settings.session.session_cookie_name,
+    );
+    assert!((28..=30).contains(&fixture.session_ttl(&session_id).await));
     let body = actix_web::body::to_bytes(finish_response.into_body())
         .await
         .expect("response body should be readable");
@@ -670,7 +710,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
         .iter()
         .find(|candidate| candidate.id == row.id)
         .expect("registered credential should remain stored");
-    assert_eq!(updated.sign_count, 1);
+    assert_eq!(updated.credential.counter, 1);
     assert!(updated.last_used_at.is_some());
 
     let replay_response = passkey_login_finish(
@@ -745,6 +785,18 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
     let session = fixture.session_payload(&session_id).await;
     assert_eq!(session.amr, vec!["passkey".to_owned()]);
     assert!(session.pending_mfa);
+    assert!((0..=1).contains(&fixture.session_ttl(&session_id).await));
+    tokio::time::sleep(StdDuration::from_millis(1_100)).await;
+    let loaded = nazo_identity::ports::SessionStorePort::load(
+        &nazo_valkey::SessionStore::new(&fixture.state.valkey_connection()),
+        &nazo_identity::session::SessionId::new(session_id),
+    )
+    .await
+    .expect("expired session lookup should succeed");
+    assert!(
+        loaded.is_none(),
+        "pending MFA session must expire at the configured short TTL"
+    );
 }
 
 #[actix_web::test]
@@ -819,6 +871,7 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
         ]
     );
     assert!(!session.pending_mfa);
+    assert!((28..=30).contains(&fixture.session_ttl(&session_id).await));
 }
 
 #[actix_web::test]
@@ -1131,7 +1184,7 @@ async fn passkey_login_finish_rejects_malformed_credential_id_before_credential_
         .await
         .expect("passkeys should load after rejected login");
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].sign_count, 0);
+    assert_eq!(rows[0].credential.counter, 0);
     assert!(rows[0].last_used_at.is_none());
 }
 

@@ -14,8 +14,8 @@ use crate::{
     LoginSuccess, PublicAccount, TenantId, UserId,
     ports::{
         LoginSessionCreate, LoginSessionPort, PasskeyAccountRepositoryPort, PasskeyAuditPort,
-        PasskeyCeremonyPort, PasskeyCredential, PasskeyRepositoryPort, RememberedMfaDevicePort,
-        RepositoryError,
+        PasskeyCeremonyPort, PasskeyCredential, PasskeyCredentialSummary, PasskeyRepositoryPort,
+        RememberedMfaDevicePort, RepositoryError,
     },
     session::SessionRecord,
 };
@@ -88,6 +88,7 @@ pub struct PasskeyServiceConfig {
     pub strict_base64: bool,
     pub ceremony_ttl_seconds: u64,
     pub session_ttl_seconds: u64,
+    pub pending_mfa_session_ttl_seconds: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -294,9 +295,9 @@ where
             return self.dummy_login_begin(account.user_id()).await;
         }
         let credentials = rows
-            .iter()
-            .map(decode_credential)
-            .collect::<Result<Vec<_>, _>>()?;
+            .into_iter()
+            .map(|row| row.credential)
+            .collect::<Vec<_>>();
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
         let (mut challenge, state) = self
             .webauthn
@@ -364,12 +365,7 @@ where
             .await
             .map_err(PasskeyError::State)?
             .ok_or(PasskeyError::LoginFailed)?;
-        let mut credential = decode_credential(&row)?;
-        if i64::from(credential.counter) != row.sign_count {
-            return Err(PasskeyError::State(RepositoryError::Consistency(
-                "passkey counter columns disagree".to_owned(),
-            )));
-        }
+        let credential = row.credential;
         let outcome = self
             .webauthn
             .finish_authentication(&stored.state, &response, &credential)
@@ -385,20 +381,13 @@ where
                 });
                 PasskeyError::LoginFailed
             })?;
-        credential.counter = outcome.new_counter;
-        let credential_json = serde_json::to_value(&credential).map_err(|_| {
-            PasskeyError::State(RepositoryError::Consistency(
-                "passkey credential serialization failed".to_owned(),
-            ))
-        })?;
         self.credentials
             .update_counter(
                 stored.tenant_id,
                 stored.user_id,
-                &row.credential_id,
-                row.sign_count,
-                i64::from(outcome.new_counter),
-                credential_json,
+                &credential_id,
+                credential.counter,
+                outcome.new_counter,
             )
             .await
             .map_err(|error| match error {
@@ -428,10 +417,9 @@ where
             .await
             .map_err(PasskeyError::State)?;
         let existing_ids = rows
-            .iter()
-            .map(decode_credential)
-            .map(|result| result.map(|credential| credential.id))
-            .collect::<Result<Vec<_>, _>>()?;
+            .into_iter()
+            .map(|row| row.credential.id)
+            .collect::<Vec<_>>();
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
         let (challenge, state) = self.webauthn.start_registration(
             &user_handle,
@@ -507,23 +495,9 @@ where
                 return Err(PasskeyError::RegistrationFailed);
             }
         };
-        let credential_id = credential.id.to_b64url();
-        let sign_count = i64::from(credential.counter);
-        let credential_json = serde_json::to_value(credential).map_err(|_| {
-            PasskeyError::State(RepositoryError::Consistency(
-                "passkey credential serialization failed".to_owned(),
-            ))
-        })?;
         let row = self
             .credentials
-            .insert(
-                stored.tenant_id,
-                stored.user_id,
-                credential_id,
-                credential_json,
-                stored.label,
-                sign_count,
-            )
+            .insert(stored.tenant_id, stored.user_id, credential, stored.label)
             .await
             .map_err(|error| match error {
                 RepositoryError::Conflict => PasskeyError::AlreadyRegistered,
@@ -545,6 +519,16 @@ where
     ) -> Result<Vec<PasskeyCredential>, PasskeyError> {
         self.credentials
             .list(account.tenant().tenant_id, account.user_id())
+            .await
+            .map_err(PasskeyError::State)
+    }
+
+    pub async fn list_summaries(
+        &self,
+        account: &PublicAccount,
+    ) -> Result<Vec<PasskeyCredentialSummary>, PasskeyError> {
+        self.credentials
+            .list_summaries(account.tenant().tenant_id, account.user_id())
             .await
             .map_err(PasskeyError::State)
     }
@@ -592,13 +576,20 @@ where
             amr.push("remembered_mfa".to_owned());
             amr.push("mfa".to_owned());
         }
-        let session = SessionRecord::new(
+        let pending_mfa = account.account.mfa_enabled && !remembered;
+        let ttl_seconds = if pending_mfa {
+            self.config.pending_mfa_session_ttl_seconds
+        } else {
+            self.config.session_ttl_seconds
+        };
+        let mut session = SessionRecord::new(
             account.user_id(),
             now.timestamp(),
             amr,
-            account.account.mfa_enabled && !remembered,
+            pending_mfa,
             Some(random_urlsafe_token()),
         );
+        session.record_authentication_at(now);
         let session_id = random_urlsafe_token();
         let csrf_token = random_urlsafe_token();
         match self
@@ -607,7 +598,7 @@ where
                 previous_session_id.as_deref(),
                 &session_id,
                 &session,
-                self.config.session_ttl_seconds,
+                ttl_seconds,
             )
             .await
             .map_err(PasskeyError::Session)?
@@ -663,14 +654,6 @@ where
             challenge,
         })
     }
-}
-
-fn decode_credential(row: &PasskeyCredential) -> Result<WebauthnCredential, PasskeyError> {
-    serde_json::from_value(row.credential.clone()).map_err(|_| {
-        PasskeyError::State(RepositoryError::Consistency(
-            "stored passkey credential is malformed".to_owned(),
-        ))
-    })
 }
 
 fn remove_authentication_transport_hints(challenge: &mut AuthenticationChallenge) {

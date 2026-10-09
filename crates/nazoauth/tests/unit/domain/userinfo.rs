@@ -548,7 +548,6 @@ async fn signed_userinfo_access_token(
             audiences,
             scopes,
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 300,
             dpop_jkt,
@@ -589,7 +588,6 @@ async fn signed_active_user_token(
             audiences: &["resource://default".to_owned()],
             scopes: &["openid".to_owned(), "email".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 300,
             dpop_jkt: None,
@@ -687,6 +685,9 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
         return;
     };
     let claims = Claims {
+        authorization_id: None,
+        client_epoch: None,
+        user_epoch: None,
         iss: state.settings.endpoint.issuer.clone(),
         sub: Uuid::now_v7().to_string(),
         tenant_id: "not-a-uuid".to_owned(),
@@ -703,8 +704,7 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
         exp: Utc::now().timestamp() + 300,
         cnf: None,
         act: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
     };
     let keyset = state.keyset.snapshot();
     let mut header = jsonwebtoken::Header::new(keyset.active_alg);
@@ -1481,7 +1481,6 @@ async fn userinfo_reports_missing_subject_before_client_state() {
             audiences: &["resource://default".to_owned()],
             scopes: &["openid".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 300,
             dpop_jkt: None,

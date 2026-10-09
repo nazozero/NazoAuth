@@ -44,6 +44,8 @@ return 'ok'
 struct SessionWireRecord {
     user_id: Uuid,
     auth_time: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth_time_micros: Option<i64>,
     amr: Vec<String>,
     pending_mfa: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,6 +59,7 @@ impl From<&SessionRecord> for SessionWireRecord {
         Self {
             user_id: value.user_id().as_uuid(),
             auth_time: value.auth_time(),
+            auth_time_micros: value.auth_time_micros(),
             amr: value.amr().to_vec(),
             pending_mfa: value.pending_mfa(),
             oidc_sid: value.oidc_sid().map(str::to_owned),
@@ -79,6 +82,11 @@ impl TryFrom<SessionWireRecord> for SessionRecord {
             value.pending_mfa,
             value.oidc_sid,
         );
+        if !record.restore_auth_time_micros(value.auth_time_micros) {
+            return Err(Error::corrupt_data(
+                "inconsistent stored authentication precision",
+            ));
+        }
         for client_id in value.logged_in_client_ids {
             record.add_logged_in_client(&client_id);
         }

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{OidcClaimRequest, deserialize_authorization_details, empty_authorization_details};
+use crate::{deserialize_authorization_details, empty_authorization_details};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ConsentPayload {
@@ -33,18 +33,12 @@ pub struct ConsentPayload {
     pub oidc_sid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acr: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_token_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_token_claim_requests: Vec<OidcClaimRequest>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_challenge: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_challenge_method: Option<String>,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub userinfo_claim_requests: crate::UserinfoClaimRequests,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub id_token_claim_requests: crate::IdTokenClaimRequests,
+    #[serde(flatten)]
+    pub pkce: crate::S256Pkce,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpop_jkt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,7 +53,7 @@ pub struct ConsentPayload {
     pub session_management_allowed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authorization_code_ttl_seconds: Option<u64>,
-    pub issued_at: DateTime<Utc>,
+
     pub expires_at: DateTime<Utc>,
 }
 
@@ -75,8 +69,13 @@ pub struct PushedAuthorizationRequest {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Payloads before this contract cannot be mapped to a stable durable fence.
+pub const AUTHORIZATION_CODE_REDEMPTION_VERSION: u8 = 2;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CodePayload {
+    #[serde(default)]
+    pub redemption_contract_version: u8,
     pub code_id: String,
     pub user_id: Uuid,
     pub client_id: String,
@@ -97,23 +96,17 @@ pub struct CodePayload {
     pub oidc_sid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acr: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_token_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_token_claim_requests: Vec<OidcClaimRequest>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_challenge: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_challenge_method: Option<String>,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub userinfo_claim_requests: crate::UserinfoClaimRequests,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub id_token_claim_requests: crate::IdTokenClaimRequests,
+    #[serde(flatten)]
+    pub pkce: crate::S256Pkce,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpop_jkt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mtls_x5t_s256: Option<String>,
-    pub issued_at: DateTime<Utc>,
+
     pub expires_at: DateTime<Utc>,
 }
 
@@ -127,25 +120,9 @@ pub enum AuthorizationCodeState {
         payload: CodePayload,
         consuming_at: DateTime<Utc>,
     },
-    Consumed {
-        marker: ConsumedAuthorizationCode,
-    },
+    Consumed,
     Failed {
         failed_at: DateTime<Utc>,
         error: String,
     },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ConsumedAuthorizationCode {
-    pub client_id: Uuid,
-    /// Hash-derived binding of the code redemption request that produced the
-    /// issued tokens. Older markers do not carry it and therefore fail closed
-    /// without allowing an unauthenticated replay to revoke another client's
-    /// tokens.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub redemption_binding: Option<String>,
-    pub access_token_jti: String,
-    pub access_token_expires_at: i64,
-    pub refresh_token_family_id: Option<Uuid>,
 }

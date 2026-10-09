@@ -7,9 +7,10 @@ use crate::{
 };
 use chrono::Utc;
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
-    dsl::{count_star, now},
+    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
+    dsl::{count_star, now, sql},
     result::{DatabaseErrorKind, Error},
+    sql_types::{Bool, Timestamptz, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
@@ -76,9 +77,11 @@ impl ScimRepository {
         }
         if let Some((created_at, id)) = query.after {
             rows_query = rows_query.filter(
-                users::created_at
-                    .gt(created_at)
-                    .or(users::created_at.eq(created_at).and(users::id.gt(id))),
+                sql::<Bool>("(users.created_at, users.id) > (")
+                    .bind::<Timestamptz, _>(created_at)
+                    .sql(", ")
+                    .bind::<SqlUuid, _>(id)
+                    .sql(")"),
             );
         }
         let rows = rows_query
@@ -189,13 +192,19 @@ impl ScimRepository {
         let event_retention = self.event_retention;
         let row = connection
             .transaction::<PublicAccountRow, Error, _>(async move |connection| {
-                let current = users::table
-                    .find(user_id.as_uuid())
-                    .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
-                    .for_update()
-                    .select(PublicAccountRow::as_select())
-                    .first::<PublicAccountRow>(connection)
-                    .await?;
+                let current_active = if mutation.transaction_id().is_some() {
+                    Some(
+                        users::table
+                            .find(user_id.as_uuid())
+                            .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                            .for_update()
+                            .select(users::is_active)
+                            .first::<bool>(connection)
+                            .await?,
+                    )
+                } else {
+                    None
+                };
                 let row = diesel::update(
                     users::table
                         .find(user_id.as_uuid())
@@ -219,7 +228,7 @@ impl ScimRepository {
                 }
                 if let Some(transaction_id) = mutation.transaction_id() {
                     let active_transition =
-                        (current.is_active != row.is_active).then_some(row.is_active);
+                        (current_active != Some(row.is_active)).then_some(row.is_active);
                     insert_event(
                         connection,
                         StoredEvent::put_notice(

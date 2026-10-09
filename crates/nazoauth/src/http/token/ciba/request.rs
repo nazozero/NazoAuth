@@ -41,8 +41,21 @@ pub(crate) async fn parse_backchannel_authentication_form(
                 "CIBA parameters must not repeat.",
             ));
         }
+        if matches!(
+            key.as_str(),
+            "scope"
+                | "login_hint"
+                | "id_token_hint"
+                | "login_hint_token"
+                | "binding_message"
+                | "acr_values"
+                | "client_notification_token"
+                | "requested_expiry"
+        ) {
+            form.authentication_parameters_present = true;
+        }
         match key.as_str() {
-            "request" => form.request = non_empty(value),
+            "request" => form.request = Some(value.trim().to_owned()),
             "scope" => form.scope = non_empty(value),
             "login_hint" => form.login_hint = non_empty(value),
             "id_token_hint" => form.id_token_hint = non_empty(value),
@@ -59,6 +72,13 @@ pub(crate) async fn parse_backchannel_authentication_form(
             "client_assertion" => form.client_assertion = non_empty(value),
             _ => {}
         }
+    }
+    if form.request.is_some() && form.has_outer_authentication_parameters() {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "CIBA signed requests must not include outer authentication parameters.",
+        ));
     }
     Ok(form)
 }

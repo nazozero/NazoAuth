@@ -1,5 +1,6 @@
 use super::*;
 use crate::ErrorKind;
+use fred::prelude::LuaInterface;
 use std::time::Duration;
 
 fn authorization() -> AvatarUploadAuthorization {
@@ -134,5 +135,170 @@ async fn upload_authorization_is_create_once_and_expiry_is_authoritative() {
         )
         .await
         .unwrap()
+    );
+}
+
+#[test]
+fn initial_upload_state_contains_no_lease_or_future_stage_placeholders() {
+    let value = serde_json::to_value(AvatarUploadWireState::from(&authorization())).unwrap();
+    assert_eq!(value.as_object().unwrap().len(), 8);
+    for field in [
+        "ownership_token",
+        "lease_until",
+        "staged_version",
+        "final_object_id",
+    ] {
+        assert!(
+            value.get(field).is_none(),
+            "unexpected initial field {field}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn generation_is_the_only_owner_state_and_completion_discards_preparation() {
+    let Ok(url) = std::env::var("VALKEY_URL") else {
+        return;
+    };
+    let connection = crate::test_support::scoped_connect(&url, Duration::from_secs(5))
+        .await
+        .expect("configured Valkey must be available");
+    let store = AvatarUploadStateStore::new(&connection);
+    let authorization = authorization();
+    let key = AvatarUploadStateStore::key(&authorization.upload_id);
+    AvatarUploadStatePort::create(&store, &authorization, 60)
+        .await
+        .unwrap();
+    let deadline: i64 = connection
+        .client
+        .eval(
+            "return redis.call('PEXPIRETIME', KEYS[1])",
+            connection.state_keys(vec![key.clone()]),
+            Vec::<String>::new(),
+        )
+        .await
+        .unwrap();
+    let lease = Utc::now() + chrono::Duration::seconds(30);
+    let AvatarUploadClaim::Pending {
+        ownership_token: first,
+        ..
+    } = store
+        .claim(authorization.user_id, &authorization.upload_id, lease)
+        .await
+        .unwrap()
+    else {
+        panic!("pending authorization expected");
+    };
+    let raw = command::get(&connection, key.clone())
+        .await
+        .unwrap()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert!(value.get("ownership_token").is_none());
+    assert_eq!(value["claim_generation"].to_string(), first);
+    assert!(
+        AvatarUploadStatePort::release(
+            &store,
+            authorization.user_id,
+            &authorization.upload_id,
+            &first,
+        )
+        .await
+        .unwrap()
+    );
+    assert!(
+        !store
+            .record_candidate(
+                authorization.user_id,
+                &authorization.upload_id,
+                &first,
+                "etag",
+                "final",
+            )
+            .await
+            .unwrap(),
+        "the unchanged generation without a live lease grants no authority"
+    );
+    let AvatarUploadClaim::Pending {
+        ownership_token: second,
+        ..
+    } = store
+        .claim(authorization.user_id, &authorization.upload_id, lease)
+        .await
+        .unwrap()
+    else {
+        panic!("released authorization must be reclaimable");
+    };
+    assert_ne!(first, second);
+    assert!(
+        !store
+            .record_candidate(
+                authorization.user_id,
+                &authorization.upload_id,
+                &first,
+                "etag",
+                "final",
+            )
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .record_candidate(
+                authorization.user_id,
+                &authorization.upload_id,
+                &second,
+                "etag",
+                "final",
+            )
+            .await
+            .unwrap()
+    );
+    assert!(
+        AvatarUploadStatePort::complete(
+            &store,
+            authorization.user_id,
+            &authorization.upload_id,
+            &second,
+            "final",
+        )
+        .await
+        .unwrap()
+    );
+    let raw = command::get(&connection, key.clone())
+        .await
+        .unwrap()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "status": "completed",
+            "user_id": authorization.user_id.as_uuid(),
+            "expires_at": authorization.expires_at.timestamp(),
+            "final_object_id": "final",
+        })
+    );
+    let after: i64 = connection
+        .client
+        .eval(
+            "return redis.call('PEXPIRETIME', KEYS[1])",
+            connection.state_keys(vec![key]),
+            Vec::<String>::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        after, deadline,
+        "no transition may renew the storage deadline"
+    );
+    assert_eq!(
+        store
+            .claim(authorization.user_id, &authorization.upload_id, lease)
+            .await
+            .unwrap(),
+        AvatarUploadClaim::Completed {
+            final_object_id: "final".to_owned(),
+        }
     );
 }

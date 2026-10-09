@@ -21,7 +21,6 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) audiences: &'a [String],
     pub(crate) scopes: &'a [String],
     pub(crate) authorization_details: &'a Value,
-    pub(crate) userinfo_claims: &'a [String],
     pub(crate) userinfo_claim_requests: &'a [OidcClaimRequest],
     pub(crate) ttl: i64,
     pub(crate) dpop_jkt: Option<&'a str>,
@@ -38,10 +37,9 @@ pub(super) fn validate_access_token_sender_constraint(
     dpop_jkt: Option<&str>,
     mtls_x5t_s256: Option<&str>,
 ) -> nazo_crypto::Result<()> {
-    if dpop_jkt.is_some() && mtls_x5t_s256.is_some() {
-        return Err(nazo_crypto::CryptoError::InvalidToken);
-    }
-    Ok(())
+    nazo_auth::validate_sender_constraint(dpop_jkt, mtls_x5t_s256)
+        .map(|_| ())
+        .map_err(|_| nazo_crypto::CryptoError::InvalidToken)
 }
 
 pub(crate) async fn make_jwt(
@@ -55,6 +53,9 @@ pub(crate) async fn make_jwt(
     let claims = nazo_auth::access_token_claims(
         issuer,
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: input.tenant_id,
             subject: input.subject,
             user_id: input.user_id,
@@ -63,11 +64,14 @@ pub(crate) async fn make_jwt(
             audiences: input.audiences,
             scopes: input.scopes,
             authorization_details: input.authorization_details,
-            userinfo_claims: input.userinfo_claims,
             userinfo_claim_requests: input.userinfo_claim_requests,
             ttl: input.ttl,
-            dpop_jkt: input.dpop_jkt,
-            mtls_x5t_s256: input.mtls_x5t_s256,
+            sender_constraint: nazo_auth::validate_sender_constraint(
+                input.dpop_jkt,
+                input.mtls_x5t_s256,
+            )
+            .expect("fixture has one sender binding"),
+
             actor: input.actor,
         },
         now,

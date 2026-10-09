@@ -41,7 +41,11 @@ impl AdminClientRepositoryPort for CapturingRepository {
         Box::pin(async { Err(AdminClientPortError::Unexpected) })
     }
 
-    fn update<'a>(&'a self, _client: &'a OAuthClient) -> AdminClientFuture<'a, OAuthClient> {
+    fn update<'a>(
+        &'a self,
+        _expected: &'a OAuthClient,
+        _client: &'a OAuthClient,
+    ) -> AdminClientFuture<'a, OAuthClient> {
         Box::pin(async { Err(AdminClientPortError::Unexpected) })
     }
 }
@@ -64,15 +68,15 @@ impl AdminClientCryptoPort for NoopCrypto {
     }
 
     fn issue_client_secret(&self, _pepper: &str) -> (String, String) {
-        unreachable!("page does not issue client secrets")
+        unreachable!("page and public registration do not issue client secrets")
     }
 
     fn validate_jwks(&self, _jwks: &Value) -> Result<(), String> {
-        Err("page does not validate JWKS".to_owned())
+        Err("unexpected JWKS validation".to_owned())
     }
 
     fn validate_rfc4514_dn(&self, _value: &str) -> Result<(), String> {
-        Err("page does not validate distinguished names".to_owned())
+        Err("unexpected distinguished name validation".to_owned())
     }
 
     fn matching_encryption_key_count(&self, _jwks: &Value, _algorithm: &str) -> usize {
@@ -88,25 +92,41 @@ impl AdminClientCryptoPort for NoopCrypto {
     }
 }
 
+fn policy() -> AdminClientPolicy {
+    AdminClientPolicy {
+        tenant: TenantContext {
+            tenant_id: TenantId::new(Uuid::now_v7()).unwrap(),
+            realm_id: RealmId::new(Uuid::now_v7()).unwrap(),
+            organization_id: OrganizationId::new(Uuid::now_v7()).unwrap(),
+        },
+        pairwise_subject_secret: None,
+        client_secret_pepper: "test-only".to_owned(),
+    }
+}
+
+fn registration(subject_type: Option<&str>) -> CreateClientRequest {
+    serde_json::from_value(serde_json::json!({
+        "client_name": "Subject contract",
+        "client_type": "public",
+        "redirect_uris": ["https://client.example/callback"],
+        "scopes": ["openid"],
+        "allowed_audiences": ["resource://default"],
+        "grant_types": ["authorization_code"],
+        "token_endpoint_auth_method": "none",
+        "subject_type": subject_type,
+        "jwks": null,
+    }))
+    .unwrap()
+}
+
 #[test]
 fn page_forwards_the_policy_tenant_to_persistence() {
-    let tenant = TenantContext {
-        tenant_id: TenantId::new(Uuid::now_v7()).unwrap(),
-        realm_id: RealmId::new(Uuid::now_v7()).unwrap(),
-        organization_id: OrganizationId::new(Uuid::now_v7()).unwrap(),
-    };
+    let policy = policy();
+    let tenant = policy.tenant;
     let repository = CapturingRepository::default();
     let observed = repository.0.clone();
-    let service = AdminClientService::new(
-        repository,
-        NoopSectorIdentifierResolver,
-        NoopCrypto,
-        AdminClientPolicy {
-            tenant,
-            pairwise_subject_secret: None,
-            client_secret_pepper: "test-only".to_owned(),
-        },
-    );
+    let service =
+        AdminClientService::new(repository, NoopSectorIdentifierResolver, NoopCrypto, policy);
 
     let (clients, total) = futures_executor::block_on(service.page(17, 23)).unwrap();
     assert!(clients.is_empty());
@@ -115,4 +135,67 @@ fn page_forwards_the_policy_tenant_to_persistence() {
         *observed.lock().unwrap(),
         vec![(tenant.tenant_id.as_uuid(), 17, 23)]
     );
+}
+
+#[test]
+fn registration_rejects_unknown_subject_types_before_persistence() {
+    let service = AdminClientService::new(
+        CapturingRepository::default(),
+        NoopSectorIdentifierResolver,
+        NoopCrypto,
+        policy(),
+    );
+    for subject_type in ["", "PUBLIC", "user", "unsupported"] {
+        let result = futures_executor::block_on(
+            service.prepare_registration(registration(Some(subject_type))),
+        );
+        assert!(matches!(result, Err(AdminClientError::InvalidRequest(_))));
+    }
+    for subject_type in [None, Some("public")] {
+        let prepared =
+            futures_executor::block_on(service.prepare_registration(registration(subject_type)))
+                .unwrap();
+        assert_eq!(prepared.registration.subject_type, "public");
+    }
+}
+
+#[test]
+fn client_patch_keeps_subject_type_validation_in_the_core() {
+    let mut policy = policy();
+    policy.pairwise_subject_secret = Some("test-only-pairwise-secret".to_owned());
+    let prepared =
+        futures_executor::block_on(super::super::registration::prepare_client_registration(
+            registration(Some("pairwise")),
+            &policy,
+            &NoopSectorIdentifierResolver,
+            &NoopCrypto,
+        ))
+        .unwrap();
+    let original = prepared.into_write().client;
+    assert_eq!(
+        original.sector_identifier_host.as_deref(),
+        Some("client.example")
+    );
+    for subject_type in ["", "PUBLIC", "user", "unsupported"] {
+        let result = futures_executor::block_on(super::super::patch::prepare_client_patch(
+            original.clone(),
+            PatchClientRequest {
+                subject_type: Some(subject_type.to_owned()),
+                ..PatchClientRequest::default()
+            },
+            &policy,
+            &NoopSectorIdentifierResolver,
+            &NoopCrypto,
+        ));
+        assert!(matches!(result, Err(AdminClientError::InvalidRequest(_))));
+    }
+    let retained = futures_executor::block_on(super::super::patch::prepare_client_patch(
+        original.clone(),
+        PatchClientRequest::default(),
+        &policy,
+        &NoopSectorIdentifierResolver,
+        &NoopCrypto,
+    ))
+    .unwrap();
+    assert_eq!(retained, original);
 }

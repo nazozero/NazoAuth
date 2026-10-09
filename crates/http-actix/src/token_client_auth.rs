@@ -4,12 +4,18 @@ use nazo_oauth_server::contracts::token_client_auth::{
     BasicAuthorizationCredentials, TokenClientAuthTransportFacts,
 };
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct TokenClientAuthForm<'a> {
     pub client_id: Option<&'a str>,
     pub client_secret: Option<&'a str>,
     pub client_assertion_type: Option<&'a str>,
     pub client_assertion: Option<&'a str>,
+}
+
+impl std::fmt::Debug for TokenClientAuthForm<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TokenClientAuthForm([REDACTED])")
+    }
 }
 
 #[must_use]

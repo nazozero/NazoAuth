@@ -26,7 +26,8 @@ pub use trust::{
     CertificateRevocationEntry, CertificateRevocationPolicy, CertificateRevocationSnapshot,
     CertificateRevocationSnapshotError, CertificateRevocationStatus, CredentialFuture,
     CredentialSignInput, CredentialSignerPort, CredentialTrustError, CredentialVerifierPort,
-    PresentedCredential, VcIssuerTrustPolicy, VerifiedCredential, certificate_identity,
+    PreparedCertificateRevocationSnapshot, PresentedCredential, VcIssuerTrustPolicy,
+    VerifiedCredential, certificate_identity,
 };
 
 pub const SD_JWT_VC_MEDIA_TYPE: &str = "dc+sd-jwt";

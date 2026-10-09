@@ -91,15 +91,15 @@ pub fn token_exchange_error_response(error: TokenExchangeError) -> OAuthEndpoint
     }
 }
 
-pub fn token_exchange_request(form: &TokenForm) -> TokenExchangeRequestInput {
+pub fn token_exchange_request(form: &TokenForm) -> TokenExchangeRequestInput<'_> {
     TokenExchangeRequestInput {
-        subject_token: form.subject_token.clone(),
-        subject_token_type: form.subject_token_type.clone(),
-        actor_token: form.actor_token.clone(),
-        actor_token_type: form.actor_token_type.clone(),
-        requested_token_type: form.requested_token_type.clone(),
-        scope: form.scope.clone(),
-        audiences: form.audiences.clone(),
+        subject_token: form.subject_token.as_deref(),
+        subject_token_type: form.subject_token_type.as_deref(),
+        actor_token: form.actor_token.as_deref(),
+        actor_token_type: form.actor_token_type.as_deref(),
+        requested_token_type: form.requested_token_type.as_deref(),
+        scope: form.scope.as_deref(),
+        audiences: &form.audiences,
     }
 }
 
@@ -204,7 +204,7 @@ pub async fn validate_exchange_access_token(
     validate_token_exchange_access_token(&claims, policy)
         .map_err(|_| TokenExchangeTokenError::Invalid)?;
     let revoked = token_service
-        .access_token_revoked(client.tenant_id, &claims.jti)
+        .access_token_revoked(client.tenant_id, &claims)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to query token exchange access token revocation state");
@@ -380,6 +380,7 @@ pub async fn validate_actor_token(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn token_exchange(
     token_service: &ServerTokenService,
     authorization_service: &crate::services::ServerAuthorizationService,
@@ -388,6 +389,7 @@ pub async fn token_exchange(
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
+    client_attestation_jkt: Option<&str>,
 ) -> Result<TokenEndpointSuccess, OAuthEndpointError> {
     if native_sso_profile_requested(form) {
         return token_native_sso_exchange(
@@ -397,6 +399,7 @@ pub async fn token_exchange(
             client,
             form,
             client_assertion,
+            client_attestation_jkt,
         )
         .await;
     }
@@ -485,7 +488,7 @@ pub async fn token_exchange(
         TokenExchangeSubjectIdentity::User {
             public_user_id: None,
         } => match token_service
-            .active_subject_id_by_access_token(client.tenant_id, &subject.jti)
+            .active_subject_id_by_access_token(client.tenant_id, &subject.jti, &subject.sub)
             .await
         {
             Ok(Some(user_id)) => Some(user_id),
@@ -515,6 +518,7 @@ pub async fn token_exchange(
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: None,
             user_id,
             prepared_subject: None,
             subject: validated_subject.subject,
@@ -526,19 +530,18 @@ pub async fn token_exchange(
             amr: Vec::new(),
             oidc_sid: None,
             acr: None,
-            userinfo_claims: Vec::new(),
-            userinfo_claim_requests: Vec::new(),
-            id_token_claims: Vec::new(),
-            id_token_claim_requests: Vec::new(),
+            userinfo_claim_requests: (Vec::new()).into(),
+            id_token_claim_requests: (Vec::new()).into(),
             refresh_id_token_sid: None,
             include_refresh: false,
-            refresh_token_policy: RefreshTokenPolicy::PreserveExisting,
+            refresh_token_policy: RefreshTokenPolicy::NoRefresh,
             dpop_jkt,
             refresh_token_dpop_jkt: None,
             mtls_x5t_s256,
             refresh_token_mtls_x5t_s256: None,
             refresh_token_client_attestation_jkt: None,
-            refresh_token_scopes: None,
+            refresh_authority: None,
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor,
             issued_token_type: Some(admission.issued_token_type),

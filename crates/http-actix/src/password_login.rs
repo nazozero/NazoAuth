@@ -79,11 +79,17 @@ impl PasswordLoginEndpoint {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct LoginRequest {
     email: String,
     password: String,
     next: Option<String>,
+}
+
+impl std::fmt::Debug for LoginRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("LoginRequest([REDACTED])")
+    }
 }
 
 #[derive(Clone, Copy)]

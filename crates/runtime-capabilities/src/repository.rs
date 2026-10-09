@@ -48,6 +48,14 @@ pub struct InstanceStateRecord {
     pub updated_at: SystemTime,
 }
 
+/// One module's durable desired state and this process instance's actual state.
+/// All records returned by `read_reconcile_state` belong to one storage snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModuleReconcileState {
+    pub desired: DesiredStateRecord,
+    pub instance: Option<InstanceStateRecord>,
+}
+
 /// Input to an actual-state compare-and-set operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstanceStateChange {
@@ -65,6 +73,14 @@ pub struct InstanceStateMutation {
     pub change: InstanceStateChange,
     pub applied_event: ModuleEventRecord,
     pub stale_event: ModuleEventRecord,
+}
+
+/// An observation of discarded work, with no desired or instance-state write.
+/// The event must be StaleTransitionDiscarded and its observed actual state
+/// (including absence) must be unchanged. Storage rejects transition events here.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstanceStateObservation {
+    pub event: ModuleEventRecord,
 }
 
 /// Typed before/after value for module audit events.
@@ -119,6 +135,13 @@ pub trait ModuleStateRepository: Send + Sync {
         &self,
     ) -> impl Future<Output = Result<Vec<DesiredStateRecord>, Self::Error>> + Send;
 
+    /// Reads all desired records and only the named instance's actual state in
+    /// one consistent snapshot. A missing instance must not omit desired state.
+    fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> impl Future<Output = Result<Vec<ModuleReconcileState>, Self::Error>> + Send;
+
     /// Compares and sets desired state and appends the matching
     /// [`ModuleEventType::DesiredStateChanged`] event in one atomic commit.
     /// A stale outcome must mutate neither desired state nor the event stream.
@@ -158,6 +181,13 @@ pub trait ModuleStateRepository: Send + Sync {
         required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> impl Future<Output = Result<CasOutcome<InstanceStateRecord>, Self::Error>> + Send;
+
+    /// Append only the observation event. Never insert, update or delete
+    /// desired/instance state, even if the observed revision is still current.
+    fn record_instance_observation(
+        &self,
+        observation: InstanceStateObservation,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Validates the bound revision against durable desired state.
     fn validate_revision(

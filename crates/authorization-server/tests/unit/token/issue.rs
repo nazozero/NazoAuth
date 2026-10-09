@@ -59,7 +59,6 @@ pub(super) fn client_with_grants(grant_types: &[&str]) -> ClientRow {
             backchannel_token_delivery_mode: "poll".to_owned(),
             backchannel_client_notification_endpoint: None,
             backchannel_authentication_request_signing_alg: None,
-            backchannel_user_code_parameter: false,
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             subject_type: "public".to_owned(),
@@ -71,6 +70,7 @@ pub(super) fn client_with_grants(grant_types: &[&str]) -> ClientRow {
 }
 fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
     TokenIssue {
+        native_sso_source: None,
         user_id: None,
         prepared_subject: None,
         subject: "subject-1".to_owned(),
@@ -82,10 +82,12 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
         amr: vec!["password".to_owned()],
         oidc_sid: Some("op-session-sid".to_owned()),
         acr: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims,
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: ((id_token_claims)
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
         refresh_id_token_sid: None,
         include_refresh: false,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
@@ -94,7 +96,8 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
         mtls_x5t_s256: None,
         refresh_token_mtls_x5t_s256: None,
         refresh_token_client_attestation_jkt: None,
-        refresh_token_scopes: None,
+        refresh_authority: None,
+        refresh_grant_audiences: None,
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,
@@ -249,7 +252,7 @@ fn essential_id_token_claim_requests_match_protocol_claim_values() {
     let client = client_with_grants(&["authorization_code"]);
     let mut issue = token_issue_with_sid(Vec::new());
     issue.acr = Some("urn:example:loa:2".to_owned());
-    issue.id_token_claim_requests = vec![
+    issue.id_token_claim_requests = (vec![
         OidcClaimRequest {
             name: "auth_time".to_owned(),
             essential: true,
@@ -280,7 +283,8 @@ fn essential_id_token_claim_requests_match_protocol_claim_values() {
             value: None,
             values: vec![json!("engineering"), json!("security")],
         },
-    ];
+    ])
+    .into();
     let extra_claims = json!({"department": "engineering"});
 
     assert!(refreshed_id_token_essential_claims_satisfied(

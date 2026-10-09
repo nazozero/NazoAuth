@@ -9,6 +9,7 @@ use nazo_scim_events::EventReceiver;
 
 pub type ScimFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+#[derive(Clone)]
 pub struct ScimAuthenticationFacts<'a> {
     pub bearer_token: Option<&'a str>,
     pub source_ip: String,

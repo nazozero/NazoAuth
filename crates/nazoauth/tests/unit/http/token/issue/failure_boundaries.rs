@@ -306,3 +306,115 @@ async fn missing_authorization_code_state_does_not_revoke_committed_access_token
         "the database issuance row is authoritative after the commit"
     );
 }
+
+use crate::test_support::counting_ports::CountingTokenRepository;
+use nazo_auth::{
+    AuthorizationCodeClientAuthentication, AuthorizationCodeHolderEvidence, GrantType,
+};
+
+async fn assert_expired_commit_response(grant_type: GrantType, expected_error: &str) {
+    let state = issue_state_with_live_database()
+        .expect("GrantExpired protocol regression requires isolated PostgreSQL and Valkey");
+    let mut client = client_with_grants(&[grant_type.as_str()]);
+    client.client_id = format!("expired-commit-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let repository = Arc::new(CountingTokenRepository::with_expired_grant_commit(
+        Arc::new(crate::test_support::token_issuance_repository(
+            state.diesel_db.clone(),
+        )),
+    ));
+    let service = ServerTokenService::from_port(
+        repository.clone(),
+        Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    );
+    let config = token_issuance_config(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    let authorization = test_support::test_authorization_service(&state);
+    let mut issue = token_issue_without_openid();
+    issue.include_refresh = false;
+    issue.subject = client.client_id.clone();
+    let deadline = Utc::now() + chrono::Duration::minutes(5);
+    // Identical opaque keys prove that the application grant, rather than a
+    // storage-key prefix, chooses the protocol error.
+    let key = format!("opaque-{}", Uuid::now_v7());
+    let mode = if grant_type == GrantType::AuthorizationCode {
+        TokenIssuanceMode::AuthorizationCode {
+            code_identity: key,
+            grant_expires_at: deadline,
+            holder: AuthorizationCodeHolderEvidence::from_verified_requirements(
+                AuthorizationCodeClientAuthentication::Authenticated,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("authenticated code holder fixture is complete"),
+        }
+    } else {
+        TokenIssuanceMode::SingleUse {
+            grant_key: key,
+            grant_expires_at: deadline,
+        }
+    };
+    let response = present_token_result(
+        nazo_oauth_server::token::issue::issue_token_response(
+            &TokenIssuanceContext {
+                grant_type: Some(grant_type),
+                client_epoch: 0,
+                config: &config,
+                modules: &modules,
+                authorization: &authorization,
+                security_audit: crate::http::authorization::test_support::test_security_audit(),
+                remote_client_documents: crate::test_support::test_remote_client_documents(),
+            },
+            &service,
+            &client,
+            mode,
+            issue,
+        )
+        .await,
+    );
+    assert_eq!(
+        repository.commit_count(),
+        1,
+        "must reach the controlled commit result"
+    );
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL),
+        Some(&HeaderValue::from_static("no-store"))
+    );
+    let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+    assert_eq!(body["error"], expected_error);
+    for name in ["access_token", "refresh_token", "id_token"] {
+        assert!(
+            body.get(name).is_none(),
+            "expired commit must not release tokens"
+        );
+    }
+    assert_eq!(token_issuance_row_count(&state, &client).await, 0);
+    assert_eq!(refresh_token_row_count(&state, &client).await, 0);
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_device_uses_expired_token() {
+    assert_expired_commit_response(GrantType::DeviceCode, "expired_token").await;
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_ciba_uses_expired_token() {
+    assert_expired_commit_response(GrantType::Ciba, "expired_token").await;
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_authorization_code_keeps_invalid_grant() {
+    assert_expired_commit_response(GrantType::AuthorizationCode, "invalid_grant").await;
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_jwt_bearer_keeps_invalid_grant() {
+    assert_expired_commit_response(GrantType::JwtBearer, "invalid_grant").await;
+}

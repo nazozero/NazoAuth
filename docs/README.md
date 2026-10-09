@@ -96,6 +96,8 @@ set can be scanned from one place.
 | [protocol/composable-capability-policy.md](protocol/composable-capability-policy.md) | Server defaults, per-client authority, compatible policy composition, and upgrade semantics. |
 | [protocol/profile-matrix.md](protocol/profile-matrix.md) | Runtime profile capability matrix. |
 | [protocol/rfc-compliance-matrix.md](protocol/rfc-compliance-matrix.md) | OAuth, OAuth 2.1, OIDC, and FAPI best-practice matrix. |
+| [protocol/authorization-code-redemption.md](protocol/authorization-code-redemption.md) | Stable code identity, independent holder requirements, receipt migration and coordinated cutover. |
+| [protocol/client-attestation-replay.md](protocol/client-attestation-replay.md) | Verified PoP windows, atomic replay-owner acceptance, Unknown behavior and HA/upgrade boundaries. |
 | [protocol/spec-freshness.md](protocol/spec-freshness.md) | Machine-checked current specification inventory. |
 | [protocol/oauth-spec-implementation-backlog.md](protocol/oauth-spec-implementation-backlog.md) | Protocol implementation backlog. |
 | [protocol/fapi-http-signatures.md](protocol/fapi-http-signatures.md) | Experimental HTTP Message Signatures resource contract. |
@@ -144,6 +146,7 @@ set can be scanned from one place.
 | [../perf/README.md](../perf/README.md) | Benchmark runner usage, load model, profiles, and metrics. |
 | [performance/README.md](performance/README.md) | Local performance documentation index, report groups, common semantics, and maintenance rules. |
 | [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) | Current release capacity baseline with its recorded source and environment. |
+| [performance/one-hour-token-state-baseline.md](performance/one-hour-token-state-baseline.md) | One-hour current-source short tests after token-state reduction; scoped evidence and deadline. |
 | [performance/reports](performance/reports) | Dated evidence reports: current-capacity set, redesign, and historical root-cause records. |
 
 ### Project

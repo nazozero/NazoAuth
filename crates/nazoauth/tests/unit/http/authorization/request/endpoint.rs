@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Int4, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use fred::interfaces::ClientLike;
+use fred::interfaces::{ClientLike, KeysInterface as _};
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
@@ -2140,6 +2140,21 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
         return;
     };
     let request_uri = fixture.push().await;
+    let key = par_storage_key(&request_uri);
+    assert!(
+        valkey_get(&fixture.live.state.valkey, &key)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let initial_ttl = fixture
+        .live
+        .state
+        .valkey
+        .pttl::<i64, _>(&key)
+        .await
+        .unwrap();
+    assert!(initial_ttl > 0 && initial_ttl <= 60_000);
     let outer = fixture.q.clone();
     let response = fixture.authorize().await;
     let location = authorization_location(&response);
@@ -2147,14 +2162,29 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
         location.query_pairs().any(|(key, _)| key == "code"),
         "the first consumer issues one code"
     );
+    assert_eq!(
+        valkey_get(&fixture.live.state.valkey, &key).await.unwrap(),
+        None,
+        "confirmed commit removes preparation without releasing the durable fence"
+    );
+    let remaining = fixture
+        .live
+        .state
+        .valkey
+        .pttl::<i64, _>(&key)
+        .await
+        .unwrap();
     assert!(
-        valkey_get(&fixture.live.state.valkey, par_storage_key(&request_uri))
-            .await
-            .expect("PAR lookup")
-            .is_none()
+        remaining == -2,
+        "confirmed consumption removes the preparation key"
+    );
+    assert_eq!(
+        super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
+        1
     );
     fixture.q = outer.clone();
     let response = fixture.authorize().await;
+    // The consumed PAR no longer supplies parameters to a new request.
     assert_authorization_error_redirect(response, "invalid_request_uri", None);
 
     let malformed_request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
@@ -2173,7 +2203,10 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
 
     let broken_state = Data::new(endpoint_state(false));
     let request = actix_web::test::TestRequest::get().to_http_request();
-    let mut parameters = query(&[("request_uri", "urn:ietf:params:oauth:request_uri:missing")]);
+    let mut parameters = query(&[
+        ("client_id", "client-1"),
+        ("request_uri", "urn:ietf:params:oauth:request_uri:missing"),
+    ]);
     let (status, body) =
         json_body(authorize_request(broken_state, request, &mut parameters).await).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -2189,6 +2222,21 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
         return;
     };
     let request_uri = fixture.push().await;
+    let key = par_storage_key(&request_uri);
+    assert!(
+        valkey_get(&fixture.live.state.valkey, &key)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let initial_ttl = fixture
+        .live
+        .state
+        .valkey
+        .pttl::<i64, _>(&key)
+        .await
+        .unwrap();
+    assert!(initial_ttl > 0 && initial_ttl <= 60_000);
     let application = fixture.dependencies.application();
     let sid = SessionId::new(fixture.sid.clone());
     let facts = AuthorizationRequestFacts {
@@ -2231,11 +2279,32 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
             .count(),
         1
     );
+    assert_eq!(
+        valkey_get(&fixture.live.state.valkey, &key).await.unwrap(),
+        None,
+        "confirmed commit removes preparation without releasing the durable fence"
+    );
+    let remaining = fixture
+        .live
+        .state
+        .valkey
+        .pttl::<i64, _>(&key)
+        .await
+        .unwrap();
     assert!(
-        valkey_get(&fixture.live.state.valkey, par_storage_key(&request_uri))
-            .await
-            .expect("PAR lookup")
-            .is_none()
+        remaining == -2,
+        "confirmed consumption removes the preparation key"
+    );
+    assert_eq!(
+        super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
+        1
+    );
+    let response = fixture.authorize().await;
+    // The consumed PAR no longer supplies parameters to a new request.
+    assert_authorization_error_redirect(response, "invalid_request_uri", None);
+    assert_eq!(
+        super::prompt_none::decision_fact_count(&fixture, &request_uri).await,
+        1
     );
 }
 

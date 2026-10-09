@@ -28,3 +28,6 @@ fn profile_transports_keep_focused_dependencies() {
         "profile transport performs filesystem IO directly"
     );
 }
+
+#[path = "profile/mfa_required.rs"]
+mod mfa_required;

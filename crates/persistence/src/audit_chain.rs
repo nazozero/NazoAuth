@@ -1,6 +1,6 @@
 //! BLAKE3 hash chain shared by the ledger writer, the anchor exporter and
 //! the independent anchor receiver. The event hash binds the sequence, its
-//! predecessor, the event identity and the canonical PostgreSQL JSON text;
+//! predecessor, the event identity and the exact adapter-persisted payload bytes;
 //! the batch digest binds one committed delivery range so a receiver can
 //! verify content identity across retries.
 

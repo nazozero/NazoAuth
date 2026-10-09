@@ -4,7 +4,7 @@ use crate::{DbPool, get_conn};
 
 #[derive(Clone)]
 pub struct OAuthClientRepository {
-    pool: DbPool,
+    pub(super) pool: DbPool,
 }
 
 impl OAuthClientRepository {

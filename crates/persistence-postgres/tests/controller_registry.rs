@@ -16,7 +16,9 @@ use uuid::Uuid;
 
 mod support;
 
-use support::{run_isolated_application_migrations, schema_database_url};
+use support::{
+    query_counter::QueryCounter, run_isolated_application_migrations, schema_database_url,
+};
 
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -701,4 +703,185 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
         .await
         .expect("listing works");
     assert_eq!(slots.len(), 1, "the refused bind left no extra slot");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_duplicate_kids_have_one_winner_for_insert_and_rotation() {
+    let Some((_url, repository)) = isolated_repository("kid_races").await else {
+        return;
+    };
+    let deployment = "deployment-duplicate-insert";
+    let (first, second) = tokio::join!(
+        repository.create_slot(slot_input(deployment, "first", 80), at(0)),
+        repository.create_slot(slot_input(deployment, "second", 80), at(0)),
+    );
+    let (created, error) = match (first, second) {
+        (Ok(slot), Err(error)) | (Err(error), Ok(slot)) => (slot, error),
+        other => panic!("expected one duplicate-kid winner, got {other:?}"),
+    };
+    assert!(matches!(error, ControllerRegistryError::DuplicateKid));
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![created]
+    );
+
+    let deployment = "deployment-duplicate-rotate";
+    let first = repository
+        .create_slot(slot_input(deployment, "first", 81), at(0))
+        .await
+        .unwrap();
+    let second = repository
+        .create_slot(slot_input(deployment, "second", 82), at(0))
+        .await
+        .unwrap();
+    let (left, right) = tokio::join!(
+        repository.rotate_slot(rotation_input(deployment, &first.controller_id, 83), at(1)),
+        repository.rotate_slot(rotation_input(deployment, &second.controller_id, 83), at(1)),
+    );
+    let (rotated, error, untouched) = match (left, right) {
+        (Ok(slot), Err(error)) => (slot, error, second),
+        (Err(error), Ok(slot)) => (slot, error, first),
+        other => panic!("expected one rotation winner, got {other:?}"),
+    };
+    assert!(matches!(error, ControllerRegistryError::DuplicateKid));
+    let stored = repository.list_slots(deployment).await.unwrap();
+    assert_eq!(stored.len(), 2);
+    assert!(stored.contains(&rotated));
+    assert!(
+        stored.contains(&untouched),
+        "duplicate rotation must leave its row unchanged"
+    );
+    assert_eq!(rotated.created_at, at(0));
+
+    // A row may retain its own kid; the removed COUNT used to exclude it.
+    let refreshed = repository
+        .rotate_slot(
+            rotation_input(deployment, &rotated.controller_id, 83),
+            at(2),
+        )
+        .await
+        .expect("the row's own kid is not a duplicate");
+    assert_eq!(refreshed.controller_id, rotated.controller_id);
+    assert_eq!(refreshed.slot_index, rotated.slot_index);
+    assert_eq!(refreshed.created_at, rotated.created_at);
+    assert_eq!(refreshed.issued_at, at(2));
+    let revoked = repository
+        .revoke_slot(deployment, &refreshed.controller_id, at(3))
+        .await
+        .unwrap();
+    assert_eq!(revoked.status, ControllerSlotStatus::Revoked);
+    assert_eq!(revoked.revoked_at, Some(at(3)));
+    assert!(
+        repository
+            .list_slots(deployment)
+            .await
+            .unwrap()
+            .contains(&revoked)
+    );
+    let error = repository
+        .rotate_slot(
+            rotation_input(deployment, &untouched.controller_id, 83),
+            at(4),
+        )
+        .await
+        .expect_err("revoked history still reserves its deployment kid");
+    assert!(matches!(error, ControllerRegistryError::DuplicateKid));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unrelated_unique_constraints_are_transport_errors_and_roll_back() {
+    let Some((url, repository)) = isolated_repository("other_uniq").await else {
+        return;
+    };
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    connection
+        .batch_execute(
+            "CREATE UNIQUE INDEX test_controller_labels ON controller_registry_slots (deployment_id, label)",
+        )
+        .await
+        .unwrap();
+    let deployment = "deployment-other-unique";
+    let first = repository
+        .create_slot(slot_input(deployment, "first", 90), at(0))
+        .await
+        .unwrap();
+    let error = repository
+        .create_slot(slot_input(deployment, "first", 91), at(1))
+        .await
+        .expect_err("an unrelated unique constraint is an infrastructure error");
+    assert!(matches!(error, ControllerRegistryError::Transport(_)));
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![first.clone()]
+    );
+    let second = repository
+        .create_slot(slot_input(deployment, "second", 91), at(2))
+        .await
+        .unwrap();
+    let rotation = RotateControllerKey {
+        label: first.label.clone(),
+        ..rotation_input(deployment, &second.controller_id, 92)
+    };
+    let error = repository
+        .rotate_slot(rotation, at(3))
+        .await
+        .expect_err("an unrelated update conflict is not DuplicateKid");
+    assert!(matches!(error, ControllerRegistryError::Transport(_)));
+    let stored = repository.list_slots(deployment).await.unwrap();
+    assert_eq!(stored, vec![first, second]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn slot_mutations_return_the_stored_rows_in_three_data_queries() {
+    let Some((url, _fixture)) = isolated_repository("slot_rows").await else {
+        return;
+    };
+    let pool = create_pool(url, 1).unwrap();
+    let counter = QueryCounter::new();
+    let mut connection = pool.get().await.unwrap();
+    connection.set_instrumentation(counter.clone());
+    drop(connection);
+    let repository = ControllerRegistryRepository::new(pool);
+    let assert_mutation = |before| {
+        let evidence = counter.since(before);
+        assert_eq!(evidence.data_queries, 3);
+        assert_eq!(evidence.begins, 1);
+        assert_eq!(evidence.commits, 1);
+        assert_eq!(evidence.rollbacks, 0);
+        assert_eq!(evidence.failed_queries, 0);
+    };
+    let deployment = "deployment-slot-returning";
+    let before = counter.snapshot();
+    let created = repository
+        .create_slot(slot_input(deployment, "first", 100), at(0))
+        .await
+        .unwrap();
+    assert_mutation(before);
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![created.clone()]
+    );
+    let before = counter.snapshot();
+    let rotated = repository
+        .rotate_slot(
+            rotation_input(deployment, &created.controller_id, 101),
+            at(1),
+        )
+        .await
+        .unwrap();
+    assert_mutation(before);
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![rotated.clone()]
+    );
+    let before = counter.snapshot();
+    let revoked = repository
+        .revoke_slot(deployment, &rotated.controller_id, at(2))
+        .await
+        .unwrap();
+    assert_mutation(before);
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap(),
+        vec![revoked]
+    );
 }

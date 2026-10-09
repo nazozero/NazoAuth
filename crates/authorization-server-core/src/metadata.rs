@@ -36,7 +36,7 @@ pub struct MetadataCapabilities {
     pub request_objects: bool,
     pub jarm: bool,
     pub authorization_details: bool,
-    pub http_message_signatures: bool,
+
     pub scim: bool,
     pub native_sso: bool,
     pub frontchannel_logout: bool,
@@ -80,7 +80,6 @@ impl MetadataCapabilities {
             request_objects: visible(ModuleId::RequestObjects),
             jarm: visible(ModuleId::Jarm),
             authorization_details: visible(ModuleId::AuthorizationDetails),
-            http_message_signatures: visible(ModuleId::HttpMessageSignatures),
             scim: visible(ModuleId::Scim),
             native_sso: visible(ModuleId::NativeSso),
             frontchannel_logout: visible(ModuleId::FrontchannelLogout),

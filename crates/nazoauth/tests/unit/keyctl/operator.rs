@@ -50,6 +50,27 @@ fn rejects_unsupported_algorithms() {
 }
 
 #[tokio::test]
+async fn database_operator_diagnostics_do_not_create_a_missing_keyset() {
+    let config = database_config(&temporary_directory("diagnostics-missing"));
+    let binding = tenant_binding("http://127.0.0.1:43123");
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let persistence = MemoryOperatorPersistence {
+        repository: repository.clone(),
+    };
+    assert!(
+        operator_list_database_for_tenant(&config, &binding, &persistence)
+            .await
+            .is_err()
+    );
+    assert!(
+        operator_validate_database_for_tenant(&config, &binding, &persistence)
+            .await
+            .is_err()
+    );
+    assert!(repository.load().await.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn database_operator_keyctl_roundtrip_keeps_keys_in_the_repository() {
     let data_dir = temporary_directory("database-roundtrip");
     let config = database_config(&data_dir);
@@ -100,15 +121,9 @@ async fn database_operator_keyctl_roundtrip_keeps_keys_in_the_repository() {
         .expect("database key validation");
     assert_eq!(validated_revision, first_revision);
 
-    let external_registration = serde_json::json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
-        "kid": "external-key",
-        "use": "sig",
-        "alg": "ES256"
-    });
+    let external_registration =
+        crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::ES256)
+            .public_jwk("external-key");
     let external_revision = operator_register_external_database_for_tenant(
         &config,
         &binding,

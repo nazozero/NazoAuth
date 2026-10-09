@@ -31,7 +31,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,11 +61,11 @@ def k6_point(metric, ts, value, tags=None):
         "metric": metric})
 
 
-def run_stream(points):
+def run_stream(points, workers=1):
     """Feed k6 JSON lines through the analyzer; return artifacts dict."""
     tmp = Path(tempfile.mkdtemp())
     p = subprocess.run(
-        [sys.executable, str(ANALYZER), "stream",
+        [sys.executable, str(ANALYZER), "stream", "--workers", str(workers),
          "--diag-out", str(tmp / "diag.jsonl.gz"),
          "--series-out", str(tmp / "series.json"),
          "--window-out", str(tmp / "window.json"),
@@ -80,6 +84,36 @@ def run_stream(points):
 
 
 class WindowContractTest(unittest.TestCase):
+    def test_sparse_sharded_stream_does_not_wait_for_eof(self):
+        # A low-rate sidecar can pause with less than 64 KiB available.
+        # Hold its pipe open beyond the unchanged five-second lag gate:
+        # the point must be consumed before the next sample or EOF arrives.
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            class SparseInput:
+                sent = False
+
+                def read1(self, _size):
+                    if self.sent:
+                        time.sleep(6)
+                        return b""
+                    self.sent = True
+                    timestamp = datetime.now(timezone.utc).isoformat()
+                    return (k6_point("cap_iter_end", timestamp, 1,
+                                     {"lw": "1", "outcome": "success"}) + "\n").encode()
+
+            # Controlled availability avoids platform-specific pipe read
+            # semantics while retaining real spawned shard consumers.
+            with patch.object(ca.sys, "stdin", SimpleNamespace(buffer=SparseInput())):
+                series = ca._consume_sharded_stream(2, str(out / "diag.jsonl.gz"))
+            series.diag_fh.close()
+            stats = series.stats()
+            self.assertEqual(stats["points"], 1)
+            self.assertEqual(stats["lag_over_5s"], 0)
+            self.assertLess(stats["lag_max_s"], 5)
+            self.assertEqual(stats["parse_errors"], 0)
+            self.assertIsNone(stats["reader_error"])
+
     def test_consistent_contract_valid(self):
         pts = [
             k6_point("cap_window_scenario_start_ms", "2026-01-01T00:00:01Z",

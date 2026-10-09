@@ -66,12 +66,17 @@ pub fn resource_access_token(
     body: &[u8],
     forbid_form_body: bool,
 ) -> ResourceAccessToken {
-    let header_token = authorization_access_token(request.headers());
-    let body_token = resource_form_body_access_token(request, body);
-    if forbid_form_body && !matches!(&body_token, FormBodyAccessToken::Missing) {
+    if request.headers().get_all(header::AUTHORIZATION).count() > 1 {
         return ResourceAccessToken::InvalidRequest;
     }
-    match (header_token, body_token) {
+    let body_token = resource_form_body_access_token(request, body);
+    if matches!(&body_token, FormBodyAccessToken::InvalidRequest)
+        || (forbid_form_body && !matches!(&body_token, FormBodyAccessToken::Missing))
+    {
+        return ResourceAccessToken::InvalidRequest;
+    }
+    let header_token = authorization_access_token(request.headers());
+    let selected = match (header_token, body_token) {
         (Some(_), FormBodyAccessToken::Present(_)) => ResourceAccessToken::InvalidRequest,
         (Some((scheme, token)), _) => ResourceAccessToken::Present(scheme, token),
         (None, FormBodyAccessToken::Present(token)) => {
@@ -79,7 +84,23 @@ pub fn resource_access_token(
         }
         (None, FormBodyAccessToken::Missing) => ResourceAccessToken::Missing,
         (None, FormBodyAccessToken::InvalidRequest) => ResourceAccessToken::InvalidRequest,
+    };
+    if matches!(selected, ResourceAccessToken::Present(..))
+        && query_has_access_token(request.query_string())
+    {
+        ResourceAccessToken::InvalidRequest
+    } else {
+        selected
     }
+}
+
+fn query_has_access_token(query: &str) -> bool {
+    query.split('&').any(|pair| {
+        let key = pair.split_once('=').map_or(pair, |(key, _)| key);
+        url::form_urlencoded::parse(key.as_bytes())
+            .next()
+            .is_some_and(|(key, _)| key == "access_token")
+    })
 }
 
 enum FormBodyAccessToken {
@@ -93,22 +114,17 @@ fn resource_form_body_access_token(request: &HttpRequest, body: &[u8]) -> FormBo
     {
         return FormBodyAccessToken::Missing;
     }
-    let mut access_token = None;
-    for (key, value) in url::form_urlencoded::parse(body) {
-        if key == "access_token" {
-            if access_token.is_some() {
-                return FormBodyAccessToken::InvalidRequest;
-            }
-            let token = value.into_owned();
-            if token.trim().is_empty() {
-                return FormBodyAccessToken::Missing;
-            }
-            access_token = Some(token);
-        }
+    let mut fields = url::form_urlencoded::parse(body).filter(|(key, _)| key == "access_token");
+    let first = fields.next();
+    if fields.next().is_some() {
+        return FormBodyAccessToken::InvalidRequest;
     }
-    access_token
-        .map(FormBodyAccessToken::Present)
-        .unwrap_or(FormBodyAccessToken::Missing)
+    match first {
+        Some((_, value)) if !value.trim().is_empty() => {
+            FormBodyAccessToken::Present(value.into_owned())
+        }
+        _ => FormBodyAccessToken::Missing,
+    }
 }
 
 pub fn request_uses_form_urlencoded(request: &HttpRequest) -> bool {

@@ -213,7 +213,7 @@ def _write_point(tmp: Path, *, started, completed, dropped, outcomes,
         "cap_measure_local_no_request":
             counter(outcomes.get("local_no_request", 0)),
         "cap_measure_unexpected":
-            counter(outcomes.get("unexpected_error", 0)),
+            counter(outcomes.get("unexpected", 0)),
         "cap_iter_begin_measure": counter(started),
         "cap_iter_begin": counter(started),
         "cap_iter_end": counter(completed),
@@ -226,6 +226,8 @@ def _write_point(tmp: Path, *, started, completed, dropped, outcomes,
         "vus_max": {"values": {"max": 40}},
         "vus": {"values": {"max": 40}},
     }
+    for outcome in ("prepare_failed", "prepare_local_failed", "prepare_sut_failed"):
+        metrics[f"cap_measure_{outcome}"] = counter(outcomes.get(outcome, 0))
     (tmp / "cap-cap-mixed.k6.json").write_text(json.dumps({
         "metrics": metrics,
         "measurement_contract": contract,
@@ -294,6 +296,30 @@ class EvaluateStreamPath(unittest.TestCase):
         self.assertEqual(meas["schedule_delta_vs_rational"], 5)
         self.assertEqual(meas["measure_drop_fraction"], 0)
         self.assertEqual(meas["cohort_source"], "k6_stream_exact")
+
+    def test_mixed_requires_successful_not_completed_rate(self):
+        sp, summary = _write_point(
+            self.tmp, started=5_355_000, completed=5_355_000, dropped=0,
+            outcomes={"success": 5_314_982, "expected_rejection": 885,
+                      "local_no_request": 39_133})
+        verdict, metrics = self._eval(sp=sp, summary=summary)
+        self.assertEqual(verdict, "FAIL")
+        self.assertEqual(metrics["measured_ops_s"], 3000)
+        self.assertLess(metrics["rate_for_gate"], 2985)
+        self.assertEqual(metrics["capacity_gate_contract"], "successful-ops-v1")
+
+    def test_low_rate_prepare_failure_never_passes(self):
+        for outcome, expected in (("prepare_failed", "INVALID"),
+                                  ("prepare_local_failed", "INVALID"),
+                                  ("prepare_sut_failed", "FAIL")):
+            with self.subTest(outcome=outcome):
+                sp, summary = _write_point(
+                    self.tmp, started=5_355_000, completed=5_355_000,
+                    dropped=0, outcomes={"success": 5_349_645,
+                                         outcome: 5355})
+                verdict, metrics = self._eval(sp=sp, summary=summary)
+                self.assertEqual(verdict, expected, metrics)
+                self.assertEqual(metrics["successful_ops_s"], 2997)
 
     def test_H_schedule_anomaly(self):
         sp, summary = _write_point(

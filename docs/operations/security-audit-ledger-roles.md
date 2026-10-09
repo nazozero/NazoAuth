@@ -30,21 +30,22 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON TABLE
     public.security_audit_chain_state,
     public.security_audit_events,
-    public.security_audit_chain_entries,
-    public.security_audit_event_outbox
+    public.security_audit_chain_entries
 FROM nazoauth_audit_writer, nazoauth_audit_exporter;
 GRANT USAGE ON SCHEMA public TO nazoauth_audit_writer, nazoauth_audit_exporter;
 ```
 
 The migration itself also revokes table and function privileges from `PUBLIC`.
 The explicit role revocation above is still required when a deployment role
-inherits privileges from another application role. `has_table_privilege` in
-the strict preflight reports effective privileges, not just direct grants.
+inherits privileges from another application role. Table and column privilege
+probes in the strict preflight report effective privileges, including grants
+through inheritance and PUBLIC.
 
 ## Function grants
 
 Grant only the capability required by each process. The writer persists event
-facts and their outbox entry atomically; the exporter owns chain assignment:
+facts atomically — the event row is the pending-delivery identity until the
+acknowledgement deletes it; the exporter owns chain assignment:
 
 ```sql
 GRANT EXECUTE ON FUNCTION
@@ -58,7 +59,13 @@ TO nazoauth_audit_writer;
 
 The exporter chains committed events, holds the single batch lease, and
 acknowledges delivered batches atomically with the checkpoint. It cannot
-create raw events:
+create raw events. Fresh claims finalize chain assignment and the lease in one
+head update; legacy append/open functions remain available. The internal
+invoker-only proof helper is not granted to runtime roles. The fresh-claim
+migration removes all non-owner creation-time grants on both new functions,
+including grants inherited from ALTER DEFAULT PRIVILEGES, before granting
+the finalizer to holders of both legacy append and open capabilities. Roles
+created later need the explicit exporter grants below:
 
 ```sql
 GRANT EXECUTE ON FUNCTION
@@ -67,6 +74,7 @@ GRANT EXECUTE ON FUNCTION
     public.nazo_security_audit_batch_members(),
     public.nazo_claim_security_audit_pending(bigint),
     public.nazo_open_security_audit_batch(bigint, bigint, integer, bytea, integer),
+    public.nazo_finalize_security_audit_claim(bigint, bytea, uuid[], bytea[], bigint, bigint, integer, bytea, integer),
     public.nazo_reclaim_security_audit_batch(bytea, integer),
     public.nazo_append_security_audit_chain(bigint, bytea, uuid[], bytea[]),
     public.nazo_ack_security_audit_batch(bigint, bigint, bigint, integer, bytea, bytea, text),
@@ -82,8 +90,8 @@ exporter grant: unblocking a permanently rejected batch is an owner/operator
 action after the receiver contract is reconciled.
 
 `public.nazo_ack_security_audit_batch(...)` is the only permitted delete path
-on the ledger tables: it removes the delivered outbox, chain-entry, and event
-rows inside the acknowledgement transaction, gated by a transaction-local
+on the ledger tables: it removes the delivered chain-entry and event rows
+inside the acknowledgement transaction, gated by a transaction-local
 permit. The `20260924000100_audit_delivery_scoped_retention` migration
 removed the earlier `security_audit_archive` copy and its sweeper function —
 the receiver is the sole durable audit history.
@@ -91,7 +99,7 @@ the receiver is the sole durable audit history.
 If one process intentionally performs both jobs, grant both function sets to
 one pre-created role and record that exception in the deployment inventory.
 Never grant `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, or
-`TRIGGER` on any of the four ledger tables to that combined role. Runtime login roles
+`TRIGGER` on any of the three ledger tables to that combined role. Runtime login roles
 must not be members of the migration owner, a superuser role, or any role that
 can acquire those privileges through `SET ROLE`.
 
@@ -102,7 +110,14 @@ uses `(require_least_privilege, require_append, require_exporter) =
  (true, true, false)`; an exporter uses `(true, false, true)`. Strict mode
 requires the requested function `EXECUTE` grants, and all of
 the following to be false for `session_user` or any role it can assume:
-superuser, ledger table owner, or any effective ledger table privilege.
+superuser/ledger-owner membership, or any effective ledger table or column
+privilege. The preflight traverses the login's complete membership graph and
+checks the login plus each role it can assume with SET ROLE (PostgreSQL 16+
+SET permission; MEMBER on earlier versions). A NOINHERIT login's reachable
+roles still count. Each assumed role's inherited and PUBLIC privileges count,
+including privileges inherited from a role the login cannot itself assume.
+A role reachable only through SET FALSE and INHERIT FALSE does not grant ledger
+access; superuser and ledger-owner membership remain rejected independently.
 Therefore a writer cannot rewrite or
 truncate the ledger and an exporter cannot bypass the claim/ack state machine.
 
@@ -166,3 +181,35 @@ Blocked batches (`batch_blocked_reason`) are operator-visible through
 `nazo_security_audit_shared_anchor_health()` and released only by the owner
 calling `nazo_unblock_security_audit_batch()` after the receiver contract is
 reconciled.
+
+## Pending-set cutover
+
+`20260927000100_audit_pending_event_set` removes the duplicated pending
+table: `security_audit_events` is the pending-delivery set itself, and the
+ordered `(occurred_at, event_id)` probe moves onto it. It is again a
+coordinated cutover: stop writers and exporters, back up, apply as the
+migration owner, then start the new binaries. The migration refuses to run
+when the mirrored pending sets diverge — it leaves the divergent state for
+reconciliation instead of deleting it; in-flight batches, the anchor, and
+the chain head carry over unchanged. Pending membership, oldest-pending age,
+and claim order are unchanged, so exporter health and drain verification now
+read `security_audit_events` directly.
+
+## Reachable-role privilege preflight upgrade
+
+The 20261002000300_audit_reachable_role_privileges migration replaces only the
+preflight function body. Its SECURITY DEFINER owner, function identity, search
+path, existing EXECUTE grants and strict-mode opt-out are preserved. Strict
+preflight additionally rejects column-level SELECT, INSERT, UPDATE and
+REFERENCES on any ledger table. Applying the down migration restores the
+previous privilege policy without dropping the function or changing its ACL.
+
+Verify with a real connection authenticated as the runtime LOGIN role. A
+superuser connection followed by SET ROLE keeps the superuser session_user and
+does not exercise the runtime policy. Run the isolated PostgreSQL 18 regression
+in crates/persistence-postgres/tests/audit_preflight_roles.rs before integrating
+this change; it covers direct and column grants, PUBLIC, indirect/diamond role
+graphs, disabled SET edges, inherited privileges behind an assumed role, owner
+and superuser membership, and function identity/ACL/EXECUTE preservation.
+
+The pinned Diesel migration harness wraps migration-body SQL errors in a private type without a source chain. Those opaque errors retain the original boxed source and remain terminal; they are not classified from display text. Public typed connection/serialization errors and advisory-lock timeout paths retain their retry classification.

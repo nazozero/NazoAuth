@@ -17,7 +17,7 @@ use nazo_identity::ports::{
     GrantSummaryRepositoryPort, LoginAccountRepositoryPort, MfaRepositoryPort,
     MtlsTrustAnchorStore, PasskeyAccountRepositoryPort, PasskeyRepositoryPort,
     ProfileRepositoryPort, RegistrationAccountRepositoryPort, RememberedMfaDevicePort,
-    ScimCredentialAuditPort, ScimRepositoryPort, SessionAccountPort,
+    ScimCredentialPort, ScimRepositoryPort, SessionAccountPort,
 };
 
 /// All database capabilities required by one NazoAuth server process.
@@ -31,7 +31,6 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore>;
     fn security_audit_ledger(&self) -> Arc<dyn nazo_persistence::SecurityAuditLedger>;
     fn database_health(&self) -> Arc<dyn nazo_persistence::DatabaseHealthPort>;
-    fn database_pool_metrics(&self) -> Arc<dyn nazo_persistence::DatabasePoolMetricsPort>;
     fn security_state_maintenance(&self)
     -> Arc<dyn nazo_persistence::SecurityStateMaintenancePort>;
     fn runtime_modules(
@@ -71,21 +70,15 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn ciba_accounts(&self) -> Arc<dyn nazo_persistence::CibaAccountStore>;
     fn openid4vc_subjects(&self) -> Arc<dyn nazo_persistence::Openid4vcSubjectStore>;
 
-    fn mfa_repository(
-        &self,
-        keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Arc<dyn MfaRepositoryPort>;
-    fn remembered_mfa_devices(
-        &self,
-        keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Arc<dyn RememberedMfaDevicePort>;
+    fn mfa_repository(&self) -> Arc<dyn MfaRepositoryPort>;
+    fn remembered_mfa_devices(&self) -> Arc<dyn RememberedMfaDevicePort>;
     fn federation_links(&self) -> Arc<dyn FederationLinkRepositoryPort>;
     fn federation_logins(&self) -> Arc<dyn FederationLoginRepositoryPort>;
 
     fn access_requests(&self) -> Arc<dyn AccessRequestRepositoryPort>;
     fn admin_access_requests(&self) -> Arc<dyn nazo_persistence::AdminAccessRequestStore>;
     fn scim_repository(&self, event_retention_seconds: u64) -> Arc<dyn ScimRepositoryPort>;
-    fn scim_credential_audit(&self) -> Arc<dyn ScimCredentialAuditPort>;
+    fn scim_credentials(&self) -> Arc<dyn ScimCredentialPort>;
     fn scim_event_store(&self) -> Arc<dyn nazo_scim_events::EventStorePort>;
     fn logout_outbox(&self) -> Arc<dyn nazo_auth::BackchannelLogoutOutboxPort>;
     fn logout_delivery_store(&self) -> Arc<dyn nazo_persistence::BackchannelLogoutDeliveryStore>;
@@ -94,14 +87,16 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn recovery_root(&self) -> Arc<dyn nazo_persistence::RecoveryRootPort>;
     fn mtls_trust_anchors(&self) -> Arc<dyn MtlsTrustAnchorStore>;
 
-    fn openid4vc_trust_policies(
+    fn openid4vc_trust_policies(&self) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore>;
+    fn openid4vci_store(
         &self,
         data_key: [u8; 32],
-    ) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore>;
-    fn openid4vci_store(&self, data_key: [u8; 32]) -> Arc<dyn nazo_persistence::Openid4vciStore>;
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
+    ) -> Arc<dyn nazo_persistence::Openid4vciStore>;
     fn openid4vci_authorization_offers(
         &self,
         data_key: [u8; 32],
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
     ) -> Arc<dyn nazo_openid4vci::AuthorizationOfferPort>;
     fn openid4vci_datasets(
         &self,

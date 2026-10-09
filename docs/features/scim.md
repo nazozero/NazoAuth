@@ -38,10 +38,15 @@ Credential behavior:
 - Database tokens can expire or be revoked independently.
 - Read endpoints require `scim:read` or `scim:*`.
 - Create, replace, patch, and delete endpoints require `scim:write` or `scim:*`.
-- Successful database-token use updates `last_used_at` and inserts `scim_audit_events`.
-- Successful and denied SCIM token checks emit structured audit events without raw token material.
+- Successful token checks emit the unified `scim_token_used` event with token ID,
+  tenant ID, required scope, credential source, source-IP hash, and user-agent
+  hash. They do not update the credential row or write a second audit table.
+- Denied token checks require a durable `scim_token_denied` event before returning
+  the rejection; an audit outage fails closed. No event contains raw token material.
+- Historical `last_used_at` values and `scim_audit_events` rows remain readable,
+  but successful use no longer refreshes or inserts them.
 - The process-level security-state maintenance worker invokes
-  `nazo_oauth_cleanup_expired_security_state()`, which removes SCIM audit events
+  `nazo_oauth_cleanup_expired_security_state()`, which removes historical SCIM audit events
   older than 180 days together with expired security state. This keeps audit
   retention bounded while preserving a compromise investigation window.
 
@@ -112,6 +117,11 @@ boundary explicitly:
   module can accept new mutations. Asynchronous SCIM requests remain unsupported,
   so `securityEvents.asyncRequest` stays `none`.
 
+Discovery handlers reuse serialized immutable document bodies. Service provider
+configuration has separate event-enabled and disabled variants, selected from the
+current runtime state after each request's bearer, tenant and scope authorization.
+The cached bodies do not retain authorization or tenant facts.
+
 ## RFC 9967 Security Event Tokens
 
 When enabled, successful create, replace, patch, activate, and deactivate
@@ -128,6 +138,22 @@ at least once: an event remains visible to a receiver until that receiver
 acknowledges it or reports a terminal error. Receipts are isolated by SCIM
 token, so one receiver cannot consume another receiver's copy. A newly created
 receiver begins at its credential creation time and cannot read older events.
+
+Polling keeps authoritative page reads at entry and at the final response, with
+the existing 250 ms cross-instance fallback during an empty wait. Before releasing
+either an empty or populated response, the server checks current credential,
+scope, tenant and module authority and requires the original receiver identity
+and audience. Transport facts are extracted once; the SCIM bearer is an opaque
+database credential rather than a JWT proof. This final check uses the existing
+authorization owner, including its audit contract, and adds one live credential
+lookup on successful responses.
+
+Caller-supplied `ack` and `setErrs` remain durable receiver dispositions applied
+by the first poll transaction. A later authorization denial does not undo them.
+Local database commit acknowledgement does not prove receiver acceptance of new
+SETs, and returning a SET does not acknowledge it. The query frequency is retained
+until an owned cross-instance wakeup/subscription path and lost-notification
+fallback can preserve these boundaries.
 
 Each SET is signed only when delivered, uses `typ=secevent+jwt`, and contains
 `iss`, `iat`, `jti`, `txn`, receiver-bound `aud`, SCIM `sub_id`, and the RFC 9967

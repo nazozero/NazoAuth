@@ -8,9 +8,7 @@ use crate::controller_registry::{
     ControllerKeyWarning, ControllerRegistryService, ControllerRegistryServiceError,
     IdentityChange, RevokeRequest, RotateRequest, SlotChangeRequest, expiry_warning,
 };
-use crate::http::admin::{
-    persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
     require_admin_with_recent_mfa_or_forbidden_with_handles,
@@ -19,8 +17,10 @@ use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies, json_response, oauth_error};
-use nazo_oauth_server::ports::audit::audit_fields;
+use nazo_oauth_server::crypto::blake3_hex;
+use nazo_persistence::control_plane::AdminIdentityAudit;
 use nazo_persistence::control_plane::{
     ControllerIdentityAction, ControllerSlotStatus, IdentityApprovalError,
     MAX_ACTIVE_CONTROLLER_SLOTS, StoredControllerSlot,
@@ -223,6 +223,7 @@ fn oauth_error_unexpected_field(_field: &str) -> &'static str {
 pub(crate) async fn admin_controller_approval(
     admin_sessions: Data<AdminSessionHandles>,
     registry: Data<ControllerRegistryService>,
+    client_ip_config: Data<ClientIpConfig>,
     req: HttpRequest,
     Json(body): Json<ApprovalRequestBody>,
 ) -> HttpResponse {
@@ -235,7 +236,7 @@ pub(crate) async fn admin_controller_approval(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let change = match body.change() {
@@ -243,29 +244,20 @@ pub(crate) async fn admin_controller_approval(
         Err(response) => return response,
     };
     match registry
-        .issue_approval(admin.id(), &change, Utc::now())
+        .issue_approval_with_required_audit(
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+            &change,
+            Utc::now(),
+        )
         .await
     {
         Ok(issued) => {
             // Durable evidence that a fresh-MFA administrator approved this
             // exact action digest.  The plaintext token is never audited.
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "controller_identity_approval_issued",
-                audit_fields(&[
-                    ("actor_user_id", serde_json::json!(admin.id().to_string())),
-                    ("deployment_id", serde_json::json!(change.deployment_id())),
-                    ("action", serde_json::json!(issued.action.as_str())),
-                    ("action_sha256", serde_json::json!(issued.action_sha256)),
-                    (
-                        "expires_at",
-                        serde_json::json!(issued.expires_at.to_rfc3339()),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
             json_response(serde_json::json!({
                 // The plaintext token appears here and nowhere else — never in
                 // logs or audit payloads.
@@ -329,6 +321,7 @@ impl SlotCommitBody {
 pub(crate) async fn admin_controller_slot_commit(
     admin_sessions: Data<AdminSessionHandles>,
     registry: Data<ControllerRegistryService>,
+    client_ip_config: Data<ClientIpConfig>,
     req: HttpRequest,
     Json(body): Json<SlotCommitBody>,
 ) -> HttpResponse {
@@ -339,7 +332,7 @@ pub(crate) async fn admin_controller_slot_commit(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let action = match body.action() {
@@ -347,10 +340,20 @@ pub(crate) async fn admin_controller_slot_commit(
         Err(response) => return response,
     };
     match registry
-        .commit_creation(&body.approval_token, action, &body.request(), Utc::now())
+        .commit_creation_with_required_audit(
+            &body.approval_token,
+            action,
+            &body.request(),
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+        )
         .await
     {
-        Ok(slot) => emit_slot_event("controller_slot_created", admin.id(), &slot).await,
+        Ok(slot) => slot_response(&slot),
         Err(error) => service_error_response(error),
     }
 }
@@ -383,6 +386,7 @@ impl SlotRotateBody {
 pub(crate) async fn admin_controller_slot_rotate(
     admin_sessions: Data<AdminSessionHandles>,
     registry: Data<ControllerRegistryService>,
+    client_ip_config: Data<ClientIpConfig>,
     req: HttpRequest,
     Json(body): Json<SlotRotateBody>,
 ) -> HttpResponse {
@@ -393,14 +397,23 @@ pub(crate) async fn admin_controller_slot_rotate(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     match registry
-        .commit_rotation(&body.approval_token, &body.request(), Utc::now())
+        .commit_rotation_with_required_audit(
+            &body.approval_token,
+            &body.request(),
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+        )
         .await
     {
-        Ok(slot) => emit_slot_event("controller_slot_rotated", admin.id(), &slot).await,
+        Ok(slot) => slot_response(&slot),
         Err(error) => service_error_response(error),
     }
 }
@@ -427,6 +440,7 @@ impl SlotRevokeBody {
 pub(crate) async fn admin_controller_slot_revoke(
     admin_sessions: Data<AdminSessionHandles>,
     registry: Data<ControllerRegistryService>,
+    client_ip_config: Data<ClientIpConfig>,
     req: HttpRequest,
     Json(body): Json<SlotRevokeBody>,
 ) -> HttpResponse {
@@ -437,42 +451,25 @@ pub(crate) async fn admin_controller_slot_revoke(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     match registry
-        .commit_revocation(&body.approval_token, &body.request(), Utc::now())
+        .commit_revocation_with_required_audit(
+            &body.approval_token,
+            &body.request(),
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant(),
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
+            },
+        )
         .await
     {
-        Ok(slot) => emit_slot_event("controller_slot_revoked", admin.id(), &slot).await,
+        Ok(slot) => slot_response(&slot),
         Err(error) => service_error_response(error),
     }
-}
-
-async fn emit_slot_event(
-    event: &'static str,
-    actor: uuid::Uuid,
-    slot: &StoredControllerSlot,
-) -> HttpResponse {
-    if let Err(response) = persist_required_audit_or_unavailable(
-        event,
-        audit_fields(&[
-            ("actor_user_id", serde_json::json!(actor.to_string())),
-            ("deployment_id", serde_json::json!(slot.deployment_id)),
-            ("controller_id", serde_json::json!(slot.controller_id)),
-            ("kid", serde_json::json!(slot.kid)),
-            ("slot_index", serde_json::json!(slot.slot_index)),
-            (
-                "expires_at",
-                serde_json::json!(slot.expires_at.to_rfc3339()),
-            ),
-        ]),
-    )
-    .await
-    {
-        return response;
-    }
-    slot_response(slot)
 }
 
 fn status_str(status: ControllerSlotStatus) -> &'static str {

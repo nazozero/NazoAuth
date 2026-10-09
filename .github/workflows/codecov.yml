@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1 # 1.98.0
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
           components: llvm-tools-preview, rustfmt, clippy
 
@@ -48,13 +48,17 @@ jobs:
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.8"
+
       - name: Install Python E2E dependencies
         run: python -m pip install --require-hashes -r requirements/codecov.txt
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
-          tool: cargo-llvm-cov@0.9.0
+          tool: cargo-llvm-cov@0.9.1
 
       - name: Verify deterministic LCOV union
         run: python -m unittest tests.unit.test_merge_lcov
@@ -76,7 +80,7 @@ jobs:
           retention-days: 7
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: lcov.info
           disable_search: true

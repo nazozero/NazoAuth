@@ -17,3 +17,6 @@ nazo-postgres.workspace = true
 nazo-resource-server.workspace = true
 nazo-scim-events.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

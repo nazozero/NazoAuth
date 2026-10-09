@@ -357,3 +357,113 @@ fn par_attestation_requires_valid_proof_and_available_single_use_replay_state() 
         }
     });
 }
+
+#[test]
+fn protocol_par_rejects_non_executable_authorization_parameters_before_persistence() {
+    block_on(async {
+        for (key, value, error) in [
+            ("response_type", None, "unsupported_response_type"),
+            ("scope", Some("unregistered"), "invalid_scope"),
+            ("prompt", Some("none login"), "invalid_request"),
+            ("max_age", Some("-1"), "invalid_request"),
+            ("claims", Some("not-json"), "invalid_request"),
+            ("response_mode", Some("jwt"), "unsupported_response_mode"),
+            (
+                "nonce",
+                Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                "invalid_request",
+            ),
+        ] {
+            let fixture = par_fixture(Ok(Some(client(true))));
+            let application = fixture.make_application();
+            let mut params = params();
+            if let Some(value) = value {
+                params.insert(key.into(), value.into());
+            } else {
+                params.remove(key);
+            }
+            let result = application
+                .begin_par("192.0.2.1")
+                .await
+                .unwrap()
+                .prepare_parameters(params, false, None)
+                .unwrap()
+                .prepare_client(&transport(), false, false)
+                .await
+                .unwrap()
+                .par(facts(), None)
+                .await;
+            assert_json_error(result.expect_err(key), StatusCode::BAD_REQUEST, error);
+            assert!(fixture.ports.stored_par.lock().unwrap().is_empty(), "{key}");
+            assert!(!fixture.ports.calls().contains(&"consume_jar"));
+        }
+    });
+}
+
+#[test]
+fn protocol_par_dpop_header_requires_pkce_even_for_confidential_oidc_compatibility() {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use p256::ecdsa::{Signature, SigningKey, signature::Signer};
+    let key = SigningKey::from_slice(&[17; 32]).unwrap();
+    let point = key.verifying_key().to_sec1_point(false);
+    let jwk = json!({"kty":"EC","crv":"P-256","x":URL_SAFE_NO_PAD.encode(point.x().unwrap()),"y":URL_SAFE_NO_PAD.encode(point.y().unwrap())});
+    let input = format!("{}.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg":"ES256","typ":"dpop+jwt","jwk":jwk})).unwrap()), URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"htu":"https://issuer.example/par","htm":"POST","iat":chrono::Utc::now().timestamp(),"jti":"par-header-pkce"})).unwrap()));
+    let signature: Signature = key.sign(input.as_bytes());
+    let proof = format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()));
+    block_on(async {
+        for has_proof in [false, true] {
+            let mut client = authorization_fixture::client(true);
+            client.token_endpoint_auth_method = "client_secret_post".into();
+            client.security_policy.allow_confidential_oidc_without_pkce = true;
+            let fixture = par_fixture(Ok(Some(client)));
+            let salt = app::crypto::random_urlsafe_token();
+            *fixture.ports.client_secret.lock().unwrap() = Some((
+                salt.clone(),
+                app::crypto::client_secret_digest(
+                    "test-secret",
+                    &fixture.config.client_secret_pepper,
+                    &salt,
+                ),
+            ));
+            let mut params = params();
+            params.remove("code_challenge");
+            params.remove("code_challenge_method");
+            params.insert("client_secret".into(), "test-secret".into());
+            let transport = TokenClientAuthTransportFacts::from_parts(
+                BasicAuthorizationCredentials::Absent,
+                Some("client-1".into()),
+                Some("test-secret".into()),
+                None,
+                None,
+            );
+            let mut facts = facts();
+            if has_proof {
+                facts.dpop.proof_present = true;
+                facts.dpop.proof = Ok(Some(&proof));
+            }
+            let application = fixture.make_application();
+            let result = application
+                .begin_par("192.0.2.1")
+                .await
+                .unwrap()
+                .prepare_parameters(params, false, None)
+                .unwrap()
+                .prepare_client(&transport, false, false)
+                .await
+                .unwrap()
+                .par(facts, None)
+                .await;
+            if has_proof {
+                assert_json_error(
+                    result.unwrap_err(),
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                );
+                assert!(fixture.ports.stored_par.lock().unwrap().is_empty());
+            } else {
+                result.unwrap();
+                assert_eq!(fixture.ports.stored_par.lock().unwrap().len(), 1);
+            }
+        }
+    });
+}

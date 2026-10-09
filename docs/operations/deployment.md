@@ -311,6 +311,31 @@ Source deployments may still use Compose during development. They are not the
 production update path. Database restoration remains separate because
 migrations may be forward-only.
 
+### Inert-state schema cleanup
+
+Migration `20261001000300_remove_inert_schema_state` removes the unsupported
+CIBA user-code storage flag, the unused OpenID4VCI configuration table, unused
+controller and remembered-MFA-device last-used fields, and four single-column
+directory foreign keys already enforced by tenant-scoped composite keys.
+CIBA registration still reports `false` and rejects `true`; issuer credential
+configurations still come from `OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON`.
+
+The migration locks the affected tables before checking them. It refuses a
+nonempty legacy configuration table, a non-false CIBA flag, any non-null removed
+last-used value, or changed directory-constraint semantics. A refusal preserves
+the prior schema and data; investigate the owner of that legacy state rather
+than deleting it to force an upgrade. External views or other dependent objects
+also block removal. The migration does not create backups or compatibility views.
+
+Stop every old server writer, including all replicas and background workers,
+before this schema cut and activate only the matching new artifact afterward.
+Old binaries still name the removed columns. The migration's `down.sql` can
+restore the proven empty/false/NULL state in an isolated schema, but does not
+authorize production artifact rollback or reconstruct unrelated history.
+Use the controller's verified snapshot recovery path when its migration fence
+blocks rollback. Keep a restore-tested backup and matching recovery tools;
+the server owns schema changes while the controller owns independent recovery.
+
 ## Production boundaries
 
 The bundled topology is a single-node deployment. Before relying on it for

@@ -1,10 +1,7 @@
 use super::*;
 use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc, time::Duration as StdDuration};
 
-use crate::adapters::avatar_files::{
-    AvatarPromotion, cleanup_avatar_temps, finish_avatar_promotion, promote_avatar_files,
-    remove_avatar_file_if_exists, rename_avatar_file_if_exists, rollback_avatar_promotion,
-};
+use crate::adapters::avatar_files::LocalAvatarStorage;
 use crate::schema::users;
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_set_ex;
@@ -37,8 +34,8 @@ use crate::config::ConfigSource;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use nazo_identity::ports::{
     AvatarDirectUploadPort, AvatarStagedObject, AvatarStorageError, AvatarStorageFuture,
-    AvatarUploadAuthorization, AvatarUploadClaim, AvatarUploadStatePort, AvatarUploadTarget,
-    GrantSummaryRepositoryPort, RepositoryError, RepositoryFuture,
+    AvatarStoragePort, AvatarUploadAuthorization, AvatarUploadClaim, AvatarUploadStatePort,
+    AvatarUploadTarget, GrantSummaryRepositoryPort, RepositoryError, RepositoryFuture,
 };
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
@@ -833,333 +830,6 @@ fn avatar_url_version_accepts_only_expected_query_shape() {
     }
 }
 
-#[tokio::test]
-async fn remove_avatar_file_if_exists_removes_existing_file_and_ignores_missing_path() {
-    let dir = temp_avatar_dir("remove");
-    let avatar = dir.join("avatar.bin");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    tokio::fs::write(&avatar, b"avatar-bytes").await.unwrap();
-
-    remove_avatar_file_if_exists(avatar.clone()).await.unwrap();
-    assert!(!tokio::fs::try_exists(&avatar).await.unwrap());
-
-    remove_avatar_file_if_exists(avatar.clone()).await.unwrap();
-    assert!(!tokio::fs::try_exists(&avatar).await.unwrap());
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn remove_avatar_file_if_exists_reports_non_file_paths() {
-    let dir = temp_avatar_dir("remove-dir-error");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-
-    let error = remove_avatar_file_if_exists(dir.clone())
-        .await
-        .expect_err("directory removal through file helper must not be hidden");
-
-    assert_ne!(error.kind(), io::ErrorKind::NotFound);
-    assert!(tokio::fs::try_exists(&dir).await.unwrap());
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn rename_avatar_file_if_exists_moves_existing_file_and_reports_missing_source() {
-    let dir = temp_avatar_dir("rename");
-    let source = dir.join("avatar.tmp");
-    let target = dir.join("avatar.bin");
-    let missing_source = dir.join("missing.tmp");
-    let missing_target = dir.join("missing.bin");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    tokio::fs::write(&source, b"new-avatar").await.unwrap();
-
-    assert!(
-        rename_avatar_file_if_exists(&source, &target)
-            .await
-            .unwrap()
-    );
-    assert!(!tokio::fs::try_exists(&source).await.unwrap());
-    assert_eq!(tokio::fs::read(&target).await.unwrap(), b"new-avatar");
-
-    assert!(
-        !rename_avatar_file_if_exists(&missing_source, &missing_target)
-            .await
-            .unwrap()
-    );
-    assert!(!tokio::fs::try_exists(&missing_target).await.unwrap());
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn rename_avatar_file_if_exists_reports_non_not_found_errors() {
-    let dir = temp_avatar_dir("rename-dir-target-error");
-    let source = dir.join("avatar.tmp");
-    let target = dir.join("existing-directory");
-    tokio::fs::create_dir_all(&target).await.unwrap();
-    tokio::fs::write(&source, b"avatar").await.unwrap();
-
-    let error = rename_avatar_file_if_exists(&source, &target)
-        .await
-        .expect_err("renaming a file over a directory must fail explicitly");
-
-    assert_ne!(error.kind(), io::ErrorKind::NotFound);
-    assert_eq!(tokio::fs::read(&source).await.unwrap(), b"avatar");
-    assert!(tokio::fs::try_exists(&target).await.unwrap());
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn cleanup_avatar_temps_removes_existing_files_and_is_idempotent() {
-    let dir = temp_avatar_dir("cleanup");
-    let avatar_tmp = dir.join("avatar.tmp");
-    let avatar_meta_tmp = dir.join("meta.tmp");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    tokio::fs::write(&avatar_tmp, b"new-avatar").await.unwrap();
-    tokio::fs::write(&avatar_meta_tmp, b"new-meta")
-        .await
-        .unwrap();
-
-    cleanup_avatar_temps(&avatar_tmp, &avatar_meta_tmp).await;
-    cleanup_avatar_temps(&avatar_tmp, &avatar_meta_tmp).await;
-
-    assert!(!tokio::fs::try_exists(&avatar_tmp).await.unwrap());
-    assert!(!tokio::fs::try_exists(&avatar_meta_tmp).await.unwrap());
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn avatar_promotion_can_restore_previous_files() {
-    let dir = temp_avatar_dir("rollback");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let avatar = dir.join("avatar.bin");
-    let meta = dir.join("meta.json");
-    let avatar_tmp = dir.join("avatar-new.tmp");
-    let meta_tmp = dir.join("meta-new.tmp");
-    tokio::fs::write(&avatar, b"old-avatar").await.unwrap();
-    tokio::fs::write(&meta, b"old-meta").await.unwrap();
-    tokio::fs::write(&avatar_tmp, b"new-avatar").await.unwrap();
-    tokio::fs::write(&meta_tmp, b"new-meta").await.unwrap();
-
-    let promotion =
-        promote_avatar_files(&avatar_tmp, &meta_tmp, avatar.clone(), meta.clone(), "v1")
-            .await
-            .unwrap();
-    assert_eq!(tokio::fs::read(&avatar).await.unwrap(), b"new-avatar");
-    assert_eq!(tokio::fs::read(&meta).await.unwrap(), b"new-meta");
-
-    rollback_avatar_promotion(&promotion).await;
-    assert_eq!(tokio::fs::read(&avatar).await.unwrap(), b"old-avatar");
-    assert_eq!(tokio::fs::read(&meta).await.unwrap(), b"old-meta");
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn avatar_promotion_finish_removes_backup_files() {
-    let dir = temp_avatar_dir("finish");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let avatar = dir.join("avatar.bin");
-    let meta = dir.join("meta.json");
-    let avatar_tmp = dir.join("avatar-new.tmp");
-    let meta_tmp = dir.join("meta-new.tmp");
-    tokio::fs::write(&avatar, b"old-avatar").await.unwrap();
-    tokio::fs::write(&meta, b"old-meta").await.unwrap();
-    tokio::fs::write(&avatar_tmp, b"new-avatar").await.unwrap();
-    tokio::fs::write(&meta_tmp, b"new-meta").await.unwrap();
-
-    let promotion =
-        promote_avatar_files(&avatar_tmp, &meta_tmp, avatar.clone(), meta.clone(), "v1")
-            .await
-            .unwrap();
-    finish_avatar_promotion(&promotion).await;
-    let avatar_backup_exists = tokio::fs::try_exists(&promotion.avatar_backup_path)
-        .await
-        .unwrap();
-    let meta_backup_exists = tokio::fs::try_exists(&promotion.avatar_meta_backup_path)
-        .await
-        .unwrap();
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-
-    assert!(!avatar_backup_exists);
-    assert!(!meta_backup_exists);
-}
-
-#[tokio::test]
-async fn avatar_promotion_without_previous_files_can_roll_back_to_empty_state() {
-    let dir = temp_avatar_dir("rollback-empty");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let avatar = dir.join("avatar.bin");
-    let meta = dir.join("meta.json");
-    let avatar_tmp = dir.join("avatar-new.tmp");
-    let meta_tmp = dir.join("meta-new.tmp");
-    tokio::fs::write(&avatar_tmp, b"new-avatar").await.unwrap();
-    tokio::fs::write(&meta_tmp, b"{\"content_type\":\"image/png\"}")
-        .await
-        .unwrap();
-
-    let promotion =
-        promote_avatar_files(&avatar_tmp, &meta_tmp, avatar.clone(), meta.clone(), "v1")
-            .await
-            .unwrap();
-    assert!(!promotion.avatar_backup_exists);
-    assert!(!promotion.avatar_meta_backup_exists);
-    assert_eq!(tokio::fs::read(&avatar).await.unwrap(), b"new-avatar");
-    assert_eq!(
-        tokio::fs::read(&meta).await.unwrap(),
-        b"{\"content_type\":\"image/png\"}"
-    );
-
-    rollback_avatar_promotion(&promotion).await;
-
-    assert!(!tokio::fs::try_exists(&avatar).await.unwrap());
-    assert!(!tokio::fs::try_exists(&meta).await.unwrap());
-    assert!(
-        !tokio::fs::try_exists(&promotion.avatar_backup_path)
-            .await
-            .unwrap()
-    );
-    assert!(
-        !tokio::fs::try_exists(&promotion.avatar_meta_backup_path)
-            .await
-            .unwrap()
-    );
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn avatar_promotion_restores_previous_files_when_avatar_temp_is_missing() {
-    let dir = temp_avatar_dir("rollback-missing-avatar-tmp");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let avatar = dir.join("avatar.bin");
-    let meta = dir.join("meta.json");
-    let avatar_tmp = dir.join("avatar-new.tmp");
-    let meta_tmp = dir.join("meta-new.tmp");
-    tokio::fs::write(&avatar, b"old-avatar").await.unwrap();
-    tokio::fs::write(&meta, b"old-meta").await.unwrap();
-    tokio::fs::write(&meta_tmp, b"new-meta").await.unwrap();
-
-    let error = match promote_avatar_files(
-        &avatar_tmp,
-        &meta_tmp,
-        avatar.clone(),
-        meta.clone(),
-        "v1",
-    )
-    .await
-    {
-        Ok(_) => panic!("missing avatar temp should fail promotion"),
-        Err(error) => error,
-    };
-
-    assert_eq!(error.kind(), io::ErrorKind::NotFound);
-    assert_eq!(tokio::fs::read(&avatar).await.unwrap(), b"old-avatar");
-    assert_eq!(tokio::fs::read(&meta).await.unwrap(), b"old-meta");
-    assert!(!tokio::fs::try_exists(&avatar_tmp).await.unwrap());
-    assert!(!tokio::fs::try_exists(&meta_tmp).await.unwrap());
-    assert!(
-        !tokio::fs::try_exists(dir.join("avatar-v1.bak"))
-            .await
-            .unwrap()
-    );
-    assert!(
-        !tokio::fs::try_exists(dir.join("meta-v1.bak"))
-            .await
-            .unwrap()
-    );
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn avatar_promotion_restores_avatar_when_metadata_backup_cannot_be_created() {
-    let dir = temp_avatar_dir("rollback-meta-backup-error");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let avatar = dir.join("avatar.bin");
-    let meta = dir.join("meta.json");
-    let avatar_tmp = dir.join("avatar-new.tmp");
-    let meta_tmp = dir.join("meta-new.tmp");
-    let meta_backup_blocker = dir.join("meta-v1.bak");
-    tokio::fs::write(&avatar, b"old-avatar").await.unwrap();
-    tokio::fs::write(&meta, b"old-meta").await.unwrap();
-    tokio::fs::write(&avatar_tmp, b"new-avatar").await.unwrap();
-    tokio::fs::write(&meta_tmp, b"new-meta").await.unwrap();
-    tokio::fs::create_dir(&meta_backup_blocker).await.unwrap();
-
-    let error = match promote_avatar_files(
-        &avatar_tmp,
-        &meta_tmp,
-        avatar.clone(),
-        meta.clone(),
-        "v1",
-    )
-    .await
-    {
-        Ok(_) => panic!("metadata backup failure must abort promotion"),
-        Err(error) => error,
-    };
-
-    assert_ne!(error.kind(), io::ErrorKind::NotFound);
-    assert_eq!(tokio::fs::read(&avatar).await.unwrap(), b"old-avatar");
-    assert_eq!(tokio::fs::read(&meta).await.unwrap(), b"old-meta");
-    assert!(!tokio::fs::try_exists(&avatar_tmp).await.unwrap());
-    assert!(!tokio::fs::try_exists(&meta_tmp).await.unwrap());
-    assert!(
-        !tokio::fs::try_exists(dir.join("avatar-v1.bak"))
-            .await
-            .unwrap()
-    );
-    assert!(tokio::fs::try_exists(&meta_backup_blocker).await.unwrap());
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[tokio::test]
-async fn avatar_promotion_restores_previous_files_when_metadata_temp_is_missing_after_avatar_move()
-{
-    let dir = temp_avatar_dir("rollback-missing-meta-tmp");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let avatar = dir.join("avatar.bin");
-    let meta = dir.join("meta.json");
-    let avatar_tmp = dir.join("avatar-new.tmp");
-    let meta_tmp = dir.join("meta-new.tmp");
-    tokio::fs::write(&avatar, b"old-avatar").await.unwrap();
-    tokio::fs::write(&meta, b"old-meta").await.unwrap();
-    tokio::fs::write(&avatar_tmp, b"new-avatar").await.unwrap();
-
-    let error = match promote_avatar_files(
-        &avatar_tmp,
-        &meta_tmp,
-        avatar.clone(),
-        meta.clone(),
-        "v1",
-    )
-    .await
-    {
-        Ok(_) => panic!("missing metadata temp should fail promotion"),
-        Err(error) => error,
-    };
-
-    assert_eq!(error.kind(), io::ErrorKind::NotFound);
-    assert_eq!(tokio::fs::read(&avatar).await.unwrap(), b"old-avatar");
-    assert_eq!(tokio::fs::read(&meta).await.unwrap(), b"old-meta");
-    assert!(!tokio::fs::try_exists(&avatar_tmp).await.unwrap());
-    assert!(!tokio::fs::try_exists(&meta_tmp).await.unwrap());
-    assert!(
-        !tokio::fs::try_exists(dir.join("avatar-v1.bak"))
-            .await
-            .unwrap()
-    );
-    assert!(
-        !tokio::fs::try_exists(dir.join("meta-v1.bak"))
-            .await
-            .unwrap()
-    );
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
 fn temp_avatar_dir(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "nazo_avatar_{label}_{}",
@@ -1832,47 +1502,6 @@ async fn get_avatar_rejects_cross_site_request_before_metadata_or_file_lookup() 
     assert!(!has_set_cookie);
 }
 
-#[tokio::test]
-async fn rollback_avatar_promotion_continues_when_one_backup_restore_fails() {
-    let dir = temp_avatar_dir("rollback-restore-error");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let avatar = dir.join("avatar.bin");
-    let meta = dir.join("meta.json");
-    let avatar_backup = dir.join("avatar-v1.bak");
-    let meta_backup = dir.join("meta-v1.bak");
-    tokio::fs::create_dir(&avatar).await.unwrap();
-    tokio::fs::write(&meta, b"new-meta").await.unwrap();
-    tokio::fs::write(&avatar_backup, b"old-avatar")
-        .await
-        .unwrap();
-    tokio::fs::write(&meta_backup, b"old-meta").await.unwrap();
-    let promotion = AvatarPromotion {
-        avatar_file_path: avatar.clone(),
-        avatar_meta_file_path: meta.clone(),
-        avatar_backup_path: avatar_backup.clone(),
-        avatar_meta_backup_path: meta_backup.clone(),
-        avatar_backup_exists: true,
-        avatar_meta_backup_exists: true,
-    };
-
-    rollback_avatar_promotion(&promotion).await;
-
-    assert!(
-        tokio::fs::metadata(&avatar)
-            .await
-            .expect("restore blocker should remain")
-            .is_dir()
-    );
-    assert_eq!(tokio::fs::read(&meta).await.unwrap(), b"old-meta");
-    assert!(
-        tokio::fs::try_exists(&avatar_backup).await.unwrap(),
-        "a failed restore must be surfaced by leaving the backup in place"
-    );
-    assert!(!tokio::fs::try_exists(&meta_backup).await.unwrap());
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
 #[actix_web::test]
 async fn upload_avatar_reports_session_lookup_failure_after_valid_csrf_before_reading_multipart() {
     let Some(fixture) = LiveAvatarFixture::new().await else {
@@ -2117,15 +1746,27 @@ async fn upload_avatar_persists_versioned_file_and_metadata() {
         Some(avatar_url)
     );
     assert_eq!(
-        tokio::fs::read(avatar_path(&fixture.state, user.id))
-            .await
-            .unwrap(),
+        tokio::fs::read(
+            avatar_user_dir(&fixture.state, user.id)
+                .join("versions")
+                .join(version)
+                .join("avatar.bin")
+        )
+        .await
+        .unwrap(),
         png
     );
-    let meta = read_avatar_meta(&fixture.state, user.id)
+    let meta: Value = serde_json::from_slice(
+        &tokio::fs::read(
+            avatar_user_dir(&fixture.state, user.id)
+                .join("versions")
+                .join(version)
+                .join("meta.json"),
+        )
         .await
-        .unwrap()
-        .expect("metadata should be present after upload");
+        .unwrap(),
+    )
+    .unwrap();
     assert_eq!(meta["content_type"], "image/png");
     assert_eq!(meta["version"], version);
 }
@@ -2359,7 +2000,7 @@ async fn get_avatar_rejects_metadata_that_declares_a_different_supported_image_t
 }
 
 #[actix_web::test]
-async fn get_avatar_serves_the_committed_version_while_a_file_replacement_is_in_flight() {
+async fn get_avatar_serves_the_committed_version_while_an_immutable_candidate_is_prepared() {
     let Some(fixture) = LiveAvatarFixture::new().await else {
         return;
     };
@@ -2382,26 +2023,20 @@ async fn get_avatar_serves_the_committed_version_while_a_file_replacement_is_in_
     )
     .await
     .unwrap();
-    let avatar_tmp = user_dir.join("avatar-v2.tmp");
-    let metadata_tmp = user_dir.join("meta-v2.tmp");
-    tokio::fs::write(&avatar_tmp, b"\xff\xd8\xffnew-avatar")
+    let storage = LocalAvatarStorage::new(user_dir.parent().unwrap().to_owned());
+    let version = Uuid::now_v7().to_string();
+    let candidate = storage
+        .begin_replace(
+            nazo_identity::UserId::new(user.id).unwrap(),
+            Some("v1"),
+            nazo_identity::AvatarObject {
+                bytes: valid_png(),
+                content_type: nazo_identity::AvatarContentType::Png,
+                version,
+            },
+        )
         .await
         .unwrap();
-    tokio::fs::write(
-        &metadata_tmp,
-        r#"{"content_type":"image/jpeg","version":"v2"}"#,
-    )
-    .await
-    .unwrap();
-    let promotion = promote_avatar_files(
-        &avatar_tmp,
-        &metadata_tmp,
-        avatar_path(&fixture.state, user.id),
-        avatar_meta_path(&fixture.state, user.id),
-        "v2",
-    )
-    .await
-    .unwrap();
 
     let response = get_avatar(fixture.state.clone(), fixture.request(&sid, &csrf)).await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -2411,8 +2046,11 @@ async fn get_avatar_serves_the_committed_version_while_a_file_replacement_is_in_
             .unwrap(),
         old_avatar.as_slice()
     );
-
-    rollback_avatar_promotion(&promotion).await;
+    assert_eq!(
+        fixture.fresh_user(user.id).await.avatar_url.as_deref(),
+        Some("/auth/me/avatar?v=v1")
+    );
+    storage.rollback(&candidate).await.unwrap();
 }
 
 #[cfg(unix)]
@@ -2506,7 +2144,7 @@ async fn get_avatar_rejects_unsupported_missing_and_unreadable_avatar_file_after
 }
 
 #[actix_web::test]
-async fn delete_avatar_removes_avatar_successfully_and_surfaces_file_removal_failures() {
+async fn delete_avatar_clears_the_database_reference_and_retains_unremovable_legacy_orphans() {
     let Some(fixture) = LiveAvatarFixture::new().await else {
         return;
     };
@@ -2589,17 +2227,20 @@ async fn delete_avatar_removes_avatar_successfully_and_surfaces_file_removal_fai
     )
     .await;
 
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body["error_description"].is_string());
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["avatar_url"].is_null());
     assert_eq!(
         fixture
             .fresh_user(avatar_error_user.id)
             .await
             .avatar_url
             .as_deref(),
-        Some("/auth/me/avatar?v=v1"),
-        "a filesystem consistency failure must not clear persisted metadata"
+        None,
+        "post-CAS filesystem cleanup must not undo the cleared reference"
     );
+
+    assert!(avatar_path(&fixture.state, avatar_error_user.id).is_dir());
+    assert!(avatar_meta_path(&fixture.state, avatar_error_user.id).is_file());
 
     let meta_error_suffix = format!("{success_suffix}-meta-error");
     let meta_error_user = fixture
@@ -2631,15 +2272,68 @@ async fn delete_avatar_removes_avatar_successfully_and_surfaces_file_removal_fai
     )
     .await;
 
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body["error_description"].is_string());
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["avatar_url"].is_null());
     assert_eq!(
         fixture
             .fresh_user(meta_error_user.id)
             .await
             .avatar_url
             .as_deref(),
-        Some("/auth/me/avatar?v=v1"),
-        "a filesystem consistency failure must not clear persisted metadata"
+        None,
+        "post-CAS filesystem cleanup must not undo the cleared reference"
+    );
+    assert!(avatar_path(&fixture.state, meta_error_user.id).is_file());
+    assert!(avatar_meta_path(&fixture.state, meta_error_user.id).is_dir());
+}
+
+#[actix_web::test]
+async fn committed_postgres_avatar_cas_followed_by_repository_error_keeps_the_selected_version_readable()
+ {
+    let Some(fixture) = LiveAvatarFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix, None).await;
+    let sid = format!("avatar-commit-error-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let user_dir = avatar_user_dir(&fixture.state, user.id);
+    let storage = LocalAvatarStorage::new(user_dir.parent().unwrap().to_owned());
+    let service = nazo_identity::AvatarService::new(
+        crate::test_support::local_avatar::CommitThenError(nazo_postgres::UserRepository::new(
+            fixture.state.diesel_db.clone(),
+        )),
+        crate::test_support::local_avatar::NoGrants,
+        storage.clone(),
+        fixture.state.settings.storage.avatar_max_bytes,
+    );
+    let (status, _, _) = response_json(
+        super::upload_avatar(
+            crate::test_support::profile_sessions(&fixture.state),
+            Data::new(crate::bootstrap::AvatarProfileService::Local(service)),
+            fixture.request(&sid, &csrf),
+            multipart_payload("commit-error-boundary", "avatar", valid_png()),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    let fresh = fixture.fresh_user(user.id).await;
+    let version =
+        avatar_url_version(fresh.avatar_url.as_deref().expect("real CAS committed")).unwrap();
+    let object = storage
+        .read(nazo_identity::UserId::new(user.id).unwrap(), version)
+        .await
+        .unwrap();
+    assert_eq!(object.bytes, valid_png());
+    let response = get_avatar(fixture.state.clone(), fixture.request(&sid, &csrf)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap()
+            .as_ref(),
+        valid_png().as_slice()
     );
 }

@@ -104,6 +104,11 @@ impl TokenIssuanceConfig {
 }
 
 pub struct TokenIssuanceContext<'a> {
+    /// OAuth grant routed by the application. External pre-authorized
+    /// credential issuance shares sender validation but never this commit.
+    pub grant_type: Option<nazo_auth::GrantType>,
+    /// Client version read by this request's authentication snapshot.
+    pub client_epoch: i64,
     pub config: &'a TokenIssuanceConfig,
     pub modules: &'a nazo_runtime_modules::ActiveModuleSnapshot,
     pub authorization: &'a crate::services::ServerAuthorizationService,
@@ -137,6 +142,7 @@ pub use authorization_code_state::{
 pub use refresh_persistence::should_issue_refresh_token;
 use refresh_persistence::{
     PendingRefreshToken, prepare_refresh_token, refresh_authentication_context,
+    refresh_issue_matches_source,
 };
 
 fn client_session_sid_enabled(frontchannel_logout: bool, client: &ClientRow) -> bool {
@@ -160,11 +166,10 @@ fn id_token_session_sid<'a>(
     if client_session_sid_enabled(frontchannel_logout, client) {
         return issue.oidc_sid.as_deref();
     }
-    let requested = issue.id_token_claims.iter().any(|claim| claim == "sid")
-        || issue
-            .id_token_claim_requests
-            .iter()
-            .any(|request| request.name == "sid");
+    let requested = issue
+        .id_token_claim_requests
+        .iter()
+        .any(|request| request.name == "sid");
     requested.then_some(issue.oidc_sid.as_deref()).flatten()
 }
 

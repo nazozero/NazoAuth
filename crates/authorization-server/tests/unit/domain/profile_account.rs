@@ -20,6 +20,7 @@ use super::ServerProfileAccountOperations;
 #[derive(Clone)]
 struct FixedSessionStore {
     load: Result<Option<SessionSnapshot>, RepositoryError>,
+    loads: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl SessionStorePort for FixedSessionStore {
@@ -28,7 +29,11 @@ impl SessionStorePort for FixedSessionStore {
         _session_id: &'a SessionId,
     ) -> RepositoryFuture<'a, Option<SessionSnapshot>> {
         let load = self.load.clone();
-        Box::pin(async move { load })
+        let loads = self.loads.clone();
+        Box::pin(async move {
+            loads.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            load
+        })
     }
 
     fn delete<'a>(&'a self, _session_id: &'a SessionId) -> RepositoryFuture<'a, bool> {
@@ -159,10 +164,18 @@ fn operations(
     load: Result<Option<SessionSnapshot>, RepositoryError>,
     applications: Vec<AuthorizedApplication>,
 ) -> Operations {
+    operations_with_loads(load, applications, Arc::default())
+}
+
+fn operations_with_loads(
+    load: Result<Option<SessionSnapshot>, RepositoryError>,
+    applications: Vec<AuthorizedApplication>,
+    loads: Arc<std::sync::atomic::AtomicUsize>,
+) -> Operations {
     let account = account();
     ServerProfileAccountOperations::new(
         SessionService::new(
-            Arc::new(FixedSessionStore { load }),
+            Arc::new(FixedSessionStore { load, loads }),
             Arc::new(FixedSessionAccounts(Some(account.clone()))),
             account.tenant().tenant_id,
         ),
@@ -253,5 +266,51 @@ fn update_validation_and_application_projection_stay_in_focused_services() {
         assert_eq!(applications.total, 1);
         assert_eq!(applications.items[0].last_scopes, vec!["openid", "profile"]);
         assert_eq!(applications.items[0].authorization_count, 3);
+    });
+}
+
+#[test]
+fn auth_me_classifies_active_pending_missing_and_invalidated_from_one_session_read() {
+    futures_executor::block_on(async {
+        for pending in [false, true] {
+            let loads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let result =
+                operations_with_loads(Ok(Some(snapshot(pending))), Vec::new(), loads.clone())
+                    .me(SessionId::new("classified"))
+                    .await
+                    .unwrap();
+            assert_eq!(matches!(result, ProfileMe::PendingMfa(_)), pending);
+            assert_eq!(loads.load(std::sync::atomic::Ordering::Relaxed), 1);
+        }
+        let invalid = SessionSnapshot::new(
+            SessionRecord::new(
+                account().user_id(),
+                i64::MAX,
+                vec!["pwd".to_owned()],
+                true,
+                Some("sid".to_owned()),
+            ),
+            SessionVersion::from_storage(b"invalid".to_vec().into_boxed_slice()),
+        );
+        for load in [
+            Ok(None),
+            Ok(Some(invalid)),
+            Err(RepositoryError::Unavailable),
+        ] {
+            let unavailable = load.is_err();
+            let loads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let result = operations_with_loads(load, Vec::new(), loads.clone())
+                .me(SessionId::new("missing-or-invalid"))
+                .await;
+            assert_eq!(
+                result,
+                Err(if unavailable {
+                    ProfileAccountError::SessionLookupUnavailable
+                } else {
+                    ProfileAccountError::LoginRequired
+                })
+            );
+            assert_eq!(loads.load(std::sync::atomic::Ordering::Relaxed), 1);
+        }
     });
 }

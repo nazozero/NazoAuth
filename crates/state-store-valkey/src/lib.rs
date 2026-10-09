@@ -21,14 +21,18 @@ mod token_issuance;
 mod token_state;
 
 pub use authentication::AuthenticationStore;
-pub use authorization::{AuthorizationCodeBegin, AuthorizationStore, AuthorizationTransition};
+pub use authorization::{
+    AuthorizationCodeBegin, AuthorizationPreparationWrite, AuthorizationStore,
+    AuthorizationTransition,
+};
 pub use authorization_state::AuthorizationStateAdapter;
 pub use avatar_upload_state::AvatarUploadStateStore;
 pub use ciba::{
-    AtomicResult, CibaPingDelivery, CibaPingFinishOutcome, CibaPingFinishResult, CibaStore,
+    AtomicResult, CibaPingClaimBatch, CibaPingDelivery, CibaPingFinishOutcome,
+    CibaPingFinishResult, CibaStore,
 };
 pub use connection::{ValkeyClient, ValkeyConnection};
-pub use delivery::{DeliveryConsume, DeliveryStore, StoredDelivery};
+pub use delivery::DeliveryStore;
 pub use device::{DeviceCreateResult, DeviceStore};
 pub use error::{Error, ErrorKind};
 

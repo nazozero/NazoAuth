@@ -2,7 +2,7 @@ use crate::{
     DbPool,
     convert::identity,
     get_conn,
-    rows::identity::{ExternalIdentityLinkRow, PublicAccountRow},
+    rows::identity::{ExternalIdentityLinkRow, ExternalIdentityLinkSummaryRow, PublicAccountRow},
     schema::{external_identity_links, users},
 };
 use diesel::{
@@ -13,7 +13,8 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
     PublicAccount, TenantId, UserId,
     ports::{
-        FederationLink, FederationLogin, NewFederatedIdentity, NewFederationLink, RepositoryError,
+        FederationLink, FederationLinkSummary, FederationLogin, NewFederatedIdentity,
+        NewFederationLink, RepositoryError,
     },
 };
 
@@ -63,6 +64,26 @@ impl FederationRepository {
             .map_err(map_error)?
             .into_iter()
             .map(identity::federation_link)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+    pub async fn list_summaries(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> Result<Vec<FederationLinkSummary>, RepositoryError> {
+        let mut connection = get_conn(&self.pool)
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        external_identity_links::table
+            .filter(external_identity_links::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(external_identity_links::user_id.eq(user_id.as_uuid()))
+            .select(ExternalIdentityLinkSummaryRow::as_select())
+            .load(&mut connection)
+            .await
+            .map_err(map_error)?
+            .into_iter()
+            .map(identity::federation_link_summary)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
@@ -177,6 +198,8 @@ impl FederationRepository {
                 Ok(user)
             })
             .await;
+        // Conflict recovery borrows from this pool again after the transaction has ended.
+        drop(connection);
         match result {
             Ok(row) => row
                 .try_into()
@@ -197,6 +220,16 @@ impl nazo_identity::ports::FederationLinkRepositoryPort for FederationRepository
         user_id: UserId,
     ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<FederationLink>> {
         Box::pin(async move { FederationRepository::list(self, tenant_id, user_id).await })
+    }
+
+    fn list_summaries(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<FederationLinkSummary>> {
+        Box::pin(
+            async move { FederationRepository::list_summaries(self, tenant_id, user_id).await },
+        )
     }
 
     fn delete(

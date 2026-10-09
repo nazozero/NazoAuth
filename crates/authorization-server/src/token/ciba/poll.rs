@@ -111,7 +111,7 @@ pub async fn token_ciba(
         Ok(binding) => binding,
         Err(response) => return Err(response),
     };
-    let ciba_grant_key = ciba_grant_key(auth_req_id, dpop_jkt.as_deref(), mtls_x5t_s256.as_deref());
+    let ciba_grant_key = ciba_grant_key(auth_req_id);
     let Some(initial) = initial else {
         return Err(OAuthEndpointError::token(
             ProtocolStatusCode::BAD_REQUEST,
@@ -224,18 +224,30 @@ async fn poll_and_issue_ciba(
             false,
         ));
     };
+    // Resolve the local subject before reading its binding. Approved state
+    // stays retryable until the PostgreSQL SingleUse issuance commits.
+    let subject = match ciba_subject_for_client(issuance.config, ciba.user_id, client) {
+        Ok(subject) => subject,
+        Err(error) => {
+            tracing::warn!(%error, "failed to compute CIBA subject");
+            return Err(OAuthEndpointError::token(
+                ProtocolStatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA failed.",
+                false,
+            ));
+        }
+    };
     // OIDC grants read the active subject claims once here and carry that
     // request-local snapshot into shared issuance. The snapshot is not the
     // final authority: the commit still revalidates the principal under its
     // lock. Non-OIDC CIBA grants keep the original active-user check.
     let prepared_subject = if ciba.scopes.iter().any(|scope| scope == "openid") {
         match token_service
-            .active_subject_claims(tenant_id, ciba.user_id)
+            .active_subject_claims(tenant_id, ciba.user_id, &subject)
             .await
         {
-            Ok(Some(claims)) => {
-                Some(crate::domain::oauth::PreparedTokenSubject { tenant_id, claims })
-            }
+            Ok(Some(subject)) => Some(subject),
             Ok(None) => {
                 return Err(OAuthEndpointError::token(
                     ProtocolStatusCode::BAD_REQUEST,
@@ -285,18 +297,6 @@ async fn poll_and_issue_ciba(
         };
         None
     };
-    let subject = match ciba_subject_for_client(issuance.config, ciba.user_id, client) {
-        Ok(subject) => subject,
-        Err(error) => {
-            tracing::warn!(%error, "failed to compute CIBA subject");
-            return Err(OAuthEndpointError::token(
-                ProtocolStatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "CIBA failed.",
-                false,
-            ));
-        }
-    };
     let issue = ciba_token_issue(
         ciba.user_id,
         subject,
@@ -343,6 +343,7 @@ fn ciba_token_issue(
     prepared_subject: Option<crate::domain::oauth::PreparedTokenSubject>,
 ) -> TokenIssue {
     TokenIssue {
+        native_sso_source: None,
         user_id: Some(user_id),
         prepared_subject,
         subject,
@@ -354,10 +355,8 @@ fn ciba_token_issue(
         amr: authentication_context.amr,
         oidc_sid: authentication_context.oidc_sid,
         acr: ciba.acr,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: (Vec::new()).into(),
         refresh_id_token_sid: None,
         include_refresh: true,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
@@ -366,7 +365,8 @@ fn ciba_token_issue(
         mtls_x5t_s256: mtls_x5t_s256.clone(),
         refresh_token_mtls_x5t_s256: mtls_x5t_s256,
         refresh_token_client_attestation_jkt: None,
-        refresh_token_scopes: None,
+        refresh_authority: None,
+        refresh_grant_audiences: None,
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,

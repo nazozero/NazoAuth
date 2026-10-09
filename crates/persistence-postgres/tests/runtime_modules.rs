@@ -300,6 +300,7 @@ async fn registry_generated_transition_events_are_postgresql_compatible() {
         authorization_code: short,
         refresh_token: short,
         session: short,
+        presentation_transaction: short,
         scim_security_events: short,
     })
     .expect("fixed module catalog should be valid");
@@ -327,6 +328,35 @@ async fn registry_generated_transition_events_are_postgresql_compatible() {
         .expect("actual state should persist");
     assert_eq!(actual.state, ModuleState::Enabled);
     assert_eq!(actual.applied_revision, Some(ModuleRevision::new(1)));
+    let snapshot = repository
+        .read_reconcile_state("postgres-registry-test")
+        .await
+        .unwrap();
+    let current = snapshot
+        .iter()
+        .find(|state| state.desired.module_id == module_id)
+        .unwrap();
+    assert_eq!(current.desired.revision, ModuleRevision::new(1));
+    assert_eq!(current.instance.as_ref(), Some(&actual));
+    let absent_instance = repository
+        .read_reconcile_state("absent-instance")
+        .await
+        .unwrap();
+    let absent = absent_instance
+        .iter()
+        .find(|state| state.desired.module_id == module_id)
+        .unwrap();
+    assert_eq!(absent.desired, current.desired);
+    assert!(absent.instance.is_none());
+    let unrelated_tenant =
+        RuntimeModuleRepository::for_tenant(create_pool(&database_url, 1).unwrap(), Uuid::now_v7());
+    assert!(
+        unrelated_tenant
+            .read_reconcile_state("postgres-registry-test")
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     assert_eq!(
@@ -883,4 +913,194 @@ async fn audit_persistence_accepts_every_closed_event_kind() {
         .await
         .expect("test database should connect");
     assert_eq!(event_count(&mut connection, "jwt_bearer_grant").await, 10);
+}
+
+#[tokio::test]
+async fn stale_observation_is_state_preserving_with_current_or_superseded_revision() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    clear_module(&database_url, "token_exchange").await;
+    let repository = RuntimeModuleRepository::new(create_pool(&database_url, 4).unwrap());
+    let instance_id = format!("observation-{}", Uuid::now_v7());
+    let module = ModuleId::TokenExchange;
+    repository
+        .compare_and_set_instance(
+            ModuleRevision::new(1),
+            instance_mutation(
+                InstanceStateChange {
+                    expected_revision: None,
+                    next: instance(&instance_id, module, ModuleState::Starting, 1),
+                },
+                ModuleEventType::TransitionStarted,
+                Uuid::now_v7(),
+            ),
+        )
+        .await
+        .unwrap();
+    let before = repository
+        .read_instance(&instance_id, module)
+        .await
+        .unwrap()
+        .unwrap();
+    for superseded in [false, true] {
+        if superseded {
+            repository
+                .compare_and_set_desired(DesiredStateChange {
+                    expected_revision: Some(ModuleRevision::new(1)),
+                    next: desired(module, DesiredMode::Disabled, 2),
+                })
+                .await
+                .unwrap();
+        }
+        let event = instance_event(
+            Uuid::now_v7(),
+            &before,
+            ModuleEventType::StaleTransitionDiscarded,
+            Some(before.state),
+        );
+        let observation = nazo_runtime_modules::InstanceStateObservation { event };
+        nazo_persistence::RuntimeModuleStore::record_instance_observation(
+            &repository,
+            observation.clone(),
+        )
+        .await
+        .expect("the actual PG observation validator must accept discarded work");
+        assert_eq!(
+            repository
+                .read_instance(&instance_id, module)
+                .await
+                .unwrap(),
+            Some(before.clone())
+        );
+        assert!(
+            nazo_persistence::RuntimeModuleStore::record_instance_observation(
+                &repository,
+                observation
+            )
+            .await
+            .is_err(),
+            "duplicate event insert must fail without touching state"
+        );
+        assert_eq!(
+            repository
+                .read_instance(&instance_id, module)
+                .await
+                .unwrap(),
+            Some(before.clone())
+        );
+    }
+    for (kind, before_state, after_state) in [
+        (
+            ModuleEventType::TransitionCompleted,
+            Some(ModuleEventState::Actual(before.state)),
+            Some(ModuleEventState::Actual(before.state)),
+        ),
+        (
+            ModuleEventType::StaleTransitionDiscarded,
+            Some(ModuleEventState::Actual(before.state)),
+            Some(ModuleEventState::Actual(ModuleState::Enabled)),
+        ),
+        (
+            ModuleEventType::StaleTransitionDiscarded,
+            Some(ModuleEventState::Desired(DesiredMode::Enabled.into())),
+            Some(ModuleEventState::Desired(DesiredMode::Enabled.into())),
+        ),
+    ] {
+        let mut event = instance_event(Uuid::now_v7(), &before, kind, Some(before.state));
+        event.before = before_state;
+        event.after = after_state;
+        assert!(
+            repository
+                .record_instance_observation(nazo_runtime_modules::InstanceStateObservation {
+                    event
+                })
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            repository
+                .read_instance(&instance_id, module)
+                .await
+                .unwrap(),
+            Some(before.clone())
+        );
+    }
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    assert_eq!(
+        event_type_count(
+            &mut connection,
+            "token_exchange",
+            "stale_transition_discarded"
+        )
+        .await,
+        2
+    );
+    assert_eq!(
+        repository
+            .read_desired(module)
+            .await
+            .unwrap()
+            .unwrap()
+            .revision,
+        ModuleRevision::new(2)
+    );
+    clear_module(&database_url, "token_exchange").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revision_validation_is_tenant_scoped_and_tracks_authoritative_changes() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    clear_module(&database_url, "native_sso").await;
+    let pool = create_pool(&database_url, 2).unwrap();
+    let repository = RuntimeModuleRepository::new(pool.clone());
+    let missing = RuntimeModuleRepository::for_tenant(pool, Uuid::now_v7());
+    assert!(
+        !missing
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(1))
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(1))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(2))
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        repository
+            .compare_and_set_desired(DesiredStateChange {
+                expected_revision: Some(ModuleRevision::new(1)),
+                next: desired(ModuleId::NativeSso, DesiredMode::Disabled, 2),
+            })
+            .await
+            .unwrap(),
+        CasOutcome::Applied(_)
+    ));
+    assert!(
+        !repository
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(1))
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .validate_revision(ModuleId::NativeSso, ModuleRevision::new(2))
+            .await
+            .unwrap()
+    );
 }

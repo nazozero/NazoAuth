@@ -241,11 +241,11 @@ impl DeviceDecisionHandles {
                 "用户码无效或已过期.",
             ));
         }
-        let payload = match device_service
-            .pending_request_for_user_code(&normalized_user_code, Utc::now)
+        let prepared = match device_service
+            .prepare_decision(&normalized_user_code, Utc::now)
             .await
         {
-            Ok(Some(payload)) => payload,
+            Ok(Some(prepared)) => prepared,
             Ok(None) => {
                 return Err(OAuthEndpointError::json(
                     StatusCode::BAD_REQUEST,
@@ -262,6 +262,7 @@ impl DeviceDecisionHandles {
                 ));
             }
         };
+        let payload = prepared.payload().clone();
         let decision_name = match decision {
             "approve" => "approve",
             "deny" => "deny",
@@ -273,7 +274,7 @@ impl DeviceDecisionHandles {
                 ));
             }
         };
-        if let Err(error) = self.audit.ensure_storage().await {
+        if let Err(error) = self.audit.ensure_transactional_ready().await {
             tracing::error!(%error, "device decision audit preflight failed");
             return Err(OAuthEndpointError::json(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -306,7 +307,7 @@ impl DeviceDecisionHandles {
             ));
         }
         let result = match decision {
-            "deny" => device_service.deny(&normalized_user_code, Utc::now).await,
+            "deny" => device_service.deny(prepared, Utc::now).await,
             "approve" => {
                 let client = match authorization_service.client_by_id(&payload.client_id).await {
                     Ok(Some(client)) if client.is_active => client,
@@ -340,7 +341,7 @@ impl DeviceDecisionHandles {
                 };
                 device_service
                     .approve(
-                        &normalized_user_code,
+                        prepared,
                         DeviceAuthorizationApproval {
                             user_id: session.user.id(),
                             subject,

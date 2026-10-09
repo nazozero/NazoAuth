@@ -46,7 +46,7 @@ async fn cache_is_monotonic_and_authoritative_snapshot_repairs_corruption() {
     assert!(!physical_key.contains(":tenant:"));
     assert_eq!(cache.load().await.unwrap(), None);
     assert!(cache.publish_authoritative(&snapshot(2)).await.unwrap());
-    assert_eq!(cache.load().await.unwrap(), Some(snapshot(2)));
+    assert_eq!(cache.load().await.unwrap().as_deref(), Some(&snapshot(2)));
     assert!(!cache.publish_authoritative(&snapshot(2)).await.unwrap());
     assert!(!cache.publish_authoritative(&snapshot(1)).await.unwrap());
 
@@ -55,7 +55,7 @@ async fn cache_is_monotonic_and_authoritative_snapshot_repairs_corruption() {
         tenants: Vec::new(),
     };
     assert!(cache.publish_authoritative(&repaired).await.unwrap());
-    assert_eq!(cache.load().await.unwrap(), Some(repaired));
+    assert_eq!(cache.load().await.unwrap().as_deref(), Some(&repaired));
 
     raw.set::<(), _, _>(&physical_key, "not-json", None, None, false)
         .await
@@ -65,10 +65,10 @@ async fn cache_is_monotonic_and_authoritative_snapshot_repairs_corruption() {
         ErrorKind::CorruptData
     );
     assert!(cache.publish_authoritative(&snapshot(2)).await.unwrap());
-    assert_eq!(cache.load().await.unwrap(), Some(snapshot(2)));
+    assert_eq!(cache.load().await.unwrap().as_deref(), Some(&snapshot(2)));
 
     assert!(cache.publish_authoritative(&snapshot(3)).await.unwrap());
-    assert_eq!(cache.load().await.unwrap(), Some(snapshot(3)));
+    assert_eq!(cache.load().await.unwrap().as_deref(), Some(&snapshot(3)));
 
     raw.set::<(), _, _>(
         &physical_key,
@@ -80,7 +80,7 @@ async fn cache_is_monotonic_and_authoritative_snapshot_repairs_corruption() {
     .await
     .unwrap();
     assert!(cache.publish_authoritative(&snapshot(3)).await.unwrap());
-    assert_eq!(cache.load().await.unwrap(), Some(snapshot(3)));
+    assert_eq!(cache.load().await.unwrap().as_deref(), Some(&snapshot(3)));
 
     raw.set::<(), _, _>(
         &physical_key,
@@ -92,7 +92,7 @@ async fn cache_is_monotonic_and_authoritative_snapshot_repairs_corruption() {
     .await
     .unwrap();
     assert!(cache.publish_authoritative(&snapshot(3)).await.unwrap());
-    assert_eq!(cache.load().await.unwrap(), Some(snapshot(3)));
+    assert_eq!(cache.load().await.unwrap().as_deref(), Some(&snapshot(3)));
 
     assert_eq!(raw.del::<i64, _>(&physical_key).await.unwrap(), 1);
 }

@@ -1,10 +1,10 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # Release OCI images are assembled from the exact native Linux binaries that
 # already passed the platform matrix. The image job must not compile the same
 # commit again under QEMU: that creates a second artifact identity and turns a
 # deterministic packaging step into an hour-long cross-build.
-FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime
+FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS runtime
 
 ARG TARGETARCH
 
@@ -14,7 +14,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         gzip=1.13-1+deb13u1 \
-        libpcre2-8-0=10.46-1~deb13u2 \
+        libpcre2-8-0=10.46-1~deb13u3 \
         libsqlite3-0=3.46.1-7+deb13u2 \
         perl-base=5.40.1-6+deb13u1 \
     && groupadd --gid 10001 nazoauth \

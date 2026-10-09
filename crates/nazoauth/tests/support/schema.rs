@@ -118,7 +118,6 @@ diesel::table! {
         token_hash -> Varchar,
         user_agent_hash -> Nullable<Varchar>,
         created_at -> Timestamptz,
-        last_used_at -> Nullable<Timestamptz>,
         expires_at -> Timestamptz,
     }
 }

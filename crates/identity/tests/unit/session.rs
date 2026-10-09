@@ -17,6 +17,7 @@ struct RotationCall {
 }
 
 struct FakeStore {
+    loads: std::sync::atomic::AtomicUsize,
     snapshot: Mutex<Option<SessionSnapshot>>,
     load_error: Mutex<Option<RepositoryError>>,
     compare_outcomes: Mutex<Vec<SessionUpdateOutcome>>,
@@ -28,6 +29,7 @@ struct FakeStore {
 impl FakeStore {
     fn with_record(record: SessionRecord) -> Self {
         Self {
+            loads: std::sync::atomic::AtomicUsize::new(0),
             snapshot: Mutex::new(Some(SessionSnapshot::new(
                 record,
                 SessionVersion::from_storage(b"version-1".to_vec().into_boxed_slice()),
@@ -47,6 +49,8 @@ impl SessionStorePort for FakeStore {
         _session_id: &'a SessionId,
     ) -> RepositoryFuture<'a, Option<SessionSnapshot>> {
         Box::pin(async move {
+            self.loads
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if let Some(error) = self.load_error.lock().unwrap().clone() {
                 return Err(error);
             }
@@ -152,6 +156,7 @@ fn add_amr_deduplicates_methods_and_preserves_claim_order() {
 fn current_session_exposes_exact_logged_in_clients() {
     let now = chrono::Utc::now();
     let session = CurrentSession {
+        pending_mfa: false,
         user: PublicAccount {
             principal: Principal {
                 user_id: UserId::new(uuid::Uuid::from_u128(2)).unwrap(),
@@ -170,6 +175,7 @@ fn current_session_exposes_exact_logged_in_clients() {
             updated_at: now,
         },
         auth_time: 900,
+        auth_time_micros: None,
         amr: vec!["password".to_owned()],
         oidc_sid: "oidc-sid".to_owned(),
         logged_in_client_ids: vec!["client-a".to_owned(), "client-b".to_owned()],
@@ -309,7 +315,13 @@ async fn step_up_builds_a_fresh_session_and_csrf_pair_for_atomic_rotation() {
     let store = Arc::new(FakeStore::with_record(record(true)));
     let old_session_id = SessionId::new("session-1");
     let rotation = service(store.clone())
-        .step_up(&old_session_id, "totp", 3_600, true, 1_000)
+        .step_up(
+            &old_session_id,
+            "totp",
+            3_600,
+            true,
+            chrono::DateTime::from_timestamp(1_000, 0).unwrap(),
+        )
         .await
         .unwrap()
         .unwrap();
@@ -324,4 +336,152 @@ async fn step_up_builds_a_fresh_session_and_csrf_pair_for_atomic_rotation() {
     assert_eq!(call.replacement.auth_time(), 1_000);
     assert!(!call.replacement.pending_mfa());
     assert_eq!(call.replacement.amr(), ["password", "totp", "mfa"]);
+}
+
+#[test]
+fn recent_interactive_mfa_has_one_strict_time_and_factor_policy() {
+    let now = 10_000;
+    let amr = vec!["mfa".to_owned(), "otp".to_owned()];
+    for age in [0, 1, 299, 300] {
+        assert!(recent_interactive_mfa(now - age, &amr, now));
+    }
+    for age in [-31, -30, -1, 301] {
+        assert!(!recent_interactive_mfa(now - age, &amr, now));
+    }
+    assert!(!recent_interactive_mfa(now, &["mfa".to_owned()], now));
+    assert!(!recent_interactive_mfa(now, &["otp".to_owned()], now));
+    assert!(recent_interactive_mfa(
+        now,
+        &["mfa".to_owned(), "recovery_code".to_owned()],
+        now
+    ));
+}
+
+struct CountingSessionAccounts {
+    calls: std::sync::atomic::AtomicUsize,
+    active: bool,
+    unavailable: bool,
+}
+impl SessionAccountPort for CountingSessionAccounts {
+    fn public_account_by_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Option<PublicAccount>> {
+        Box::pin(async move {
+            self.calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if self.unavailable {
+                return Err(RepositoryError::Unavailable);
+            }
+            let now = chrono::Utc::now();
+            Ok(Some(PublicAccount {
+                principal: Principal {
+                    user_id,
+                    tenant: TenantContext {
+                        tenant_id,
+                        ..TenantContext::default_system()
+                    },
+                    role: UserRole::User,
+                    active: self.active,
+                },
+                account: AccountIdentity {
+                    username: "user".to_owned(),
+                    email: "user@example.com".to_owned(),
+                    email_verified: true,
+                    mfa_enabled: true,
+                },
+                profile: UserProfile::default(),
+                created_at: now,
+                updated_at: now,
+            }))
+        })
+    }
+}
+#[tokio::test]
+async fn mfa_resolution_reads_one_snapshot_and_one_account_for_either_session_state() {
+    for pending in [false, true] {
+        let store = Arc::new(FakeStore::with_record(record(pending)));
+        let accounts = Arc::new(CountingSessionAccounts {
+            calls: 0.into(),
+            active: true,
+            unavailable: false,
+        });
+        let service = SessionService::new(
+            store.clone(),
+            accounts.clone(),
+            TenantId::new(uuid::Uuid::from_u128(1)).unwrap(),
+        );
+        let SessionResolution::Present(session) = service
+            .resolve_for_mfa(&SessionId::new("session-1"), 1000)
+            .await
+            .unwrap()
+        else {
+            panic!("active account must resolve")
+        };
+        assert_eq!(session.pending_mfa(), pending);
+        assert_eq!(store.loads.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(accounts.calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert!(store.deleted.lock().unwrap().is_empty());
+    }
+}
+#[tokio::test]
+async fn mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_dependency_failures() {
+    for case in [
+        "inactive",
+        "corrupt",
+        "store_unavailable",
+        "account_unavailable",
+    ] {
+        let store = Arc::new(FakeStore::with_record(record(false)));
+        if case == "corrupt" {
+            *store.load_error.lock().unwrap() =
+                Some(RepositoryError::Consistency("bad json".into()));
+        }
+        if case == "store_unavailable" {
+            *store.load_error.lock().unwrap() = Some(RepositoryError::Unavailable);
+        }
+        let accounts = Arc::new(CountingSessionAccounts {
+            calls: 0.into(),
+            active: case != "inactive",
+            unavailable: case == "account_unavailable",
+        });
+        let service = SessionService::new(
+            store.clone(),
+            accounts.clone(),
+            TenantId::new(uuid::Uuid::from_u128(1)).unwrap(),
+        );
+        let resolution = service
+            .resolve_for_mfa(&SessionId::new("session-1"), 1000)
+            .await;
+        match case {
+            "inactive" => assert_eq!(resolution.unwrap(), SessionResolution::Invalidated),
+            "corrupt" => assert_eq!(resolution.unwrap(), SessionResolution::Missing),
+            _ => assert_eq!(resolution, Err(RepositoryError::Unavailable)),
+        }
+        assert_eq!(store.loads.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(
+            accounts.calls.load(std::sync::atomic::Ordering::Relaxed),
+            usize::from(matches!(case, "inactive" | "account_unavailable"))
+        );
+        assert_eq!(
+            store.deleted.lock().unwrap().len(),
+            usize::from(matches!(case, "inactive" | "corrupt"))
+        );
+    }
+}
+
+#[test]
+fn authentication_precision_is_owned_by_the_record_and_legacy_updates_clear_it() {
+    let mut session = record(false);
+    assert_eq!(session.auth_time_micros(), None);
+    let now = chrono::DateTime::from_timestamp_micros(1_000_123_456).unwrap();
+    session.record_authentication_at(now);
+    assert_eq!(session.auth_time(), 1_000);
+    assert_eq!(session.auth_time_micros(), Some(1_000_123_456));
+    assert!(!session.restore_auth_time_micros(Some(1_001_123_456)));
+    assert!(!session.restore_auth_time_micros(Some(-1)));
+    assert_eq!(session.auth_time_micros(), Some(1_000_123_456));
+    session.set_auth_time(1_001);
+    assert_eq!(session.auth_time_micros(), None);
 }

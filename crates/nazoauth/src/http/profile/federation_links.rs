@@ -1,6 +1,6 @@
 //! 当前用户外部身份绑定管理。
 //! 用户只能查看和解绑自己的 provider subject 绑定，不能修改 provider 配置。
-use nazo_http_actix::{empty_response_no_store, json_response_no_store, oauth_error};
+use nazo_http_actix::{csrf_error, empty_response_no_store, json_response_no_store, oauth_error};
 
 use crate::adapters::audit::audit_event_required;
 use nazo_oauth_server::ports::audit::audit_fields;
@@ -11,7 +11,7 @@ use actix_web::web::Data;
 use actix_web::web::Path;
 use actix_web::{HttpRequest, HttpResponse};
 
-use nazo_identity::ports::FederationLink;
+use nazo_identity::ports::FederationLinkSummary;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -24,7 +24,7 @@ pub(crate) async fn my_federation_links(
         Ok(user) => user,
         Err(response) => return response,
     };
-    let rows = match federation.list(&user).await {
+    let rows = match federation.list_summaries(&user).await {
         Ok(rows) => rows,
         Err(error) => {
             tracing::warn!(%error, user_id = %user.id(), "failed to load federation links");
@@ -48,6 +48,9 @@ pub(crate) async fn unlink_my_federation_link(
     req: HttpRequest,
     path: Path<Uuid>,
 ) -> HttpResponse {
+    if !sessions.has_valid_csrf_token(&req, None) {
+        return csrf_error();
+    }
     // link_id 来自路径参数，但后续删除仍必须叠加当前 user_id 约束。
     let link_id = path.into_inner();
     let user = match sessions.current_user_or_login_required(&req).await {
@@ -93,7 +96,7 @@ pub(crate) async fn unlink_my_federation_link(
     empty_response_no_store(StatusCode::NO_CONTENT)
 }
 
-fn federation_link_json(link: FederationLink) -> Value {
+fn federation_link_json(link: FederationLinkSummary) -> Value {
     // subject 可能是 provider 内稳定标识，但不是本地 secret；claims 可能含上游
     // 扩展字段，列表接口不返回 claims，避免把 provider 原始响应扩散给前端。
     json!({

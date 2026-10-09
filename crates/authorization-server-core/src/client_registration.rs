@@ -86,7 +86,7 @@ pub struct ClientPresentationMetadata {
 ///
 /// Tenant placement, credential digests, issued plaintext credentials, and
 /// database command shape belong to the coordinating service and adapters.
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct ValidatedClientRegistration {
     pub client_id: String,
     pub client_name: String,
@@ -112,7 +112,6 @@ pub struct ValidatedClientRegistration {
     /// Signing algorithm registered for CIBA Authentication Request objects.
     pub backchannel_authentication_request_signing_alg: Option<String>,
     /// NazoAuth does not support the optional CIBA user-code parameter.
-    pub backchannel_user_code_parameter: bool,
     pub backchannel_logout_uri: Option<String>,
     pub backchannel_logout_session_required: bool,
     pub frontchannel_logout_uri: Option<String>,
@@ -165,7 +164,7 @@ pub struct ApprovedClient {
 /// The validated registration metadata is composed rather than copied into a
 /// second flat persistence-shaped DTO. Credential digests deliberately do not
 /// cross this boundary.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OAuthClient {
     pub id: Uuid,
     pub tenant_id: Uuid,

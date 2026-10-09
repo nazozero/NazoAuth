@@ -33,7 +33,7 @@ pub(crate) async fn admin_get_client(
 }
 
 fn client_detail_response(client: nazo_auth::OAuthClient) -> HttpResponse {
-    json_response(client_json(client))
+    json_response(client_json(&client))
 }
 
 fn client_detail_not_found_response() -> HttpResponse {

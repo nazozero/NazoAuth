@@ -364,6 +364,8 @@ async fn call_ciba_token_with_modules_for_test(
         client_assertion,
         auth_method,
         modules,
+        crate::http::authorization::test_support::test_security_audit(),
+        0,
     )
     .await
 }
@@ -378,6 +380,8 @@ async fn call_ciba_token_with_prepared_service(
     client_assertion: Option<&ValidatedClientAssertion>,
     auth_method: &str,
     modules: nazo_runtime_modules::ActiveModuleSnapshot,
+    security_audit: &dyn nazo_oauth_server::ports::audit::SecurityAudit,
+    client_epoch: i64,
 ) -> HttpResponse {
     let connection = state.valkey_connection();
     let ciba_service = ServerCibaService::new(std::sync::Arc::new(CibaStore::new(&connection)));
@@ -386,10 +390,12 @@ async fn call_ciba_token_with_prepared_service(
     let ciba_config = ciba_config(state.settings.as_ref());
     let authorization = super::super::issue::test_support::test_authorization_service(state);
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::Ciba),
+        client_epoch,
         config: &issuance_config,
         modules: &modules,
         authorization: &authorization,
-        security_audit: crate::http::authorization::test_support::test_security_audit(),
+        security_audit,
         remote_client_documents: crate::test_support::test_remote_client_documents(),
     };
     let handles = CibaTokenHandles::new(
@@ -473,4 +479,39 @@ fn ciba_private_key_jwt_client_with_alg(kid: &str, fixture: &ClientSigningFixtur
 
 fn ciba_private_key_jwt_client(kid: &str, fixture: &ClientSigningFixture) -> ClientRow {
     ciba_private_key_jwt_client_with_alg(kid, fixture)
+}
+
+async fn call_ciba_token_with_audit_for_test(
+    state: &TestInfrastructure,
+    client: &ClientRow,
+    id: String,
+    req: HttpRequest,
+    audit: &dyn nazo_oauth_server::ports::audit::SecurityAudit,
+) -> HttpResponse {
+    let service = ServerTokenService::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+        Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    );
+    let epoch = crate::http::token::issue::test_support::test_authorization_service(state)
+        .client_authentication_snapshot(&client.client_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .client_epoch;
+    call_ciba_token_with_prepared_service(
+        state,
+        &service,
+        client,
+        ciba_token_form(id),
+        req,
+        None,
+        "private_key_jwt",
+        state.active_module_snapshot(),
+        audit,
+        epoch,
+    )
+    .await
 }

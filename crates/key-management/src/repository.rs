@@ -1,3 +1,19 @@
+/// A typed temporary failure at this persistence owner; Context preserves it.
+#[derive(Debug)]
+pub struct SigningKeyRepositoryUnavailable(pub anyhow::Error);
+
+impl std::fmt::Display for SigningKeyRepositoryUnavailable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("signing-key persistence is temporarily unavailable")
+    }
+}
+
+impl std::error::Error for SigningKeyRepositoryUnavailable {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref())
+    }
+}
+
 use std::{fmt, future::Future, pin::Pin};
 
 use uuid::Uuid;

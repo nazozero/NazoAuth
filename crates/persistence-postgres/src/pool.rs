@@ -8,12 +8,7 @@ use diesel_async::{
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use futures_util::FutureExt as _;
-use serde::Serialize;
-use std::{
-    str::FromStr as _,
-    sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
-};
+use std::{str::FromStr as _, time::Duration};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
@@ -27,7 +22,50 @@ const MIGRATION_LOCK_TIMEOUT: Duration = Duration::from_secs(25);
 const MIGRATION_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const MIGRATION_STATEMENT_TIMEOUT: &str = "240s";
 
-pub type DbPool = Pool<AsyncPgConnection>;
+/// Shared connections and their transaction execution use one runtime owner.
+#[derive(Clone)]
+pub struct DbPool {
+    connections: Pool<AsyncPgConnection>,
+    pub(crate) runtime: tokio::runtime::Handle,
+}
+
+impl DbPool {
+    /// Complete a read on the runtime that drives its connection. Return only
+    /// owned row data, so a delayed request task cannot retain the pool slot.
+    /// Dropping the caller aborts the owner and discards an unfinished query's
+    /// physical connection instead of returning it with work still in flight.
+    pub(crate) async fn read<T, F>(&self, query: F) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+        F: for<'a> FnOnce(&'a mut AsyncPgConnection) -> futures_util::future::BoxFuture<'a, T>
+            + Send
+            + 'static,
+    {
+        let pool = self.clone();
+        let mut operation = tokio::task::JoinSet::new();
+        operation.spawn_on(
+            async move {
+                let mut guard = DiscardOnDrop(Some(get_conn(&pool).await?));
+                let result = query(guard.connection()).await;
+                guard.return_to_pool();
+                Ok::<T, anyhow::Error>(result)
+            },
+            &self.runtime,
+        );
+        operation
+            .join_next()
+            .await
+            .expect("read task was registered")?
+    }
+}
+
+impl std::ops::Deref for DbPool {
+    type Target = Pool<AsyncPgConnection>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.connections
+    }
+}
 pub type DbConnection = Object<AsyncPgConnection>;
 
 /// Discard the physical connection unless its transaction outcome is confirmed.
@@ -52,22 +90,6 @@ impl Drop for DiscardOnDrop {
     }
 }
 
-static DB_POOL_ACQUIRE_COUNT: AtomicU64 = AtomicU64::new(0);
-static DB_POOL_WAIT_NANOS_TOTAL: AtomicU64 = AtomicU64::new(0);
-static DB_POOL_WAIT_NANOS_MAX: AtomicU64 = AtomicU64::new(0);
-
-/// Business-pool acquisition counters. `acquire_count` is the number of
-/// `get_conn` attempts (success and failure each count once); the wait fields
-/// record the time spent inside `pool.get()` before success or error.
-/// Migration and other standalone connections established outside this pool
-/// do not go through `get_conn` and are not included.
-#[derive(Serialize)]
-pub struct DbPoolMetrics {
-    pub acquire_count: u64,
-    pub wait_nanos_total: u64,
-    pub wait_nanos_max: u64,
-}
-
 #[derive(diesel::QueryableByName)]
 struct AdvisoryLockStatus {
     #[diesel(sql_type = diesel::sql_types::Bool)]
@@ -84,16 +106,34 @@ pub fn create_pool(
     database_url: impl Into<String>,
     max_connections: usize,
 ) -> anyhow::Result<DbPool> {
-    let manager = connection_manager(database_url.into());
-    Ok(Pool::builder(manager).max_size(max_connections).build()?)
+    let runtime = tokio::runtime::Handle::try_current()?;
+    let manager = connection_manager(database_url.into(), runtime.clone());
+    Ok(DbPool {
+        connections: Pool::builder(manager).max_size(max_connections).build()?,
+        runtime,
+    })
 }
 
-fn connection_manager(database_url: String) -> AsyncDieselConnectionManager<AsyncPgConnection> {
+fn connection_manager(
+    database_url: String,
+    runtime: tokio::runtime::Handle,
+) -> AsyncDieselConnectionManager<AsyncPgConnection> {
     let mut config = ManagerConfig::default();
     config.recycling_method = RecyclingMethod::Fast;
-    config.custom_setup = Box::new(|url| {
+    config.custom_setup = Box::new(move |url| {
         let url = url.to_owned();
-        async move { establish_connection(&url).await }.boxed()
+        // A shared pool's connection drivers belong to its owning runtime.
+        // JoinSet aborts an in-flight setup when its borrower is cancelled.
+        let mut setup = tokio::task::JoinSet::new();
+        setup.spawn_on(async move { establish_connection(&url).await }, &runtime);
+        async move {
+            setup
+                .join_next()
+                .await
+                .expect("connection setup task was registered")
+                .map_err(|error| ConnectionError::BadConnection(error.to_string()))?
+        }
+        .boxed()
     });
     AsyncDieselConnectionManager::new_with_config(database_url, config)
 }
@@ -136,14 +176,19 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
 }
 
 pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
-    let started = Instant::now();
+    let observation = tracing::enabled!(target: "persistence.pool", tracing::Level::TRACE)
+        .then(|| (std::time::Instant::now(), pool.status()));
     let connection = pool.get().await;
-    let wait_nanos = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-    DB_POOL_ACQUIRE_COUNT.fetch_add(1, Ordering::Relaxed);
-    DB_POOL_WAIT_NANOS_TOTAL.fetch_add(wait_nanos, Ordering::Relaxed);
-    let _ = DB_POOL_WAIT_NANOS_MAX.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-        (wait_nanos > current).then_some(wait_nanos)
-    });
+    if let Some((started, status)) = observation {
+        tracing::trace!(
+            target: "persistence.pool",
+            acquire_us = started.elapsed().as_micros() as u64,
+            available_before = status.available,
+            waiting_before = status.waiting,
+            success = connection.is_ok(),
+            "PostgreSQL connection acquisition completed"
+        );
+    }
     Ok(connection?)
 }
 
@@ -156,15 +201,6 @@ pub async fn health_check(pool: &DbPool) -> anyhow::Result<()> {
         .execute(&mut connection)
         .await?;
     Ok(())
-}
-
-#[must_use]
-pub fn db_pool_metrics() -> DbPoolMetrics {
-    DbPoolMetrics {
-        acquire_count: DB_POOL_ACQUIRE_COUNT.load(Ordering::Relaxed),
-        wait_nanos_total: DB_POOL_WAIT_NANOS_TOTAL.load(Ordering::Relaxed),
-        wait_nanos_max: DB_POOL_WAIT_NANOS_MAX.load(Ordering::Relaxed),
-    }
 }
 
 pub async fn run_pending_migrations(database_url: &str) -> anyhow::Result<bool> {
@@ -213,7 +249,8 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
     )
     .bind::<diesel::sql_types::Text, _>(runtime_role)
     .get_result::<RuntimeRoleStatus>(&mut connection)
-    .await?;
+    .await
+    .map_err(crate::unavailable::migration_query)?;
     if !status.acceptable {
         anyhow::bail!(
             "runtime PostgreSQL role must exist, differ from the lifecycle role, and have no superuser membership"
@@ -222,7 +259,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
 
     let quoted_role = format!("\"{runtime_role}\"");
     connection
-        .transaction::<(), anyhow::Error, _>(async move |connection| {
+        .transaction::<(), diesel::result::Error, _>(async move |connection| {
             connection
                 .batch_execute(&format!(
                     "REVOKE ALL ON SCHEMA public FROM {quoted_role};\
@@ -239,17 +276,21 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.__diesel_schema_migrations, \
                          public.security_audit_chain_state, \
                          public.security_audit_events, \
-                         public.security_audit_chain_entries, \
-                         public.security_audit_event_outbox \
+                         public.security_audit_chain_entries \
                      FROM {quoted_role};\
                      REVOKE ALL ON FUNCTION \
                          public.nazo_reject_security_audit_event_mutation(), \
                          public.nazo_security_audit_chain_head_for_update(), \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
+                         public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
+                         public.nazo_cleanup_authorization_decisions(), \
+                         public.nazo_access_request_required_approval_matches(UUID, UUID, UUID, UUID, TEXT, TEXT), \
                          public.nazo_append_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
+                         public.nazo_stage_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
                          public.nazo_security_audit_batch_members(), \
                          public.nazo_claim_security_audit_pending(BIGINT), \
                          public.nazo_open_security_audit_batch(BIGINT, BIGINT, INTEGER, BYTEA, INTEGER), \
+                         public.nazo_finalize_security_audit_claim(BIGINT, BYTEA, UUID[], BYTEA[], BIGINT, BIGINT, INTEGER, BYTEA, INTEGER), \
                          public.nazo_reclaim_security_audit_batch(BYTEA, INTEGER), \
                          public.nazo_ack_security_audit_batch(BIGINT, BIGINT, BIGINT, INTEGER, BYTEA, BYTEA, TEXT), \
                          public.nazo_fail_security_audit_batch(BIGINT, TIMESTAMPTZ, TEXT, BOOLEAN), \
@@ -257,10 +298,19 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_observe_security_audit_anchor(TEXT), \
                          public.nazo_record_security_audit_genesis(TEXT, BYTEA), \
                          public.nazo_security_audit_shared_anchor_health(), \
-                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
+                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN), \
+                         public.nazo_lock_token_principals(UUID, UUID, BIGINT, UUID, BIGINT), \
+                         public.nazo_create_refresh_family(UUID, UUID, UUID, UUID, BYTEA, JSONB, UUID, BYTEA, JSONB, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, UUID, UUID, TEXT), \
+                         public.nazo_oauth_refresh_contract_ensure(UUID, BYTEA, JSONB) \
                      FROM {quoted_role};\
                      GRANT EXECUTE ON FUNCTION \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
+                         public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
+                         public.nazo_cleanup_authorization_decisions(), \
+                         public.nazo_access_request_required_approval_matches(UUID, UUID, UUID, UUID, TEXT, TEXT), \
+                         public.nazo_lock_token_principals(UUID, UUID, BIGINT, UUID, BIGINT), \
+                         public.nazo_create_refresh_family(UUID, UUID, UUID, UUID, BYTEA, JSONB, UUID, BYTEA, JSONB, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, UUID, UUID, TEXT), \
+                         public.nazo_oauth_refresh_contract_ensure(UUID, BYTEA, JSONB), \
                          public.nazo_security_audit_shared_anchor_health(), \
                          public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
                      TO {quoted_role};"
@@ -268,7 +318,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                 .await?;
             Ok(())
         })
-        .await?;
+        .await.map_err(crate::unavailable::migration_query)?;
     Ok(())
 }
 
@@ -283,7 +333,7 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
         .batch_execute(&format!(
             "SET SESSION lock_timeout = '25s'; SET SESSION statement_timeout = '{MIGRATION_STATEMENT_TIMEOUT}';"
         ))
-        .await?;
+        .await.map_err(crate::unavailable::migration_query)?;
 
     let deadline = tokio::time::Instant::now() + MIGRATION_LOCK_TIMEOUT;
     loop {
@@ -291,12 +341,16 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
             "SELECT pg_try_advisory_lock({MIGRATION_ADVISORY_LOCK}) AS acquired"
         ))
         .get_result::<AdvisoryLockStatus>(&mut connection)
-        .await?;
+        .await
+        .map_err(crate::unavailable::migration_query)?;
         if status.acquired {
             break;
         }
         if tokio::time::Instant::now() >= deadline {
-            anyhow::bail!("migration advisory lock acquisition timed out");
+            return Err(nazo_persistence::MigrationUnavailable(anyhow::anyhow!(
+                "migration advisory lock acquisition timed out"
+            ))
+            .into());
         }
         tokio::time::sleep(MIGRATION_LOCK_RETRY_INTERVAL).await;
     }
@@ -308,7 +362,7 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
     let migration_result = harness
         .run_pending_migrations(MIGRATIONS)
         .map(|applied| !applied.is_empty())
-        .map_err(|error| anyhow::anyhow!(error.to_string()));
+        .map_err(crate::unavailable::migration_harness);
     let mut connection = harness.into_inner();
     let unlock_result: anyhow::Result<()> = match diesel::sql_query(format!(
         "SELECT pg_advisory_unlock({MIGRATION_ADVISORY_LOCK}) AS acquired"
@@ -317,18 +371,11 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
     .await
     {
         Ok(status) if status.acquired => Ok(()),
-        Ok(_) => anyhow::bail!("migration advisory lock release returned false"),
-        Err(error) => Err(error.into()),
+        Ok(_) => Err(anyhow::anyhow!(
+            "migration advisory lock release returned false"
+        )),
+        Err(error) => Err(crate::unavailable::migration_query(error)),
     };
 
-    match (migration_result, unlock_result) {
-        (Ok(applied), Ok(())) => Ok(applied),
-        (Err(error), Ok(())) => Err(error),
-        (Ok(_), Err(error)) => {
-            anyhow::bail!("migration advisory lock release failed: {error}")
-        }
-        (Err(migration_error), Err(unlock_error)) => anyhow::bail!(
-            "migration failed: {migration_error}; advisory lock release failed: {unlock_error}"
-        ),
-    }
+    crate::unavailable::migration_outcome(migration_result, unlock_result)
 }

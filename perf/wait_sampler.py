@@ -61,18 +61,10 @@ def rows(cur, sql, params=()):
     return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
-APP_METRICS_URL = os.environ.get("APP_METRICS_URL", "http://nazoauth:8000/__perf/metrics")
 
 
 def app_metrics():
-    try:
-        import urllib.request
-        req = urllib.request.Request(APP_METRICS_URL, headers={"Host": "127.0.0.1:8000"})
-        with urllib.request.urlopen(req, timeout=3) as r:
-            return json.loads(r.read().decode())
-    except Exception as exc:
-        return {"error": str(exc)}
-
+    return {"status": "UNAVAILABLE", "value": None, "collection_contract": "blackbox-db-v1"}
 
 def snap(cur):
     return {

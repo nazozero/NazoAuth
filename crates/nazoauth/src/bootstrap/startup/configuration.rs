@@ -6,7 +6,6 @@ use super::*;
 
 /// Tenant-scoped values used to assemble one immutable request graph.
 pub(super) struct StartupConfiguration {
-    pub(super) config: ConfigSource,
     pub(super) persistence: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
     pub(super) transient_state:
         nazo_oauth_server::ports::transient_state::ServerTransientStateBindings,
@@ -37,7 +36,6 @@ pub(super) async fn load(
     transient_state_launcher: &dyn crate::cli::TransientStateLauncher,
     avatar_object_store_launcher: &dyn crate::cli::AvatarObjectStoreLauncher,
 ) -> anyhow::Result<StartupRuntime> {
-    let perf_metrics_enabled = config.bool("PERF_METRICS_ENABLED", false)?;
     let password_hash_max_concurrency = config.parse::<usize>(
         "PASSWORD_HASH_MAX_CONCURRENCY",
         default_password_hash_max_concurrency(),
@@ -115,17 +113,13 @@ pub(super) async fn load(
         })?;
 
     let directory_cache = state_backend.tenant_directory_cache();
-    let database_pool_metrics: web::Data<dyn nazo_persistence::DatabasePoolMetricsPort> =
-        web::Data::from(persistence.provider().database_pool_metrics());
     let process = Arc::new(ProcessRuntime {
         config,
-        perf_metrics_enabled,
         control_tenant_id,
         persistence,
         state_backend,
         avatar_object_store,
         control_discovery,
-        database_pool_metrics,
         route_settings,
     });
 

@@ -8,11 +8,11 @@ fn prompt_none_claims_require_their_authorizing_scope() {
     assert!(user_claims_are_covered_by_scopes(&openid_only, &[]));
     assert!(!user_claims_are_covered_by_scopes(
         &openid_only,
-        &["email".to_owned()]
+        &[OidcClaimRequest::named("email")]
     ));
     assert!(!user_claims_are_covered_by_scopes(
         &openid_only,
-        &["unknown_claim".to_owned()]
+        &[OidcClaimRequest::named("unknown_claim")]
     ));
 
     let authorized = vec![
@@ -25,10 +25,10 @@ fn prompt_none_claims_require_their_authorizing_scope() {
     assert!(user_claims_are_covered_by_scopes(
         &authorized,
         &[
-            "birthdate".to_owned(),
-            "email_verified".to_owned(),
-            "address".to_owned(),
-            "phone_number".to_owned(),
+            OidcClaimRequest::named("birthdate"),
+            OidcClaimRequest::named("email_verified"),
+            OidcClaimRequest::named("address"),
+            OidcClaimRequest::named("phone_number"),
         ]
     ));
 }
@@ -78,8 +78,6 @@ fn userinfo_claims_follow_authorized_scopes() {
         ],
         "subject-1",
         &[],
-        &[],
-        None,
     );
 
     assert_eq!(claims["sub"], "subject-1");
@@ -117,7 +115,7 @@ fn userinfo_claims_follow_authorized_scopes() {
 #[test]
 fn userinfo_claims_omit_unrequested_profile_and_email() {
     let user = user();
-    let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1", &[], &[], None);
+    let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1", &[]);
 
     assert!(claims.get("name").is_none());
     assert!(claims.get("given_name").is_none());
@@ -151,8 +149,6 @@ fn id_token_user_claims_do_not_expose_email_scope_claims() {
         ],
         "subject-1",
         &[],
-        &[],
-        None,
     );
 
     assert_eq!(claims["sub"], "subject-1");
@@ -172,9 +168,10 @@ fn requested_userinfo_claims_allow_explicit_profile_claims_without_profile_scope
         &user,
         &["openid".to_owned()],
         "subject-1",
-        &["name".to_owned()],
-        &[],
-        None,
+        &(["name".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>(),
     );
 
     assert_eq!(claims["sub"], "subject-1");
@@ -189,13 +186,14 @@ fn requested_contact_claims_allow_explicit_contact_claims_without_contact_scopes
         &user,
         &["openid".to_owned()],
         "subject-1",
-        &[
+        &([
             "address".to_owned(),
             "phone_number".to_owned(),
             "phone_number_verified".to_owned(),
-        ],
-        &[],
-        None,
+        ])
+        .into_iter()
+        .map(nazo_auth::OidcClaimRequest::named)
+        .collect::<Vec<_>>(),
     );
 
     assert_eq!(claims["sub"], "subject-1");
@@ -214,11 +212,6 @@ fn requested_userinfo_claim_values_filter_output_even_without_matching_scope() {
         &user,
         &["openid".to_owned()],
         "subject-1",
-        &[
-            "email".to_owned(),
-            "email_verified".to_owned(),
-            "phone_number".to_owned(),
-        ],
         &[
             OidcClaimRequest {
                 name: "email".to_owned(),
@@ -239,7 +232,6 @@ fn requested_userinfo_claim_values_filter_output_even_without_matching_scope() {
                 values: vec![json!("+15555550000"), json!("+15555550001")],
             },
         ],
-        None,
     );
 
     assert!(claims.get("email").is_none());
@@ -254,11 +246,6 @@ fn id_token_claim_values_filter_output_and_allow_matching_contact_claims() {
         &user,
         &["openid".to_owned(), "email".to_owned(), "phone".to_owned()],
         "subject-1",
-        &[
-            "email".to_owned(),
-            "email_verified".to_owned(),
-            "phone_number".to_owned(),
-        ],
         &[
             OidcClaimRequest {
                 name: "email".to_owned(),
@@ -279,7 +266,6 @@ fn id_token_claim_values_filter_output_and_allow_matching_contact_claims() {
                 values: vec![json!("+15555550000")],
             },
         ],
-        None,
     );
 
     assert_eq!(claims["email"], "alice@example.com");

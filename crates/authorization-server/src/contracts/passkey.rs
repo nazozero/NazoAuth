@@ -3,7 +3,7 @@ use std::{future::Future, pin::Pin};
 use chrono::{DateTime, Utc};
 use nazo_identity::{
     LoginSuccess, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, RememberedMfaProof,
-    ports::PasskeyCredential,
+    ports::{PasskeyCredential, PasskeyCredentialSummary},
 };
 use passkey_auth::{AuthenticationResponse, RegistrationResponse};
 use uuid::Uuid;
@@ -64,6 +64,19 @@ pub trait PasskeyProfileOperations: Send + Sync {
     ) -> PasskeyFuture<'_, PasskeyCredential>;
 
     fn list(&self, context: PasskeyProfileContext) -> PasskeyFuture<'_, Vec<PasskeyCredential>>;
+
+    fn list_summaries(
+        &self,
+        context: PasskeyProfileContext,
+    ) -> PasskeyFuture<'_, Vec<PasskeyCredentialSummary>> {
+        Box::pin(async move {
+            self.list(context).await.map(|rows| {
+                rows.into_iter()
+                    .map(PasskeyCredentialSummary::from)
+                    .collect()
+            })
+        })
+    }
 
     fn delete(&self, context: PasskeyProfileContext, passkey_id: Uuid) -> PasskeyFuture<'_, ()>;
 }

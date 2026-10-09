@@ -30,7 +30,6 @@ pub struct StoredControllerSlot {
     pub slot_index: i16,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
-    pub last_used_at: Option<DateTime<Utc>>,
     pub status: ControllerSlotStatus,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -189,13 +188,19 @@ impl std::fmt::Display for CommitWithApprovalError {
 
 impl std::error::Error for CommitWithApprovalError {}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IssuedIdentityApproval {
     pub approval_id: Uuid,
     pub action: ControllerIdentityAction,
     pub action_sha256: String,
     pub token: String,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for IssuedIdentityApproval {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("IssuedIdentityApproval([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -343,7 +348,112 @@ impl std::fmt::Display for RecoveryRotationError {
 
 impl std::error::Error for RecoveryRotationError {}
 
+/// Current administrator context and canonical source hash for an admin identity command.
+#[derive(Clone, Debug)]
+pub struct AdminIdentityAudit {
+    pub tenant: nazo_identity::TenantContext,
+    pub actor_user_id: Uuid,
+    pub source_ip_hash: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct IdentityApprovalCommand {
+    pub deployment_id: String,
+    pub action: ControllerIdentityAction,
+    pub action_sha256: String,
+    pub now: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+pub struct SlotCreationCommand {
+    pub approval_token: String,
+    pub action: ControllerIdentityAction,
+    pub action_sha256: String,
+    pub slot: NewControllerSlot,
+    pub initial_root: Option<NewRecoveryRoot>,
+    pub now: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+pub struct SlotRotationCommand {
+    pub approval_token: String,
+    pub deployment_id: String,
+    pub action_sha256: String,
+    pub rotation: RotateControllerKey,
+    pub now: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+pub struct SlotRevocationCommand {
+    pub approval_token: String,
+    pub deployment_id: String,
+    pub action_sha256: String,
+    pub controller_id: String,
+    pub now: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoveryApprovalCommand {
+    pub deployment_id: String,
+    pub action_sha256: String,
+    pub now: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+pub struct RecoveryRotationCommand {
+    pub approval_token: String,
+    pub deployment_id: String,
+    pub action_sha256: String,
+    pub root: NewRecoveryRoot,
+    pub now: DateTime<Utc>,
+}
+
 pub trait ControllerRegistryPort: Send + Sync {
+    fn issue_identity_approval_with_required_audit(
+        &self,
+        _command: IdentityApprovalCommand,
+        _audit: AdminIdentityAudit,
+    ) -> BoxFuture<'_, Result<IssuedIdentityApproval, IdentityApprovalError>> {
+        Box::pin(async {
+            Err(IdentityApprovalError::Transport(anyhow::anyhow!(
+                "Required issue_identity_approval capability unavailable"
+            )))
+        })
+    }
+    fn commit_slot_creation_with_required_audit(
+        &self,
+        _command: SlotCreationCommand,
+        _audit: AdminIdentityAudit,
+    ) -> BoxFuture<'_, Result<StoredControllerSlot, CommitWithApprovalError>> {
+        Box::pin(async {
+            Err(CommitWithApprovalError::Transport(anyhow::anyhow!(
+                "Required commit_slot_creation capability unavailable"
+            )))
+        })
+    }
+    fn commit_slot_rotation_with_required_audit(
+        &self,
+        _command: SlotRotationCommand,
+        _audit: AdminIdentityAudit,
+    ) -> BoxFuture<'_, Result<StoredControllerSlot, CommitWithApprovalError>> {
+        Box::pin(async {
+            Err(CommitWithApprovalError::Transport(anyhow::anyhow!(
+                "Required commit_slot_rotation capability unavailable"
+            )))
+        })
+    }
+    fn commit_slot_revocation_with_required_audit(
+        &self,
+        _command: SlotRevocationCommand,
+        _audit: AdminIdentityAudit,
+    ) -> BoxFuture<'_, Result<StoredControllerSlot, CommitWithApprovalError>> {
+        Box::pin(async {
+            Err(CommitWithApprovalError::Transport(anyhow::anyhow!(
+                "Required commit_slot_revocation capability unavailable"
+            )))
+        })
+    }
+
     fn issue_identity_approval<'a>(
         &'a self,
         deployment_id: &'a str,
@@ -395,6 +505,29 @@ pub trait ControllerRegistryPort: Send + Sync {
 }
 
 pub trait RecoveryRootPort: Send + Sync {
+    fn issue_rotation_approval_with_required_audit(
+        &self,
+        _command: RecoveryApprovalCommand,
+        _audit: AdminIdentityAudit,
+    ) -> BoxFuture<'_, Result<IssuedIdentityApproval, RecoveryRotationError>> {
+        Box::pin(async {
+            Err(RecoveryRotationError::Transport(anyhow::anyhow!(
+                "Required issue_rotation_approval capability unavailable"
+            )))
+        })
+    }
+    fn commit_rotation_with_required_audit(
+        &self,
+        _command: RecoveryRotationCommand,
+        _audit: AdminIdentityAudit,
+    ) -> BoxFuture<'_, Result<StoredRecoveryRoot, RecoveryRotationError>> {
+        Box::pin(async {
+            Err(RecoveryRotationError::Transport(anyhow::anyhow!(
+                "Required commit_rotation capability unavailable"
+            )))
+        })
+    }
+
     fn current_root<'a>(
         &'a self,
         deployment_id: &'a str,

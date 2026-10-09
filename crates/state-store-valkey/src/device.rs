@@ -1,7 +1,8 @@
+use fred::prelude::LuaInterface;
 use nazo_auth::DeviceAuthorizationState;
 use nazo_auth::{
     DeviceAtomicResult, DeviceCreateResult as AuthDeviceCreateResult, DeviceStatePortError,
-    DeviceStateStorePort, DeviceStateVersion, StoredDeviceAuthorization,
+    DeviceStateReplacement, DeviceStateStorePort, DeviceStateVersion, StoredDeviceAuthorization,
 };
 
 use crate::{Error, ValkeyConnection, command, keys};
@@ -15,12 +16,13 @@ return 'applied'
 "#;
 const SNAPSHOT_DEVICE_SCRIPT: &str = r#"
 local value = redis.call('GET', KEYS[1])
-if not value then return cjson.encode({found = false}) end
-return cjson.encode({found = true, value = value, expire_at = redis.call('PEXPIRETIME', KEYS[1])})
+if not value then return false end
+return {value, redis.call('PEXPIRETIME', KEYS[1])}
 "#;
 const COMPARE_SET_DEVICE_SCRIPT: &str = r#"
 local current = redis.call('GET', KEYS[1])
 if not current or current ~= ARGV[1] then return 'conflict' end
+if #KEYS == 2 and redis.call('GET', KEYS[2]) ~= ARGV[3] then return 'conflict' end
 local deadline = redis.call('PEXPIRETIME', KEYS[1])
 if deadline == -2 then return 'deadline_elapsed' end
 if deadline == -1 then return 'invalid_deadline' end
@@ -48,18 +50,6 @@ end
 redis.call('SET', KEYS[1], ARGV[2])
 redis.call('PEXPIREAT', KEYS[1], deadline)
 redis.call('DEL', KEYS[2])
-return 'applied'
-"#;
-const COMPARE_DELETE_DEVICE_SCRIPT: &str = r#"
-local current = redis.call('GET', KEYS[1])
-if not current or current ~= ARGV[1] then return 'conflict' end
-local deadline = redis.call('PEXPIRETIME', KEYS[1])
-if deadline == -2 then return 'deadline_elapsed' end
-if deadline == -1 then return 'invalid_deadline' end
-local time = redis.call('TIME')
-local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
-redis.call('DEL', KEYS[1])
-if now >= deadline then return 'deadline_elapsed' end
 return 'applied'
 "#;
 const DELETE_USER_CODE_IF_MATCHES_SCRIPT: &str = r#"
@@ -140,23 +130,19 @@ impl DeviceStore {
         &self,
         key: String,
     ) -> Result<Option<StoredDeviceAuthorization<DeviceStateVersion>>, Error> {
-        let reply =
-            command::eval_string(&self.connection, SNAPSHOT_DEVICE_SCRIPT, vec![key], vec![])
-                .await?;
-        let snapshot: serde_json::Value = serde_json::from_str(&reply)
-            .map_err(|error| Error::protocol(format!("malformed device snapshot: {error}")))?;
-        if snapshot.get("found").and_then(serde_json::Value::as_bool) != Some(true) {
+        let snapshot: Option<(String, i64)> = self
+            .connection
+            .client
+            .eval(
+                SNAPSHOT_DEVICE_SCRIPT,
+                self.connection.state_keys(vec![key]),
+                Vec::<String>::new(),
+            )
+            .await
+            .map_err(Error::from_fred)?;
+        let Some((raw, deadline)) = snapshot else {
             return Ok(None);
-        }
-        let raw = snapshot
-            .get("value")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error::protocol("missing device snapshot value"))?
-            .to_owned();
-        let deadline = snapshot
-            .get("expire_at")
-            .and_then(serde_json::Value::as_i64)
-            .ok_or_else(|| Error::protocol("missing device snapshot deadline"))?;
+        };
         if deadline == -2 {
             return Ok(None);
         }
@@ -175,18 +161,21 @@ impl DeviceStore {
         key: String,
         expected: &DeviceStateVersion,
         replacement: &DeviceAuthorizationState,
-    ) -> Result<DeviceAtomicResult, Error> {
-        let replacement = serde_json::to_string(replacement).map_err(|error| {
+        user_code_mapping: Option<(&str, &str)>,
+    ) -> Result<(DeviceAtomicResult, String), Error> {
+        let raw = serde_json::to_string(replacement).map_err(|error| {
             Error::protocol(format!("failed to serialize device state: {error}"))
         })?;
-        let reply = command::eval_string(
-            &self.connection,
-            COMPARE_SET_DEVICE_SCRIPT,
-            vec![key],
-            vec![expected.comparison_token().to_owned(), replacement],
-        )
-        .await?;
-        parse_atomic_result(&reply)
+        let mut keys = vec![key];
+        let mut arguments = vec![expected.comparison_token().to_owned(), raw.clone()];
+        if let Some((user_code, device_hash)) = user_code_mapping {
+            keys.push(keys::device_user_code(user_code));
+            arguments.push(device_hash.to_owned());
+        }
+        let reply =
+            command::eval_string(&self.connection, COMPARE_SET_DEVICE_SCRIPT, keys, arguments)
+                .await?;
+        Ok((parse_atomic_result(&reply)?, raw))
     }
 
     async fn complete_decision_snapshot(
@@ -211,21 +200,6 @@ impl DeviceStore {
                 replacement,
                 device_hash.to_owned(),
             ],
-        )
-        .await?;
-        parse_atomic_result(&reply)
-    }
-
-    async fn consume_snapshot(
-        &self,
-        device_code: &str,
-        expected: &DeviceStateVersion,
-    ) -> Result<DeviceAtomicResult, Error> {
-        let reply = command::eval_string(
-            &self.connection,
-            COMPARE_DELETE_DEVICE_SCRIPT,
-            vec![keys::device_code(device_code)],
-            vec![expected.comparison_token().to_owned()],
         )
         .await?;
         parse_atomic_result(&reply)
@@ -298,8 +272,9 @@ impl DeviceStateStorePort for DeviceStore {
         replacement: &'a DeviceAuthorizationState,
     ) -> nazo_auth::DeviceStateFuture<'a, DeviceAtomicResult> {
         Box::pin(async move {
-            self.replace_snapshot(keys::device_code(device_code), version, replacement)
+            self.replace_snapshot(keys::device_code(device_code), version, replacement, None)
                 .await
+                .map(|(result, _)| result)
                 .map_err(port_error)
         })
     }
@@ -309,11 +284,47 @@ impl DeviceStateStorePort for DeviceStore {
         device_hash: &'a str,
         version: &'a Self::Version,
         replacement: &'a DeviceAuthorizationState,
+    ) -> nazo_auth::DeviceStateFuture<'a, DeviceStateReplacement<Self::Version>> {
+        Box::pin(async move {
+            let (result, raw) = self
+                .replace_snapshot(
+                    keys::device_code_hash(device_hash),
+                    version,
+                    replacement,
+                    None,
+                )
+                .await
+                .map_err(port_error)?;
+            Ok(match result {
+                DeviceAtomicResult::Applied => {
+                    DeviceStateReplacement::Applied(Box::new(StoredDeviceAuthorization::new(
+                        replacement.clone(),
+                        DeviceStateVersion::new(raw),
+                    )))
+                }
+                DeviceAtomicResult::Conflict => DeviceStateReplacement::Conflict,
+                DeviceAtomicResult::DeadlineElapsed => DeviceStateReplacement::DeadlineElapsed,
+            })
+        })
+    }
+
+    fn claim_decision<'a>(
+        &'a self,
+        device_hash: &'a str,
+        user_code: &'a str,
+        version: &'a Self::Version,
+        replacement: &'a DeviceAuthorizationState,
     ) -> nazo_auth::DeviceStateFuture<'a, DeviceAtomicResult> {
         Box::pin(async move {
-            self.replace_snapshot(keys::device_code_hash(device_hash), version, replacement)
-                .await
-                .map_err(port_error)
+            self.replace_snapshot(
+                keys::device_code_hash(device_hash),
+                version,
+                replacement,
+                Some((user_code, device_hash)),
+            )
+            .await
+            .map(|(result, _)| result)
+            .map_err(port_error)
         })
     }
 
@@ -326,18 +337,6 @@ impl DeviceStateStorePort for DeviceStore {
     ) -> nazo_auth::DeviceStateFuture<'a, DeviceAtomicResult> {
         Box::pin(async move {
             self.complete_decision_snapshot(device_hash, user_code, version, replacement)
-                .await
-                .map_err(port_error)
-        })
-    }
-
-    fn consume_by_device_code<'a>(
-        &'a self,
-        device_code: &'a str,
-        version: &'a Self::Version,
-    ) -> nazo_auth::DeviceStateFuture<'a, DeviceAtomicResult> {
-        Box::pin(async move {
-            self.consume_snapshot(device_code, version)
                 .await
                 .map_err(port_error)
         })

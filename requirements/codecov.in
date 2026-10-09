@@ -3,6 +3,6 @@ psycopg[binary]
 redis
 argon2-cffi
 pyjwt
-cryptography>=50.0.0
+cryptography>=50.0.2
 aiosmtpd
 blake3

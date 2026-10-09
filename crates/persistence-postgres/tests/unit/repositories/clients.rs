@@ -124,7 +124,7 @@ async fn oauth_client_record_into_domain_validates_json_columns_after_decode() {
         .get_result::<OAuthClientRecord>(&mut connection)
         .await
         .expect("a JSONB array of non-strings still decodes into the record");
-    // Stage two (post-commit) fails closed on the domain-invalid column.
+    // Stage two (after decode) fails closed on the domain-invalid column.
     let error = record.into_domain().unwrap_err();
     assert!(
         matches!(error, RepositoryError::Unexpected(ref message) if message.contains("scopes")),
@@ -133,13 +133,11 @@ async fn oauth_client_record_into_domain_validates_json_columns_after_decode() {
     delete_dc04_client(&mut connection, client_id).await;
 }
 
-/// DC-04b: `replace_registration` runs exactly one `UPDATE ... RETURNING`
-/// statement — a single statement is already atomic, so no transaction wraps
-/// it — and converts the decoded record to the domain client only after the
-/// statement resolves, so a conversion error can neither resurrect a rejected
-/// update nor hide a committed one.
+/// DC-04b: one UPDATE RETURNING is drained and validated inside the shared
+/// Required-audit transaction. Domain conversion failure rolls back the update;
+/// the domain client is returned only after the full transaction acknowledgement.
 #[test]
-fn replace_registration_converts_the_record_after_commit() {
+fn replace_registration_validates_the_record_before_audited_commit() {
     let source = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/repositories/clients/mutation.rs"
@@ -150,34 +148,35 @@ fn replace_registration_converts_the_record_after_commit() {
         .nth(1)
         .and_then(|source| source.split("pub async fn rotate_credentials(").next())
         .expect("replace_registration remains present");
-
-    assert!(
-        !body.contains(".transaction"),
-        "a single UPDATE ... RETURNING needs no explicit transaction"
-    );
+    let transaction = body
+        .find(".transaction::<OAuthClient")
+        .expect("atomic owner remains present");
     let statement = body
         .find("UPDATE oauth_clients SET")
-        .expect("the single update statement is present");
+        .expect("single update remains present");
+    assert_eq!(body.matches("UPDATE oauth_clients SET").count(), 1);
+    let drain = body
+        .find(".load::<OAuthClientRecord>")
+        .expect("RETURNING is fully drained");
     let domain = body
-        .rfind("record.into_domain()")
-        .expect("the returned record converts to the domain client");
-    assert!(
-        statement < domain,
-        "into_domain must run after the statement returns, not before"
-    );
-    assert!(
-        body.contains("RETURNING") && body.contains("get_result::<OAuthClientRecord>"),
-        "the statement decodes the returned row into the record type"
-    );
+        .find(".into_domain()")
+        .expect("returned record is validated");
+    let audit = body
+        .find("append_dynamic_registration_audit")
+        .expect("audited update retains the Required owner");
+    assert!(transaction < statement && statement < drain && drain < domain && domain < audit);
+    assert!(body.contains("RETURNING") && body.contains("records.len() != 1"));
     let metadata = body
         .find("serde_json::json!")
-        .expect("metadata is serialized before the statement runs");
+        .expect("metadata serialization remains present");
     let acquire = body
         .find("self.connection().await?")
-        .expect("the connection is acquired for the statement");
+        .expect("single connection is acquired");
+    assert!(metadata < acquire && acquire < transaction);
+    assert_eq!(body.matches("self.connection().await?").count(), 1);
     assert!(
-        metadata < acquire && acquire < statement,
-        "metadata is constructed before the pooled connection is acquired"
+        body.contains("if result.is_ok()") && body.contains("guard.return_to_pool()"),
+        "failed acknowledgements must discard the guarded connection"
     );
 }
 

@@ -6,8 +6,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    AuthorizationPortError, RedirectUriError, is_subset, is_valid_pkce_value,
-    parse_resource_indicator_parameter, resolve_registered_redirect_uri,
+    AuthorizationPortError, RedirectUriError, parse_resource_indicator_parameter,
+    resolve_registered_redirect_uri,
 };
 use crate::{
     OAuthClient,
@@ -213,7 +213,7 @@ fn decode_request_object_claims(
 pub struct RequestObjectReplay {
     pub client_id: String,
     pub jti: String,
-    pub ttl_seconds: u64,
+    pub expires_at: i64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -430,24 +430,14 @@ fn request_object_replay(
     let Some(jti) = claims.jti.as_ref() else {
         return Ok(None);
     };
-    let ttl_seconds = match claims.exp {
-        Some(expiry) => {
-            let remaining = expiry
-                .checked_sub(policy.now)
-                .ok_or(AuthorizationRequestError::RequestObjectClaims)?;
-            let remaining = u64::try_from(remaining)
-                .map_err(|_| AuthorizationRequestError::RequestObjectClaims)?;
-            if remaining == 0 {
-                return Err(AuthorizationRequestError::RequestObjectClaims);
-            }
-            remaining
-        }
-        None => return Err(AuthorizationRequestError::RequestObjectClaims),
-    };
+    let expires_at = claims
+        .exp
+        .filter(|expiry| *expiry > policy.now)
+        .ok_or(AuthorizationRequestError::RequestObjectClaims)?;
     Ok(Some(RequestObjectReplay {
         client_id: claims.client_id.clone(),
         jti: jti.clone(),
-        ttl_seconds,
+        expires_at,
     }))
 }
 
@@ -525,6 +515,9 @@ pub struct RawParAdmissionPolicy<'a> {
 pub struct ExpandedParAdmissionPolicy<'a> {
     pub client_type: &'a str,
     pub redirect_uris: &'a [String],
+    pub allowed_scopes: &'a [String],
+    pub capabilities: crate::AuthorizationCapabilityPolicy,
+    pub signed_authorization_response_required: bool,
     pub allowed_audiences: &'a [String],
     pub pkce_required: bool,
     pub fapi2_requires_explicit_redirect_uri: bool,
@@ -539,18 +532,14 @@ pub struct ParAdmission {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ParAdmissionError {
     RequestUriNotAllowed,
-    UnsupportedResponseType,
+    Authorization(crate::AuthorizationPolicyError),
     RequestObjectRequired,
     ConfidentialClientRequired,
     StrongClientAuthenticationRequired,
     SenderConstraintRequired,
-    PkceRequired,
-    InvalidPkce,
     ExplicitRedirectUriRequired,
     RedirectUriRequired,
     RedirectUriNotRegistered,
-    InvalidResource,
-    ResourceNotAllowed,
 }
 
 impl ParAdmissionError {
@@ -558,17 +547,14 @@ impl ParAdmissionError {
     pub const fn oauth_error(self) -> &'static str {
         match self {
             Self::RequestUriNotAllowed => "invalid_request_object",
-            Self::UnsupportedResponseType => "unsupported_response_type",
+            Self::Authorization(error) => error.oauth_error(),
             Self::ConfidentialClientRequired => "unauthorized_client",
             Self::StrongClientAuthenticationRequired => "invalid_client",
             Self::RequestObjectRequired
             | Self::SenderConstraintRequired
-            | Self::PkceRequired
-            | Self::InvalidPkce
             | Self::ExplicitRedirectUriRequired
             | Self::RedirectUriRequired
             | Self::RedirectUriNotRegistered => "invalid_request",
-            Self::InvalidResource | Self::ResourceNotAllowed => "invalid_target",
         }
     }
 }
@@ -609,21 +595,6 @@ pub fn validate_expanded_par_admission(
     if parameters.contains_key("request_uri") {
         return Err(ParAdmissionError::RequestUriNotAllowed);
     }
-    if parameters
-        .get("response_type")
-        .is_some_and(|response_type| response_type != "code")
-    {
-        return Err(ParAdmissionError::UnsupportedResponseType);
-    }
-    match (
-        parameters.get("code_challenge").map(String::as_str),
-        parameters.get("code_challenge_method").map(String::as_str),
-    ) {
-        (None, None) if !policy.pkce_required => {}
-        (None, None) => return Err(ParAdmissionError::PkceRequired),
-        (Some(challenge), Some("S256")) if is_valid_pkce_value(challenge) => {}
-        _ => return Err(ParAdmissionError::InvalidPkce),
-    }
     if policy.fapi2_requires_explicit_redirect_uri && !parameters.contains_key("redirect_uri") {
         return Err(ParAdmissionError::ExplicitRedirectUriRequired);
     }
@@ -636,22 +607,29 @@ pub fn validate_expanded_par_admission(
         RedirectUriError::Missing => ParAdmissionError::RedirectUriRequired,
         RedirectUriError::Invalid => ParAdmissionError::RedirectUriNotRegistered,
     })?;
-    let resources =
-        parse_resource_indicator_parameter(parameters.get("resource").map(String::as_str))
-            .map_err(|_| ParAdmissionError::InvalidResource)?;
-    if !resources.is_empty() && !is_subset(&resources, policy.allowed_audiences) {
-        return Err(ParAdmissionError::ResourceNotAllowed);
-    }
+    let normalized = crate::normalize_authorization_request(
+        parameters,
+        crate::AuthorizationClientPolicy {
+            client_type: policy.client_type,
+            allowed_scopes: policy.allowed_scopes,
+            allowed_audiences: policy.allowed_audiences,
+        },
+        policy.capabilities,
+        crate::AuthorizationProfilePolicy {
+            signed_authorization_response_required: policy.signed_authorization_response_required,
+            pkce_required: policy.pkce_required,
+        },
+    )
+    .map_err(ParAdmissionError::Authorization)?;
     Ok(ParAdmission {
         redirect_uri,
-        resources,
+        resources: normalized.resources,
     })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PushedAuthorizationRequestConsumeError {
     Missing,
-    Malformed,
     Dependency(AuthorizationPortError),
 }
 

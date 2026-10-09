@@ -518,8 +518,6 @@ async fn seed_user(connection: &mut AsyncPgConnection, tenant: &TenantContext, u
 struct IssuanceRow {
     #[diesel(sql_type = Nullable<diesel::sql_types::Bytea>)]
     single_use_key_blake3: Option<Vec<u8>>,
-    #[diesel(sql_type = SqlText)]
-    access_token_jti: String,
 }
 
 async fn issuance_rows(
@@ -527,8 +525,8 @@ async fn issuance_rows(
     tenant: &TenantContext,
 ) -> Vec<IssuanceRow> {
     diesel::sql_query(format!(
-        "SELECT single_use_key_blake3, access_token_jti FROM oauth_token_issuances \
-         WHERE tenant_id = '{}' ORDER BY access_token_jti",
+        "SELECT single_use_key_blake3 FROM oauth_token_issuances \
+         WHERE tenant_id = '{}' ORDER BY issuance_id",
         tenant.tenant_id.as_uuid()
     ))
     .load::<IssuanceRow>(connection)
@@ -572,8 +570,8 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
     )
     .await;
 
-    // The issuance fact stays narrow: eight core columns plus the nullable
-    // family reference required to revoke an authorization-code replay.
+    // The narrow issuance facts also retain the epoch guard, receipt contract
+    // version and exact authorization-code holder required for safe replay.
     assert_eq!(
         issuance_column_names(&mut connection).await,
         vec![
@@ -586,8 +584,11 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
             "access_token_expires_at",
             "retain_until",
             "refresh_token_family_id",
+            "principal_epoch_bound",
+            "receipt_contract_version",
+            "authorization_code_holder",
         ],
-        "oauth_token_issuances must carry only the simplified facts and replay family reference"
+        "oauth_token_issuances must retain the simplified facts and exact replay authority"
     );
 
     // TOK-01/TOK-11: the same inbound Idempotency-Key on two requests yields
@@ -648,20 +649,11 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
         "a repeated Idempotency-Key must never replay a stored response"
     );
 
-    // TOK-05: both issuances are Fresh — NULL single-use keys, distinct JTIs.
+    // Fresh responses are distinct without producing per-token business rows.
     let rows = issuance_rows(&mut connection, &fixture.tenant).await;
-    assert_eq!(
-        rows.len(),
-        2,
-        "each request must persist its own issuance row"
-    );
     assert!(
-        rows.iter().all(|row| row.single_use_key_blake3.is_none()),
-        "client_credentials issuance must not store a single-use key"
-    );
-    assert_ne!(
-        rows[0].access_token_jti, rows[1].access_token_jti,
-        "each response must carry its own committed access-token JTI"
+        rows.is_empty(),
+        "Fresh must not create issuance ownership records"
     );
 }
 

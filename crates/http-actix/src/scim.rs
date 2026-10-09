@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use actix_web::{
     HttpRequest, HttpResponse,
     http::{StatusCode, header},
-    web::{Data, Json, Path},
+    web::{Bytes, Data, Json, Path},
 };
 use chrono::Utc;
 use nazo_identity::{
@@ -21,7 +21,7 @@ use nazo_identity::{
     },
 };
 use nazo_scim_events::{EventPollerPort, MutationContext, PollRequest, ValidatedPollRequest};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use nazo_oauth_server::contracts::scim::{
     ScimAuthenticationFacts, ScimAuthorizationError, ScimAuthorizedRequest,
@@ -82,9 +82,17 @@ pub async fn scim_service_provider_config(
     if let Err(error) = authorize(&endpoint, &request, ScimRequiredScope::Read).await {
         return authorization_error(error);
     }
-    json_response(scim_service_provider_config_document_with_events(
-        endpoint.security_events_enabled(),
-    ))
+    static WITH_EVENTS: OnceLock<Bytes> = OnceLock::new();
+    static WITHOUT_EVENTS: OnceLock<Bytes> = OnceLock::new();
+    let enabled = endpoint.security_events_enabled();
+    discovery_response(
+        if enabled {
+            &WITH_EVENTS
+        } else {
+            &WITHOUT_EVENTS
+        },
+        || scim_service_provider_config_document_with_events(enabled),
+    )
 }
 
 pub async fn scim_poll_security_events(
@@ -95,11 +103,16 @@ pub async fn scim_poll_security_events(
     if !endpoint.security_event_delivery_enabled() {
         return authorization_error(ScimAuthorizationError::Disabled);
     }
-    let authorized = match authorize(&endpoint, &request, ScimRequiredScope::Events).await {
+    let facts = authentication_facts(&endpoint, &request);
+    let authorized = match endpoint
+        .authorizer
+        .authorize(facts.clone(), ScimRequiredScope::Events)
+        .await
+    {
         Ok(authorized) => authorized,
         Err(error) => return authorization_error(error),
     };
-    let Some(receiver) = authorized.event_receiver else {
+    let Some(receiver) = authorized.event_receiver.as_ref() else {
         return authorization_error(ScimAuthorizationError::EventReceiverNotConfigured);
     };
     let has_content_language = request
@@ -120,7 +133,7 @@ pub async fn scim_poll_security_events(
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut current = validated;
     loop {
-        let response = match events.poll(&receiver, &current).await {
+        let response = match events.poll(receiver, &current).await {
             Ok(response) => response,
             Err(_) => return backend_unavailable(),
         };
@@ -129,6 +142,35 @@ pub async fn scim_poll_security_events(
             || response.more_available
             || tokio::time::Instant::now() >= deadline
         {
+            // Polling may have awaited page reads, signing and sleeps. Reuse the
+            // extracted transport facts, but obtain fresh authority before release.
+            let fresh = match endpoint
+                .authorizer
+                .authorize(facts.clone(), ScimRequiredScope::Events)
+                .await
+            {
+                Ok(fresh) => fresh,
+                Err(error) => return authorization_error(error),
+            };
+            if !endpoint.security_event_delivery_enabled() {
+                return authorization_error(ScimAuthorizationError::Disabled);
+            }
+            if fresh.tenant != authorized.tenant
+                || fresh.cursor_subject != authorized.cursor_subject
+            {
+                return authorization_error(ScimAuthorizationError::TenantMismatch);
+            }
+            match fresh.event_receiver.as_ref() {
+                None => {
+                    return authorization_error(ScimAuthorizationError::EventReceiverNotConfigured);
+                }
+                Some(current_receiver) if current_receiver != receiver => {
+                    return authorization_error(ScimAuthorizationError::InvalidBearer);
+                }
+                Some(_) => {}
+            }
+            // Durable processing of caller-supplied dispositions is not rolled
+            // back by a rejected HTTP response, and is not an ACK of these SETs.
             return json_response(json!({
                 "sets": response.sets,
                 "moreAvailable": response.more_available,
@@ -148,7 +190,8 @@ pub async fn scim_schemas(endpoint: Data<ScimEndpoint>, request: HttpRequest) ->
     if let Err(error) = authorize(&endpoint, &request, ScimRequiredScope::Read).await {
         return authorization_error(error);
     }
-    json_response(scim_schemas_document())
+    static DOCUMENT: OnceLock<Bytes> = OnceLock::new();
+    discovery_response(&DOCUMENT, scim_schemas_document)
 }
 
 pub async fn scim_resource_types(
@@ -158,7 +201,21 @@ pub async fn scim_resource_types(
     if let Err(error) = authorize(&endpoint, &request, ScimRequiredScope::Read).await {
         return authorization_error(error);
     }
-    json_response(scim_resource_types_document())
+    static DOCUMENT: OnceLock<Bytes> = OnceLock::new();
+    discovery_response(&DOCUMENT, scim_resource_types_document)
+}
+
+// Only immutable document bytes are shared. Each handler authorizes its request
+// before selecting a current module variant or returning these bytes.
+fn discovery_response(cache: &OnceLock<Bytes>, document: impl FnOnce() -> Value) -> HttpResponse {
+    let body = cache.get_or_init(|| {
+        Bytes::from(
+            serde_json::to_vec(&document()).expect("SCIM discovery document is a JSON value"),
+        )
+    });
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(body.clone())
 }
 
 pub async fn scim_list_users(endpoint: Data<ScimEndpoint>, request: HttpRequest) -> HttpResponse {
@@ -418,18 +475,22 @@ async fn authorize(
 ) -> Result<ScimAuthorizedRequest, ScimAuthorizationError> {
     endpoint
         .authorizer
-        .authorize(
-            ScimAuthenticationFacts {
-                bearer_token: bearer_token(request),
-                source_ip: client_ip_with_config(request, &endpoint.client_ip),
-                user_agent: request
-                    .headers()
-                    .get(header::USER_AGENT)
-                    .and_then(|value| value.to_str().ok()),
-            },
-            required_scope,
-        )
+        .authorize(authentication_facts(endpoint, request), required_scope)
         .await
+}
+
+fn authentication_facts<'a>(
+    endpoint: &ScimEndpoint,
+    request: &'a HttpRequest,
+) -> ScimAuthenticationFacts<'a> {
+    ScimAuthenticationFacts {
+        bearer_token: bearer_token(request),
+        source_ip: client_ip_with_config(request, &endpoint.client_ip),
+        user_agent: request
+            .headers()
+            .get(header::USER_AGENT)
+            .and_then(|value| value.to_str().ok()),
+    }
 }
 
 fn bearer_token(request: &HttpRequest) -> Option<&str> {

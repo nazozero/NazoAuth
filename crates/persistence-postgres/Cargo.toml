@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+passkey-auth.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 rand.workspace = true
@@ -31,7 +32,7 @@ nazo-digital-credentials.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
 tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true
 tracing.workspace = true
@@ -44,7 +45,7 @@ argon2.workspace = true
 ed25519-dalek.workspace = true
 jsonwebtoken.workspace = true
 rcgen.workspace = true
-syn = { version = "3.0.0", features = ["full", "visit"] }
+syn = { version = "3.0.6", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 
 [lints]

@@ -1,13 +1,18 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use futures_executor::block_on;
 use nazo_auth::{
     CibaAtomicResult, CibaAuthenticationContext, CibaDecision, CibaDecisionEvaluation,
     CibaDecisionFailure, CibaPingNotification, CibaPingNotificationStatus, CibaRequestState,
-    CibaService, CibaStateFuture, CibaStateStorePort, CibaStatus, CibaStoredRequest,
-    evaluate_ciba_decision,
+    CibaService, CibaStateFuture, CibaStatePortError, CibaStateStorePort, CibaStatus,
+    CibaStoredRequest, evaluate_ciba_decision,
 };
 use uuid::Uuid;
 
-struct CreateStore;
+#[derive(Default)]
+struct CreateStore {
+    calls: AtomicUsize,
+}
 
 impl CibaStateStorePort for CreateStore {
     type Version = ();
@@ -24,6 +29,7 @@ impl CibaStateStorePort for CreateStore {
         auth_req_id: &'a str,
         state: &'a CibaRequestState,
     ) -> CibaStateFuture<'a, CibaAtomicResult> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         assert_eq!(auth_req_id, "generated-auth-req-id");
         let notification = state
             .ping_notification
@@ -43,6 +49,7 @@ impl CibaStateStorePort for CreateStore {
         _version: &'a Self::Version,
         _state: &'a CibaRequestState,
     ) -> CibaStateFuture<'a, CibaAtomicResult> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(CibaAtomicResult::Applied) })
     }
 
@@ -51,6 +58,7 @@ impl CibaStateStorePort for CreateStore {
         _auth_req_id: &'a str,
         _version: &'a Self::Version,
     ) -> CibaStateFuture<'a, CibaAtomicResult> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(CibaAtomicResult::Applied) })
     }
 }
@@ -58,7 +66,7 @@ impl CibaStateStorePort for CreateStore {
 #[test]
 fn decision_deadline_preserves_the_neutral_atomic_contract() {
     let result = block_on(
-        CibaService::new(CreateStore).decide_with_authorization_deadline(
+        CibaService::new(CreateStore::default()).decide_with_authorization_deadline(
             "missing-auth-request",
             CibaDecision::Approve(CibaAuthenticationContext {
                 auth_time: 100,
@@ -74,7 +82,7 @@ fn decision_deadline_preserves_the_neutral_atomic_contract() {
 }
 
 #[test]
-fn authorization_deadline_defaults_delegate_to_the_atomic_store_operations() {
+fn protocol_ciba_deadline_defaults_refuse_unenforced_authority_without_mutation() {
     let state = CibaRequestState {
         client_id: "deadline-client".to_owned(),
         user_id: Uuid::from_u128(7),
@@ -98,25 +106,50 @@ fn authorization_deadline_defaults_delegate_to_the_atomic_store_operations() {
             next_attempt_at: None,
         }),
     };
-    let store = CreateStore;
+    let store = CreateStore::default();
     assert_eq!(
-        block_on(store.create_with_authorization_deadline(
-            "generated-auth-req-id",
-            &state,
-            Some(150),
-        ))
-        .unwrap(),
-        CibaAtomicResult::Applied
-    );
-    assert_eq!(
-        block_on(store.replace_with_authorization_deadline("auth-req-id", &(), &state, Some(150),))
+        block_on(store.create_with_authorization_deadline("generated-auth-req-id", &state, None))
             .unwrap(),
         CibaAtomicResult::Applied
     );
     assert_eq!(
-        block_on(store.delete_with_authorization_deadline("auth-req-id", &(), Some(150),)).unwrap(),
+        block_on(store.replace_with_authorization_deadline("auth-req-id", &(), &state, None))
+            .unwrap(),
         CibaAtomicResult::Applied
     );
+    assert_eq!(
+        block_on(store.delete_with_authorization_deadline("auth-req-id", &(), None)).unwrap(),
+        CibaAtomicResult::Applied
+    );
+    assert_eq!(store.calls.load(Ordering::SeqCst), 3);
+    for deadline in [0, -1, 150, i64::MAX] {
+        assert_eq!(
+            block_on(store.create_with_authorization_deadline(
+                "generated-auth-req-id",
+                &state,
+                Some(deadline)
+            )),
+            Err(CibaStatePortError::Unavailable)
+        );
+        assert_eq!(
+            block_on(store.replace_with_authorization_deadline(
+                "auth-req-id",
+                &(),
+                &state,
+                Some(deadline)
+            )),
+            Err(CibaStatePortError::Unavailable)
+        );
+        assert_eq!(
+            block_on(store.delete_with_authorization_deadline("auth-req-id", &(), Some(deadline))),
+            Err(CibaStatePortError::Unavailable)
+        );
+        assert_eq!(
+            store.calls.load(Ordering::SeqCst),
+            3,
+            "unsupported deadline must not invoke mutation"
+        );
+    }
 }
 
 #[test]
@@ -146,7 +179,8 @@ fn ping_creation_allows_the_adapter_to_atomically_bind_auth_req_id() {
     };
 
     let auth_req_id = block_on(
-        CibaService::new(CreateStore).create_unique(&state, || "generated-auth-req-id".to_owned()),
+        CibaService::new(CreateStore::default())
+            .create_unique(&state, || "generated-auth-req-id".to_owned()),
     )
     .expect("valid pre-persistence ping state must be accepted");
 

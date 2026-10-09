@@ -24,7 +24,7 @@ use crate::token::{DEVICE_CODE_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE};
 use http::StatusCode;
 use nazo_auth::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, ClientAuthenticationContext,
-    PresentedClientCredentials as ClientCredentials, unverified_client_assertion_client_id,
+    PresentedClientCredentialsView as ClientCredentials, unverified_client_assertion_client_id,
 };
 use nazo_runtime_modules::SnapshotStore;
 use std::sync::Arc;
@@ -189,25 +189,25 @@ impl TokenEndpointHandles {
         let form_mtls_client_id =
             if !has_basic && !client_auth_context.has_assertion && form.client_secret.is_none() {
                 form.client_id
-                    .as_ref()
+                    .as_deref()
                     .filter(|_| facts.certificate.is_some())
-                    .cloned()
             } else {
                 None
             };
+        let attestation_client_id = attestation_headers.and_then(|(attestation, _)| {
+            crate::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator::unverified_client_id(attestation)
+        });
         let mut credentials =
-            auth_facts.presented_credentials(assertion_client_id, form_mtls_client_id);
-        if let Some((attestation, _)) = attestation_headers {
+            auth_facts.credential_view(assertion_client_id.as_deref(), form_mtls_client_id);
+        if attestation_headers.is_some() {
             credentials = ClientCredentials {
-            client_id: crate::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator::unverified_client_id(
-                attestation,
-            ),
-            client_secret: None,
-            client_assertion: None,
-            method: "attest_jwt_client_auth".to_owned(),
-        };
+                client_id: attestation_client_id.as_deref(),
+                client_secret: None,
+                client_assertion: None,
+                method: "attest_jwt_client_auth",
+            };
         }
-        let Some(client_id) = credentials.client_id.as_deref() else {
+        let Some(client_id) = credentials.client_id else {
             if !has_client_auth_material {
                 if let Some(response) =
                     client_credentials_holder_missing_client_error(&form, facts.dpop.proof_present)
@@ -231,14 +231,14 @@ impl TokenEndpointHandles {
                 has_basic,
             ));
         };
-        let (mut client, secret_salt) = match authorization_service
+        let (mut client, secret_salt, client_epoch) = match authorization_service
             .client_authentication_snapshot(client_id)
             .await
         {
-            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
+            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt, snapshot.client_epoch),
             Ok(None) => {
                 perform_dummy_client_secret_verification(
-                    &credentials,
+                    credentials,
                     issuance_config.client_secret_pepper(),
                 );
                 return Err(OAuthEndpointError::token(
@@ -320,12 +320,11 @@ impl TokenEndpointHandles {
                 ));
             }
             client_attestation_jkt = Some(validated.client_instance_key_thumbprint.clone());
-            let replay_key = format!("client-attestation:{}", validated.client_id);
             match authorization_service
-                .consume_private_key_jwt(
-                    &replay_key,
+                .consume_client_attestation_proof(
+                    &validated.client_id,
                     &validated.replay_id,
-                    validated.replay_ttl_seconds,
+                    validated.replay_window,
                 )
                 .await
             {
@@ -361,7 +360,7 @@ impl TokenEndpointHandles {
                 )),
                 &auth_request,
                 &mut client,
-                &credentials,
+                credentials,
                 ClientAuthenticationContext::AllowPublicNone,
                 secret_salt.as_deref(),
             )
@@ -413,6 +412,8 @@ impl TokenEndpointHandles {
         }
         let modules = runtime_modules.load_full();
         let issuance = TokenIssuanceContext {
+            grant_type: nazo_auth::GrantType::try_from(form.grant_type.as_str()).ok(),
+            client_epoch,
             config: issuance_config,
             modules: &modules,
             authorization: authorization_service,
@@ -539,6 +540,7 @@ impl TokenEndpointHandles {
                     &client,
                     &form,
                     client_assertion.as_ref(),
+                    client_attestation_jkt.as_deref(),
                 )
                 .await
             }

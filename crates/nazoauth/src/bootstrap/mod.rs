@@ -54,7 +54,7 @@ use crate::http::token::ciba::ciba_config;
 use crate::http::token::device_config::DeviceHttpConfig;
 use crate::http::token::issue::token_issuance_config;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
-use crate::settings::{Settings, mfa_totp_key_ring};
+use crate::settings::Settings;
 use actix_files::{Files, NamedFile};
 use actix_web::{
     HttpResponse,
@@ -150,3 +150,7 @@ fn ui_static_files(root: PathBuf) -> Files {
 #[cfg(test)]
 #[path = "../../tests/unit/bootstrap.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/support/bootstrap.rs"]
+pub(crate) mod test_support;

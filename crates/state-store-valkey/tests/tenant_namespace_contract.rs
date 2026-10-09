@@ -197,7 +197,8 @@ async fn ciba_ping_queue_is_isolated_between_tenants_with_the_same_auth_req_id()
     let delivery_a = store_a
         .claim_due_ping(now, now + 15, 10)
         .await
-        .expect("claim tenant A ping");
+        .expect("claim tenant A ping")
+        .deliveries;
     assert_eq!(delivery_a.len(), 1);
     assert_eq!(delivery_a[0].auth_req_id, auth_req_id);
     assert_eq!(delivery_a[0].endpoint, endpoint_a);
@@ -229,7 +230,8 @@ async fn ciba_ping_queue_is_isolated_between_tenants_with_the_same_auth_req_id()
     let delivery_b = store_b
         .claim_due_ping(now, now + 15, 10)
         .await
-        .expect("claim tenant B ping after tenant A completes");
+        .expect("claim tenant B ping after tenant A completes")
+        .deliveries;
     assert_eq!(delivery_b.len(), 1);
     assert_eq!(delivery_b[0].auth_req_id, auth_req_id);
     assert_eq!(delivery_b[0].endpoint, endpoint_b);

@@ -180,9 +180,14 @@ async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request
     let mut provider = provider();
     provider.token_endpoint = endpoint;
 
-    let token = exchange_oidc_code(&provider, "code-1", "verifier-1")
-        .await
-        .expect("valid token response should parse");
+    let token = exchange_oidc_code(
+        &super::super::federation_http_client().unwrap(),
+        &provider,
+        "code-1",
+        "verifier-1",
+    )
+    .await
+    .expect("valid token response should parse");
     let request = request.await.expect("test server should finish");
 
     assert_eq!(token.id_token, "signed-id-token");
@@ -217,7 +222,7 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
     provider.jwks_url = valid_endpoint;
 
     assert_eq!(
-        fetch_oidc_jwks(&provider)
+        fetch_oidc_jwks(&super::super::federation_http_client().unwrap(), &provider)
             .await
             .expect("keys array should be accepted"),
         json!({"keys": []})
@@ -230,7 +235,9 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
     provider.jwks_url = invalid_endpoint;
 
     assert!(
-        fetch_oidc_jwks(&provider).await.is_err(),
+        fetch_oidc_jwks(&super::super::federation_http_client().unwrap(), &provider)
+            .await
+            .is_err(),
         "JWKS responses without a keys array must fail closed"
     );
     invalid_request
@@ -388,4 +395,50 @@ fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
     private_jwk["keys"][0]["d"] = json!("private-material");
     let valid_token = signed_id_token(&provider, "oidc-kid", &key, &nonce, json!({}));
     assert!(verify_oidc_id_token(&provider, &private_jwk, &valid_token, &nonce).is_err());
+}
+
+#[actix_web::test]
+async fn federation_configuration_reuses_connection_for_successive_provider_requests() {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            // A second request must arrive on this same connection. If the
+            // caller rebuilds its client, this read cannot complete.
+            let (mut stream, _) = listener.accept().await.unwrap();
+            for _ in 0..2 {
+                let request = read_http_request(&mut stream).await;
+                assert!(request.starts_with("GET / HTTP/1.1"));
+                stream
+                    .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 11\r\n\r\n{\"keys\":[]}")
+                    .await
+                    .unwrap();
+            }
+        });
+        let config = super::super::FederationHttpConfig::new(
+            crate::settings::FederationProviderRegistry::default(),
+            None,
+            "session",
+            "csrf",
+            300,
+            true,
+        )
+        .unwrap();
+        let mut provider = provider();
+        provider.jwks_url = endpoint;
+        assert_eq!(
+            fetch_oidc_jwks(&config.client, &provider).await.unwrap(),
+            json!({"keys": []})
+        );
+        let shared_config = config.clone();
+        assert_eq!(
+            fetch_oidc_jwks(&shared_config.client, &provider)
+                .await
+                .unwrap(),
+            json!({"keys": []})
+        );
+        server.await.unwrap();
+    })
+    .await
+    .expect("shared federation client should reuse its established connection");
 }

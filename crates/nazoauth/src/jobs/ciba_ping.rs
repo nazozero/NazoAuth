@@ -1,4 +1,4 @@
-use nazo_oauth_server::workers::ciba_ping::CibaPingDeliveryWorker;
+use nazo_oauth_server::workers::ciba_ping::{CibaPingDeliveryWorker, DELIVERY_BATCH_SIZE};
 use std::{sync::Arc, time::Duration};
 const LOOP_INTERVAL: Duration = Duration::from_millis(500);
 pub(crate) fn spawn_ciba_ping_delivery_worker(
@@ -6,8 +6,16 @@ pub(crate) fn spawn_ciba_ping_delivery_worker(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
-            if let Err(error) = worker.process_due_batch().await {
-                tracing::warn!(%error, "CIBA ping delivery worker failed");
+            match worker.process_due_batch().await {
+                Ok(DELIVERY_BATCH_SIZE) => {
+                    // A full scan can leave due work behind even if stale
+                    // entries produced no deliveries. Retry deadlines remain
+                    // in the store; only batch scheduling is immediate.
+                    tokio::task::yield_now().await;
+                    continue;
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "CIBA ping delivery worker failed"),
             }
             tokio::time::sleep(LOOP_INTERVAL).await;
         }

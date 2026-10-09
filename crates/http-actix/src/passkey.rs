@@ -14,7 +14,10 @@ use actix_web::{
     web::{self, Data, Json, Path, ServiceConfig},
 };
 use chrono::Utc;
-use nazo_identity::{LoginSuccess, PasskeyError, RememberedMfaProof, ports::PasskeyCredential};
+use nazo_identity::{
+    LoginSuccess, PasskeyError, RememberedMfaProof,
+    ports::{PasskeyCredential, PasskeyCredentialSummary},
+};
 use passkey_auth::{AuthenticationResponse, RegistrationResponse};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -256,7 +259,7 @@ pub async fn passkey_registration_finish(
         })
         .await
     {
-        Ok(credential) => passkey_created_response(&credential),
+        Ok(credential) => passkey_created_response(credential),
         Err(error) => registration_error(&endpoint, error),
     }
 }
@@ -269,7 +272,7 @@ pub async fn passkey_list(
         Ok(context) => context,
         Err(response) => return response,
     };
-    match endpoint.operations.list(context).await {
+    match endpoint.operations.list_summaries(context).await {
         Ok(credentials) => passkey_list_response(&credentials),
         Err(error) => passkey_management_error(&endpoint, error, "passkey state unavailable."),
     }
@@ -557,7 +560,7 @@ fn passkey_session_response(config: &PasskeyLoginConfig, success: LoginSuccess) 
     )
 }
 
-fn passkey_public_json(row: &PasskeyCredential) -> Value {
+fn passkey_public_json(row: &PasskeyCredentialSummary) -> Value {
     json!({
         "id": row.id,
         "label": row.label,
@@ -569,14 +572,15 @@ fn passkey_public_json(row: &PasskeyCredential) -> Value {
     })
 }
 
-fn passkey_list_response(rows: &[PasskeyCredential]) -> HttpResponse {
+fn passkey_list_response(rows: &[PasskeyCredentialSummary]) -> HttpResponse {
     json_response_no_store(json!({
         "passkeys": rows.iter().map(passkey_public_json).collect::<Vec<_>>()
     }))
 }
 
-fn passkey_created_response(row: &PasskeyCredential) -> HttpResponse {
-    json_response_status_no_store(StatusCode::CREATED, passkey_public_json(row))
+fn passkey_created_response(row: PasskeyCredential) -> HttpResponse {
+    let summary = PasskeyCredentialSummary::from(row);
+    json_response_status_no_store(StatusCode::CREATED, passkey_public_json(&summary))
 }
 
 fn no_store_response(mut response: HttpResponse) -> HttpResponse {

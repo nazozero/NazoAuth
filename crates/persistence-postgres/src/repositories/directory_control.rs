@@ -79,7 +79,9 @@ impl TenantDirectoryControlRepository {
                     return Ok(outcome);
                 }
 
-                let previous_revision = read_current_revision(connection).await?;
+                // Every successful mutation proves expected_revision under
+                // the held directory lock; its returned revision is the actual
+                // trigger-produced after fact. A preread cannot prove before.
                 let outcome = match &action {
                     DirectoryControlAction::Create {
                         expected_revision,
@@ -94,7 +96,7 @@ impl TenantDirectoryControlRepository {
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
                             action: operation_name.clone(),
                             tenant_id: provisioning.binding.tenant.tenant_id.as_uuid().to_string(),
-                            previous_revision,
+                            previous_revision: *expected_revision,
                             revision,
                         })
                     }
@@ -115,7 +117,7 @@ impl TenantDirectoryControlRepository {
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
                             action: operation_name.clone(),
                             tenant_id: tenant_id.as_uuid().to_string(),
-                            previous_revision,
+                            previous_revision: *expected_revision,
                             revision,
                         })
                     }
@@ -133,7 +135,7 @@ impl TenantDirectoryControlRepository {
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
                             action: operation_name.clone(),
                             tenant_id: tenant_id.as_uuid().to_string(),
-                            previous_revision,
+                            previous_revision: *expected_revision,
                             revision,
                         })
                     }
@@ -150,7 +152,7 @@ impl TenantDirectoryControlRepository {
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
                             action: operation_name.clone(),
                             tenant_id: tenant_id.as_uuid().to_string(),
-                            previous_revision,
+                            previous_revision: *expected_revision,
                             revision,
                         })
                     }
@@ -167,7 +169,7 @@ impl TenantDirectoryControlRepository {
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
                             action: operation_name.clone(),
                             tenant_id: tenant_id.as_uuid().to_string(),
-                            previous_revision,
+                            previous_revision: *expected_revision,
                             revision,
                         })
                     }
@@ -180,6 +182,10 @@ impl TenantDirectoryControlRepository {
                     }
                 };
 
+                let previous_revision = match &outcome {
+                    DirectoryControlOutcome::Mutation(mutation) => mutation.previous_revision,
+                    DirectoryControlOutcome::Describe(snapshot) => snapshot.revision,
+                };
                 let audit_event = directory_audit_event(
                     deployment_id,
                     &operation_id.to_string(),
@@ -324,22 +330,6 @@ fn map_query_error(error: diesel::result::Error) -> RepositoryError {
         diesel::result::Error::NotFound => RepositoryError::NotFound,
         error => RepositoryError::Unexpected(error.to_string()),
     }
-}
-
-async fn read_current_revision(connection: &mut AsyncPgConnection) -> Result<u64, RepositoryError> {
-    let row = sql_query("SELECT revision FROM tenant_runtime_directory_state WHERE singleton")
-        .get_result::<DirectoryRevisionRow>(connection)
-        .await
-        .map_err(map_query_error)?;
-    u64::try_from(row.revision).map_err(|_| {
-        RepositoryError::Consistency("tenant directory revision is invalid".to_owned())
-    })
-}
-
-#[derive(Debug, QueryableByName)]
-struct DirectoryRevisionRow {
-    #[diesel(sql_type = sql_types::BigInt)]
-    revision: i64,
 }
 
 #[derive(Debug, QueryableByName)]

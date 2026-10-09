@@ -39,9 +39,12 @@ impl ServerProfileAccountOperations {
     async fn me(&self, session_id: SessionId) -> Result<ProfileMe, ProfileAccountError> {
         match self
             .sessions
-            .current(&session_id, chrono::Utc::now().timestamp())
+            .resolve_for_mfa(&session_id, chrono::Utc::now().timestamp())
             .await
         {
+            Ok(SessionResolution::Present(session)) if session.pending_mfa() => {
+                Ok(ProfileMe::PendingMfa(session.into_user().into()))
+            }
             Ok(SessionResolution::Present(session)) => {
                 let overview =
                     self.profiles
@@ -54,22 +57,7 @@ impl ServerProfileAccountOperations {
                 Ok(ProfileMe::Active(Box::new(overview.into())))
             }
             Ok(SessionResolution::Missing | SessionResolution::Invalidated) => {
-                match self
-                    .sessions
-                    .pending_mfa(&session_id, chrono::Utc::now().timestamp())
-                    .await
-                {
-                    Ok(SessionResolution::Present(session)) => {
-                        Ok(ProfileMe::PendingMfa(session.into_user().into()))
-                    }
-                    Ok(SessionResolution::Missing | SessionResolution::Invalidated) => {
-                        Err(ProfileAccountError::LoginRequired)
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, "failed to resolve pending MFA session");
-                        Err(ProfileAccountError::SessionLookupUnavailable)
-                    }
-                }
+                Err(ProfileAccountError::LoginRequired)
             }
             Err(error) => {
                 tracing::warn!(%error, "failed to resolve current session");

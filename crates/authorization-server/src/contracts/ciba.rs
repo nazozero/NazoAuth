@@ -5,6 +5,8 @@ use serde_json::Value;
 #[derive(Default)]
 pub struct BackchannelAuthenticationForm {
     pub request: Option<String>,
+    /// Transport presence survives empty strings and invalid numeric input.
+    pub authentication_parameters_present: bool,
     pub scope: Option<String>,
     pub login_hint: Option<String>,
     pub id_token_hint: Option<String>,
@@ -17,6 +19,20 @@ pub struct BackchannelAuthenticationForm {
     pub client_secret: Option<String>,
     pub client_assertion_type: Option<String>,
     pub client_assertion: Option<String>,
+}
+
+impl BackchannelAuthenticationForm {
+    pub fn has_outer_authentication_parameters(&self) -> bool {
+        self.authentication_parameters_present
+            || self.scope.is_some()
+            || self.login_hint.is_some()
+            || self.id_token_hint.is_some()
+            || self.login_hint_token.is_some()
+            || self.binding_message.is_some()
+            || self.acr_values.is_some()
+            || self.requested_expiry_seconds.is_some()
+            || self.client_notification_token.is_some()
+    }
 }
 
 #[derive(Deserialize)]
@@ -40,7 +56,7 @@ pub struct CibaAuthenticationRequestClaims {
 #[derive(Debug)]
 pub struct CibaRequestObjectReplay {
     pub jti: String,
-    pub ttl_seconds: u64,
+    pub expires_at: i64,
 }
 
 #[derive(Deserialize)]

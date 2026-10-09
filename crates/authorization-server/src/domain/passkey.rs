@@ -4,7 +4,8 @@ use crate::contracts::passkey::{
 };
 use nazo_identity::{
     LoginSuccess, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, PublicAccount,
-    SessionId, SessionResolution, SessionService, ports::PasskeyCredential,
+    SessionId, SessionResolution, SessionService,
+    ports::{PasskeyCredential, PasskeyCredentialSummary},
 };
 use uuid::Uuid;
 
@@ -126,6 +127,19 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
             let account = self.current_account(&context).await?;
             self.passkeys
                 .list(&account)
+                .await
+                .map_err(Self::profile_error)
+        })
+    }
+
+    fn list_summaries(
+        &self,
+        context: PasskeyProfileContext,
+    ) -> PasskeyFuture<'_, Vec<PasskeyCredentialSummary>> {
+        Box::pin(async move {
+            let account = self.current_account(&context).await?;
+            self.passkeys
+                .list_summaries(&account)
                 .await
                 .map_err(Self::profile_error)
         })

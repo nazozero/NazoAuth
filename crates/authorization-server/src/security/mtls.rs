@@ -29,7 +29,7 @@ pub fn certificate_der_identity(der: &[u8]) -> Option<ClientCertificateFacts> {
         thumbprint: Some(URL_SAFE_NO_PAD.encode(Sha256::digest(der))),
         subject_dn: Some(subject_name_to_dn(x509.subject())?),
         verified_certificate_expiry: true,
-        certificate_chain_der: vec![der.to_vec()],
+        certificate_chain_der: vec![der.to_vec()].into(),
         ..ClientCertificateFacts::default()
     };
     if let Some(names) = x509.subject_alternative_name().ok().flatten() {

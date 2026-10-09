@@ -8,7 +8,6 @@ diesel::table! {
         slot_index -> Int2,
         issued_at -> Timestamptz,
         expires_at -> Timestamptz,
-        last_used_at -> Nullable<Timestamptz>,
         status -> Varchar,
         revoked_at -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
@@ -156,6 +155,7 @@ diesel::table! {
         address_locality -> Nullable<Varchar>, address_region -> Nullable<Varchar>,
         address_postal_code -> Nullable<Varchar>, address_country -> Nullable<Varchar>,
         phone_number -> Nullable<Varchar>, phone_number_verified -> Bool,
+        access_token_epoch -> BigInt,
     }
 }
 
@@ -189,7 +189,7 @@ diesel::table! {
     user_mfa_remembered_devices (id) {
         id -> Uuid, tenant_id -> Uuid, user_id -> Uuid, token_hash -> Varchar,
         user_agent_hash -> Nullable<Varchar>, created_at -> Timestamptz,
-        last_used_at -> Nullable<Timestamptz>, expires_at -> Timestamptz,
+        expires_at -> Timestamptz,
     }
 }
 
@@ -262,7 +262,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    oauth_subject_bindings (tenant_id, subject) {
+        tenant_id -> Uuid,
+        subject -> Varchar,
+        user_id -> Uuid,
+    }
+}
+
+diesel::table! {
     oauth_token_issuances (issuance_id) {
+        receipt_contract_version -> Int2,
+        authorization_code_holder -> Nullable<Jsonb>,
+        principal_epoch_bound -> Bool,
         issuance_id -> Uuid,
         tenant_id -> Uuid,
         client_id -> Uuid,
@@ -363,6 +374,7 @@ diesel::table! {
         admin_note -> Nullable<Varchar>,
         resolved_by_user_id -> Nullable<Uuid>,
         approved_client_id -> Nullable<Uuid>,
+        required_approval_event_id -> Nullable<Uuid>,
         resolved_at -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
@@ -428,7 +440,6 @@ diesel::table! {
         backchannel_token_delivery_mode -> Varchar,
         backchannel_client_notification_endpoint -> Nullable<Text>,
         backchannel_authentication_request_signing_alg -> Nullable<Varchar>,
-        backchannel_user_code_parameter -> Bool,
         frontchannel_logout_uri -> Nullable<Varchar>,
         frontchannel_logout_session_required -> Bool,
         subject_type -> Text,
@@ -447,6 +458,7 @@ diesel::table! {
         not_before -> Timestamptz,
         revoked_refresh_tokens -> Int8,
         completed_at -> Timestamptz,
+        coverage_version -> Int2,
     }
 }
 
@@ -508,6 +520,13 @@ diesel::table! {
         event_category -> Varchar,
         payload -> Jsonb,
         occurred_at -> Timestamptz,
+        authorization_tenant_id -> Nullable<Uuid>,
+        authorization_request_id -> Nullable<Text>,
+        authorization_par_uri -> Nullable<Text>,
+        authorization_decision -> Nullable<Text>,
+        authorization_valid_until -> Nullable<Timestamptz>,
+        business_retain_until -> Nullable<Timestamptz>,
+        exported_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -517,18 +536,6 @@ diesel::table! {
         sequence -> Int8,
         previous_hash -> Binary,
         event_hash -> Binary,
-    }
-}
-
-diesel::table! {
-    security_audit_event_outbox (event_id) {
-        event_id -> Uuid,
-        attempts -> Int4,
-        available_at -> Timestamptz,
-        locked_at -> Nullable<Timestamptz>,
-        last_error -> Nullable<Text>,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
     }
 }
 
@@ -565,6 +572,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     oauth_refresh_families,
     oauth_refresh_spent_tokens,
     oauth_token_issuances,
+    oauth_subject_bindings,
     recovery_invalidations,
     user_client_grants,
     client_access_requests,
@@ -580,6 +588,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     runtime_module_state_events,
     security_audit_chain_state,
     security_audit_chain_entries,
-    security_audit_events,
-    security_audit_event_outbox
+    security_audit_events
 );

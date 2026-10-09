@@ -306,20 +306,22 @@ async fn public_passkey_projection_excludes_tenant_user_and_credential_material(
         id: Uuid::from_u128(1),
         tenant_id: TenantId::new(Uuid::from_u128(2)).unwrap(),
         user_id: UserId::new(Uuid::from_u128(3)).unwrap(),
-        credential_id: "public-credential-id".to_owned(),
-        credential: json!({"private": "credential-material"}),
+        credential: serde_json::from_value(json!({"id": [1,2,3], "counter": 9,
+            "public_key_cose": [164,1,1,3,39,32,6,33], "transports": ["internal"],
+            "aaguid": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}))
+        .unwrap(),
         label: "Laptop".to_owned(),
-        sign_count: 9,
         last_used_at: Some(now),
         created_at: now,
         updated_at: now,
     };
-    let public = passkey_public_json(&credential);
+    let summary = PasskeyCredentialSummary::from(credential.clone());
+    let public = passkey_public_json(&summary);
     let public = public.as_object().unwrap();
     assert_eq!(public.len(), 7);
     assert_eq!(public["id"], json!(credential.id));
     assert_eq!(public["label"], "Laptop");
-    assert_eq!(public["credential_id"], "public-credential-id");
+    assert_eq!(public["credential_id"], "AQID");
     assert_eq!(public["sign_count"], 9);
     for forbidden in ["tenant_id", "user_id", "credential"] {
         assert!(
@@ -329,8 +331,8 @@ async fn public_passkey_projection_excludes_tenant_user_and_credential_material(
     }
 
     for response in [
-        passkey_list_response(std::slice::from_ref(&credential)),
-        passkey_created_response(&credential),
+        passkey_list_response(std::slice::from_ref(&summary)),
+        passkey_created_response(credential),
         empty_response_no_store(StatusCode::NO_CONTENT),
     ] {
         assert_no_store(response.headers());

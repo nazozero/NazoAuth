@@ -31,6 +31,9 @@ where
             .effective_disable_policy(module_id)
             .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
         let enabling = mode.is_enabled();
+        if enabling && !self.catalog.is_available(module_id) {
+            return Err(RegistryError::ServiceNotConstructed(module_id));
+        }
         let snapshot = self.snapshot();
         let mut required_revisions = Vec::new();
         if enabling {
@@ -41,7 +44,11 @@ where
                     .await
                     .map_err(RegistryError::Repository)?
                     .ok_or(RegistryError::MissingDesiredState(*dependency))?;
-                if !dependency_desired.mode.is_enabled() || !snapshot.admits(*dependency) {
+                if !self
+                    .catalog
+                    .effective_enabled(*dependency, dependency_desired.mode.is_enabled())
+                    || !snapshot.admits(*dependency)
+                {
                     return Err(RegistryError::DependencyUnavailable {
                         module_id,
                         dependency: *dependency,
@@ -68,7 +75,12 @@ where
                     .await
                     .map_err(RegistryError::Repository)?
                     .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
-                if dependent_desired.mode.is_enabled() || snapshot.admits(dependent.id) {
+                if self
+                    .catalog
+                    .effective_enabled(dependent.id, dependent_desired.mode.is_enabled())
+                    || snapshot.admits(dependent.id)
+                    || snapshot.draining.contains(&dependent.id)
+                {
                     return Err(RegistryError::ActiveDependent {
                         module_id,
                         dependent: dependent.id,

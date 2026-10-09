@@ -34,10 +34,11 @@ pub use service::{
     PendingCredentialIssuance,
 };
 pub use store::{
-    AuthorizationOfferPort, CredentialAccess, CredentialAuthorization, CredentialResponseEncoding,
-    CredentialStoreError, CredentialStoreFuture, CredentialStorePort, DeferredCredential,
-    DeferredCredentialClaim, IssuanceNotification, NonceRecord, NotificationHandle,
-    StoredCredentialOffer, StoredCredentialResponse,
+    AuthorizationOfferPort, CredentialAccess, CredentialAuthorization, CredentialProofOrigin,
+    CredentialResponseEncoding, CredentialSelection, CredentialStoreError, CredentialStoreFuture,
+    CredentialStorePort, DeferredClaimOutcome, DeferredCredential, DeferredCredentialClaim,
+    IssuanceNotification, NonceRecord, NotificationHandle, StoredCredentialOffer,
+    StoredCredentialResponse,
 };
 
 pub const PRE_AUTHORIZED_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:pre-authorized_code";

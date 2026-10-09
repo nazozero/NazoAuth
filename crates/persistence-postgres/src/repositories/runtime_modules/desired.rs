@@ -1,16 +1,19 @@
 use chrono::{DateTime, Utc};
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
+use diesel::{
+    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
+    SelectableHelper,
+};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::ports::RepositoryError;
 use nazo_runtime_modules::{
     CasOutcome, DesiredMode, DesiredRevisionGuard, DesiredStateChange, DesiredStateRecord,
-    HistoricalDesiredMode, ModuleId, ModuleRevision,
+    HistoricalDesiredMode, ModuleId, ModuleReconcileState, ModuleRevision,
 };
 
 use crate::{
     repositories::audit::{append_runtime_event, desired_mode, map_error, module_id, revision},
-    rows::runtime::DesiredStateRow,
-    schema::runtime_module_desired_states,
+    rows::runtime::{DesiredStateRow, InstanceStateRow},
+    schema::{runtime_module_desired_states, runtime_module_instance_states},
 };
 
 use super::{
@@ -47,6 +50,39 @@ pub(super) async fn read_all_desired(
         .map_err(map_error)?
         .into_iter()
         .map(mapping::desired_from_row)
+        .collect()
+}
+
+pub(super) async fn read_reconcile_state(
+    repository: &RuntimeModuleRepository,
+    instance_id: &str,
+) -> Result<Vec<ModuleReconcileState>, RepositoryError> {
+    let mut connection = repository.connection().await?;
+    runtime_module_desired_states::table
+        .left_join(
+            runtime_module_instance_states::table.on(runtime_module_instance_states::tenant_id
+                .eq(runtime_module_desired_states::tenant_id)
+                .and(
+                    runtime_module_instance_states::module_id
+                        .eq(runtime_module_desired_states::module_id),
+                )
+                .and(runtime_module_instance_states::instance_id.eq(instance_id))),
+        )
+        .filter(runtime_module_desired_states::tenant_id.eq(repository.tenant_id()))
+        .select((
+            DesiredStateRow::as_select(),
+            Option::<InstanceStateRow>::as_select(),
+        ))
+        .load::<(DesiredStateRow, Option<InstanceStateRow>)>(&mut connection)
+        .await
+        .map_err(map_error)?
+        .into_iter()
+        .map(|(desired, instance)| {
+            Ok(ModuleReconcileState {
+                desired: mapping::desired_from_row(desired)?,
+                instance: instance.map(mapping::instance_from_row).transpose()?,
+            })
+        })
         .collect()
 }
 
@@ -171,9 +207,17 @@ pub(super) async fn validate_revision(
     requested_module_id: ModuleId,
     expected: ModuleRevision,
 ) -> Result<bool, RepositoryError> {
-    Ok(read_desired(repository, requested_module_id)
-        .await?
-        .is_some_and(|record| record.revision == expected))
+    let mut connection = repository.connection().await?;
+    let current = runtime_module_desired_states::table
+        .find((repository.tenant_id(), module_id(requested_module_id)))
+        .select(runtime_module_desired_states::revision)
+        .first::<i64>(&mut connection)
+        .await
+        .optional()
+        .map_err(map_error)?
+        .map(mapping::parse_revision)
+        .transpose()?;
+    Ok(current == Some(expected))
 }
 
 pub(super) fn next_desired_revision(

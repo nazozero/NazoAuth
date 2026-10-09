@@ -23,14 +23,6 @@ use nazo_oauth_server::{
 
 struct ContractProfileOperations;
 
-struct ZeroDatabasePoolMetrics;
-
-impl nazo_persistence::DatabasePoolMetricsPort for ZeroDatabasePoolMetrics {
-    fn snapshot(&self) -> nazo_persistence::DatabasePoolMetrics {
-        nazo_persistence::DatabasePoolMetrics::default()
-    }
-}
-
 impl ProfileAccountOperations for ContractProfileOperations {
     fn me(&self, _session_id: SessionId) -> ProfileAccountFuture<'_, ProfileMe> {
         Box::pin(async { Ok(ProfileMe::Active(Box::new(contract_profile()))) })
@@ -244,8 +236,7 @@ async fn browser_userinfo_cors_allows_get_and_post_bearer_or_dpop() {
 async fn authorization_endpoint_is_not_cors_enabled() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
     let app =
-        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings, false)))
-            .await;
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings))).await;
 
     let request = test::TestRequest::default()
         .method(actix_web::http::Method::OPTIONS)
@@ -351,7 +342,7 @@ async fn disabled_dynamic_client_registration_keeps_the_static_route_contract() 
                 nazo_http_actix::security_headers,
             ))
             .app_data(dynamic_registration_endpoint)
-            .configure(|cfg| routes::configure(cfg, &settings, false)),
+            .configure(|cfg| routes::configure(cfg, &settings)),
     )
     .await;
 
@@ -462,8 +453,7 @@ async fn disabled_dynamic_client_registration_keeps_the_static_route_contract() 
 async fn openid_federation_route_is_not_registered() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
     let app =
-        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings, false)))
-            .await;
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings))).await;
 
     let request = test::TestRequest::get()
         .uri("/.well-known/openid-federation")
@@ -475,42 +465,6 @@ async fn openid_federation_route_is_not_registered() {
         StatusCode::NOT_FOUND,
         "OpenID Federation is not part of the product surface"
     );
-}
-
-#[actix_web::test]
-async fn perf_metrics_route_is_controlled_by_the_typed_startup_flag() {
-    let settings = test_settings(Vec::new());
-    let disabled =
-        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings, false)))
-            .await;
-    let response = test::call_service(
-        &disabled,
-        test::TestRequest::get().uri("/__perf/metrics").to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-    let pool_metrics: web::Data<dyn nazo_persistence::DatabasePoolMetricsPort> = web::Data::from(
-        Arc::new(ZeroDatabasePoolMetrics) as Arc<dyn nazo_persistence::DatabasePoolMetricsPort>,
-    );
-    let enabled = test::init_service(
-        App::new()
-            .app_data(pool_metrics)
-            .app_data(web::Data::new(
-                nazo_identity::TenantContext::default_system(),
-            ))
-            .app_data(web::Data::new(routes::ControlTenantId::new(
-                nazo_identity::TenantContext::default_system().tenant_id,
-            )))
-            .configure(|cfg| routes::configure(cfg, &settings, true)),
-    )
-    .await;
-    let response = test::call_service(
-        &enabled,
-        test::TestRequest::get().uri("/__perf/metrics").to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[actix_web::test]
@@ -701,7 +655,7 @@ async fn production_profile_routes_keep_method_cors_cache_and_security_contracts
                 nazo_http_actix::security_headers,
             ))
             .app_data(web::Data::new(endpoint))
-            .configure(|cfg| routes::configure(cfg, &settings, false)),
+            .configure(|cfg| routes::configure(cfg, &settings)),
     )
     .await;
 
@@ -886,8 +840,7 @@ async fn cors_scim_allows_put_without_browser_credentials() {
 async fn production_token_route_rejects_get_csrf_and_unknown_origins() {
     let settings = test_settings(vec!["https://spa.example".to_owned()]);
     let app =
-        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings, false)))
-            .await;
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings))).await;
 
     for (origin, method, headers) in [
         ("https://spa.example", "GET", "content-type"),
@@ -921,8 +874,7 @@ async fn production_token_route_rejects_get_csrf_and_unknown_origins() {
 async fn production_browser_oauth_routes_expose_only_required_cors() {
     let settings = test_settings(vec!["https://spa.example".to_owned()]);
     let app =
-        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings, false)))
-            .await;
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings))).await;
 
     for (path, method, headers) in [
         ("/token", "POST", "content-type, dpop"),
@@ -958,4 +910,104 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
     settings.endpoint.cors_allowed_origins = cors_allowed_origins;
     settings.session.cookie_secure = true;
     settings
+}
+
+#[actix_web::test]
+async fn dynamic_cors_policy_is_bound_to_one_immutable_request_snapshot() {
+    let mut first = Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    first.endpoint.cors_allowed_origins = vec!["https://first.example".to_owned()];
+    let mut second = first.clone();
+    second.endpoint.cors_allowed_origins = vec!["https://second.example".to_owned()];
+    let registry = arc_swap::ArcSwap::from_pointee(first);
+    let selected = registry.load_full();
+    let request = test::TestRequest::get()
+        .uri("/token")
+        .insert_header(("host", "tenant.example"))
+        .to_http_request();
+    let first_origin = HeaderValue::from_static("https://first.example");
+    let second_origin = HeaderValue::from_static("https://second.example");
+    let predicate = origin_predicate();
+    assert!(
+        !predicate(&first_origin, request.head()),
+        "missing selection fails closed"
+    );
+    REQUEST_CORS_SETTINGS
+        .scope(selected, async {
+            // Swap after binding and before synchronous CORS admission.
+            registry.store(Arc::new(second));
+            assert!(predicate(&first_origin, request.head()));
+            assert!(!predicate(&second_origin, request.head()));
+        })
+        .await;
+    REQUEST_CORS_SETTINGS
+        .scope(registry.load_full(), async {
+            assert!(!predicate(&first_origin, request.head()));
+            assert!(predicate(&second_origin, request.head()));
+        })
+        .await;
+    assert!(!predicate(&second_origin, request.head()));
+}
+
+#[actix_web::test]
+async fn dynamic_cors_request_scopes_are_isolated_when_futures_interleave() {
+    let mut one = Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    one.endpoint.cors_allowed_origins = vec!["https://one.example".to_owned()];
+    let mut two = one.clone();
+    two.endpoint.cors_allowed_origins = vec!["https://two.example".to_owned()];
+    let request = test::TestRequest::get().to_http_request();
+    let first = HeaderValue::from_static("https://one.example");
+    let second = HeaderValue::from_static("https://two.example");
+    let predicate = origin_predicate();
+    tokio::join!(
+        REQUEST_CORS_SETTINGS.scope(Arc::new(one), async {
+            tokio::task::yield_now().await;
+            assert!(predicate(&first, request.head()));
+            assert!(!predicate(&second, request.head()));
+        }),
+        REQUEST_CORS_SETTINGS.scope(Arc::new(two), async {
+            tokio::task::yield_now().await;
+            assert!(predicate(&second, request.head()));
+            assert!(!predicate(&first, request.head()));
+        })
+    );
+}
+
+#[actix_web::test]
+async fn dynamic_cors_preflight_uses_selected_policy_and_missing_context_rejects() {
+    let mut settings = Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    settings.endpoint.cors_allowed_origins = vec!["https://selected.example".to_owned()];
+    let app = test::init_service(App::new().wrap(CorsPolicy::dynamic().auth_api()).route(
+        "/auth/me",
+        web::get().to(|| async { HttpResponse::Ok().finish() }),
+    ))
+    .await;
+    for scoped in [false, true] {
+        let request = test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/auth/me")
+            .insert_header(("origin", "https://selected.example"))
+            .insert_header(("access-control-request-method", "GET"))
+            .to_request();
+        let response = if scoped {
+            REQUEST_CORS_SETTINGS
+                .scope(Arc::new(settings.clone()), async {
+                    test::call_service(&app, request).await
+                })
+                .await
+        } else {
+            test::call_service(&app, request).await
+        };
+        if scoped {
+            assert!(response.status().is_success());
+            assert_eq!(
+                response
+                    .headers()
+                    .get("access-control-allow-origin")
+                    .unwrap(),
+                "https://selected.example"
+            );
+        } else {
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+    }
 }

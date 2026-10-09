@@ -14,20 +14,56 @@ use crate::schema::{oauth_clients, user_client_grants};
 use super::base::OAuthClientRepository;
 use super::{OAuthClientRecord, map_error};
 
+// Both metadata expressions have fixed SQL. SqlLiteral would make the entire
+// client lookup uncacheable, including its wide registration projection. Cache
+// the prepared statement only; activity, salt and epoch remain per-read facts.
+#[derive(Debug, Clone, Copy, diesel::query_builder::QueryId, diesel::expression::ValidGrouping)]
+struct AuthenticationMetadata;
+
+impl diesel::Expression for AuthenticationMetadata {
+    type SqlType = (
+        diesel::sql_types::Nullable<diesel::sql_types::Text>,
+        diesel::sql_types::BigInt,
+    );
+}
+
+impl diesel::AppearsOnTable<oauth_clients::table> for AuthenticationMetadata {}
+impl diesel::SelectableExpression<oauth_clients::table> for AuthenticationMetadata {}
+
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuthenticationMetadata {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql(
+            "CASE WHEN is_active AND client_secret_hash LIKE 'client-secret-v1:%:%' \
+             THEN split_part(client_secret_hash, ':', 2) END, access_token_epoch",
+        );
+        Ok(())
+    }
+}
+
 impl OAuthClientRepository {
     pub async fn by_client_id(
         &self,
         tenant_id: Uuid,
         client_id: &str,
     ) -> Result<Option<OAuthClient>, RepositoryError> {
-        let mut connection = self.connection().await?;
-        oauth_clients::table
-            .filter(oauth_clients::tenant_id.eq(tenant_id))
-            .filter(oauth_clients::client_id.eq(client_id))
-            .select(OAuthClientRecord::as_select())
-            .first::<OAuthClientRecord>(&mut connection)
+        let client_id = client_id.to_owned();
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    oauth_clients::table
+                        .filter(oauth_clients::tenant_id.eq(tenant_id))
+                        .filter(oauth_clients::client_id.eq(client_id))
+                        .select(OAuthClientRecord::as_select())
+                        .first::<OAuthClientRecord>(connection)
+                        .await
+                        .optional()
+                })
+            })
             .await
-            .optional()
+            .map_err(|_| RepositoryError::Unavailable)?
             .map_err(map_error)?
             .map(OAuthClientRecord::into_domain)
             .transpose()
@@ -38,14 +74,20 @@ impl OAuthClientRepository {
         tenant_id: Uuid,
         id: Uuid,
     ) -> Result<Option<OAuthClient>, RepositoryError> {
-        let mut connection = self.connection().await?;
-        oauth_clients::table
-            .find(id)
-            .filter(oauth_clients::tenant_id.eq(tenant_id))
-            .select(OAuthClientRecord::as_select())
-            .first::<OAuthClientRecord>(&mut connection)
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    oauth_clients::table
+                        .find(id)
+                        .filter(oauth_clients::tenant_id.eq(tenant_id))
+                        .select(OAuthClientRecord::as_select())
+                        .first::<OAuthClientRecord>(connection)
+                        .await
+                        .optional()
+                })
+            })
             .await
-            .optional()
+            .map_err(|_| RepositoryError::Unavailable)?
             .map_err(map_error)?
             .map(OAuthClientRecord::into_domain)
             .transpose()
@@ -189,23 +231,28 @@ impl OAuthClientRepository {
         &self,
         tenant_id: Uuid,
         client_id: &str,
-    ) -> Result<Option<(OAuthClient, Option<String>)>, RepositoryError> {
-        let mut connection = self.connection().await?;
-        oauth_clients::table
-            .filter(oauth_clients::tenant_id.eq(tenant_id))
-            .filter(oauth_clients::client_id.eq(client_id))
-            .select((
-                OAuthClientRecord::as_select(),
-                diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
-                    "CASE WHEN is_active AND client_secret_hash LIKE 'client-secret-v1:%:%' \
-                     THEN split_part(client_secret_hash, ':', 2) END",
-                ),
-            ))
-            .first::<(OAuthClientRecord, Option<String>)>(&mut connection)
+    ) -> Result<Option<(OAuthClient, Option<String>, i64)>, RepositoryError> {
+        let client_id = client_id.to_owned();
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    oauth_clients::table
+                        .filter(oauth_clients::tenant_id.eq(tenant_id))
+                        .filter(oauth_clients::client_id.eq(client_id))
+                        .select((OAuthClientRecord::as_select(), AuthenticationMetadata))
+                        .first::<(OAuthClientRecord, (Option<String>, i64))>(connection)
+                        .await
+                        .optional()
+                })
+            })
             .await
-            .optional()
+            .map_err(|_| RepositoryError::Unavailable)?
             .map_err(map_error)?
-            .map(|(record, secret_salt)| record.into_domain().map(|client| (client, secret_salt)))
+            .map(|(record, (secret_salt, epoch))| {
+                record
+                    .into_domain()
+                    .map(|client| (client, secret_salt, epoch))
+            })
             .transpose()
     }
 
@@ -237,17 +284,24 @@ impl OAuthClientRepository {
         id: Uuid,
         candidate_digest: &str,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = self.connection().await?;
-        diesel::select(diesel::dsl::exists(
-            oauth_clients::table
-                .find(id)
-                .filter(oauth_clients::tenant_id.eq(tenant_id))
-                .filter(oauth_clients::is_active.eq(true))
-                .filter(oauth_clients::client_secret_hash.eq(candidate_digest)),
-        ))
-        .get_result(&mut connection)
-        .await
-        .map_err(map_error)
+        let candidate_digest = candidate_digest.to_owned();
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    diesel::select(diesel::dsl::exists(
+                        oauth_clients::table
+                            .find(id)
+                            .filter(oauth_clients::tenant_id.eq(tenant_id))
+                            .filter(oauth_clients::is_active.eq(true))
+                            .filter(oauth_clients::client_secret_hash.eq(candidate_digest)),
+                    ))
+                    .get_result(connection)
+                    .await
+                })
+            })
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?
+            .map_err(map_error)
     }
 }
 

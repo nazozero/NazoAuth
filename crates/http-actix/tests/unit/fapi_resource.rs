@@ -13,6 +13,8 @@ use nazo_resource_server::{
 };
 use serde_json::{Value, json};
 
+use nazo_http_signatures::{content_digest, content_digest_field_matches};
+
 use super::*;
 
 struct Authorizer {
@@ -29,6 +31,10 @@ impl FapiResourceAuthorizer for Authorizer {
         Box::pin(async {
             Ok(ProtectedResourceAuthorizationResult {
                 token: VerifiedAccessToken {
+                    client_epoch: None,
+                    user_epoch: None,
+                    user_id: None,
+                    subject_type: None,
                     issuer: "https://auth.example".to_owned(),
                     subject: "subject-1".to_owned(),
                     tenant_id: Some("01900000-0000-7000-8000-000000000001".to_owned()),
@@ -128,6 +134,10 @@ impl FapiResourceAuthorizer for RecordingAuthorizer {
 fn successful_authorization() -> ProtectedResourceAuthorizationResult {
     ProtectedResourceAuthorizationResult {
         token: VerifiedAccessToken {
+            client_epoch: None,
+            user_epoch: None,
+            user_id: None,
+            subject_type: None,
             issuer: "https://auth.example".to_owned(),
             subject: "subject-1".to_owned(),
             tenant_id: Some("01900000-0000-7000-8000-000000000001".to_owned()),
@@ -688,7 +698,8 @@ async fn response_signing_preserves_multiple_physical_header_values() {
         .insert_header(("signature-input", fields.signature_input))
         .insert_header(("signature", fields.signature))
         .to_http_request();
-    let original = CapturedRequest::capture("https://auth.example", &request, &Bytes::new());
+    let request_body = Bytes::new();
+    let original = CapturedRequest::capture("https://auth.example", &request, &request_body);
     let response = HttpResponse::Ok()
         .append_header((header::SET_COOKIE, "first=1; Secure"))
         .append_header((header::SET_COOKIE, "second=2; Secure"))

@@ -831,6 +831,7 @@ async fn seed_codes(
         let code = format!("{}.{}", Uuid::now_v7().simple(), Uuid::now_v7().simple());
         let state = AuthorizationCodeState::Pending {
             payload: CodePayload {
+                redemption_contract_version: nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION,
                 code_id: Uuid::now_v7().to_string(),
                 user_id,
                 client_id: client_id.to_owned(),
@@ -844,15 +845,12 @@ async fn seed_codes(
                 amr: vec!["pwd".to_owned()],
                 oidc_sid: oidc_sid.map(str::to_owned),
                 acr: None,
-                userinfo_claims: Vec::new(),
-                userinfo_claim_requests: Vec::new(),
-                id_token_claims: Vec::new(),
-                id_token_claim_requests: Vec::new(),
-                code_challenge: Some(pkce_s256(PKCE_VERIFIER)),
-                code_challenge_method: Some("S256".to_owned()),
+                userinfo_claim_requests: (Vec::new()).into(),
+                id_token_claim_requests: (Vec::new()).into(),
+                pkce: (Some(pkce_s256(PKCE_VERIFIER))).into(),
                 dpop_jkt: None,
                 mtls_x5t_s256: None,
-                issued_at: now,
+
                 expires_at: now + chrono::Duration::seconds(CODE_TTL_SECONDS),
             },
         };
@@ -876,7 +874,7 @@ async fn seed_codes(
 // ---------------------------------------------------------------------------
 
 struct Worker {
-    client: reqwest_012::blocking::Client,
+    client: reqwest::blocking::Client,
     port: u16,
     host: String,
     basic: String,
@@ -886,7 +884,7 @@ struct Worker {
 impl Worker {
     fn new(port: u16, host: &str, client_id: &str, mtls_header: Option<String>) -> Self {
         use base64::engine::general_purpose::STANDARD;
-        let client = reqwest_012::blocking::Client::builder()
+        let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(60))
             .pool_max_idle_per_host(2)
             // The measurement target is always loopback; ambient HTTP(S)_PROXY

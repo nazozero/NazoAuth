@@ -4,10 +4,40 @@ use nazo_auth::OAuthClient;
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
-use crate::schema::{oauth_clients, oauth_refresh_families, user_client_grants};
+use crate::rows::identity::PrincipalRow;
+use crate::schema::{oauth_clients, oauth_refresh_families, user_client_grants, users};
 
 use super::base::OAuthClientRepository;
 use super::{OAuthClientRecord, map_error};
+
+/// Purpose-specific audit input for the existing client insertion owner.
+enum ClientInsertAudit<'a> {
+    Dynamic(&'a str),
+    Admin {
+        actor_id: Uuid,
+        source_ip_hash: &'a str,
+    },
+}
+
+enum MetadataUpdateError {
+    Diesel(diesel::result::Error),
+    Repository(RepositoryError),
+}
+
+impl MetadataUpdateError {
+    fn into_repository(self) -> RepositoryError {
+        match self {
+            Self::Diesel(error) => map_error(error),
+            Self::Repository(error) => error,
+        }
+    }
+}
+
+impl From<diesel::result::Error> for MetadataUpdateError {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Diesel(error)
+    }
+}
 
 impl OAuthClientRepository {
     pub async fn insert(
@@ -16,20 +46,109 @@ impl OAuthClientRepository {
         client_secret_hash: Option<&str>,
         registration_access_token_blake3: Option<&str>,
     ) -> Result<OAuthClient, RepositoryError> {
-        let mut connection = self.connection().await?;
-        let record = connection
-            .transaction::<OAuthClientRecord, diesel::result::Error, _>(async move |connection| {
-                Self::insert_client_on_connection(
+        self.insert_with_audit(
+            client,
+            client_secret_hash,
+            registration_access_token_blake3,
+            None,
+        )
+        .await
+    }
+
+    pub(super) async fn insert_with_audit(
+        &self,
+        client: &OAuthClient,
+        client_secret_hash: Option<&str>,
+        registration_access_token_blake3: Option<&str>,
+        source_ip_hash: Option<&str>,
+    ) -> Result<OAuthClient, RepositoryError> {
+        self.insert_owned(
+            client,
+            client_secret_hash,
+            registration_access_token_blake3,
+            source_ip_hash.map(ClientInsertAudit::Dynamic),
+        )
+        .await
+    }
+
+    pub(super) async fn insert_admin_with_required_audit(
+        &self,
+        client: &OAuthClient,
+        client_secret_hash: Option<&str>,
+        registration_access_token_blake3: Option<&str>,
+        actor_id: Uuid,
+        source_ip_hash: &str,
+    ) -> Result<OAuthClient, RepositoryError> {
+        self.insert_owned(
+            client,
+            client_secret_hash,
+            registration_access_token_blake3,
+            Some(ClientInsertAudit::Admin {
+                actor_id,
+                source_ip_hash,
+            }),
+        )
+        .await
+    }
+
+    async fn insert_owned(
+        &self,
+        client: &OAuthClient,
+        client_secret_hash: Option<&str>,
+        registration_access_token_blake3: Option<&str>,
+        audit: Option<ClientInsertAudit<'_>>,
+    ) -> Result<OAuthClient, RepositoryError> {
+        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let result = guard
+            .connection()
+            .transaction::<OAuthClient, MetadataUpdateError, _>(async move |connection| {
+                let record = Self::insert_client_on_connection(
                     connection,
                     client,
                     client_secret_hash,
                     registration_access_token_blake3,
                 )
-                .await
+                .await?;
+                let client = record
+                    .into_domain()
+                    .map_err(MetadataUpdateError::Repository)?;
+                match audit {
+                    Some(ClientInsertAudit::Dynamic(source_ip_hash)) => {
+                        append_dynamic_registration_audit(
+                            connection,
+                            "dynamic_client_registered",
+                            &client,
+                            source_ip_hash,
+                        )
+                        .await?;
+                    }
+                    Some(ClientInsertAudit::Admin {
+                        actor_id,
+                        source_ip_hash,
+                    }) => {
+                        // New client authority precedes user authority in the
+                        // existing client -> user lock order. Invalid actors roll
+                        // back the tentative insert and its secret hash.
+                        authorize_admin_client_actor(connection, &client, actor_id).await?;
+                        append_admin_client_audit(
+                            connection,
+                            "client_created",
+                            &client,
+                            actor_id,
+                            source_ip_hash,
+                        )
+                        .await?;
+                    }
+                    None => {}
+                }
+                Ok(client)
             })
             .await
-            .map_err(map_error)?;
-        record.into_domain()
+            .map_err(MetadataUpdateError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
     /// Inserts one client on a caller-owned transaction connection.
@@ -41,7 +160,7 @@ impl OAuthClientRepository {
         client_secret_hash: Option<&str>,
         registration_access_token_blake3: Option<&str>,
     ) -> Result<OAuthClientRecord, diesel::result::Error> {
-        let record = diesel::insert_into(oauth_clients::table)
+        let mut records = diesel::insert_into(oauth_clients::table)
             .values((
                 oauth_clients::id.eq(client.id),
                 oauth_clients::tenant_id.eq(client.tenant_id),
@@ -79,8 +198,6 @@ impl OAuthClientRepository {
                     .eq(&client.backchannel_client_notification_endpoint),
                 oauth_clients::backchannel_authentication_request_signing_alg
                     .eq(&client.backchannel_authentication_request_signing_alg),
-                oauth_clients::backchannel_user_code_parameter
-                    .eq(client.backchannel_user_code_parameter),
                 oauth_clients::frontchannel_logout_uri.eq(&client.frontchannel_logout_uri),
                 oauth_clients::frontchannel_logout_session_required
                     .eq(client.frontchannel_logout_session_required),
@@ -136,9 +253,12 @@ impl OAuthClientRepository {
                 oauth_clients::is_active.eq(client.is_active),
             ))
             .returning(OAuthClientRecord::as_returning())
-            .get_result::<OAuthClientRecord>(connection)
+            .load::<OAuthClientRecord>(connection)
             .await?;
-        Ok(record)
+        if records.len() != 1 {
+            return Err(diesel::result::Error::NotFound);
+        }
+        Ok(records.pop().expect("one acknowledged client row"))
     }
 
     pub async fn upsert(
@@ -165,6 +285,97 @@ impl OAuthClientRepository {
         credentials: Option<(Option<&str>, Option<&str>)>,
     ) -> Result<OAuthClient, RepositoryError> {
         let mut connection = self.connection().await?;
+        Self::replace_on_connection(&mut connection, client, credentials).await
+    }
+
+    pub async fn update_metadata_if_current(
+        &self,
+        expected: &OAuthClient,
+        client: &OAuthClient,
+    ) -> Result<OAuthClient, RepositoryError> {
+        self.update_metadata_owned(expected, client, None).await
+    }
+
+    pub(super) async fn update_admin_with_required_audit(
+        &self,
+        expected: &OAuthClient,
+        client: &OAuthClient,
+        actor_id: Uuid,
+        source_ip_hash: &str,
+    ) -> Result<OAuthClient, RepositoryError> {
+        self.update_metadata_owned(expected, client, Some((actor_id, source_ip_hash)))
+            .await
+    }
+
+    async fn update_metadata_owned(
+        &self,
+        expected: &OAuthClient,
+        client: &OAuthClient,
+        audit: Option<(Uuid, &str)>,
+    ) -> Result<OAuthClient, RepositoryError> {
+        if expected.id != client.id
+            || expected.tenant_id != client.tenant_id
+            || expected.realm_id != client.realm_id
+            || expected.organization_id != client.organization_id
+            || expected.client_id != client.client_id
+        {
+            return Err(RepositoryError::Consistency(
+                "client patch changed its authority identity".to_owned(),
+            ));
+        }
+        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let result = guard
+            .connection()
+            .transaction::<OAuthClient, MetadataUpdateError, _>(async |connection| {
+                let mut rows = oauth_clients::table
+                    .filter(oauth_clients::tenant_id.eq(expected.tenant_id))
+                    .filter(oauth_clients::id.eq(expected.id))
+                    .for_update()
+                    .select(OAuthClientRecord::as_select())
+                    .load::<OAuthClientRecord>(connection)
+                    .await?;
+                if rows.len() != 1 {
+                    return Err(MetadataUpdateError::Repository(RepositoryError::Conflict));
+                }
+                let current = rows
+                    .pop()
+                    .expect("one client authority row")
+                    .into_domain()
+                    .map_err(MetadataUpdateError::Repository)?;
+                if current != *expected {
+                    return Err(MetadataUpdateError::Repository(RepositoryError::Conflict));
+                }
+                if let Some((actor_id, _)) = audit {
+                    authorize_admin_client_actor(connection, &current, actor_id).await?;
+                }
+                let written = Self::replace_on_connection(connection, client, None)
+                    .await
+                    .map_err(MetadataUpdateError::Repository)?;
+                if let Some((actor_id, source_ip_hash)) = audit {
+                    append_admin_client_audit(
+                        connection,
+                        "client_updated",
+                        &written,
+                        actor_id,
+                        source_ip_hash,
+                    )
+                    .await?;
+                }
+                Ok(written)
+            })
+            .await
+            .map_err(MetadataUpdateError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
+    }
+
+    async fn replace_on_connection(
+        connection: &mut AsyncPgConnection,
+        client: &OAuthClient,
+        credentials: Option<(Option<&str>, Option<&str>)>,
+    ) -> Result<OAuthClient, RepositoryError> {
         let target = oauth_clients::table
             .filter(oauth_clients::tenant_id.eq(client.tenant_id))
             .filter(oauth_clients::id.eq(client.id));
@@ -197,8 +408,6 @@ impl OAuthClientRepository {
                 .eq(&client.backchannel_client_notification_endpoint),
             oauth_clients::backchannel_authentication_request_signing_alg
                 .eq(&client.backchannel_authentication_request_signing_alg),
-            oauth_clients::backchannel_user_code_parameter
-                .eq(client.backchannel_user_code_parameter),
             oauth_clients::frontchannel_logout_uri.eq(&client.frontchannel_logout_uri),
             oauth_clients::frontchannel_logout_session_required
                 .eq(client.frontchannel_logout_session_required),
@@ -250,7 +459,7 @@ impl OAuthClientRepository {
             oauth_clients::is_active.eq(client.is_active),
             oauth_clients::updated_at.eq(diesel::dsl::now),
         );
-        let record = if let Some((secret_hash, access_token_hash)) = credentials {
+        let mut records = if let Some((secret_hash, access_token_hash)) = credentials {
             diesel::update(target)
                 .set((
                     metadata,
@@ -258,17 +467,31 @@ impl OAuthClientRepository {
                     oauth_clients::registration_access_token_blake3.eq(access_token_hash),
                 ))
                 .returning(OAuthClientRecord::as_returning())
-                .get_result::<OAuthClientRecord>(&mut connection)
+                .load::<OAuthClientRecord>(connection)
                 .await
         } else {
             diesel::update(target)
                 .set(metadata)
                 .returning(OAuthClientRecord::as_returning())
-                .get_result::<OAuthClientRecord>(&mut connection)
+                .load::<OAuthClientRecord>(connection)
                 .await
         }
         .map_err(map_error)?;
-        record.into_domain()
+        // Drain the complete RETURNING stream, including a delayed statement
+        // error, before any accepting transaction can commit a success view.
+        if records.len() != 1 {
+            return Err(if records.is_empty() {
+                RepositoryError::NotFound
+            } else {
+                RepositoryError::Consistency(
+                    "client replacement returned more than one authority row".to_owned(),
+                )
+            });
+        }
+        records
+            .pop()
+            .expect("one completely received client row")
+            .into_domain()
     }
 
     pub async fn replace_registration(
@@ -277,6 +500,24 @@ impl OAuthClientRepository {
         client_secret_hash: Option<&str>,
         expected_registration_access_token_blake3: &str,
         new_registration_access_token_blake3: Option<&str>,
+    ) -> Result<OAuthClient, RepositoryError> {
+        self.replace_registration_with_audit(
+            client,
+            client_secret_hash,
+            expected_registration_access_token_blake3,
+            new_registration_access_token_blake3,
+            None,
+        )
+        .await
+    }
+
+    pub(super) async fn replace_registration_with_audit(
+        &self,
+        client: &OAuthClient,
+        client_secret_hash: Option<&str>,
+        expected_registration_access_token_blake3: &str,
+        new_registration_access_token_blake3: Option<&str>,
+        source_ip_hash: Option<&str>,
     ) -> Result<OAuthClient, RepositoryError> {
         let mut metadata = serde_json::json!({
             "client_name": client.client_name,
@@ -373,15 +614,12 @@ impl OAuthClientRepository {
             serde_json::json!(client.backchannel_authentication_request_signing_alg),
         );
         metadata_object.insert(
-            "backchannel_user_code_parameter".to_owned(),
-            serde_json::json!(client.backchannel_user_code_parameter),
-        );
-        metadata_object.insert(
             "security_policy".to_owned(),
             serde_json::json!(&client.security_policy),
         );
-        let mut connection = self.connection().await?;
-        let record = diesel::sql_query(
+        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let result = guard.connection().transaction::<OAuthClient, MetadataUpdateError, _>(async |connection| {
+        let mut records = diesel::sql_query(
                     r#"
             UPDATE oauth_clients SET
                 client_name = $3->>'client_name',
@@ -406,7 +644,6 @@ impl OAuthClientRepository {
                 backchannel_token_delivery_mode = $3->>'backchannel_token_delivery_mode',
                 backchannel_client_notification_endpoint = $3->>'backchannel_client_notification_endpoint',
                 backchannel_authentication_request_signing_alg = $3->>'backchannel_authentication_request_signing_alg',
-                backchannel_user_code_parameter = ($3->>'backchannel_user_code_parameter')::boolean,
                 frontchannel_logout_uri = $3->>'frontchannel_logout_uri',
                 frontchannel_logout_session_required = ($3->>'frontchannel_logout_session_required')::boolean,
                 tls_client_auth_subject_dn = $3->>'tls_client_auth_subject_dn',
@@ -467,7 +704,7 @@ impl OAuthClientRepository {
                 backchannel_token_delivery_mode,
                 backchannel_client_notification_endpoint,
                 backchannel_authentication_request_signing_alg,
-                backchannel_user_code_parameter, frontchannel_logout_uri,
+                frontchannel_logout_uri,
                 frontchannel_logout_session_required, subject_type,
                 sector_identifier_uri, sector_identifier_host, security_policy
             "#,
@@ -484,10 +721,19 @@ impl OAuthClientRepository {
                 .bind::<diesel::sql_types::VarChar, _>(
                     expected_registration_access_token_blake3,
                 )
-                .get_result::<OAuthClientRecord>(&mut connection)
-                .await
-            .map_err(map_error)?;
-        record.into_domain()
+                .load::<OAuthClientRecord>(connection)
+                .await?;
+        if records.len() != 1 { return Err(MetadataUpdateError::Diesel(diesel::result::Error::NotFound)); }
+        let client = records.pop().expect("one acknowledged registration row").into_domain().map_err(MetadataUpdateError::Repository)?;
+        if let Some(source_ip_hash) = source_ip_hash {
+            append_dynamic_registration_audit(connection, "dynamic_client_configuration_updated", &client, source_ip_hash).await?;
+        }
+        Ok(client)
+        }).await.map_err(MetadataUpdateError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
     pub async fn rotate_credentials(
@@ -528,10 +774,27 @@ impl OAuthClientRepository {
         id: Uuid,
         expected_registration_access_token_blake3: &str,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = self.connection().await?;
-        connection
-            .transaction::<bool, diesel::result::Error, _>(async |connection| {
-                let changed = diesel::update(
+        self.deactivate_with_audit(
+            tenant_id,
+            id,
+            expected_registration_access_token_blake3,
+            None,
+        )
+        .await
+    }
+
+    pub(super) async fn deactivate_with_audit(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        expected_registration_access_token_blake3: &str,
+        source_ip_hash: Option<&str>,
+    ) -> Result<bool, RepositoryError> {
+        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let result = guard
+            .connection()
+            .transaction::<bool, MetadataUpdateError, _>(async |connection| {
+                let mut records = diesel::update(
                     oauth_clients::table
                         .filter(oauth_clients::tenant_id.eq(tenant_id))
                         .filter(oauth_clients::id.eq(id))
@@ -546,16 +809,35 @@ impl OAuthClientRepository {
                     oauth_clients::registration_access_token_blake3.eq::<Option<String>>(None),
                     oauth_clients::updated_at.eq(diesel::dsl::now),
                 ))
-                .execute(connection)
+                .returning(OAuthClientRecord::as_returning())
+                .load::<OAuthClientRecord>(connection)
                 .await?;
-                if changed != 1 {
-                    return Err(diesel::result::Error::NotFound);
+                if records.len() != 1 {
+                    return Err(MetadataUpdateError::Diesel(diesel::result::Error::NotFound));
                 }
+                let client = records
+                    .pop()
+                    .expect("one acknowledged deactivated client row")
+                    .into_domain()
+                    .map_err(MetadataUpdateError::Repository)?;
                 revoke_client_dependents_on_connection(connection, tenant_id, id).await?;
+                if let Some(source_ip_hash) = source_ip_hash {
+                    append_dynamic_registration_audit(
+                        connection,
+                        "dynamic_client_deleted",
+                        &client,
+                        source_ip_hash,
+                    )
+                    .await?;
+                }
                 Ok(true)
             })
             .await
-            .map_err(map_error)
+            .map_err(MetadataUpdateError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 }
 
@@ -669,7 +951,7 @@ pub(crate) async fn upsert_client_on_connection(
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience, require_par_request_object,
             backchannel_token_delivery_mode, backchannel_client_notification_endpoint,
-            backchannel_authentication_request_signing_alg, backchannel_user_code_parameter,
+            backchannel_authentication_request_signing_alg,
             frontchannel_logout_uri,
             frontchannel_logout_session_required, jwks,
             authorization_signed_response_alg,
@@ -680,8 +962,8 @@ pub(crate) async fn upsert_client_on_connection(
             security_policy, is_active
         ) VALUES (
             $1, $2, $3, $4, $5, 'confidential', $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
-            $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, TRUE
+            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
+            $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, TRUE
         )
         ON CONFLICT (tenant_id, client_id) DO UPDATE SET
             client_name = EXCLUDED.client_name,
@@ -703,7 +985,6 @@ pub(crate) async fn upsert_client_on_connection(
             backchannel_token_delivery_mode = EXCLUDED.backchannel_token_delivery_mode,
             backchannel_client_notification_endpoint = EXCLUDED.backchannel_client_notification_endpoint,
             backchannel_authentication_request_signing_alg = EXCLUDED.backchannel_authentication_request_signing_alg,
-            backchannel_user_code_parameter = EXCLUDED.backchannel_user_code_parameter,
             frontchannel_logout_uri = EXCLUDED.frontchannel_logout_uri,
             frontchannel_logout_session_required = EXCLUDED.frontchannel_logout_session_required,
             jwks = EXCLUDED.jwks,
@@ -751,7 +1032,6 @@ pub(crate) async fn upsert_client_on_connection(
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
         &client.backchannel_authentication_request_signing_alg,
     )
-    .bind::<diesel::sql_types::Bool, _>(client.backchannel_user_code_parameter)
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
         &client.frontchannel_logout_uri,
     )
@@ -788,4 +1068,90 @@ pub(crate) async fn upsert_client_on_connection(
     .execute(connection)
     .await
     .map(|_| ())
+}
+
+async fn append_dynamic_registration_audit(
+    connection: &mut AsyncPgConnection,
+    event_type: &str,
+    client: &OAuthClient,
+    source_ip_hash: &str,
+) -> Result<(), diesel::result::Error> {
+    let event = nazo_persistence::SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: event_type.to_owned(),
+        event_category: "client_lifecycle".to_owned(),
+        payload: serde_json::json!({
+            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+            "event_category": "client_lifecycle", "tenant_id": client.tenant_id,
+            "client_id": client.client_id, "client_type": client.client_type,
+            "grant_types": client.grant_types,
+            "token_endpoint_auth_method": client.token_endpoint_auth_method,
+            "source_ip_hash": source_ip_hash,
+        }),
+        occurred_at: chrono::Utc::now(),
+    };
+    crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(connection, &event)
+        .await
+}
+
+async fn authorize_admin_client_actor(
+    connection: &mut AsyncPgConnection,
+    client: &OAuthClient,
+    actor_id: Uuid,
+) -> Result<(), MetadataUpdateError> {
+    let rows = users::table
+        .filter(users::id.eq(actor_id))
+        .filter(users::tenant_id.eq(client.tenant_id))
+        .filter(users::realm_id.eq(client.realm_id))
+        .filter(users::organization_id.eq(client.organization_id))
+        .select(PrincipalRow::as_select())
+        .for_update()
+        .load::<PrincipalRow>(connection)
+        .await?;
+    let allowed = rows
+        .into_iter()
+        .map(crate::convert::identity::principal_row)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| MetadataUpdateError::Repository(RepositoryError::Consistency(error.0)))?
+        .into_iter()
+        .any(|principal| {
+            principal.active && principal.admin_level().is_some_and(|level| level > 0)
+        });
+    if allowed {
+        Ok(())
+    } else {
+        Err(MetadataUpdateError::Repository(
+            RepositoryError::Consistency(
+                "admin client actor is no longer authorized in the current client context"
+                    .to_owned(),
+            ),
+        ))
+    }
+}
+
+async fn append_admin_client_audit(
+    connection: &mut AsyncPgConnection,
+    event_type: &str,
+    client: &OAuthClient,
+    actor_id: Uuid,
+    source_ip_hash: &str,
+) -> Result<(), diesel::result::Error> {
+    let event = nazo_persistence::SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: event_type.to_owned(),
+        event_category: "client_lifecycle".to_owned(),
+        payload: serde_json::json!({
+            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+            "event_category": "client_lifecycle", "tenant_id": client.tenant_id,
+            "realm_id": client.realm_id, "organization_id": client.organization_id,
+            "admin_user_id": actor_id, "client_pk": client.id,
+            "client_id": client.client_id, "client_type": client.client_type,
+            "grant_types": client.grant_types,
+            "token_endpoint_auth_method": client.token_endpoint_auth_method,
+            "outcome": "success", "source_ip_hash": source_ip_hash,
+        }),
+        occurred_at: chrono::Utc::now(),
+    };
+    crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(connection, &event)
+        .await
 }

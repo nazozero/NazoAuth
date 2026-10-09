@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
-use fred::prelude::{Builder, Config};
+use fred::prelude::{Builder, Config, Expiration};
 use nazo_auth::{
     CibaAuthenticationContext, CibaDecision, CibaPingNotification, CibaPingNotificationStatus,
     CibaPollCommit, CibaRequestState, CibaService, CibaStatus, DeviceAuthorizationApproval,
@@ -73,7 +73,7 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
         audiences: vec!["resource".to_owned()],
         acr: None,
         authentication_context: None,
-        binding_message: None,
+        binding_message: Some("确认 \"device\"\nrequest".to_owned()),
         issued_at: now,
         status: CibaStatus::Pending,
         interval_seconds: 5,
@@ -82,6 +82,7 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
         last_poll_at: None,
         ping_notification: None,
     };
+    assert!(store.load(&auth_req_id).await.unwrap().is_none());
     assert_eq!(
         store.create(&auth_req_id, &state).await.unwrap(),
         AtomicResult::Applied
@@ -90,7 +91,17 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
         inspector.expire_time::<i64, _>(&key).await.unwrap(),
         state.retention_expires_at
     );
+    let raw = serde_json::to_string_pretty(&state).unwrap();
+    inspector
+        .set::<(), _, _>(&key, &raw, Some(Expiration::KEEPTTL), None, false)
+        .await
+        .unwrap();
     let stored = store.load(&auth_req_id).await.unwrap().unwrap();
+    assert_eq!(stored.version().comparison_token(), raw);
+    assert_eq!(
+        stored.version().retention_expires_at(),
+        state.retention_expires_at
+    );
     assert_eq!(stored.state(), &state);
     state.last_poll_at = Some(now + 1);
     let mut other = state.clone();
@@ -106,6 +117,21 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
             .count(),
         1
     );
+    assert!(inspector.persist::<bool, _>(&key).await.unwrap());
+    assert_eq!(
+        store.load(&auth_req_id).await.unwrap_err().kind(),
+        nazo_valkey::ErrorKind::Protocol
+    );
+    inspector
+        .set::<(), _, _>(&key, "not-json", Some(Expiration::EX(60)), None, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.load(&auth_req_id).await.unwrap_err().kind(),
+        nazo_valkey::ErrorKind::Protocol
+    );
+    inspector.del::<i64, _>(&key).await.unwrap();
+    assert!(store.load(&auth_req_id).await.unwrap().is_none());
 }
 
 #[tokio::test]
@@ -163,10 +189,56 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
         store.load(&auth_req_id).await.unwrap().unwrap().state(),
         &state
     );
+    let expired_id = format!("ciba-create-auth-expired-{}", uuid::Uuid::now_v7());
+    let mut expired_state = state.clone();
+    expired_state.expires_at = now;
+    assert!(expired_state.retention_expires_at > server_time(&inspector).await);
+    assert_eq!(
+        store
+            .create_with_authorization_deadline(&expired_id, &expired_state, Some(now))
+            .await
+            .unwrap(),
+        AtomicResult::DeadlineElapsed
+    );
+    assert!(
+        store.load(&expired_id).await.unwrap().is_none(),
+        "Lua create must not write expired authority despite live retention"
+    );
+    assert_eq!(
+        store.create(&expired_id, &expired_state).await.unwrap(),
+        AtomicResult::Applied
+    );
+    let expired = store.load(&expired_id).await.unwrap().unwrap();
+    assert_eq!(
+        store
+            .replace_with_authorization_deadline(
+                &expired_id,
+                expired.version(),
+                &replacement,
+                Some(now)
+            )
+            .await
+            .unwrap(),
+        AtomicResult::DeadlineElapsed
+    );
+    assert_eq!(
+        store.load(&expired_id).await.unwrap().unwrap().state(),
+        &expired_state
+    );
+    assert_eq!(
+        store
+            .delete_with_authorization_deadline(&expired_id, expired.version(), None)
+            .await
+            .unwrap(),
+        AtomicResult::Applied,
+        "ordinary expired cleanup must remain available"
+    );
+    assert!(store.load(&expired_id).await.unwrap().is_none());
+    store.delete(&auth_req_id, stored.version()).await.unwrap();
 }
 
 #[tokio::test]
-async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
+async fn concurrent_approved_ciba_polls_preserve_retryable_state_until_durable_commit() {
     let Some((connection, inspector)) = setup().await else {
         return;
     };
@@ -193,6 +265,11 @@ async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
         store.create(&auth_req_id, &state).await.unwrap(),
         AtomicResult::Applied
     );
+    let key = nazo_valkey::test_support::state_storage_key(format!(
+        "oauth:ciba:{}",
+        blake3::hash(auth_req_id.as_bytes()).to_hex()
+    ));
+    let deadline = inspector.expire_time::<i64, _>(&key).await.unwrap();
     let first = CibaService::new(store.clone());
     let second = CibaService::new(store);
     let first_stored = first.load(&auth_req_id).await.unwrap().unwrap();
@@ -206,10 +283,16 @@ async fn concurrent_approved_ciba_polls_consume_auth_req_id_once() {
             .into_iter()
             .filter(|result| matches!(result, Ok(CibaPollCommit::Approved(_))))
             .count(),
-        1,
-        "approved auth_req_id must have exactly one successful redemption"
+        2,
+        "poll prepares issuance; PostgreSQL owns the final single-use fence"
     );
-    assert!(first.load(&auth_req_id).await.unwrap().is_none());
+    let retained = first.load(&auth_req_id).await.unwrap().unwrap();
+    assert_eq!(retained.state(), &state);
+    assert_eq!(
+        inspector.expire_time::<i64, _>(&key).await.unwrap(),
+        deadline
+    );
+    inspector.del::<i64, _>(&key).await.unwrap();
 }
 
 #[tokio::test]
@@ -264,7 +347,9 @@ async fn ciba_decision_atomically_schedules_and_terminally_acks_ping_delivery() 
         .await
         .unwrap();
 
-    let deliveries = store.claim_due_ping(now, now + 15, 10).await.unwrap();
+    let batch = store.claim_due_ping(now, now + 15, 10).await.unwrap();
+    assert_eq!(batch.scanned, 1);
+    let deliveries = batch.deliveries;
     assert_eq!(deliveries.len(), 1);
     assert_eq!(deliveries[0].auth_req_id, auth_req_id);
     assert_eq!(deliveries[0].attempts, 1);
@@ -285,8 +370,103 @@ async fn ciba_decision_atomically_schedules_and_terminally_acks_ping_delivery() 
             .claim_due_ping(now + 30, now + 45, 10)
             .await
             .unwrap()
+            .deliveries
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn ciba_ping_claim_reports_full_stale_and_mixed_scans_before_live_tail() {
+    let Some((_, inspector)) = setup().await else {
+        return;
+    };
+    let now = server_time(&inspector).await;
+    for stale_count in [8, 7] {
+        let epoch = uuid::Uuid::now_v7();
+        let tenant = nazo_identity::TenantId::new(uuid::Uuid::now_v7()).unwrap();
+        let connection = ValkeyConnection::from_existing_client(
+            inspector.clone(),
+            "ciba-stale-scan",
+            epoch,
+            tenant,
+        )
+        .unwrap();
+        let store = CibaStore::new(&connection);
+        for id in 0..9 {
+            let auth_req_id = format!("scan-{id}");
+            let state = CibaRequestState {
+                client_id: "ping-client".to_owned(),
+                user_id: uuid::Uuid::from_u128(7),
+                scopes: vec!["openid".to_owned()],
+                audiences: vec!["resource".to_owned()],
+                acr: None,
+                authentication_context: None,
+                binding_message: None,
+                issued_at: now,
+                status: CibaStatus::Pending,
+                interval_seconds: 5,
+                expires_at: now + 60,
+                retention_expires_at: now + 180,
+                last_poll_at: None,
+                ping_notification: Some(CibaPingNotification {
+                    auth_req_id: None,
+                    endpoint: "https://client.example/ciba-notification".to_owned(),
+                    client_notification_token: Some("notification-token-0123456789".to_owned()),
+                    status: CibaPingNotificationStatus::AwaitingDecision,
+                    attempts: 0,
+                    next_attempt_at: None,
+                }),
+            };
+            assert_eq!(
+                store.create(&auth_req_id, &state).await.unwrap(),
+                AtomicResult::Applied
+            );
+            CibaService::new(store.clone())
+                .decide(
+                    &auth_req_id,
+                    CibaDecision::Approve(ciba_approval_context(now)),
+                    Some(state.user_id),
+                    || now + i64::from(id == 8),
+                )
+                .await
+                .unwrap();
+            if id < stale_count {
+                // Simulate state TTL expiry while its ZSET member remains.
+                let key = nazo_valkey::test_support::storage_key(
+                    "ciba-stale-scan",
+                    epoch,
+                    tenant,
+                    format!(
+                        "oauth:ciba:{}",
+                        blake3::hash(auth_req_id.as_bytes()).to_hex()
+                    ),
+                )
+                .unwrap();
+                assert_eq!(inspector.del::<i64, _>(key).await.unwrap(), 1);
+            }
+        }
+
+        let first = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(first.scanned, 8);
+        assert_eq!(first.deliveries.len(), 8 - stale_count);
+        let tail = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(tail.scanned, 1);
+        assert_eq!(tail.deliveries.len(), 1);
+        assert_eq!(tail.deliveries[0].auth_req_id, "scan-8");
+        assert_eq!(tail.deliveries[0].attempts, 1);
+        for delivery in first.deliveries.iter().chain(&tail.deliveries) {
+            assert_eq!(
+                store
+                    .finish_ping(delivery, CibaPingFinishOutcome::Delivered)
+                    .await
+                    .unwrap(),
+                CibaPingFinishResult::Applied
+            );
+        }
+        let empty = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(empty.scanned, 0);
+        assert!(empty.deliveries.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -341,6 +521,7 @@ async fn expired_ciba_ping_is_failed_without_exposing_its_notification_token() {
             .claim_due_ping(now + 2, now + 17, 10)
             .await
             .unwrap()
+            .deliveries
             .is_empty(),
         "an expired authorization request must never trigger outbound notification"
     );
@@ -365,6 +546,84 @@ fn pending_device(now: chrono::DateTime<Utc>) -> DeviceAuthorizationState {
         last_poll_at: None,
         slow_down_count: 0,
     }
+}
+
+#[tokio::test]
+async fn device_snapshot_preserves_raw_cas_value_and_rejects_missing_expiry_or_corruption() {
+    use nazo_auth::{DeviceAtomicResult, DeviceStateStorePort};
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let store = DeviceStore::new(&connection);
+    let device_code = format!("snapshot-{}", uuid::Uuid::now_v7());
+    let key = nazo_valkey::test_support::state_storage_key(format!(
+        "oauth:device:code:{}",
+        blake3::hash(device_code.as_bytes()).to_hex()
+    ));
+    assert!(
+        store
+            .load_by_device_code(&device_code)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let state = pending_device(Utc::now());
+    let raw = serde_json::to_string_pretty(&state).unwrap();
+    inspector
+        .set::<(), _, _>(&key, &raw, Some(Expiration::PX(60_000)), None, false)
+        .await
+        .unwrap();
+    let deadline = inspector.pexpire_time::<i64, _>(&key).await.unwrap();
+    let stored = DeviceStateStorePort::load_by_device_code(&store, &device_code)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.state(), &state);
+    assert_eq!(stored.version().comparison_token(), raw);
+    assert_eq!(
+        DeviceStateStorePort::replace_by_device_code(
+            &store,
+            &device_code,
+            stored.version(),
+            &state
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Applied
+    );
+    assert_eq!(
+        inspector.pexpire_time::<i64, _>(&key).await.unwrap(),
+        deadline
+    );
+    assert!(inspector.persist::<bool, _>(&key).await.unwrap());
+    assert_eq!(
+        store
+            .load_by_device_code(&device_code)
+            .await
+            .unwrap_err()
+            .kind(),
+        nazo_valkey::ErrorKind::Protocol
+    );
+    inspector
+        .set::<(), _, _>(&key, "not-json", Some(Expiration::EX(60)), None, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .load_by_device_code(&device_code)
+            .await
+            .unwrap_err()
+            .kind(),
+        nazo_valkey::ErrorKind::Protocol
+    );
+    inspector.del::<i64, _>(&key).await.unwrap();
+    assert!(
+        store
+            .load_by_device_code(&device_code)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -544,9 +803,19 @@ async fn concurrent_device_denials_commit_one_terminal_result() {
         .await
         .unwrap();
     let service = DeviceGrantService::new(store);
+    let first_prepared = service
+        .prepare_decision(&user_code, || now)
+        .await
+        .unwrap()
+        .unwrap();
+    let second_prepared = service
+        .prepare_decision(&user_code, || now)
+        .await
+        .unwrap()
+        .unwrap();
     let (first, second) = tokio::join!(
-        service.deny(&user_code, || now),
-        service.deny(&user_code, || now)
+        service.deny(first_prepared, || now),
+        service.deny(second_prepared, || now)
     );
 
     assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
@@ -561,4 +830,374 @@ async fn concurrent_device_denials_commit_one_terminal_result() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_deadline() {
+    use nazo_auth::{DeviceAtomicResult, DeviceStateReplacement, DeviceStateStorePort};
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let device_code = format!("prepared-{}", uuid::Uuid::now_v7());
+    let user_code = format!("PREPARED-{}", uuid::Uuid::now_v7());
+    let device_key = nazo_valkey::test_support::device_code_storage_key(&device_code);
+    let user_key = nazo_valkey::test_support::device_user_code_storage_key(&user_code);
+    let store = DeviceStore::new(&connection);
+    let pending = pending_device(now);
+    store
+        .create(&device_code, &user_code, &pending, 60)
+        .await
+        .unwrap();
+    let device_hash = store.resolve_user_code(&user_code).await.unwrap().unwrap();
+    let raw_pending = serde_json::to_string_pretty(&pending).unwrap();
+    inspector
+        .set::<(), _, _>(
+            &device_key,
+            &raw_pending,
+            Some(Expiration::KEEPTTL),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    let deadline = inspector.pexpire_time::<i64, _>(&device_key).await.unwrap();
+    let initial = DeviceStateStorePort::load_by_device_code(&store, &device_code)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(initial.version().comparison_token(), raw_pending);
+    let DeviceAuthorizationState::Pending { payload, .. } = pending else {
+        unreachable!()
+    };
+    let approval = DeviceAuthorizationApproval {
+        user_id: uuid::Uuid::from_u128(42),
+        subject: "subject".into(),
+        auth_time: now.timestamp(),
+        amr: vec!["pwd".into()],
+        oidc_sid: Some("sid".into()),
+    };
+    let claim_id = uuid::Uuid::now_v7();
+    let claim = DeviceAuthorizationState::Approving {
+        payload: payload.clone(),
+        approval: approval.clone(),
+        claim_id,
+        grant_recorded: false,
+        started_at: now,
+    };
+    inspector
+        .set::<(), _, _>(
+            &user_key,
+            "replacement-hash",
+            Some(Expiration::KEEPTTL),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        DeviceStateStorePort::claim_decision(
+            &store,
+            &device_hash,
+            &user_code,
+            initial.version(),
+            &claim
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Conflict
+    );
+    inspector.del::<i64, _>(&user_key).await.unwrap();
+    assert_eq!(
+        DeviceStateStorePort::claim_decision(
+            &store,
+            &device_hash,
+            &user_code,
+            initial.version(),
+            &claim
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Conflict
+    );
+    assert_eq!(
+        inspector.get::<String, _>(&device_key).await.unwrap(),
+        raw_pending
+    );
+    inspector
+        .set::<(), _, _>(
+            &user_key,
+            &device_hash,
+            Some(Expiration::EX(60)),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        DeviceStateStorePort::claim_decision(
+            &store,
+            &device_hash,
+            &user_code,
+            initial.version(),
+            &claim
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Applied
+    );
+    assert_eq!(
+        inspector.pexpire_time::<i64, _>(&device_key).await.unwrap(),
+        deadline
+    );
+    // The caller must reload after claiming, before its durable grant side effect.
+    let claimed = DeviceStateStorePort::load_by_device_code(&store, &device_code)
+        .await
+        .unwrap()
+        .unwrap();
+    let recorded = DeviceAuthorizationState::Approving {
+        payload: payload.clone(),
+        approval: approval.clone(),
+        claim_id,
+        grant_recorded: true,
+        started_at: now,
+    };
+    let DeviceStateReplacement::Applied(written) = DeviceStateStorePort::replace_by_device_hash(
+        &store,
+        &device_hash,
+        claimed.version(),
+        &recorded,
+    )
+    .await
+    .unwrap() else {
+        panic!("recorded CAS must succeed")
+    };
+    assert_eq!(written.state(), &recorded);
+    assert_eq!(
+        written.version().comparison_token(),
+        inspector.get::<String, _>(&device_key).await.unwrap()
+    );
+    assert_eq!(
+        inspector.pexpire_time::<i64, _>(&device_key).await.unwrap(),
+        deadline
+    );
+    assert!(matches!(
+        DeviceStateStorePort::replace_by_device_hash(
+            &store,
+            &device_hash,
+            claimed.version(),
+            &recorded
+        )
+        .await
+        .unwrap(),
+        DeviceStateReplacement::Conflict
+    ));
+    let approved = DeviceAuthorizationState::Approved {
+        payload,
+        approval,
+        approved_at: now,
+    };
+    assert_eq!(
+        DeviceStateStorePort::complete_decision(
+            &store,
+            &device_hash,
+            &user_code,
+            written.version(),
+            &approved
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Applied
+    );
+    assert_eq!(
+        inspector.pexpire_time::<i64, _>(&device_key).await.unwrap(),
+        deadline
+    );
+    assert!(store.resolve_user_code(&user_code).await.unwrap().is_none());
+}
+
+fn protocol_ciba_deadline_state(now: i64) -> CibaRequestState {
+    CibaRequestState {
+        client_id: "deadline-contract-client".to_owned(),
+        user_id: uuid::Uuid::now_v7(),
+        scopes: vec!["openid".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        acr: None,
+        authentication_context: None,
+        binding_message: None,
+        issued_at: now,
+        status: CibaStatus::Pending,
+        interval_seconds: 5,
+        expires_at: now + 600,
+        retention_expires_at: now + 900,
+        last_poll_at: None,
+        ping_notification: None,
+    }
+}
+
+#[tokio::test]
+async fn protocol_ciba_deadline_create_rejects_every_explicit_elapsed_value() {
+    let (connection, inspector) = setup()
+        .await
+        .expect("deadline regression requires explicit test Valkey");
+    let store = CibaStore::new(&connection);
+    let now = server_time(&inspector).await;
+    let state = protocol_ciba_deadline_state(now);
+    for deadline in [0, -1, now - 1, now] {
+        let id = format!("ciba-create-deadline-{}", uuid::Uuid::now_v7());
+        assert_eq!(
+            store
+                .create_with_authorization_deadline(&id, &state, Some(deadline))
+                .await
+                .unwrap(),
+            AtomicResult::DeadlineElapsed
+        );
+        assert!(
+            store.load(&id).await.unwrap().is_none(),
+            "explicit elapsed authority must not create state"
+        );
+    }
+    for deadline in [None, Some(now + 300)] {
+        let id = format!("ciba-create-valid-deadline-{}", uuid::Uuid::now_v7());
+        assert_eq!(
+            store
+                .create_with_authorization_deadline(&id, &state, deadline)
+                .await
+                .unwrap(),
+            AtomicResult::Applied
+        );
+        let stored = store.load(&id).await.unwrap().unwrap();
+        assert_eq!(stored.state(), &state);
+        assert_eq!(
+            store.delete(&id, stored.version()).await.unwrap(),
+            AtomicResult::Applied
+        );
+    }
+}
+
+#[tokio::test]
+async fn protocol_ciba_deadline_replace_rejects_elapsed_authority_without_mutation() {
+    let (connection, inspector) = setup()
+        .await
+        .expect("deadline regression requires explicit test Valkey");
+    let store = CibaStore::new(&connection);
+    let now = server_time(&inspector).await;
+    let state = protocol_ciba_deadline_state(now);
+    let id = format!("ciba-replace-deadline-{}", uuid::Uuid::now_v7());
+    assert_eq!(
+        store.create(&id, &state).await.unwrap(),
+        AtomicResult::Applied
+    );
+    let stored = store.load(&id).await.unwrap().unwrap();
+    let mut replacement = state.clone();
+    replacement.last_poll_at = Some(now);
+    for deadline in [0, -1, now - 1, now] {
+        assert_eq!(
+            store
+                .replace_with_authorization_deadline(
+                    &id,
+                    stored.version(),
+                    &replacement,
+                    Some(deadline)
+                )
+                .await
+                .unwrap(),
+            AtomicResult::DeadlineElapsed
+        );
+        let after = store.load(&id).await.unwrap().unwrap();
+        assert_eq!(after.state(), &state);
+        assert_eq!(
+            after.version().comparison_token(),
+            stored.version().comparison_token()
+        );
+        assert_eq!(
+            after.version().retention_expires_at(),
+            stored.version().retention_expires_at()
+        );
+    }
+    let wrong = nazo_auth::CibaStateVersion::new(
+        "wrong-CAS-version".to_owned(),
+        state.retention_expires_at,
+    );
+    assert_eq!(
+        store
+            .replace_with_authorization_deadline(&id, &wrong, &replacement, Some(now + 300))
+            .await
+            .unwrap(),
+        AtomicResult::Conflict
+    );
+    assert_eq!(store.load(&id).await.unwrap().unwrap().state(), &state);
+    assert_eq!(
+        store
+            .replace_with_authorization_deadline(
+                &id,
+                stored.version(),
+                &replacement,
+                Some(now + 300)
+            )
+            .await
+            .unwrap(),
+        AtomicResult::Applied
+    );
+    let after = store.load(&id).await.unwrap().unwrap();
+    assert_eq!(after.state(), &replacement);
+    assert_eq!(
+        store.delete(&id, after.version()).await.unwrap(),
+        AtomicResult::Applied
+    );
+}
+
+#[tokio::test]
+async fn protocol_ciba_deadline_delete_rejects_elapsed_authority_without_mutation() {
+    let (connection, inspector) = setup()
+        .await
+        .expect("deadline regression requires explicit test Valkey");
+    let store = CibaStore::new(&connection);
+    let now = server_time(&inspector).await;
+    let state = protocol_ciba_deadline_state(now);
+    let id = format!("ciba-delete-deadline-{}", uuid::Uuid::now_v7());
+    assert_eq!(
+        store.create(&id, &state).await.unwrap(),
+        AtomicResult::Applied
+    );
+    let stored = store.load(&id).await.unwrap().unwrap();
+    for deadline in [0, -1, now - 1, now] {
+        assert_eq!(
+            store
+                .delete_with_authorization_deadline(&id, stored.version(), Some(deadline))
+                .await
+                .unwrap(),
+            AtomicResult::DeadlineElapsed
+        );
+        let after = store.load(&id).await.unwrap().unwrap();
+        assert_eq!(after.state(), &state);
+        assert_eq!(
+            after.version().comparison_token(),
+            stored.version().comparison_token()
+        );
+        assert_eq!(
+            after.version().retention_expires_at(),
+            stored.version().retention_expires_at()
+        );
+    }
+    let wrong = nazo_auth::CibaStateVersion::new(
+        "wrong-CAS-version".to_owned(),
+        state.retention_expires_at,
+    );
+    assert_eq!(
+        store
+            .delete_with_authorization_deadline(&id, &wrong, Some(now + 300))
+            .await
+            .unwrap(),
+        AtomicResult::Conflict
+    );
+    assert_eq!(store.load(&id).await.unwrap().unwrap().state(), &state);
+    assert_eq!(
+        store
+            .delete_with_authorization_deadline(&id, stored.version(), Some(now + 300))
+            .await
+            .unwrap(),
+        AtomicResult::Applied
+    );
+    assert!(store.load(&id).await.unwrap().is_none());
 }

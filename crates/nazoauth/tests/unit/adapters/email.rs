@@ -65,10 +65,11 @@ fn delivery_adapter_projects_only_focused_smtp_configuration() {
         password: Some("secret".to_owned()),
         from: "Nazo <no-reply@example.test>".parse().unwrap(),
     };
-    let configured = SmtpVerificationEmailDelivery::from_delivery(&EmailDelivery::Smtp(smtp));
+    let configured =
+        SmtpVerificationEmailDelivery::from_delivery(&EmailDelivery::Smtp(smtp)).unwrap();
     assert!(configured.smtp.is_some());
 
-    let disabled = SmtpVerificationEmailDelivery::from_delivery(&EmailDelivery::Disabled);
+    let disabled = SmtpVerificationEmailDelivery::from_delivery(&EmailDelivery::Disabled).unwrap();
     assert!(disabled.smtp.is_none());
 
     let source = include_str!(concat!(

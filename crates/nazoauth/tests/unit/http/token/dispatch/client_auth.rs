@@ -22,6 +22,7 @@ fn pending_authorization_code_payload(raw: &str) -> Result<Option<CodePayload>, 
 
 fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
     CodePayload {
+        redemption_contract_version: nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION,
         code_id: "code-id".to_owned(),
         user_id: Uuid::nil(),
         client_id: "client-1".to_owned(),
@@ -35,15 +36,12 @@ fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("sid-1".to_owned()),
         acr: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
-        code_challenge: Some("challenge".to_owned()),
-        code_challenge_method: Some("S256".to_owned()),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: (Vec::new()).into(),
+        pkce: (Some("challenge".to_owned())).into(),
         dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
         mtls_x5t_s256: None,
-        issued_at: Utc::now(),
+
         expires_at: Utc::now() + Duration::minutes(5),
     }
 }

@@ -4,14 +4,15 @@ use sfv::{
 use thiserror::Error;
 use url::Url;
 
+use crate::digest::digest_matches;
 use crate::request::is_reserved_signature_field;
 use crate::verify::{
     fingerprint, integer_parameter, signature_bytes, string_parameter, top_level_member_count,
     top_level_parameter_count, validate_parameters, validate_time,
 };
 use crate::{
-    PreparedSignature, RequestInput, SignatureFields, VerificationPolicy, VerifiedInput,
-    VerifyError, content_digest_field_matches,
+    BodyDigest, PreparedSignature, RequestInput, SignatureFields, VerificationPolicy,
+    VerifiedInput, VerifyError, content_digest_field_matches,
 };
 
 const SIGNATURE_NAME: &str = "nazo";
@@ -59,8 +60,26 @@ pub fn prepare_response(
     original: OriginalRequest<'_>,
     policy: ResponsePolicy<'_>,
 ) -> Result<PreparedSignature, ResponseError> {
+    prepare_response_with_digests(response, original, policy, None, None)
+}
+
+/// Prepares the same signature base using digest evidence for these exact bodies.
+/// Missing evidence performs the usual body hash; mismatched evidence is denied.
+pub fn prepare_response_with_digests(
+    response: ResponseInput<'_>,
+    original: OriginalRequest<'_>,
+    policy: ResponsePolicy<'_>,
+    response_digest: Option<&BodyDigest<'_>>,
+    request_digest: Option<&BodyDigest<'_>>,
+) -> Result<PreparedSignature, ResponseError> {
     validate_policy(policy.keyid, policy.algorithm)?;
-    let components = response_components(&response, &original, &policy)?;
+    let components = response_components(
+        &response,
+        &original,
+        &policy,
+        response_digest,
+        request_digest,
+    )?;
     let signature_input = serialize_signature_input(&components, policy)?;
     let params = signature_input
         .strip_prefix(&format!("{SIGNATURE_NAME}="))
@@ -86,7 +105,7 @@ pub fn parse_response_for_verification(
     policy: VerificationPolicy,
 ) -> Result<VerifiedInput, VerifyError> {
     validate_body_digest(response.headers, response.body)?;
-    validate_original_digest(&original).map_err(|_| VerifyError::DigestMismatch)?;
+    validate_original_digest(&original, None).map_err(|_| VerifyError::DigestMismatch)?;
 
     let signature_input: Dictionary = Parser::new(&fields.signature_input)
         .parse()
@@ -166,6 +185,8 @@ fn response_components(
     response: &ResponseInput<'_>,
     original: &OriginalRequest<'_>,
     policy: &ResponsePolicy<'_>,
+    response_evidence: Option<&BodyDigest<'_>>,
+    request_evidence: Option<&BodyDigest<'_>>,
 ) -> Result<Vec<Component>, ResponseError> {
     if !(100..=599).contains(&response.status) {
         return Err(invalid("invalid HTTP response status"));
@@ -184,11 +205,12 @@ fn response_components(
     } else {
         let supplied = supplied_response_digest
             .ok_or_else(|| invalid("response Content-Digest is missing"))?;
-        validate_digest_value(supplied, response.body)
-            .map_err(|_| invalid("response Content-Digest does not match its body"))?;
+        if !digest_matches(supplied, response.body, response_evidence) {
+            return Err(invalid("response Content-Digest does not match its body"));
+        }
         Some(normalize_field("content-digest", supplied)?)
     };
-    validate_original_digest(original)?;
+    validate_original_digest(original, request_evidence)?;
 
     let mut components = vec![Component {
         name: "@status".into(),
@@ -422,7 +444,10 @@ fn component_line(component: &Component) -> String {
     format!("\"{}\"{req}: {}", component.name, component.value)
 }
 
-fn validate_original_digest(original: &OriginalRequest<'_>) -> Result<(), ResponseError> {
+fn validate_original_digest(
+    original: &OriginalRequest<'_>,
+    evidence: Option<&BodyDigest<'_>>,
+) -> Result<(), ResponseError> {
     let supplied = unique_header(original.input.headers, "content-digest")?;
     match (original.input.body.is_empty(), supplied) {
         (true, None) => Ok(()),
@@ -430,8 +455,9 @@ fn validate_original_digest(original: &OriginalRequest<'_>) -> Result<(), Respon
             "request Content-Digest is invalid for an empty body",
         )),
         (false, None) => Err(invalid("request Content-Digest is missing")),
-        (false, Some(value)) => validate_digest_value(value, original.input.body)
-            .map_err(|_| invalid("request Content-Digest does not match its body")),
+        (false, Some(value)) => digest_matches(value, original.input.body, evidence)
+            .then_some(())
+            .ok_or_else(|| invalid("request Content-Digest does not match its body")),
     }
 }
 

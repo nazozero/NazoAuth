@@ -1,0 +1,3 @@
+DROP INDEX ix_openid4vci_notification_token;
+DROP INDEX ix_openid4vci_deferred_token;
+DROP INDEX ix_openid4vci_notification_expiry;

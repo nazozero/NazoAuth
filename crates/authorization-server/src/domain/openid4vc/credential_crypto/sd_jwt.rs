@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -11,7 +13,6 @@ use nazo_digital_credentials::{
     PresentedCredential, VerifiedCredential,
 };
 use rand::Rng;
-use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
@@ -23,6 +24,7 @@ pub(super) struct ValidatedSdJwtChain {
     pub(super) decoding_key: JwtVerificationKey,
     pub(super) certificates: Vec<Vec<u8>>,
     pub(super) leaf_der: Vec<u8>,
+    pub(super) scoped_anchor_authenticated: bool,
 }
 
 pub(super) async fn sign(
@@ -97,6 +99,7 @@ pub(super) fn verify(
         decoding_key: key,
         certificates,
         leaf_der,
+        scoped_anchor_authenticated,
     } = validate_sd_jwt_chain(
         crypto,
         header
@@ -106,7 +109,10 @@ pub(super) fn verify(
         &presentation.additional_trust_anchors,
     )?;
     let mut validation = Validation::new(header.alg);
-    validation.required_spec_claims = ["exp", "iss"].into_iter().map(str::to_owned).collect();
+    // Authenticate the issuer once, including its algorithm and trusted key.
+    // Issuer time policy cannot hide a subsequently authenticated holder nonce.
+    validation.required_spec_claims = ["iss"].into_iter().map(str::to_owned).collect();
+    validation.validate_exp = false;
     validation.validate_aud = false;
     let credential = decode::<Value>(credential_jwt, &key, &validation)
         .map_err(|_| CredentialTrustError::InvalidSignature)?
@@ -119,14 +125,93 @@ pub(super) fn verify(
         .issuer_trust_policy
         .validate(issuer, &leaf_der)
         .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    let holder_jwk = credential
+        .pointer("/cnf/jwk")
+        .ok_or(CredentialTrustError::InvalidHolderBinding)?;
+    let kb_header =
+        decode_header(kb_jwt).map_err(|_| CredentialTrustError::InvalidHolderBinding)?;
+    if kb_header.typ.as_deref() != Some("kb+jwt") {
+        return Err(CredentialTrustError::InvalidHolderBinding);
+    }
+    let holder_key = decoding_key_trust(holder_jwk, kb_header.alg)?;
+    let mut kb_validation = Validation::new(kb_header.alg);
+    kb_validation.validate_exp = false;
+    kb_validation.required_spec_claims.clear();
+    kb_validation.validate_aud = false;
+    let binding = decode::<Value>(kb_jwt, &holder_key, &kb_validation)
+        .map_err(|_| CredentialTrustError::InvalidHolderBinding)?
+        .claims;
+    // The signature has authenticated these claims. A missing or wrong
+    // nonce rejects the entire response, even when audience/time also fail.
+    if binding.get("nonce").and_then(Value::as_str) != Some(&presentation.expected_nonce) {
+        return Err(CredentialTrustError::InvalidNonce);
+    }
+    // Preserve the pinned JWT policy's required NumericDate, rounded fractional
+    // seconds and default leeway, but apply it only after nonce authentication.
+    // Missing/malformed/expired issuer exp remains an invalid credential.
+    let expiration = credential
+        .get("exp")
+        .and_then(|value| {
+            value.as_u64().or_else(|| {
+                value
+                    .as_f64()
+                    .filter(|value| {
+                        value.is_finite() && *value >= 0.0 && *value < (u64::MAX as f64)
+                    })
+                    .map(|value| value.round() as u64)
+            })
+        })
+        .ok_or(CredentialTrustError::InvalidSignature)?;
+    let now = Utc::now().timestamp() as u64;
+    if expiration < now.saturating_sub(validation.leeway) {
+        return Err(CredentialTrustError::InvalidSignature);
+    }
+    // A discardable revocation result cannot hide an authenticated nonce
+    // mismatch in this same presentation. Issuer/path and holder signatures
+    // have already been verified; a revoked credential still cannot succeed.
     crypto
         .current_revocation_policy()
         .check_chain_with_scoped_trust(
             Some(issuer),
             &certificates,
             Utc::now(),
-            &presentation.additional_trust_anchors,
+            scoped_anchor_authenticated,
         )?;
+    let audience_matches = binding.get("aud").is_some_and(|audience| {
+        audience.as_str() == Some(&presentation.expected_audience)
+            || audience.as_array().is_some_and(|audiences| {
+                audiences.iter().all(Value::is_string)
+                    && audiences
+                        .iter()
+                        .any(|value| value.as_str() == Some(&presentation.expected_audience))
+            })
+    });
+    let now = Utc::now();
+    if !audience_matches
+        || binding
+            .get("iat")
+            .and_then(Value::as_i64)
+            .is_none_or(|issued_at| {
+                issued_at < (now - Duration::minutes(5)).timestamp()
+                    || issued_at > (now + Duration::seconds(60)).timestamp()
+            })
+    {
+        return Err(CredentialTrustError::InvalidHolderBinding);
+    }
+    let sd_input = if disclosures.is_empty() {
+        format!("{credential_jwt}~")
+    } else {
+        format!("{}~{}~", credential_jwt, disclosures.join("~"))
+    };
+    if binding.get("sd_hash").and_then(Value::as_str)
+        != Some(
+            URL_SAFE_NO_PAD
+                .encode(Sha256::digest(sd_input.as_bytes()))
+                .as_str(),
+        )
+    {
+        return Err(CredentialTrustError::InvalidHolderBinding);
+    }
     if credential
         .get("_sd_alg")
         .and_then(Value::as_str)
@@ -137,11 +222,14 @@ pub(super) fn verify(
     let expected_digests = credential
         .get("_sd")
         .and_then(Value::as_array)
-        .ok_or(CredentialTrustError::InvalidEncoding)?;
+        .ok_or(CredentialTrustError::InvalidEncoding)?
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<HashSet<_>>();
     let mut disclosed = Map::new();
     for disclosure in disclosures {
-        let digest = Value::String(URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes())));
-        if !expected_digests.contains(&digest) {
+        let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
+        if !expected_digests.contains(digest.as_str()) {
             return Err(CredentialTrustError::InvalidSignature);
         }
         let decoded: Value = serde_json::from_slice(
@@ -164,40 +252,11 @@ pub(super) fn verify(
             return Err(CredentialTrustError::InvalidEncoding);
         }
     }
-    let holder_jwk = credential
-        .pointer("/cnf/jwk")
-        .ok_or(CredentialTrustError::InvalidHolderBinding)?;
-    let kb_header =
-        decode_header(kb_jwt).map_err(|_| CredentialTrustError::InvalidHolderBinding)?;
-    if kb_header.typ.as_deref() != Some("kb+jwt") {
-        return Err(CredentialTrustError::InvalidHolderBinding);
-    }
-    let holder_key = decoding_key_trust(holder_jwk, kb_header.alg)?;
-    let mut kb_validation = Validation::new(kb_header.alg);
-    kb_validation.validate_exp = false;
-    kb_validation.required_spec_claims.clear();
-    kb_validation.set_audience(&[presentation.expected_audience.as_str()]);
-    let binding = decode::<KeyBindingClaims>(kb_jwt, &holder_key, &kb_validation)
-        .map_err(|_| CredentialTrustError::InvalidHolderBinding)?
-        .claims;
-    let now = Utc::now();
-    if binding.nonce != presentation.expected_nonce
-        || binding.iat < (now - Duration::minutes(5)).timestamp()
-        || binding.iat > (now + Duration::seconds(60)).timestamp()
-    {
-        return Err(CredentialTrustError::InvalidHolderBinding);
-    }
-    let sd_input = if disclosures.is_empty() {
-        format!("{credential_jwt}~")
-    } else {
-        format!("{}~{}~", credential_jwt, disclosures.join("~"))
-    };
-    if binding.sd_hash != URL_SAFE_NO_PAD.encode(Sha256::digest(sd_input.as_bytes())) {
-        return Err(CredentialTrustError::InvalidHolderBinding);
-    }
     Ok(VerifiedCredential {
         format: CredentialFormat::SdJwtVc,
         issuer: issuer.to_owned(),
+        issuer_chain_authority_key_identifiers:
+            super::certificates::issuer_authority_key_identifiers(&certificates)?,
         credential_type: credential
             .get("vct")
             .and_then(Value::as_str)
@@ -229,8 +288,15 @@ pub(super) fn validate_sd_jwt_chain(
         .ok_or(CredentialTrustError::UntrustedIssuer)?
         .clone();
     let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
-    super::super::crypto_helpers::verify_openid4vc_chain(&certificates, &anchors)
-        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    let authenticated_anchor = super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(
+        &certificates,
+        &anchors,
+        additional_trust_anchors,
+    )
+    .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    let scoped_anchor_authenticated = additional_trust_anchors
+        .iter()
+        .any(|anchor| anchor.as_slice() == authenticated_anchor);
     let (_, leaf) = x509_parser::parse_x509_certificate(&leaf_der)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     Ok(ValidatedSdJwtChain {
@@ -239,12 +305,6 @@ pub(super) fn validate_sd_jwt_chain(
         ),
         certificates,
         leaf_der,
+        scoped_anchor_authenticated,
     })
-}
-
-#[derive(Deserialize)]
-struct KeyBindingClaims {
-    nonce: String,
-    iat: i64,
-    sd_hash: String,
 }

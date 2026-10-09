@@ -1,6 +1,6 @@
 use diesel::sql_query;
 use diesel_async::RunQueryDsl;
-use nazo_postgres::{create_pool, db_pool_metrics, get_conn, health_check};
+use nazo_postgres::{create_pool, get_conn, health_check};
 
 fn function_source<'a>(source: &'a str, name: &str, next_name: Option<&str>) -> &'a str {
     let start = source
@@ -105,7 +105,7 @@ async fn pool_admin_operation_errors_remain_typed_across_runtime_boundaries() {
 }
 
 #[tokio::test]
-async fn pool_health_and_connection_round_trip_record_acquisition_metrics() {
+async fn pool_health_and_connection_execute_real_async_round_trips() {
     let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .ok();
@@ -116,7 +116,6 @@ async fn pool_health_and_connection_round_trip_record_acquisition_metrics() {
         return;
     };
 
-    let before = db_pool_metrics();
     let pool = create_pool(database_url, 1).expect("the test pool should be configured");
     health_check(&pool)
         .await
@@ -129,16 +128,10 @@ async fn pool_health_and_connection_round_trip_record_acquisition_metrics() {
         .await
         .expect("an acquired connection should execute a query");
     drop(connection);
-
-    let after = db_pool_metrics();
-    assert!(after.acquire_count >= before.acquire_count + 2);
-    assert!(after.wait_nanos_total >= before.wait_nanos_total);
-    assert!(after.wait_nanos_max >= before.wait_nanos_max);
 }
 
 #[tokio::test]
-async fn failed_pool_acquisition_still_records_the_attempt_metrics() {
-    let before = db_pool_metrics();
+async fn failed_pool_acquisition_returns_an_error() {
     // Port 1 refuses immediately; pool construction is lazy so only the
     // acquisition attempt inside `get_conn` can fail.
     let pool = create_pool("postgres://127.0.0.1:1/nazo-unreachable", 1)
@@ -150,27 +143,20 @@ async fn failed_pool_acquisition_still_records_the_attempt_metrics() {
         result.is_err(),
         "a refused backend must fail the acquisition"
     );
-    let after = db_pool_metrics();
-    assert!(
-        after.acquire_count > before.acquire_count,
-        "failed acquisitions are still counted attempts"
-    );
-    assert!(after.wait_nanos_total >= before.wait_nanos_total);
 }
 
 #[tokio::test]
-async fn concurrent_acquisitions_count_each_attempt_once() {
+async fn concurrent_acquisitions_all_succeed() {
     let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .ok();
     if database_url.is_none() && std::env::var_os("CI").is_some() {
-        panic!("CI pool metrics tests require NAZO_TEST_DATABASE_URL or DATABASE_URL");
+        panic!("CI pool acquisition tests require NAZO_TEST_DATABASE_URL or DATABASE_URL");
     }
     let Some(database_url) = database_url else {
         return;
     };
 
-    let before = db_pool_metrics();
     let pool = create_pool(database_url, 4).expect("the test pool should be configured");
     let attempts = 8usize;
     let mut tasks = tokio::task::JoinSet::new();
@@ -185,10 +171,4 @@ async fn concurrent_acquisitions_count_each_attempt_once() {
         }
     }
     assert_eq!(succeeded, attempts, "every concurrent acquisition succeeds");
-
-    let after = db_pool_metrics();
-    assert!(
-        after.acquire_count >= before.acquire_count + attempts as u64,
-        "each concurrent attempt is counted exactly once"
-    );
 }

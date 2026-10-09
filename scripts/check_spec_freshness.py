@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -303,11 +304,40 @@ def check_entry(entry: dict, opener=urllib.request.urlopen) -> str:
     raise RuntimeError(f"{entry['id']}: unsupported kind {kind}")
 
 
+def _write_report(
+    path: Path | None,
+    manifest_path: Path,
+    mode: str,
+    sources: list[dict],
+    checks: list[dict],
+) -> None:
+    if path is None:
+        return
+    failed = sum(check["status"] == "failed" for check in checks)
+    report = {
+        "schema_version": 1,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "mode": mode,
+        "status": "failed" if failed else "passed",
+        "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "source_count": len(sources),
+        "checked_source_count": len(checks),
+        "failed_source_count": failed,
+        "checks": checks,
+        "scope": "Official source status/markers; not implementation compliance",
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument(
         "--offline", action="store_true", help="validate inventory and active pins only"
+    )
+    parser.add_argument(
+        "--report-json", type=Path, help="save per-source results, including failures"
     )
     args = parser.parse_args(argv)
 
@@ -315,15 +345,27 @@ def main(argv: list[str] | None = None) -> int:
     validate_manifest(manifest, ROOT)
     print(f"offline validation passed: {len(manifest['sources'])} official sources")
     if args.offline:
+        _write_report(args.report_json, args.manifest, "offline", manifest["sources"], [])
         return 0
 
     failures: list[str] = []
+    checks: list[dict] = []
     for entry in manifest["sources"]:
+        result = {
+            key: entry[key]
+            for key in ("id", "kind", "url", "document", "revision")
+            if key in entry
+        }
         try:
-            print(check_entry(entry))
+            message = check_entry(entry)
+            print(message)
+            result.update(status="passed", message=message)
         except (RuntimeError, ValueError, json.JSONDecodeError) as error:
             failures.append(str(error))
+            result.update(status="failed", message=str(error))
             print(f"ERROR: {error}", file=sys.stderr)
+        checks.append(result)
+    _write_report(args.report_json, args.manifest, "online", manifest["sources"], checks)
     if failures:
         print(f"online validation failed: {len(failures)} source(s)", file=sys.stderr)
         return 1

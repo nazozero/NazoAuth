@@ -1,6 +1,7 @@
 use crate::rows::identity::{
-    AuthenticationIdentityRow, ExternalIdentityLinkRow, PasskeyCredentialRow, PrincipalRow,
-    PublicAccountRow, SubjectClaimsRow, UserRow,
+    AuthenticationIdentityRow, ExternalIdentityLinkRow, ExternalIdentityLinkSummaryRow,
+    PasskeyCredentialRow, PasskeyCredentialSummaryRow, PrincipalRow, PublicAccountRow,
+    SubjectClaimsRow,
 };
 use nazo_identity::{
     AccountIdentity, AuthenticationIdentity, IdentityModelError, LoginIdentity, OrganizationId,
@@ -15,25 +16,6 @@ impl From<IdentityModelError> for ConversionError {
         Self(error.to_string())
     }
 }
-impl TryFrom<UserRow> for Principal {
-    type Error = ConversionError;
-    fn try_from(row: UserRow) -> Result<Self, Self::Error> {
-        principal(&row)
-    }
-}
-
-fn principal(row: &UserRow) -> Result<Principal, ConversionError> {
-    principal_parts(
-        row.id,
-        row.tenant_id,
-        row.realm_id,
-        row.organization_id,
-        &row.role,
-        row.admin_level,
-        row.is_active,
-    )
-}
-
 fn principal_parts(
     id: uuid::Uuid,
     tenant_id: uuid::Uuid,
@@ -76,15 +58,6 @@ pub(crate) fn principal_row(row: PrincipalRow) -> Result<Principal, ConversionEr
         row.admin_level,
         row.is_active,
     )
-}
-
-fn account(row: &UserRow) -> AccountIdentity {
-    AccountIdentity {
-        username: row.username.clone(),
-        email: row.email.clone(),
-        email_verified: row.email_verified,
-        mfa_enabled: row.mfa_enabled,
-    }
 }
 
 pub(crate) fn authentication_identity(
@@ -213,44 +186,6 @@ pub(crate) fn active_subject_claims(
     })
 }
 
-impl TryFrom<UserRow> for PublicAccount {
-    type Error = ConversionError;
-
-    fn try_from(row: UserRow) -> Result<Self, Self::Error> {
-        let principal = principal(&row)?;
-        Ok(Self {
-            principal,
-            account: account(&row),
-            profile: UserProfile {
-                display_name: row.display_name,
-                avatar_url: row.avatar_url,
-                given_name: row.given_name,
-                family_name: row.family_name,
-                middle_name: row.middle_name,
-                nickname: row.nickname,
-                profile_url: row.profile_url,
-                website_url: row.website_url,
-                gender: row.gender,
-                birthdate: row.birthdate,
-                zoneinfo: row.zoneinfo,
-                locale: row.locale,
-                address: PostalAddress {
-                    formatted: row.address_formatted,
-                    street_address: row.address_street_address,
-                    locality: row.address_locality,
-                    region: row.address_region,
-                    postal_code: row.address_postal_code,
-                    country: row.address_country,
-                },
-                phone_number: row.phone_number,
-                phone_number_verified: row.phone_number_verified,
-            },
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-        })
-    }
-}
-
 pub(crate) fn passkey(
     row: PasskeyCredentialRow,
 ) -> Result<nazo_identity::ports::PasskeyCredential, ConversionError> {
@@ -258,8 +193,22 @@ pub(crate) fn passkey(
         id: row.id,
         tenant_id: TenantId::new(row.tenant_id)?,
         user_id: UserId::new(row.user_id)?,
+        credential: passkey_material(&row.credential_id, row.sign_count, row.credential)?,
+        label: row.label,
+        last_used_at: row.last_used_at,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+pub(crate) fn passkey_summary(
+    row: PasskeyCredentialSummaryRow,
+) -> Result<nazo_identity::ports::PasskeyCredentialSummary, ConversionError> {
+    Ok(nazo_identity::ports::PasskeyCredentialSummary {
+        id: row.id,
+        tenant_id: TenantId::new(row.tenant_id)?,
+        user_id: UserId::new(row.user_id)?,
         credential_id: row.credential_id,
-        credential: row.credential,
         label: row.label,
         sign_count: row.sign_count,
         last_used_at: row.last_used_at,
@@ -285,6 +234,67 @@ pub(crate) fn federation_link(
     })
 }
 
+pub(crate) fn federation_link_summary(
+    row: ExternalIdentityLinkSummaryRow,
+) -> Result<nazo_identity::ports::FederationLinkSummary, ConversionError> {
+    Ok(nazo_identity::ports::FederationLinkSummary {
+        id: row.id,
+        tenant_id: TenantId::new(row.tenant_id)?,
+        user_id: UserId::new(row.user_id)?,
+        provider_type: row.provider_type,
+        provider_id: row.provider_id,
+        subject: row.subject,
+        email: row.email,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        last_login_at: row.last_login_at,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../tests/unit/convert/identity.rs"]
 mod tests;
+
+/// Relational lookup/CAS columns are the stored authority. Legacy JSON copies
+/// must agree before decoding; new JSON contains only authenticator material.
+fn passkey_material(
+    credential_id: &str,
+    sign_count: i64,
+    mut value: serde_json::Value,
+) -> Result<passkey_auth::PasskeyCredential, ConversionError> {
+    let invalid = || ConversionError("stored passkey credential is malformed".into());
+    let id = passkey_auth::CredentialId::from_b64url(credential_id).map_err(|_| invalid())?;
+    let counter = u32::try_from(sign_count).map_err(|_| invalid())?;
+    let object = value.as_object_mut().ok_or_else(invalid)?;
+    let id_value = serde_json::to_value(&id).map_err(|_| invalid())?;
+    let counter_value = serde_json::json!(counter);
+    if object.get("id").is_some_and(|stored| stored != &id_value)
+        || object
+            .get("counter")
+            .is_some_and(|stored| stored != &counter_value)
+    {
+        return Err(ConversionError(
+            "passkey credential columns disagree".into(),
+        ));
+    }
+    object.insert("id".into(), id_value);
+    object.insert("counter".into(), counter_value);
+    serde_json::from_value(value).map_err(|_| invalid())
+}
+
+pub(crate) fn encoded_passkey(
+    credential: &passkey_auth::PasskeyCredential,
+) -> Result<serde_json::Value, ConversionError> {
+    let mut value = serde_json::to_value(credential)
+        .map_err(|_| ConversionError("passkey credential serialization failed".into()))?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| ConversionError("passkey credential serialization failed".into()))?;
+    object.remove("id");
+    object.remove("counter");
+    Ok(value)
+}
+
+#[cfg(test)]
+#[path = "../../tests/unit/convert/passkey_material.rs"]
+mod passkey_tests;

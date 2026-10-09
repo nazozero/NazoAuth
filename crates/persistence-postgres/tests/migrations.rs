@@ -9,6 +9,91 @@ use uuid::Uuid;
 
 mod support;
 
+#[tokio::test]
+async fn token_principal_epochs_survive_reactivation_and_bindings_are_tenant_owned() {
+    let Some(url) = database_url() else { return };
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("principal_epoch_{}", Uuid::now_v7().simple());
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema}; \
+         CREATE TABLE users (id UUID PRIMARY KEY, tenant_id UUID NOT NULL, \
+           is_active BOOLEAN NOT NULL DEFAULT TRUE, UNIQUE (id, tenant_id)); \
+         CREATE TABLE oauth_clients (id UUID PRIMARY KEY, is_active BOOLEAN NOT NULL DEFAULT TRUE);"
+        ))
+        .await
+        .unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20260929000200_token_principal_state/up.sql"
+        ))
+        .await
+        .unwrap();
+    let user = Uuid::now_v7();
+    let tenant = Uuid::now_v7();
+    connection
+        .batch_execute(&format!(
+            "INSERT INTO users (id, tenant_id) VALUES ('{user}', '{tenant}'); \
+         INSERT INTO oauth_clients (id) VALUES ('{user}'); \
+         INSERT INTO oauth_subject_bindings VALUES ('{tenant}', 'pairwise', '{user}'); \
+         UPDATE users SET is_active = FALSE; UPDATE users SET is_active = TRUE; \
+         UPDATE oauth_clients SET is_active = FALSE; UPDATE oauth_clients SET is_active = TRUE;"
+        ))
+        .await
+        .unwrap();
+    let state = sql_query(
+        "SELECT (SELECT access_token_epoch = 1 FROM users) AND \
+                (SELECT access_token_epoch = 1 FROM oauth_clients) AS value",
+    )
+    .get_result::<BooleanRow>(&mut connection)
+    .await
+    .unwrap();
+    assert!(state.value, "reactivation must never restore a token epoch");
+    connection
+        .batch_execute("SAVEPOINT wrong_tenant")
+        .await
+        .unwrap();
+    assert!(
+        connection
+            .batch_execute(&format!(
+                "INSERT INTO oauth_subject_bindings VALUES ('{}', 'wrong-tenant', '{user}')",
+                Uuid::now_v7()
+            ))
+            .await
+            .is_err(),
+        "a binding must belong to the user's tenant"
+    );
+    connection
+        .batch_execute("ROLLBACK TO wrong_tenant; DELETE FROM users")
+        .await
+        .unwrap();
+    let remaining = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_subject_bindings")
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(remaining.count, 0, "identity deletion removes its bindings");
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
+#[test]
+fn migration_versions_are_unique_across_merged_branches() {
+    let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let mut versions = std::collections::BTreeMap::new();
+    for entry in std::fs::read_dir(migrations).unwrap() {
+        let entry = entry.unwrap();
+        if !entry.file_type().unwrap().is_dir() || !entry.path().join("up.sql").is_file() {
+            continue;
+        }
+        let name = entry.file_name().into_string().unwrap();
+        let version = name.split('_').next().unwrap().to_owned();
+        let previous = versions.insert(version.clone(), name.clone());
+        assert!(
+            previous.is_none(),
+            "migration version {version} is shared by {previous:?} and {name}"
+        );
+    }
+}
+
 #[test]
 fn embedded_migration_head_tracks_latest_directory() {
     let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
@@ -27,7 +112,26 @@ fn embedded_migration_head_tracks_latest_directory() {
 }
 
 #[test]
-fn security_state_cleanup_has_one_bounded_definition_and_no_runtime_call() {
+fn revoked_refresh_family_cleanup_index_is_partial_and_reversible() {
+    let up = include_str!(
+        "../../../migrations/20261002000100_refresh_family_revoked_cleanup_index/up.sql"
+    );
+    let down = include_str!(
+        "../../../migrations/20261002000100_refresh_family_revoked_cleanup_index/down.sql"
+    );
+    assert!(
+        up.contains("ON oauth_refresh_families (revoked_at, tenant_id, token_family_id)")
+            && up.contains("WHERE revoked_at IS NOT NULL"),
+        "terminal-family cleanup must have a partial revoked-time scan index"
+    );
+    assert!(
+        down.contains("DROP INDEX IF EXISTS ix_orf_revoked_cleanup"),
+        "the new cleanup index migration must be reversible"
+    );
+}
+
+#[test]
+fn security_state_cleanup_has_versioned_definitions_and_no_runtime_call() {
     let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let mut definitions = 0;
     let mut invocations = 0;
@@ -56,8 +160,8 @@ fn security_state_cleanup_has_one_bounded_definition_and_no_runtime_call() {
                 .count();
     }
     assert_eq!(
-        definitions, 1,
-        "the bounded security-state cleanup must be defined exactly once"
+        definitions, 2,
+        "the original cleanup plus its index-cutoff replacement define one runtime function"
     );
     assert_eq!(
         invocations, 0,
@@ -67,27 +171,32 @@ fn security_state_cleanup_has_one_bounded_definition_and_no_runtime_call() {
 
 #[test]
 fn security_state_cleanup_function_bounds_every_category() {
-    let sql = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../migrations/20260805000500_token_issuance_saga/up.sql"),
-    )
-    .expect("token issuance saga migration should be readable");
-    assert_eq!(
-        sql.matches("LIMIT 256 FOR UPDATE SKIP LOCKED").count(),
-        5,
-        "each cleanup category must select a bounded candidate set under SKIP LOCKED"
-    );
-    for column in [
-        "deleted_issuances",
-        "deleted_access_token_revocations",
-        "deleted_scim_audit_events",
-        "deleted_backchannel_logout_deliveries",
-        "deleted_scim_security_events",
+    for migration in [
+        "20260805000500_token_issuance_saga",
+        "20260929000100_security_cleanup_index_cutoff",
     ] {
-        assert!(
-            sql.contains(column),
-            "cleanup function must report {column}"
+        let sql = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../migrations/{migration}/up.sql")),
+        )
+        .expect("security cleanup migration should be readable");
+        assert_eq!(
+            sql.matches("LIMIT 256 FOR UPDATE SKIP LOCKED").count(),
+            5,
+            "each cleanup category must select a bounded candidate set under SKIP LOCKED"
         );
+        for column in [
+            "deleted_issuances",
+            "deleted_access_token_revocations",
+            "deleted_scim_audit_events",
+            "deleted_backchannel_logout_deliveries",
+            "deleted_scim_security_events",
+        ] {
+            assert!(
+                sql.contains(column),
+                "cleanup function must report {column}"
+            );
+        }
     }
 }
 
@@ -636,6 +745,61 @@ async fn tenant_resource_provenance_cut_keeps_one_deterministic_binding_and_reje
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn issuance_cleanup_uses_expiry_as_an_index_bound() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("pending migrations should apply");
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    #[derive(QueryableByName)]
+    struct FunctionBody {
+        #[diesel(sql_type = Text)]
+        body: String,
+    }
+    let body = sql_query(
+        "SELECT prosrc AS body FROM pg_proc \
+         WHERE oid = 'nazo_oauth_cleanup_expired_security_state()'::regprocedure",
+    )
+    .get_result::<FunctionBody>(&mut connection)
+    .await
+    .expect("installed cleanup definition should be readable")
+    .body;
+    // Explain the installed candidate query, not a second copy that could
+    // keep passing after the production predicate regresses. The bind models
+    // PL/pgSQL's one per-call cutoff variable.
+    let candidate = body
+        .split_once("WITH due AS (")
+        .expect("issuance candidate CTE should exist")
+        .1
+        .split_once(")\n    DELETE FROM oauth_token_issuances")
+        .expect("issuance candidate should feed the bounded delete")
+        .0
+        .replace("v_cutoff", "$1");
+    connection
+        .batch_execute("SET enable_seqscan = off; SET enable_bitmapscan = off")
+        .await
+        .expect("small fixtures should still expose usable index conditions");
+    let plan = sql_query(format!("EXPLAIN (COSTS OFF) {candidate}"))
+        .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+        .load::<ExplainRow>(&mut connection)
+        .await
+        .expect("installed expiry candidate should explain")
+        .into_iter()
+        .map(|row| row.query_plan)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        plan.contains("oauth_token_issuances_retention_idx")
+            && plan.contains("Index Cond: (retain_until <="),
+        "expiry must bound the index scan rather than filter retained rows:\n{plan}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn openid4vp_expiry_cleanup_query_is_indexable() {
     let Some(database_url) = database_url() else {
         return;
@@ -776,15 +940,6 @@ async fn pending_migrations_create_all_runtime_module_state_tables() {
     // The runtime-module migration establishes its clean-install baseline once
     // per schema. Other integration tests deliberately mutate the shared
     // default schema, so this assertion needs its own fresh migration ledger.
-    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 7] = [
-        "20260805000100",
-        "20260905000100",
-        "20260909000100",
-        "20260919000100",
-        "20260919000200",
-        "20260920000100",
-        "20260923000100",
-    ];
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("public migrations needed by the isolated schema should apply");
@@ -797,32 +952,10 @@ async fn pending_migrations_create_all_runtime_module_state_tables() {
         .await
         .expect("isolated schema should create");
     drop(coordinator);
-    let separator = if database_url.contains('?') { '&' } else { '?' };
-    let isolated_url =
-        format!("{database_url}{separator}options=-csearch_path%3D{schema}%2Cpublic");
-    {
-        let mut connection = AsyncPgConnection::establish(&isolated_url)
-            .await
-            .expect("isolated migration database should connect");
-        connection
-            .batch_execute(diesel::migration::CREATE_MIGRATIONS_TABLE)
-            .await
-            .expect("isolated migration ledger should create");
-        for version in PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS {
-            sql_query(
-                "INSERT INTO __diesel_schema_migrations (version)
-                 VALUES ($1)
-                 ON CONFLICT (version) DO NOTHING",
-            )
-            .bind::<Text, _>(version)
-            .execute(&mut connection)
-            .await
-            .expect("public-only migration should be excluded from the isolated ledger");
-        }
-    }
-    nazo_postgres::run_pending_migrations(&isolated_url)
-        .await
-        .expect("pending migrations should apply to the isolated schema");
+    let isolated_url = support::schema_database_url(&database_url, &schema);
+    // Reuse the shared public-only migration exclusions. A second local list
+    // can replay already-applied public DDL through this fresh schema ledger.
+    support::run_isolated_application_migrations(&isolated_url).await;
     let mut connection = AsyncPgConnection::establish(&isolated_url)
         .await
         .expect("isolated test database should connect");
@@ -1679,6 +1812,12 @@ async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writ
     let Some(database_url) = database_url() else {
         return;
     };
+    // The isolated schema proves application migration from empty. Runtime role
+    // grants separately target the production public schema, which needs its
+    // actual complete migration baseline before configure_runtime_role.
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("runtime role fixture public baseline must be fully migrated");
     let schema = format!("access_revocation_baseline_{}", Uuid::now_v7().simple());
     let mut bootstrap = AsyncPgConnection::establish(&database_url)
         .await
@@ -2126,4 +2265,60 @@ async fn refresh_state_minimal_migration_converges_family_cap_and_contracts() {
         .batch_execute("ROLLBACK")
         .await
         .expect("migration fixture should roll back");
+}
+
+#[tokio::test]
+async fn recovery_coverage_migration_preserves_old_receipts_and_writer_default() {
+    let Some(url) = database_url() else { return };
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("recovery_coverage_migration_{}", Uuid::now_v7().simple());
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema};
+        CREATE TABLE tenants (id UUID PRIMARY KEY);
+        INSERT INTO tenants VALUES ('00000000-0000-0000-0000-000000000001')"
+        ))
+        .await
+        .unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20260828000200_recovery_invalidation/up.sql"
+        ))
+        .await
+        .unwrap();
+    let insert =
+        "INSERT INTO recovery_invalidations (operation_id, request_hash, tenant_id, state_epoch,
+        not_before, revoked_refresh_tokens, completed_at) VALUES (uuidv7(), repeat('a',64),
+        '00000000-0000-0000-0000-000000000001',uuidv7(),NOW()+INTERVAL '1 hour',4,NOW())";
+    connection.batch_execute(insert).await.unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261002000200_recovery_invalidation_coverage/up.sql"
+        ))
+        .await
+        .unwrap();
+    connection.batch_execute(insert).await.unwrap();
+    let preserved = sql_query("SELECT COUNT(*)::bigint AS count FROM recovery_invalidations WHERE coverage_version=0 AND revoked_refresh_tokens=4")
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        preserved.count, 2,
+        "history and omitted old-writer fields stay version zero"
+    );
+    connection
+        .batch_execute("SAVEPOINT invalid_coverage")
+        .await
+        .unwrap();
+    assert!(connection.batch_execute("INSERT INTO recovery_invalidations (operation_id,request_hash,tenant_id,state_epoch,not_before,revoked_refresh_tokens,completed_at,coverage_version)
+        VALUES(uuidv7(),repeat('a',64),'00000000-0000-0000-0000-000000000001',uuidv7(),NOW()+INTERVAL '1 hour',0,NOW(),2)").await.is_err());
+    connection
+        .batch_execute("ROLLBACK TO invalid_coverage")
+        .await
+        .unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261002000200_recovery_invalidation_coverage/down.sql"
+        ))
+        .await
+        .unwrap();
+    connection.batch_execute("ROLLBACK").await.unwrap();
 }

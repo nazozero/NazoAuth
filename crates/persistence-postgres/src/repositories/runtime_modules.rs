@@ -7,8 +7,8 @@ mod transaction;
 use nazo_identity::ports::RepositoryError;
 use nazo_runtime_modules::{
     CasOutcome, DesiredRevisionGuard, DesiredStateChange, DesiredStateRecord,
-    InstanceStateMutation, InstanceStateRecord, ModuleEventPage, ModuleId, ModuleRevision,
-    ModuleStateRepository,
+    InstanceStateMutation, InstanceStateRecord, ModuleEventPage, ModuleId, ModuleReconcileState,
+    ModuleRevision, ModuleStateRepository,
 };
 
 use crate::{DbPool, get_conn};
@@ -70,6 +70,13 @@ impl ModuleStateRepository for RuntimeModuleRepository {
         desired::read_all_desired(self).await
     }
 
+    async fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> Result<Vec<ModuleReconcileState>, Self::Error> {
+        desired::read_reconcile_state(self, instance_id).await
+    }
+
     async fn compare_and_set_desired(
         &self,
         change: DesiredStateChange,
@@ -112,6 +119,13 @@ impl ModuleStateRepository for RuntimeModuleRepository {
         instance::compare_and_set_instance(self, required_desired_revision, mutation).await
     }
 
+    async fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> Result<(), Self::Error> {
+        instance::record_instance_observation(self, observation).await
+    }
+
     async fn validate_revision(
         &self,
         requested_module_id: ModuleId,
@@ -134,6 +148,14 @@ impl nazo_persistence::RuntimeModuleStore for RuntimeModuleRepository {
         &self,
     ) -> futures_util::future::BoxFuture<'_, Result<Vec<DesiredStateRecord>, RepositoryError>> {
         Box::pin(async move { desired::read_all_desired(self).await })
+    }
+
+    fn read_reconcile_state<'a>(
+        &'a self,
+        instance_id: &'a str,
+    ) -> futures_util::future::BoxFuture<'a, Result<Vec<ModuleReconcileState>, RepositoryError>>
+    {
+        Box::pin(async move { desired::read_reconcile_state(self, instance_id).await })
     }
 
     fn compare_and_set_desired(
@@ -189,6 +211,13 @@ impl nazo_persistence::RuntimeModuleStore for RuntimeModuleRepository {
         Box::pin(async move {
             instance::compare_and_set_instance(self, required_desired_revision, mutation).await
         })
+    }
+
+    fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> futures_util::future::BoxFuture<'_, Result<(), RepositoryError>> {
+        Box::pin(async move { instance::record_instance_observation(self, observation).await })
     }
 
     fn validate_revision(

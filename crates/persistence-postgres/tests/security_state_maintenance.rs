@@ -2,10 +2,10 @@
 //!
 //! One `cleanup_batch` performs at most 256 row modifications per category.
 //! Refresh reclaim works on `(tenant_id, token_family_id)` authorities under
-//! the shared family advisory key: expired spent proofs delete on their own
-//! `expires_at`, a fully expired family row deletes under a try-lock (a writer
-//! holding the lock skips it for the batch), and orphan contracts leave after
-//! a grace period once the last family reference is gone — never touching a
+//! the exclusive family advisory try-lock: spent proofs delete at their own
+//! expiry or drain under one global budget for revoked/expired families, and a
+//! parent row leaves only after its proofs are gone. Orphan contracts leave after
+//! parent locks once the last family reference is gone — never touching a
 //! family that still has an unexpired current member or a same-named family
 //! in another tenant. OpenID4VP reads are pure selects; the global
 //! presentation sweep belongs exclusively to this worker.
@@ -20,7 +20,7 @@ use nazo_auth::RefreshTokenAuthenticationContext;
 use nazo_digital_credentials::{CredentialFormat, CredentialQuery, DcqlQuery};
 use nazo_openid4vp::{
     AuthorizationRequest, ClientIdPrefix, PresentationCreateIdempotency, PresentationCreateOutcome,
-    PresentationStorePort, PresentationTransaction, RequestMethod, ResponseMode,
+    PresentationStorePort, PresentationTransaction, RequestMethod,
 };
 use nazo_persistence::SecurityStateMaintenancePort;
 use nazo_postgres::{
@@ -173,13 +173,11 @@ async fn insert_refresh_leaf_in_tenant(
         auth_time: issued_at.timestamp() - 1,
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
-        id_token_sid: None,
+
         acr: None,
-        nonce: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
+
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: (Vec::new()).into(),
     };
     let contract = nazo_auth::RefreshContract {
         subject: fixture.user_id.to_string(),
@@ -188,8 +186,9 @@ async fn insert_refresh_leaf_in_tenant(
         authorization_details: serde_json::json!([]),
         authentication_context: context,
     };
-    let persisted = contract.persisted();
-    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let persisted = contract.clone();
+    let contract_blake3 =
+        (*blake3::hash(&serde_json::to_vec(&persisted).unwrap()).as_bytes()).to_vec();
     let contract_json = serde_json::to_value(&persisted).expect("contract serializes");
     sql_query(
         r#"
@@ -253,18 +252,20 @@ async fn insert_refresh_leaf_in_tenant(
     id
 }
 
-/// Clears expired refresh state the same way the production sweeps do: spent
-/// proofs at their own expiry, expired families (proofs cascade), then orphan
-/// contracts.
+/// Clears stale refresh state left by other tests so each fixture starts
+/// clean. This setup helper intentionally does not mirror production batching.
 async fn clear_expired_tokens(connection: &mut AsyncPgConnection) {
     sql_query("DELETE FROM oauth_refresh_spent_tokens WHERE expires_at <= CURRENT_TIMESTAMP")
         .execute(connection)
         .await
         .expect("expired spent proofs should clear");
-    sql_query("DELETE FROM oauth_refresh_families WHERE current_expires_at <= CURRENT_TIMESTAMP")
-        .execute(connection)
-        .await
-        .expect("expired families should clear");
+    sql_query(
+        "DELETE FROM oauth_refresh_families \
+         WHERE current_expires_at <= CURRENT_TIMESTAMP OR revoked_at IS NOT NULL",
+    )
+    .execute(connection)
+    .await
+    .expect("terminal families should clear");
     sql_query(
         "DELETE FROM oauth_refresh_contracts AS c WHERE NOT EXISTS (\
              SELECT 1 FROM oauth_refresh_families AS f \
@@ -273,6 +274,19 @@ async fn clear_expired_tokens(connection: &mut AsyncPgConnection) {
     .execute(connection)
     .await
     .expect("orphan contracts should clear");
+}
+
+async fn spent_proof_count(connection: &mut AsyncPgConnection, family_id: Uuid) -> i64 {
+    sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_spent_tokens \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(family_id)
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("spent proof count should query")
+    .count
 }
 
 /// Family extent = its family row plus surviving spent proofs.
@@ -509,9 +523,223 @@ async fn three_generation_family_reclaims_whole_chain_in_one_batch() {
     assert_eq!(
         family_row_count(&mut connection, family_id).await,
         0,
-        "deleting the family cascades its spent proofs — the whole chain \
-         leaves in one batch"
+        "the expired proofs and parent must leave in the same bounded batch"
     );
+    assert_eq!(
+        result.spent_refresh_proofs, 2,
+        "both spent proofs must be explicitly counted before parent deletion"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_refresh_proofs_drain_with_one_global_budget_before_parent_delete() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+
+    let first_family = Uuid::now_v7();
+    let second_family = Uuid::now_v7();
+    for family_id in [first_family, second_family] {
+        let head = insert_refresh_leaf(
+            &mut connection,
+            &fixture,
+            family_id,
+            None,
+            Utc::now() + Duration::hours(1),
+        )
+        .await;
+        sql_query(
+            "INSERT INTO oauth_refresh_spent_tokens (\
+                 tenant_id, refresh_token_blake3, token_family_id, member_id, \
+                 successor_member_id, spent_at, expires_at) \
+             SELECT $1, \
+                    decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 'hex'), \
+                    $2, gen_random_uuid(), $3, \
+                    CASE WHEN ordinal <= 10 THEN CURRENT_TIMESTAMP - INTERVAL '2 minutes' \
+                         ELSE CURRENT_TIMESTAMP END, \
+                    CASE WHEN ordinal <= 10 THEN CURRENT_TIMESTAMP - INTERVAL '1 minute' \
+                         ELSE $4 END \
+             FROM generate_series(1, 310) AS ordinal",
+        )
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(family_id)
+        .bind::<SqlUuid, _>(head)
+        .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+        .execute(&mut connection)
+        .await
+        .expect("mixed expired and unexpired terminal proofs should insert");
+        sql_query(
+            "UPDATE oauth_refresh_families SET revoked_at = CURRENT_TIMESTAMP \
+             WHERE tenant_id = $1 AND token_family_id = $2",
+        )
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(family_id)
+        .execute(&mut connection)
+        .await
+        .expect("family should become terminal");
+    }
+
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let families = [first_family, second_family];
+    // Both sweeps must share one allowance: 20 expired and 600 live proofs.
+    for (round, expected_deleted) in [256_u64, 256, 108].into_iter().enumerate() {
+        let result = maintenance
+            .cleanup_batch()
+            .await
+            .expect("terminal-family cleanup should succeed");
+        assert_eq!(
+            result.spent_refresh_proofs, expected_deleted,
+            "round {round} must use one global proof budget across both families"
+        );
+        if round < 2 {
+            assert!(
+                result.saturated,
+                "saturation must report terminal proof backlog through round {round}"
+            );
+        }
+        for family_id in families {
+            let proofs = spent_proof_count(&mut connection, family_id).await;
+            assert_eq!(
+                family_row_count(&mut connection, family_id).await,
+                proofs + if proofs > 0 { 1 } else { 0 },
+                "a parent must remain while proofs exist and leave immediately after the last proof"
+            );
+        }
+    }
+    assert_eq!(spent_proof_count(&mut connection, first_family).await, 0);
+    assert_eq!(spent_proof_count(&mut connection, second_family).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_public_family_keeps_more_than_sixty_four_unexpired_proofs() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    sql_query(
+        "UPDATE oauth_clients SET client_type = 'public', \
+         token_endpoint_auth_method = 'none', client_secret_hash = NULL WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(fixture.client_id)
+    .execute(&mut connection)
+    .await
+    .expect("client should become public before family creation");
+
+    let family_id = Uuid::now_v7();
+    let head = insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        None,
+        Utc::now() + Duration::hours(1),
+    )
+    .await;
+    sql_query(
+        "INSERT INTO oauth_refresh_spent_tokens (\
+             tenant_id, refresh_token_blake3, token_family_id, member_id, \
+             successor_member_id, spent_at, expires_at) \
+         SELECT $1, \
+                decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 'hex'), \
+                $2, gen_random_uuid(), $3, CURRENT_TIMESTAMP, $4 \
+         FROM generate_series(1, 80)",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(family_id)
+    .bind::<SqlUuid, _>(head)
+    .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+    .execute(&mut connection)
+    .await
+    .expect("public proof history should insert");
+
+    SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap())
+        .cleanup_batch()
+        .await
+        .expect("maintenance should leave live public proofs alone");
+    assert_eq!(
+        spent_proof_count(&mut connection, family_id).await,
+        80,
+        "live unexpired public proof history has no generation-count cap"
+    );
+    assert_eq!(
+        family_row_count(&mut connection, family_id).await,
+        81,
+        "the live family and all 80 proofs should survive"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn preserve_shared_family_lock_skips_terminal_cleanup() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    let family_id = Uuid::now_v7();
+    let head = insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        None,
+        Utc::now() + Duration::hours(1),
+    )
+    .await;
+    sql_query(
+        "INSERT INTO oauth_refresh_spent_tokens (\
+             tenant_id, refresh_token_blake3, token_family_id, member_id, \
+             successor_member_id, spent_at, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6)",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<sql_types::Binary, _>(blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec())
+    .bind::<SqlUuid, _>(family_id)
+    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(head)
+    .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+    .execute(&mut connection)
+    .await
+    .expect("terminal proof should insert");
+    sql_query(
+        "UPDATE oauth_refresh_families SET revoked_at = CURRENT_TIMESTAMP \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(family_id)
+    .execute(&mut connection)
+    .await
+    .expect("family should become terminal");
+
+    let mut preserve_existing = AsyncPgConnection::establish(&database_url).await.unwrap();
+    preserve_existing.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT pg_advisory_xact_lock_shared($1)")
+        .bind::<BigInt, _>(family_lock_key(family_id))
+        .execute(&mut preserve_existing)
+        .await
+        .expect("PreserveExisting shared family lock should be held");
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        maintenance.cleanup_batch(),
+    )
+    .await
+    .expect("exclusive try-lock must not wait for PreserveExisting")
+    .expect("cleanup should succeed while the shared lock is held");
+    assert_eq!(family_row_count(&mut connection, family_id).await, 2);
+    assert_eq!(spent_proof_count(&mut connection, family_id).await, 1);
+    preserve_existing.batch_execute("COMMIT").await.unwrap();
+
+    maintenance
+        .cleanup_batch()
+        .await
+        .expect("terminal family should drain after shared lock releases");
+    assert_eq!(family_row_count(&mut connection, family_id).await, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -653,6 +881,66 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
         "a family that gained an unexpired generation after the candidate \
          scan must survive the post-lock recheck; only the spent proof goes"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate_budget() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    let locked_family = Uuid::now_v7();
+    insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        locked_family,
+        None,
+        Utc::now() - Duration::days(730),
+    )
+    .await;
+    // Put the held key first in a 300-family backlog. The candidate budget
+    // counts attempted families, including the one whose try-lock fails.
+    sql_query(
+        "INSERT INTO oauth_refresh_families \
+         (tenant_id,token_family_id,client_id,user_id,contract_blake3, \
+          current_member_id,current_token_blake3,current_audience, \
+          current_issued_at,current_expires_at,created_at) \
+         SELECT tenant_id,gen_random_uuid(),client_id,user_id,contract_blake3, \
+                gen_random_uuid(),decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text),'hex'),current_audience, \
+                current_issued_at,current_expires_at + interval '1 second',created_at \
+         FROM oauth_refresh_families CROSS JOIN generate_series(1,299) \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(locked_family)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    connection.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT pg_advisory_xact_lock($1)")
+        .bind::<BigInt, _>(family_lock_key(locked_family))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let first = maintenance.cleanup_batch().await.unwrap();
+        let second = maintenance.cleanup_batch().await.unwrap();
+        (first, second)
+    })
+    .await
+    .expect("a held family advisory key must not stall either batch");
+    assert_eq!(first.refresh_tokens, 255);
+    assert!(first.saturated);
+    assert_eq!(second.refresh_tokens, 44);
+    assert_eq!(family_row_count(&mut connection, locked_family).await, 1);
+    connection.batch_execute("COMMIT").await.unwrap();
+    let final_batch = maintenance.cleanup_batch().await.unwrap();
+    assert_eq!(final_batch.refresh_tokens, 1);
+    assert_eq!(family_row_count(&mut connection, locked_family).await, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -822,12 +1110,12 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
         id,
         client_id_prefix: ClientIdPrefix::RedirectUri,
         request_method: RequestMethod::UrlQuery,
-        response_mode: ResponseMode::DirectPost,
+
         wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
         request: AuthorizationRequest {
             client_id: "redirect_uri:https://verifier.example/response".to_owned(),
             response_type: "vp_token".to_owned(),
-            response_mode: "direct_post".to_owned(),
+            response_mode: nazo_openid4vp::ResponseMode::DirectPost,
             response_uri: "https://verifier.example/response".to_owned(),
             nonce: "nonce".to_owned(),
             state: format!("state-{id}"),
@@ -836,7 +1124,7 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
                     id: "pid".to_owned(),
                     format: CredentialFormat::SdJwtVc,
                     multiple: false,
-                    meta: None,
+                    meta: Some(serde_json::json!({})),
                     claims: None,
                     claim_sets: None,
                     trusted_authorities: None,
@@ -1138,18 +1426,6 @@ async fn insert_audit_event(connection: &mut AsyncPgConnection, event_id: Uuid) 
     .expect("audit event fixture should insert");
 }
 
-async fn outbox_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
-    sql_query(
-        "SELECT COUNT(*)::bigint AS count \
-         FROM security_audit_event_outbox WHERE event_id = $1",
-    )
-    .bind::<SqlUuid, _>(event_id)
-    .get_result::<CountRow>(connection)
-    .await
-    .expect("outbox count should query")
-    .count
-}
-
 /// Acknowledge the whole committed batch through the real exporter path.
 async fn ack_batch(
     repository: &nazo_postgres::AuditLedgerRepository,
@@ -1171,7 +1447,7 @@ async fn ack_batch(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
+async fn audit_ack_deletes_delivery_rows_atomically() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1219,7 +1495,7 @@ async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
     let second = Uuid::now_v7();
     for event_id in [first, second] {
         insert_audit_event(&mut connection, event_id).await;
-        assert_eq!(outbox_count(&mut connection, event_id).await, 1);
+        assert_eq!(event_row_count(&mut connection, event_id).await, 1);
     }
 
     let batch = match repository
@@ -1244,21 +1520,21 @@ async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
         ack_batch(&repository, &batch, batch.generation + 1, &deployment_id).await,
         Err(nazo_identity::ports::RepositoryError::Consistency(_))
     ));
-    assert_eq!(outbox_count(&mut connection, first).await, 1);
-    assert_eq!(outbox_count(&mut connection, second).await, 1);
+    assert_eq!(event_row_count(&mut connection, first).await, 1);
+    assert_eq!(event_row_count(&mut connection, second).await, 1);
 
     // The live generation ack deletes every member row and advances the
     // anchor in the same transaction.
     ack_batch(&repository, &batch, batch.generation, &deployment_id)
         .await
         .expect("the committed batch should acknowledge");
-    assert_eq!(outbox_count(&mut connection, first).await, 0);
-    assert_eq!(outbox_count(&mut connection, second).await, 0);
+    assert_eq!(event_row_count(&mut connection, first).await, 0);
+    assert_eq!(event_row_count(&mut connection, second).await, 0);
     assert!(matches!(
         repository
             .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
             .await
-            .expect("an empty outbox should report Empty"),
+            .expect("an empty pending set should report Empty"),
         nazo_persistence::SecurityAuditBatchClaim::Empty
     ));
     // Repeating the settled acknowledgement is a stale claim, not a duplicate.
@@ -1268,8 +1544,8 @@ async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
     ));
 
     // The acknowledgement already reclaimed every delivered copy: the
-    // receiver is the durable audit store, so the OLTP event, chain-entry
-    // and outbox rows for this batch are gone.
+    // receiver is the durable audit store, so the OLTP event and chain-entry
+    // rows for this batch are gone.
     for event_id in [first, second] {
         let row = sql_query(
             "SELECT COUNT(*)::bigint AS count \
@@ -1444,9 +1720,8 @@ async fn reclaim_scopes_family_authority_to_tenant() {
     );
 }
 
-/// The spent-proof sweep is bounded at 256 rows per batch; an expired family
-/// takes its remaining proofs down by cascade in the same batch. Both sweeps
-/// must converge without stalling.
+/// Expired proofs and terminal-family proofs share one 256-row budget; a
+/// parent waits until its proofs have drained in bounded batches.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn large_family_reclaim_stays_bounded_per_batch() {
     let Some(database_url) = database_url() else {
@@ -1492,8 +1767,8 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
     .await
     .expect("large spent fixture should insert");
 
-    // An expired family with 1,000 expired spent proofs: the family delete
-    // cascades them in one batch.
+    // An expired family with 1,000 expired spent proofs: they must be counted
+    // as explicit bounded proof deletes before the parent can be removed.
     let dead_head = insert_refresh_leaf_in_tenant(
         &mut connection,
         &fixture,
@@ -1545,9 +1820,9 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
         assert!(round < 63, "refresh-state reclaim must converge, not stall");
     }
     assert_eq!(
-        spent_total, 10_000,
-        "the dead family's proofs left by cascade are not double-counted; \
-         only the live family's sweep drains through the bounded cursor"
+        spent_total, 11_000,
+        "every expired proof must be counted by the bounded sweeps, including \
+         proofs belonging to a terminal family"
     );
     assert_eq!(
         family_row_count(&mut connection, dead_family).await,
@@ -1666,7 +1941,7 @@ async fn expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive
     );
 }
 
-async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64, i64) {
+async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64) {
     let events = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events")
         .get_result::<CountRow>(connection)
         .await
@@ -1677,12 +1952,7 @@ async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64, i64) {
         .await
         .expect("chain count should query")
         .count;
-    let outbox = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_event_outbox")
-        .get_result::<CountRow>(connection)
-        .await
-        .expect("outbox count should query")
-        .count;
-    (events, chain, outbox)
+    (events, chain)
 }
 
 async fn event_row_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
@@ -1710,9 +1980,9 @@ async fn chain_row_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> 
 }
 
 /// Acknowledgement is the only retention boundary: it reclaims the delivered
-/// event, chain-entry and outbox rows in the same transaction that advances
-/// the anchor, an unacknowledged event keeps all three rows, and the
-/// append-only guard still rejects deletes without the reclaim permit.
+/// event and chain-entry rows in the same transaction that advances the
+/// anchor, an unacknowledged event keeps both rows, and the append-only
+/// guard still rejects deletes without the reclaim permit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
     let Some(database_url) = database_url() else {
@@ -1757,7 +2027,7 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         }
     }
 
-    // Two events claimed and acknowledged: all three delivery copies leave in
+    // Two events claimed and acknowledged: both delivery copies leave in
     // the ack transaction, and the anchor lands on the batch tail.
     let acked_ids: Vec<Uuid> = (0..2).map(|_| Uuid::now_v7()).collect();
     for event_id in &acked_ids {
@@ -1771,11 +2041,11 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) => batch,
         other => panic!("expected a claimed batch, got {other:?}"),
     };
-    let (events_before, chain_before, outbox_before) = audit_counts(&mut connection).await;
+    let (events_before, chain_before) = audit_counts(&mut connection).await;
     ack_batch(&repository, &batch, batch.generation, &deployment_id)
         .await
         .expect("the batch should acknowledge");
-    let (events_after, chain_after, outbox_after) = audit_counts(&mut connection).await;
+    let (events_after, chain_after) = audit_counts(&mut connection).await;
     assert_eq!(
         events_before - events_after,
         2,
@@ -1786,15 +2056,9 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         2,
         "acked chain entries leave security_audit_chain_entries"
     );
-    assert_eq!(
-        outbox_before - outbox_after,
-        2,
-        "acked outbox rows leave security_audit_event_outbox"
-    );
     for event_id in &acked_ids {
         assert_eq!(event_row_count(&mut connection, *event_id).await, 0);
         assert_eq!(chain_row_count(&mut connection, *event_id).await, 0);
-        assert_eq!(outbox_count(&mut connection, *event_id).await, 0);
     }
 
     // A fully delivered chain is still a valid chain: head reads through
@@ -1807,8 +2071,8 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
     assert_eq!(health.last_exported_sequence, Some(health.head_sequence));
     assert!(!health.pending_orphan_exists);
 
-    // One event claimed (chain entry exists) but never acknowledged keeps all
-    // three rows until its batch is delivered.
+    // One event claimed (chain entry exists) but never acknowledged keeps
+    // both rows until its batch is delivered.
     let unacked = Uuid::now_v7();
     insert_audit_event(&mut connection, unacked).await;
     let pending_batch = match repository
@@ -1825,7 +2089,6 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         .expect("batch should return to pending");
     assert_eq!(event_row_count(&mut connection, unacked).await, 1);
     assert_eq!(chain_row_count(&mut connection, unacked).await, 1);
-    assert_eq!(outbox_count(&mut connection, unacked).await, 1);
 
     // The append-only guard still rejects direct deletes — both with no
     // permit and under the retired archive permit name.
@@ -1844,4 +2107,918 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         retired.is_err(),
         "the retired archive permit must not authorize deletes"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn credential_state_cleanup_is_bounded_and_preserves_live_ownership() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    let tag = Uuid::now_v7().simple().to_string();
+    let expired_parent = Uuid::now_v7();
+    let skew_parent = Uuid::now_v7();
+    let live_parent = Uuid::now_v7();
+    for (id, age) in [
+        (expired_parent, -172800_i64),
+        (skew_parent, -1),
+        (live_parent, 3600),
+    ] {
+        sql_query(
+            "INSERT INTO openid4vci_access_grants \
+             (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+             VALUES ($1,$1::text,$2,$3,$4,'[\"pid\"]','[]',CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP + make_interval(secs => $5))",
+        )
+        .bind::<SqlUuid, _>(id)
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .bind::<Text, _>(&fixture.client_public_id)
+        .bind::<sql_types::Double, _>(age as f64)
+        .execute(&mut connection).await.unwrap();
+    }
+    // A single expired parent has more than one batch of each child. It must
+    // survive the first round rather than cascading the remaining children.
+    for (table, columns, values) in [
+        (
+            "openid4vci_deferred_transactions",
+            "id,transaction_hash,token_id,credential_configuration_id,credential_format,holder_bindings,payload_ciphertext,ready_at,created_at,expires_at",
+            "gen_random_uuid(),$2 || '-' || g,$1,'pid','dc+sd-jwt','[{}]','ciphertext'::bytea,CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '2 days'",
+        ),
+        (
+            "openid4vci_notifications",
+            "notification_id,token_id,issued_at,expires_at",
+            "$2 || '-' || g,$1,CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '2 days'",
+        ),
+        (
+            "openid4vci_issuance_responses",
+            "issuance_id,token_id,request_digest,body_ciphertext,encoding,status,created_at,expires_at",
+            "gen_random_uuid(),$1,md5($2 || '-' || g) || md5($2 || '-' || g),'ciphertext'::bytea,'json',200,CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '2 days'",
+        ),
+    ] {
+        sql_query(format!(
+            "INSERT INTO {table} ({columns}) SELECT {values} FROM generate_series(1, 300) AS g"
+        ))
+        .bind::<SqlUuid, _>(expired_parent)
+        .bind::<Text, _>(&tag)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    sql_query(
+        "INSERT INTO openid4vci_offers \
+         (id,tenant_id,subject_id,credential_configuration_ids,grants_ciphertext,created_at,expires_at) \
+         SELECT gen_random_uuid(),$1,$2,'[\"pid\"]','ciphertext'::bytea,CURRENT_TIMESTAMP - interval '3 days', \
+                CASE WHEN g = 301 THEN CURRENT_TIMESTAMP + interval '1 hour' ELSE CURRENT_TIMESTAMP - interval '2 days' END \
+         FROM generate_series(1,301) AS g",
+    ).bind::<SqlUuid, _>(SYSTEM_TENANT).bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection).await.unwrap();
+    sql_query(
+        "INSERT INTO openid4vci_nonces (nonce_hash,created_at,expires_at) \
+         SELECT $1 || '-' || g,CURRENT_TIMESTAMP - interval '3 days', \
+                CASE WHEN g = 301 THEN CURRENT_TIMESTAMP + interval '1 hour' ELSE CURRENT_TIMESTAMP - interval '2 days' END \
+         FROM generate_series(1,301) AS g",
+    ).bind::<Text, _>(&tag).execute(&mut connection).await.unwrap();
+    // The grant category must itself be bounded, independent of its children.
+    sql_query(
+        "INSERT INTO openid4vci_access_grants \
+         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+         SELECT gen_random_uuid(),$4 || '-' || g,$1,$2,$3,'[\"pid\"]','[]',CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '2 days' \
+         FROM generate_series(1,300) AS g",
+    ).bind::<SqlUuid, _>(SYSTEM_TENANT).bind::<SqlUuid, _>(fixture.user_id)
+        .bind::<Text, _>(&fixture.client_public_id).bind::<Text, _>(&tag)
+        .execute(&mut connection).await.unwrap();
+
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    for round in 0..8 {
+        let result = maintenance.cleanup_batch().await.unwrap();
+        for count in [
+            result.credential_offers,
+            result.credential_nonces,
+            result.credential_access_grants,
+            result.deferred_credentials,
+            result.credential_notifications,
+            result.credential_responses,
+        ] {
+            assert!(
+                count <= 256,
+                "every credential lifecycle must keep its own batch bound"
+            );
+        }
+        if round == 0 {
+            assert!(result.saturated);
+            let parent = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1")
+                .bind::<SqlUuid, _>(expired_parent).get_result::<CountRow>(&mut connection).await.unwrap();
+            assert_eq!(
+                parent.count, 1,
+                "an expired parent cannot cascade children beyond their budget"
+            );
+            for table in [
+                "openid4vci_deferred_transactions",
+                "openid4vci_notifications",
+                "openid4vci_issuance_responses",
+            ] {
+                let children = sql_query(format!(
+                    "SELECT COUNT(*)::bigint AS count FROM {table} WHERE token_id = $1"
+                ))
+                .bind::<SqlUuid, _>(expired_parent)
+                .get_result::<CountRow>(&mut connection)
+                .await
+                .unwrap();
+                assert!(
+                    children.count >= 44,
+                    "{table} must retain children beyond the batch limit"
+                );
+            }
+        }
+        let due = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants \
+             WHERE subject_id = $1 AND expires_at < CURRENT_TIMESTAMP - interval '1 day'",
+        )
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+        if due.count == 0 {
+            break;
+        }
+        assert_ne!(
+            round, 7,
+            "the expired parent and independent grants must drain"
+        );
+    }
+    let retained = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = ANY($1)",
+    )
+    .bind::<sql_types::Array<SqlUuid>, _>(vec![skew_parent, live_parent])
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        retained.count, 2,
+        "live and recently expired ownership must survive verifier clock skew"
+    );
+    let offers =
+        sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_offers WHERE subject_id = $1")
+            .bind::<SqlUuid, _>(fixture.user_id)
+            .get_result::<CountRow>(&mut connection)
+            .await
+            .unwrap();
+    assert_eq!(offers.count, 1);
+    let nonces = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_nonces WHERE nonce_hash LIKE $1",
+    )
+    .bind::<Text, _>(format!("{tag}-%"))
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(nonces.count, 1);
+    sql_query("DELETE FROM openid4vci_nonces WHERE nonce_hash LIKE $1")
+        .bind::<Text, _>(format!("{tag}-%"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_credential_sweepers_skip_an_uncommitted_child_parent() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut writer) = fixture(&database_url).await;
+    let parent_id = Uuid::now_v7();
+    let control_id = Uuid::now_v7();
+    let notification_id = Uuid::now_v7().to_string();
+    for id in [parent_id, control_id] {
+        sql_query(
+            "INSERT INTO openid4vci_access_grants \
+             (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+             VALUES ($1,$1::text,$2,$3,$4,'[\"pid\"]','[]',TIMESTAMPTZ '1899-01-01 UTC',TIMESTAMPTZ '1900-01-01 UTC')",
+        )
+        .bind::<SqlUuid, _>(id)
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .bind::<Text, _>(&fixture.client_public_id)
+        .execute(&mut writer)
+        .await
+        .unwrap();
+    }
+    writer.batch_execute("BEGIN").await.unwrap();
+    sql_query(
+        "INSERT INTO openid4vci_notifications (notification_id,token_id,expires_at) \
+         VALUES ($1,$2,CURRENT_TIMESTAMP + interval '1 hour')",
+    )
+    .bind::<Text, _>(&notification_id)
+    .bind::<SqlUuid, _>(parent_id)
+    .execute(&mut writer)
+    .await
+    .unwrap();
+    // INSERT has completed its immediate FK check and therefore holds KEY
+    // SHARE on the expired parent. The child is still invisible to sweepers.
+    // No timer or task scheduling assumption establishes this interleaving.
+    let pool = create_pool(&database_url, 3).unwrap();
+    let mut observer = get_conn(&pool).await.unwrap();
+    let invisible = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_notifications WHERE notification_id = $1",
+    )
+    .bind::<Text, _>(&notification_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(
+        invisible.count, 0,
+        "the racing child must still be uncommitted"
+    );
+    let first = SecurityStateMaintenanceRepository::new(pool.clone());
+    let second = SecurityStateMaintenanceRepository::new(pool.clone());
+    let (first_result, second_result) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(first.cleanup_batch(), second.cleanup_batch())
+        })
+        .await
+        .expect("both sweepers must skip the FK-locked parent without waiting for its writer");
+    for result in [first_result.unwrap(), second_result.unwrap()] {
+        assert!(result.credential_access_grants <= 256);
+        assert!(result.credential_notifications <= 256);
+    }
+    let retained = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(parent_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(retained.count, 1);
+    let reclaimed = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(control_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(
+        reclaimed.count, 0,
+        "the unlocked expired control proves reclaim still makes progress"
+    );
+    writer.batch_execute("COMMIT").await.unwrap();
+    first.cleanup_batch().await.unwrap();
+    let retained_child = sql_query(
+        "SELECT COUNT(*)::bigint AS count \
+         FROM openid4vci_notifications AS child \
+         JOIN openid4vci_access_grants AS parent ON parent.token_id = child.token_id \
+         WHERE child.notification_id = $1 AND child.expires_at > CURRENT_TIMESTAMP",
+    )
+    .bind::<Text, _>(&notification_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(
+        retained_child.count, 1,
+        "a committed future child and its parent must not be cascaded away"
+    );
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    let mut families = Vec::new();
+    // Distinct persisted auth_time values give these live families distinct
+    // contracts. Every referenced contract sorts before the orphan below.
+    let future = Utc::now() + Duration::minutes(20);
+    for offset in 0..300 {
+        let family = Uuid::now_v7();
+        insert_refresh_leaf(
+            &mut connection,
+            &fixture,
+            family,
+            None,
+            future + Duration::seconds(offset),
+        )
+        .await;
+        families.push(family);
+    }
+    sql_query(
+        "UPDATE oauth_refresh_contracts AS contract SET created_at = TIMESTAMPTZ '1000-01-01 UTC' \
+         FROM oauth_refresh_families AS family \
+         WHERE family.tenant_id = contract.tenant_id AND family.contract_blake3 = contract.contract_blake3 \
+           AND family.token_family_id = ANY($1)",
+    )
+    .bind::<sql_types::Array<SqlUuid>, _>(&families)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let orphan = Uuid::now_v7();
+    insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        orphan,
+        None,
+        Utc::now() + Duration::minutes(30),
+    )
+    .await;
+    #[derive(QueryableByName)]
+    struct ContractRow {
+        #[diesel(sql_type = sql_types::Binary)]
+        contract_blake3: Vec<u8>,
+    }
+    let orphan_digest = sql_query(
+        "UPDATE oauth_refresh_contracts AS contract SET created_at = TIMESTAMPTZ '1001-01-01 UTC' \
+         FROM oauth_refresh_families AS family \
+         WHERE family.tenant_id = contract.tenant_id AND family.contract_blake3 = contract.contract_blake3 \
+           AND family.tenant_id = $1 AND family.token_family_id = $2 \
+         RETURNING contract.contract_blake3",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(orphan)
+    .get_result::<ContractRow>(&mut connection)
+    .await
+    .unwrap()
+    .contract_blake3;
+    sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2")
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(orphan)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let first = maintenance.cleanup_batch().await.unwrap();
+    assert_eq!(first.refresh_contracts, 0);
+    assert!(
+        first.saturated,
+        "a referenced full page still advances the scan"
+    );
+    // A clone must continue the same scan, not restart at its referenced head.
+    maintenance.clone().cleanup_batch().await.unwrap();
+    let orphan_count = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<sql_types::Binary, _>(&orphan_digest)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        orphan_count.count, 0,
+        "referenced parents must not starve a later orphan"
+    );
+
+    // Remove a reference that this pass has already visited. A completed
+    // pass must wrap and discover it without restarting the repository.
+    let released = sql_query(
+        "DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2 RETURNING contract_blake3",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(families[0])
+    .get_result::<ContractRow>(&mut connection)
+    .await
+    .unwrap()
+    .contract_blake3;
+    for round in 0..8 {
+        maintenance.cleanup_batch().await.unwrap();
+        let count = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract_blake3 = $2",
+        )
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<sql_types::Binary, _>(&released)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+        if count.count == 0 {
+            break;
+        }
+        assert_ne!(
+            round, 7,
+            "completed scans must revisit newly unreferenced contracts"
+        );
+    }
+    let live = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families AS family \
+         JOIN oauth_refresh_contracts AS contract USING (tenant_id, contract_blake3) \
+         WHERE family.tenant_id = $1 AND family.token_family_id = ANY($2)",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<sql_types::Array<SqlUuid>, _>(&families)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        live.count, 299,
+        "all still-referenced contracts must remain"
+    );
+    sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND user_id = $2")
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    // Do not leave the centuries-old fixture at the head of sibling scans.
+    sql_query(
+        "DELETE FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract->>'subject' = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<Text, _>(fixture.user_id.to_string())
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grant_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    let tag = Uuid::now_v7().simple().to_string();
+    sql_query(
+        "WITH parents AS ( \
+             INSERT INTO openid4vci_access_grants \
+             (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+             SELECT gen_random_uuid(),$4 || '-' || g,$1,$2,$3,'[\"pid\"]','[]',TIMESTAMPTZ '0999-01-01 UTC',TIMESTAMPTZ '1000-01-01 UTC' \
+             FROM generate_series(1,300) AS g RETURNING token_id \
+         ) INSERT INTO openid4vci_notifications (notification_id,token_id,expires_at) \
+         SELECT token_id::text,token_id,CURRENT_TIMESTAMP + interval '1 hour' FROM parents",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .bind::<Text, _>(&fixture.client_public_id)
+    .bind::<Text, _>(&tag)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let orphan = Uuid::now_v7();
+    sql_query(
+        "INSERT INTO openid4vci_access_grants \
+         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+         VALUES ($1,$1::text,$2,$3,$4,'[\"pid\"]','[]',TIMESTAMPTZ '0999-01-01 UTC',TIMESTAMPTZ '1001-01-01 UTC')",
+    )
+    .bind::<SqlUuid, _>(orphan)
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .bind::<Text, _>(&fixture.client_public_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let first = maintenance.cleanup_batch().await.unwrap();
+    assert_eq!(first.credential_access_grants, 0);
+    assert!(first.saturated);
+    maintenance.clone().cleanup_batch().await.unwrap();
+    let count = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(orphan)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        count.count, 0,
+        "a later childless grant must not starve behind a full referenced page"
+    );
+    #[derive(QueryableByName)]
+    struct GrantRow {
+        #[diesel(sql_type = SqlUuid)]
+        token_id: Uuid,
+    }
+    let released = sql_query(
+        "DELETE FROM openid4vci_notifications WHERE token_id = ( \
+             SELECT token_id FROM openid4vci_access_grants WHERE subject_id = $1 ORDER BY expires_at,token_id LIMIT 1 \
+         ) RETURNING token_id",
+    )
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .get_result::<GrantRow>(&mut connection)
+    .await
+    .unwrap()
+    .token_id;
+    for round in 0..8 {
+        maintenance.cleanup_batch().await.unwrap();
+        let count = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+        )
+        .bind::<SqlUuid, _>(released)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+        if count.count == 0 {
+            break;
+        }
+        assert_ne!(
+            round, 7,
+            "a completed pass must revisit a parent whose child is later removed"
+        );
+    }
+    let retained = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants AS parent \
+         JOIN openid4vci_notifications AS child USING (token_id) WHERE parent.subject_id = $1",
+    )
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        retained.count, 299,
+        "unexpired children and their parents must survive every pass"
+    );
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[derive(QueryableByName)]
+struct ContractRaceRow {
+    #[diesel(sql_type = sql_types::Binary)]
+    digest: Vec<u8>,
+    #[diesel(sql_type = sql_types::Jsonb)]
+    contract: serde_json::Value,
+    #[diesel(sql_type = sql_types::Jsonb)]
+    family: serde_json::Value,
+}
+async fn contract_race_seed(
+    connection: &mut AsyncPgConnection,
+    fixture: &FixtureIds,
+) -> ContractRaceRow {
+    let id = Uuid::now_v7();
+    insert_refresh_leaf(
+        connection,
+        fixture,
+        id,
+        None,
+        Utc::now() + Duration::hours(1),
+    )
+    .await;
+    let row=sql_query("SELECT c.contract_blake3 AS digest,c.contract,to_jsonb(f) AS family FROM oauth_refresh_families f JOIN oauth_refresh_contracts c USING (tenant_id,contract_blake3) WHERE f.token_family_id=$1")
+         .bind::<SqlUuid,_>(id).get_result::<ContractRaceRow>(connection).await.unwrap();
+    sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=$1")
+        .bind::<SqlUuid, _>(id)
+        .execute(connection)
+        .await
+        .unwrap();
+    // Age only this fixture so the race executes before the optional grace
+    // removal. The protection under test is the row lock, not elapsed time.
+    sql_query("UPDATE oauth_refresh_contracts SET created_at=TIMESTAMPTZ '1000-01-01 UTC' WHERE tenant_id=$1 AND contract_blake3=$2")
+         .bind::<SqlUuid,_>(SYSTEM_TENANT).bind::<sql_types::Binary,_>(&row.digest).execute(connection).await.unwrap();
+    row
+}
+async fn ensure_race_contract(connection: &mut AsyncPgConnection, row: &ContractRaceRow) {
+    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1,$2,$3)")
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<sql_types::Binary, _>(&row.digest)
+        .bind::<sql_types::Jsonb, _>(&row.contract)
+        .execute(connection)
+        .await
+        .unwrap();
+}
+async fn insert_race_family(connection: &mut AsyncPgConnection, row: &ContractRaceRow) {
+    sql_query("INSERT INTO oauth_refresh_families SELECT (jsonb_populate_record(NULL::oauth_refresh_families,$1)).*")
+         .bind::<sql_types::Jsonb,_>(&row.family).execute(connection).await.unwrap();
+}
+async fn race_contract_count(connection: &mut AsyncPgConnection, row: &ContractRaceRow) -> i64 {
+    sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id=$1 AND contract_blake3=$2")
+         .bind::<SqlUuid,_>(SYSTEM_TENANT).bind::<sql_types::Binary,_>(&row.digest).get_result::<CountRow>(connection).await.unwrap().count
+}
+async fn wait_contract_backend(connection: &mut AsyncPgConnection, name: &str, waiting: bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let count=sql_query("SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE application_name=$1 AND ($2='gone' OR wait_event_type='Lock')")
+             .bind::<Text,_>(name).bind::<Text,_>(if waiting {"wait"} else {"gone"}).get_result::<CountRow>(connection).await.unwrap().count;
+        if (waiting && count > 0) || (!waiting && count == 0) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "contract race connection {name}: expected waiting={waiting}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconnect() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut observer) = fixture(&database_url).await;
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    for outcome in ["commit", "rollback", "disconnect"] {
+        let row = contract_race_seed(&mut observer, &fixture).await;
+        let name = format!("contract-writer-{}", Uuid::now_v7().simple());
+        let mut url = url::Url::parse(&database_url).unwrap();
+        url.query_pairs_mut().append_pair("application_name", &name);
+        let mut writer = AsyncPgConnection::establish(url.as_str()).await.unwrap();
+        writer.batch_execute("BEGIN").await.unwrap();
+        ensure_race_contract(&mut writer, &row).await;
+        for _ in 0..3 {
+            maintenance.cleanup_batch().await.unwrap();
+        }
+        assert_eq!(
+            race_contract_count(&mut observer, &row).await,
+            1,
+            "writer KEY SHARE must skip cleanup"
+        );
+        insert_race_family(&mut writer, &row).await;
+        match outcome {
+            "commit" => writer.batch_execute("COMMIT").await.unwrap(),
+            "rollback" => writer.batch_execute("ROLLBACK").await.unwrap(),
+            _ => {}
+        }
+        drop(writer);
+        wait_contract_backend(&mut observer, &name, false).await;
+        for _ in 0..4 {
+            maintenance.cleanup_batch().await.unwrap();
+        }
+        assert_eq!(
+            race_contract_count(&mut observer, &row).await,
+            i64::from(outcome == "commit")
+        );
+        if outcome == "commit" {
+            sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=($1->>'token_family_id')::uuid").bind::<sql_types::Jsonb,_>(&row.family).execute(&mut observer).await.unwrap();
+            for _ in 0..4 {
+                maintenance.cleanup_batch().await.unwrap();
+            }
+            assert_eq!(race_contract_count(&mut observer, &row).await, 0);
+        }
+        println!(
+            "contract writer first/{outcome}: locked parent skipped, committed reference retained, unreferenced parent converged after cursor wrap"
+        );
+    }
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn contract_cleaner_first_fences_writer_and_cancelled_sweeper_discards_connection() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut observer) = fixture(&database_url).await;
+    for outcome in ["commit", "rollback", "cancel"] {
+        let row = contract_race_seed(&mut observer, &fixture).await;
+        let suffix = Uuid::now_v7().simple().to_string();
+        let function = format!("contract_gate_{suffix}");
+        let fail = if outcome == "rollback" {
+            "RAISE EXCEPTION 'contract cleanup late failure';"
+        } else {
+            ""
+        };
+        observer.batch_execute(&format!("CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.contract_blake3=decode('{}','hex') THEN PERFORM pg_advisory_xact_lock(23020261009); {fail} END IF; RETURN OLD; END $$; CREATE TRIGGER {function} BEFORE DELETE ON oauth_refresh_contracts FOR EACH ROW EXECUTE FUNCTION {function}();",row.digest.iter().map(|byte|format!("{byte:02x}")).collect::<String>())).await.unwrap();
+        observer
+            .batch_execute("SELECT pg_advisory_lock(23020261009)")
+            .await
+            .unwrap();
+        let cleaner_name = format!("contract-cleaner-{suffix}");
+        let mut url = url::Url::parse(&database_url).unwrap();
+        url.query_pairs_mut()
+            .append_pair("application_name", &cleaner_name);
+        let pool = create_pool(url.as_str(), 1).unwrap();
+        let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
+        let cleanup = tokio::spawn(async move { maintenance.cleanup_batch().await });
+        wait_contract_backend(&mut observer, &cleaner_name, true).await;
+        let writer_name = format!("contract-writer-{suffix}");
+        let mut url = url::Url::parse(&database_url).unwrap();
+        url.query_pairs_mut()
+            .clear()
+            .append_pair("application_name", &writer_name);
+        let mut writer = AsyncPgConnection::establish(url.as_str()).await.unwrap();
+        let write = tokio::spawn(async move {
+            writer.batch_execute("BEGIN").await.unwrap();
+            ensure_race_contract(&mut writer, &row).await;
+            insert_race_family(&mut writer, &row).await;
+            writer.batch_execute("COMMIT").await.unwrap();
+            row
+        });
+        wait_contract_backend(&mut observer, &writer_name, true).await;
+        if outcome == "cancel" {
+            cleanup.abort();
+            assert!(cleanup.await.unwrap_err().is_cancelled());
+            // Recycle the only lease: an interrupted transaction must be
+            // discarded, never reused with its row locks still owned.
+            let replacement = tokio::spawn(async move { get_conn(&pool).await.unwrap() });
+            observer
+                .batch_execute("SELECT pg_advisory_unlock(23020261009)")
+                .await
+                .unwrap();
+            let connection = tokio::time::timeout(std::time::Duration::from_secs(5), replacement)
+                .await
+                .unwrap()
+                .unwrap();
+            drop(connection);
+        } else {
+            observer
+                .batch_execute("SELECT pg_advisory_unlock(23020261009)")
+                .await
+                .unwrap();
+            let result = cleanup.await.unwrap();
+            assert_eq!(result.is_ok(), outcome == "commit");
+        }
+        let row = tokio::time::timeout(std::time::Duration::from_secs(5), write)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(race_contract_count(&mut observer, &row).await, 1);
+        observer
+            .batch_execute(&format!(
+                "DROP TRIGGER {function} ON oauth_refresh_contracts; DROP FUNCTION {function}()"
+            ))
+            .await
+            .unwrap();
+        sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=($1->>'token_family_id')::uuid").bind::<sql_types::Jsonb,_>(&row.family).execute(&mut observer).await.unwrap();
+        sql_query("DELETE FROM oauth_refresh_contracts WHERE tenant_id=$1 AND contract_blake3=$2")
+            .bind::<SqlUuid, _>(SYSTEM_TENANT)
+            .bind::<sql_types::Binary, _>(&row.digest)
+            .execute(&mut observer)
+            .await
+            .unwrap();
+        println!(
+            "contract cleaner first/{outcome}: writer waited on parent lock then safely referenced or recreated exact contract"
+        );
+    }
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_atomic() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut observer) = fixture(&database_url).await;
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    for commit in [false, true] {
+        let row = contract_race_seed(&mut observer, &fixture).await;
+        sql_query("DELETE FROM oauth_refresh_contracts WHERE tenant_id=$1 AND contract_blake3=$2")
+            .bind::<SqlUuid, _>(SYSTEM_TENANT)
+            .bind::<sql_types::Binary, _>(&row.digest)
+            .execute(&mut observer)
+            .await
+            .unwrap();
+        let mut writer = AsyncPgConnection::establish(&database_url).await.unwrap();
+        writer.batch_execute("BEGIN").await.unwrap();
+        ensure_race_contract(&mut writer, &row).await;
+        assert_eq!(
+            race_contract_count(&mut observer, &row).await,
+            0,
+            "uncommitted parent is invisible"
+        );
+        maintenance.cleanup_batch().await.unwrap();
+        insert_race_family(&mut writer, &row).await;
+        writer
+            .batch_execute(if commit { "COMMIT" } else { "ROLLBACK" })
+            .await
+            .unwrap();
+        assert_eq!(
+            race_contract_count(&mut observer, &row).await,
+            i64::from(commit)
+        );
+        if commit {
+            for _ in 0..3 {
+                maintenance.cleanup_batch().await.unwrap();
+            }
+            assert_eq!(
+                race_contract_count(&mut observer, &row).await,
+                1,
+                "fresh live reference survives"
+            );
+            sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=($1->>'token_family_id')::uuid").bind::<sql_types::Jsonb,_>(&row.family).execute(&mut observer).await.unwrap();
+            // No timestamp backdating or shortened security TTL: this parent
+            // was created moments ago and has no remaining owner.
+            for _ in 0..4 {
+                maintenance.cleanup_batch().await.unwrap();
+            }
+            assert_eq!(
+                race_contract_count(&mut observer, &row).await,
+                0,
+                "fresh orphan needs no age grace"
+            );
+        }
+    }
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bounded_batch_finishes_before_a_queued_connection_borrower() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let held = get_conn(&pool).await.unwrap();
+    let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
+    let mut cleanup = tokio::spawn(async move { maintenance.cleanup_batch().await });
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while pool.status().waiting != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("maintenance must be queued for the only connection");
+
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let borrower_pool = pool.clone();
+    let borrower = tokio::spawn(async move {
+        let connection = get_conn(&borrower_pool).await.unwrap();
+        let _ = released.await;
+        drop(connection);
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while pool.status().waiting != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the request must queue after maintenance");
+    drop(held);
+
+    // The bounded batch owns one lease. Rejoining the request queue between
+    // categories lets the later borrower strand an already admitted batch.
+    // This is pool contention with a real PostgreSQL connection, not a delay
+    // inserted into the cleanup implementation or a smaller retention TTL.
+    let result = tokio::time::timeout(std::time::Duration::from_secs(3), &mut cleanup).await;
+    let _ = release.send(());
+    borrower.await.unwrap();
+    if result.is_err() {
+        cleanup.abort();
+        let _ = cleanup.await;
+    }
+    result
+        .expect("an admitted bounded batch must not requeue between cleanup categories")
+        .expect("maintenance task must finish")
+        .expect("maintenance database work must succeed");
 }

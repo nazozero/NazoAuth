@@ -288,7 +288,7 @@ async fn deployment_routes_are_gated_but_runtime_modules_are_tenant_scoped() {
             ))
             .service(
                 web::scope("")
-                    .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false))
+                    .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings))
                     .wrap(from_fn({
                         let registry = Arc::clone(&registry);
                         let cache = Rc::clone(&cache);

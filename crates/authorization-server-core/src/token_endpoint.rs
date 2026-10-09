@@ -3,7 +3,7 @@ use crate::{
     SenderConstraintPolicy, validate_token_request_profile,
 };
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct TokenEndpointRequestInput {
     pub grant_type: String,
     pub code: Option<String>,
@@ -14,7 +14,13 @@ pub struct TokenEndpointRequestInput {
     pub resources: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for TokenEndpointRequestInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TokenEndpointRequestInput([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct AuthorizationCodeTokenRequest {
     pub code: String,
     pub redirect_uri: Option<String>,
@@ -22,11 +28,23 @@ pub struct AuthorizationCodeTokenRequest {
     pub resources: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for AuthorizationCodeTokenRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AuthorizationCodeTokenRequest([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct RefreshTokenRequest {
     pub refresh_token: String,
     pub scope: Option<String>,
     pub resources: Vec<String>,
+}
+
+impl std::fmt::Debug for RefreshTokenRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RefreshTokenRequest([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

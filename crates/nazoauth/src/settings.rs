@@ -256,7 +256,7 @@ impl Settings {
 
 pub(crate) fn mfa_totp_key_ring(
     config: &ConfigSource,
-) -> anyhow::Result<Option<nazo_identity::ports::MfaTotpKeyRing>> {
+) -> anyhow::Result<Option<nazo_postgres::MfaTotpKeyRing>> {
     let current_key = parse_optional_32_byte_key(config, "MFA_TOTP_ENCRYPTION_KEY")?;
     let current_key_id = config.optional_string("MFA_TOTP_ENCRYPTION_KEY_ID");
     let previous_key = parse_optional_32_byte_key(config, "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY")?;
@@ -286,17 +286,15 @@ pub(crate) fn mfa_totp_key_ring(
     let Some(current_key) = current_key else {
         return Ok(None);
     };
-    let current = nazo_identity::ports::MfaTotpKey::new(
+    let current = nazo_postgres::MfaTotpKey::new(
         current_key_id.expect("validated MFA TOTP current key id"),
         current_key,
     )?;
     let previous = previous_key
         .zip(previous_key_id)
-        .map(|(key, id)| nazo_identity::ports::MfaTotpKey::new(id, key))
+        .map(|(key, id)| nazo_postgres::MfaTotpKey::new(id, key))
         .transpose()?;
-    Ok(Some(nazo_identity::ports::MfaTotpKeyRing::new(
-        current, previous,
-    )?))
+    Ok(Some(nazo_postgres::MfaTotpKeyRing::new(current, previous)?))
 }
 
 pub(crate) fn signing_key_wrapping_key_ring(

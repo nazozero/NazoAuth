@@ -60,20 +60,9 @@ pub trait ScimRepositoryPort: Send + Sync {
     ) -> RepositoryFuture<'a, bool>;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ScimCredentialUse {
-    pub token_id: Uuid,
-    pub tenant_id: Uuid,
-    pub scopes: Vec<String>,
-    pub ip_hash: Option<String>,
-    pub user_agent_hash: Option<String>,
-}
-
-pub trait ScimCredentialAuditPort: Send + Sync {
+pub trait ScimCredentialPort: Send + Sync {
     fn active_credential<'a>(
         &'a self,
         token_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::scim::ScimTokenCredential>>;
-
-    fn record_use<'a>(&'a self, usage: ScimCredentialUse) -> RepositoryFuture<'a, ()>;
 }

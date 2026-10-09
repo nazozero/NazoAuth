@@ -181,3 +181,27 @@ async fn concurrent_session_rotation_has_exactly_one_winner_and_no_partial_state
     let second_exists = inspector.exists::<i64, _>(second_key).await.unwrap();
     assert_eq!(first_exists + second_exists, 1);
 }
+
+#[tokio::test]
+async fn session_authentication_precision_roundtrips_and_malformed_precision_is_rejected() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let sid = uuid::Uuid::now_v7().to_string();
+    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}"));
+    let mut value = payload();
+    value.record_authentication_at(chrono::DateTime::from_timestamp_micros(1_000_500_001).unwrap());
+    store.store(&sid, &value, 30).await.unwrap();
+    let loaded = store.load(&sid).await.unwrap().unwrap();
+    assert_eq!(loaded.value(), &value);
+    assert_eq!(loaded.value().auth_time_micros(), Some(1_000_500_001));
+    assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
+    let raw = inspector.get::<String, _>(&key).await.unwrap();
+    let mut malformed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    malformed["auth_time_micros"] = serde_json::json!(1_001_500_001_i64);
+    inspector
+        .set::<(), _, _>(&key, malformed.to_string(), None, None, false)
+        .await
+        .unwrap();
+    assert!(store.load(&sid).await.is_err());
+}

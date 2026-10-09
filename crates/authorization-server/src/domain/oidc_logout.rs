@@ -10,13 +10,9 @@ use nazo_auth::{
     LogoutTokenSignerPort, RpLogoutRequest,
 };
 use nazo_key_management::KeyManager;
-use serde::Deserialize;
-use serde_json::Value;
 
-use crate::crypto::jwt_decoding_key_from_jwk;
 use crate::ports::audit::{SecurityAudit, audit_fields};
 use crate::sessions::SessionResolver;
-use nazo_key_management::signing_algorithm_name;
 use nazo_runtime_modules::SnapshotStore;
 use serde_json::json;
 
@@ -87,47 +83,17 @@ impl OidcLogoutHandles {
         token: &str,
         now: DateTime<Utc>,
     ) -> Option<DecodedIdTokenHint> {
-        let header = nazo_crypto::jwt::decode_header(token).ok()?;
-        if header.typ.as_deref().is_some_and(|typ| typ != "JWT")
-            || signing_algorithm_name(header.alg).is_none()
-        {
-            return None;
-        }
-        let keyset = self.keys.snapshot();
-        let verification_key = keyset.verification_key(header.kid.as_deref()?)?;
-        let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
-        let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
-        validation.validate_aud = false;
-        // RP-Initiated Logout 1.0 §2 recommends accepting an expired ID Token
-        // when it remains bound to the current or a recent OP session. The auth
-        // service below enforces that session binding before accepting it.
-        validation.validate_exp = false;
-        validation.set_issuer(&[self.issuer()]);
-        nazo_crypto::jwt::decode::<DecodedIdTokenHintClaims>(token, &decoding_key, &validation)
-            .ok()
-            .map(|data| DecodedIdTokenHint {
-                expired: id_token_hint_expired(data.claims.exp, now),
-                claims: nazo_auth::IdTokenHintClaims {
-                    sub: data.claims.sub,
-                    aud: data.claims.aud,
-                    sid: data.claims.sid,
-                },
-            })
+        let (claims, expires_at) = self.keys.decode_id_token_hint(self.issuer(), token)?;
+        Some(DecodedIdTokenHint {
+            expired: id_token_hint_expired(expires_at, now),
+            claims,
+        })
     }
 }
 
 struct DecodedIdTokenHint {
     claims: nazo_auth::IdTokenHintClaims,
     expired: bool,
-}
-
-#[derive(Deserialize)]
-struct DecodedIdTokenHintClaims {
-    sub: String,
-    aud: Value,
-    #[serde(default)]
-    sid: Option<String>,
-    exp: i64,
 }
 
 #[derive(Clone)]
@@ -198,6 +164,10 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                     .to_string()
             });
             let audit_client_id = command.request.client_id.clone();
+            let (id_token_hint, id_token_hint_expired) = match decoded_id_token_hint {
+                Some(decoded) => (Some(decoded.claims), decoded.expired),
+                None => (None, false),
+            };
             let execution = self
                 .service
                 .execute(LogoutInput {
@@ -208,12 +178,8 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                         post_logout_redirect_uri: command.request.post_logout_redirect_uri,
                         state: command.request.state,
                     },
-                    id_token_hint: decoded_id_token_hint
-                        .as_ref()
-                        .map(|decoded| decoded.claims.clone()),
-                    id_token_hint_expired: decoded_id_token_hint
-                        .as_ref()
-                        .is_some_and(|decoded| decoded.expired),
+                    id_token_hint,
+                    id_token_hint_expired,
                     session: current_session.as_ref().map(|session| LogoutSession {
                         user_id: session.user.id(),
                         oidc_sid: session.oidc_sid.clone(),

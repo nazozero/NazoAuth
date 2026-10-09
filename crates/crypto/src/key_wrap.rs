@@ -55,11 +55,6 @@ pub fn generate_rsa_pkcs8_der(bits: usize) -> crate::Result<Vec<u8>> {
         .to_vec())
 }
 
-pub fn validate_rsa_pkcs8(private_der: &[u8]) -> crate::Result<()> {
-    KeyPair::from_pkcs8(private_der).map_err(|_| CryptoError::InvalidKey)?;
-    Ok(())
-}
-
 pub fn rsa_public_components(private_der: &[u8]) -> crate::Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     let key = KeyPair::from_pkcs8(private_der).map_err(|_| CryptoError::InvalidKey)?;
     let public = key.public_key();
@@ -85,15 +80,28 @@ pub fn rsa_oaep256_encrypt(n: &[u8], e: &[u8], plaintext: &[u8]) -> crate::Resul
         .to_vec())
 }
 
-pub fn rsa_oaep256_decrypt(private_der: &[u8], ciphertext: &[u8]) -> crate::Result<Vec<u8>> {
-    let private =
-        PrivateDecryptingKey::from_pkcs8(private_der).map_err(|_| CryptoError::InvalidKey)?;
-    let private = OaepPrivateDecryptingKey::new(private).map_err(|_| CryptoError::InvalidKey)?;
-    let mut plaintext = vec![0; private.min_output_size()];
-    Ok(private
-        .decrypt(&OAEP_SHA256_MGF1SHA256, ciphertext, &mut plaintext, None)
-        .map_err(|_| CryptoError::AuthenticationFailed)?
-        .to_vec())
+/// Prepared RSA-OAEP-256 recipient key. The backend and private material stay
+/// inside the crypto boundary while a published generation reuses this handle.
+pub struct RsaOaep256PrivateKey {
+    inner: OaepPrivateDecryptingKey,
+}
+
+impl RsaOaep256PrivateKey {
+    pub fn from_pkcs8(private_der: &[u8]) -> crate::Result<Self> {
+        let private =
+            PrivateDecryptingKey::from_pkcs8(private_der).map_err(|_| CryptoError::InvalidKey)?;
+        let inner = OaepPrivateDecryptingKey::new(private).map_err(|_| CryptoError::InvalidKey)?;
+        Ok(Self { inner })
+    }
+
+    pub fn decrypt(&self, ciphertext: &[u8]) -> crate::Result<Vec<u8>> {
+        let mut plaintext = vec![0; self.inner.min_output_size()];
+        Ok(self
+            .inner
+            .decrypt(&OAEP_SHA256_MGF1SHA256, ciphertext, &mut plaintext, None)
+            .map_err(|_| CryptoError::AuthenticationFailed)?
+            .to_vec())
+    }
 }
 
 pub fn aes_wrap(kek: &[u8], plaintext: &[u8]) -> crate::Result<Vec<u8>> {

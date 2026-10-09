@@ -142,6 +142,37 @@ async fn invoke_admin_revoke_grant(
     admin_revoke_grant(admin_sessions, grants, req, payload).await
 }
 
+struct CommittedGrantUnknown(nazo_postgres::GrantRepository);
+
+impl AdminGrantRepositoryPort for CommittedGrantUnknown {
+    fn page(
+        &self,
+        tenant_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> nazo_auth::AdminGrantFuture<'_, nazo_auth::AdminGrantPage> {
+        self.0.page(tenant_id, limit, offset)
+    }
+
+    fn revoke_by_client_id<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        client_id: &'a str,
+        admin_user_id: Uuid,
+    ) -> nazo_auth::AdminGrantRevokeFuture<'a> {
+        Box::pin(async move {
+            self.0
+                .revoke_by_client_id(tenant_id, user_id, client_id, admin_user_id)
+                .await?;
+            // Hide the acknowledgement only after a real successful PG commit.
+            Err(AdminGrantRevokeError::Revoke(
+                nazo_auth::AuthorizationPortError::Unavailable,
+            ))
+        })
+    }
+}
+
 fn create_client_request(client_name: &str) -> CreateClientRequest {
     CreateClientRequest {
         client_name: client_name.to_owned(),
@@ -572,7 +603,7 @@ fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
     assert!(!adapter.contains(".for_update()"));
     assert!(adapter.contains("lock_refresh_grant_scope(connection"));
     assert!(tokens.contains("lock_refresh_grant_scope("));
-    assert!(tokens.contains("lock_refresh_family(connection, token.family_id)"));
+    assert!(tokens.contains("lock_refresh_family(connection, family_id)"));
     assert!(adapter.contains(".filter(user_client_grants::tenant_id.eq(tenant_id))"));
 }
 
@@ -946,4 +977,58 @@ async fn admin_revoke_grant_surfaces_transaction_failure_without_partial_revocat
         token_count, 0,
         "refresh token should remain unrecalled on failure"
     );
+}
+
+#[actix_web::test]
+async fn admin_revoke_grant_unknown_ack_is_503_with_committed_effect_and_required_evidence() {
+    let Some(fixture) = LiveAdminGrantFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple();
+    let admin = fixture
+        .create_user(&format!("unknown-grant-admin-{suffix}"), "admin", 10)
+        .await;
+    let user = fixture
+        .create_user(&format!("unknown-grant-target-{suffix}"), "user", 0)
+        .await;
+    let sid = format!("sid-grant-unknown-{}", Uuid::now_v7().simple());
+    let csrf = format!("csrf-grant-unknown-{}", Uuid::now_v7().simple());
+    fixture.store_session(&admin, &sid).await;
+    let client = fixture.insert_client("Unknown ACK Grant").await;
+    fixture.insert_grant(&user, &client).await;
+    fixture.insert_refresh_token(&user, &client).await;
+    let (sessions, _) = admin_grant_dependencies(&fixture.state);
+    let grants: Data<dyn AdminGrantRepositoryPort> = Data::from(Arc::new(CommittedGrantUnknown(
+        nazo_postgres::GrantRepository::new(fixture.state.diesel_db.clone()),
+    ))
+        as Arc<dyn AdminGrantRepositoryPort>);
+    let response = admin_revoke_grant(
+        sessions,
+        grants,
+        fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
+        Json(GrantRevokeRequest {
+            user_id: user.id.to_string(),
+            client_id: client.client_id.clone(),
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        oauth_error_name(response).await.as_deref(),
+        Some("server_error")
+    );
+    assert_eq!(fixture.grant_count(&user, &client).await, 0);
+    assert_eq!(fixture.revoked_refresh_token_count(&user, &client).await, 1);
+    let mut connection = get_conn(&fixture.state.diesel_db).await.unwrap();
+    let count = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type='admin_grant_revoked' AND payload->>'tenant_id'=$1 AND payload->>'admin_user_id'=$2 AND payload->>'user_id'=$3 AND payload->>'client_id'=$4 AND payload->>'removed_grants'='1' AND payload->>'revoked_refresh_tokens'='1'")
+        .bind::<Text, _>(admin.tenant_id.to_string())
+        .bind::<Text, _>(admin.id.to_string())
+        .bind::<Text, _>(user.id.to_string())
+        .bind::<Text, _>(&client.client_id)
+        .get_result::<CountRow>(&mut connection).await.unwrap().count;
+    assert_eq!(
+        count, 1,
+        "Unknown does not erase canonical evidence or report known non-commit"
+    );
+    fixture.cleanup().await;
 }

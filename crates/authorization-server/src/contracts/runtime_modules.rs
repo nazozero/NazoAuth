@@ -11,6 +11,7 @@ pub type RuntimeModuleAdminFuture<'a, T> =
 pub enum RuntimeModuleAdminError {
     Unavailable,
     PolicyConflict,
+    ServiceNotConstructed,
     CatalogInconsistent,
 }
 

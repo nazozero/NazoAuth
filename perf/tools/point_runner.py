@@ -8,8 +8,7 @@ contiguity, per-second CPU accounting, and post-run point health checks.
 This module carries the point-orchestration code that used to live in
 the one-shot A/B experiment drivers (prepared_rsa_ab, audit_batch_ab,
 group_commit_ab, token_audit_preflight_ab, residency_run). Those drivers
-are gone; the formal capacity/stability runner (pool_size_ab) is the
-sole consumer of what remains.
+are gone; pool_size_ab and the short current_capacity search reuse this lifecycle.
 """
 from __future__ import annotations
 
@@ -26,6 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import single_instance_scaling as sis  # noqa: E402
+from blackbox_contract import (CONTRACT, audit_queue_unverified, require_external_point,
+                               unavailable_dimension, unverified_gates)
 
 
 KEYSET_VOLUME = "sisprsa-confirm-keys"
@@ -128,10 +129,12 @@ def _wire_hash_bytes(value) -> bytes | None:
 
 
 def db_chain_state() -> dict:
-    """security_audit_chain_state facts + outbox depth."""
+    """security_audit_chain_state facts + pending depth."""
     try:
+        pending_where, _ = sis.audit_event_predicates()
         row = sis.psql(
-            "SELECT (SELECT count(*) FROM security_audit_event_outbox),"
+            "SELECT (SELECT count(*) FROM security_audit_events WHERE "
+            + pending_where + "),"
             " last_sequence, encode(last_hash,'hex'),"
             " anchor_deployment_id, anchor_sequence,"
             " encode(anchor_hash,'hex')"
@@ -141,6 +144,7 @@ def db_chain_state() -> dict:
         return {
             "collected": True,
             "pending": int(pending),
+            **sis.audit_event_counts(),
             "last_sequence": int(last_seq),
             "last_hash": last_hash or None,
             "anchor_deployment_id": dep or None,
@@ -292,14 +296,15 @@ def journal_event_counts(run_id: str, deployment: str,
 
 def reconcile_audit_state(pre: dict, post: dict, point_name: str,
                           expected_issuances: int | None,
-                          journal: dict | None) -> dict:
+                          journal: dict | None, *, allow_empty_prefix: bool = False) -> dict:
     """Two-sided persisted-prefix check for one point.
 
     Passes only when ALL hold:
       pending == 0; DB last==anchor (sequence AND hash); receiver
       checkpoint sequence/hash equal the DB anchor; receiver and DB
       deployment identity match the run deployment; receiver fault none;
-      the receiver checkpoint advanced across the load; the receiver
+      the receiver checkpoint advanced across the load (or retained the
+      same sequence and hash for an explicitly audit-free PAR workload); the receiver
       journal is readable, carries only this deployment, has a contiguous
       non-duplicated sequence range matching the checkpoint delta and the
       receiver's own accepted_events increment.
@@ -347,9 +352,15 @@ def reconcile_audit_state(pre: dict, post: dict, point_name: str,
     pre_ckpt = pre.get("receiver_checkpoint") or {}
     pre_seq = pre_ckpt.get("last_sequence")
     post_seq = ckpt.get("last_sequence")
-    checks["checkpoint_advanced"] = (
+    advanced = (
         isinstance(pre_seq, int) and isinstance(post_seq, int)
         and post_seq > pre_seq)
+    result["checkpoint_advanced"] = advanced
+    result["empty_prefix_allowed"] = allow_empty_prefix
+    checks["checkpoint_progress_valid"] = advanced or (
+        allow_empty_prefix and isinstance(pre_seq, int) and post_seq == pre_seq
+        and _wire_hash_bytes(pre_ckpt.get("last_hash")) is not None
+        and _wire_hash_bytes(pre_ckpt.get("last_hash")) == rcv_hash)
     delta = (post_seq - pre_seq
              if isinstance(pre_seq, int) and isinstance(post_seq, int)
              else None)
@@ -459,6 +470,7 @@ def stack_up_pinned(point: dict) -> dict:
     lives on an EXTERNAL volume (not removed by `down -v`) so every point
     of the confirmation shares one controlled keyset while postgres /
     valkey / audit state still get fresh volumes per point."""
+    sis.reset_audit_schema_cache()
     evidence: dict = {"point": point["name"], "image": point["image"]}
     for svc in ("nazoauth", "migrate", "audit-worker"):
         sis.dc("tag", point["image"], f"{sis.PROJECT}-{svc}")
@@ -521,18 +533,26 @@ def stack_up_pinned(point: dict) -> dict:
         sis.APP)
 
     # pin_container injects /tmp/pinset and retargets stray threads;
-    # verify_pin shells the same binary — so pin must run before verify.
+    # Verify actual service descendants and all their threads after pinning.
     evidence["pin"] = {
         "app_exec_mode": "pinset-exec",
         "app_cpus": app_cpus,
-        "postgres": sis.pin_container(sis.POSTGRES, infra_cpus),
-        "valkey": sis.pin_container(sis.VALKEY, infra_cpus),
+        "postgres": sis.pin_container(sis.POSTGRES, sis.format_cpu_list(
+            point.get("postgres_cpus", point["infra_cpus"]))),
+        "valkey": sis.pin_container(sis.VALKEY, sis.format_cpu_list(
+            point.get("valkey_cpus", point["infra_cpus"]))),
         "keyset": sis.pin_container(sis.KEYSET, infra_cpus),
-        "pg_verified": sis.verify_pin(sis.POSTGRES, infra_cpus),
+        "pg_verified": sis.verify_pin(sis.POSTGRES, sis.format_cpu_list(
+            point.get("postgres_cpus", point["infra_cpus"])), "postgres"),
     }
     # Record the proc masks after exec-pinning for the thread/CPU evidence.
     evidence["pin"]["app"] = sis.pin_container(sis.APP, app_cpus)
-    evidence["pin"]["app_verified"] = sis.verify_pin(sis.APP, app_cpus)
+    evidence["pin"]["app_verified"] = sis.verify_pin(sis.APP, app_cpus, "nazoauth")
+    evidence["pin"]["valkey_verified"] = sis.verify_pin(
+        sis.VALKEY, sis.format_cpu_list(point.get("valkey_cpus", point["infra_cpus"])), "valkey-server")
+    if not all(evidence["pin"][key] for key in
+               ("app_verified", "pg_verified", "valkey_verified")):
+        raise RuntimeError("CPU_AFFINITY_INVALID: service threads exceed requested sets")
 
     depid = ""
     for _ in range(30):
@@ -548,12 +568,14 @@ def stack_up_pinned(point: dict) -> dict:
 
 def run_ab_point(point: dict) -> dict:
     """run_point equivalent with receiver-state baselines around load."""
+    require_external_point(point)
     run_id = point["name"]
     out_dir = sis.RESULTS / point["phase"] / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     sis.CURRENT_POINT = point
 
-    rec: dict = {"point": point, "run_id": run_id}
+    rec: dict = {"point": point, "run_id": run_id, "collection_contract": CONTRACT,
+                 "unverified_internal_gates": unverified_gates()}
     # load_seconds is one shared elapsed window per point (main and
     # sidecars run concurrently, tracked via max()), so the planned
     # estimate must be the longest container duration plus margin,
@@ -595,12 +617,9 @@ def run_ab_point(point: dict) -> dict:
                 raise RuntimeError(
                     "PROVENANCE_INVALID: "
                     f"{rec['binary_provenance']}")
-            rec["perf_schema"] = sis.app_perf_schema(
-                out_path=out_dir / "perf-metrics-preflight.json")
-            if not rec["perf_schema"]["ok"]:
-                raise RuntimeError(
-                    f"perf metrics schema missing fields: "
-                    f"{rec['perf_schema']}")
+            rec["application_performance_observation"] = {
+                "status": "UNAVAILABLE", "contract": CONTRACT,
+                "reason": "application performance collection removed"}
         depid = rec["stack"].get("deployment_id")
         if not depid:
             raise RuntimeError("deployment id unavailable after stack up")
@@ -670,6 +689,7 @@ def run_ab_point(point: dict) -> dict:
             sis._spend_load_budget(run_id, rec)
 
         rec["audit_drain"] = sis.audit_drain()
+        rec["audit_queue_post_drain"] = audit_queue_unverified()
         rec["audit_state_post"] = audit_state_snapshot(run_id)
         rec["audit_state_post"]["deployment_id"] = depid
 
@@ -705,12 +725,8 @@ def run_ab_point(point: dict) -> dict:
             wal_w = sis.windowed_series_delta(
                 soak_path, "wal_bytes",
                 m.get("window_start_ms"), m.get("window_end_ms"))
-            acq_w = sis.windowed_series_delta(
-                soak_path, "pool.acq",
-                m.get("window_start_ms"), m.get("window_end_ms"))
-            wait_w = sis.windowed_series_delta(
-                soak_path, "pool.wait_ns",
-                m.get("window_start_ms"), m.get("window_end_ms"))
+            acq_w = unavailable_dimension("pool.acq")
+            wait_w = unavailable_dimension("pool.wait_ns")
             wal_io_w = {
                 k: sis.windowed_series_delta(
                     soak_path, f"wal_io.{k}",
@@ -809,11 +825,27 @@ def run_ab_point(point: dict) -> dict:
             and m.get("outcome_local_no_request") == 0
             and m.get("outcome_expected_rejection") == 0
             and m.get("outcome_prepare_failed") in (0, None)
+            and m.get("outcome_prepare_local_failed") in (0, None)
+            and m.get("outcome_prepare_sut_failed") in (0, None)
             and rec["load"].get("load_status") == "completed")
         expected = m.get("iterations_completed") if clean_run else None
         rec["audit_state_check"] = reconcile_audit_state(
             rec["audit_state_pre"], rec["audit_state_post"], run_id,
-            expected, rec["journal_stats"])
+            expected, rec["journal_stats"],
+            # Successful PAR stores the request in transient state; it does
+            # not emit an audit event. All two-sided reconciliation remains.
+            allow_empty_prefix=(point["scenario"] == "par_signed_request_object"
+                                and not point.get("sidecars")))
+        if point.get("capture_audit_journal"):
+            journal_path = out_dir / "audit-journal.jsonl"
+            sis.dc("cp", f"sis-rcv-{run_id}:/data/journal.jsonl", str(journal_path))
+            with journal_path.open("rb") as journal_file:
+                digest = hashlib.file_digest(journal_file, "sha256").hexdigest()
+            if digest != rec["journal_stats"].get("journal_sha256"):
+                raise RuntimeError("archived audit journal differs from reconciled journal")
+            rec["audit_journal_archive"] = {
+                "collected": True, "file": str(journal_path), "sha256": digest,
+                "bytes": journal_path.stat().st_size, "source_hash_match": True}
         rec["ok"] = True
     except Exception as e:  # noqa: BLE001 - evidence path
         rec["ok"] = False
@@ -1072,30 +1104,7 @@ def _proc_cpu(point_dir: Path, rec: dict) -> dict:
 
 
 def audit_queue_final(out_dir: Path) -> dict:
-    """Last audit_queue counters sampled by the soak sampler.
-
-    The sampler keeps ticking until after audit_drain, so the final row
-    carrying audit_queue data is the post-drain in-process truth: the
-    enqueued==persisted and pending_in_process==0 gates read it here
-    instead of a live endpoint that is already gone."""
-    path = out_dir / "soak-metrics.jsonl"
-    if not path.exists():
-        return {"collected": False, "error": "sampler stream missing"}
-    last = None
-    for line in path.read_text(errors="replace").splitlines():
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        q = row.get("audit_queue")
-        if isinstance(q, dict):
-            last = q
-    if last is None:
-        return {"collected": False, "error": "no audit_queue samples"}
-    out = dict(last)
-    out["collected"] = True
-    return out
-
+    return audit_queue_unverified()
 
 def _bounded(value, limit) -> bool:
     return isinstance(value, (int, float)) and value <= limit
@@ -1119,9 +1128,27 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
     scan = m.get("audit_log_scan") or {}
     asc = rec.get("audit_state_check") or {}
     journal = asc.get("journal") or {}
+    pin = (rec.get("stack") or {}).get("pin") or {}
+    affinity = {
+        component + "_affinity_verified": (
+            ((pin.get(component) or {}).get("snapshot") or {}).get("complete") is True
+            and sis._tasks_pinned(
+            (pin.get(component) or {}).get("task_masks") or [],
+            (pin.get(component) or {}).get("requested") or "", role))
+        for component, role in (("app", "nazoauth"), ("postgres", "postgres"),
+                                ("valkey", "valkey-server"))
+    }
+    affinity["service_affinity_verified"] = (
+        (rec.get("load") or {}).get("service_affinity_verified") is True)
+    affinity["generator_affinity_verified"] = (
+        (rec.get("load") or {}).get("generator_affinity_verified") is True)
     checks = {
+        **affinity,
         "point_completed": rec.get("ok") is True,
         "unexpected_zero": m.get("outcome_unexpected") == 0,
+        "preparation_valid": (m.get("outcome_prepare_failed", 0) == 0
+                              and m.get("outcome_prepare_local_failed", 0) == 0),
+        "prepare_sut_zero": m.get("outcome_prepare_sut_failed", 0) == 0,
         "oom_none": m.get("oom_killed") is False,
         "no_restarts": m.get("restart_count") == 0,
         "queue_full_zero": scan.get("queue_full") == 0,
@@ -1138,7 +1165,7 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
         # issuance, so both classes must stay at zero. cap_mixed counts
         # protocol-correct bounded-family invalid_grant rejections and
         # dead-family local no-request exits by design, so the mixed gate
-        # only requires unexpected == 0.
+        # allows these outcomes diagnostically; neither is a success.
         checks["local_no_request_zero"] = (
             m.get("outcome_local_no_request") == 0)
         checks["expected_rejection_zero"] = (
@@ -1148,9 +1175,10 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
         checks.update(_refresh_ok(m.get("refresh_invariants") or {}))
         checks["sidecars_complete"] = (
             m.get("sidecar_terminal_complete") is True)
-        checks["queue_dropped_zero"] = q.get("dropped") == 0
-        checks["pending_zero_post_drain"] = q.get("pending_in_process") == 0
-        checks["enqueued_eq_persisted"] = (
-            isinstance(q.get("enqueued"), int)
-            and q.get("enqueued") == q.get("persisted"))
+        if rec.get("collection_contract") != CONTRACT:
+            checks["queue_dropped_zero"] = q.get("dropped") == 0
+            checks["pending_zero_post_drain"] = q.get("pending_in_process") == 0
+            checks["enqueued_eq_persisted"] = (
+                isinstance(q.get("enqueued"), int)
+                and q.get("enqueued") == q.get("persisted"))
     return checks

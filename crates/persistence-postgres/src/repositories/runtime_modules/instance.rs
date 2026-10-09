@@ -191,6 +191,32 @@ pub(super) async fn compare_and_set_instance(
         .map_err(RuntimeTransactionError::into_repository)
 }
 
+pub(super) async fn record_instance_observation(
+    repository: &RuntimeModuleRepository,
+    observation: nazo_runtime_modules::InstanceStateObservation,
+) -> Result<(), RepositoryError> {
+    let event = observation.event;
+    if event.event_type != ModuleEventType::StaleTransitionDiscarded
+        || event.instance_id.as_ref().is_none_or(String::is_empty)
+        || event.before != event.after
+        || matches!(event.before, Some(ModuleEventState::Desired(_)))
+    {
+        return Err(RepositoryError::Consistency(
+            "instance observation must describe unchanged actual state and discarded work"
+                .to_owned(),
+        ));
+    }
+    let mut connection = repository.connection().await?;
+    connection
+        .transaction::<(), RuntimeTransactionError, _>(async |connection| {
+            append_runtime_event(connection, repository.tenant_id(), &event)
+                .await
+                .map_err(RuntimeTransactionError::Repository)
+        })
+        .await
+        .map_err(RuntimeTransactionError::into_repository)
+}
+
 fn validate_instance_mutation(
     required_desired_revision: ModuleRevision,
     mutation: &InstanceStateMutation,

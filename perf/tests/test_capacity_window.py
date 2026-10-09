@@ -178,6 +178,18 @@ class GateTest(unittest.TestCase):
         self.assertEqual(v, "PASS", met)
         self.assertEqual(met["gate_p99"], 200.0)
 
+    def test_cold_login_preserves_its_existing_guardrails(self):
+        m = self._passing_metrics(iter_p95=180.0, iter_p99=320.0)
+        s = _summary()
+        self.assertEqual(self._eval(s, m)[0], "FAIL")
+        path = self._write(m)
+        verdict, met = cs.evaluate(s, path, 3000, 120, "oidc_cold_login_refresh")
+        self.assertEqual(verdict, "PASS", met)
+        self.assertEqual(met["gate_p95"], 180.0)
+        self.assertEqual(met["latency_gate"], "existing_cold_login_k6_guardrails")
+        s["status"] = "threshold_failed"
+        self.assertEqual(cs.evaluate(s, path, 3000, 120, "oidc_cold_login_refresh")[0], "FAIL")
+
     def test_measure_unexpected_fails(self):
         m = self._passing_metrics()
         m["cap_measure_unexpected"] = {"count": 3}
@@ -445,7 +457,7 @@ class GateTest(unittest.TestCase):
         self.assertEqual(met["measure"]["dropped"], 430)
         self.assertAlmostEqual(met["measure"]["drop_fraction"],
                                430 / 315000, places=6)
-        # B2: 75 drops -> PASS
+        # B2: drops pass, but successes are below the successful-ops-v1 gate.
         m2 = _k6_metrics(314925, 314925,
                          {"success": 310400, "expected_rejection": 60,
                           "local_no_request": 4465, "unexpected": 0,
@@ -455,8 +467,9 @@ class GateTest(unittest.TestCase):
                          dropped_whole=714)
         s2 = _summary(dropped_whole=714, iters=359287)
         v2, met2 = self._eval(s2, m2)
-        self.assertEqual(v2, "PASS", met2)
+        self.assertEqual(v2, "FAIL", met2)
         self.assertEqual(met2["measure"]["dropped"], 75)
+        self.assertLess(met2["rate_for_gate"], 2985)
 
 
 class SubjectLifecycleWiringTest(unittest.TestCase):

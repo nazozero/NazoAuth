@@ -1,0 +1,255 @@
+--- a/internal/output/json/json.go
++++ b/internal/output/json/json.go
+@@ -10,0 +11,2 @@
++	"math"
++	"strconv"
+@@ -36,0 +39,5 @@
++	// Tag sets are immutable and interned by k6. Bound retained encodings so
++	// dynamic user tags cannot turn the output into an unbounded cache.
++	tagJSON      map[*metrics.TagSet][]byte
++	metricJSON   map[string][]byte
++	sampleBuffer []byte
+@@ -141 +148 @@
+-			if err := enc.Encode(wrapSample(sample)); err != nil {
++			if err := o.writeSample(sample, enc); err != nil {
+@@ -148,0 +156,11 @@
++	// stdout is buffered. A sparse batch must leave that buffer at the
++	// periodic boundary, rather than waiting for 4 KiB or Stop().
++	if buffered, ok := o.out.(*bufio.Writer); ok {
++		if err := buffered.Flush(); err != nil {
++			errCount++
++			if firstErr == nil {
++				firstErr = err
++			}
++		}
++	}
++
+@@ -155,0 +174,64 @@
++}
++
++// writeSample preserves the stock sample envelope and all fields. Avoid
++// repeatedly reflecting the fixed frame and encoding an immutable tag set
++// for every metric in the same request. Uncommon metadata/error cases retain
++// the stock encoder. The periodic flusher owns these buffers and caches.
++func (o *Output) writeSample(sample metrics.Sample, enc *json.Encoder) error {
++	if sample.Metadata != nil || math.IsNaN(sample.Value) || math.IsInf(sample.Value, 0) {
++		return enc.Encode(wrapSample(sample))
++	}
++	timestamp, err := sample.Time.MarshalJSON()
++	if err != nil {
++		return enc.Encode(wrapSample(sample))
++	}
++	// These six auxiliary HTTP timings are not consumed by the capacity
++	// evaluator. Native k6 summaries and thresholds still receive all samples.
++	// Preserve full-operation cohorts, HTTP totals/duration, errors and drops.
++	if o.params.Environment["K6_JSON_OMIT_UNUSED_HTTP_TIMINGS"] == "1" {
++		switch sample.Metric.Name {
++		case "http_req_blocked", "http_req_connecting", "http_req_tls_handshaking",
++			"http_req_sending", "http_req_waiting", "http_req_receiving":
++			return nil
++		}
++	}
++	if o.tagJSON == nil {
++		o.tagJSON = make(map[*metrics.TagSet][]byte)
++		o.metricJSON = make(map[string][]byte)
++	}
++	tags, ok := o.tagJSON[sample.Tags]
++	if !ok {
++		tags = []byte("null")
++		if sample.Tags != nil {
++			tags, err = sample.Tags.MarshalJSON()
++			if err != nil {
++				return err
++			}
++		}
++		if len(o.tagJSON) < 4096 {
++			o.tagJSON[sample.Tags] = tags
++		}
++	}
++	metric, ok := o.metricJSON[sample.Metric.Name]
++	if !ok {
++		metric, err = metrics.MarshalJSONWithoutHTMLEscape(sample.Metric.Name)
++		if err != nil {
++			return err
++		}
++		if len(o.metricJSON) < 4096 {
++			o.metricJSON[sample.Metric.Name] = metric
++		}
++	}
++	b := o.sampleBuffer[:0]
++	b = append(b, `{"metric":`...)
++	b = append(b, metric...)
++	b = append(b, `,"type":"Point","data":{"time":`...)
++	b = append(b, timestamp...)
++	b = append(b, `,"value":`...)
++	b = strconv.AppendFloat(b, sample.Value, 'g', -1, 64)
++	b = append(b, `,"tags":`...)
++	b = append(b, tags...)
++	b = append(b, '}', '}', '\n')
++	_, err = o.out.Write(b)
++	o.sampleBuffer = b
++	return err
+--- a/internal/output/json/json_test.go
++++ b/internal/output/json/json_test.go
+@@ -6,0 +7 @@
++	stdjson "encoding/json"
+@@ -7,0 +9,2 @@
++	"math"
++	"strconv"
+@@ -18,0 +22,119 @@
++
++func TestOptionalAuxiliaryTimingsPreserveCapacitySamples(t *testing.T) {
++	r := metrics.NewRegistry()
++	auxiliary := []string{"http_req_blocked", "http_req_connecting", "http_req_tls_handshaking",
++		"http_req_sending", "http_req_waiting", "http_req_receiving"}
++	retained := []string{"cap_iter_begin", "cap_iter_end", "cap_iter_ms", "cap_measure_ms",
++		"cap_window_start_ms", "cap_window_end_ms", "cap_measure_ops", "cap_measure_errors",
++		"dropped_iterations", "iterations", "iteration_duration", "http_reqs", "http_req_failed",
++		"http_req_duration", "data_sent", "data_received", "vus", "vus_max", "unknown_metric"}
++	for _, enabled := range []bool{false, true} {
++		flag := "0"
++		if enabled {
++			flag = "1"
++		}
++		output, err := New(output.Params{Logger: testutils.NewLogger(t),
++			Environment: map[string]string{"K6_JSON_OMIT_UNUSED_HTTP_TIMINGS": flag}})
++		require.NoError(t, err)
++		o := output.(*Output)
++		for _, name := range append(auxiliary, retained...) {
++			m, err := r.NewMetric(name, metrics.Trend)
++			require.NoError(t, err)
++			sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m,
++				Tags: r.RootTagSet().With("cohort", "measure")}, Time: time.Now(), Value: 123}
++			var got, stock bytes.Buffer
++			o.out = &got
++			enc := stdjson.NewEncoder(&got)
++			require.NoError(t, o.writeSample(sample, enc))
++			omit := false
++			for _, aux := range auxiliary {
++				omit = omit || name == aux
++			}
++			if enabled && omit {
++				assert.Empty(t, got.Bytes(), name)
++			} else {
++				require.NoError(t, stdjson.NewEncoder(&stock).Encode(wrapSample(sample)))
++				assert.JSONEq(t, stock.String(), got.String(), name)
++			}
++			// Metadata and invalid samples keep stock error handling even for
++			// auxiliary metrics, rather than silently hiding malformed output.
++			sample.Metadata = map[string]string{"detail": "retained"}
++			got.Reset()
++			stock.Reset()
++			require.NoError(t, o.writeSample(sample, enc))
++			require.NoError(t, stdjson.NewEncoder(&stock).Encode(wrapSample(sample)))
++			assert.JSONEq(t, stock.String(), got.String())
++			sample.Metadata = nil
++			for _, invalid := range []float64{math.NaN(), math.Inf(1)} {
++				sample.Value = invalid
++				got.Reset()
++				assert.Error(t, o.writeSample(sample, enc))
++				assert.Empty(t, got.Bytes())
++			}
++			sample.Value = 123
++			sample.Time = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
++			assert.Error(t, o.writeSample(sample, enc))
++		}
++	}
++}
++
++func TestSampleWriterMatchesStockEnvelope(t *testing.T) {
++	r := metrics.NewRegistry()
++	m, err := r.NewMetric("fixture_metric", metrics.Trend)
++	require.NoError(t, err)
++	tags := r.RootTagSet().With("escaped", "<>&\"\\\n雪").With("cohort", "measure")
++	values := []float64{0, math.Copysign(0, -1), 1.25, 1e-10, 1e22, math.MaxFloat64, math.SmallestNonzeroFloat64}
++	var optimized bytes.Buffer
++	o := &Output{out: &optimized}
++	enc := stdjson.NewEncoder(&optimized)
++	enc.SetEscapeHTML(false)
++	for _, value := range values {
++		for _, metadata := range []map[string]string{nil, {}, {"detail": "<>&\"\\\n雪"}} {
++			for _, tagSet := range []*metrics.TagSet{nil, r.RootTagSet(), tags} {
++				sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m, Tags: tagSet},
++					Time:  time.Date(2026, 9, 28, 10, 11, 12, 123456789, time.FixedZone("fixture", 8*3600)),
++					Value: value, Metadata: metadata}
++				var stock bytes.Buffer
++				stockEncoder := stdjson.NewEncoder(&stock)
++				stockEncoder.SetEscapeHTML(false)
++				require.NoError(t, stockEncoder.Encode(wrapSample(sample)))
++				optimized.Reset()
++				require.NoError(t, o.writeSample(sample, enc))
++				assert.JSONEq(t, stock.String(), optimized.String())
++				assert.Equal(t, byte('\n'), optimized.Bytes()[optimized.Len()-1])
++			}
++		}
++	}
++	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
++		sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m, Tags: tags}, Time: time.Now(), Value: value}
++		optimized.Reset()
++		assert.Error(t, o.writeSample(sample, enc))
++		assert.Empty(t, optimized.Bytes())
++	}
++	sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m, Tags: tags}, Time: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}
++	optimized.Reset()
++	assert.Error(t, o.writeSample(sample, enc))
++	assert.Empty(t, optimized.Bytes())
++}
++
++func TestSampleWriterBoundsImmutableTagCache(t *testing.T) {
++	r := metrics.NewRegistry()
++	m, err := r.NewMetric("fixture_metric", metrics.Counter)
++	require.NoError(t, err)
++	var output bytes.Buffer
++	o := &Output{out: &output}
++	enc := stdjson.NewEncoder(&output)
++	for i := 0; i < 4200; i++ {
++		sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m,
++			Tags: r.RootTagSet().With("dynamic", strconv.Itoa(i))}, Time: time.Now(), Value: float64(i)}
++		output.Reset()
++		require.NoError(t, o.writeSample(sample, enc))
++		// TagSet cannot be unmarshaled outside its registry; inspect generic JSON.
++		var fields map[string]interface{}
++		require.NoError(t, stdjson.Unmarshal(output.Bytes(), &fields))
++		assert.Equal(t, float64(i), fields["data"].(map[string]interface{})["value"])
++		assert.Equal(t, strconv.Itoa(i), fields["data"].(map[string]interface{})["tags"].(map[string]interface{})["dynamic"])
++	}
++	assert.Len(t, o.tagJSON, 4096)
++	assert.Len(t, o.metricJSON, 1)
++}
+@@ -227,0 +350,36 @@
++
++func TestPeriodicFlushDrainsBufferedStdout(t *testing.T) {
++	r := metrics.NewRegistry()
++	m, err := r.NewMetric("vus", metrics.Gauge)
++	require.NoError(t, err)
++	out, err := New(output.Params{Logger: testutils.NewLogger(t)})
++	require.NoError(t, err)
++	o := out.(*Output)
++	var stdout bytes.Buffer
++	o.out = bufio.NewWriter(&stdout)
++	for i := 0; i < 2; i++ {
++		sample := metrics.Sample{TimeSeries: metrics.TimeSeries{Metric: m,
++			Tags: r.RootTagSet()}, Time: time.Now(), Value: float64(i)}
++		o.AddMetricSamples([]metrics.SampleContainer{metrics.Samples{sample}})
++		o.flushMetrics()
++		// A sparse periodic batch must arrive before another batch or Stop.
++		require.NotEmpty(t, stdout.Bytes())
++		require.Less(t, stdout.Len(), 4096)
++		scanner := bufio.NewScanner(bytes.NewReader(stdout.Bytes()))
++		var points []string
++		for scanner.Scan() {
++			var frame struct {
++				Type string `json:"type"`
++			}
++			require.NoError(t, stdjson.Unmarshal(scanner.Bytes(), &frame))
++			if frame.Type == "Point" {
++				points = append(points, scanner.Text())
++			}
++		}
++		require.NoError(t, scanner.Err())
++		require.Len(t, points, i+1)
++		expected, err := stdjson.Marshal(wrapSample(sample))
++		require.NoError(t, err)
++		assert.JSONEq(t, string(expected), points[i])
++	}
++}

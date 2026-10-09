@@ -222,7 +222,7 @@ fn valid_dcql() -> DcqlQuery {
             id: "pid".to_owned(),
             format: CredentialFormat::SdJwtVc,
             multiple: false,
-            meta: None,
+            meta: Some(json!({})),
             claims: None,
             claim_sets: None,
             trusted_authorities: None,
@@ -396,10 +396,10 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
     let unavailable_request = disabled
         .request(Uuid::now_v7(), None)
         .await
-        .expect_err("request lookup must report unavailable storage");
+        .expect_err("request must reject disabled admission before storage");
     assert_eq!(
         (unavailable_request.status, unavailable_request.error),
-        (503, "server_error")
+        (503, "temporarily_unavailable")
     );
     let unavailable_response = disabled
         .respond(
@@ -412,18 +412,18 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
             }),
         )
         .await
-        .expect_err("response lookup must report unavailable storage");
+        .expect_err("response must reject disabled admission before storage");
     assert_eq!(
         (unavailable_response.status, unavailable_response.error),
-        (503, "server_error")
+        (503, "temporarily_unavailable")
     );
     let unavailable_result = disabled
         .result(Uuid::now_v7())
         .await
-        .expect_err("result lookup must report unavailable storage");
+        .expect_err("result must reject disabled admission before storage");
     assert_eq!(
         (unavailable_result.status, unavailable_result.error),
-        (503, "server_error")
+        (503, "temporarily_unavailable")
     );
 }
 
@@ -450,7 +450,7 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
     // current domain serializer. Existing JTI records must remain retryable.
     let legacy = nazo_operator_protocol::Openid4vpNormalizedCreateRequest {
         wallet_authorization_endpoint: url_query_input.wallet_authorization_endpoint.clone(),
-        dcql_query: json!({"credentials": [{"id": "pid", "format": "dc+sd-jwt"}]}),
+        dcql_query: json!({"credentials": [{"id": "pid", "format": "dc+sd-jwt", "meta": {}}]}),
         haip: false,
         client_id_prefix: "redirect_uri".to_owned(),
         request_method: "url_query".to_owned(),
@@ -721,4 +721,176 @@ fn canonicalize_controller_start_wire() {
     let (_, hash) =
         nazo_operator_protocol::canonical_openid4vp_normalized_create_request(&normalized).unwrap();
     std::fs::write(std::env::var("NAZO_VP_HASH_OUTPUT").unwrap(), hash).unwrap();
+}
+
+#[tokio::test]
+async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_rejected() {
+    let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
+        return;
+    };
+    let pool = nazo_postgres::create_pool(database_url, 2).unwrap();
+    let (crypto, keyset) = fixture_crypto_with_dns(true).await;
+    let operations = operations_with_crypto(pool.clone(), crypto, true).await;
+    let supported_input = create_input(
+        Some("request_uri_signed_get"),
+        Some("direct_post"),
+        Some("x509_san_dns"),
+        false,
+    );
+    let supported = operations
+        .create(supported_input)
+        .await
+        .expect("supported request is committed and published");
+    let published = operations
+        .request(supported.transaction_id, None)
+        .await
+        .unwrap();
+    assert!(matches!(
+        published,
+        PresentationResponseBody::RequestObject(_)
+    ));
+    let stored = operations
+        .store
+        .request(supported.transaction_id, chrono::Utc::now())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stored.request.validate().is_ok());
+
+    let mut old_input = create_input(
+        Some("request_uri_signed_get"),
+        Some("direct_post"),
+        Some("x509_san_dns"),
+        false,
+    );
+    old_input.dcql_query.credentials[0].require_cryptographic_holder_binding = Some(false);
+    let error = operations
+        .create(old_input.clone())
+        .await
+        .expect_err("new unsupported profile is rejected");
+    assert_eq!((error.status, error.error), (400, "invalid_request"));
+    #[derive(diesel::QueryableByName)]
+    struct Count {
+        #[diesel(sql_type=diesel::sql_types::BigInt)]
+        count: i64,
+    }
+    let mut connection = pool.get().await.unwrap();
+    let count=sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vp_transactions WHERE create_request_jti = $1")
+        .bind::<diesel::sql_types::Text,_>(&old_input.create_request_jti).get_result::<Count>(&mut connection).await.unwrap();
+    assert_eq!(count.count, 0, "rejected requests are not persisted");
+    drop(connection);
+
+    // Simulate a pre-upgrade writer with the real store and signing owner.
+    // The request object contains the same unsupported query as its stored DTO.
+    let mut historical = stored;
+    let original_id = historical.id;
+    historical.id = Uuid::now_v7();
+    historical.request.state = Uuid::now_v7().to_string();
+    historical.request.dcql_query = old_input.dcql_query.clone();
+    historical.request_uri = historical
+        .request_uri
+        .map(|uri| uri.replace(&original_id.to_string(), &historical.id.to_string()));
+    historical.created_at = chrono::Utc::now();
+    historical.expires_at = historical.created_at + chrono::Duration::seconds(300);
+    let original_object = historical.request_object.as_ref().unwrap();
+    let header = nazo_crypto::jwt::decode_header(original_object).unwrap();
+    let mut claims = nazo_digital_credentials::decode_compact_jwt(original_object)
+        .unwrap()
+        .claims;
+    claims["dcql_query"] = serde_json::to_value(&historical.request.dcql_query).unwrap();
+    claims["state"] = json!(historical.request.state);
+    claims["jti"] = json!(Uuid::now_v7());
+    claims["iat"] = json!(historical.created_at.timestamp());
+    claims["exp"] = json!(historical.expires_at.timestamp());
+    let signed = keyset
+        .prepare_openid4vc_signing()
+        .unwrap()
+        .encode_jwt(SigningPurpose::PresentationRequest, &header, &claims)
+        .await
+        .unwrap();
+    historical.request_object = Some(signed);
+    let normalized = nazo_operator_protocol::Openid4vpNormalizedCreateRequest {
+        wallet_authorization_endpoint: old_input.wallet_authorization_endpoint.clone(),
+        dcql_query: serde_json::to_value(&old_input.dcql_query).unwrap(),
+        haip: false,
+        client_id_prefix: "x509_san_dns".to_owned(),
+        request_method: "request_uri_signed_get".to_owned(),
+        response_mode: "direct_post".to_owned(),
+        transaction_data: None,
+        openid4vc_trust_policy_resource_id: None,
+        openid4vc_trust_policy_digest: None,
+    };
+    let (canonical, sha256) =
+        nazo_operator_protocol::canonical_openid4vp_normalized_create_request(&normalized).unwrap();
+    let outcome = operations
+        .store
+        .create(
+            &historical,
+            nazo_openid4vp::PresentationCreateIdempotency {
+                request_jti: &old_input.create_request_jti,
+                request_sha256: &sha256,
+                canonical_request: &canonical,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        outcome,
+        nazo_openid4vp::PresentationCreateOutcome::Created
+    ));
+    let get = operations
+        .request(historical.id, None)
+        .await
+        .expect_err("historical unsupported request objects are not republished");
+    assert_eq!((get.status, get.error), (400, "invalid_request"));
+    let replay = operations
+        .create(old_input)
+        .await
+        .expect_err("existing create replay also checks the stored profile");
+    assert_eq!((replay.status, replay.error), (400, "invalid_request"));
+    let response = operations
+        .respond(
+            historical.id,
+            PresentationResponseInput::DirectPost(AuthorizationResponse {
+                vp_token: None,
+                state: Some(historical.request.state.clone()),
+                error: None,
+                error_description: None,
+            }),
+        )
+        .await
+        .expect_err("unsupported retained response transactions are rejected before verification");
+    assert_eq!((response.status, response.error), (400, "invalid_request"));
+    let mut connection = pool.get().await.unwrap();
+    sql_query("DELETE FROM openid4vp_transactions WHERE id IN ($1,$2)")
+        .bind::<diesel::sql_types::Uuid, _>(supported.transaction_id)
+        .bind::<diesel::sql_types::Uuid, _>(historical.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn typed_presentation_create_rejects_empty_sets_and_malformed_metadata_before_storage() {
+    let enabled = operations(invalid_pool(), true).await;
+    for query in [
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{}}],"credential_sets":[]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":"required-type"}}]}),
+        json!({"credentials":[{"id":"pid","format":"mso_mdoc","meta":{"doctype_value":["required-doctype"]}}]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":17}]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt"}]}),
+    ] {
+        let mut request = create_input(
+            Some("url_query"),
+            Some("direct_post"),
+            Some("redirect_uri"),
+            false,
+        );
+        request.dcql_query = serde_json::from_value(query).unwrap();
+        let error = enabled.create(request).await.unwrap_err();
+        assert_eq!(
+            (error.status, error.error, error.description),
+            (400, "invalid_request", "DCQL query is invalid.")
+        );
+    }
 }

@@ -26,12 +26,14 @@ tracked in budget.json and capped (failed attempts count against it).
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shlex
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------
@@ -122,6 +124,143 @@ static int parse_list(const char *s, cpu_set_t *set) {
     return 0;
 }
 
+/* A single-process, bounded service-tree snapshot. No cmdline/environ reads. */
+#define SNAP_MAX_PROCS 4096
+struct snap_proc { long pid, parent; unsigned long long start; int service; };
+struct snap_task {
+    long pid, tid, parent, uid;
+    char name[64], mask[1024];
+};
+
+static int numeric_name(const char *name) {
+    if (!*name) return 0;
+    for (; *name; name++) if (*name < '0' || *name > '9') return 0;
+    return 1;
+}
+
+static int read_stat(const char *path, long *parent, unsigned long long *start) {
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    char line[4096];
+    if (!fgets(line, sizeof line, f)) { fclose(f); errno = EIO; return -1; }
+    fclose(f);
+    char *last = strrchr(line, ')');
+    if (!last || last[1] != ' ') { errno = EINVAL; return -1; }
+    char *save = NULL, *token = strtok_r(last + 2, " ", &save);
+    int got_parent = 0, got_start = 0;
+    for (int field = 3; token && field <= 22; field++, token = strtok_r(NULL, " ", &save)) {
+        char *end;
+        if (field == 4) { *parent = strtol(token, &end, 10); got_parent = *end == '\0'; }
+        if (field == 22) { *start = strtoull(token, &end, 10); got_start = *end == '\0'; }
+    }
+    if (!got_parent || !got_start) { errno = EINVAL; return -1; }
+    return 0;
+}
+
+static int read_task_status(const char *path, struct snap_task *task) {
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    char line[2048]; int fields = 0;
+    memset(task, 0, sizeof *task);
+    while (fgets(line, sizeof line, f)) {
+        if (sscanf(line, "Name: %63s", task->name) == 1) fields |= 1;
+        if (sscanf(line, "Tgid: %ld", &task->pid) == 1) fields |= 2;
+        if (sscanf(line, "Pid: %ld", &task->tid) == 1) fields |= 4;
+        if (sscanf(line, "PPid: %ld", &task->parent) == 1) fields |= 8;
+        if (sscanf(line, "Uid: %ld", &task->uid) == 1) fields |= 16;
+        if (sscanf(line, "Cpus_allowed_list: %1023s", task->mask) == 1) fields |= 32;
+    }
+    int failed = ferror(f); fclose(f);
+    if (failed || fields != 63) { errno = failed ? EIO : EINVAL; return -1; }
+    return 0;
+}
+
+/* Retry file reads once. A disappearing directory is confirmed twice; a
+ * still-present or unreadable directory is incomplete evidence, never PASS. */
+static int snapshot_failure(const char *directory, long pid, long tid, int error) {
+    int gone = 1;
+    for (int i = 0; i < 2; i++) {
+        if (access(directory, F_OK) == 0 || errno != ENOENT) gone = 0;
+    }
+    printf("%s %ld %ld %d\n", gone ? "gone" : "unread", pid, tid, error);
+    return !gone;
+}
+
+static int snapshot_services(void) {
+    struct snap_proc *procs = calloc(SNAP_MAX_PROCS, sizeof *procs);
+    if (!procs) { puts("snapshot_complete 0"); return 1; }
+    printf("inspector %ld\n", (long)getpid());
+    DIR *dir = opendir("/proc");
+    if (!dir) { free(procs); puts("snapshot_complete 0"); return 1; }
+    struct dirent *entry; size_t used = 0; int failures = 0, root = 0;
+    for (;;) {
+        errno = 0; entry = readdir(dir);
+        if (!entry) { if (errno) { failures++; printf("unread 0 0 %d\n", errno); } break; }
+        if (!numeric_name(entry->d_name)) continue;
+        long pid = strtol(entry->d_name, NULL, 10);
+        if (pid == (long)getpid()) continue;
+        char path[128], process_dir[64];
+        snprintf(process_dir, sizeof process_dir, "/proc/%ld", pid);
+        snprintf(path, sizeof path, "%s/stat", process_dir);
+        long parent; unsigned long long start;
+        int ok = -1;
+        for (int attempt = 0; attempt < 2 && ok; attempt++) ok = read_stat(path, &parent, &start);
+        if (ok) { failures += snapshot_failure(process_dir, pid, pid, errno); continue; }
+        if (used == SNAP_MAX_PROCS) { failures++; puts("unread 0 0 7"); break; }
+        procs[used++] = (struct snap_proc){pid, parent, start, pid == 1};
+        root |= pid == 1;
+    }
+    closedir(dir);
+    int changed;
+    do {
+        changed = 0;
+        for (size_t i = 0; i < used; i++) if (!procs[i].service) {
+            for (size_t j = 0; j < used; j++) if (procs[j].service && procs[i].parent == procs[j].pid) {
+                procs[i].service = 1; changed = 1; break;
+            }
+        }
+    } while (changed);
+    for (size_t i = 0; i < used; i++) {
+        if (!procs[i].service) continue;
+        char task_dir[128]; snprintf(task_dir, sizeof task_dir, "/proc/%ld/task", procs[i].pid);
+        DIR *tasks = opendir(task_dir);
+        if (!tasks) { failures += snapshot_failure(task_dir, procs[i].pid, procs[i].pid, errno); continue; }
+        for (;;) {
+            errno = 0; entry = readdir(tasks);
+            if (!entry) { if (errno) { failures++; printf("unread %ld 0 %d\n", procs[i].pid, errno); } break; }
+            if (!numeric_name(entry->d_name)) continue;
+            long tid = strtol(entry->d_name, NULL, 10);
+            char directory[160], status[180], stat[180];
+            snprintf(directory, sizeof directory, "%s/%ld", task_dir, tid);
+            snprintf(status, sizeof status, "%s/status", directory);
+            snprintf(stat, sizeof stat, "%s/stat", directory);
+            struct snap_task task; long parent; unsigned long long start;
+            int ok = -1;
+            for (int attempt = 0; attempt < 2 && ok; attempt++) {
+                ok = read_task_status(status, &task);
+                if (!ok) ok = read_stat(stat, &parent, &start);
+                if (!ok && (task.pid != procs[i].pid || task.tid != tid || parent != task.parent)) {
+                    errno = EINVAL; ok = -1;
+                }
+            }
+            if (ok) { failures += snapshot_failure(directory, procs[i].pid, tid, errno); continue; }
+            printf("%ld %ld %ld %ld %s %s %llu\n", task.pid, task.tid, task.parent,
+                   task.uid, task.mask, task.name, start);
+        }
+        closedir(tasks);
+        char stat[128], directory[64]; long parent; unsigned long long start;
+        snprintf(directory, sizeof directory, "/proc/%ld", procs[i].pid);
+        snprintf(stat, sizeof stat, "%s/stat", directory);
+        int ok = read_stat(stat, &parent, &start);
+        if (ok) failures += snapshot_failure(directory, procs[i].pid, procs[i].pid, errno);
+        else if (start != procs[i].start) { failures++; printf("unread %ld %ld 22\n", procs[i].pid, procs[i].pid); }
+    }
+    free(procs);
+    int complete = root && !failures;
+    printf("snapshot_complete %d\n", complete);
+    return complete ? 0 : 1;
+}
+
 static long pin_tree(const char *pid, cpu_set_t *set) {
     char dir[64];
     snprintf(dir, sizeof dir, "/proc/%s/task", pid);
@@ -144,11 +283,12 @@ static long pin_tree(const char *pid, cpu_set_t *set) {
  * pinset CPULIST --tree PID   retarget every thread of a process
  * pinset CPULIST --all        retarget every task visible in this pidns
  * pinset CPULIST --show PID   print Cpus_allowed_list of PID
+ * pinset CPULIST --snapshot   collect a complete service-tree task snapshot
  * pinset CPULIST CMD [ARGS]   pin self, then exec
  */
 int main(int argc, char **argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: pinset CPULIST (--pid TID|--tree PID|--all|--show PID|CMD [ARGS...])\n");
+        fprintf(stderr, "usage: pinset CPULIST (--pid TID|--tree PID|--all|--show PID|--snapshot|CMD [ARGS...])\n");
         return 64;
     }
     cpu_set_t set;
@@ -157,6 +297,8 @@ int main(int argc, char **argv) {
         return 64;
     }
     if (argv[2][0] == '-') {
+        if (strcmp(argv[2], "--snapshot") == 0 && argc == 3)
+            return snapshot_services();
         if (strcmp(argv[2], "--all") == 0 && argc == 3) {
             DIR *d = opendir("/proc");
             if (!d) { perror("opendir"); return 1; }
@@ -245,6 +387,40 @@ def psql(sql: str, check: bool = True) -> str:
               "-U", "postgres", "-d", "oauth", "-c", sql,
               check=check, timeout=60)
     return proc.stdout.strip()
+
+
+# Schema is fixed within a point. Scope the probe to its database target and
+# invalidate it at stack lifecycle boundaries, including a reused project.
+_AUDIT_SCHEMA_CACHE: dict[tuple[str, str, str], bool] = {}
+
+
+def reset_audit_schema_cache() -> None:
+    _AUDIT_SCHEMA_CACHE.clear()
+
+
+def audit_event_predicates() -> tuple[str, str]:
+    key = (PROJECT, POSTGRES, "oauth")
+    if key not in _AUDIT_SCHEMA_CACHE:
+        result = psql(
+            "SELECT EXISTS (SELECT 1 FROM pg_attribute"
+            " WHERE attrelid = 'public.security_audit_events'::regclass"
+            " AND attname = 'exported_at' AND attnum > 0 AND NOT attisdropped)")
+        if result not in ("t", "f"):
+            raise ValueError(f"invalid audit schema probe result: {result!r}")
+        _AUDIT_SCHEMA_CACHE[key] = result == "t"
+    if _AUDIT_SCHEMA_CACHE[key]:
+        return "exported_at IS NULL", "exported_at IS NOT NULL"
+    return "TRUE", "FALSE"
+
+
+def audit_event_counts() -> dict:
+    """Boundary-only totals; ACKed rows are retained committed decisions."""
+    _, exported = audit_event_predicates()
+    row = psql(
+        "SELECT count(*), count(*) FILTER (WHERE " + exported + ")"
+        " FROM security_audit_events")
+    total, exported_retained = row.split("|")
+    return {"total": int(total), "exported_retained": int(exported_retained)}
 
 
 def psql_file(path: str, out: Path, extra: list[str] | None = None) -> None:
@@ -363,47 +539,123 @@ def ensure_pinset(container: str) -> None:
     dcx(container, ["chmod", "+x", "/tmp/pinset"], check=False)
 
 
-def container_uid(container: str) -> str:
-    """UID that owns PID 1; docker exec must match it because default
-    containers lack CAP_SYS_NICE (sched_setaffinity on other uids -> EPERM)."""
-    proc = dcx(container, ["sh", "-c",
-                           "awk '/^Uid:/{print $2}' /proc/1/status"],
-               check=False)
-    return proc.stdout.strip() or "0"
+def container_task_snapshot(container: str) -> dict:
+    """Read service tasks in one native process; retain incomplete evidence.
+
+    pin_container/ensure_pinset must install the source-bound helper first.
+    The helper retries reads once and confirms vanished task directories;
+    unreadable still-present tasks and malformed output fail closed.
+    """
+    started = time.monotonic()
+    proc = dcx(container, ["/tmp/pinset", "0", "--snapshot"], check=False)
+    report = {"tasks": [], "complete": False, "read_errors": [],
+              "confirmed_gone": [], "collector_exit": proc.returncode,
+              "round_trip_ms": round((time.monotonic() - started) * 1000, 4)}
+    lines = (proc.stdout or "").splitlines()
+    if not lines:
+        report["read_errors"].append({"kind": "missing_collector_output"})
+        return report
+    try:
+        tag, inspector = lines[0].split()
+        if tag != "inspector":
+            raise ValueError("collector_header")
+        inspector = int(inspector)
+        footer = None
+        for line in lines[1:]:
+            if line.startswith(("gone ", "unread ")):
+                kind, pid, tid, error = line.split()
+                item = {"pid": int(pid), "tid": int(tid), "errno": int(error)}
+                report["confirmed_gone" if kind == "gone" else "read_errors"].append(item)
+            elif line.startswith("snapshot_complete "):
+                if footer is not None:
+                    raise ValueError("duplicate_collector_footer")
+                if line not in ("snapshot_complete 0", "snapshot_complete 1"):
+                    raise ValueError("malformed_collector_footer")
+                footer = line == "snapshot_complete 1"
+            else:
+                if footer is not None:
+                    raise ValueError("data_after_collector_footer")
+                pid, tid, ppid, uid, allowed, name, start = line.split()
+                parse_cpu_list(allowed)
+                report["tasks"].append({"pid": int(pid), "tid": int(tid),
+                    "ppid": int(ppid), "uid": str(int(uid)), "allowed": allowed,
+                    "name": name, "starttime_ticks": int(start)})
+        if footer is None:
+            report["read_errors"].append({"kind": "missing_collector_completion"})
+        excluded = {inspector}
+        services = {1}
+        for _ in range(len(report["tasks"])):
+            old = (len(excluded), len(services))
+            excluded.update(t["pid"] for t in report["tasks"] if t["ppid"] in excluded)
+            services.update(t["pid"] for t in report["tasks"] if t["ppid"] in services)
+            if old == (len(excluded), len(services)):
+                break
+        report["tasks"] = [t for t in report["tasks"] if t["pid"] in services - excluded]
+        report["complete"] = bool(footer and not proc.returncode and not report["read_errors"])
+    except (ValueError, TypeError):
+        report["read_errors"].append({"kind": "malformed_collector_output"})
+    return report
+
+
+def container_tasks(container: str) -> list[dict]:
+    """Only a complete snapshot can establish the visible service masks."""
+    report = container_task_snapshot(container)
+    return report["tasks"] if report["complete"] else []
+
+
+def _tasks_pinned(tasks: list[dict], cpus: str, role: str | None = None) -> bool:
+    try:
+        requested = parse_cpu_list(cpus)
+        return (any(t["pid"] == t["tid"] == 1 for t in tasks)
+                and (role is None or any(t.get("name") == role for t in tasks))
+                and all(parse_cpu_list(t["allowed"]) == requested for t in tasks))
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def pin_container(container: str, cpus: str) -> dict:
     ensure_pinset(container)
-    uid = container_uid(container)
-    # --all is best-effort: a stray proc owned by another uid cannot be
-    # retargeted without CAP_SYS_NICE; the masks audit + verify_pin on
-    # PID 1 record the effective coverage instead of aborting the point.
-    out = dc("exec", "-u", uid, container,
-             "/tmp/pinset", cpus, "--all", check=False)
-    show = dc("exec", "-u", uid, container,
-              "/tmp/pinset", cpus, "--show", "1", check=False)
-    masks = dc("exec", "-u", uid, container, "sh", "-c",
-               "for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null); "
-               "a=$(awk '/Cpus_allowed_list/{print $2}' $p/status 2>/dev/null); "
-               "[ -n \"$a\" ] && echo \"$p $c $a\"; done",
-               check=False)
+    before_snapshot = container_task_snapshot(container)
+    before = before_snapshot["tasks"] if before_snapshot["complete"] else []
+    owners: dict[str, set[int]] = {}
+    for task in before:
+        owners.setdefault(task["uid"], set()).add(task["pid"])
+    attempts = []
+    # PID 1 can be root-owned tini while the daemon uses another UID.
+    # Match each process owner to retarget its threads without CAP_SYS_NICE.
+    for uid, pids in sorted(owners.items()):
+        out = dc("exec", "-u", uid, container, "sh", "-c",
+                 'rc=0; cpus=$1; shift; for pid; do '
+                 '/tmp/pinset "$cpus" --tree "$pid" || rc=1; '
+                 'done; exit "$rc"', "pin-services", cpus,
+                 *[str(pid) for pid in sorted(pids)], check=False)
+        attempts.append({"uid": uid, "pids": sorted(pids),
+                         "returncode": out.returncode,
+                         "stdout": out.stdout.strip()})
+    after_snapshot = container_task_snapshot(container)
+    after = after_snapshot["tasks"] if after_snapshot["complete"] else []
+    leader = next((t for t in after if t["pid"] == t["tid"] == 1), {})
     return {
         "container": container,
-        "uid": uid,
+        "uid": leader.get("uid"),
         "requested": cpus,
-        "pin_rc": out.returncode,
-        "pin_output": out.stdout.strip(),
-        "pid1_allowed": (show.stdout or "").strip(),
-        "proc_masks": masks.stdout.strip().splitlines(),
+        "pin_rc": max((a["returncode"] for a in attempts), default=1),
+        "pin_output": "\n".join(a["stdout"] for a in attempts),
+        "pin_attempts": attempts,
+        "pid1_allowed": ("Cpus_allowed_list: " + leader["allowed"]
+                         if leader else ""),
+        "proc_masks": [f"/proc/{t['pid']} {t['name']} {t['allowed']}"
+                       for t in after if t["pid"] == t["tid"]],
+        "task_masks": after,
+        "snapshot": {k: v for k, v in after_snapshot.items() if k != "tasks"},
+        "before_snapshot": {k: v for k, v in before_snapshot.items() if k != "tasks"},
+        "verified": _tasks_pinned(after, cpus),
     }
 
 
-def verify_pin(container: str, cpus: str) -> bool:
-    """PID 1's allowed list must equal the requested set exactly."""
-    show = dc("exec", "-u", container_uid(container), container,
-              "/tmp/pinset", cpus, "--show", "1", check=False)
-    m = re.search(r"Cpus_allowed_list:\s*(\S+)", show.stdout or "")
-    return bool(m) and parse_cpu_list(m.group(1)) == parse_cpu_list(cpus)
+def verify_pin(container: str, cpus: str, role: str | None = None) -> bool:
+    """Require the service root, descendants and all threads to match."""
+    return _tasks_pinned(container_tasks(container), cpus, role)
 
 
 # ---------------------------------------------------------------------
@@ -520,12 +772,14 @@ def stack_down() -> None:
     resources (other sis runs, scratch databases, historical soak
     projects, the shared nazoauth-perf project) are never touched —
     not by name prefix, not by prune."""
+    reset_audit_schema_cache()
     compose("down", "-v", "--remove-orphans", check=False)
     _remove_recorded_extras()
 
 
 def stack_up(point: dict) -> dict:
     """Fresh stack: tag app image, down -v, up, pin, audit pair, seed-ready."""
+    reset_audit_schema_cache()
     evidence: dict = {"point": point["name"], "image": point["image"]}
     # Tag the point's app image into every compose service name that
     # consumes perf-runtime, then bring the stack up from scratch.
@@ -551,8 +805,12 @@ def stack_up(point: dict) -> dict:
         "valkey": pin_container(VALKEY, infra_cpus),
         "keyset": pin_container(KEYSET, infra_cpus),
     }
-    evidence["pin"]["app_verified"] = verify_pin(APP, app_cpus)
-    evidence["pin"]["pg_verified"] = verify_pin(POSTGRES, infra_cpus)
+    evidence["pin"]["app_verified"] = verify_pin(APP, app_cpus, "nazoauth")
+    evidence["pin"]["pg_verified"] = verify_pin(POSTGRES, infra_cpus, "postgres")
+    evidence["pin"]["valkey_verified"] = verify_pin(VALKEY, infra_cpus, "valkey-server")
+    if not all(evidence["pin"][key] for key in
+               ("app_verified", "pg_verified", "valkey_verified")):
+        raise RuntimeError("CPU_AFFINITY_INVALID: service threads exceed requested sets")
 
     depid = ""
     for _ in range(30):
@@ -588,6 +846,7 @@ def audit_pair_up(run_id: str, depid: str) -> dict:
         "public.nazo_security_audit_batch_members(),"
         "public.nazo_claim_security_audit_pending(BIGINT),"
         "public.nazo_open_security_audit_batch(BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),"
+        "public.nazo_finalize_security_audit_claim(BIGINT,BYTEA,UUID[],BYTEA[],BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),"
         "public.nazo_reclaim_security_audit_batch(BYTEA,INTEGER),"
         "public.nazo_append_security_audit_chain(BIGINT,BYTEA,UUID[],BYTEA[]),"
         "public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),"
@@ -708,7 +967,7 @@ def start_samplers(run_id: str, out_host: str, tick: int = 2) -> dict:
     infra = format_cpu_list(CURRENT_POINT["infra_cpus"])
     pin_container(sampler, infra)
     pin_container(detail, infra)
-    return {"sampler": sampler, "proc_detail": detail}
+    return {"sampler": sampler, "proc_detail": detail, "interval_s": tick}
 
 
 def stop_samplers(run_id: str) -> None:
@@ -722,17 +981,34 @@ def stop_samplers(run_id: str) -> None:
 
 WORKSPACE_FILES = (
     "docker-compose.perf.yml",
+    "Containerfile",
+    "perf/env.yaml",
+    "perf/runner.py",
+    "perf/seed.py",
+    "perf/k6/oauth.js",
+    "perf/k6/measurement_clock.js",
+    "perf/k6/subject_state.js",
+    "perf/runner/Containerfile",
+    "perf/keyset/Containerfile",
+    "perf/audit-anchor-receiver/Containerfile",
+    "perf/audit-anchor-receiver/Cargo.toml",
+    "perf/audit-anchor-receiver/src/main.rs",
+    "perf/audit-anchor-receiver/src/store.rs",
+    "perf/audit-anchor-receiver/src/wire.rs",
+    "scripts/ensure_runtime_keyset.py",
     "perf/tools/single_instance_scaling.py",
+    "perf/tools/point_runner.py",
+    "perf/tools/pool_size_ab.py",
+    "perf/tools/capacity_search.py",
     "perf/tools/soak_sampler.py",
     "perf/tools/proc_detail_sampler.py",
     "perf/tools/residency_observer.py",
     "perf/tools/checkpoint_analyze.py",
-    "perf/tools/pool_size_ab.py",
     "perf/tools/stability_analyze.py",
     "perf/tools/vkledger.py",
     "perf/tools/ledger.sql",
-    "perf/runner.py",
-    "perf/seed.py",
+    "perf/tools/ledger_check.py",
+    "perf/tools/audit_anchor_fault_regression.sh",
 )
 
 
@@ -762,8 +1038,21 @@ def workspace_provenance() -> dict:
     head = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
         capture_output=True, text=True, check=False).stdout.strip()
+    # Whole-tree harness hash: the runner image bakes all of perf/ via
+    # `COPY perf /perf`, so provenance binds the tree, not only the files
+    # this driver happens to mount today.
+    import hashlib
+    tree = hashlib.sha256()
+    perf_root = root / "perf"
+    if perf_root.is_dir():
+        for f in sorted(perf_root.rglob("*")):
+            if f.is_file():
+                tree.update(str(f.relative_to(perf_root)).encode())
+                tree.update(hashlib.sha256(f.read_bytes()).digest())
+    tree_sha = tree.hexdigest()
     return {"workspace_realpath": str(root), "git_head": head or None,
             "file_sha256": files, "missing": missing,
+            "perf_tree_sha256": tree_sha,
             "ok": not missing}
 
 
@@ -859,40 +1148,7 @@ def sampler_health(run_id: str, out_dir: Path,
 
 
 def app_perf_schema(out_path: Path | None = None) -> dict:
-    """Fetch /__perf/metrics inside the APP container's own network
-    namespace (127.0.0.1) — never via the shared DNS name, which could
-    resolve to a different responder on a shared network. The schema
-    contract requires both db_pool and audit_queue."""
-    helper = (  # noqa: E501 - inline python one-liner for the perf image
-        "import urllib.request,sys;"
-        "sys.stdout.write(urllib.request.urlopen("
-        "'http://127.0.0.1:8000/__perf/metrics',timeout=10)"
-        ".read().decode())")
-    proc = dc("run", "--rm", "--network", f"container:{APP}",
-              "--label", f"{SIS_LABEL}={PROJECT}",
-              PERF_IMAGE, "python3", "-c", helper, check=False)
-    body = None
-    parse_error = None
-    try:
-        body = json.loads(proc.stdout)
-    except (json.JSONDecodeError, ValueError):
-        parse_error = (proc.stdout + proc.stderr)[:300]
-    out = {
-        "http_ok": proc.returncode == 0 and body is not None,
-        "has_db_pool": isinstance(body, dict) and "db_pool" in body,
-        "has_audit_queue": isinstance(body, dict)
-                         and "audit_queue" in body,
-        "app_container": APP,
-        "via": "container-netns 127.0.0.1:8000",
-    }
-    if parse_error:
-        out["parse_error"] = parse_error
-    out["ok"] = (out["http_ok"] and out["has_db_pool"]
-                 and out["has_audit_queue"])
-    if out_path is not None:
-        jdump(out_path, {"response": body, "check": out})
-    return out
-
+    raise RuntimeError("retired application collection: use blackbox-db-v1 external evidence")
 
 def runtime_binary_provenance(image_sha: str | None = None,
                               expected_sha: str | None = None) -> dict:
@@ -956,21 +1212,27 @@ def pgss_snapshot(tag: str, out_dir: Path) -> dict:
     Identity for a delta is (dbid, userid, toplevel, queryid) — queryid
     alone does not distinguish roles or nested vs top-level execution.
     `stats_reset` is captured per snapshot; a changed reset epoch makes
-    any cross-snapshot subtraction invalid."""
+    any cross-snapshot subtraction invalid. Preserve WAL counters for
+    attribution, without truncating infrequent, write-heavy statements.
+    Top-level and nested WAL must not be added together."""
     snap = {
         "tag": tag, "ts": time.time(),
         "stats_reset": psql(
             "SELECT extract(epoch from stats_reset) "
             "FROM pg_stat_statements_info", check=False),
+        "dealloc": psql(
+            "SELECT dealloc FROM pg_stat_statements_info", check=False),
         "statements": json.loads(psql(
             "SELECT COALESCE(json_agg(t),'[]') FROM ("
             "SELECT s.dbid, d.datname, s.userid, r.rolname,"
             " s.toplevel, s.queryid, s.calls, s.total_exec_time, s.rows,"
+            " s.wal_records, s.wal_fpi, s.wal_bytes, s.stats_since,"
+            " s.shared_blks_dirtied, s.shared_blks_written,"
             " left(s.query,160) AS q"
             " FROM pg_stat_statements s"
             " JOIN pg_database d ON d.oid = s.dbid"
             " JOIN pg_roles r ON r.oid = s.userid"
-            " ORDER BY s.calls DESC LIMIT 800) t", check=False) or "[]"),
+            " ORDER BY s.calls DESC) t", check=False) or "[]"),
         "wal": psql("SELECT wal_bytes::bigint FROM pg_stat_wal", check=False),
         "checkpointer": psql(
             "SELECT row_to_json(pg_stat_checkpointer) "
@@ -1311,6 +1573,7 @@ def load_env_list(point: dict, run_id: str) -> list[str]:
         "-e", f"CAP_WARMUP_MS={point.get('warmup_ms', 15000)}",
         "-e", f"PERF_USER_COUNT={point.get('user_count', 64)}",
         "-e", f"PERF_VECTOR_COUNT={point.get('vector_count', 48000)}",
+        "-e", f"PERF_CHECKPOINT_STREAM_WORKERS={point.get('stream_workers', 1)}",
         # The harness owns the only pg_stat_statements reset (executed
         # before the pre snapshot); nothing may reset mid-window.
         "-e", "PERF_SKIP_PG_STATS_RESET=1",
@@ -1351,7 +1614,9 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
     _record_extra(proc.stdout, main, "load")
     infra = format_cpu_list(point["infra_cpus"])
     time.sleep(2)
-    pin_container(main, infra)
+    main_pin = pin_container(main, infra)
+    if not main_pin["verified"]:
+        raise RuntimeError("CPU_AFFINITY_INVALID: main generator")
 
     sidecars: list[dict] = []
     if point.get("sidecars"):
@@ -1364,13 +1629,14 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
                                       ("PERF_SCENARIO", "PERF_RATE",
                                        "PERF_VUS", "PERF_PRE_ALLOCATED",
                                        "PERF_MAX_VUS", "PERF_DURATION",
-                                       "PERF_USER_COUNT"))
+                                       "PERF_USER_COUNT", "CAP_WARMUP_MS"))
             sc_env += [
                 "-e", f"PERF_SCENARIO={sc['scenario']}",
                 "-e", f"PERF_RATE={sc['rate']}",
                 "-e", f"PERF_PRE_ALLOCATED_VUS={sc['pre_vus']}",
                 "-e", f"PERF_MAX_VUS={sc['max_vus']}",
                 "-e", f"PERF_DURATION={sc['duration']}",
+                "-e", f"CAP_WARMUP_MS={sc.get('warmup_ms', 15000)}",
                 "-e", f"PERF_USER_COUNT={sc.get('user_count', 64)}",
                 "-e", "PERF_VECTOR_COUNT=2000",
                 "-e", "PERF_SKIP_SEED=1",
@@ -1393,14 +1659,60 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
             _record_extra(proc.stdout, name, f"sidecar:{sc['name']}")
             sc["container"] = name
             sc["started_ts"] = time.time()
-            pin_container(name, infra)
+            sc["pin"] = pin_container(name, infra)
+            if not sc["pin"]["verified"]:
+                raise RuntimeError(f"CPU_AFFINITY_INVALID: sidecar {sc['name']}")
             sidecars.append(sc)
 
     # Bounded wait: launch + duration + grace; overrun -> INVALID point.
     dur_s = _duration_seconds(point["duration"])
     deadline = start_ts + dur_s + int(point.get("grace_s", 300))
     exit_code = "deadline_exceeded"
+    generator_affinity = []
+    k6_checked = set()
+    service_affinity = []
+    service_sets = [(APP, format_cpu_list(point["app_cpus"]), "nazoauth"),
+                    (POSTGRES, format_cpu_list(point.get("postgres_cpus", point["infra_cpus"])), "postgres"),
+                    (VALKEY, format_cpu_list(point.get("valkey_cpus", point["infra_cpus"])), "valkey-server")]
+    def record_affinity() -> None:
+        for name, cpus, role in service_sets:
+            snapshot = container_task_snapshot(name)
+            tasks = snapshot["tasks"]
+            verified = snapshot["complete"] and _tasks_pinned(tasks, cpus, role)
+            service_affinity.append({"ts": time.time(), "container": name,
+                                     "role": role, "requested": cpus,
+                                     "verified": verified, "task_masks": tasks,
+                                     "snapshot": {k: v for k, v in snapshot.items() if k != "tasks"}})
+            jdump(out_dir / "service-affinity.json", service_affinity)
+            if not verified:
+                raise RuntimeError(f"CPU_AFFINITY_INVALID: service {role}")
+        # Runners bootstrap before spawning k6. Check the live service tree
+        # during the existing wait loop so actual k6 threads are covered too.
+        for name in [main, *[sc["container"] for sc in sidecars]]:
+            active = dc("inspect", name, "--format", "{{.State.Running}}",
+                        check=False).stdout.strip() == "true"
+            if not active:
+                continue
+            snapshot = container_task_snapshot(name)
+            tasks = snapshot["tasks"]
+            verified = snapshot["complete"] and _tasks_pinned(tasks, infra)
+            if not verified and dc("inspect", name, "--format", "{{.State.Running}}",
+                                   check=False).stdout.strip() != "true":
+                # A naturally finished runner can exit between inspect and
+                # /proc sampling. It contributes terminal workload evidence,
+                # not a fabricated affinity failure for a vanished process.
+                continue
+            if verified and any(t["name"] == "k6" for t in tasks):
+                k6_checked.add(name)
+            generator_affinity.append({"ts": time.time(), "container": name,
+                                       "verified": verified, "task_masks": tasks,
+                                       "snapshot": {k: v for k, v in snapshot.items() if k != "tasks"}})
+            jdump(out_dir / "generator-affinity.json", generator_affinity)
+            if not verified:
+                raise RuntimeError(f"CPU_AFFINITY_INVALID: generator {name}")
+
     while time.time() < deadline:
+        record_affinity()
         running = dc("inspect", main, "--format",
                      "{{.State.Running}}", check=False)
         if "true" not in running.stdout:
@@ -1431,6 +1743,7 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
         side_deadline = sc["started_ts"] + _duration_seconds(sc["duration"]) + 180
         interrupted = False
         while time.time() < side_deadline:
+            record_affinity()
             running = dc("inspect", name, "--format",
                          "{{.State.Running}}", check=False)
             if "true" not in running.stdout:
@@ -1450,12 +1763,23 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
             "name": sc["name"], "container": name,
             "exit_code": code or "unknown", "interrupted": interrupted,
             "terminal_summary": summary_ok,
+            "pin": sc["pin"],
         })
         _remove_owned_by_name(name)
         load_seconds = max(load_seconds, end_ts - start_ts)
 
+    record_affinity()
+
     return {
         "main_container": main, "main_exit_code": exit_code,
+        "main_pin": main_pin,
+        "service_affinity_verified": (
+            bool(service_affinity) and all(row["verified"] for row in service_affinity)),
+        "generator_affinity_verified": (
+            bool(generator_affinity)
+            and all(row["verified"] for row in generator_affinity)
+            and k6_checked == {main, *[sc["container"] for sc in sidecars]}),
+        "k6_containers_verified": sorted(k6_checked),
         "main_oom_killed": oom == "true",
         "load_status": load_status,
         "started_ts": start_ts, "ended_ts": end_ts,
@@ -1522,6 +1846,8 @@ def extract_point_metrics(combined: dict) -> dict:
         "outcome_local_no_request": outcomes.get("local_no_request"),
         "outcome_unexpected": outcomes.get("unexpected"),
         "outcome_prepare_failed": outcomes.get("prepare_failed"),
+        "outcome_prepare_local_failed": outcomes.get("prepare_local_failed"),
+        "outcome_prepare_sut_failed": outcomes.get("prepare_sut_failed"),
         "subject_lifecycle": m.get("subject_lifecycle"),
         "late_vu_fraction": (m.get("iterations") or {})
                             .get("late_vu_fraction"),
@@ -1625,22 +1951,33 @@ def audit_drain(timeout_s: int = 120) -> dict:
     last = None
     while time.time() < deadline:
         try:
+            pending_where, _ = audit_event_predicates()
             row = psql(
-                "SELECT (SELECT count(*) FROM security_audit_event_outbox),"
-                " last_sequence, anchor_sequence"
+                "SELECT (SELECT count(*) FROM security_audit_events WHERE "
+                + pending_where + "), last_sequence, anchor_sequence"
                 " FROM security_audit_chain_state")
             pending, last_seq, anchor = row.split("|")
             last = {"pending": int(pending), "last_sequence": int(last_seq),
                     "anchor_sequence": int(anchor)}
             if int(pending) == 0:
                 last["drained"] = True
-                return last
+                return _audit_drain_with_totals(last)
         except Exception as e:  # noqa: BLE001 - evidence path
             last = {"error": str(e)[:200]}
         time.sleep(3)
     if last is not None:
         last["drained"] = False
-    return last or {"drained": False, "error": "no samples"}
+    return _audit_drain_with_totals(last or {"drained": False, "error": "no samples"})
+
+
+def _audit_drain_with_totals(last: dict) -> dict:
+    # Do not scan retained history on each three-second drain poll.
+    if "pending" in last:
+        try:
+            last.update(audit_event_counts())
+        except Exception as error:  # noqa: BLE001 - diagnostic evidence
+            last["counts_error"] = str(error)[:200]
+    return last
 
 
 def refresh_invariants(ledger_path: Path) -> dict:
@@ -1661,6 +1998,150 @@ def refresh_invariants(ledger_path: Path) -> dict:
             out["spent_expired_backlog"] = int(f[2])
     return out
 
+
+def issuance_ledger(ledger_path: Path) -> dict:
+    """Whole-ledger diagnostics; its clock precedes the later backlog query."""
+    out = {"rows": None, "due_count": None, "sampled_at_s": None,
+           "oldest_due_at_s": None, "oldest_expired_age_s": None}
+    if not ledger_path.exists():
+        return out
+    for line in ledger_path.read_text(errors="replace").splitlines():
+        f = line.split("|")
+        if f[:2] == ["META", "sampled_at"] and len(f) >= 3:
+            out["sampled_at_s"] = datetime.fromisoformat(f[2]).replace(
+                tzinfo=timezone.utc).timestamp()
+        elif f[:2] == ["ROW_COUNTS", "oauth_token_issuances"] and len(f) >= 3:
+            out["rows"] = int(f[2])
+        elif f[:2] == ["EXPIRED_BACKLOG", "issuances_due"] and len(f) >= 4:
+            out["due_count"] = int(f[2])
+            if f[3] != "-":
+                out["oldest_due_at_s"] = datetime.fromisoformat(f[3]).replace(
+                    tzinfo=timezone.utc).timestamp()
+    sampled, oldest = out["sampled_at_s"], out["oldest_due_at_s"]
+    if out["due_count"] == 0:
+        out["oldest_expired_age_s"] = 0.0
+    elif sampled is not None and oldest is not None and sampled >= oldest:
+        out["oldest_expired_age_s"] = sampled - oldest
+    out["clock_scope"] = "ledger-start clock; diagnostic lower bound, not a gate"
+    return out
+
+
+def issuance_maintenance_evidence(
+        sample_path: Path, window_start_ms: float | None,
+        window_end_ms: float | None, point: dict,
+        sampler_interval_s: float = 2) -> dict:
+    """Age SLO over >=3 normal maintenance intervals after retention matures.
+
+    The test point must declare the actual maximum retention horizon and its
+    expiry-age SLO before load. Counts/slopes are diagnostics, not zero-backlog
+    requirements: normal periodic reclamation has a sawtooth queue.
+    """
+    retention = point.get("issuance_retention_seconds")
+    max_age = point.get("issuance_max_expired_age_seconds")
+    out = {"status": "INVALID", "pass": False,
+           "retention_seconds": retention, "max_expired_age_seconds": max_age,
+           "minimum_mature_observation_seconds": 180,
+           "max_sample_gap_seconds": 2 * sampler_interval_s}
+
+    def number(value):
+        return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                and math.isfinite(value))
+
+    if not all(number(v) and v > 0 for v in
+               (retention, max_age, sampler_interval_s)):
+        return {**out, "reason": "missing_or_invalid_declared_retention_or_age_slo"}
+    if not all(number(v) for v in (window_start_ms, window_end_ms)):
+        return {**out, "reason": "missing_measurement_window"}
+    start, end = window_start_ms / 1000, window_end_ms / 1000
+    mature_start = start + retention
+    out["mature_window_s"] = [mature_start, end]
+    if end - mature_start < 180:
+        return {**out, "reason": "insufficient_mature_observation"}
+    if not sample_path.exists():
+        return {**out, "reason": "missing_sampler"}
+    ages, counts, counters, problems = [], [], [], []
+    gap_limit = out["max_sample_gap_seconds"]
+    for line in sample_path.read_text(errors="replace").splitlines():
+        try:
+            row = json.loads(line)
+        except (ValueError, TypeError):
+            problems.append("malformed_sampler_row")
+            continue
+        if not isinstance(row, dict):
+            problems.append("malformed_sampler_row")
+            continue
+        if row.get("kind") == "meta":
+            continue
+        host_ts = row.get("ts")
+        if not number(host_ts) or not (mature_start - gap_limit <= host_ts <= end):
+            continue
+        sample = row.get("issuance_maintenance") or {}
+        ts, due_at = sample.get("sampled_at_s"), sample.get("oldest_due_at_s")
+        if (not number(ts) or abs(ts - host_ts) > gap_limit
+                or "oldest_due_at_s" not in sample
+                or (due_at is not None and (not number(due_at) or due_at > ts))
+                or row.get("pg_err")):
+            problems.append("missing_or_invalid_database_clock_or_oldest_due")
+            continue
+        if not (mature_start <= ts <= end):
+            continue
+        if ages and ts <= ages[-1][0]:
+            problems.append("non_increasing_database_clock")
+            continue
+        ages.append((ts, ts - due_at if due_at is not None else 0.0))
+        count, count_ts = sample.get("due_count"), sample.get("due_count_sampled_at_s")
+        if count is not None:
+            if (not number(count) or count < 0 or not number(count_ts)
+                    or abs(count_ts - ts) > gap_limit):
+                problems.append("invalid_due_count")
+            elif mature_start <= count_ts <= end:
+                counts.append((count_ts, count))
+        stat = (row.get("rel_bytes") or {}).get("oauth_token_issuances") or {}
+        if all(number(stat.get(k)) for k in ("ins", "del")):
+            counters.append((ts, stat["ins"], stat["del"]))
+    out["samples"] = len(ages)
+    out["problems"] = sorted(set(problems))
+    if not ages:
+        return {**out, "reason": "missing_mature_samples"}
+    gaps = [b[0] - a[0] for a, b in zip(ages, ages[1:])]
+    out["observed_max_sample_gap_seconds"] = max(gaps, default=0)
+    out["observed_sample_span_s"] = [ages[0][0], ages[-1][0]]
+    if (problems or ages[0][0] > mature_start + gap_limit
+            or ages[-1][0] < end - gap_limit
+            or any(gap > gap_limit for gap in gaps)):
+        return {**out, "reason": "invalid_clock_or_incomplete_mature_coverage"}
+
+    def trend(series):
+        if len(series) < 2:
+            return {"samples": len(series), "slope_per_s": None}
+        origin = series[0][0]
+        xs, ys = zip(*[(ts - origin, val) for ts, val in series])
+        mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+        xx = sum((x - mx) ** 2 for x in xs)
+        return {"samples": len(series), "first": series[0][1],
+                "last": series[-1][1], "min": min(ys), "max": max(ys),
+                "slope_per_s": (sum((x - mx) * (y - my)
+                                    for x, y in zip(xs, ys)) / xx if xx else None)}
+
+    out["oldest_expired_age"] = trend(ages)
+    out["due_count"] = trend(counts)
+    out["counter_window"] = None
+    if len(counters) >= 2:
+        first, last = counters[0], counters[-1]
+        if any(b[i] < a[i] for a, b in zip(counters, counters[1:]) for i in (1, 2)):
+            return {**out, "reason": "issuance_stat_counter_reset"}
+        span = last[0] - first[0]
+        out["counter_window"] = {
+            "start_s": first[0], "end_s": last[0],
+            "inserted": last[1] - first[1], "deleted": last[2] - first[2],
+            "inserted_per_s": (last[1] - first[1]) / span,
+            "deleted_per_s": (last[2] - first[2]) / span,
+        }
+    passed = all(age <= max_age for _, age in ages)
+    return {**out, "status": "PASS" if passed else "FAIL", "pass": passed,
+            "reason": "sampled_expiry_age_within_declared_slo" if passed
+            else "sampled_expiry_age_exceeded_declared_slo",
+            "scope": "sampled issuance maintenance SLO; not all-state or indefinite steady state"}
 
 def receiver_log_scan(run_id: str) -> dict:
     """Receiver-side audit evidence for this run, scoped to what the log
@@ -1774,6 +2255,50 @@ def provenance(point: dict, out_dir: Path) -> dict:
         import hashlib
         prov["applied_migrations_sha256"] = hashlib.sha256(
             applied.encode()).hexdigest()
+
+    # Image <-> source bindings. The app image carries
+    # org.opencontainers.image.revision and /etc/nazoauth-source-sha; the
+    # runner image bakes the harness (COPY perf /perf) so the in-image k6
+    # script hash must equal this checkout's file hash — otherwise the run
+    # would measure a stale harness.
+    prov["app_image_revision"] = dc(
+        "image", "inspect", point["image"], "--format",
+        '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+        check=False).stdout.strip() or None
+    srcfile = dcx(APP, ["cat", "/etc/nazoauth-source-sha"], check=False)
+    prov["app_source_sha_file"] = (
+        srcfile.stdout.strip() or None if srcfile.returncode == 0 else None)
+    declared = prov.get("source_sha")
+    prov["source_sha_registered"] = (
+        declared is not None and declared != "unknown")
+    prov["source_sha_eq_image_revision"] = (
+        prov["source_sha_registered"]
+        and prov["app_image_revision"] == declared)
+    prov["source_sha_eq_file"] = (
+        prov["source_sha_registered"]
+        and prov["app_source_sha_file"] == declared)
+
+    runner = PERF_IMAGE
+    prov["runner_image_ref"] = runner
+    prov["runner_image_id"] = dc(
+        "image", "inspect", runner, "--format", "{{.Id}}",
+        check=False).stdout.strip() or None
+    prov["runner_image_revision"] = dc(
+        "image", "inspect", runner, "--format",
+        '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+        check=False).stdout.strip() or None
+    k6_in_image = dc("run", "--rm", "--entrypoint", "sha256sum", runner,
+                     "/perf/k6/oauth.js", check=False)
+    prov["runner_k6_oauth_sha256"] = (
+        k6_in_image.stdout.split()[0]
+        if k6_in_image.returncode == 0 and k6_in_image.stdout.strip()
+        else None)
+    prov["workspace_k6_oauth_sha256"] = file_sha256(
+        Path(WORKSPACE) / "perf/k6/oauth.js")
+    prov["k6_oauth_eq_workspace"] = (
+        prov["runner_k6_oauth_sha256"] is not None
+        and prov["runner_k6_oauth_sha256"]
+        == prov["workspace_k6_oauth_sha256"])
     jdump(out_dir / "provenance.json", prov)
     return prov
 
@@ -1896,6 +2421,14 @@ def run_point(point: dict) -> dict:
             audit_delivery_reconciled_of(rec["audit_drain"], rcv))
         rec["metrics"]["refresh_invariants"] = refresh_invariants(
             out_dir / "ledger-post.txt")
+        rec["metrics"]["issuance_ledger"] = {
+            phase: issuance_ledger(out_dir / f"ledger-{phase}.txt")
+            for phase in ("pre", "post")}
+        rec["metrics"]["issuance_maintenance"] = issuance_maintenance_evidence(
+            out_dir / "soak-metrics.jsonl",
+            rec["metrics"].get("window_start_ms"),
+            rec["metrics"].get("window_end_ms"), point,
+            rec["samplers"]["interval_s"])
         if rec["load"].get("sidecars") is not None:
             rec["metrics"]["sidecar_terminal_complete"] = all(
                 s["terminal_summary"] and not s["interrupted"]
@@ -1918,6 +2451,8 @@ def run_point(point: dict) -> dict:
 PHASE2_REQUIRED = (
     "window_valid", "successful_ops_per_s", "op_p99_ms",
     "outcome_unexpected", "outcome_local_no_request",
+    "outcome_prepare_failed", "outcome_prepare_local_failed",
+    "outcome_prepare_sut_failed",
     "oom_killed", "restart_count", "wal_per_success_bytes",
     "audit_log_scan", "audit_db_drained", "audit_delivery_reconciled")
 
@@ -1938,6 +2473,16 @@ def _missing_required(records: dict, points: tuple, fields: tuple) -> list:
     return missing
 
 
+def _preparation_gate(records: dict) -> dict:
+    rows = [{"point": name,
+             "unknown": rec["outcome_prepare_failed"],
+             "local": rec["outcome_prepare_local_failed"],
+             "sut": rec["outcome_prepare_sut_failed"]}
+            for name, rec in records.items()]
+    return {"pass": all(r["unknown"] == r["local"] == r["sut"] == 0 for r in rows),
+            "invalid_points": [r["point"] for r in rows if r["unknown"] or r["local"]],
+            "rows": rows}
+
 def evaluate_phase2_gates(records: dict) -> dict:
     gates: dict = {}
 
@@ -1956,6 +2501,9 @@ def evaluate_phase2_gates(records: dict) -> dict:
     invalid = [n for n, r in records.items()
                if r["window_valid"] is not True]
     gates["window_validity"] = {"pass": not invalid, "invalid_points": invalid}
+    preparation = _preparation_gate(records)
+    gates["preparation"] = preparation
+    invalid += preparation["invalid_points"]
 
     a_vals = [a1["successful_ops_per_s"], a2["successful_ops_per_s"]]
     amax, amin = max(a_vals), min(a_vals)
@@ -2031,7 +2579,7 @@ def evaluate_phase2_gates(records: dict) -> dict:
     gates["runtime_health"] = {
         "pass": all(r["pass"] for r in health_rows), "rows": health_rows}
     # DB drain and end-to-end delivery are separate gates — an empty
-    # outbox alone is not reconciliation.
+    # pending set alone is not reconciliation.
     gates["audit_db_drained"] = {"pass": all(
         r["audit_db_drained"] is True for r in records.values())}
     gates["audit_delivery_reconciled"] = {"pass": all(
@@ -2049,12 +2597,13 @@ def evaluate_phase2_gates(records: dict) -> dict:
 
 PHASE3_REQUIRED_A = (
     "successful_ops_per_s", "drop_fraction", "op_p99_ms",
-    "outcome_expected_rejection", "audit_db_drained",
+    "outcome_expected_rejection", "outcome_prepare_failed",
+    "outcome_prepare_local_failed", "outcome_prepare_sut_failed", "audit_db_drained",
     "audit_delivery_reconciled")
 PHASE3_REQUIRED_B = PHASE3_REQUIRED_A + (
     "window_valid", "outcome_unexpected", "outcome_local_no_request",
     "oom_killed", "restart_count", "audit_log_scan",
-    "refresh_invariants", "sidecar_terminal_complete")
+    "refresh_invariants", "issuance_maintenance", "sidecar_terminal_complete")
 
 
 def evaluate_phase3_gates(a: dict | None, b: dict | None) -> dict:
@@ -2075,6 +2624,15 @@ def evaluate_phase3_gates(a: dict | None, b: dict | None) -> dict:
     if missing:
         return {"verdict": "INVALID", "retain": False, "gates": gates}
 
+    preparation = _preparation_gate({"A": a, "B": b})
+    gates["preparation"] = preparation
+    issuance = b["issuance_maintenance"]
+    gates["issuance_maintenance"] = {
+        "pass": issuance.get("status") == "PASS" and issuance.get("pass") is True,
+        "evidence": issuance}
+    invalid = (bool(preparation["invalid_points"])
+               or issuance.get("status") not in ("PASS", "FAIL")
+               or b["window_valid"] is not True)
     a_thr, b_thr = a["successful_ops_per_s"], b["successful_ops_per_s"]
     gates["throughput"] = {
         "pass": bool(a_thr and b_thr and b_thr >= a_thr * 0.98),
@@ -2115,8 +2673,9 @@ def evaluate_phase3_gates(a: dict | None, b: dict | None) -> dict:
         "pass": a.get("sidecar_terminal_complete") is not False
         and b.get("sidecar_terminal_complete") is True}
     all_pass = all(g["pass"] for g in gates.values())
-    return {"verdict": "PASS" if all_pass else "FAIL",
-            "retain": all_pass, "gates": gates}
+    verdict = "INVALID" if invalid else "PASS" if all_pass else "FAIL"
+    return {"verdict": verdict,
+            "retain": verdict == "PASS", "gates": gates}
 
 
 # ---------------------------------------------------------------------

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_openid4vp::{
     PresentationCreateIdempotency, PresentationCreateOutcome, PresentationResult,
     PresentationStoreError, PresentationStoreFuture, PresentationStorePort,
@@ -10,6 +10,12 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{DbPool, get_conn};
+
+#[derive(QueryableByName)]
+struct PresentationCompletionId {
+    #[diesel(sql_type = sql_types::Uuid)]
+    id: Uuid,
+}
 
 #[derive(Clone)]
 pub struct Openid4vpRepository {
@@ -63,12 +69,12 @@ impl Openid4vpRepository {
             .transpose()?;
         let inserted = sql_query(
             "INSERT INTO openid4vp_transactions \
-             (id, tenant_id, client_id_prefix, request_method, response_mode, \
+             (id, tenant_id, client_id_prefix, request_method, \
               wallet_authorization_endpoint, state_hash, request, request_object, request_uri, \
               openid4vc_trust_policy_binding_id, openid4vc_trust_policy_resource_id, \
               openid4vc_trust_policy_digest, ephemeral_private_key_ciphertext, expires_at, \
               create_request_jti, create_request_sha256, create_request_canonical_json, created_at) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) \
              ON CONFLICT (tenant_id, create_request_jti) \
                  WHERE create_request_jti IS NOT NULL DO NOTHING",
         )
@@ -76,7 +82,6 @@ impl Openid4vpRepository {
         .bind::<sql_types::Uuid, _>(self.tenant_id)
         .bind::<sql_types::Text, _>(transaction.client_id_prefix.as_str())
         .bind::<sql_types::Text, _>(transaction.request_method.as_str())
-        .bind::<sql_types::Text, _>(transaction.response_mode.as_str())
         .bind::<sql_types::Text, _>(&transaction.wallet_authorization_endpoint)
         .bind::<sql_types::Text, _>(state_hash)
         .bind::<sql_types::Jsonb, _>(
@@ -183,6 +188,7 @@ impl PresentationStorePort for Openid4vpRepository {
             let row = load_presentation(&mut connection, self.tenant_id, transaction_id, now)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
+            drop(connection);
             row.map(|value| value.transaction_with_key(&self.data_key, self.tenant_id))
                 .transpose()
         })
@@ -224,6 +230,7 @@ impl PresentationStorePort for Openid4vpRepository {
             .execute(&mut connection)
             .await
             .map_err(|_| PresentationStoreError::Unavailable)?;
+            drop(connection);
             if changed != 1 {
                 return Ok(None);
             }
@@ -241,9 +248,6 @@ impl PresentationStorePort for Openid4vpRepository {
         now: DateTime<Utc>,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| PresentationStoreError::Unavailable)?;
             let encoded = serde_json::to_vec(result)
                 .map_err(|_| PresentationStoreError::InvalidTransition)?;
             let encoded = protect_payload(
@@ -253,24 +257,54 @@ impl PresentationStorePort for Openid4vpRepository {
                 transaction_id,
                 &encoded,
             )?;
-            let changed = sql_query(
-                "UPDATE openid4vp_transactions SET result_ciphertext = $5, completed_at = $4, \
-                     ephemeral_private_key_ciphertext = NULL \
-                 WHERE id = $1 AND tenant_id = $2 AND state_hash = $3 \
-                   AND completed_at IS NULL AND expires_at > $4 \
-                   AND openid4vc_presentation_trust_policy_is_active( \
-                       tenant_id, openid4vc_trust_policy_binding_id, \
-                       openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest)",
-            )
-            .bind::<sql_types::Uuid, _>(transaction_id)
-            .bind::<sql_types::Uuid, _>(self.tenant_id)
-            .bind::<sql_types::Text, _>(state_hash)
-            .bind::<sql_types::Timestamptz, _>(now)
-            .bind::<sql_types::Binary, _>(encoded)
-            .execute(&mut connection)
-            .await
-            .map_err(|_| PresentationStoreError::Unavailable)?;
-            Ok(changed == 1)
+            let mut guard = crate::pool::DiscardOnDrop(Some(
+                get_conn(&self.pool)
+                    .await
+                    .map_err(|_| PresentationStoreError::Unavailable)?,
+            ));
+            let completed = guard.connection()
+                .transaction::<bool, diesel::result::Error, _>(async |connection| {
+                    // Finish the potentially blocking record lock before the
+                    // deadline predicate is evaluated. A statement-start clock
+                    // or an UPDATE predicate sampled before its row wait is not
+                    // the accepting clock for this completion.
+                    let locked = sql_query(
+                        "SELECT id FROM openid4vp_transactions \
+                         WHERE id = $1 AND tenant_id = $2 AND state_hash = $3 \
+                           AND completed_at IS NULL FOR UPDATE",
+                    )
+                    .bind::<sql_types::Uuid, _>(transaction_id)
+                    .bind::<sql_types::Uuid, _>(self.tenant_id)
+                    .bind::<sql_types::Text, _>(state_hash)
+                    .load::<PresentationCompletionId>(connection)
+                    .await?;
+                    if !locked.iter().any(|row| row.id == transaction_id) {
+                        return Ok(false);
+                    }
+                    let changed = sql_query(
+                        "UPDATE openid4vp_transactions SET result_ciphertext = $5, completed_at = $4, \
+                             ephemeral_private_key_ciphertext = NULL \
+                         WHERE id = $1 AND tenant_id = $2 AND state_hash = $3 \
+                           AND completed_at IS NULL AND expires_at > $4 \
+                           AND expires_at > clock_timestamp() \
+                           AND openid4vc_presentation_trust_policy_is_active( \
+                               tenant_id, openid4vc_trust_policy_binding_id, \
+                               openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest)",
+                    )
+                    .bind::<sql_types::Uuid, _>(transaction_id)
+                    .bind::<sql_types::Uuid, _>(self.tenant_id)
+                    .bind::<sql_types::Text, _>(state_hash)
+                    .bind::<sql_types::Timestamptz, _>(now)
+                    .bind::<sql_types::Binary, _>(&encoded)
+                    .execute(connection)
+                    .await?;
+                    Ok(changed == 1)
+                })
+                .await;
+            if completed.is_ok() {
+                guard.return_to_pool();
+            }
+            completed.map_err(|_| PresentationStoreError::Unavailable)
         })
     }
     fn result<'a>(
@@ -286,6 +320,7 @@ impl PresentationStorePort for Openid4vpRepository {
             let row = load_presentation(&mut connection, self.tenant_id, transaction_id, now)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
+            drop(connection);
             row.map(|value| value.stored(&self.data_key, self.tenant_id))
                 .transpose()
         })
@@ -300,8 +335,6 @@ struct PresentationRow {
     client_id_prefix: String,
     #[diesel(sql_type = sql_types::Text)]
     request_method: String,
-    #[diesel(sql_type = sql_types::Text)]
-    response_mode: String,
     #[diesel(sql_type = sql_types::Text)]
     wallet_authorization_endpoint: String,
     #[diesel(sql_type = sql_types::Text)]
@@ -361,7 +394,7 @@ impl PresentationRow {
                 .request_method
                 .parse()
                 .map_err(|_| PresentationStoreError::InvalidTransition)?,
-            response_mode: parse_response_mode(&self.response_mode)?,
+
             wallet_authorization_endpoint: self.wallet_authorization_endpoint.clone(),
             request: serde_json::from_value(self.request.clone())
                 .map_err(|_| PresentationStoreError::InvalidTransition)?,
@@ -456,7 +489,7 @@ async fn load_presentation(
     now: DateTime<Utc>,
 ) -> Result<Option<PresentationRow>, diesel::result::Error> {
     sql_query(
-        "SELECT id, client_id_prefix, request_method, response_mode, wallet_authorization_endpoint, \
+        "SELECT id, client_id_prefix, request_method, wallet_authorization_endpoint, \
          create_request_sha256, create_request_canonical_json, \
          request, request_object, request_uri, openid4vc_trust_policy_binding_id, \
          openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest, \
@@ -481,7 +514,7 @@ async fn load_presentation_by_create_request(
     now: DateTime<Utc>,
 ) -> Result<Option<PresentationRow>, diesel::result::Error> {
     sql_query(
-        "SELECT id, client_id_prefix, request_method, response_mode, wallet_authorization_endpoint, \
+        "SELECT id, client_id_prefix, request_method, wallet_authorization_endpoint, \
          create_request_sha256, create_request_canonical_json, \
          request, request_object, request_uri, openid4vc_trust_policy_binding_id, \
          openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest, \
@@ -532,16 +565,6 @@ fn parse_client_id_prefix(
         "redirect_uri" => Ok(nazo_openid4vp::ClientIdPrefix::RedirectUri),
         "x509_san_dns" => Ok(nazo_openid4vp::ClientIdPrefix::X509SanDns),
         "x509_hash" => Ok(nazo_openid4vp::ClientIdPrefix::X509Hash),
-        _ => Err(PresentationStoreError::InvalidTransition),
-    }
-}
-
-fn parse_response_mode(
-    value: &str,
-) -> Result<nazo_openid4vp::ResponseMode, PresentationStoreError> {
-    match value {
-        "direct_post" => Ok(nazo_openid4vp::ResponseMode::DirectPost),
-        "direct_post.jwt" => Ok(nazo_openid4vp::ResponseMode::DirectPostJwt),
         _ => Err(PresentationStoreError::InvalidTransition),
     }
 }

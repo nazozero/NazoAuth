@@ -12,7 +12,6 @@ use nazo_auth::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, ClientAuthenticationContext, IntrospectionSignInput,
     OAuthClient, unverified_client_assertion_client_id,
 };
-use serde_json::json;
 
 use crate::authorization::config::AuthorizationConfig;
 use crate::contracts::dynamic_client_registration::RemoteJwksResolverPort;
@@ -22,7 +21,6 @@ use crate::domain::client_jwe::client_jwe_key;
 use crate::domain::client_jwe::encrypt_compact_jwe;
 use crate::domain::client_policy::refresh_client_jwks_for_encryption;
 use crate::ports::audit::SecurityAudit;
-use crate::ports::audit::audit_fields;
 use crate::services::ServerAuthorizationService;
 use crate::services::ServerTokenService;
 use crate::token::client_auth::ClientAuthConfig;
@@ -119,12 +117,13 @@ impl ServerTokenManagementOperations {
             && !presentation.form_client_secret
             && request.client_certificate.is_some()
         {
-            form.client_id.clone()
+            form.client_id.as_deref()
         } else {
             None
         };
-        let credentials = client_auth.presented_credentials(assertion_client_id, mtls_client_id);
-        let Some(client_id) = credentials.client_id.as_deref() else {
+        let credentials =
+            client_auth.credential_view(assertion_client_id.as_deref(), mtls_client_id);
+        let Some(client_id) = credentials.client_id else {
             return Err(TokenManagementError::InvalidClient {
                 basic_challenge: has_basic,
             });
@@ -137,7 +136,7 @@ impl ServerTokenManagementOperations {
             Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
             Ok(None) => {
                 perform_dummy_client_secret_verification(
-                    &credentials,
+                    credentials,
                     &self.config.client_secret_pepper,
                 );
                 return Err(TokenManagementError::InvalidClient {
@@ -149,6 +148,15 @@ impl ServerTokenManagementOperations {
                 return Err(TokenManagementError::ClientLookupUnavailable);
             }
         };
+        if !client.is_active {
+            perform_dummy_client_secret_verification(
+                credentials,
+                &self.config.client_secret_pepper,
+            );
+            return Err(TokenManagementError::InvalidClient {
+                basic_challenge: has_basic,
+            });
+        }
         let config = ClientAuthConfig::new(
             &self.config.issuer,
             &self.config.client_secret_pepper,
@@ -164,7 +172,7 @@ impl ServerTokenManagementOperations {
                     config,
                     &auth_request,
                     &mut client,
-                    &credentials,
+                    credentials,
                     secret_salt.as_deref(),
                 )
                 .await
@@ -175,7 +183,7 @@ impl ServerTokenManagementOperations {
                     config,
                     &auth_request,
                     &mut client,
-                    &credentials,
+                    credentials,
                     secret_salt.as_deref(),
                 )
                 .await
@@ -188,9 +196,9 @@ impl ServerTokenManagementOperations {
     async fn protected_introspection(
         &self,
         client: &OAuthClient,
-        inspection: &nazo_auth::TokenInspection,
+        inspection: nazo_auth::TokenInspection,
     ) -> Result<String, TokenManagementError> {
-        let body = inspection.clone().into_document();
+        let body = inspection.into_document();
         let token = self
             .token_service
             .sign_introspection_response(IntrospectionSignInput {
@@ -267,7 +275,7 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     TokenManagementError::ResponseProtectionFailed
                 })?;
                 return self
-                    .protected_introspection(&client, &inspection)
+                    .protected_introspection(&client, inspection)
                     .await
                     .map(TokenIntrospectionRepresentation::Jwt);
             }
@@ -290,27 +298,19 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     ClientAuthenticationContext::AllowPublicNone,
                 )
                 .await?;
-            let updated = self
-                .token_service
-                .revoke_token(&self.config.issuer, &form.token, &client)
+            self.audit
+                .ensure_transactional_ready()
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "token revocation audit readiness failed");
+                    TokenManagementError::RevocationUnavailable
+                })?;
+            let source_ip_hash = blake3_hex(&request.source_ip);
+            self.token_service
+                .revoke_token_with_audit(&self.config.issuer, &form.token, &client, &source_ip_hash)
                 .await
                 .map_err(|error| {
                     tracing::warn!(%error, "failed to revoke token");
-                    TokenManagementError::RevocationUnavailable
-                })?;
-            self.audit
-                .record_required(
-                    "token_revoked",
-                    audit_fields(&[
-                        ("client_id", json!(client.client_id)),
-                        ("token_hash", json!(blake3_hex(&form.token))),
-                        ("updated", json!(updated)),
-                        ("source_ip_hash", json!(blake3_hex(&request.source_ip))),
-                    ]),
-                )
-                .await
-                .map_err(|error| {
-                    tracing::warn!(%error, "token revocation audit append failed");
                     TokenManagementError::RevocationUnavailable
                 })?;
             Ok(())

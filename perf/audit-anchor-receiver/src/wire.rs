@@ -3,8 +3,8 @@
 //! hash and the batch digest from the envelope content, so nothing is trusted
 //! until it verifies.
 
-use anyhow::{Result, anyhow, bail};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use anyhow::{anyhow, bail, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hmac::{Hmac, KeyInit, Mac};

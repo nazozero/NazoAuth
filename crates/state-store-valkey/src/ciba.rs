@@ -1,23 +1,21 @@
+use fred::prelude::LuaInterface;
 use nazo_auth::{
     CibaAtomicResult, CibaPingNotificationStatus, CibaRequestState, CibaStatePortError,
     CibaStateStorePort, CibaStateVersion, CibaStoredRequest,
 };
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::{Error, ValkeyConnection, command, keys};
 
 const SNAPSHOT_SCRIPT: &str = r#"
 local value = redis.call('GET', KEYS[1])
-if not value then
-  return cjson.encode({found = false})
-end
-return cjson.encode({found = true, value = value, expire_at = redis.call('EXPIRETIME', KEYS[1])})
+if not value then return false end
+return {value, redis.call('EXPIRETIME', KEYS[1])}
 "#;
 const SET_NX_DEADLINE_SCRIPT: &str = r#"
-local authorization_deadline = tonumber(ARGV[3]) or 0
+local authorization_deadline = tonumber(ARGV[3])
 local now = tonumber(redis.call('TIME')[1])
-if authorization_deadline > 0 and now >= authorization_deadline then return 'deadline_elapsed' end
+if authorization_deadline and now >= authorization_deadline then return 'deadline_elapsed' end
 local deadline = tonumber(ARGV[2])
 if now >= deadline then return 'deadline_elapsed' end
 if redis.call('SETNX', KEYS[1], ARGV[1]) == 0 then return 'conflict' end
@@ -28,8 +26,8 @@ return 'applied'
 const COMPARE_SET_DEADLINE_SCRIPT: &str = r#"
 local deadline = tonumber(ARGV[3])
 local now = tonumber(redis.call('TIME')[1])
-local authorization_deadline = tonumber(ARGV[6]) or 0
-if authorization_deadline > 0 and now >= authorization_deadline then
+local authorization_deadline = tonumber(ARGV[6])
+if authorization_deadline and now >= authorization_deadline then
   return 'deadline_elapsed'
 end
 if now >= deadline then
@@ -55,8 +53,8 @@ return 'applied'
 const COMPARE_DELETE_DEADLINE_SCRIPT: &str = r#"
 local deadline = tonumber(ARGV[2])
 local now = tonumber(redis.call('TIME')[1])
-local authorization_deadline = tonumber(ARGV[4]) or 0
-if authorization_deadline > 0 and now >= authorization_deadline then
+local authorization_deadline = tonumber(ARGV[4])
+if authorization_deadline and now >= authorization_deadline then
   return 'deadline_elapsed'
 end
 if now >= deadline then
@@ -125,8 +123,8 @@ for _, member in ipairs(members) do
     end
   end
 end
-if #deliveries == 0 then return '[]' end
-return cjson.encode(deliveries)
+if #deliveries == 0 then return {#members, '[]'} end
+return {#members, cjson.encode(deliveries)}
 "#;
 
 const FINISH_PING_SCRIPT: &str = r#"
@@ -171,7 +169,7 @@ pub struct CibaStore {
     connection: ValkeyConnection,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 pub struct CibaPingDelivery {
     pub auth_req_id_hash: String,
     pub auth_req_id: String,
@@ -179,6 +177,18 @@ pub struct CibaPingDelivery {
     pub client_notification_token: String,
     pub attempts: u32,
     pub expires_at: i64,
+}
+
+impl std::fmt::Debug for CibaPingDelivery {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CibaPingDelivery([REDACTED])")
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CibaPingClaimBatch {
+    pub scanned: usize,
+    pub deliveries: Vec<CibaPingDelivery>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -232,26 +242,19 @@ impl CibaStore {
         &self,
         auth_req_id: &str,
     ) -> Result<Option<CibaStoredRequest<CibaStateVersion>>, Error> {
-        let reply = command::eval_string(
-            &self.connection,
-            SNAPSHOT_SCRIPT,
-            vec![keys::ciba(auth_req_id)],
-            vec![],
-        )
-        .await?;
-        let snapshot: Value = serde_json::from_str(&reply).map_err(serialization_error)?;
-        if snapshot.get("found").and_then(Value::as_bool) != Some(true) {
+        let snapshot: Option<(String, i64)> = self
+            .connection
+            .client
+            .eval(
+                SNAPSHOT_SCRIPT,
+                self.connection.state_keys(vec![keys::ciba(auth_req_id)]),
+                Vec::<String>::new(),
+            )
+            .await
+            .map_err(Error::from_fred)?;
+        let Some((raw, deadline)) = snapshot else {
             return Ok(None);
-        }
-        let raw = snapshot
-            .get("value")
-            .and_then(Value::as_str)
-            .ok_or_else(|| Error::protocol("missing CIBA snapshot value"))?
-            .to_owned();
-        let deadline = snapshot
-            .get("expire_at")
-            .and_then(Value::as_i64)
-            .ok_or_else(|| Error::protocol("missing CIBA snapshot deadline"))?;
+        };
         let value: CibaRequestState = serde_json::from_str(&raw).map_err(serialization_error)?;
         if value.retention_expires_at != deadline {
             return Err(Error::protocol(
@@ -346,20 +349,26 @@ impl CibaStore {
         now: i64,
         lock_until: i64,
         limit: usize,
-    ) -> Result<Vec<CibaPingDelivery>, Error> {
-        let raw = command::eval_string(
-            &self.connection,
-            CLAIM_DUE_PING_SCRIPT,
-            vec![keys::ciba_ping_queue()],
-            vec![
-                now.to_string(),
-                lock_until.to_string(),
-                limit.to_string(),
-                format!("{}oauth:ciba:", self.connection.state_prefix()),
-            ],
-        )
-        .await?;
-        serde_json::from_str(&raw).map_err(serialization_error)
+    ) -> Result<CibaPingClaimBatch, Error> {
+        let (scanned, raw): (usize, String) = self
+            .connection
+            .client
+            .eval(
+                CLAIM_DUE_PING_SCRIPT,
+                self.connection.state_keys(vec![keys::ciba_ping_queue()]),
+                vec![
+                    now.to_string(),
+                    lock_until.to_string(),
+                    limit.to_string(),
+                    format!("{}oauth:ciba:", self.connection.state_prefix()),
+                ],
+            )
+            .await
+            .map_err(Error::from_fred)?;
+        Ok(CibaPingClaimBatch {
+            scanned,
+            deliveries: serde_json::from_str(&raw).map_err(serialization_error)?,
+        })
     }
 
     pub async fn finish_ping(

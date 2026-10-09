@@ -3,7 +3,10 @@ use diesel::{
     sql_types::{BigInt, Jsonb, Text, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use nazo_auth::IdempotentBackchannelLogoutDelivery;
+use nazo_auth::{
+    IdempotentBackchannelLogoutDelivery, LogoutClientRepositoryPort, LogoutDependencyError,
+    RegisteredLogoutClient,
+};
 use nazo_postgres::{AuditRepository, OAuthClientRepository, create_pool};
 use uuid::Uuid;
 
@@ -226,6 +229,67 @@ async fn logout_fanout_is_tenant_scoped_idempotent_and_atomic() {
     assert_eq!(clients.len(), 1);
     assert_eq!(clients[0].id, local_client);
 
+    let active_public_id = format!("logout-client-{suffix}-active");
+    let inactive_public_id = format!("logout-client-{suffix}-inactive");
+    let foreign_public_id = format!("logout-client-{suffix}-foreign");
+    let requested = [
+        active_public_id.as_str(),
+        inactive_public_id.as_str(),
+        active_public_id.as_str(),
+        foreign_public_id.as_str(),
+        "missing-client",
+    ];
+    let batch = OAuthClientRepository::new(pool.clone())
+        .by_client_ids(DEFAULT_TENANT_ID, &requested)
+        .await
+        .expect("logout batch lookup should load only requested clients in this tenant");
+    assert_eq!(batch.len(), 2);
+    assert!(
+        batch
+            .iter()
+            .any(|client| client.id == local_client && client.active)
+    );
+    assert!(
+        batch
+            .iter()
+            .any(|client| client.id == inactive_client && !client.active)
+    );
+    assert!(
+        batch
+            .iter()
+            .all(|client| client.tenant_id == DEFAULT_TENANT_ID)
+    );
+
+    let repository = OAuthClientRepository::new(pool.clone());
+    for public_id in [foreign_public_id.as_str(), "missing-client"] {
+        assert!(
+            LogoutClientRepositoryPort::by_client_id(&repository, DEFAULT_TENANT_ID, public_id)
+                .await
+                .expect("single logout lookup should remain tenant scoped")
+                .is_none()
+        );
+    }
+    for expected in &batch {
+        assert_eq!(
+            LogoutClientRepositoryPort::by_client_id(
+                &repository,
+                DEFAULT_TENANT_ID,
+                &expected.client_id,
+            )
+            .await
+            .expect("single and batch logout reads should agree")
+            .as_ref(),
+            Some(expected)
+        );
+    }
+    assert!(
+        repository
+            .by_client_ids(DEFAULT_TENANT_ID, &[])
+            .await
+            .expect("empty client requests need no rows")
+            .is_empty()
+    );
+
     let outbox = AuditRepository::new(pool);
     let operation_key = format!("logout-operation-{suffix}");
     let delivery = IdempotentBackchannelLogoutDelivery {
@@ -273,6 +337,23 @@ async fn logout_fanout_is_tenant_scoped_idempotent_and_atomic() {
         stored.logout_token, delivery.logout_token,
         "the first durable logout payload must remain authoritative across retries"
     );
+
+    let mut first_in_batch = delivery.clone();
+    first_in_batch.operation_key = format!("logout-duplicate-batch-{suffix}");
+    let mut repeated_in_batch = first_in_batch.clone();
+    repeated_in_batch.logout_token = "later-token-must-not-replace-first".to_owned();
+    outbox
+        .enqueue_idempotent_backchannel_logout_batch(&[first_in_batch.clone(), repeated_in_batch])
+        .await
+        .expect("duplicates within one fan-out remain idempotent");
+    let stored = sql_query(
+        "SELECT logout_token FROM backchannel_logout_deliveries WHERE operation_key = $1",
+    )
+    .bind::<Text, _>(&first_in_batch.operation_key)
+    .get_result::<LogoutTokenRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(stored.logout_token, first_in_batch.logout_token);
 
     let mut cross_tenant_client = delivery.clone();
     cross_tenant_client.operation_key = format!("logout-cross-tenant-{suffix}");
@@ -330,4 +411,107 @@ async fn logout_fanout_is_tenant_scoped_idempotent_and_atomic() {
     .await
     .expect("rollback count should load");
     assert_eq!(rollback_count.count, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn logout_projection_reads_only_logout_facts_and_rejects_malformed_redirects() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("logout migrations should apply");
+    let repository = OAuthClientRepository::new(
+        create_pool(&database_url, 2).expect("logout pool should create"),
+    );
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("logout test database should connect");
+    let suffix = Uuid::now_v7().simple().to_string();
+    let id = insert_client(
+        &mut connection,
+        DEFAULT_TENANT_ID,
+        DEFAULT_REALM_ID,
+        DEFAULT_ORGANIZATION_ID,
+        &suffix,
+        true,
+    )
+    .await;
+    let client_id = format!("logout-client-{suffix}");
+    sql_query(
+        "UPDATE oauth_clients SET
+            post_logout_redirect_uris = '[\"https://client.example/logged-out\"]'::jsonb,
+            frontchannel_logout_uri = 'https://client.example/frontchannel-logout',
+            frontchannel_logout_session_required = false,
+            subject_type = 'pairwise', sector_identifier_host = 'client.example',
+            scopes = '[1, \"openid\"]'::jsonb
+         WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(id)
+    .execute(&mut connection)
+    .await
+    .expect("logout facts and malformed unrelated metadata should persist");
+    let expected = RegisteredLogoutClient {
+        id,
+        tenant_id: DEFAULT_TENANT_ID,
+        client_id: client_id.clone(),
+        active: true,
+        redirect_uris: vec!["https://client.example/callback".to_owned()],
+        post_logout_redirect_uris: vec!["https://client.example/logged-out".to_owned()],
+        backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        frontchannel_logout_uri: Some("https://client.example/frontchannel-logout".to_owned()),
+        frontchannel_logout_session_required: false,
+        subject_type: "pairwise".to_owned(),
+        sector_identifier_host: Some("client.example".to_owned()),
+    };
+    assert!(
+        repository
+            .by_client_id(DEFAULT_TENANT_ID, &client_id)
+            .await
+            .is_err(),
+        "the full registration read still rejects malformed scopes"
+    );
+    assert_eq!(
+        LogoutClientRepositoryPort::by_client_id(&repository, DEFAULT_TENANT_ID, &client_id)
+            .await
+            .expect("logout does not depend on scope metadata"),
+        Some(expected.clone())
+    );
+    assert_eq!(
+        repository
+            .by_client_ids(DEFAULT_TENANT_ID, &[client_id.as_str()])
+            .await
+            .expect("batch logout reads the same facts"),
+        vec![expected]
+    );
+
+    // Both consumed JSON arrays must fail closed in single and batch reads.
+    // Keep each UPDATE fixed, and reset the other array between cases.
+    for statement in [
+        "UPDATE oauth_clients SET redirect_uris = '[1]'::jsonb WHERE id = $1",
+        "UPDATE oauth_clients SET redirect_uris = '[]'::jsonb,
+            post_logout_redirect_uris = '[1]'::jsonb WHERE id = $1",
+    ] {
+        sql_query(statement)
+            .bind::<SqlUuid, _>(id)
+            .execute(&mut connection)
+            .await
+            .expect("array shape constraints allow a non-string element");
+        assert_eq!(
+            LogoutClientRepositoryPort::by_client_id(&repository, DEFAULT_TENANT_ID, &client_id)
+                .await,
+            Err(LogoutDependencyError::Unavailable)
+        );
+        assert_eq!(
+            repository
+                .by_client_ids(DEFAULT_TENANT_ID, &[client_id.as_str()])
+                .await,
+            Err(LogoutDependencyError::Unavailable)
+        );
+    }
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(id)
+        .execute(&mut connection)
+        .await
+        .expect("logout projection fixture should clean up");
 }

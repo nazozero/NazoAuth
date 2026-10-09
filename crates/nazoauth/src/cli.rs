@@ -13,7 +13,7 @@ use std::{
 use crate::{
     adapters::security::{
         configure_password_hash_limits, default_password_hash_max_concurrency,
-        default_password_hash_queue_timeout_ms, initialize_dummy_password_hash,
+        default_password_hash_queue_timeout_ms,
     },
     bootstrap::RegistrationSecretHasher,
     config::{ConfigSource, ServerConfigPreparation},
@@ -234,7 +234,6 @@ async fn run_admin_provision(launcher: &dyn PersistenceLauncher) -> anyhow::Resu
             .map_err(|_| admin_provision_error())?,
     )
     .map_err(|_| admin_provision_error())?;
-    initialize_dummy_password_hash().map_err(|_| admin_provision_error())?;
     let password_hash = nazo_identity::ports::SecretHashPort::hash_secret(
         &RegistrationSecretHasher,
         credentials.password,

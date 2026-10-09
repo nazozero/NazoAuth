@@ -19,16 +19,16 @@ use nazo_openid4vci::application::{
     AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
     CredentialEndpointResponse, CredentialHttpError, CredentialIssuerFuture,
     CredentialIssuerOperations, CredentialRequestBody, CredentialRequestContext,
-    CredentialResponseBody, PreAuthorizedTokenRequest, PreAuthorizedTokenResponse,
+    CredentialResponseBody, CredentialResponseStatus, PreAuthorizedTokenRequest,
+    PreAuthorizedTokenResponse,
 };
 use nazo_openid4vci::{
     AuthorizationCodeGrant, BatchCredentialIssuance, CredentialAccess, CredentialConfiguration,
     CredentialIssuance, CredentialIssuerMetadata, CredentialIssuerService, CredentialOffer,
     CredentialOfferGrants, CredentialRequest, CredentialRequestEncryptionMetadata,
     CredentialResponse, CredentialResponseEncryption, CredentialStorePort,
-    DeferredCredentialRequest, DeferredPayload, EncryptionMetadata, IssuanceDisposition,
-    IssuanceNotification, NonceRecord, NotificationRequest, PreAuthorizedCodeGrant,
-    TxCodeDescription,
+    DeferredCredentialRequest, EncryptionMetadata, IssuanceDisposition, IssuanceNotification,
+    NonceRecord, NotificationRequest, PreAuthorizedCodeGrant, TxCodeDescription,
 };
 use nazo_persistence::{Openid4vcSubjectStore, Openid4vciDatasetStore, Openid4vciStore};
 use nazo_runtime_modules::ModuleId;
@@ -120,6 +120,20 @@ fn finish_response(
         });
     }
     Ok(CredentialResponseBody::Json(response))
+}
+
+fn validate_response_encryption_transport(
+    encrypted_request: bool,
+    encryption: Option<&CredentialResponseEncryption>,
+) -> Result<(), CredentialHttpError> {
+    if encryption.is_some() && !encrypted_request {
+        return Err(vci_error(
+            400,
+            "invalid_encryption_parameters",
+            "Credential response encryption requires an encrypted request.",
+        ));
+    }
+    Ok(())
 }
 
 async fn next_dpop_nonce<S: DpopStateStorePort + ?Sized>(
@@ -302,7 +316,7 @@ impl ServerCredentialIssuerOperations {
         }
         if self
             .token_service
-            .access_token_revoked(tenant_id, &claims.jti)
+            .access_token_revoked(tenant_id, &claims)
             .await
             .unwrap_or(true)
         {
@@ -342,7 +356,7 @@ impl ServerCredentialIssuerOperations {
             }
             None => self
                 .token_service
-                .active_subject_id_by_access_token(tenant_id, &claims.jti)
+                .active_subject_id_by_access_token(tenant_id, &claims.jti, &claims.sub)
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -451,7 +465,53 @@ impl ServerCredentialIssuerOperations {
         )?;
         let token_id = Uuid::parse_str(&claims.jti)
             .map_err(|_| vci_error(401, "invalid_token", "Access token identifier is invalid."))?;
+        let token_hash = blake3_hex(&context.bearer_token);
+        let retained_access = self
+            .store
+            .resolve_access(&token_hash, Utc::now())
+            .await
+            .map_err(|_| {
+                vci_error(
+                    503,
+                    "server_error",
+                    "Credential proof provenance is unavailable.",
+                )
+            })?;
+        let proof_origin = match retained_access {
+            Some(retained)
+                if retained.token_id == token_id
+                    && retained.tenant_id == tenant_id
+                    && retained.subject_id == subject_id
+                    && retained.client_id == claims.client_id
+                    && retained.authorization_id == claims.authorization_id
+                    && retained.dpop_jkt == dpop_jkt
+                    && (retained.authorization_id.is_none()
+                        || retained.mtls_x5t_s256 == mtls_x5t_s256) =>
+            {
+                retained.proof_origin
+            }
+            Some(_) => {
+                return Err(vci_error(
+                    503,
+                    "server_error",
+                    "Credential proof provenance is inconsistent.",
+                ));
+            }
+            None if claims.client_epoch.is_some() => {
+                nazo_openid4vci::CredentialProofOrigin::RegisteredClient
+            }
+            None => {
+                return Err(vci_error(
+                    401,
+                    "invalid_token",
+                    "Credential authorization provenance is missing.",
+                ));
+            }
+        };
         let access = CredentialAccess {
+            authorization_id: claims.authorization_id,
+            mtls_x5t_s256,
+            proof_origin,
             token_id,
             tenant_id,
             subject_id,
@@ -464,7 +524,7 @@ impl ServerCredentialIssuerOperations {
             })?,
         };
         self.store
-            .upsert_access(&blake3_hex(&context.bearer_token), &access)
+            .upsert_access(&token_hash, &access)
             .await
             .map_err(|_| {
                 vci_error(

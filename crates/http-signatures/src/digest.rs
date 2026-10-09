@@ -60,3 +60,50 @@ fn raw_dictionary_key_count(field: &str, wanted: &str) -> usize {
         .filter(|key| *key == wanted)
         .count()
 }
+
+/// A digest established for one borrowed, immutable body.
+///
+/// The private body borrow keeps the bytes alive and immutable for the evidence's
+/// lifetime. Reuse requires the same slice and the same field value; neither body
+/// length nor an externally supplied boolean can establish this evidence.
+pub struct BodyDigest<'body> {
+    body: &'body [u8],
+    field_value: String,
+}
+
+impl<'body> BodyDigest<'body> {
+    /// Computes the field for an outgoing body once.
+    pub fn for_body(body: &'body [u8]) -> Self {
+        Self {
+            body,
+            field_value: content_digest(body),
+        }
+    }
+
+    /// Checks a received field against the actual body before retaining evidence.
+    pub fn from_field(field_value: &str, body: &'body [u8]) -> Option<Self> {
+        content_digest_field_matches(field_value, body).then(|| Self {
+            body,
+            field_value: field_value.trim_matches([' ', '\t']).to_owned(),
+        })
+    }
+
+    pub fn field_value(&self) -> &str {
+        &self.field_value
+    }
+
+    pub(crate) fn matches(&self, field_value: &str, body: &[u8]) -> bool {
+        std::ptr::eq(self.body, body) && field_value.trim_matches([' ', '\t']) == self.field_value
+    }
+}
+
+pub(crate) fn digest_matches(
+    field_value: &str,
+    body: &[u8],
+    evidence: Option<&BodyDigest<'_>>,
+) -> bool {
+    match evidence {
+        Some(evidence) => evidence.matches(field_value, body),
+        None => content_digest_field_matches(field_value, body),
+    }
+}

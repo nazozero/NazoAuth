@@ -4,7 +4,7 @@
 //! request only resolves its host in the immutable index owned here.
 
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -29,14 +29,12 @@ const DIRECTORY_DATABASE_RECONCILE_INTERVAL: Duration = Duration::from_secs(5);
 /// used as a request tenant or CORS policy.
 pub(super) struct ProcessRuntime {
     pub(super) config: ConfigSource,
-    pub(super) perf_metrics_enabled: bool,
     /// The sole tenant allowed to reach deployment-global HTTP control routes.
     pub(super) control_tenant_id: nazo_identity::TenantId,
     pub(super) persistence: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
     pub(super) state_backend: nazo_oauth_server::ports::transient_state::ServerStateBackendBindings,
     pub(super) avatar_object_store: super::super::ServerAvatarObjectStoreBindings,
     pub(super) control_discovery: web::Data<crate::control_discovery::ControlDiscoveryEndpoint>,
-    pub(super) database_pool_metrics: web::Data<dyn nazo_persistence::DatabasePoolMetricsPort>,
     pub(super) route_settings: Arc<Settings>,
 }
 
@@ -57,6 +55,19 @@ struct TenantRuntimeLifecycle {
     ciba_ping_worker: Option<JoinHandle<()>>,
 }
 
+impl Drop for TenantRuntimeLifecycle {
+    fn drop(&mut self) {
+        if let Some(worker) = self.runtime_module_reconciler.take() {
+            worker.abort();
+        }
+        if let Some(worker) = self.ciba_ping_worker.take() {
+            worker.abort();
+        }
+        // KeyLifecycleTask's watch sender closes on drop. Its current refresh
+        // completes cooperatively; key material writes must never be aborted.
+    }
+}
+
 impl TenantRuntime {
     fn new(
         binding: TenantDirectoryBinding,
@@ -74,17 +85,6 @@ impl TenantRuntime {
         self.assembly
             .as_ref()
             .expect("test tenant runtime has no HTTP service assembly")
-    }
-
-    /// Used only by the HTTP CORS predicate after a host lookup in this same
-    /// in-process registry. It never reads an external source.
-    pub(in crate::bootstrap) fn cors_allowed_origins(&self) -> &[String] {
-        &self
-            .assembly()
-            .startup
-            .settings
-            .endpoint
-            .cors_allowed_origins
     }
 
     async fn start_lifecycle(&self) -> anyhow::Result<()> {
@@ -138,27 +138,31 @@ impl TenantRuntime {
                 lifecycle.ciba_ping_worker.take(),
             )
         };
+        // Abort both owned loops before the first await. Cancellation while
+        // joining either one must not detach the other extracted handle.
+        if let Some(worker) = runtime_module_reconciler.as_ref() {
+            worker.abort();
+        }
+        if let Some(worker) = ciba_ping_worker.as_ref() {
+            worker.abort();
+        }
         let stop_key = async {
             if let Some(worker) = key_lifecycle {
                 worker.stop().await;
             }
         };
         let stop_workers = async {
-            if let Some(worker) = runtime_module_reconciler {
-                worker.abort();
-                if let Err(error) = worker.await
-                    && !error.is_cancelled()
-                {
-                    tracing::warn!(%error, "tenant runtime-module reconciler stopped unexpectedly");
-                }
+            if let Some(worker) = runtime_module_reconciler
+                && let Err(error) = worker.await
+                && !error.is_cancelled()
+            {
+                tracing::warn!(%error, "tenant runtime-module reconciler stopped unexpectedly");
             }
-            if let Some(worker) = ciba_ping_worker {
-                worker.abort();
-                if let Err(error) = worker.await
-                    && !error.is_cancelled()
-                {
-                    tracing::warn!(%error, "tenant CIBA ping worker stopped unexpectedly");
-                }
+            if let Some(worker) = ciba_ping_worker
+                && let Err(error) = worker.await
+                && !error.is_cancelled()
+            {
+                tracing::warn!(%error, "tenant CIBA ping worker stopped unexpectedly");
             }
         };
         tokio::join!(biased; stop_key, stop_workers);
@@ -200,10 +204,6 @@ impl TenantRuntimeRegistry {
 
     pub(in crate::bootstrap) fn revision(&self) -> u64 {
         self.load().revision
-    }
-
-    pub(in crate::bootstrap) fn resolve(&self, host: &str) -> Option<Arc<TenantRuntime>> {
-        self.load().by_host.get(host).cloned()
     }
 
     pub(crate) fn contains_tenant(&self, tenant_id: nazo_identity::TenantId) -> bool {
@@ -355,7 +355,6 @@ async fn build_service_runtime(
         .await?,
     );
     let startup = StartupConfiguration {
-        config: process.config.clone(),
         persistence: process.persistence.clone(),
         transient_state,
         avatar_storage,
@@ -382,7 +381,7 @@ pub(super) enum TenantDirectoryRefreshOutcome {
 struct TenantDirectoryRefreshState {
     // Cache-applied revisions deliberately do not advance this fence. The DB
     // reconciler must eventually read the authoritative payload for them.
-    last_database_revision: u64,
+    last_database_snapshot: Option<Arc<TenantDirectorySnapshot>>,
     // A cache revision proven ahead of PostgreSQL is ignored until the DB
     // catches up, rather than being re-applied every one-second cache tick.
     rejected_cache_revision: Option<u64>,
@@ -427,13 +426,14 @@ impl TenantRuntimeRefresher {
         snapshot: TenantDirectorySnapshot,
     ) -> anyhow::Result<TenantDirectoryRefreshOutcome> {
         let _guard = self.gate.lock().await;
+        let snapshot = Arc::new(snapshot);
         let outcome = self
-            .apply_snapshot(snapshot.clone(), SnapshotSource::Database)
+            .apply_snapshot(&snapshot, SnapshotSource::Database)
             .await?;
         self.state
             .lock()
             .expect("tenant directory refresh state mutex is not poisoned")
-            .last_database_revision = snapshot.revision;
+            .last_database_snapshot = Some(snapshot);
         Ok(outcome)
     }
 
@@ -464,7 +464,9 @@ impl TenantRuntimeRefresher {
                         .state
                         .lock()
                         .expect("tenant directory refresh state mutex is not poisoned")
-                        .last_database_revision;
+                        .last_database_snapshot
+                        .as_ref()
+                        .map_or(0, |snapshot| snapshot.revision);
                     if last_database_revision < candidate_revision {
                         self.state
                             .lock()
@@ -473,7 +475,7 @@ impl TenantRuntimeRefresher {
                     }
                     return Ok(outcome);
                 }
-                self.apply_snapshot(snapshot, SnapshotSource::Cache).await
+                self.apply_snapshot(&snapshot, SnapshotSource::Cache).await
             }
             Ok(Some(_)) => Ok(TenantDirectoryRefreshOutcome::Unchanged),
             Ok(None) | Err(_) => self.reconcile_database_locked(true).await,
@@ -505,16 +507,25 @@ impl TenantRuntimeRefresher {
         repair_cache: bool,
     ) -> anyhow::Result<TenantDirectoryRefreshOutcome> {
         let local_revision = self.registry.revision();
-        let last_database_revision = self
+        let last_database_snapshot = self
             .state
             .lock()
             .expect("tenant directory refresh state mutex is not poisoned")
-            .last_database_revision;
+            .last_database_snapshot
+            .clone();
         let revision =
             self.directory.current_revision().await.map_err(|error| {
                 anyhow::anyhow!("tenant directory revision read failed: {error}")
             })?;
-        if !repair_cache && revision == last_database_revision && revision == local_revision {
+        if let Some(snapshot) = last_database_snapshot
+            && revision == snapshot.revision
+            && revision == local_revision
+        {
+            // Only a database-confirmed payload may repair the cache. A
+            // cache-applied generation still takes the full authoritative read.
+            if repair_cache && let Err(error) = self.cache.publish_authoritative(&snapshot).await {
+                tracing::warn!(%error, "tenant directory cache repair failed; retaining authoritative local snapshot");
+            }
             return Ok(TenantDirectoryRefreshOutcome::Unchanged);
         }
         let snapshot = self
@@ -522,27 +533,31 @@ impl TenantRuntimeRefresher {
             .load_active()
             .await
             .map_err(|error| anyhow::anyhow!("tenant directory read failed: {error}"))?;
-        if snapshot.revision != revision {
+        if snapshot.revision < revision {
             anyhow::bail!(
-                "tenant directory revision changed during read (expected {revision}, got {})",
+                "tenant directory snapshot precedes revision check (expected at least {revision}, got {})",
                 snapshot.revision
             );
         }
-        let cache_was_ahead = local_revision > revision;
+        // The authoritative read owns one complete coherent snapshot. A commit
+        // between the compact precheck and that read may advance its revision.
+        let authoritative_revision = snapshot.revision;
+        let cache_was_ahead = local_revision > authoritative_revision;
+        let snapshot = Arc::new(snapshot);
         let outcome = self
-            .apply_snapshot(snapshot.clone(), SnapshotSource::Database)
+            .apply_snapshot(&snapshot, SnapshotSource::Database)
             .await?;
         {
             let mut state = self
                 .state
                 .lock()
                 .expect("tenant directory refresh state mutex is not poisoned");
-            state.last_database_revision = revision;
+            state.last_database_snapshot = Some(snapshot.clone());
             if cache_was_ahead {
                 state.rejected_cache_revision = Some(local_revision);
             } else if state
                 .rejected_cache_revision
-                .is_some_and(|rejected| revision >= rejected)
+                .is_some_and(|rejected| authoritative_revision >= rejected)
             {
                 state.rejected_cache_revision = None;
             }
@@ -557,14 +572,14 @@ impl TenantRuntimeRefresher {
 
     async fn apply_snapshot(
         &self,
-        snapshot: TenantDirectorySnapshot,
+        snapshot: &TenantDirectorySnapshot,
         source: SnapshotSource,
     ) -> anyhow::Result<TenantDirectoryRefreshOutcome> {
         let current = self.registry.load();
         if matches!(source, SnapshotSource::Cache) && snapshot.revision <= current.revision {
             return Ok(TenantDirectoryRefreshOutcome::Unchanged);
         }
-        validate_snapshot(&snapshot)?;
+        validate_snapshot(snapshot)?;
 
         let existing = current
             .by_host
@@ -588,12 +603,13 @@ impl TenantRuntimeRefresher {
             by_host.insert(binding.external_host.clone(), runtime);
         }
 
-        self.publish_candidate(snapshot, by_host, newly_built).await
+        self.publish_candidate(snapshot.revision, by_host, newly_built)
+            .await
     }
 
     async fn publish_candidate(
         &self,
-        snapshot: TenantDirectorySnapshot,
+        revision: u64,
         by_host: HashMap<String, Arc<TenantRuntime>>,
         newly_built: Vec<Arc<TenantRuntime>>,
     ) -> anyhow::Result<TenantDirectoryRefreshOutcome> {
@@ -610,27 +626,27 @@ impl TenantRuntimeRefresher {
             started.push(runtime.clone());
         }
 
-        let previous = self.registry.replace(TenantHostIndex {
-            revision: snapshot.revision,
-            by_host,
-        });
-        let next = self.registry.load();
-        for runtime in previous.by_host.values() {
-            let retained = next
+        let previous = self.registry.replace(TenantHostIndex { revision, by_host });
+        let retired = {
+            let next = self.registry.load();
+            // A retained runtime also retains its lifecycle. One pointer set
+            // covers both retained graphs and replacements sharing a lifecycle.
+            let retained_lifecycles = next
                 .by_host
                 .values()
-                .any(|candidate| Arc::ptr_eq(candidate, runtime));
-            let lifecycle_reused = next
+                .map(|runtime| Arc::as_ptr(&runtime.lifecycle))
+                .collect::<HashSet<_>>();
+            previous
                 .by_host
                 .values()
-                .any(|candidate| Arc::ptr_eq(&candidate.lifecycle, &runtime.lifecycle));
-            if !retained && !lifecycle_reused {
-                runtime.stop_lifecycle().await;
-            }
+                .filter(|runtime| !retained_lifecycles.contains(&Arc::as_ptr(&runtime.lifecycle)))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        for runtime in retired {
+            runtime.stop_lifecycle().await;
         }
-        Ok(TenantDirectoryRefreshOutcome::Applied {
-            revision: snapshot.revision,
-        })
+        Ok(TenantDirectoryRefreshOutcome::Applied { revision })
     }
 }
 
@@ -707,3 +723,7 @@ fn validate_snapshot(snapshot: &TenantDirectorySnapshot) -> anyhow::Result<()> {
 #[cfg(test)]
 #[path = "../../../tests/unit/bootstrap/startup/tenant_runtime.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/support/tenant_runtime.rs"]
+pub(crate) mod test_support;
