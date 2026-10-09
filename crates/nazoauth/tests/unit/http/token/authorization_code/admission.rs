@@ -73,8 +73,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
         assert_eq!(oauth_error_code(expired).await, "invalid_grant");
 
         payload.expires_at = Utc::now() + Duration::seconds(60);
-        payload.code_challenge = None;
-        payload.code_challenge_method = None;
+        payload.pkce = (None).into();
         for verifier in ["", "wrong-verifier", VALID_CODE_VERIFIER] {
             form.code_verifier = Some(verifier.to_owned());
             let downgrade =
@@ -103,8 +102,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
 
         payload.resource_indicators.clear();
         form.audiences.clear();
-        payload.code_challenge = Some(pkce_s256(VALID_CODE_VERIFIER));
-        payload.code_challenge_method = Some("S256".to_owned());
+        payload.pkce = (Some(pkce_s256(VALID_CODE_VERIFIER))).into();
         form.code_verifier = Some(VALID_CODE_VERIFIER.to_owned());
         payload.scopes = vec![nazo_oauth_server::token::native_sso::DEVICE_SSO_SCOPE.to_owned()];
         let native_sso_disabled =
@@ -292,8 +290,7 @@ async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_
 
     let no_challenge_code = format!("code-{}", Uuid::now_v7());
     let mut no_challenge_payload = payload_for_client(&client);
-    no_challenge_payload.code_challenge = None;
-    no_challenge_payload.code_challenge_method = None;
+    no_challenge_payload.pkce = (None).into();
     fixture
         .store_code_state(
             &no_challenge_code,
@@ -378,15 +375,20 @@ async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_
     ));
 
     let pkce_state_code = format!("code-{}", Uuid::now_v7());
-    let mut pkce_state_payload = payload_for_client(&client);
-    pkce_state_payload.code_challenge_method = None;
+    let mut pkce_state = serde_json::to_value(AuthorizationCodeState::Pending {
+        payload: payload_for_client(&client),
+    })
+    .unwrap();
+    let challenge = pkce_state["payload"]
+        .as_object_mut()
+        .unwrap()
+        .remove("s256_code_challenge")
+        .unwrap();
+    pkce_state["payload"]["code_challenge"] = challenge;
+    // Missing legacy method must fail closed, never become an absent challenge.
+    let raw_pkce_state = pkce_state.to_string();
     fixture
-        .store_code_state(
-            &pkce_state_code,
-            &AuthorizationCodeState::Pending {
-                payload: pkce_state_payload,
-            },
-        )
+        .store_raw_code_state(&pkce_state_code, &raw_pkce_state)
         .await;
     let pkce_state_response = token_authorization_code(
         &fixture.state,
@@ -401,10 +403,17 @@ async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_
         StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(oauth_error_code(pkce_state_response).await, "server_error");
-    assert!(matches!(
-        fixture.code_state(&pkce_state_code).await,
-        AuthorizationCodeState::Pending { .. }
-    ));
+    let retained = valkey_get(
+        &fixture.state.valkey,
+        authorization_code_key(&pkce_state_code),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        retained, raw_pkce_state,
+        "malformed PKCE must not consume the code"
+    );
 
     let audience_code = format!("code-{}", Uuid::now_v7());
     fixture

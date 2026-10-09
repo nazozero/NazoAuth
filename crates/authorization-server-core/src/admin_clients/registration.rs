@@ -119,7 +119,6 @@ where
             backchannel_authentication_request_signing_alg: trim_optional_string(
                 request.backchannel_authentication_request_signing_alg,
             ),
-            backchannel_user_code_parameter: request.backchannel_user_code_parameter,
             backchannel_logout_uri: trim_optional_string(request.backchannel_logout_uri),
             backchannel_logout_session_required: request.backchannel_logout_session_required,
             frontchannel_logout_uri: trim_optional_string(request.frontchannel_logout_uri),

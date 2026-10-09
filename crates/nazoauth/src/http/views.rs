@@ -84,7 +84,6 @@ pub(crate) fn client_json(client: &ClientRow) -> Value {
     let backchannel_client_notification_endpoint = &client.backchannel_client_notification_endpoint;
     let backchannel_authentication_request_signing_alg =
         &client.backchannel_authentication_request_signing_alg;
-    let backchannel_user_code_parameter = client.backchannel_user_code_parameter;
     let security_policy = &client.security_policy;
     let mut value = json!({
         "client_id": client.client_id,
@@ -179,10 +178,7 @@ pub(crate) fn client_json(client: &ClientRow) -> Value {
         "backchannel_authentication_request_signing_alg".to_owned(),
         json!(backchannel_authentication_request_signing_alg),
     );
-    object.insert(
-        "backchannel_user_code_parameter".to_owned(),
-        json!(backchannel_user_code_parameter),
-    );
+    object.insert("backchannel_user_code_parameter".to_owned(), json!(false));
     object.insert("security_policy".to_owned(), json!(security_policy));
     value
 }

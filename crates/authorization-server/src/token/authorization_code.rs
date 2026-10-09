@@ -13,9 +13,7 @@ use crate::domain::client_policy::is_subset;
 use crate::domain::client_policy::is_valid_pkce_value;
 
 use crate::contracts::request_facts::DpopErrorContext;
-use crate::domain::oauth::{
-    AuthorizationCodeState, CodePayload, ConsumedAuthorizationCode, RefreshTokenPolicy, TokenIssue,
-};
+use crate::domain::oauth::{AuthorizationCodeState, CodePayload, RefreshTokenPolicy, TokenIssue};
 use crate::domain::rows::ClientRow;
 use nazo_auth::DpopError;
 
@@ -42,7 +40,7 @@ use crate::token::validate_token_sender_constraints;
 pub enum AuthorizationCodeConsumption {
     Consuming(Box<CodePayload>),
     Busy,
-    Consumed(ConsumedAuthorizationCode),
+    Consumed,
     Failed,
     Missing,
     Malformed,
@@ -389,9 +387,9 @@ pub async fn begin_authorization_code_consumption_with_service(
             Ok(AuthorizationCodeConsumption::Consuming(Box::new(payload)))
         }
         Ok(nazo_auth::AuthorizationCodeBeginResult::Busy) => Ok(AuthorizationCodeConsumption::Busy),
-        Ok(nazo_auth::AuthorizationCodeBeginResult::Consumed(
-            AuthorizationCodeState::Consumed { marker },
-        )) => Ok(AuthorizationCodeConsumption::Consumed(marker)),
+        Ok(nazo_auth::AuthorizationCodeBeginResult::Consumed(AuthorizationCodeState::Consumed)) => {
+            Ok(AuthorizationCodeConsumption::Consumed)
+        }
         Ok(
             nazo_auth::AuthorizationCodeBeginResult::Consumed(_)
             | nazo_auth::AuthorizationCodeBeginResult::Malformed,
@@ -562,7 +560,7 @@ pub async fn token_authorization_code_with_service(
     let payload =
         match begin_authorization_code_consumption_with_service(token_service, &code_hash).await {
             Ok(AuthorizationCodeConsumption::Consuming(payload)) => payload,
-            Ok(AuthorizationCodeConsumption::Consumed(_)) => {
+            Ok(AuthorizationCodeConsumption::Consumed) => {
                 // Cached markers do not authorize revocation. Read the durable
                 // receipt and require freshly verified original possession.
                 if let Some(redemption) = committed_single_use_redemption(
@@ -800,8 +798,8 @@ pub fn validate_pending_authorization_code_request(
     if !redirect_uri_matches_authorization_request(payload, form.redirect_uri.as_deref()) {
         return Err(authorization_code_client_mismatch_response());
     }
-    match (&payload.code_challenge, &payload.code_challenge_method) {
-        (Some(code_challenge), Some(method)) if method == "S256" => {
+    match payload.pkce.challenge() {
+        Some(code_challenge) => {
             let Some(verifier) = &form.code_verifier else {
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,
@@ -810,7 +808,7 @@ pub fn validate_pending_authorization_code_request(
                     false,
                 ));
             };
-            if !is_valid_pkce_value(verifier) || pkce_s256(verifier) != *code_challenge {
+            if !is_valid_pkce_value(verifier) || pkce_s256(verifier) != code_challenge {
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
@@ -819,7 +817,7 @@ pub fn validate_pending_authorization_code_request(
                 ));
             }
         }
-        (None, None) if !authorization_code_requires_pkce(client, payload) => {
+        None if !authorization_code_requires_pkce(client, payload) => {
             if form.code_verifier.is_some() {
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,

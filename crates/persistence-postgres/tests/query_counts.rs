@@ -166,7 +166,6 @@ fn oauth_client_fixture(
             backchannel_token_delivery_mode: "poll".to_owned(),
             backchannel_client_notification_endpoint: None,
             backchannel_authentication_request_signing_alg: None,
-            backchannel_user_code_parameter: false,
             backchannel_logout_uri: None,
             backchannel_logout_session_required: true,
             frontchannel_logout_uri: None,

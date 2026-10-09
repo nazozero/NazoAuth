@@ -79,7 +79,6 @@ fn client(suffix: &str) -> ValidatedClientRegistration {
         backchannel_token_delivery_mode: "poll".to_owned(),
         backchannel_client_notification_endpoint: None,
         backchannel_authentication_request_signing_alg: None,
-        backchannel_user_code_parameter: false,
         frontchannel_logout_uri: None,
         frontchannel_logout_session_required: false,
         tls_client_auth_subject_dn: None,

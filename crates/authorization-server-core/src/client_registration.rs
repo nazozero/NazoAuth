@@ -112,7 +112,6 @@ pub struct ValidatedClientRegistration {
     /// Signing algorithm registered for CIBA Authentication Request objects.
     pub backchannel_authentication_request_signing_alg: Option<String>,
     /// NazoAuth does not support the optional CIBA user-code parameter.
-    pub backchannel_user_code_parameter: bool,
     pub backchannel_logout_uri: Option<String>,
     pub backchannel_logout_session_required: bool,
     pub frontchannel_logout_uri: Option<String>,

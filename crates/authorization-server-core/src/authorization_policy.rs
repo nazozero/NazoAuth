@@ -52,7 +52,6 @@ pub struct AuthorizationProfilePolicy {
 pub struct NormalizedAuthorizationRequest {
     pub response_mode: Option<String>,
     pub code_challenge: Option<String>,
-    pub code_challenge_method: Option<String>,
     pub prompt: PromptDirectives,
     pub max_age: Option<i64>,
     pub requested_claims: RequestedClaims,
@@ -118,13 +117,13 @@ pub fn normalize_authorization_request(
     }
 
     let scopes = parse_scope(parameters.get("scope").map(String::as_str).unwrap_or(""));
-    let (code_challenge, code_challenge_method) = match (
+    let code_challenge = match (
         parameters.get("code_challenge").map(String::as_str),
         parameters.get("code_challenge_method").map(String::as_str),
     ) {
-        (None, None) => (None, None),
+        (None, None) => None,
         (Some(challenge), Some("S256")) if is_valid_pkce_value(challenge) => {
-            (Some(challenge.to_owned()), Some("S256".to_owned()))
+            Some(challenge.to_owned())
         }
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
     };
@@ -172,7 +171,6 @@ pub fn normalize_authorization_request(
     Ok(NormalizedAuthorizationRequest {
         response_mode,
         code_challenge,
-        code_challenge_method,
         prompt,
         max_age,
         requested_claims,

@@ -69,6 +69,10 @@ fn omitted_and_false_ciba_user_code_metadata_have_the_same_public_value() {
         let mut request = ciba_request("poll");
         request.backchannel_user_code_parameter = value;
         let prepared = prepare_dynamic_client_registration(request, POLICY).unwrap();
-        assert!(!prepared.backchannel_user_code_parameter);
+        assert!(
+            !prepared
+                .into_create_client_request()
+                .backchannel_user_code_parameter
+        );
     }
 }

@@ -176,10 +176,10 @@ fn prompt_none_payload() -> ConsentPayload {
             .map(nazo_auth::OidcClaimRequest::named)
             .collect::<Vec<_>>())
         .into(),
-        code_challenge: Some(crate::crypto::pkce_s256(
+        pkce: (Some(crate::crypto::pkce_s256(
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~",
-        )),
-        code_challenge_method: Some("S256".to_owned()),
+        )))
+        .into(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
         pushed_request_uri: None,

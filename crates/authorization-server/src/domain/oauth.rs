@@ -5,8 +5,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 pub use nazo_auth::{
-    AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
-    PreparedTokenSubject, PushedAuthorizationRequest,
+    AuthorizationCodeState, CodePayload, ConsentPayload, PreparedTokenSubject,
+    PushedAuthorizationRequest,
 };
 
 /// token 签发函数所需的归一化输入。

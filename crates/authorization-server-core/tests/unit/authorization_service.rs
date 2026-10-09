@@ -402,8 +402,7 @@ fn consent(user_id: Uuid, request_uri: Option<&str>) -> ConsentPayload {
             .map(crate::OidcClaimRequest::named)
             .collect::<Vec<_>>())
         .into(),
-        code_challenge: Some("challenge".to_owned()),
-        code_challenge_method: Some("S256".to_owned()),
+        pkce: (Some("challenge".to_owned())).into(),
         dpop_jkt: Some("jkt".to_owned()),
         mtls_x5t_s256: None,
         pushed_request_uri: request_uri.map(str::to_owned),
@@ -999,7 +998,7 @@ fn successful_commit_binds_exact_prepared_code_before_publication() {
         assert_eq!(payload.code_id, "code-id");
         assert_eq!(payload.nonce.as_deref(), Some("nonce-1"));
         assert_eq!(payload.dpop_jkt.as_deref(), Some("jkt"));
-        assert_eq!(payload.code_challenge.as_deref(), Some("challenge"));
+        assert_eq!(payload.pkce.challenge(), Some("challenge"));
         assert_eq!(payload.issued_at, issued_at);
         assert_eq!(payload.expires_at, issued_at + Duration::seconds(60));
         let state = repository.0.decisions.lock().unwrap();

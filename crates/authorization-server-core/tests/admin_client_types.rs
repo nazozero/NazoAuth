@@ -73,7 +73,6 @@ fn registration() -> ValidatedClientRegistration {
         backchannel_token_delivery_mode: "poll".to_owned(),
         backchannel_client_notification_endpoint: None,
         backchannel_authentication_request_signing_alg: None,
-        backchannel_user_code_parameter: false,
         backchannel_logout_uri: None,
         backchannel_logout_session_required: false,
         frontchannel_logout_uri: None,
@@ -392,13 +391,8 @@ fn admin_create_and_patch_keep_ciba_user_code_disabled_without_stored_state() {
             assert!(matches!(created, Err(AdminClientError::InvalidRequest(_))));
             assert!(matches!(patched, Err(AdminClientError::InvalidRequest(_))));
         } else {
-            assert!(
-                !created
-                    .unwrap()
-                    .registration
-                    .backchannel_user_code_parameter
-            );
-            assert!(!patched.unwrap().backchannel_user_code_parameter);
+            assert!(created.is_ok());
+            assert!(patched.is_ok());
         }
     }
 }

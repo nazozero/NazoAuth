@@ -29,8 +29,7 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
             .map(nazo_auth::OidcClaimRequest::named)
             .collect::<Vec<_>>())
         .into(),
-        code_challenge: Some("challenge-material".to_owned()),
-        code_challenge_method: Some("S256".to_owned()),
+        pkce: (Some("challenge-material".to_owned())).into(),
         dpop_jkt: Some("dpop-binding".to_owned()),
         mtls_x5t_s256: Some("mtls-binding".to_owned()),
         pushed_request_uri: Some("urn:ietf:params:oauth:request_uri:par-1".to_owned()),

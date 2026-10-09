@@ -5,8 +5,8 @@ use fred::interfaces::{ClientLike, KeysInterface, LuaInterface};
 use fred::prelude::{Builder, Config, Expiration};
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationPortError, AuthorizationStateStorePort, CodePayload,
-    ConsentPayload, ConsumedAuthorizationCode, DecisionMaterialDiscardError,
-    DecisionMaterialDiscardOutcome, PushedAuthorizationRequest,
+    ConsentPayload, DecisionMaterialDiscardError, DecisionMaterialDiscardOutcome,
+    PushedAuthorizationRequest,
 };
 use nazo_identity::TenantId;
 use nazo_valkey::{
@@ -48,8 +48,7 @@ fn code_payload(code_id: &str) -> CodePayload {
         acr: None,
         userinfo_claim_requests: (vec![]).into(),
         id_token_claim_requests: (vec![]).into(),
-        code_challenge: None,
-        code_challenge_method: None,
+        pkce: (None).into(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
         issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
@@ -77,8 +76,7 @@ fn consent_payload(request_id: &str, user_id: uuid::Uuid) -> ConsentPayload {
         acr: None,
         userinfo_claim_requests: (Vec::new()).into(),
         id_token_claim_requests: (Vec::new()).into(),
-        code_challenge: None,
-        code_challenge_method: None,
+        pkce: (None).into(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
         pushed_request_uri: None,
@@ -1106,15 +1104,19 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
         .store_authorization_code_hash(&code_hash, &pending, 30)
         .await
         .unwrap();
-    let consumed = AuthorizationCodeState::Consumed {
-        marker: ConsumedAuthorizationCode {
-            client_id: uuid::Uuid::from_u128(3),
-            redemption_binding: Some("request-binding".to_owned()),
-            access_token_jti: "issued-jti".to_owned(),
-            access_token_expires_at: 2_000,
-            refresh_token_family_id: None,
-        },
-    };
+    let consumed = AuthorizationCodeState::Consumed;
+    let legacy: AuthorizationCodeState = serde_json::from_value(serde_json::json!({
+        "status": "consumed", "marker": {"client_id": uuid::Uuid::from_u128(3),
+        "redemption_binding": "request-binding", "access_token_jti": "issued-jti",
+        "access_token_expires_at": 2000, "refresh_token_family_id": null}
+    }))
+    .unwrap();
+    assert!(matches!(legacy, AuthorizationCodeState::Consumed));
+    assert_eq!(
+        serde_json::to_value(legacy).unwrap(),
+        serde_json::json!({"status":"consumed"})
+    );
+
     assert_eq!(
         store
             .mark_authorization_code(&code_hash, &consumed, 60)
@@ -1160,13 +1162,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
         .await
         .unwrap();
     match replay {
-        AuthorizationCodeBegin::Consumed(AuthorizationCodeState::Consumed { marker }) => {
-            assert_eq!(marker.access_token_jti, "issued-jti");
-            assert_eq!(
-                marker.redemption_binding.as_deref(),
-                Some("request-binding")
-            );
-        }
+        AuthorizationCodeBegin::Consumed(AuthorizationCodeState::Consumed) => {}
         unexpected => panic!("expected terminal consumed marker, got {unexpected:?}"),
     }
     let failed = AuthorizationCodeState::Failed {

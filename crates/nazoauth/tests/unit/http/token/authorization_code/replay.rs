@@ -97,7 +97,7 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
     fixture
         .store_code_state(
             &code,
-            &AuthorizationCodeState::Consumed {
+            &LegacyAuthorizationCodeState::Consumed {
                 marker: marker.clone(),
             },
         )
@@ -129,7 +129,7 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
     fixture
         .store_code_state(
             &missing_client_code,
-            &AuthorizationCodeState::Consumed {
+            &LegacyAuthorizationCodeState::Consumed {
                 marker: ConsumedAuthorizationCode {
                     client_id: Uuid::now_v7(),
                     redemption_binding: None,
@@ -183,7 +183,7 @@ async fn token_authorization_code_replay_fails_closed_when_token_revocation_erro
     fixture
         .store_code_state(
             &code,
-            &AuthorizationCodeState::Consumed {
+            &LegacyAuthorizationCodeState::Consumed {
                 marker: ConsumedAuthorizationCode {
                     client_id: client.id,
                     redemption_binding: Some(legacy_authorization_code_redemption_key(

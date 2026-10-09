@@ -37,10 +37,8 @@ pub struct ConsentPayload {
     pub userinfo_claim_requests: crate::UserinfoClaimRequests,
     #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
     pub id_token_claim_requests: crate::IdTokenClaimRequests,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_challenge: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_challenge_method: Option<String>,
+    #[serde(flatten)]
+    pub pkce: crate::S256Pkce,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpop_jkt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -102,10 +100,8 @@ pub struct CodePayload {
     pub userinfo_claim_requests: crate::UserinfoClaimRequests,
     #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
     pub id_token_claim_requests: crate::IdTokenClaimRequests,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_challenge: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_challenge_method: Option<String>,
+    #[serde(flatten)]
+    pub pkce: crate::S256Pkce,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpop_jkt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,23 +120,9 @@ pub enum AuthorizationCodeState {
         payload: CodePayload,
         consuming_at: DateTime<Utc>,
     },
-    Consumed {
-        marker: ConsumedAuthorizationCode,
-    },
+    Consumed,
     Failed {
         failed_at: DateTime<Utc>,
         error: String,
     },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ConsumedAuthorizationCode {
-    pub client_id: Uuid,
-    /// Historical cache metadata retained for wire compatibility. It is not
-    /// replay-revocation authority; the durable receipt owns that decision.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub redemption_binding: Option<String>,
-    pub access_token_jti: String,
-    pub access_token_expires_at: i64,
-    pub refresh_token_family_id: Option<Uuid>,
 }

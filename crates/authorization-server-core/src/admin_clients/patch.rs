@@ -70,8 +70,10 @@ where
     if let Some(value) = request.backchannel_authentication_request_signing_alg {
         client.backchannel_authentication_request_signing_alg = trim_optional_string(Some(value));
     }
-    if let Some(value) = request.backchannel_user_code_parameter {
-        client.backchannel_user_code_parameter = value;
+    if request.backchannel_user_code_parameter == Some(true) {
+        return Err(AdminClientError::InvalidRequest(
+            "backchannel_user_code_parameter=true 不受支持".into(),
+        ));
     }
     if let Some(value) = request.backchannel_logout_uri {
         client.backchannel_logout_uri = trim_optional_string(Some(value));

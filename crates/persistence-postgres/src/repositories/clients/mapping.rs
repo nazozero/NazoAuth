@@ -103,7 +103,6 @@ impl OAuthClientRecord {
                 backchannel_authentication_request_signing_alg: self
                     .backchannel_authentication_request_signing_alg,
                 // The optional CIBA user-code feature is unsupported.
-                backchannel_user_code_parameter: false,
                 frontchannel_logout_uri: self.frontchannel_logout_uri,
                 frontchannel_logout_session_required: self.frontchannel_logout_session_required,
                 tls_client_auth_subject_dn: self.tls_client_auth_subject_dn,

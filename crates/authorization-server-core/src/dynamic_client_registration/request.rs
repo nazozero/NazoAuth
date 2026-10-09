@@ -162,7 +162,6 @@ pub struct PreparedDynamicClientRegistration {
     pub backchannel_token_delivery_mode: String,
     pub backchannel_client_notification_endpoint: Option<String>,
     pub backchannel_authentication_request_signing_alg: Option<String>,
-    pub backchannel_user_code_parameter: bool,
     pub backchannel_logout_uri: Option<String>,
     pub backchannel_logout_session_required: bool,
     pub frontchannel_logout_uri: Option<String>,
@@ -223,7 +222,7 @@ impl PreparedDynamicClientRegistration {
             backchannel_client_notification_endpoint: self.backchannel_client_notification_endpoint,
             backchannel_authentication_request_signing_alg: self
                 .backchannel_authentication_request_signing_alg,
-            backchannel_user_code_parameter: self.backchannel_user_code_parameter,
+            backchannel_user_code_parameter: false,
             backchannel_logout_uri: self.backchannel_logout_uri,
             backchannel_logout_session_required: self.backchannel_logout_session_required,
             frontchannel_logout_uri: self.frontchannel_logout_uri,

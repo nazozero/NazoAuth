@@ -92,7 +92,13 @@ fn requested_prompt(q: &HashMap<String, String>) -> Result<PromptDirectives, ()>
 
 fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Option<String>), ()> {
     normalize_pkce_case(q, false)
-        .map(|normalized| (normalized.code_challenge, normalized.code_challenge_method))
+        .map(|normalized| {
+            let method = normalized
+                .code_challenge
+                .as_ref()
+                .map(|_| "S256".to_owned());
+            (normalized.code_challenge, method)
+        })
         .map_err(|_| ())
 }
 

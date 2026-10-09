@@ -17,7 +17,22 @@ use nazo_oauth_server::crypto::blake3_hex;
 use nazo_oauth_server::crypto::pkce_s256;
 use nazo_oauth_server::domain::oauth::AuthorizationCodeState;
 use nazo_oauth_server::domain::oauth::CodePayload;
-use nazo_oauth_server::domain::oauth::ConsumedAuthorizationCode;
+// Exact historical cache format used only to prove that attacker-controlled
+// marker metadata never becomes durable replay/revocation authority.
+#[derive(Clone, serde::Serialize)]
+struct ConsumedAuthorizationCode {
+    client_id: Uuid,
+    redemption_binding: Option<String>,
+    access_token_jti: String,
+    access_token_expires_at: i64,
+    refresh_token_family_id: Option<Uuid>,
+}
+#[derive(serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum LegacyAuthorizationCodeState {
+    Consumed { marker: ConsumedAuthorizationCode },
+}
+
 use nazo_oauth_server::domain::oauth::RefreshTokenPolicy;
 use nazo_oauth_server::domain::rows::ClientRow;
 use nazo_oauth_server::services::ServerTokenService;
@@ -369,7 +384,7 @@ impl LiveAuthorizationCodeFixture {
         .expect("test user should insert")
     }
 
-    async fn store_code_state(&self, code: &str, state: &AuthorizationCodeState) {
+    async fn store_code_state(&self, code: &str, state: &impl serde::Serialize) {
         valkey_set_ex(
             &self.state.valkey,
             authorization_code_key(code),
@@ -549,8 +564,7 @@ fn live_client(client_id: &str) -> ClientRow {
 fn payload_for_client(client: &ClientRow) -> CodePayload {
     let mut payload = code_payload(true);
     payload.client_id = client.client_id.clone();
-    payload.code_challenge = Some(pkce_s256(VALID_CODE_VERIFIER));
-    payload.code_challenge_method = Some("S256".to_owned());
+    payload.pkce = (Some(pkce_s256(VALID_CODE_VERIFIER))).into();
     payload.redirect_uri = "https://client.example/callback".to_owned();
     payload.redirect_uri_was_supplied = true;
     payload.scopes = vec!["openid".to_owned()];

@@ -57,7 +57,6 @@ fn client(tenant: TenantContext) -> OAuthClient {
             backchannel_token_delivery_mode: "poll".to_owned(),
             backchannel_client_notification_endpoint: None,
             backchannel_authentication_request_signing_alg: None,
-            backchannel_user_code_parameter: false,
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             tls_client_auth_subject_dn: None,
@@ -420,7 +419,10 @@ async fn dynamic_profile_metadata_round_trips_through_postgres() {
         persisted.backchannel_authentication_request_signing_alg,
         client.backchannel_authentication_request_signing_alg
     );
-    assert!(!persisted.backchannel_user_code_parameter);
+    assert_eq!(
+        persisted.backchannel_token_delivery_mode,
+        client.backchannel_token_delivery_mode
+    );
 
     let mut replacement = client.clone();
     replacement.registration.client_id = format!("replacement-{}", Uuid::now_v7());
@@ -434,7 +436,10 @@ async fn dynamic_profile_metadata_round_trips_through_postgres() {
         .await
         .unwrap();
     assert_eq!(replaced.client_id, client.client_id);
-    assert!(!replaced.backchannel_user_code_parameter);
+    assert_eq!(
+        replaced.backchannel_token_delivery_mode,
+        client.backchannel_token_delivery_mode
+    );
 
     repository
         .deactivate(client.tenant_id, client.id, rotated_token.as_str())

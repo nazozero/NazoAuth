@@ -11,6 +11,8 @@ mod authorization_service;
 mod ciba;
 mod ciba_ping;
 mod claim_selection;
+mod pkce;
+pub use pkce::S256Pkce;
 mod claims;
 pub use claim_selection::{IdTokenClaimRequests, UserinfoClaimRequests};
 mod client;
@@ -233,7 +235,7 @@ pub use token_service::{
 };
 pub use transaction::{
     AUTHORIZATION_CODE_REDEMPTION_VERSION, AuthorizationCodeState, CodePayload, ConsentPayload,
-    ConsumedAuthorizationCode, PushedAuthorizationRequest,
+    PushedAuthorizationRequest,
 };
 pub use uri_policy::{
     RedirectUriError, is_loopback_http_url, is_valid_pkce_value, oauth_redirect_uri_matches,

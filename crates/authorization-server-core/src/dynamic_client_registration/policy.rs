@@ -311,7 +311,6 @@ pub fn prepare_dynamic_client_registration(
         backchannel_client_notification_endpoint,
         backchannel_authentication_request_signing_alg: request
             .backchannel_authentication_request_signing_alg,
-        backchannel_user_code_parameter: false,
         backchannel_logout_uri: request.backchannel_logout_uri,
         backchannel_logout_session_required: request
             .backchannel_logout_session_required

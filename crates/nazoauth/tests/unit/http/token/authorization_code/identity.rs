@@ -292,7 +292,7 @@ async fn authorization_code_legacy_payload_and_cache_only_marker_cannot_issue_or
     fixture
         .store_code_state(
             &code,
-            &AuthorizationCodeState::Consumed {
+            &LegacyAuthorizationCodeState::Consumed {
                 marker: ConsumedAuthorizationCode {
                     client_id: client.id,
                     redemption_binding: Some(legacy_authorization_code_redemption_key(
