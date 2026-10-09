@@ -21,7 +21,6 @@ pub(super) fn refresh_authentication_context(
     issue: &TokenIssue,
     issuer: &str,
     audience: &str,
-    id_token_sid: Option<&str>,
 ) -> Option<nazo_auth::RefreshTokenAuthenticationContext> {
     // Every refresh family carries one immutable authentication contract. An
     // absent original auth_time or malformed AMR must never be synthesized.
@@ -32,11 +31,11 @@ pub(super) fn refresh_authentication_context(
         auth_time: issue.auth_time?,
         amr: issue.amr.clone(),
         oidc_sid: issue.oidc_sid.clone(),
-        id_token_sid: id_token_sid.map(ToOwned::to_owned),
+
         acr: issue.acr.clone(),
-        nonce: issue.nonce.clone(),
-        userinfo_claim_requests: (issue.userinfo_claim_requests.clone()).into(),
-        id_token_claim_requests: (issue.id_token_claim_requests.clone()).into(),
+
+        userinfo_claim_requests: issue.userinfo_claim_requests.clone(),
+        id_token_claim_requests: issue.id_token_claim_requests.clone(),
     };
     context.is_well_formed().then_some(context)
 }
@@ -77,14 +76,13 @@ pub(super) fn refresh_issue_matches_source(
         && source.contract.subject == issue.subject
         && source.contract.authorization_details == issue.authorization_details
         && context.is_well_formed()
+        && source.id_token_sid.as_deref().is_none_or(|sid| !sid.trim().is_empty())
         && context.issuer == issuer
         && context.audience == client.client_id
         && issue.auth_time == Some(context.auth_time)
         && context.amr == issue.amr
         && context.oidc_sid == issue.oidc_sid
-        && context.id_token_sid.is_none()
         && context.acr == issue.acr
-        && context.nonce.is_none()
 
         && context.userinfo_claim_requests == issue.userinfo_claim_requests
 

@@ -48,21 +48,18 @@ fn refresh_authentication_context_preserves_original_claim_contract_on_scope_nar
     // The issued AT narrows scopes; its original claim context is unchanged.
     issue.scopes = vec!["openid".to_owned()];
 
-    let context = refresh_authentication_context(
-        &issue,
-        "https://issuer.example",
-        "client-1",
-        Some("original-sid"),
-    )
-    .expect("openid refresh token should carry authentication context");
+    let context = refresh_authentication_context(&issue, "https://issuer.example", "client-1")
+        .expect("openid refresh token should carry authentication context");
     assert_eq!(context.issuer, "https://issuer.example");
     assert_eq!(context.audience, "client-1");
-    assert_eq!(context.id_token_sid.as_deref(), Some("original-sid"));
+    let wire = serde_json::to_value(&context).unwrap();
+    assert!(wire.get("id_token_sid").is_none());
     assert_eq!(context.auth_time, 1_700_000_000);
     assert_eq!(context.amr, vec!["pwd"]);
     assert_eq!(context.oidc_sid.as_deref(), Some("original-sid"));
     assert_eq!(context.acr.as_deref(), Some("1"));
-    assert_eq!(context.nonce.as_deref(), Some("original-nonce"));
+    assert!(wire.get("nonce").is_none());
+    assert_eq!(issue.nonce.as_deref(), Some("original-nonce"));
     assert_eq!(context.id_token_claim_requests.names(), vec!["email"]);
 }
 
@@ -131,11 +128,10 @@ fn source_for_issue(issue: &TokenIssue, client: &ClientRow) -> nazo_auth::Refres
             issue,
             "https://issuer.example",
             &client.client_id,
-            None,
         )
         .unwrap(),
     }
-    .persisted();
+    .clone();
     nazo_auth::RefreshTokenAuthority {
         tenant_id: client.tenant_id,
         client_id: client.id,
@@ -143,7 +139,7 @@ fn source_for_issue(issue: &TokenIssue, client: &ClientRow) -> nazo_auth::Refres
         family_id: Uuid::now_v7(),
         member_id: Uuid::now_v7(),
         token_blake3: [4; 32],
-        contract_key: contract.blake3_digest(),
+        contract_key: (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes()),
         current_audiences: contract.audiences.clone(),
         id_token_sid: None,
         dpop_jkt: None,
@@ -398,7 +394,7 @@ fn ownership_preserved_issue(client: &ClientRow) -> TokenIssue {
 #[test]
 fn ownership_refresh_borrowed_context_rejects_each_contract_field_difference() {
     let client = client_with_grants(&["authorization_code", "refresh_token"]);
-    for field in 0..13 {
+    for field in 0..11 {
         let mut issue = ownership_preserved_issue(&client);
         assert!(refresh_issue_matches_source(
             &issue,
@@ -424,17 +420,15 @@ fn ownership_refresh_borrowed_context_rejects_each_contract_field_difference() {
             3 => context.auth_time += 1,
             4 => context.amr.push("mfa".into()),
             5 => context.oidc_sid = Some("different".into()),
-            6 => context.id_token_sid = Some("not-persisted".into()),
-            7 => context.acr = Some("different".into()),
-            8 => context.nonce = Some("not-persisted".into()),
-            9 => context
+            6 => context.acr = Some("different".into()),
+            7 => context
                 .userinfo_claim_requests
                 .push(nazo_auth::OidcClaimRequest::named("profile")),
-            10 => context.userinfo_claim_requests.push(request),
-            11 => context
+            8 => context.userinfo_claim_requests.push(request),
+            9 => context
                 .id_token_claim_requests
                 .push(nazo_auth::OidcClaimRequest::named("profile")),
-            12 => context.id_token_claim_requests.push(request),
+            10 => context.id_token_claim_requests.push(request),
             _ => unreachable!(),
         }
         assert!(
@@ -507,5 +501,20 @@ fn ownership_refresh_context_rejects_equal_but_malformed_issue_and_source() {
             !refresh_issue_matches_source(&issue, &client, issuer),
             "malformed context field {field}"
         );
+    }
+}
+
+#[test]
+fn ownership_refresh_rejects_blank_generation_sid_after_lifecycle_separation() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    for sid in ["", " "] {
+        let mut issue = ownership_preserved_issue(&client);
+        issue.refresh_authority.as_mut().unwrap().id_token_sid = Some(sid.into());
+        issue.refresh_id_token_sid = Some(Some(sid.into()));
+        assert!(!refresh_issue_matches_source(
+            &issue,
+            &client,
+            "https://issuer.example"
+        ));
     }
 }

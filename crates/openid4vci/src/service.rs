@@ -741,8 +741,7 @@ where
                     configuration_id: issuance.configuration_id.clone(),
                     format: issuance.configuration.format,
                     holder_bindings,
-                    payload_ciphertext: serde_json::to_vec(&protected)
-                        .map_err(|_| CredentialIssuanceError::InvalidConfiguration)?,
+                    payload: protected,
                     ready_at,
                     expires_at: access.continuation_expires_at(issuance.expires_at),
                 };

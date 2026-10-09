@@ -97,9 +97,9 @@ fn contract(fixture: &Fixture) -> RefreshContract {
             auth_time: 1_700_000_000,
             amr: vec!["pwd".to_owned()],
             oidc_sid: Some("original-oidc-session".to_owned()),
-            id_token_sid: None,
+
             acr: None,
-            nonce: None,
+
             userinfo_claim_requests: (Vec::new()).into(),
             id_token_claim_requests: (Vec::new()).into(),
         },
@@ -960,9 +960,7 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
     let fixture = seed_fixture(&mut connection).await;
     let token = new_token(&fixture, Utc::now() - Duration::minutes(1));
     let original_contract = contract(&fixture);
-    let mut context = original_contract.authentication_context.clone();
-    context.nonce = Some("legacy-original-nonce".to_owned());
-    context.id_token_sid.clone_from(&token.id_token_sid);
+    let context = original_contract.authentication_context.clone();
     // Seed the real old schema. The opaque token hash is the public BLAKE3
     // token contract; the migration alone computes its SQL-namespaced key.
     sql_query(
@@ -987,6 +985,8 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
         // current compact Rust writer. Only the migration computes its key.
         let mut legacy = serde_json::to_value(context).unwrap();
         legacy["version"] = json!(1);
+        legacy["nonce"] = json!("legacy-original-nonce");
+        legacy["id_token_sid"] = json!(token.id_token_sid);
         legacy["userinfo_claims"] = json!([]);
         legacy["id_token_claims"] = json!([]);
         legacy
@@ -1000,15 +1000,14 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
     let source = lookup(&url, &token.raw_token).await;
     assert_ne!(
         source.contract_key,
-        original_contract.persisted().blake3_digest(),
+        *blake3::hash(&serde_json::to_vec(&original_contract).unwrap()).as_bytes(),
         "this source must use the genuine migration key, not a fabricated Rust key"
     );
     assert_eq!(source.contract_audiences, vec![A, B]);
-    assert!(source.authentication_context.nonce.is_none());
-    assert_eq!(
-        source.authentication_context.id_token_sid,
-        token.id_token_sid
-    );
+    let context_wire = serde_json::to_value(&source.authentication_context).unwrap();
+    assert!(context_wire.get("nonce").is_none());
+    assert!(context_wire.get("id_token_sid").is_none());
+    assert_eq!(source.id_token_sid, token.id_token_sid);
     let before = state(&mut connection, source.token_family_id).await;
     let (input, raw) = rotation(&fixture, &source, &[A]);
     let repository = TokenIssuanceRepository::new(create_pool(&url, 1).unwrap());

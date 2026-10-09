@@ -153,7 +153,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
     let request = AuthorizationRequest {
         client_id: "x509_san_dns:example.com".to_owned(),
         response_type: "vp_token".to_owned(),
-        response_mode: "direct_post.jwt".to_owned(),
+        response_mode: nazo_openid4vp::ResponseMode::DirectPostJwt,
         response_uri: "https://example.com/response".to_owned(),
         nonce: "exc7gBkxjx1rdc9udRrveKvSsJIq80avlXeLHhGwqtA".to_owned(),
         state: "state".to_owned(),
@@ -205,7 +205,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
         id: transaction_id,
         client_id_prefix: ClientIdPrefix::X509SanDns,
         request_method: RequestMethod::RequestUriSignedPost,
-        response_mode: ResponseMode::DirectPostJwt,
+
         wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
         request,
         request_object: None,
@@ -303,8 +303,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
     );
 
     let mut unencrypted_transaction = transaction.clone();
-    unencrypted_transaction.response_mode = ResponseMode::DirectPost;
-    unencrypted_transaction.request.response_mode = "direct_post".to_owned();
+    unencrypted_transaction.request.response_mode = ResponseMode::DirectPost;
     let unencrypted_recorded = Arc::new(Mutex::new(None));
     let unencrypted_trust = Arc::new(Mutex::new(Vec::new()));
     PresentationService::new(
@@ -385,7 +384,7 @@ fn cardinality_transaction() -> PresentationTransaction {
         id: Uuid::now_v7(),
         client_id_prefix: ClientIdPrefix::RedirectUri,
         request_method: RequestMethod::RequestUriSignedPost,
-        response_mode: ResponseMode::DirectPost,
+
         wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
         request: serde_json::from_value(json!({
             "client_id": "redirect_uri:https://verifier.example/response",

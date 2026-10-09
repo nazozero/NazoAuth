@@ -17,9 +17,8 @@ mod presentation;
 mod service;
 pub use dpop::{DpopProofVerifier, DpopProofVerifierConfig, DpopProofVerifierError};
 use presentation::{
-    PresentedAccessTokenScheme, http_authorization_headers, http_dpop_headers,
-    presented_authorization_token, query_has_access_token, single_dpop_header,
-    validate_presented_sender_constraint,
+    http_authorization_headers, http_dpop_headers, presented_authorization_token,
+    query_has_access_token, single_dpop_header, validate_presented_sender_constraint,
 };
 use serde_json::Value;
 pub use service::{
@@ -40,7 +39,12 @@ const DEFAULT_DPOP_MAX_AGE_SECONDS: i64 = 300;
 
 #[derive(Clone, Debug)]
 pub struct ResourceServerVerifier {
-    config: ResourceServerVerifierConfig,
+    issuer: String,
+    audiences: Vec<String>,
+    required_scopes: Vec<String>,
+    confirmation: ConfirmationPolicy,
+    allowed_algs: Vec<Algorithm>,
+    clock_skew_seconds: i64,
     verification_keys: HashMap<String, Option<jwk::PreparedVerificationKey>>,
 }
 
@@ -158,8 +162,14 @@ struct AccessTokenClaims {
     scope: String,
     #[serde(default)]
     authorization_details: Value,
-    token_use: String,
+    /// Optional private compatibility assertion, not the token-type authority.
+    #[serde(default)]
+    token_use: Option<String>,
     jti: String,
+    /// RFC 9068 requires an issuance NumericDate. It is checked on input, not
+    /// copied into the runtime projection or turned into an extra age policy.
+    #[serde(rename = "iat")]
+    _issued_at: serde_json::Number,
     #[serde(default)]
     nbf: Option<i64>,
     exp: i64,
@@ -196,7 +206,12 @@ impl ResourceServerVerifier {
             }
         }
         Ok(Self {
-            config,
+            issuer: config.issuer,
+            audiences: config.audiences,
+            required_scopes: config.required_scopes,
+            confirmation: config.confirmation,
+            allowed_algs: config.allowed_algs,
+            clock_skew_seconds: config.clock_skew_seconds,
             verification_keys,
         })
     }
@@ -212,10 +227,10 @@ impl ResourceServerVerifier {
     ) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
         let header = nazo_crypto::jwt::decode_header(token)
             .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
-        if header.typ.as_deref() != Some("at+jwt") {
+        if !matches!(header.typ.as_deref(), Some("at+jwt" | "application/at+jwt")) {
             return Err(ResourceServerVerifierError::WrongTokenType);
         }
-        if !self.config.allowed_algs.contains(&header.alg) {
+        if !self.allowed_algs.contains(&header.alg) {
             return Err(ResourceServerVerifierError::UnsupportedAlgorithm);
         }
         let kid = header
@@ -243,21 +258,25 @@ impl ResourceServerVerifier {
         claims: AccessTokenClaims,
         now: i64,
     ) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
-        if claims.token_use != "access" {
+        if claims
+            .token_use
+            .as_deref()
+            .is_some_and(|value| value != "access")
+        {
             return Err(ResourceServerVerifierError::WrongTokenType);
         }
-        if claims.iss != self.config.issuer {
+        if claims.iss != self.issuer {
             return Err(ResourceServerVerifierError::IssuerMismatch);
         }
         let audiences =
             audience_values(&claims.aud).ok_or(ResourceServerVerifierError::AudienceMismatch)?;
         if !audiences
             .iter()
-            .any(|aud| self.config.audiences.iter().any(|expected| expected == aud))
+            .any(|aud| self.audiences.iter().any(|expected| expected == aud))
         {
             return Err(ResourceServerVerifierError::AudienceMismatch);
         }
-        let skew = self.config.clock_skew_seconds.max(0);
+        let skew = self.clock_skew_seconds.max(0);
         if claims.exp <= now.saturating_sub(skew) {
             return Err(ResourceServerVerifierError::Expired);
         }
@@ -265,13 +284,13 @@ impl ResourceServerVerifier {
             return Err(ResourceServerVerifierError::NotYetValid);
         }
         let scopes = scope_values(&claims.scope);
-        for required in &self.config.required_scopes {
+        for required in &self.required_scopes {
             if !scopes.iter().any(|scope| scope == required) {
                 return Err(ResourceServerVerifierError::MissingScope(required.clone()));
             }
         }
         validate_confirmation_claims(claims.cnf.as_ref())?;
-        validate_confirmation_policy(&self.config.confirmation, claims.cnf.as_ref())?;
+        validate_confirmation_policy(&self.confirmation, claims.cnf.as_ref())?;
         Ok(VerifiedAccessToken {
             client_epoch: claims.client_epoch,
             user_epoch: claims.user_epoch,
@@ -340,7 +359,7 @@ pub fn authorize_dpop_resource_request(
         return Err(ResourceServerRequestError::InvalidRequest);
     }
     let (scheme, access_token) = presented_authorization_token(authorization_headers)?;
-    if scheme != PresentedAccessTokenScheme::Dpop {
+    if scheme != AccessTokenScheme::Dpop {
         return Err(ResourceServerRequestError::MissingSenderConstraint);
     }
     let verified = verifier

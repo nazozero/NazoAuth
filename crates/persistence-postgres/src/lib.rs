@@ -13,6 +13,8 @@
 //! ```
 
 mod convert;
+mod mfa_keys;
+pub use mfa_keys::{MfaTotpKey, MfaTotpKeyError, MfaTotpKeyRing};
 mod pool;
 mod repositories;
 pub(crate) mod rows;

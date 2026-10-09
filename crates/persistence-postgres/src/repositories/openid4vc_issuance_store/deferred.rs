@@ -12,7 +12,7 @@ use super::super::crypto::map_stored_credential_error;
 use super::{
     DeferredLeaseReceipt, DeferredLockedProjectionRow, LockedContinuationGrant,
     NewIssuanceResponse, decode_error, decode_selection, insert_issuance_response, protect_payload,
-    response_encoding_name, unprotect_payload,
+    response_encoding_name,
 };
 use crate::{get_conn, pool::DiscardOnDrop};
 
@@ -28,7 +28,8 @@ impl Openid4vciRepository {
             let protected_payload = protect_payload(
                 &self.data_key,
                 credential.id,
-                &credential.payload_ciphertext,
+                &serde_json::to_vec(&credential.payload)
+                    .map_err(|_| CredentialStoreError::Unavailable)?,
             )?;
             sql_query(
                 "INSERT INTO openid4vci_deferred_transactions \
@@ -66,7 +67,8 @@ impl Openid4vciRepository {
             let protected_payload = protect_payload(
                 &self.data_key,
                 credential.id,
-                &credential.payload_ciphertext,
+                &serde_json::to_vec(&credential.payload)
+                    .map_err(|_| CredentialStoreError::Unavailable)?,
             )?;
             let response_ciphertext =
                 protect_payload(&self.data_key, response.issuance_id, &response.body)?;
@@ -146,7 +148,8 @@ impl Openid4vciRepository {
             let protected_payload = protect_payload(
                 &self.data_key,
                 credential.id,
-                &credential.payload_ciphertext,
+                &serde_json::to_vec(&credential.payload)
+                    .map_err(|_| CredentialStoreError::Unavailable)?,
             )?;
             let id = credential.id;
             let transaction_hash = credential.transaction_hash.clone();
@@ -213,7 +216,8 @@ impl Openid4vciRepository {
             let protected_payload = protect_payload(
                 &self.data_key,
                 credential.id,
-                &credential.payload_ciphertext,
+                &serde_json::to_vec(&credential.payload)
+                    .map_err(|_| CredentialStoreError::Unavailable)?,
             )?;
             let response_ciphertext =
                 protect_payload(&self.data_key, response.issuance_id, &response.body)?;
@@ -406,10 +410,7 @@ impl Openid4vciRepository {
                         }
                         let current_expires_at = current.expires_at;
                         let original_token_id = original.token_id;
-                        let mut deferred = row.deferred.into_domain(original.clone())?;
-                        deferred.payload_ciphertext = unprotect_payload(
-                            &self.data_key, deferred.id, &deferred.payload_ciphertext,
-                        )?;
+                        let deferred = row.deferred.into_domain(original.clone(), &self.data_key)?;
                         // The second data statement owns only the lease. Recheck
                         // temporal facts at acceptance; locks still protect all
                         // authorization and final-state facts. Drain RETURNING,

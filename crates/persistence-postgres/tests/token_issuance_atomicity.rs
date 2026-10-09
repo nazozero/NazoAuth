@@ -126,14 +126,14 @@ fn refresh_token_fixture(
                 auth_time: authentication_time.timestamp(),
                 amr: vec!["pwd".to_owned()],
                 oidc_sid: None,
-                id_token_sid: None,
+
                 acr: None,
-                nonce: None,
+
                 userinfo_claim_requests: (Vec::new()).into(),
                 id_token_claim_requests: (Vec::new()).into(),
             },
         }
-        .persisted(),
+        .clone(),
     )
 }
 

@@ -546,8 +546,6 @@ fn validate_refresh_commit(refresh: &RefreshTokenCommit) -> Result<(), Repositor
     if !contract.authentication_context.is_well_formed()
         || contract.subject.trim().is_empty()
         || !valid_audiences(&contract.audiences)
-        || contract.authentication_context.nonce.is_some()
-        || contract.authentication_context.id_token_sid.is_some()
     {
         return Err(RepositoryError::Consistency(
             "refresh token requires a complete immutable authentication contract".to_owned(),
@@ -555,7 +553,9 @@ fn validate_refresh_commit(refresh: &RefreshTokenCommit) -> Result<(), Repositor
     }
     match refresh {
         RefreshTokenCommit::IssueNew { token, contract } => {
-            if token.rotated_from_id.is_some()
+            if contract.authentication_context.version
+                != nazo_auth::RefreshTokenAuthenticationContext::CURRENT_VERSION
+                || token.rotated_from_id.is_some()
                 || token.lost_response_retry.is_some()
                 || token.audiences != contract.audiences
             {
@@ -568,7 +568,11 @@ fn validate_refresh_commit(refresh: &RefreshTokenCommit) -> Result<(), Repositor
             authority,
             rotation,
         } => {
-            if authority.family_id.is_nil()
+            if authority
+                .id_token_sid
+                .as_deref()
+                .is_some_and(|sid| sid.trim().is_empty())
+                || authority.family_id.is_nil()
                 || authority.member_id.is_nil()
                 || !valid_audiences(&authority.current_audiences)
                 || !nazo_auth::is_subset(&authority.current_audiences, &contract.audiences)
@@ -598,6 +602,10 @@ fn validate_refresh_commit(refresh: &RefreshTokenCommit) -> Result<(), Repositor
         && (token.family_id.is_nil()
             || token.member_id.is_nil()
             || token.raw_token.is_empty()
+            || token
+                .id_token_sid
+                .as_deref()
+                .is_some_and(|sid| sid.trim().is_empty())
             || !valid_audiences(&token.audiences)
             || contract.authentication_context.auth_time > token.issued_at.timestamp()
             || token.expires_at <= token.issued_at)
@@ -613,7 +621,12 @@ fn persisted_contract(contract: &RefreshContract) -> Result<(Vec<u8>, Value), Re
     let value = serde_json::to_value(contract).map_err(|error| {
         RepositoryError::Consistency(format!("refresh contract could not be serialized: {error}"))
     })?;
-    Ok((contract.blake3_digest().to_vec(), value))
+    // Keep this adapter's existing deterministic struct encoding. Historical
+    // family references never pass through this path or have their key recomputed.
+    let bytes = serde_json::to_vec(contract).map_err(|error| {
+        RepositoryError::Consistency(format!("refresh contract could not be encoded: {error}"))
+    })?;
+    Ok((blake3::hash(&bytes).as_bytes().to_vec(), value))
 }
 
 /// Only new families serialize/hash their original contract before borrowing
@@ -655,9 +668,9 @@ fn token_from_current(
     family: RefreshFamilyRow,
     contract: RefreshContract,
 ) -> Result<RefreshToken, RepositoryError> {
-    let mut context = contract.authentication_context;
-    context.id_token_sid = family.current_id_token_sid;
+    let context = contract.authentication_context;
     Ok(RefreshToken {
+        id_token_sid: family.current_id_token_sid,
         id: family.current_member_id,
         token_blake3: digest32(&family.current_token_blake3)?,
         tenant_id: family.tenant_id,
@@ -689,9 +702,9 @@ fn token_from_spent(
     family: RefreshFamilyRow,
     contract: RefreshContract,
 ) -> Result<RefreshToken, RepositoryError> {
-    let mut context = contract.authentication_context;
-    context.id_token_sid = family.current_id_token_sid;
+    let context = contract.authentication_context;
     Ok(RefreshToken {
+        id_token_sid: family.current_id_token_sid,
         id: spent.member_id,
         token_blake3: digest32(&spent.refresh_token_blake3)?,
         tenant_id: family.tenant_id,

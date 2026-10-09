@@ -1,4 +1,5 @@
 use super::{MfaAuditError, MfaRepository, map_mfa_error, mfa_event};
+use crate::MfaTotpKeyRing;
 use crate::{
     get_conn,
     pool::DiscardOnDrop,
@@ -10,9 +11,7 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
     IdentitySecurityEventType, IdentitySecurityOutcome, IdentitySecurityReason, TenantId, UserId,
     mfa::{MFA_BACKUP_CODE_COUNT, verified_totp_step},
-    ports::{
-        MfaTotpKeyRing, RepositoryError, TotpCredential, TotpEnrollment, TotpVerificationOutcome,
-    },
+    ports::{RepositoryError, TotpCredential, TotpEnrollment, TotpVerificationOutcome},
 };
 use rand::Rng;
 

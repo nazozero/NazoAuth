@@ -661,14 +661,14 @@ fn set_refresh_authority_for_issue(
             auth_time: issue.auth_time.unwrap_or(1_700_000_000),
             amr: issue.amr.clone(),
             oidc_sid: issue.oidc_sid.clone(),
-            id_token_sid: None,
+
             acr: issue.acr.clone(),
-            nonce: None,
-            userinfo_claim_requests: (issue.userinfo_claim_requests.clone()).into(),
-            id_token_claim_requests: (issue.id_token_claim_requests.clone()).into(),
+
+            userinfo_claim_requests: issue.userinfo_claim_requests.clone(),
+            id_token_claim_requests: issue.id_token_claim_requests.clone(),
         },
     }
-    .persisted();
+    .clone();
     issue.refresh_id_token_sid.get_or_insert(None);
     issue.refresh_authority = Some(nazo_auth::RefreshTokenAuthority {
         tenant_id: client.tenant_id,
@@ -677,7 +677,7 @@ fn set_refresh_authority_for_issue(
         family_id,
         member_id,
         token_blake3: [0; 32],
-        contract_key: contract.blake3_digest(),
+        contract_key: (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes()),
         current_audiences: issue.audiences.clone(),
         id_token_sid: issue.refresh_id_token_sid.clone().flatten(),
         dpop_jkt: issue.refresh_token_dpop_jkt.clone(),

@@ -4,12 +4,13 @@ use super::totp::{
     protect_totp_secret, totp_aad,
 };
 use super::*;
+use crate::MfaTotpKey;
+use crate::MfaTotpKeyRing;
 use aes_gcm::{
     Aes256Gcm, KeyInit,
     aead::{Aead, Payload},
 };
 use nazo_identity::mfa::MFA_BACKUP_CODE_COUNT;
-use nazo_identity::ports::{MfaTotpKey, MfaTotpKeyRing};
 use uuid::Uuid;
 
 fn single_key_ring() -> MfaTotpKeyRing {

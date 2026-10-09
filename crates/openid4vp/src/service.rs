@@ -248,17 +248,18 @@ fn mdoc_session_transcript(
     {
         return Ok(None);
     }
-    let verifier_key_thumbprint = if transaction.response_mode == ResponseMode::DirectPostJwt {
-        transaction
-            .request
-            .client_metadata
-            .as_ref()
-            .and_then(|metadata| metadata.jwks.as_ref())
-            .map(jwk_set_thumbprint)
-            .transpose()?
-    } else {
-        None
-    };
+    let verifier_key_thumbprint =
+        if transaction.request.response_mode == ResponseMode::DirectPostJwt {
+            transaction
+                .request
+                .client_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.jwks.as_ref())
+                .map(jwk_set_thumbprint)
+                .transpose()?
+        } else {
+            None
+        };
     let handover_info = ciborium::Value::Array(vec![
         ciborium::Value::Text(transaction.request.client_id.clone()),
         ciborium::Value::Text(transaction.request.nonce.clone()),

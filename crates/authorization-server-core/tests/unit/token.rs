@@ -9,9 +9,9 @@ fn authentication_context_accepts_current_and_retained_legacy_versions() {
         auth_time: 1_700_000_000,
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("sid".to_owned()),
-        id_token_sid: Some("sid".to_owned()),
+
         acr: Some("1".to_owned()),
-        nonce: Some("nonce".to_owned()),
+
         userinfo_claim_requests: ((vec!["email".to_owned()])
             .into_iter()
             .map(crate::OidcClaimRequest::named)
@@ -61,6 +61,7 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
     use super::{RefreshContract, RefreshToken};
     let now = chrono::Utc::now();
     let token = RefreshToken {
+        id_token_sid: Some("current-id-token-sid".to_owned()),
         id: uuid::Uuid::now_v7(),
         token_blake3: [1; 32],
         tenant_id: uuid::Uuid::now_v7(),
@@ -86,9 +87,9 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
             auth_time: now.timestamp(),
             amr: vec!["pwd".to_owned()],
             oidc_sid: Some("oidc-sid".to_owned()),
-            id_token_sid: Some("current-id-token-sid".to_owned()),
+
             acr: Some("1".to_owned()),
-            nonce: Some("first-response-nonce".to_owned()),
+
             userinfo_claim_requests: ((vec!["email".to_owned()])
                 .into_iter()
                 .map(crate::OidcClaimRequest::named)
@@ -108,25 +109,18 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
         authorization_details: token.authorization_details.clone(),
         authentication_context: token.authentication_context.clone(),
     }
-    .persisted();
+    .clone();
     let authority = token.authority();
     assert_eq!(authority.contract, expected);
-    assert_eq!(
-        authority.contract.canonical_bytes(),
-        expected.canonical_bytes()
-    );
+    assert_eq!(authority.contract, expected);
     assert_eq!(authority.contract_key, [2; 32]);
     assert_eq!(authority.current_audiences, vec!["narrowed-resource"]);
     assert_eq!(
         authority.id_token_sid.as_deref(),
         Some("current-id-token-sid")
     );
-    assert_eq!(
-        token.authentication_context.nonce.as_deref(),
-        Some("first-response-nonce")
-    );
-    assert_eq!(
-        token.authentication_context.id_token_sid.as_deref(),
-        Some("current-id-token-sid")
-    );
+    let wire = serde_json::to_value(&token.authentication_context).unwrap();
+    assert!(wire.get("nonce").is_none());
+    assert!(wire.get("id_token_sid").is_none());
+    assert_eq!(token.id_token_sid.as_deref(), Some("current-id-token-sid"));
 }

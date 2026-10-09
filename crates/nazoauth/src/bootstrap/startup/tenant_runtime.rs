@@ -355,7 +355,6 @@ async fn build_service_runtime(
         .await?,
     );
     let startup = StartupConfiguration {
-        config: process.config.clone(),
         persistence: process.persistence.clone(),
         transient_state,
         avatar_storage,

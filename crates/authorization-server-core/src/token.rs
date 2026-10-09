@@ -7,9 +7,8 @@ use uuid::Uuid;
 ///
 /// OIDC Core 12.2 preserves the original issuer, subject, audience and
 /// authentication time. NazoAuth also preserves its original claim contract.
-/// The immutable subset is persisted once per family in
-/// `oauth_refresh_contracts`; the per-generation `id_token_sid` rides on the
-/// family row because a refresh may emit a fresh ID-token session id.
+/// This context contains only original authentication facts. The current
+/// ID-token session identifier belongs to the refresh generation.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RefreshTokenAuthenticationContext {
     pub version: u16,
@@ -18,13 +17,9 @@ pub struct RefreshTokenAuthenticationContext {
     pub auth_time: i64,
     pub amr: Vec<String>,
     pub oidc_sid: Option<String>,
-    pub id_token_sid: Option<String>,
+
     pub acr: Option<String>,
-    /// The original authorization nonce. It is consumed by the first ID Token
-    /// only: OIDC Core 12.2 says a refreshed ID Token SHOULD omit it, and no
-    /// refresh-time reader exists, so persistence strips it (the audit ledger
-    /// is the durable record of the authorization request).
-    pub nonce: Option<String>,
+
     #[serde(flatten)]
     pub userinfo_claim_requests: crate::UserinfoClaimRequests,
     #[serde(flatten)]
@@ -52,23 +47,13 @@ impl RefreshTokenAuthenticationContext {
                 .oidc_sid
                 .as_deref()
                 .is_none_or(|sid| !sid.trim().is_empty())
-            && self
-                .id_token_sid
-                .as_deref()
-                .is_none_or(|sid| !sid.trim().is_empty())
             && self.acr.as_deref().is_none_or(|acr| !acr.trim().is_empty())
     }
 }
 
-/// The immutable authorization contract shared by every generation of a
-/// refresh family. Serialized canonically (struct field order plus
-/// `serde_json`'s sorted map keys) and content-addressed by BLAKE3 so equal
-/// contracts share one `oauth_refresh_contracts` row. Legacy SQL content keys
-/// remain stable references; equality of the contract is checked separately.
-///
-/// `nonce` and `id_token_sid` are deliberately absent from the persisted
-/// context: no refresh-time reader consumes the nonce, and the ID-token
-/// session id is per-generation family state.
+/// The immutable authorization contract shared by every refresh generation.
+/// The adapter owns its storage representation and stable reference. Neither
+/// the initial authorization nonce nor a current-generation SID belongs here.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RefreshContract {
     pub subject: String,
@@ -77,33 +62,6 @@ pub struct RefreshContract {
     #[serde(default)]
     pub authorization_details: Value,
     pub authentication_context: RefreshTokenAuthenticationContext,
-}
-
-impl RefreshContract {
-    /// Canonical serialization feeding both the stored JSONB payload and the
-    /// content digest. `serde_json::to_vec` emits struct fields in declaration
-    /// order and object keys sorted (BTreeMap-backed `Map`), so the encoding is
-    /// deterministic for equal content.
-    #[must_use]
-    pub fn canonical_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).expect("refresh contract serialization is infallible")
-    }
-
-    /// 32-byte BLAKE3 content digest stored as `BYTEA` (never hex).
-    #[must_use]
-    pub fn blake3_digest(&self) -> [u8; 32] {
-        *blake3::hash(&self.canonical_bytes()).as_bytes()
-    }
-
-    /// The persisted payload: a clone whose per-generation fields are cleared
-    /// so content addressing cannot diverge from the family-level authority.
-    #[must_use]
-    pub fn persisted(&self) -> Self {
-        let mut persisted = self.clone();
-        persisted.authentication_context.nonce = None;
-        persisted.authentication_context.id_token_sid = None;
-        persisted
-    }
 }
 
 /// Maximum simultaneously active refresh families per
@@ -137,6 +95,8 @@ pub fn refresh_spent_proof_limit(
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RefreshToken {
+    /// Current generation ID-token session, separate from original OP authentication.
+    pub id_token_sid: Option<String>,
     pub id: Uuid,
     /// BLAKE3 digest of the presented opaque token (binary, never hex).
     pub token_blake3: [u8; 32],
@@ -185,9 +145,7 @@ pub struct RefreshTokenAuthority {
 impl RefreshToken {
     #[must_use]
     pub fn authority(&self) -> RefreshTokenAuthority {
-        let mut authentication_context = self.authentication_context.clone();
-        authentication_context.nonce = None;
-        authentication_context.id_token_sid = None;
+        let authentication_context = self.authentication_context.clone();
         RefreshTokenAuthority {
             tenant_id: self.tenant_id,
             client_id: self.client_id,
@@ -204,7 +162,7 @@ impl RefreshToken {
                 authentication_context,
             },
             current_audiences: crate::string_array_values(&self.audience),
-            id_token_sid: self.authentication_context.id_token_sid.clone(),
+            id_token_sid: self.id_token_sid.clone(),
             dpop_jkt: self.dpop_jkt.clone(),
             mtls_x5t_s256: self.mtls_x5t_s256.clone(),
             client_attestation_jkt: self.client_attestation_jkt.clone(),

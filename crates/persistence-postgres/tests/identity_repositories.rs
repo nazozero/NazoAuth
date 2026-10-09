@@ -9,11 +9,13 @@ use nazo_identity::{
     AdminPolicyError, AdminUserUpdateOutcome, OrganizationId, RealmId, TenantContext, TenantId,
     UserId, UserProfile,
     ports::{
-        AdminUserUpdate, EncodedSecretHash, FederationLogin, MfaRepositoryPort, MfaTotpKey,
-        MfaTotpKeyRing, NewFederatedIdentity, NewFederationLink, ProfileUpdate, RepositoryError,
+        AdminUserUpdate, EncodedSecretHash, FederationLogin, MfaRepositoryPort,
+        NewFederatedIdentity, NewFederationLink, ProfileUpdate, RepositoryError,
     },
     scim::NormalizedScimUser,
 };
+use nazo_postgres::MfaTotpKey;
+use nazo_postgres::MfaTotpKeyRing;
 use nazo_postgres::{
     FederationRepository, MfaRepository, OAuthClientRepository, PasskeyRepository, ScimRepository,
     UserRepository, create_pool, get_conn,

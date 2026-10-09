@@ -1852,7 +1852,7 @@ fn signed_sd_transaction(
         id: uuid::Uuid::now_v7(),
         client_id_prefix: nazo_openid4vp::ClientIdPrefix::RedirectUri,
         request_method: nazo_openid4vp::RequestMethod::RequestUriSignedPost,
-        response_mode: nazo_openid4vp::ResponseMode::DirectPost,
+
         wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
         request: serde_json::from_value(json!({
             "client_id": presentation.expected_audience,

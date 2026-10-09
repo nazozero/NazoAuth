@@ -18,7 +18,7 @@ mod totp;
 #[derive(Clone)]
 pub struct MfaRepository {
     pool: DbPool,
-    totp_keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
+    totp_keys: Option<crate::MfaTotpKeyRing>,
 }
 
 impl MfaRepository {
@@ -31,10 +31,7 @@ impl MfaRepository {
     }
 
     #[must_use]
-    pub fn with_totp_key_ring(
-        pool: DbPool,
-        totp_keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Self {
+    pub fn with_totp_key_ring(pool: DbPool, totp_keys: Option<crate::MfaTotpKeyRing>) -> Self {
         Self { pool, totp_keys }
     }
 

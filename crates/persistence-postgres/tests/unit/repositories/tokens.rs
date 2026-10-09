@@ -9,9 +9,9 @@ fn valid_context(auth_time: i64) -> nazo_auth::RefreshTokenAuthenticationContext
         auth_time,
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
-        id_token_sid: None,
+
         acr: None,
-        nonce: None,
+
         userinfo_claim_requests: (Vec::new()).into(),
         id_token_claim_requests: (Vec::new()).into(),
     }
@@ -44,7 +44,7 @@ fn valid_refresh_token() -> nazo_auth::RefreshTokenCommit {
             subject: "subject".to_owned(),
             authentication_context: valid_context(issued_at.timestamp()),
         }
-        .persisted(),
+        .clone(),
     }
 }
 
@@ -59,7 +59,7 @@ fn refresh_token_validation_rejects_malformed_context_and_audiences() {
     let mut invalid_version = valid_refresh_token();
     contract_mut(&mut invalid_version)
         .authentication_context
-        .version = 2;
+        .version = nazo_auth::RefreshTokenAuthenticationContext::CURRENT_VERSION + 1;
     assert!(matches!(
         validate_refresh_commit(&invalid_version),
         Err(RepositoryError::Consistency(message)) if message.contains("complete immutable")
@@ -121,28 +121,33 @@ fn refresh_contract_preparation_preserves_the_original_canonical_digest() {
         {"type": "account_information", "locations": ["https://resource.example"], "actions": ["read"]}
     ]);
     let contract = refresh.contract();
-    let expected = contract.persisted();
+    let expected = contract.clone();
     let prepared = prepare_refresh_contract(&refresh).unwrap().unwrap();
     assert_eq!(
         prepared.contract_value,
         serde_json::to_value(&expected).unwrap()
     );
-    assert_eq!(prepared.contract_blake3, expected.blake3_digest().to_vec());
-    assert_eq!(contract.canonical_bytes(), expected.canonical_bytes());
+    assert_eq!(
+        prepared.contract_blake3,
+        blake3::hash(&serde_json::to_vec(&expected).unwrap())
+            .as_bytes()
+            .to_vec()
+    );
+    assert_eq!(contract, &expected);
 }
 
 #[test]
-fn refresh_contract_preparation_rejects_each_nonpersistent_context_field() {
-    for nonce in [true, false] {
-        let mut refresh = valid_refresh_token();
-        let context = &mut contract_mut(&mut refresh).authentication_context;
-        if nonce {
-            context.nonce = Some("first-response-nonce".to_owned());
-        } else {
-            context.id_token_sid = Some("current-generation-sid".to_owned());
-        }
-        assert!(prepare_refresh_contract(&refresh).is_err());
-    }
+fn refresh_contract_preparation_excludes_response_only_facts() {
+    let mut refresh = valid_refresh_token();
+    token_mut(&mut refresh).id_token_sid = Some("current-generation-sid".to_owned());
+    let prepared = prepare_refresh_contract(&refresh).unwrap().unwrap();
+    let context = &prepared.contract_value["authentication_context"];
+    assert!(context.get("nonce").is_none());
+    assert!(context.get("id_token_sid").is_none());
+    assert_eq!(
+        refresh.token().unwrap().id_token_sid.as_deref(),
+        Some("current-generation-sid")
+    );
 }
 
 fn ownership_family(contract: &RefreshContract) -> RefreshFamilyRow {
@@ -152,7 +157,8 @@ fn ownership_family(contract: &RefreshContract) -> RefreshFamilyRow {
         token_family_id: Uuid::from_u128(2),
         client_id: Uuid::from_u128(3),
         user_id: Some(Uuid::from_u128(4)),
-        contract_blake3: contract.blake3_digest().to_vec(),
+        contract_blake3: (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes())
+            .to_vec(),
         current_member_id: Uuid::from_u128(5),
         current_token_blake3: vec![6; 32],
         current_audience: serde_json::json!(["resource://a"]),
@@ -183,10 +189,7 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() 
     assert_eq!(current.contract_audiences, ["resource://a", "resource://b"]);
     assert_eq!(current.contract_audiences.as_ptr(), original_allocation);
     assert_eq!(current.audience, serde_json::json!(["resource://a"]));
-    assert_eq!(
-        current.authentication_context.id_token_sid.as_deref(),
-        Some("generation-sid")
-    );
+    assert_eq!(current.id_token_sid.as_deref(), Some("generation-sid"));
     let spent = SpentRefreshTokenRow {
         refresh_token_blake3: vec![7; 32],
         member_id: Uuid::from_u128(8),
@@ -207,10 +210,7 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() 
         restored.contract_audiences,
         ["resource://a", "resource://b"]
     );
-    assert_eq!(
-        restored.authentication_context.id_token_sid.as_deref(),
-        Some("generation-sid")
-    );
+    assert_eq!(restored.id_token_sid.as_deref(), Some("generation-sid"));
 }
 
 #[tokio::test]
@@ -273,4 +273,16 @@ async fn ownership_public_uuid_boundary_keeps_consistency_error_before_connectio
         );
     }
     assert_eq!(pool.status().size, 0);
+}
+
+#[test]
+fn new_family_requires_current_encoding_and_nonblank_generation_sid() {
+    let mut legacy = valid_refresh_token();
+    contract_mut(&mut legacy).authentication_context.version = 1;
+    assert!(validate_refresh_commit(&legacy).is_err());
+    for sid in ["", " "] {
+        let mut invalid = valid_refresh_token();
+        token_mut(&mut invalid).id_token_sid = Some(sid.into());
+        assert!(validate_refresh_commit(&invalid).is_err());
+    }
 }

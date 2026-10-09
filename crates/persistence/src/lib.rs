@@ -107,7 +107,10 @@ pub struct SecurityAuditPendingDelivery {
     pub sequence: i64,
     pub event_type: String,
     pub event_category: String,
-    /// Exact `jsonb::text` bytes used by the chain hash and the wire envelope.
+    /// Exact persisted UTF-8 payload bytes used by the chain and wire envelope.
+    /// The ledger adapter chooses this representation once. Consumers must not
+    /// parse and reserialize it; retained PostgreSQL events keep their original
+    /// `jsonb::text` bytes, including whitespace and key order.
     pub payload_canonical: String,
     pub occurred_at: chrono::DateTime<chrono::Utc>,
     pub previous_hash: Vec<u8>,

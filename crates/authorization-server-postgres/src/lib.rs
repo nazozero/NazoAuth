@@ -17,11 +17,12 @@ use nazo_postgres::{
 #[derive(Clone)]
 pub struct PostgresProvider {
     pool: DbPool,
+    totp_keys: Option<nazo_postgres::MfaTotpKeyRing>,
 }
 
 impl PostgresProvider {
-    pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+    pub fn new(pool: DbPool, totp_keys: Option<nazo_postgres::MfaTotpKeyRing>) -> Self {
+        Self { pool, totp_keys }
     }
 }
 
@@ -165,18 +166,18 @@ impl ServerPersistenceProvider for PostgresProvider {
         Arc::new(UserRepository::new(self.pool.clone()))
     }
 
-    fn mfa_repository(
-        &self,
-        keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Arc<dyn nazo_identity::ports::MfaRepositoryPort> {
-        Arc::new(MfaRepository::with_totp_key_ring(self.pool.clone(), keys))
+    fn mfa_repository(&self) -> Arc<dyn nazo_identity::ports::MfaRepositoryPort> {
+        Arc::new(MfaRepository::with_totp_key_ring(
+            self.pool.clone(),
+            self.totp_keys.clone(),
+        ))
     }
 
-    fn remembered_mfa_devices(
-        &self,
-        keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Arc<dyn nazo_identity::ports::RememberedMfaDevicePort> {
-        Arc::new(MfaRepository::with_totp_key_ring(self.pool.clone(), keys))
+    fn remembered_mfa_devices(&self) -> Arc<dyn nazo_identity::ports::RememberedMfaDevicePort> {
+        Arc::new(MfaRepository::with_totp_key_ring(
+            self.pool.clone(),
+            self.totp_keys.clone(),
+        ))
     }
 
     fn federation_links(&self) -> Arc<dyn nazo_identity::ports::FederationLinkRepositoryPort> {
@@ -233,10 +234,7 @@ impl ServerPersistenceProvider for PostgresProvider {
         Arc::new(MtlsTrustAnchorRepository::new(self.pool.clone()))
     }
 
-    fn openid4vc_trust_policies(
-        &self,
-        _data_key: [u8; 32],
-    ) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore> {
+    fn openid4vc_trust_policies(&self) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore> {
         Arc::new(TenantResourceRepository::new(self.pool.clone()))
     }
 

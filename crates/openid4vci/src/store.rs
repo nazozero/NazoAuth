@@ -143,7 +143,7 @@ pub struct DeferredCredential {
     pub configuration_id: String,
     pub format: CredentialFormat,
     pub holder_bindings: Vec<Value>,
-    pub payload_ciphertext: Vec<u8>,
+    pub payload: crate::DeferredPayload,
     pub ready_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }

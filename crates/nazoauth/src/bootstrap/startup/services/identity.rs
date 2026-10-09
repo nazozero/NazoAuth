@@ -316,8 +316,7 @@ pub(super) async fn build(
     ));
     let mfa_attempt_throttle: Arc<dyn nazo_identity::ports::MfaAttemptThrottlePort> =
         transient_state.mfa_attempt_throttle();
-    let mfa_totp_keys = mfa_totp_key_ring(&startup.config)?;
-    let mfa_repository = persistence.mfa_repository(mfa_totp_keys.clone());
+    let mfa_repository = persistence.mfa_repository();
     let mfa_profiles = web::Data::new(MfaProfileEndpoint::new(
         Arc::new(ServerMfaProfileOperations::new(
             nazo_identity::MfaService::new(mfa_repository.clone(), Arc::new(ServerMfaSecretHasher)),
@@ -351,7 +350,7 @@ pub(super) async fn build(
         persistence.login_accounts(),
         transient_state.login_throttle(),
         Arc::new(LoginPasswordVerifier),
-        persistence.remembered_mfa_devices(mfa_totp_keys.clone()),
+        persistence.remembered_mfa_devices(),
         transient_state.login_sessions(),
         Arc::new(TracingAuthenticationAudit::new(core.security_audit.clone())),
         nazo_identity::AuthenticationServiceConfig {
@@ -385,7 +384,7 @@ pub(super) async fn build(
             persistence.passkey_accounts(),
             persistence.passkeys(),
             transient_state.passkey_ceremonies(),
-            persistence.remembered_mfa_devices(mfa_totp_keys),
+            persistence.remembered_mfa_devices(),
             transient_state.login_sessions(),
             Arc::new(TracingPasskeyAudit::new(core.security_audit.clone())),
             nazo_identity::PasskeyServiceConfig {

@@ -132,7 +132,7 @@ pub struct TransactionData {
 pub struct AuthorizationRequest {
     pub client_id: String,
     pub response_type: String,
-    pub response_mode: String,
+    pub response_mode: ResponseMode,
     pub response_uri: String,
     pub nonce: String,
     pub state: String,
@@ -163,10 +163,6 @@ impl AuthorizationRequest {
             || self.dcql_query.credentials.iter().any(|query| {
                 query.require_cryptographic_holder_binding == Some(false)
             })
-            || !matches!(
-                self.response_mode.as_str(),
-                "direct_post" | "direct_post.jwt"
-            )
         {
             return Err(PresentationError::InvalidRequest);
         }
@@ -199,7 +195,7 @@ pub struct PresentationTransaction {
     pub id: Uuid,
     pub client_id_prefix: ClientIdPrefix,
     pub request_method: RequestMethod,
-    pub response_mode: ResponseMode,
+
     pub wallet_authorization_endpoint: String,
     pub request: AuthorizationRequest,
     pub request_object: Option<String>,

@@ -69,12 +69,12 @@ impl Openid4vpRepository {
             .transpose()?;
         let inserted = sql_query(
             "INSERT INTO openid4vp_transactions \
-             (id, tenant_id, client_id_prefix, request_method, response_mode, \
+             (id, tenant_id, client_id_prefix, request_method, \
               wallet_authorization_endpoint, state_hash, request, request_object, request_uri, \
               openid4vc_trust_policy_binding_id, openid4vc_trust_policy_resource_id, \
               openid4vc_trust_policy_digest, ephemeral_private_key_ciphertext, expires_at, \
               create_request_jti, create_request_sha256, create_request_canonical_json, created_at) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) \
              ON CONFLICT (tenant_id, create_request_jti) \
                  WHERE create_request_jti IS NOT NULL DO NOTHING",
         )
@@ -82,7 +82,6 @@ impl Openid4vpRepository {
         .bind::<sql_types::Uuid, _>(self.tenant_id)
         .bind::<sql_types::Text, _>(transaction.client_id_prefix.as_str())
         .bind::<sql_types::Text, _>(transaction.request_method.as_str())
-        .bind::<sql_types::Text, _>(transaction.response_mode.as_str())
         .bind::<sql_types::Text, _>(&transaction.wallet_authorization_endpoint)
         .bind::<sql_types::Text, _>(state_hash)
         .bind::<sql_types::Jsonb, _>(
@@ -337,8 +336,6 @@ struct PresentationRow {
     #[diesel(sql_type = sql_types::Text)]
     request_method: String,
     #[diesel(sql_type = sql_types::Text)]
-    response_mode: String,
-    #[diesel(sql_type = sql_types::Text)]
     wallet_authorization_endpoint: String,
     #[diesel(sql_type = sql_types::Text)]
     create_request_sha256: String,
@@ -397,7 +394,7 @@ impl PresentationRow {
                 .request_method
                 .parse()
                 .map_err(|_| PresentationStoreError::InvalidTransition)?,
-            response_mode: parse_response_mode(&self.response_mode)?,
+
             wallet_authorization_endpoint: self.wallet_authorization_endpoint.clone(),
             request: serde_json::from_value(self.request.clone())
                 .map_err(|_| PresentationStoreError::InvalidTransition)?,
@@ -492,7 +489,7 @@ async fn load_presentation(
     now: DateTime<Utc>,
 ) -> Result<Option<PresentationRow>, diesel::result::Error> {
     sql_query(
-        "SELECT id, client_id_prefix, request_method, response_mode, wallet_authorization_endpoint, \
+        "SELECT id, client_id_prefix, request_method, wallet_authorization_endpoint, \
          create_request_sha256, create_request_canonical_json, \
          request, request_object, request_uri, openid4vc_trust_policy_binding_id, \
          openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest, \
@@ -517,7 +514,7 @@ async fn load_presentation_by_create_request(
     now: DateTime<Utc>,
 ) -> Result<Option<PresentationRow>, diesel::result::Error> {
     sql_query(
-        "SELECT id, client_id_prefix, request_method, response_mode, wallet_authorization_endpoint, \
+        "SELECT id, client_id_prefix, request_method, wallet_authorization_endpoint, \
          create_request_sha256, create_request_canonical_json, \
          request, request_object, request_uri, openid4vc_trust_policy_binding_id, \
          openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest, \
@@ -568,16 +565,6 @@ fn parse_client_id_prefix(
         "redirect_uri" => Ok(nazo_openid4vp::ClientIdPrefix::RedirectUri),
         "x509_san_dns" => Ok(nazo_openid4vp::ClientIdPrefix::X509SanDns),
         "x509_hash" => Ok(nazo_openid4vp::ClientIdPrefix::X509Hash),
-        _ => Err(PresentationStoreError::InvalidTransition),
-    }
-}
-
-fn parse_response_mode(
-    value: &str,
-) -> Result<nazo_openid4vp::ResponseMode, PresentationStoreError> {
-    match value {
-        "direct_post" => Ok(nazo_openid4vp::ResponseMode::DirectPost),
-        "direct_post.jwt" => Ok(nazo_openid4vp::ResponseMode::DirectPostJwt),
         _ => Err(PresentationStoreError::InvalidTransition),
     }
 }

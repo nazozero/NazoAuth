@@ -6,7 +6,6 @@ use super::*;
 
 /// Tenant-scoped values used to assemble one immutable request graph.
 pub(super) struct StartupConfiguration {
-    pub(super) config: ConfigSource,
     pub(super) persistence: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
     pub(super) transient_state:
         nazo_oauth_server::ports::transient_state::ServerTransientStateBindings,

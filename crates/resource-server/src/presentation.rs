@@ -1,12 +1,9 @@
 use http::{HeaderMap, header};
 
-use super::{ResourceServerRequestError, VerifiedAccessToken, VerifiedSenderConstraintProof};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PresentedAccessTokenScheme {
-    Bearer,
-    Dpop,
-}
+use super::{
+    AccessTokenScheme, ResourceServerRequestError, VerifiedAccessToken,
+    VerifiedSenderConstraintProof,
+};
 
 pub(super) fn http_authorization_headers(
     headers: &HeaderMap,
@@ -59,7 +56,7 @@ pub(super) fn query_has_access_token(query: Option<&str>) -> bool {
 
 pub(super) fn presented_authorization_token<'a>(
     values: &'a [&'a str],
-) -> Result<(PresentedAccessTokenScheme, &'a str), ResourceServerRequestError> {
+) -> Result<(AccessTokenScheme, &'a str), ResourceServerRequestError> {
     if values.is_empty() {
         return Err(ResourceServerRequestError::MissingToken);
     }
@@ -77,9 +74,9 @@ pub(super) fn presented_authorization_token<'a>(
         return Err(ResourceServerRequestError::InvalidRequest);
     }
     let scheme = if scheme.eq_ignore_ascii_case("bearer") {
-        PresentedAccessTokenScheme::Bearer
+        AccessTokenScheme::Bearer
     } else if scheme.eq_ignore_ascii_case("dpop") {
-        PresentedAccessTokenScheme::Dpop
+        AccessTokenScheme::Dpop
     } else {
         return Err(ResourceServerRequestError::MissingToken);
     };
@@ -87,19 +84,19 @@ pub(super) fn presented_authorization_token<'a>(
 }
 
 pub(super) fn validate_presented_sender_constraint(
-    scheme: PresentedAccessTokenScheme,
+    scheme: AccessTokenScheme,
     verified: &VerifiedAccessToken,
     proof: &VerifiedSenderConstraintProof,
 ) -> Result<(), ResourceServerRequestError> {
     let Some(cnf) = verified.cnf.as_ref() else {
-        return if scheme == PresentedAccessTokenScheme::Dpop {
+        return if scheme == AccessTokenScheme::Dpop {
             Err(ResourceServerRequestError::MissingSenderConstraint)
         } else {
             Ok(())
         };
     };
     if let Some(expected) = cnf.jkt.as_ref() {
-        if scheme != PresentedAccessTokenScheme::Dpop {
+        if scheme != AccessTokenScheme::Dpop {
             return Err(ResourceServerRequestError::MissingSenderConstraint);
         }
         return match proof.dpop_jkt.as_ref() {
@@ -108,7 +105,7 @@ pub(super) fn validate_presented_sender_constraint(
             None => Err(ResourceServerRequestError::MissingSenderConstraint),
         };
     }
-    if scheme == PresentedAccessTokenScheme::Dpop {
+    if scheme == AccessTokenScheme::Dpop {
         return Err(ResourceServerRequestError::MissingSenderConstraint);
     }
     if let Some(expected) = cnf.x5t_s256.as_ref() {

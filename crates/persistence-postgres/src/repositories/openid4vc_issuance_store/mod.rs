@@ -441,6 +441,7 @@ impl DeferredRow {
     pub(super) fn into_domain(
         self,
         access: CredentialAccess,
+        data_key: &[u8; 32],
     ) -> Result<DeferredCredential, diesel::result::Error> {
         if self.token_id != access.token_id || self.authorization_id != access.authorization_id {
             return Err(diesel::result::Error::NotFound);
@@ -455,7 +456,12 @@ impl DeferredRow {
                 decode_error(serde_json::Error::io(std::io::Error::other(error)))
             })?,
             holder_bindings: serde_json::from_value(self.holder_bindings).map_err(decode_error)?,
-            payload_ciphertext: self.payload_ciphertext,
+            payload: serde_json::from_slice(&unprotect_payload(
+                data_key,
+                self.id,
+                &self.payload_ciphertext,
+            )?)
+            .map_err(decode_error)?,
             ready_at: self.ready_at,
             expires_at: self.expires_at,
         })
@@ -479,3 +485,7 @@ pub(super) fn decode_selection(
 ) -> Result<Option<nazo_openid4vci::CredentialSelection>, diesel::result::Error> {
     serde_json::from_value(value.unwrap_or(serde_json::Value::Null)).map_err(decode_error)
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/repositories/deferred_payload.rs"]
+mod payload_tests;

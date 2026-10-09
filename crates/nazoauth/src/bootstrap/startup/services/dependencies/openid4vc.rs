@@ -28,7 +28,7 @@ pub(super) async fn build(
             .data_encryption_key
             .expect("enabled OpenID4VC modules require a data encryption key")
     });
-    let trust_policy_store = data_key.map(|key| persistence.openid4vc_trust_policies(key));
+    let trust_policy_store = openid4vc_enabled.then(|| persistence.openid4vc_trust_policies());
     let openid4vc_crypto = if openid4vc_enabled {
         Some(
             Openid4vcCredentialCrypto::new_with_policies(

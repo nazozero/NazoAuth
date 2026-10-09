@@ -70,14 +70,8 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn ciba_accounts(&self) -> Arc<dyn nazo_persistence::CibaAccountStore>;
     fn openid4vc_subjects(&self) -> Arc<dyn nazo_persistence::Openid4vcSubjectStore>;
 
-    fn mfa_repository(
-        &self,
-        keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Arc<dyn MfaRepositoryPort>;
-    fn remembered_mfa_devices(
-        &self,
-        keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Arc<dyn RememberedMfaDevicePort>;
+    fn mfa_repository(&self) -> Arc<dyn MfaRepositoryPort>;
+    fn remembered_mfa_devices(&self) -> Arc<dyn RememberedMfaDevicePort>;
     fn federation_links(&self) -> Arc<dyn FederationLinkRepositoryPort>;
     fn federation_logins(&self) -> Arc<dyn FederationLoginRepositoryPort>;
 
@@ -93,10 +87,7 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn recovery_root(&self) -> Arc<dyn nazo_persistence::RecoveryRootPort>;
     fn mtls_trust_anchors(&self) -> Arc<dyn MtlsTrustAnchorStore>;
 
-    fn openid4vc_trust_policies(
-        &self,
-        data_key: [u8; 32],
-    ) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore>;
+    fn openid4vc_trust_policies(&self) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore>;
     fn openid4vci_store(
         &self,
         data_key: [u8; 32],

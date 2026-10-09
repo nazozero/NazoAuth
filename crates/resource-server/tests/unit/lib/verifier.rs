@@ -196,7 +196,7 @@ fn rejects_missing_required_scope() {
 fn rejects_expired_and_not_yet_valid_tokens_with_clock_skew() {
     let fixture = fixture();
     let now = Utc::now().timestamp();
-    let outside_skew = fixture.verifier.config.clock_skew_seconds + 60;
+    let outside_skew = fixture.verifier.clock_skew_seconds + 60;
 
     let expired = fixture
         .verifier

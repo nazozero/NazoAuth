@@ -19,9 +19,9 @@ use nazo_identity::{
     SessionUpdateOutcome, SessionVersion, TenantContext, TenantId, UserId,
     ports::{
         BackupCodeCandidate, EncodedSecretHash, MfaAttemptThrottleDecision, MfaAttemptThrottlePort,
-        MfaHashError, MfaHashFuture, MfaRepositoryPort, MfaSecretHashPort, MfaTotpKey,
-        MfaTotpKeyRing, RepositoryError, RepositoryFuture, SessionAccountPort, SessionStorePort,
-        TotpCredential, TotpEnrollment, TotpVerificationOutcome,
+        MfaHashError, MfaHashFuture, MfaRepositoryPort, MfaSecretHashPort, RepositoryError,
+        RepositoryFuture, SessionAccountPort, SessionStorePort, TotpCredential, TotpEnrollment,
+        TotpVerificationOutcome,
     },
     session::SessionRecord,
 };
@@ -32,6 +32,8 @@ use nazo_oauth_server::{
     domain::mfa_profile::ServerMfaProfileOperations,
     ports::audit::{AuditFuture, SecurityAudit},
 };
+use nazo_postgres::MfaTotpKey;
+use nazo_postgres::MfaTotpKeyRing;
 use nazo_postgres::{MfaRepository, UserRepository, create_pool, get_conn};
 use std::{
     collections::HashMap,

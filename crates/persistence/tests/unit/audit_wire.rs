@@ -94,3 +94,36 @@ fn shared_encoder_matches_frozen_legacy_anchor_v2_wire_bytes() {
         frozen
     );
 }
+
+#[test]
+fn payload_representation_is_opaque_and_never_recanonicalized_by_wire_encoder() {
+    let id = uuid::Uuid::from_u128(99);
+    let occurred_at = "2026-10-01T00:00:00Z".parse().unwrap();
+    let representations = [r#"{"a":1,"b":"雪"}"#, r#"{ "b": "雪", "a": 1 }"#];
+    let mut hashes = Vec::new();
+    for payload in representations {
+        let hash = crate::audit_chain::security_audit_event_hash(
+            1,
+            &[0; 32],
+            id,
+            "event",
+            "security",
+            occurred_at,
+            payload.as_bytes(),
+        );
+        hashes.push(hash);
+        let delivery = SecurityAuditPendingDelivery {
+            event_id: id,
+            sequence: 1,
+            event_type: "event".into(),
+            event_category: "security".into(),
+            occurred_at,
+            payload_canonical: payload.into(),
+            previous_hash: vec![0; 32],
+            event_hash: hash.to_vec(),
+        };
+        let wire = serde_json::to_value(Event::from(&delivery)).unwrap();
+        assert_eq!(wire["payload_canonical"].as_str(), Some(payload));
+    }
+    assert_ne!(hashes[0], hashes[1]);
+}

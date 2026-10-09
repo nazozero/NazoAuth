@@ -27,9 +27,8 @@ use nazo_openid4vci::{
     CredentialIssuance, CredentialIssuerMetadata, CredentialIssuerService, CredentialOffer,
     CredentialOfferGrants, CredentialRequest, CredentialRequestEncryptionMetadata,
     CredentialResponse, CredentialResponseEncryption, CredentialStorePort,
-    DeferredCredentialRequest, DeferredPayload, EncryptionMetadata, IssuanceDisposition,
-    IssuanceNotification, NonceRecord, NotificationRequest, PreAuthorizedCodeGrant,
-    TxCodeDescription,
+    DeferredCredentialRequest, EncryptionMetadata, IssuanceDisposition, IssuanceNotification,
+    NonceRecord, NotificationRequest, PreAuthorizedCodeGrant, TxCodeDescription,
 };
 use nazo_persistence::{Openid4vcSubjectStore, Openid4vciDatasetStore, Openid4vciStore};
 use nazo_runtime_modules::ModuleId;

@@ -187,6 +187,10 @@ pub async fn token_refresh_with_service(
     // context through `token` would prevent assigning the successor in place.
     let authentication_context = token.authentication_context.clone();
     if !authentication_context.is_well_formed()
+        || token
+            .id_token_sid
+            .as_deref()
+            .is_some_and(|sid| sid.trim().is_empty())
         || authentication_context.issuer != issuance.config.issuer()
         || authentication_context.audience != client.client_id
     {
@@ -355,7 +359,7 @@ pub async fn token_refresh_with_service(
         },
         None => refresh_token_policy(client, &token),
     };
-    let refresh_id_token_sid = Some(authentication_context.id_token_sid);
+    let refresh_id_token_sid = Some(token.id_token_sid.clone());
     let refresh_authority = token.authority();
     issue_token_response(
         issuance,
@@ -372,13 +376,13 @@ pub async fn token_refresh_with_service(
             audiences,
             // A refreshed ID Token omits the original nonce; the immutable
             // source contract also strips this first-response-only value.
-            nonce: authentication_context.nonce,
+            nonce: None,
             auth_time: Some(authentication_context.auth_time),
             amr: authentication_context.amr,
             oidc_sid: authentication_context.oidc_sid,
             acr: authentication_context.acr,
-            userinfo_claim_requests: (authentication_context.userinfo_claim_requests).into(),
-            id_token_claim_requests: (authentication_context.id_token_claim_requests).into(),
+            userinfo_claim_requests: authentication_context.userinfo_claim_requests,
+            id_token_claim_requests: authentication_context.id_token_claim_requests,
             refresh_id_token_sid,
             include_refresh: true,
             refresh_token_policy,

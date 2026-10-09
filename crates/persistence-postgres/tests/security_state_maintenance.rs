@@ -20,7 +20,7 @@ use nazo_auth::RefreshTokenAuthenticationContext;
 use nazo_digital_credentials::{CredentialFormat, CredentialQuery, DcqlQuery};
 use nazo_openid4vp::{
     AuthorizationRequest, ClientIdPrefix, PresentationCreateIdempotency, PresentationCreateOutcome,
-    PresentationStorePort, PresentationTransaction, RequestMethod, ResponseMode,
+    PresentationStorePort, PresentationTransaction, RequestMethod,
 };
 use nazo_persistence::SecurityStateMaintenancePort;
 use nazo_postgres::{
@@ -173,9 +173,9 @@ async fn insert_refresh_leaf_in_tenant(
         auth_time: issued_at.timestamp() - 1,
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
-        id_token_sid: None,
+
         acr: None,
-        nonce: None,
+
         userinfo_claim_requests: (Vec::new()).into(),
         id_token_claim_requests: (Vec::new()).into(),
     };
@@ -186,8 +186,9 @@ async fn insert_refresh_leaf_in_tenant(
         authorization_details: serde_json::json!([]),
         authentication_context: context,
     };
-    let persisted = contract.persisted();
-    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let persisted = contract.clone();
+    let contract_blake3 =
+        (*blake3::hash(&serde_json::to_vec(&persisted).unwrap()).as_bytes()).to_vec();
     let contract_json = serde_json::to_value(&persisted).expect("contract serializes");
     sql_query(
         r#"
@@ -1109,12 +1110,12 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
         id,
         client_id_prefix: ClientIdPrefix::RedirectUri,
         request_method: RequestMethod::UrlQuery,
-        response_mode: ResponseMode::DirectPost,
+
         wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
         request: AuthorizationRequest {
             client_id: "redirect_uri:https://verifier.example/response".to_owned(),
             response_type: "vp_token".to_owned(),
-            response_mode: "direct_post".to_owned(),
+            response_mode: nazo_openid4vp::ResponseMode::DirectPost,
             response_uri: "https://verifier.example/response".to_owned(),
             nonce: "nonce".to_owned(),
             state: format!("state-{id}"),

@@ -148,7 +148,7 @@ impl PersistenceLauncher for PostgresLauncher {
             let max_connections = config::database_max_connections(source)?;
             let pool = nazo_postgres::create_pool(database_url, max_connections)?;
             Ok(ServerPersistenceBindings::new(Arc::new(
-                PostgresProvider::new(pool),
+                PostgresProvider::new(pool, crate::settings::mfa_totp_key_ring(source)?),
             )))
         })
     }

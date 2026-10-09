@@ -521,7 +521,7 @@ impl PresentationOperations for ServerPresentationOperations {
             let request = AuthorizationRequest {
                 client_id: client_id.clone(),
                 response_type: "vp_token".to_owned(),
-                response_mode: mode.as_str().to_owned(),
+                response_mode: mode,
                 response_uri: response_uri.clone(),
                 nonce: random_urlsafe_token(),
                 state: random_urlsafe_token(),
@@ -555,7 +555,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 id,
                 client_id_prefix: prefix,
                 request_method: method,
-                response_mode: mode,
+
                 wallet_authorization_endpoint,
                 request: request.clone(),
                 request_object,
@@ -727,12 +727,12 @@ impl PresentationOperations for ServerPresentationOperations {
             validate_retained_request_profile(&transaction.request)?;
             let response: AuthorizationResponse = match input {
                 PresentationResponseInput::DirectPost(response)
-                    if transaction.response_mode == ResponseMode::DirectPost =>
+                    if transaction.request.response_mode == ResponseMode::DirectPost =>
                 {
                     response
                 }
                 PresentationResponseInput::DirectPostJwt(encoded)
-                    if transaction.response_mode == ResponseMode::DirectPostJwt =>
+                    if transaction.request.response_mode == ResponseMode::DirectPostJwt =>
                 {
                     let key: [u8; 32] = transaction
                         .response_encryption_private_key

@@ -251,9 +251,9 @@ fn refresh_context(client_public_id: &str) -> RefreshTokenAuthenticationContext 
         auth_time: 1_700_000_000,
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
-        id_token_sid: None,
+
         acr: None,
-        nonce: None,
+
         userinfo_claim_requests: (vec![]).into(),
         id_token_claim_requests: (vec![]).into(),
     }
@@ -283,8 +283,9 @@ async fn seed_refresh_token_row(
         authorization_details: json!([]),
         authentication_context: refresh_context(&seed.client.client_id),
     };
-    let persisted = contract.persisted();
-    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let persisted = contract.clone();
+    let contract_blake3 =
+        (*blake3::hash(&serde_json::to_vec(&persisted).unwrap()).as_bytes()).to_vec();
     let contract_json = serde_json::to_value(&persisted).expect("contract serializes");
     sql_query(
         r#"
@@ -384,7 +385,7 @@ fn new_refresh_token(
             subject: seed.user_id.to_string(),
             authentication_context: refresh_context(&seed.client.client_id),
         }
-        .persisted(),
+        .clone(),
     )
 }
 
@@ -1147,6 +1148,7 @@ async fn rf06_lost_response_successor_is_single_read() {
     }
 
     let parent = RefreshToken {
+        id_token_sid: None,
         id: parent_id,
         token_blake3: *blake3::hash(parent_raw.as_bytes()).as_bytes(),
         tenant_id,
@@ -1521,7 +1523,7 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
         configuration_id: "qc-config".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![json!({"key_type": "software", "kid": "qc-key"})],
-        payload_ciphertext: b"deferred-payload".to_vec(),
+        payload: deferred_payload("deferred-payload"),
         ready_at,
         expires_at: ready_at + Duration::minutes(5),
     };
@@ -2031,8 +2033,8 @@ async fn replace_oidc_refresh_contract(
         authorization_details: json!([]),
         authentication_context: refresh_context(&seed.client.client_id),
     }
-    .persisted();
-    let key = contract.blake3_digest().to_vec();
+    .clone();
+    let key = (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes()).to_vec();
     sql_query("INSERT INTO oauth_refresh_contracts (tenant_id,contract_blake3,contract) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
         .bind::<sql_types::Uuid,_>(tenant.tenant_id.as_uuid()).bind::<sql_types::Binary,_>(&key)
         .bind::<sql_types::Jsonb,_>(serde_json::to_value(contract).unwrap())
@@ -2749,4 +2751,13 @@ async fn principal_fence_timeout_covers_later_locks_and_resets_at_transaction_en
     );
     drop(c);
     cleanup_seed(&url, tenant, &seed).await;
+}
+
+fn deferred_payload(label: &str) -> nazo_openid4vci::DeferredPayload {
+    nazo_openid4vci::DeferredPayload {
+        dataset: serde_json::json!({"test_payload": label}),
+        status: None,
+        issued_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+        expires_at: chrono::DateTime::from_timestamp(1_700_003_600, 0).unwrap(),
+    }
 }

@@ -118,12 +118,9 @@ pub async fn issue_token_response(
     let refresh_authentication_context = if will_issue_refresh
         && matches!(issue.refresh_token_policy, RefreshTokenPolicy::IssueNew)
     {
-        let Some(context) = refresh_authentication_context(
-            &issue,
-            context.config.issuer(),
-            &client.client_id,
-            None,
-        ) else {
+        let Some(context) =
+            refresh_authentication_context(&issue, context.config.issuer(), &client.client_id)
+        else {
             mark_failed_authorization_code_if_needed(
                 token_service,
                 issue.authorization_code_hash.as_deref(),
@@ -588,10 +585,8 @@ pub async fn issue_token_response(
         })
     } else {
         refresh_token_to_commit.map(|token| {
-            let mut authentication_context = refresh_authentication_context
+            let authentication_context = refresh_authentication_context
                 .expect("new refresh family validated authentication context");
-            authentication_context.nonce = None;
-            authentication_context.id_token_sid = None;
             let contract = nazo_auth::RefreshContract {
                 subject: issue.subject.clone(),
                 scopes: issue.scopes.clone(),

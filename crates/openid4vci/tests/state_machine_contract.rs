@@ -768,7 +768,12 @@ fn deferred_fixture(now: DateTime<Utc>) -> DeferredCredential {
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![json!({"jwk":{"kid":"holder"}})],
-        payload_ciphertext: br#"{"given_name":"Ada"}"#.to_vec(),
+        payload: nazo_openid4vci::DeferredPayload {
+            dataset: json!({"given_name":"Ada"}),
+            status: None,
+            issued_at: now,
+            expires_at: now + Duration::hours(1),
+        },
         ready_at: now + Duration::minutes(1),
         expires_at: now + Duration::hours(1),
     }

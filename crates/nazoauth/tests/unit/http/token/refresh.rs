@@ -293,8 +293,9 @@ async fn insert_refresh_token_row(
         authorization_details: token.authorization_details.clone(),
         authentication_context: authentication_context.clone(),
     }
-    .persisted();
-    let contract_blake3 = persisted.blake3_digest().to_vec();
+    .clone();
+    let contract_blake3 =
+        (*blake3::hash(&serde_json::to_vec(&persisted).unwrap()).as_bytes()).to_vec();
     let contract_json = serde_json::to_value(&persisted).expect("contract should serialize");
     let token_blake3 = blake3::hash(raw_refresh_token.as_bytes())
         .as_bytes()
@@ -360,7 +361,7 @@ async fn insert_refresh_token_row(
     .bind::<Jsonb, _>(token.audience.clone())
     .bind::<Timestamptz, _>(token.issued_at)
     .bind::<Timestamptz, _>(token.expires_at)
-    .bind::<Nullable<Text>, _>(token.authentication_context.id_token_sid.as_deref())
+    .bind::<Nullable<Text>, _>(token.id_token_sid.as_deref())
     .bind::<Nullable<Text>, _>(token.dpop_jkt.as_deref())
     .bind::<Nullable<Text>, _>(token.mtls_x5t_s256.as_deref())
     .bind::<Nullable<Text>, _>(token.client_attestation_jkt.as_deref())
@@ -675,9 +676,9 @@ fn refresh_authentication_context(
         auth_time: issued_at.timestamp().saturating_sub(1).max(1),
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
-        id_token_sid: None,
+
         acr: None,
-        nonce: None,
+
         userinfo_claim_requests: (Vec::new()).into(),
         id_token_claim_requests: (Vec::new()).into(),
     }
@@ -690,6 +691,7 @@ fn token_row_with_refresh_context(
 ) -> TokenRow {
     let issued_at = Utc::now();
     TokenRow {
+        id_token_sid: None,
         id: Uuid::now_v7(),
         // The fixture does not know the raw token; the insert helper derives
         // the stored digest from `raw_refresh_token`, and tests that pass the

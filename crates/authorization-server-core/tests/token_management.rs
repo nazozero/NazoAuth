@@ -474,6 +474,7 @@ fn ownership_refresh_introspection_preserves_scope_output() {
         ),
     ] {
         let token = RefreshToken {
+            id_token_sid: None,
             id: Uuid::from_u128(1),
             token_blake3: [1; 32],
             tenant_id: client.tenant_id,
@@ -499,9 +500,9 @@ fn ownership_refresh_introspection_preserves_scope_output() {
                 auth_time: now.timestamp(),
                 amr: vec!["pwd".into()],
                 oidc_sid: None,
-                id_token_sid: None,
+
                 acr: None,
-                nonce: None,
+
                 userinfo_claim_requests: (Vec::new()).into(),
                 id_token_claim_requests: (Vec::new()).into(),
             },

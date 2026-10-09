@@ -45,16 +45,19 @@ The receiver must recompute every BLAKE3 event hash and the batch digest
 before accepting a checkpoint. The event hash input is `nazo.audit.v1\0`,
 big-endian sequence, previous hash, UUID bytes, length-prefixed UTF-8 event
 type and category, big-endian microsecond timestamp, and length-prefixed
-PostgreSQL `jsonb::text` payload. Sequence and timestamp are signed 64-bit
+persisted UTF-8 `payload_canonical` bytes. Sequence and timestamp are signed 64-bit
 integers; lengths are unsigned 64-bit byte counts, all big-endian. The batch
 digest input is `nazo.audit.batch.v1\0`, deployment id, first and last
 sequence, event count, previous hash, last hash, and each member event hash in
 order. Hashes are 32 raw bytes and the event UUID is 16 raw bytes. The JSON
-wire envelope encodes hashes as unpadded base64url. A receiver must reproduce
-PostgreSQL `jsonb::text` representation, including whitespace and key
-ordering; hashing arbitrary reserialized JSON is not equivalent. The
-[persistence crate](../../crates/persistence/src/audit_chain.rs) owns this
-encoding. The receiver independently validates deployment identity, sequence
+wire envelope encodes hashes as unpadded base64url. A receiver hashes the exact
+`payload_canonical` string carried by the envelope, without parsing and
+reserializing its JSON. The ledger adapter owns the stored representation;
+the PostgreSQL adapter uses `jsonb::text`, including its whitespace and key
+ordering. Retained events and claimed batches must keep those original bytes
+through upgrades or adapter changes. The
+[persistence crate](../../crates/persistence/src/audit_chain.rs) owns the shared
+hash framing; it does not impose a database text encoder. The receiver independently validates deployment identity, sequence
 continuity, previous hash, event content, batch digest, and duplicate
 consistency.
 

@@ -144,7 +144,7 @@ fn query_has_access_token_handles_url_encoded() {
 fn presented_authorization_token_accepts_bearer() {
     assert_eq!(
         presented_authorization_token(&["Bearer token-1"]).unwrap(),
-        (PresentedAccessTokenScheme::Bearer, "token-1")
+        (AccessTokenScheme::Bearer, "token-1")
     );
 }
 
@@ -152,7 +152,7 @@ fn presented_authorization_token_accepts_bearer() {
 fn presented_authorization_token_accepts_dpop() {
     assert_eq!(
         presented_authorization_token(&["DPoP token-1"]).unwrap(),
-        (PresentedAccessTokenScheme::Dpop, "token-1")
+        (AccessTokenScheme::Dpop, "token-1")
     );
 }
 
@@ -160,11 +160,11 @@ fn presented_authorization_token_accepts_dpop() {
 fn presented_authorization_token_case_insensitive_scheme() {
     assert_eq!(
         presented_authorization_token(&["bearer token-1"]).unwrap(),
-        (PresentedAccessTokenScheme::Bearer, "token-1")
+        (AccessTokenScheme::Bearer, "token-1")
     );
     assert_eq!(
         presented_authorization_token(&["dpop token-1"]).unwrap(),
-        (PresentedAccessTokenScheme::Dpop, "token-1")
+        (AccessTokenScheme::Dpop, "token-1")
     );
 }
 
@@ -237,7 +237,7 @@ fn empty_proof() -> VerifiedSenderConstraintProof {
 #[test]
 fn validate_presented_sender_constraint_no_cnf_bearer_ok() {
     let result = validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Bearer,
+        AccessTokenScheme::Bearer,
         &verified_token(None),
         &empty_proof(),
     );
@@ -247,7 +247,7 @@ fn validate_presented_sender_constraint_no_cnf_bearer_ok() {
 #[test]
 fn validate_presented_sender_constraint_no_cnf_dpop_fails() {
     let result = validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Dpop,
+        AccessTokenScheme::Dpop,
         &verified_token(None),
         &empty_proof(),
     );
@@ -267,10 +267,7 @@ fn validate_presented_sender_constraint_cnf_jkt_with_dpop_and_matching_proof() {
         dpop_jkt: Some("jkt-1".to_owned()),
         mtls_x5t_s256: None,
     };
-    assert!(
-        validate_presented_sender_constraint(PresentedAccessTokenScheme::Dpop, &token, &proof,)
-            .is_ok()
-    );
+    assert!(validate_presented_sender_constraint(AccessTokenScheme::Dpop, &token, &proof,).is_ok());
 }
 
 #[test]
@@ -279,11 +276,8 @@ fn validate_presented_sender_constraint_cnf_jkt_without_dpop_fails() {
         jkt: Some("jkt-1".to_owned()),
         x5t_s256: None,
     }));
-    let result = validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Bearer,
-        &token,
-        &empty_proof(),
-    );
+    let result =
+        validate_presented_sender_constraint(AccessTokenScheme::Bearer, &token, &empty_proof());
     assert_eq!(
         result,
         Err(ResourceServerRequestError::MissingSenderConstraint)
@@ -300,8 +294,7 @@ fn validate_presented_sender_constraint_cnf_jkt_dpop_jkt_mismatch() {
         dpop_jkt: Some("jkt-other".to_owned()),
         mtls_x5t_s256: None,
     };
-    let result =
-        validate_presented_sender_constraint(PresentedAccessTokenScheme::Dpop, &token, &proof);
+    let result = validate_presented_sender_constraint(AccessTokenScheme::Dpop, &token, &proof);
     assert_eq!(result, Err(ResourceServerRequestError::DpopBindingMismatch));
 }
 
@@ -311,11 +304,8 @@ fn validate_presented_sender_constraint_cnf_jkt_dpop_missing_proof() {
         jkt: Some("jkt-1".to_owned()),
         x5t_s256: None,
     }));
-    let result = validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Dpop,
-        &token,
-        &empty_proof(),
-    );
+    let result =
+        validate_presented_sender_constraint(AccessTokenScheme::Dpop, &token, &empty_proof());
     assert_eq!(
         result,
         Err(ResourceServerRequestError::MissingSenderConstraint)
@@ -333,8 +323,7 @@ fn validate_presented_sender_constraint_cnf_x5t_with_mtls_matching() {
         mtls_x5t_s256: Some("thumb-1".to_owned()),
     };
     assert!(
-        validate_presented_sender_constraint(PresentedAccessTokenScheme::Bearer, &token, &proof,)
-            .is_ok()
+        validate_presented_sender_constraint(AccessTokenScheme::Bearer, &token, &proof,).is_ok()
     );
 }
 
@@ -348,8 +337,7 @@ fn validate_presented_sender_constraint_cnf_x5t_mismatch() {
         dpop_jkt: None,
         mtls_x5t_s256: Some("thumb-other".to_owned()),
     };
-    let result =
-        validate_presented_sender_constraint(PresentedAccessTokenScheme::Bearer, &token, &proof);
+    let result = validate_presented_sender_constraint(AccessTokenScheme::Bearer, &token, &proof);
     assert_eq!(result, Err(ResourceServerRequestError::MtlsBindingMismatch));
 }
 
@@ -359,11 +347,8 @@ fn validate_presented_sender_constraint_cnf_x5t_missing_mtls_proof() {
         jkt: None,
         x5t_s256: Some("thumb-1".to_owned()),
     }));
-    let result = validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Bearer,
-        &token,
-        &empty_proof(),
-    );
+    let result =
+        validate_presented_sender_constraint(AccessTokenScheme::Bearer, &token, &empty_proof());
     assert_eq!(
         result,
         Err(ResourceServerRequestError::MissingSenderConstraint)
@@ -376,11 +361,8 @@ fn validate_presented_sender_constraint_cnf_without_jkt_or_x5t_fails() {
         jkt: None,
         x5t_s256: None,
     }));
-    let result = validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Bearer,
-        &token,
-        &empty_proof(),
-    );
+    let result =
+        validate_presented_sender_constraint(AccessTokenScheme::Bearer, &token, &empty_proof());
     assert_eq!(
         result,
         Err(ResourceServerRequestError::MissingSenderConstraint)
@@ -398,11 +380,10 @@ fn dpop_scheme_cannot_reuse_a_matching_mtls_only_confirmation() {
         mtls_x5t_s256: Some("certificate".to_owned()),
     };
     assert_eq!(
-        validate_presented_sender_constraint(PresentedAccessTokenScheme::Dpop, &token, &proof),
+        validate_presented_sender_constraint(AccessTokenScheme::Dpop, &token, &proof),
         Err(ResourceServerRequestError::MissingSenderConstraint)
     );
     assert!(
-        validate_presented_sender_constraint(PresentedAccessTokenScheme::Bearer, &token, &proof)
-            .is_ok()
+        validate_presented_sender_constraint(AccessTokenScheme::Bearer, &token, &proof).is_ok()
     );
 }

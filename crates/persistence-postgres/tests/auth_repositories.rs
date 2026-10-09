@@ -109,9 +109,9 @@ fn refresh_authentication_context(
         auth_time: issued_at.timestamp() - 1,
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
-        id_token_sid: None,
+
         acr: None,
-        nonce: None,
+
         userinfo_claim_requests: (Vec::new()).into(),
         id_token_claim_requests: (Vec::new()).into(),
     }
@@ -325,8 +325,9 @@ async fn refresh_issuance(fixture: RefreshFixture) -> CommitTokenIssuance {
                 family_id: token.family_id,
                 member_id,
                 token_blake3: [0; 32],
-                contract_key: contract.persisted().blake3_digest(),
-                contract: contract.persisted(),
+                contract_key: (*blake3::hash(&serde_json::to_vec(&contract.clone()).unwrap())
+                    .as_bytes()),
+                contract: contract.clone(),
                 current_audiences: token.audiences.clone(),
                 id_token_sid: None,
                 dpop_jkt: token.dpop_jkt.clone(),
@@ -341,7 +342,7 @@ async fn refresh_issuance(fixture: RefreshFixture) -> CommitTokenIssuance {
         authority.user_id = token.user_id;
         authority.family_id = token.family_id;
         authority.member_id = member_id;
-        authority.contract = contract.persisted();
+        authority.contract = contract.clone();
         authority.dpop_jkt.clone_from(&token.dpop_jkt);
         authority.mtls_x5t_s256.clone_from(&token.mtls_x5t_s256);
         authority
@@ -2464,8 +2465,9 @@ async fn insert_refresh_row(connection: &mut AsyncPgConnection, row: &RawRefresh
         authorization_details: json!([]),
         authentication_context: context.clone(),
     };
-    let persisted = contract.persisted();
-    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let persisted = contract.clone();
+    let contract_blake3 =
+        (*blake3::hash(&serde_json::to_vec(&persisted).unwrap()).as_bytes()).to_vec();
     let contract_json = serde_json::to_value(&persisted).expect("contract serializes");
     let member_id = Uuid::now_v7();
     let token_blake3 = blake3::hash(row.raw_token.as_bytes()).as_bytes().to_vec();
@@ -3254,7 +3256,7 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
             .as_ref()
             .unwrap()
             .contract()
-            .persisted()
+            .clone()
             .authentication_context,
     )
     .unwrap();
@@ -4307,9 +4309,9 @@ fn contract_parts(fixture: &FixtureIds) -> (Vec<u8>, serde_json::Value) {
             authentication_time,
         ),
     };
-    let persisted = contract.persisted();
+    let persisted = contract.clone();
     (
-        persisted.blake3_digest().to_vec(),
+        (*blake3::hash(&serde_json::to_vec(&persisted).unwrap()).as_bytes()).to_vec(),
         serde_json::to_value(&persisted).expect("contract serializes"),
     )
 }

@@ -135,14 +135,14 @@ fn new_refresh(
                 auth_time: 1_700_000_000,
                 amr: vec!["pwd".to_owned()],
                 oidc_sid: None,
-                id_token_sid: None,
+
                 acr: None,
-                nonce: None,
+
                 userinfo_claim_requests: (Vec::new()).into(),
                 id_token_claim_requests: (Vec::new()).into(),
             },
         }
-        .persisted(),
+        .clone(),
     )
 }
 

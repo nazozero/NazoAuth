@@ -49,11 +49,10 @@ async fn remember_mfa_device(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(nazo_oauth_server::crypto::blake3_hex);
-    let key =
-        nazo_identity::ports::MfaTotpKey::new("passkey-remember-fixture", rand::random()).unwrap();
+    let key = nazo_postgres::MfaTotpKey::new("passkey-remember-fixture", rand::random()).unwrap();
     let repository = Arc::new(nazo_postgres::MfaRepository::with_totp_key_ring(
         state.diesel_db.clone(),
-        Some(nazo_identity::ports::MfaTotpKeyRing::new(key, None).unwrap()),
+        Some(nazo_postgres::MfaTotpKeyRing::new(key, None).unwrap()),
     ));
     let service = nazo_identity::MfaService::new(repository, Arc::new(ServerMfaSecretHasher));
     let enrollment = service

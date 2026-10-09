@@ -280,15 +280,16 @@ async fn insert_refresh(
             auth_time: Utc::now().timestamp() - 1,
             amr: vec!["pwd".to_owned()],
             oidc_sid: None,
-            id_token_sid: None,
+
             acr: None,
-            nonce: None,
+
             userinfo_claim_requests: (Vec::new()).into(),
             id_token_claim_requests: (Vec::new()).into(),
         },
     };
-    let persisted = contract.persisted();
-    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let persisted = contract.clone();
+    let contract_blake3 =
+        (*blake3::hash(&serde_json::to_vec(&persisted).unwrap()).as_bytes()).to_vec();
     let contract_json = serde_json::to_value(&persisted).expect("contract should serialize");
     let member_id = Uuid::now_v7();
     sql_query(

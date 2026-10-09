@@ -20,7 +20,7 @@ use nazo_openid4vci::{
 };
 use nazo_openid4vp::{
     AuthorizationRequest, ClientIdPrefix, PresentationResult, PresentationStorePort,
-    PresentationTransaction, RequestMethod, ResponseMode,
+    PresentationTransaction, RequestMethod,
 };
 use nazo_postgres::{
     ManagedCredentialDatasetWrite, Openid4vciDatasetRepository, Openid4vciRepository,
@@ -693,7 +693,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     let request = AuthorizationRequest {
         client_id: "redirect_uri:https://verifier.example/response".to_owned(),
         response_type: "vp_token".to_owned(),
-        response_mode: "direct_post".to_owned(),
+        response_mode: nazo_openid4vp::ResponseMode::DirectPost,
         response_uri: "https://verifier.example/response".to_owned(),
         nonce: "nonce".to_owned(),
         state: presentation_state.clone(),
@@ -719,7 +719,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
         id: transaction_id,
         client_id_prefix: ClientIdPrefix::RedirectUri,
         request_method: RequestMethod::UrlQuery,
-        response_mode: ResponseMode::DirectPost,
+
         wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
         request,
         request_object: None,
@@ -738,7 +738,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
         haip: false,
         client_id_prefix: transaction.client_id_prefix.as_str().to_owned(),
         request_method: transaction.request_method.as_str().to_owned(),
-        response_mode: transaction.response_mode.as_str().to_owned(),
+        response_mode: transaction.request.response_mode.as_str().to_owned(),
         transaction_data: None,
         openid4vc_trust_policy_resource_id: None,
         openid4vc_trust_policy_digest: None,
@@ -1347,7 +1347,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"holder"}})],
-        payload_ciphertext: b"deferred-payload".to_vec(),
+        payload: deferred_payload("deferred-payload"),
         ready_at: deferred_ready_at,
         expires_at: deferred_ready_at + Duration::minutes(5),
     };
@@ -1366,10 +1366,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
     )
     .unwrap();
     assert_eq!(first_claim.claim_id, "deferred-a");
-    assert_eq!(
-        first_claim.credential.payload_ciphertext,
-        b"deferred-payload"
-    );
+    assert_eq!(first_claim.credential.payload, deferred.payload);
     assert!(
         claim_payload(
             issuer
@@ -1468,7 +1465,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"reclaim"}})],
-        payload_ciphertext: b"reclaim-payload".to_vec(),
+        payload: deferred_payload("reclaim-payload"),
         ready_at: reclaim_deferred_ready_at,
         expires_at: reclaim_deferred_ready_at + Duration::minutes(30),
     };
@@ -1565,7 +1562,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"holder"}})],
-        payload_ciphertext: b"atomic-payload".to_vec(),
+        payload: deferred_payload("atomic-payload"),
         ready_at: atomic_deferred_ready_at,
         expires_at: atomic_deferred_ready_at + Duration::minutes(5),
     };
@@ -1623,10 +1620,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        atomic_claim.credential.payload_ciphertext,
-        b"atomic-payload"
-    );
+    assert_eq!(atomic_claim.credential.payload, atomic_deferred.payload);
     assert!(
         issuer
             .finalize_deferred(
@@ -2327,7 +2321,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"boundary"}})],
-        payload_ciphertext: b"boundary-deferred-payload".to_vec(),
+        payload: deferred_payload("boundary-deferred-payload"),
         ready_at: deferred_ready_at,
         expires_at: deferred_ready_at + Duration::minutes(10),
     };
@@ -2359,10 +2353,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        consumed_deferred.credential.payload_ciphertext,
-        deferred.payload_ciphertext
-    );
+    assert_eq!(consumed_deferred.credential.payload, deferred.payload);
     assert!(
         issuer
             .finalize_deferred(
@@ -2400,7 +2391,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"lease"}})],
-        payload_ciphertext: b"lease-payload".to_vec(),
+        payload: deferred_payload("lease-payload"),
         ready_at: lease_deferred_ready_at,
         expires_at: lease_deferred_ready_at + Duration::minutes(10),
     };
@@ -2491,7 +2482,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"atomic"}})],
-        payload_ciphertext: b"atomic-payload".to_vec(),
+        payload: deferred_payload("atomic-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
     };
@@ -2564,7 +2555,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"atomic-response"}})],
-        payload_ciphertext: b"atomic-response-payload".to_vec(),
+        payload: deferred_payload("atomic-response-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
     };
@@ -2619,7 +2610,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"response"}})],
-        payload_ciphertext: b"response-payload".to_vec(),
+        payload: deferred_payload("response-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
     };
@@ -2669,7 +2660,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"notification"}})],
-        payload_ciphertext: b"notification-payload".to_vec(),
+        payload: deferred_payload("notification-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
     };
@@ -2732,7 +2723,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid":"notification-response"}})],
-        payload_ciphertext: b"notification-response-payload".to_vec(),
+        payload: deferred_payload("notification-response-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
     };
@@ -2886,7 +2877,7 @@ fn openid4vc_deferred_fixture(
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
         holder_bindings: vec![serde_json::json!({"jwk":{"kid": format!("{tag}-holder")}})],
-        payload_ciphertext: format!("{tag}-payload").into_bytes(),
+        payload: deferred_payload(&format!("{tag}-payload")),
         ready_at,
         expires_at: ready_at + lifetime,
     }
@@ -5475,7 +5466,7 @@ async fn refreshed_access_continues_only_its_original_credential_intent_after_so
     };
     assert_eq!(claim.credential.access.token_id, original.token_id);
     assert!(claim.credential.access.expires_at < Utc::now());
-    assert!(claim.credential.payload_ciphertext == deferred.payload_ciphertext);
+    assert!(claim.credential.payload == deferred.payload);
     assert!(claim.credential.holder_bindings == deferred.holder_bindings);
     assert_eq!(claim.credential.selection, Some(selection.clone()));
     assert_eq!(claim.credential.expires_at, deferred.expires_at);
@@ -5661,7 +5652,7 @@ async fn presentation_completion_rechecks_owner_clock_after_pool_and_record_wait
             id,
             client_id_prefix: ClientIdPrefix::RedirectUri,
             request_method: RequestMethod::UrlQuery,
-            response_mode: ResponseMode::DirectPost,
+
             wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
             request: serde_json::from_value(serde_json::json!({
                 "client_id":"redirect_uri:https://verifier.example/response",
@@ -6200,4 +6191,13 @@ async fn credential_persistence_rejects_binding_conflicts_and_accepts_exact_retr
     assert_eq!(after.xmin, before.xmin);
     assert_persisted_access_grant(&after, &hash, &legacy);
     delete_openid4vc_subject_and_client(&pool, subject_id, Some(client_uuid)).await;
+}
+
+fn deferred_payload(label: &str) -> nazo_openid4vci::DeferredPayload {
+    nazo_openid4vci::DeferredPayload {
+        dataset: serde_json::json!({"test_payload": label}),
+        status: None,
+        issued_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+        expires_at: chrono::DateTime::from_timestamp(1_700_003_600, 0).unwrap(),
+    }
 }

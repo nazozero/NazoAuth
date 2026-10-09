@@ -233,14 +233,7 @@ impl ServerCredentialIssuerOperations {
                 }
             };
             let result = async {
-                let payload: DeferredPayload = serde_json::from_slice(&deferred.payload_ciphertext)
-                    .map_err(|_| {
-                        vci_error(
-                            503,
-                            "server_error",
-                            "Deferred credential payload is unavailable.",
-                        )
-                    })?;
+                let payload = deferred.payload;
                 let configuration = self
                     .configurations
                     .get(&deferred.configuration_id)
