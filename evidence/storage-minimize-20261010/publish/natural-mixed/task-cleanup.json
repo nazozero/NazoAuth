@@ -1,0 +1,11 @@
+{
+  "label": "pr238-natural-mix60-20261010",
+  "key": "MIX60",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.678,
+  "total_elapsed_s": 343.027,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

@@ -1,0 +1,19 @@
+{
+  "before": {
+    "rows": 10000,
+    "avg_tuple_bytes": 224.0,
+    "heap_bytes": 2367488,
+    "index_bytes": 1933312,
+    "total_bytes": 4300800,
+    "exit": 0
+  },
+  "after": {
+    "rows": 10000,
+    "avg_tuple_bytes": 200.0,
+    "heap_bytes": 2072576,
+    "index_bytes": 1679360,
+    "total_bytes": 3751936,
+    "exit": 0
+  },
+  "method": "Identical 10000 newly inserted rows in isolated transaction-local LIKE tables with actual before/after schema and indexes; no vacuum; not migration-time shrink or production workload."
+}

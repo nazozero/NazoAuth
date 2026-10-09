@@ -1,0 +1,1 @@
+{"command": "cargo test --locked --all-features -p nazo-postgres --test controller_registry reclaimed_expired_approval_still_cannot_authorize_a_controller -- --exact --nocapture", "exit": 0, "seconds": 2.1952756699174643}

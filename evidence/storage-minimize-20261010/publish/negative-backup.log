@@ -1,0 +1,21 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 3.76s
+     Running tests/identity_repositories.rs (target/debug/deps/identity_repositories-0a866e020d3508b2)
+
+running 1 test
+test backup_code_is_consumed_once_atomically ... 
+thread 'backup_code_is_consumed_once_atomically' (39859) panicked at crates/persistence-postgres/tests/identity_repositories.rs:936:5:
+assertion `left == right` failed: an atomically consumed backup verifier has no remaining consumer
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    backup_code_is_consumed_once_atomically
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.48s
+
+error: test failed, to rerun pass `-p nazo-postgres --test identity_repositories`

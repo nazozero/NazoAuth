@@ -1,0 +1,1 @@
+{"command": "cargo test --locked --all-features -p nazoauth --lib http::profile::mfa -- --nocapture", "exit": 0, "seconds": 73.72012291569263}

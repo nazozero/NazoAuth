@@ -1,0 +1,9 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.20s
+     Running tests/controller_registry.rs (target/debug/deps/controller_registry-e6bb5d6e1cdb9f7c)
+
+running 1 test
+test reclaimed_expired_approval_still_cannot_authorize_a_controller ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.89s
+

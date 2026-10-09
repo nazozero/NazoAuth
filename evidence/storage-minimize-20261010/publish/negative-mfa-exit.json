@@ -1,0 +1,1 @@
+{"exit": 101, "seconds": 90.41623667813838, "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_maintenance expired_remembered_devices_are_reclaimed_without_user_activity -- --exact --nocapture", "source": "c733618056235dd7fadbbbc76a6a719844465b00 plus new test only"}

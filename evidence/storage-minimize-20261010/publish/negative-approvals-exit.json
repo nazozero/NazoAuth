@@ -1,0 +1,1 @@
+{"command": "cargo test --locked --all-features -p nazo-postgres --test security_state_maintenance expired_identity_approvals_are_reclaimed_but_live_single_use_fences_remain -- --exact --nocapture", "exit": 101, "seconds": 1.8777198609896004}

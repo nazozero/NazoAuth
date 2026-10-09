@@ -1,0 +1,39 @@
+{
+  "user_mfa_backup_codes": {
+    "before": {
+      "rows": 10000,
+      "avg_tuple_bytes": 184.0,
+      "heap_bytes": 1933312,
+      "index_bytes": 974848,
+      "total_bytes": 2908160,
+      "exit": 0
+    },
+    "after": {
+      "rows": 10000,
+      "avg_tuple_bytes": 170.0,
+      "heap_bytes": 1851392,
+      "index_bytes": 974848,
+      "total_bytes": 2826240,
+      "exit": 0
+    }
+  },
+  "user_totp_credentials": {
+    "before": {
+      "rows": 10000,
+      "avg_tuple_bytes": 213.0,
+      "heap_bytes": 2252800,
+      "index_bytes": 1384448,
+      "total_bytes": 3637248,
+      "exit": 0
+    },
+    "after": {
+      "rows": 10000,
+      "avg_tuple_bytes": 165.0,
+      "heap_bytes": 1777664,
+      "index_bytes": 1384448,
+      "total_bytes": 3162112,
+      "exit": 0
+    }
+  },
+  "method": "10000 new rows with equal retained field shapes in transaction-local LIKE tables; old/new actual schemas and indexes; no vacuum. This measures storage layout only, not authentication correctness or immediate migration-time file shrink."
+}
