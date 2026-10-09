@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  baseline-types:
+  baseline-field-references:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -23,15 +23,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: workspace-quality
-          save-if: false
+          shared-key: model-audit-baseline-types
+          cache-on-failure: true
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
-      - name: Capture baseline source, packages and compiler-expanded types
+      - name: Capture type-resolved expression bodies with original source spans
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/model-audit-types/hir /tmp/model-audit-types/rustdoc
+          mkdir -p /tmp/model-audit-types/thir
           git rev-parse HEAD > /tmp/model-audit-types/source-sha.txt
           rustc --version --verbose > /tmp/model-audit-types/compiler.txt
           cargo metadata --no-deps --format-version 1 > /tmp/model-audit-types/metadata.json
@@ -44,19 +44,15 @@ jobs:
                   print(package['name'])
           PY
           while read -r package; do
-            # Diagnostic output only. No unstable compiler settings enter a release build.
+            # Compiler diagnostics only. Production flags and dependencies are unchanged.
             RUSTC_BOOTSTRAP=1 cargo rustc -p "$package" --lib --all-features --locked \
-              -- -Zunpretty=hir,typed > "/tmp/model-audit-types/hir/$package.rs" \
-              2> "/tmp/model-audit-types/hir/$package.log"
-            RUSTC_BOOTSTRAP=1 cargo rustdoc -p "$package" --lib --all-features --locked \
-              -- -Zunstable-options --output-format json --document-private-items \
-              2> "/tmp/model-audit-types/rustdoc/$package.log"
+              -- -Zunpretty=thir-flat 2> "/tmp/model-audit-types/thir/$package.log" \
+              | gzip -1 > "/tmp/model-audit-types/thir/$package.txt.gz"
           done < /tmp/model-audit-types/packages.txt
-          cp target/doc/*.json /tmp/model-audit-types/rustdoc/
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: baseline-model-types-${{ github.sha }}
+          name: baseline-field-references-${{ github.sha }}
           path: /tmp/model-audit-types/
           retention-days: 2
           if-no-files-found: error
