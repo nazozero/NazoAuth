@@ -1,0 +1,33 @@
+name: model-inventory
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/model-inventory.yml'
+      - 'scripts/data_model_inventory.py'
+      - 'crates/**'
+
+permissions:
+  contents: read
+
+jobs:
+  declarations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Enumerate declarations only
+        run: |
+          mkdir -p /tmp/model-review-metadata
+          python3 scripts/data_model_inventory.py > /tmp/model-review-metadata/declarations.jsonl
+          git rev-parse HEAD > /tmp/model-review-metadata/commit.txt
+          head -n 1 /tmp/model-review-metadata/declarations.jsonl
+      - name: Retain declaration metadata, not source files or application data
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: model-declaration-metadata
+          path: /tmp/model-review-metadata/
+          retention-days: 3
+          if-no-files-found: error
