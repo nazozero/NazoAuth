@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "cohort_size": 43601,
+  "last_retain_epoch": 1791478042.945116,
+  "final_cycle": "2026-10-08T16:48:16.749989Z  INFO nazoauth::jobs::security_state: security-state maintenance cycle completed stop_reason=\"drained\" batches=16 rows=3887 issuances=0 elapsed_ms=196 next_delay_ms=60000",
+  "zero_observation": {
+    "ts": 1791478098.079113,
+    "remaining": 0,
+    "eligible": 0,
+    "retained": 0,
+    "unexported": 0,
+    "last_retain": null,
+    "last_exported": null
+  },
+  "same_final_instance": true,
+  "natural_delete_total": 43601,
+  "boundary": "Frozen batch zero and completed natural cycle; no claim of all security state zero or indefinite disk bound."
+}

@@ -11,13 +11,10 @@ Replaces the dimensional-lossy obs1s.py for diagnostic runs:
   * Host disk stats are collected for the caller-provided PGDATA devices
     (DISK_DEVS) — md/DM device plus members are reported separately, never
     summed.
-  * app pool counters come from the app metrics endpoint; deltas are computed
-    by the analyzer, max gauges are reported as-is (never as per-second max).
+  * Application pool counters are unavailable under blackbox-db-v1.
 
 Env:
   DB_URL        postgres://... (required)
-  APP_METRICS   app metrics URL, e.g. http://nazoauth:8000/__perf/metrics
-  APP_METRICS_HOST  optional Host header for tenant-routed app endpoints
   OUT_PATH      JSONL output path (required)
   DISK_DEVS     space-separated device names from /proc/diskstats (e.g.
                 "md0 vdb vdc ..."); md0 members reported separately.
@@ -32,7 +29,6 @@ import os
 import re
 import sys
 import time
-import urllib.request
 from datetime import datetime, timezone
 
 try:
@@ -47,8 +43,6 @@ except ImportError:  # required only in main(); tests import helpers offline
 
 INTERVAL_S = float(os.environ.get("INTERVAL_S", "1.0"))
 DB_URL = os.environ.get("DB_URL", "")
-APP_METRICS = os.environ.get("APP_METRICS", "")
-APP_METRICS_HOST = os.environ.get("APP_METRICS_HOST", "")
 OUT_PATH = os.environ.get("OUT_PATH", "")
 DISK_DEVS = [d for d in os.environ.get("DISK_DEVS", "").split() if d]
 HOST_PROC = os.environ.get("HOST_PROC", "/proc")
@@ -129,29 +123,8 @@ def fetch_pg(conn):
 
 
 def fetch_pool():
-    """App /__perf/metrics JSON endpoint -> db_pool counters. Cumulative
-    acquire/wait are emitted raw; the analyzer computes per-second deltas.
-    wait_nanos_max is a process-lifetime max, never a per-second value."""
-    if not APP_METRICS:
-        return None
-    t0 = time.monotonic()
-    try:
-        req = urllib.request.Request(APP_METRICS)
-        if APP_METRICS_HOST:
-            req.add_header("Host", APP_METRICS_HOST)
-        with urllib.request.urlopen(req, timeout=0.8) as resp:
-            doc = json.loads(resp.read().decode("utf-8", "replace"))
-        pool = doc.get("db_pool") or {}
-        return {"identity": APP_IDENTITY,
-                "acquire_count": pool.get("acquire_count"),
-                "wait_nanos_total": pool.get("wait_nanos_total"),
-                "wait_nanos_max_lifetime": pool.get("wait_nanos_max"),
-                "query_ms": round((time.monotonic() - t0) * 1000, 2)}
-    except Exception as e:  # noqa: BLE001
-        return {"identity": APP_IDENTITY,
-                "error": f"{type(e).__name__}: {e}",
-                "query_ms": round((time.monotonic() - t0) * 1000, 2)}
-
+    """Application pool collection is retired; no HTTP request is made."""
+    return None
 
 def read_diskstats():
     found = {}

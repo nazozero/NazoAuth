@@ -77,7 +77,7 @@ pub(super) fn dynamic_registration_response(
         "post_logout_redirect_uris": client.post_logout_redirect_uris,
         "backchannel_logout_session_required": client.backchannel_logout_session_required,
         "backchannel_token_delivery_mode": client.backchannel_token_delivery_mode,
-        "backchannel_user_code_parameter": client.backchannel_user_code_parameter,
+        "backchannel_user_code_parameter": false,
         "frontchannel_logout_session_required": client.frontchannel_logout_session_required,
     });
     if let Some(uri) = &client.backchannel_logout_uri {

@@ -1,0 +1,2 @@
+536f52191b7d6d7f28754be7461d688c0a4a998fecdbeae10d17bf376c909ff9  /src/evidence/pr230-recovery-20261008/perf/p04-B/bin/pinset
+{"utc": "2026-10-08T13:50:47.794967+00:00", "stage": "task-environment-setup", "pinset_sha256": "536f52191b7d6d7f28754be7461d688c0a4a998fecdbeae10d17bf376c909ff9", "isolated_pinset_output": "pinned_tasks=1 failed_procs=0", "scripts_volume": "r230-recovery-p04-b-20261008-scripts", "pinbin_volume": "r230-recovery-p04-b-20261008-pinbin", "tls_volume": "r230-recovery-p04-b-20261008-audit-tls"}

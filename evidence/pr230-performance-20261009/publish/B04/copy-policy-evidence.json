@@ -1,0 +1,215 @@
+{
+  "source_sha": "101939f7095a9ea5822ff68580d9fedcd259e970",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791480690.310062,
+      "container": "sis-sampler-pr230-perf-b04-20261009"
+    },
+    {
+      "ts": 1791480690.3898067,
+      "container": "sis-proc-pr230-perf-b04-20261009"
+    },
+    {
+      "ts": 1791480705.583997,
+      "container": "sis-sampler-pr230-perf-b04-20261009"
+    },
+    {
+      "ts": 1791480705.7270021,
+      "container": "sis-sampler-pr230-perf-b04-20261009"
+    },
+    {
+      "ts": 1791480716.470704,
+      "container": "sis-proc-pr230-perf-b04-20261009"
+    },
+    {
+      "ts": 1791480716.4902847,
+      "container": "sis-proc-pr230-perf-b04-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791480690.0963418,
+      "ts_end": 1791480690.1568768,
+      "elapsed_ms": 60.5361,
+      "container": "sis-sampler-pr230-perf-b04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791480690.1569118,
+      "ts_end": 1791480690.234064,
+      "elapsed_ms": 77.1537,
+      "container": "sis-proc-pr230-perf-b04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791480690.3901799,
+      "ts_end": 1791480690.4623938,
+      "elapsed_ms": 72.214,
+      "container": "sis-sampler-pr230-perf-b04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791480690.462417,
+      "ts_end": 1791480690.6200407,
+      "elapsed_ms": 157.6239,
+      "container": "sis-proc-pr230-perf-b04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791480716.3209925,
+      "ts_end": 1791480716.399828,
+      "elapsed_ms": 78.8356,
+      "container": "sis-sampler-pr230-perf-b04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "9377165a9016b2e9cbeeb6b49efe3b7d27fe47477fc7069aa21de8d3142fe2f6",
+        "owner": "pr230-perf-b04-20261009",
+        "running": false,
+        "checked_at": 1791480716.3499727,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480726.8621721,
+      "ts_end": 1791480726.988957,
+      "elapsed_ms": 126.7847,
+      "container": "sis-proc-pr230-perf-b04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "807b66063c2b07b962d4ad7e0aa80028ecef9624ba59064d97e7300bc2f6d3ea",
+        "owner": "pr230-perf-b04-20261009",
+        "running": false,
+        "checked_at": 1791480726.9400527,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480731.01213,
+      "ts_end": 1791480731.1964939,
+      "elapsed_ms": 184.3638,
+      "container": "sis-load-pr230-perf-b04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "34e64633ef69dc2698da3d2ad14c4015fa590331138fbdde40e4d8089b0a2ac9",
+        "owner": "pr230-perf-b04-20261009",
+        "running": false,
+        "checked_at": 1791480731.0647435,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480734.6766686,
+      "ts_end": 1791480734.8758733,
+      "elapsed_ms": 199.2048,
+      "container": "sis-side-argon2-pr230-perf-b04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "d0e68663956679a9611f98401736cd16300176a6628493a4557386d0fb9cd10a",
+        "owner": "pr230-perf-b04-20261009",
+        "running": false,
+        "checked_at": 1791480734.7675486,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480738.5408406,
+      "ts_end": 1791480738.614979,
+      "elapsed_ms": 74.1386,
+      "container": "sis-side-meta-pr230-perf-b04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "f1f206bff84697da1aea58333e2f256eaf1ac718aa959fb551340892f27c315d",
+        "owner": "pr230-perf-b04-20261009",
+        "running": false,
+        "checked_at": 1791480738.5625505,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480742.1283412,
+      "ts_end": 1791480742.3709407,
+      "elapsed_ms": 242.5996,
+      "container": "sis-side-fapi-pr230-perf-b04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "151487a146f726f92ac18ef4ac27c2cd9eccf49109258a68bc7a917f8b4086c1",
+        "owner": "pr230-perf-b04-20261009",
+        "running": false,
+        "checked_at": 1791480742.2129128,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-pr230-perf-b04-20261009",
+    "sis-proc-pr230-perf-b04-20261009",
+    "sis-sampler-pr230-perf-b04-20261009",
+    "sis-side-argon2-pr230-perf-b04-20261009",
+    "sis-side-fapi-pr230-perf-b04-20261009",
+    "sis-side-meta-pr230-perf-b04-20261009"
+  ],
+  "finalization": {
+    "errors": [
+      {
+        "container": "sis-load-pr230-perf-b04-20261009",
+        "reason": "workload still running at finalization"
+      },
+      {
+        "container": "sis-side-argon2-pr230-perf-b04-20261009",
+        "reason": "workload still running at finalization"
+      },
+      {
+        "container": "sis-side-meta-pr230-perf-b04-20261009",
+        "reason": "workload still running at finalization"
+      },
+      {
+        "container": "sis-side-fapi-pr230-perf-b04-20261009",
+        "reason": "workload still running at finalization"
+      }
+    ],
+    "stopped": [
+      "sis-load-pr230-perf-b04-20261009",
+      "sis-side-argon2-pr230-perf-b04-20261009",
+      "sis-side-meta-pr230-perf-b04-20261009",
+      "sis-side-fapi-pr230-perf-b04-20261009"
+    ],
+    "terminal_captured": [
+      "sis-load-pr230-perf-b04-20261009",
+      "sis-proc-pr230-perf-b04-20261009",
+      "sis-sampler-pr230-perf-b04-20261009",
+      "sis-side-argon2-pr230-perf-b04-20261009",
+      "sis-side-fapi-pr230-perf-b04-20261009",
+      "sis-side-meta-pr230-perf-b04-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

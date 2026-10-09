@@ -111,6 +111,9 @@ fn client() -> ClientRow {
 
 fn claims(client_id: &str, audience: Value, scope: &str) -> Claims {
     Claims {
+        authorization_id: None,
+        client_epoch: None,
+        user_epoch: None,
         iss: "https://issuer.example".to_owned(),
         sub: "subject-1".to_owned(),
         tenant_id: DEFAULT_TENANT_ID.to_string(),
@@ -127,8 +130,7 @@ fn claims(client_id: &str, audience: Value, scope: &str) -> Claims {
         exp: Utc::now().timestamp() + 300,
         cnf: None,
         act: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
     }
 }
 
@@ -445,6 +447,8 @@ async fn token_exchange_subject_binding_requires_the_presented_sender_proof() {
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::TokenExchange),
+        client_epoch: 0,
         config: &config,
         modules: &modules,
         authorization: &authorization,
@@ -851,11 +855,8 @@ async fn token_exchange_subject_boundaries_and_safe_default_scope_are_table_driv
 async fn token_exchange_request_policy_and_admission_wrappers_preserve_boundaries() {
     let input = form();
     let request = token_exchange_request(&input);
-    assert_eq!(request.subject_token.as_deref(), Some("subject-token"));
-    assert_eq!(
-        request.subject_token_type.as_deref(),
-        Some(ACCESS_TOKEN_TYPE)
-    );
+    assert_eq!(request.subject_token, Some("subject-token"));
+    assert_eq!(request.subject_token_type, Some(ACCESS_TOKEN_TYPE));
     assert_eq!(request.audiences, input.audiences);
 
     let state = token_exchange_state();
@@ -863,6 +864,8 @@ async fn token_exchange_request_policy_and_admission_wrappers_preserve_boundarie
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
     let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::TokenExchange),
+        client_epoch: 0,
         config: &config,
         modules: &modules,
         authorization: &authorization,

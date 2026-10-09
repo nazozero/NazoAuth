@@ -1,0 +1,1083 @@
+{
+  "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791530862.3812833,
+      "container": "sis-sampler-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530862.3960905,
+      "container": "sis-proc-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530870.7787442,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530870.8466427,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530870.9209743,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530870.9847956,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530871.0521035,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530871.132911,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530876.30039,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530876.3837976,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530876.4551756,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530876.5226233,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530876.5921147,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530876.6597729,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530881.820714,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530881.8860037,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530881.9531105,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530882.0209348,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530882.0853143,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530882.148253,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530887.3129025,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530887.3819287,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530887.4541821,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530887.5284128,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530887.604277,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530887.7073426,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530892.9186203,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530892.9866767,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530893.055711,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530893.1356378,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530893.2014687,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530893.270596,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530898.4423208,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530898.522568,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530898.590916,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530898.7100706,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530898.7782478,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530898.8421383,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530904.0096133,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530904.0810997,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530904.214387,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530904.2795584,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530904.3482413,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530904.4144003,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530909.614778,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530909.6956975,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530909.7837267,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530909.8523295,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530909.9175868,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530909.989361,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530915.1565065,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530915.2239776,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530915.290764,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530915.358866,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530915.4382157,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530915.5147126,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530920.7417884,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530920.8110592,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530920.9107485,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530920.9807127,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530921.0525386,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530921.1275053,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530926.3574495,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530926.4424076,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530926.5159411,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530926.5965059,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530926.671405,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530926.7755263,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530931.95177,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530932.0245755,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530932.0958447,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530932.17292,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530932.2448723,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530932.3230505,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530937.590366,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530937.666198,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530937.7438838,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530937.813992,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530937.9058695,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530937.980639,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530943.1577468,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530943.231275,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530943.3044086,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530943.376439,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530943.453461,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530943.5293067,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530948.7183309,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530948.7914526,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530948.86147,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530948.9336753,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530949.0112894,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530949.0860937,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530954.264002,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530954.3434815,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530954.4191203,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530954.4947822,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530954.5707269,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530954.6543136,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530959.8588815,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530959.9319394,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530960.00935,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530960.0826123,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530960.1573286,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530960.235092,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530965.4049368,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530965.4783108,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530965.5507736,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530965.6267025,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530965.705065,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530965.7881148,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530971.0668333,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530971.1453311,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530971.2181997,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530971.297239,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530971.3744063,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530971.4489388,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530976.6293755,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530976.7047,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530976.7820246,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530976.8561902,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530976.9318645,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530977.0160775,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530982.1934917,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530982.2702491,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530982.3477652,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530982.423837,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530982.504734,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530982.5829499,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530987.778668,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530987.8605082,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530987.9331076,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530988.0088756,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530988.0833545,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530988.1561728,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530993.3430443,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530993.3596404,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530993.4375613,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530993.5254068,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530993.6074216,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530993.7104537,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530993.7295961,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530993.749638,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530994.329575,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530994.3493607,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530994.424385,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530994.49899,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530994.578822,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530994.651436,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530999.8484962,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530999.8670294,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791530999.9579656,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531000.0452268,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531000.138879,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531000.215845,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531005.4041107,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531005.4215016,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531005.5014665,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531005.5786378,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531005.6554558,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531005.7314627,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531010.930331,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531010.947357,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531011.0312905,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531011.107628,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531011.1832836,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531011.2607431,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531016.447123,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531016.4622545,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531016.547426,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531016.6332526,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531016.711973,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531016.8057735,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.0022275,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.018617,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.0340414,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.2366712,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.2532167,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.3658662,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.380726,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.4601905,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.4755332,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.6898322,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.7134926,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.7272248,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.741925,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.755462,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.8328922,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.848973,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.9211078,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531022.9358864,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.1718342,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.1947472,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.2174149,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.2322118,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.248075,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.2633507,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.2786014,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.352817,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.367899,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.586467,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.6080198,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.6313276,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.6530943,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.6687274,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.6852765,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.7014208,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.782984,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531023.7979176,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531024.037317,
+      "container": "sis-load-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531024.0595355,
+      "container": "sis-side-argon2-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531024.0831578,
+      "container": "sis-side-meta-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531024.1041577,
+      "container": "sis-side-fapi-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531024.1254292,
+      "container": "sis-side-refresh-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531030.4265935,
+      "container": "sis-sampler-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531030.4432986,
+      "container": "sis-sampler-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531041.0124788,
+      "container": "sis-proc-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531041.028751,
+      "container": "sis-proc-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531051.8006039,
+      "container": "sis-sampler-r230-model-model04-20261009"
+    },
+    {
+      "ts": 1791531051.8233736,
+      "container": "sis-proc-r230-model-model04-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791530862.320796,
+      "ts_end": 1791530862.342926,
+      "elapsed_ms": 22.1314,
+      "container": "sis-sampler-r230-model-model04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791530862.342952,
+      "ts_end": 1791530862.3657312,
+      "elapsed_ms": 22.7805,
+      "container": "sis-proc-r230-model-model04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791530862.3963919,
+      "ts_end": 1791530862.4201484,
+      "elapsed_ms": 23.7565,
+      "container": "sis-sampler-r230-model-model04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791530862.4201682,
+      "ts_end": 1791530862.443232,
+      "elapsed_ms": 23.0642,
+      "container": "sis-proc-r230-model-model04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791530993.769922,
+      "ts_end": 1791530994.0996032,
+      "elapsed_ms": 329.6811,
+      "container": "sis-load-r230-model-model04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "e1724df25d70d64174740ef7f5831b86b9028f17b28bb96f50df05231b27da59",
+        "owner": "r230-model-model04-20261009",
+        "running": false,
+        "checked_at": 1791530994.0646203,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791531022.3970978,
+      "ts_end": 1791531022.4449651,
+      "elapsed_ms": 47.8674,
+      "container": "sis-side-argon2-r230-model-model04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "bbfea1c99f1057f4f2105a9849d4bcfc54b64632e9b35a17b618cae4cf557432",
+        "owner": "r230-model-model04-20261009",
+        "running": false,
+        "checked_at": 1791531022.4112453,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791531022.8634615,
+      "ts_end": 1791531022.9060621,
+      "elapsed_ms": 42.6008,
+      "container": "sis-side-meta-r230-model-model04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "8f6db426a16659fd230932372876c49fc1c8eb608fa54fd90861726d6c317be6",
+        "owner": "r230-model-model04-20261009",
+        "running": false,
+        "checked_at": 1791531022.8790379,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791531023.2931051,
+      "ts_end": 1791531023.3380084,
+      "elapsed_ms": 44.9033,
+      "container": "sis-side-fapi-r230-model-model04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "30a2cde92f1677e5c9b36c3e10ed031e0a8743bdd8083db91b88ad83d3727196",
+        "owner": "r230-model-model04-20261009",
+        "running": false,
+        "checked_at": 1791531023.308829,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791531023.7172208,
+      "ts_end": 1791531023.7677653,
+      "elapsed_ms": 50.5441,
+      "container": "sis-side-refresh-r230-model-model04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "83042cf3d31d0f9d7baeec387f172310617c6ea142d0a286e2d42f71e79ecee9",
+        "owner": "r230-model-model04-20261009",
+        "running": false,
+        "checked_at": 1791531023.7338617,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791531024.2400243,
+      "ts_end": 1791531024.265315,
+      "elapsed_ms": 25.291,
+      "container": "sis-sampler-r230-model-model04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791531024.265352,
+      "ts_end": 1791531024.2862604,
+      "elapsed_ms": 20.9091,
+      "container": "sis-proc-r230-model-model04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791531040.9144123,
+      "ts_end": 1791531040.9597313,
+      "elapsed_ms": 45.3195,
+      "container": "sis-sampler-r230-model-model04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "752856b0cc9f8146b5b13e995dce9f865d0dad0ceb5845dbe15028cc8b2bd77c",
+        "owner": "r230-model-model04-20261009",
+        "running": false,
+        "checked_at": 1791531040.9304478,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791531051.246009,
+      "ts_end": 1791531051.2885199,
+      "elapsed_ms": 42.5109,
+      "container": "sis-proc-r230-model-model04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "6b79cc34c4bbfa214de9b9884f340339b2315fb6e3e0142087db62ed53e29ee2",
+        "owner": "r230-model-model04-20261009",
+        "running": false,
+        "checked_at": 1791531051.2626324,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-r230-model-model04-20261009",
+    "sis-proc-r230-model-model04-20261009",
+    "sis-sampler-r230-model-model04-20261009",
+    "sis-side-argon2-r230-model-model04-20261009",
+    "sis-side-fapi-r230-model-model04-20261009",
+    "sis-side-meta-r230-model-model04-20261009",
+    "sis-side-refresh-r230-model-model04-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-r230-model-model04-20261009",
+      "sis-proc-r230-model-model04-20261009",
+      "sis-sampler-r230-model-model04-20261009",
+      "sis-side-argon2-r230-model-model04-20261009",
+      "sis-side-fapi-r230-model-model04-20261009",
+      "sis-side-meta-r230-model-model04-20261009",
+      "sis-side-refresh-r230-model-model04-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

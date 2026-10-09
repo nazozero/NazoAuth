@@ -1,0 +1,121 @@
+{
+  "overall_verdict": "INVALID",
+  "reason": "600 second total collection deadline; retained original verdict",
+  "formal_cohort": {
+    "window_start_s": 1791440446.098,
+    "window_end_s": 1791440881.098,
+    "measure_started_exact": 203918,
+    "measure_completed_exact": 203918,
+    "measure_dropped_exact": 213683,
+    "measure_scheduled_observed": 417601,
+    "measure_drop_fraction": 0.511692,
+    "measure_outcomes": {
+      "success": 203918
+    },
+    "measure_outcome_sum": 203918,
+    "drops_pre_window": 6515,
+    "drops_post_window": 0,
+    "drops_pending_unclassified": 0,
+    "pending_drops_overflow": false,
+    "valid": true,
+    "problems": [],
+    "rational_planned_arrivals": 417600,
+    "schedule_delta_vs_rational": 1,
+    "observed_schedule_rate": 960.002,
+    "cohort_source": "k6_stream_exact",
+    "late_vu_fraction": 0.0
+  },
+  "complete_operation_latency_ms": {
+    "p50": 1882.0,
+    "p95": 3249.0,
+    "p99": 3702.0
+  },
+  "successful_ops_s": 468.777,
+  "storage_samples": 94,
+  "formal_storage_samples": 80,
+  "peak_pending": 41287,
+  "peak_oldest_pending_s": 30.109104,
+  "final_sample": {
+    "ts": 1791440926.606141,
+    "pending": 0,
+    "oldest_pending_s": 0,
+    "pending_by_type": {},
+    "decision_eligible": 6587,
+    "decision_retained": 22440,
+    "family_eligible": 0,
+    "family_live": 992,
+    "contract_orphan": 0,
+    "spent_eligible": 0,
+    "spent_retained": 0,
+    "anchor": 635406,
+    "observed_at": 1791440926.247146,
+    "blocked": null,
+    "db_bytes": 482916031,
+    "tables": [
+      {
+        "relname": "security_audit_events",
+        "table_bytes": 190832640,
+        "index_bytes": 68493312,
+        "n_tup_ins": 635406,
+        "n_tup_del": 606379,
+        "n_dead_tup": 69544,
+        "autovacuum_count": 8
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "table_bytes": 82534400,
+        "index_bytes": 58163200,
+        "n_tup_ins": 211802,
+        "n_tup_del": 59492,
+        "n_dead_tup": 30411,
+        "autovacuum_count": 7
+      },
+      {
+        "relname": "security_audit_chain_entries",
+        "table_bytes": 6127616,
+        "index_bytes": 21774336,
+        "n_tup_ins": 635406,
+        "n_tup_del": 635406,
+        "n_dead_tup": 36307,
+        "autovacuum_count": 8
+      },
+      {
+        "relname": "oauth_refresh_contracts",
+        "table_bytes": 3334144,
+        "index_bytes": 770048,
+        "n_tup_ins": 6010,
+        "n_tup_del": 5018,
+        "n_dead_tup": 992,
+        "autovacuum_count": 4
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "table_bytes": 9469952,
+        "index_bytes": 23281664,
+        "n_tup_ins": 212794,
+        "n_tup_del": 211802,
+        "n_dead_tup": 19614,
+        "autovacuum_count": 8
+      },
+      {
+        "relname": "oauth_refresh_spent_tokens",
+        "table_bytes": 8192,
+        "index_bytes": 24576,
+        "n_tup_ins": 0,
+        "n_tup_del": 0,
+        "n_dead_tup": 0,
+        "autovacuum_count": 0
+      }
+    ],
+    "locks": [
+      {
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "n": 33,
+        "xact_age_s": null
+      }
+    ],
+    "phase": "post_drain"
+  },
+  "note": "Independent SQL observations are retained; they do not repair absent terminal performance health evidence."
+}

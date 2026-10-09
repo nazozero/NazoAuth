@@ -10,6 +10,7 @@ pub(super) const VALID_CODE_VERIFIER: &str =
 pub(super) fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
     let now = Utc::now();
     CodePayload {
+        redemption_contract_version: nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION,
         code_id: "code-1".to_owned(),
         user_id: Uuid::now_v7(),
         client_id: "client-1".to_owned(),
@@ -23,15 +24,12 @@ pub(super) fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
         amr: vec!["password".to_owned()],
         oidc_sid: Some("sid-1".to_owned()),
         acr: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
-        code_challenge: Some("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned()),
-        code_challenge_method: Some("S256".to_owned()),
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: (Vec::new()).into(),
+        pkce: (Some("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned())).into(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: now,
+
         expires_at: now + Duration::seconds(300),
     }
 }

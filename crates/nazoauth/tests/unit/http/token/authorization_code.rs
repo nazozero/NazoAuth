@@ -17,7 +17,22 @@ use nazo_oauth_server::crypto::blake3_hex;
 use nazo_oauth_server::crypto::pkce_s256;
 use nazo_oauth_server::domain::oauth::AuthorizationCodeState;
 use nazo_oauth_server::domain::oauth::CodePayload;
-use nazo_oauth_server::domain::oauth::ConsumedAuthorizationCode;
+// Exact historical cache format used only to prove that attacker-controlled
+// marker metadata never becomes durable replay/revocation authority.
+#[derive(Clone, serde::Serialize)]
+struct ConsumedAuthorizationCode {
+    client_id: Uuid,
+    redemption_binding: Option<String>,
+    access_token_jti: String,
+    access_token_expires_at: i64,
+    refresh_token_family_id: Option<Uuid>,
+}
+#[derive(serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum LegacyAuthorizationCodeState {
+    Consumed { marker: ConsumedAuthorizationCode },
+}
+
 use nazo_oauth_server::domain::oauth::RefreshTokenPolicy;
 use nazo_oauth_server::domain::rows::ClientRow;
 use nazo_oauth_server::services::ServerTokenService;
@@ -25,9 +40,9 @@ use nazo_oauth_server::token::authorization_code::AuthorizationCodeConsumption;
 use nazo_oauth_server::token::authorization_code::AuthorizationCodeIssueInput;
 use nazo_oauth_server::token::authorization_code::authorization_code_client_mismatch_response;
 use nazo_oauth_server::token::authorization_code::authorization_code_dpop_error_response;
-use nazo_oauth_server::token::authorization_code::authorization_code_grant_key;
 use nazo_oauth_server::token::authorization_code::authorization_code_mtls_holder_error_response;
 use nazo_oauth_server::token::authorization_code::begin_authorization_code_consumption_with_service;
+use nazo_oauth_server::token::authorization_code::legacy_authorization_code_redemption_key;
 use nazo_oauth_server::token::authorization_code::load_pending_authorization_code_payload_with_service;
 use nazo_oauth_server::token::authorization_code::redirect_uri_matches_authorization_request;
 use nazo_oauth_server::token::authorization_code::refresh_token_dpop_binding;
@@ -86,6 +101,8 @@ use nazo_postgres::{create_pool, get_conn};
 
 #[path = "authorization_code/admission.rs"]
 mod admission;
+#[path = "authorization_code/identity.rs"]
+mod identity;
 #[path = "authorization_code/issuance.rs"]
 mod issuance;
 #[path = "authorization_code/replay.rs"]
@@ -125,13 +142,27 @@ pub(crate) async fn token_authorization_code(
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
     let service = test_token_service(state);
+    token_authorization_code_using_service(state, req, client, form, client_assertion, &service)
+        .await
+}
+
+async fn token_authorization_code_using_service(
+    state: &TestInfrastructure,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+    service: &ServerTokenService,
+) -> HttpResponse {
     let config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
     let modules = state.active_module_snapshot();
     let authorization = crate::http::token::issue::test_support::test_authorization_service(state);
     crate::http::token::issue::test_support::present_token_result(
         token_authorization_code_with_service(
-            &service,
+            service,
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::AuthorizationCode),
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,
@@ -353,7 +384,7 @@ impl LiveAuthorizationCodeFixture {
         .expect("test user should insert")
     }
 
-    async fn store_code_state(&self, code: &str, state: &AuthorizationCodeState) {
+    async fn store_code_state(&self, code: &str, state: &impl serde::Serialize) {
         valkey_set_ex(
             &self.state.valkey,
             authorization_code_key(code),
@@ -482,10 +513,11 @@ impl LiveAuthorizationCodeFixture {
             INSERT INTO oauth_token_issuances (
                 issuance_id, tenant_id, client_id, user_id,
                 single_use_key_blake3, access_token_jti,
-                access_token_expires_at, retain_until, refresh_token_family_id
+                access_token_expires_at, retain_until, refresh_token_family_id,
+                receipt_contract_version
             )
             VALUES ($1, $2, $3, NULL, $4, $5, now() + interval '5 minutes',
-                    now() + interval '1 day', $6)
+                    now() + interval '1 day', $6, 2)
             "#,
         )
         .bind::<SqlUuid, _>(Uuid::now_v7())
@@ -532,8 +564,7 @@ fn live_client(client_id: &str) -> ClientRow {
 fn payload_for_client(client: &ClientRow) -> CodePayload {
     let mut payload = code_payload(true);
     payload.client_id = client.client_id.clone();
-    payload.code_challenge = Some(pkce_s256(VALID_CODE_VERIFIER));
-    payload.code_challenge_method = Some("S256".to_owned());
+    payload.pkce = (Some(pkce_s256(VALID_CODE_VERIFIER))).into();
     payload.redirect_uri = "https://client.example/callback".to_owned();
     payload.redirect_uri_was_supplied = true;
     payload.scopes = vec!["openid".to_owned()];

@@ -73,7 +73,6 @@ fn registration() -> ValidatedClientRegistration {
         backchannel_token_delivery_mode: "poll".to_owned(),
         backchannel_client_notification_endpoint: None,
         backchannel_authentication_request_signing_alg: None,
-        backchannel_user_code_parameter: false,
         backchannel_logout_uri: None,
         backchannel_logout_session_required: false,
         frontchannel_logout_uri: None,
@@ -114,7 +113,7 @@ fn prepared() -> PreparedClientRegistration {
         tenant: TenantContext::default(),
         registration: registration(),
         require_mtls_bound_tokens: true,
-        issued_secret: Some("issued-secret".to_owned()),
+        issued_secret: Some("issued-secret".to_owned()).into(),
         client_secret_hash: Some("hashed-secret".to_owned()),
         registration_access_token_blake3: Some("registration-token-digest".to_owned()),
     }
@@ -348,4 +347,72 @@ fn admin_client_ports_and_errors_have_stable_operator_messages() {
     ] {
         assert_eq!(error.to_string(), expected);
     }
+}
+
+#[test]
+fn admin_create_and_patch_keep_ciba_user_code_disabled_without_stored_state() {
+    let resolver = StaticSectorIdentifier(Vec::new());
+    let crypto = TestCrypto;
+    for value in [None, Some(false), Some(true)] {
+        let mut payload = json!({
+            "client_name": "Unsupported CIBA user-code metadata",
+            "client_type": "public",
+            "redirect_uris": ["https://client.example/callback"],
+            "scopes": ["openid"],
+            "allowed_audiences": ["resource://default"],
+            "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none"
+        });
+        if let Some(value) = value {
+            payload["backchannel_user_code_parameter"] = json!(value);
+        }
+        let request: nazo_auth::CreateClientRequest = serde_json::from_value(payload).unwrap();
+        assert_eq!(
+            request.backchannel_user_code_parameter,
+            value.unwrap_or(false)
+        );
+        let created = futures_executor::block_on(nazo_auth::prepare_client_registration(
+            request,
+            &policy(None),
+            &resolver,
+            &crypto,
+        ));
+        let patched = futures_executor::block_on(prepare_client_patch(
+            oauth_client(),
+            PatchClientRequest {
+                backchannel_user_code_parameter: value,
+                ..PatchClientRequest::default()
+            },
+            &policy(None),
+            &resolver,
+            &crypto,
+        ));
+        if value == Some(true) {
+            assert!(matches!(created, Err(AdminClientError::InvalidRequest(_))));
+            assert!(matches!(patched, Err(AdminClientError::InvalidRequest(_))));
+        } else {
+            assert!(created.is_ok());
+            assert!(patched.is_ok());
+        }
+    }
+}
+
+#[test]
+fn prepared_write_moves_registration_and_holds_undisclosed_secret() {
+    let prepared = prepared();
+    let registration_allocation = prepared.registration.redirect_uris.as_ptr();
+    let tenant = prepared.tenant;
+    let mut write = prepared.into_write();
+    assert_eq!(
+        write.client.registration.redirect_uris.as_ptr(),
+        registration_allocation
+    );
+    assert_eq!(write.client.tenant_id, tenant.tenant_id.as_uuid());
+    assert_eq!(write.issued_secret.as_deref(), Some("issued-secret"));
+    assert!(!format!("{:?}", write.issued_secret).contains("issued-secret"));
+    assert_eq!(
+        write.issued_secret.take_after_commit().as_deref(),
+        Some("issued-secret")
+    );
+    assert!(write.issued_secret.is_none());
 }

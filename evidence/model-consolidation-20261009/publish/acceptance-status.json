@@ -1,0 +1,15 @@
+{
+  "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+  "CODE": "PASS",
+  "SECURITY": "PASS",
+  "RECOVERY": "PASS",
+  "PERFORMANCE": "PASS",
+  "STORAGE": "PASS_SHORT_TEST_SCOPE",
+  "LONG_TERM_STORAGE": "INVALID_NOT_MEASURED",
+  "ci": "Recorded separately on the PR after final report publication",
+  "limitations": [
+    "Historical latency/CPU/WAL costs do not all improve.",
+    "No concurrent A was rerun for this model consolidation.",
+    "No claim of infinite-outage disk bound or long-term plateau."
+  ]
+}

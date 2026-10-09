@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use http::StatusCode;
 use nazo_auth::{
     CibaAuthenticationContext, CibaCommittedDecision, CibaDecision, CibaDecisionFailure,
-    CibaRequestState, CibaStatePortError, CibaStatus,
+    CibaRequestState, CibaStatePortError, CibaStateVersion, CibaStatus, PreparedCibaDecision,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -123,9 +123,9 @@ async fn prepare_ciba_decision_intent(
     ciba_service: &ServerCibaService,
     security_audit: &dyn SecurityAudit,
     command: &CibaDecisionCommand,
-) -> Result<(), OAuthEndpointError> {
-    let state = match load_ciba_request_payload(ciba_service, &command.auth_req_id).await {
-        Ok(Some(state)) => state,
+) -> Result<PreparedCibaDecision<CibaStateVersion>, OAuthEndpointError> {
+    let prepared = match ciba_service.prepare_decision(&command.auth_req_id).await {
+        Ok(Some(prepared)) => prepared,
         Ok(None) => {
             return Err(OAuthEndpointError::authorization(
                 StatusCode::NOT_FOUND,
@@ -133,9 +133,10 @@ async fn prepare_ciba_decision_intent(
                 "CIBA request expired.",
             ));
         }
-        Err(response) => return Err(response),
+        Err(error) => return Err(ciba_state_error(error)),
     };
-    if let Err(error) = security_audit.ensure_storage().await {
+    let state = prepared.state();
+    if let Err(error) = security_audit.ensure_transactional_ready().await {
         tracing::error!(%error, "CIBA decision audit preflight failed");
         return Err(OAuthEndpointError::authorization(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -172,7 +173,8 @@ async fn prepare_ciba_decision_intent(
                 "server_error",
                 "CIBA decision audit could not be persisted.",
             )
-        })
+        })?;
+    Ok(prepared)
 }
 
 async fn set_ciba_request_decision(
@@ -180,7 +182,7 @@ async fn set_ciba_request_decision(
     security_audit: &dyn SecurityAudit,
     command: CibaDecisionCommand,
 ) -> Result<(), OAuthEndpointError> {
-    prepare_ciba_decision_intent(ciba_service, security_audit, &command).await?;
+    let prepared = prepare_ciba_decision_intent(ciba_service, security_audit, &command).await?;
     let CibaDecisionCommand {
         auth_req_id,
         decision,
@@ -189,7 +191,7 @@ async fn set_ciba_request_decision(
         source_ip_hash,
     } = command;
     let result = ciba_service
-        .decide(&auth_req_id, decision, expected_user_id, || {
+        .decide_prepared(prepared, decision, expected_user_id, || {
             Utc::now().timestamp()
         })
         .await;

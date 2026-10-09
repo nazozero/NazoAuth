@@ -23,16 +23,11 @@ async fn ciba_token_approved_state_issues_access_and_id_tokens_for_an_active_use
     store_ciba_state_with_user(&state, &client, &auth_req_id, user_id, CibaStatus::Approved).await;
 
     let response = call_ciba_token_with_mtls_for_test(&state, &client, auth_req_id.clone()).await;
-    if response.status() != StatusCode::OK {
-        let status = response.status();
-        let body = actix_web::body::to_bytes(response.into_body())
-            .await
-            .expect("CIBA error response should collect");
-        panic!(
-            "approved CIBA token request returned {status}: {}",
-            String::from_utf8_lossy(&body)
-        );
-    }
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "approved CIBA issuance must succeed"
+    );
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .expect("CIBA token response should collect");
@@ -65,11 +60,7 @@ async fn ciba_replay_rejects_a_consumed_auth_req_id_after_a_committed_issuance()
     client.client_id = format!("ciba-persisted-replay-{}", client.id);
     client.require_mtls_bound_tokens = true;
     let auth_req_id = format!("ciba-replay-{}", Uuid::now_v7());
-    let grant_key = ciba_grant_key(
-        &auth_req_id,
-        None,
-        Some(ciba_test_mtls_certificate().thumbprint.as_str()),
-    );
+    let grant_key = ciba_grant_key(&auth_req_id);
 
     crate::http::token::issue::tests::persist_consumed_single_use_grant_for_test(
         &state, &client, &grant_key,
@@ -82,4 +73,215 @@ async fn ciba_replay_rejects_a_consumed_auth_req_id_after_a_committed_issuance()
         Some(oauth_error_code(response).await.as_str()),
         Some("invalid_grant")
     );
+}
+
+#[actix_web::test]
+async fn ciba_precommit_dependency_failure_is_retryable_and_sender_keys_share_one_fence() {
+    let Some(mut state) = live_ciba_replay_state().await else {
+        return;
+    };
+    let mut settings = (*state.settings).clone();
+    settings.protocol.dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Optional;
+    settings.protocol.ciba_security_profile =
+        nazo_oauth_server::policy::CibaSecurityProfile::Fapi2Ciba;
+    state.settings = Arc::new(settings);
+    let client_key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("retryable-approved-kid", &client_key);
+    client.client_id = format!("ciba-sender-fence-{}", Uuid::now_v7());
+    client.require_dpop_bound_tokens = true;
+    persist_ciba_test_client(&state, &client).await;
+    client = crate::http::token::issue::test_support::test_authorization_service(&state)
+        .client_authentication_snapshot(&client.client_id)
+        .await
+        .expect("stored client authentication should be readable")
+        .expect("stored client should exist")
+        .client;
+    let user_id = Uuid::now_v7();
+    insert_ciba_user(&state, user_id).await;
+    let one = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let two = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    for concurrent in [false, true] {
+        let id = format!("ciba-sender-{}", Uuid::now_v7());
+        store_ciba_state_with_user(&state, &client, &id, user_id, CibaStatus::Approved).await;
+        let before =
+            crate::http::token::issue::tests::token_issuance_row_count(&state, &client).await;
+        let dependency = call_ciba_token_with_audit_for_test(
+            &state,
+            &client,
+            id.clone(),
+            crate::test_support::dpop_token_request(state.settings.as_ref(), &one),
+            crate::http::authorization::test_support::unavailable_security_audit(),
+        )
+        .await;
+        assert_eq!(dependency.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(oauth_error_code(dependency).await, "server_error");
+        let service = ServerCibaService::new(Arc::new(CibaStore::new(&state.valkey_connection())));
+        assert_eq!(
+            ServerCibaService::load(&service, &id)
+                .await
+                .unwrap()
+                .unwrap()
+                .state()
+                .status,
+            CibaStatus::Approved
+        );
+        assert_eq!(
+            crate::http::token::issue::tests::token_issuance_row_count(&state, &client).await,
+            before
+        );
+        state.keyset = crate::test_support::failing_key_manager();
+        let failed = call_ciba_token_with_audit_for_test(
+            &state,
+            &client,
+            id.clone(),
+            crate::test_support::dpop_token_request(state.settings.as_ref(), &one),
+            crate::http::authorization::test_support::test_security_audit(),
+        )
+        .await;
+        assert_eq!(
+            failed.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "expected signing dependency failure"
+        );
+        let service = ServerCibaService::new(Arc::new(CibaStore::new(&state.valkey_connection())));
+        assert_eq!(
+            ServerCibaService::load(&service, &id)
+                .await
+                .unwrap()
+                .unwrap()
+                .state()
+                .status,
+            CibaStatus::Approved
+        );
+        assert_eq!(
+            crate::http::token::issue::tests::token_issuance_row_count(&state, &client).await,
+            before
+        );
+        state.keyset =
+            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+        let request_a = crate::test_support::dpop_token_request(state.settings.as_ref(), &one);
+        let request_b = crate::test_support::dpop_token_request(state.settings.as_ref(), &two);
+        let (a, b) = if concurrent {
+            tokio::join!(
+                call_ciba_token_with_audit_for_test(
+                    &state,
+                    &client,
+                    id.clone(),
+                    request_a,
+                    crate::http::authorization::test_support::test_security_audit()
+                ),
+                call_ciba_token_with_audit_for_test(
+                    &state,
+                    &client,
+                    id.clone(),
+                    request_b,
+                    crate::http::authorization::test_support::test_security_audit()
+                )
+            )
+        } else {
+            let a = call_ciba_token_with_audit_for_test(
+                &state,
+                &client,
+                id.clone(),
+                request_a,
+                crate::http::authorization::test_support::test_security_audit(),
+            )
+            .await;
+            let b = call_ciba_token_with_audit_for_test(
+                &state,
+                &client,
+                id.clone(),
+                request_b,
+                crate::http::authorization::test_support::test_security_audit(),
+            )
+            .await;
+            (a, b)
+        };
+        assert_eq!(
+            [a.status(), b.status()]
+                .into_iter()
+                .filter(|status| *status == StatusCode::OK)
+                .count(),
+            1
+        );
+        let rejected = if a.status() == StatusCode::OK { b } else { a };
+        assert_eq!(oauth_error_code(rejected).await, "invalid_grant");
+        let replay = call_ciba_token_with_audit_for_test(
+            &state,
+            &client,
+            id,
+            crate::test_support::dpop_token_request(state.settings.as_ref(), &one),
+            crate::http::authorization::test_support::test_security_audit(),
+        )
+        .await;
+        assert_eq!(oauth_error_code(replay).await, "invalid_grant");
+        assert_eq!(
+            crate::http::token::issue::tests::token_issuance_row_count(&state, &client).await,
+            before + 1
+        );
+        #[derive(diesel::QueryableByName)]
+        struct Count {
+            #[diesel(sql_type=diesel::sql_types::BigInt)]
+            count: i64,
+        }
+        let mut conn = get_conn(&state.diesel_db).await.unwrap();
+        let revoked=sql_query("SELECT COUNT(*)::bigint AS count FROM access_token_revocations WHERE tenant_id=$1 AND client_id=$2").bind::<SqlUuid,_>(client.tenant_id).bind::<SqlUuid,_>(client.id).get_result::<Count>(&mut conn).await.unwrap();
+        assert_eq!(
+            revoked.count, 0,
+            "CIBA replay must not revoke another holder's tokens"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_dispatch_ciba_after_approved_poll() {
+    use crate::http::token::issue::test_support::{
+        assert_expired_grant_dispatch_response, token_with_expired_grant_commit,
+    };
+    let mut state = live_ciba_replay_state()
+        .await
+        .expect("CIBA commit regression requires isolated PostgreSQL and Valkey");
+    configure_ciba_test_mtls_proxy(&mut state);
+    state.keyset =
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("ciba-expired-commit-kid", &key);
+    client.client_id = format!("ciba-expired-commit-{}", Uuid::now_v7());
+    client.require_mtls_bound_tokens = true;
+    persist_ciba_test_client(&state, &client).await;
+    let user_id = Uuid::now_v7();
+    insert_ciba_user(&state, user_id).await;
+    let id = format!("ciba-commit-{}", Uuid::now_v7());
+    store_ciba_state_with_user(&state, &client, &id, user_id, CibaStatus::Approved).await;
+    let certificate = ciba_test_mtls_certificate();
+    let request = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .app_data(actix_web::web::Data::new(
+            crate::http::mtls::MtlsCertificateSource::new(
+                crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
+            ),
+        ))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("client-cert", certificate.header.as_str()))
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    let assertion = super::client_auth::signed_ciba_client_assertion(
+        &client.client_id,
+        "ciba-expired-commit-kid",
+        &key,
+    );
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", CIBA_GRANT_TYPE)
+        .append_pair("client_id", &client.client_id)
+        .append_pair("auth_req_id", &id)
+        .append_pair(
+            "client_assertion_type",
+            nazo_auth::CLIENT_ASSERTION_TYPE_JWT_BEARER,
+        )
+        .append_pair("client_assertion", &assertion)
+        .finish();
+    let (response, commits) =
+        token_with_expired_grant_commit(&state, request, actix_web::web::Bytes::from(body)).await;
+    assert_expired_grant_dispatch_response(&state, &client, response, commits, "expired_token")
+        .await;
 }

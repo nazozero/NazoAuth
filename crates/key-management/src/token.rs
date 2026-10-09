@@ -9,11 +9,26 @@ use uuid::Uuid;
 
 use crate::{KeyManager, signing_algorithm_from_name};
 
+// Match the sorted field order of the previous serde_json::Value payload.
+#[derive(serde::Serialize)]
+struct IntrospectionResponseClaims<'a> {
+    aud: &'a str,
+    iat: i64,
+    iss: &'a str,
+    token_introspection: &'a Value,
+}
+
 impl TokenSignerPort for KeyManager {
     fn sign_access_token<'a>(
         &'a self,
         input: AccessTokenSignInput<'a>,
     ) -> TokenFuture<'a, IssuedAccessToken> {
+        // Pin the header and signing key to one generation. Rotation may publish
+        // another generation before this future is polled or while it signs.
+        let generation = self.inner.generation.load_full();
+        let mut header = nazo_crypto::jwt::Header::new(generation.snapshot.active_alg);
+        header.typ = Some("at+jwt".to_owned());
+        header.kid = Some(generation.snapshot.active_kid.clone());
         Box::pin(async move {
             let now = Utc::now().timestamp();
             let jti = Uuid::now_v7().to_string();
@@ -21,6 +36,9 @@ impl TokenSignerPort for KeyManager {
             let claims = access_token_claims(
                 input.issuer,
                 AccessTokenClaimsInput {
+                    authorization_id: input.authorization_id,
+                    client_epoch: input.client_epoch,
+                    user_epoch: input.user_epoch,
                     tenant_id: input.tenant_id,
                     subject: input.subject,
                     user_id: input.user_id,
@@ -29,24 +47,25 @@ impl TokenSignerPort for KeyManager {
                     audiences: input.audiences,
                     scopes: input.scopes,
                     authorization_details: input.authorization_details,
-                    userinfo_claims: input.userinfo_claims,
                     userinfo_claim_requests: input.userinfo_claim_requests,
                     ttl: input.ttl_seconds,
-                    dpop_jkt: input.dpop_jkt,
-                    mtls_x5t_s256: input.mtls_x5t_s256,
+                    sender_constraint: input.sender_constraint,
+
                     actor: input.actor,
                 },
                 now,
                 &jti,
             );
-            let keyset = self.snapshot();
-            let mut header = nazo_crypto::jwt::Header::new(keyset.active_alg);
-            header.typ = Some("at+jwt".to_owned());
-            header.kid = Some(keyset.active_kid.clone());
-            let token = self
-                .encode_jwt(SigningPurpose::AccessToken, &header, &claims)
-                .await
-                .map_err(|_| TokenPortError::Unavailable)?;
+            let token = crate::model::encode_jwt_for_generation(
+                &generation,
+                &self.inner.health,
+                None,
+                SigningPurpose::AccessToken,
+                &header,
+                &claims,
+            )
+            .await
+            .map_err(|_| TokenPortError::Unavailable)?;
             Ok(IssuedAccessToken {
                 token,
                 jti,
@@ -56,6 +75,7 @@ impl TokenSignerPort for KeyManager {
     }
 
     fn sign_id_token<'a>(&'a self, input: IdTokenSignInput<'a>) -> TokenFuture<'a, String> {
+        let generation = self.inner.generation.load_full();
         Box::pin(async move {
             let claims = id_token_claims(
                 input.issuer,
@@ -76,13 +96,20 @@ impl TokenSignerPort for KeyManager {
                 Some(name) => {
                     signing_algorithm_from_name(name).ok_or(TokenPortError::Unexpected)?
                 }
-                None => self.snapshot().active_alg,
+                None => generation.snapshot.active_alg,
             };
             let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("JWT".to_owned());
-            self.encode_jwt(SigningPurpose::IdToken, &header, &Value::Object(claims))
-                .await
-                .map_err(|_| TokenPortError::Unavailable)
+            crate::model::encode_jwt_for_generation(
+                &generation,
+                &self.inner.health,
+                None,
+                SigningPurpose::IdToken,
+                &header,
+                &Value::Object(claims),
+            )
+            .await
+            .map_err(|_| TokenPortError::Unavailable)
         })
     }
 
@@ -159,27 +186,72 @@ impl TokenSignerPort for KeyManager {
         &'a self,
         input: IntrospectionSignInput<'a>,
     ) -> TokenFuture<'a, String> {
+        let generation = self.inner.generation.load_full();
         Box::pin(async move {
-            let snapshot = self.snapshot();
             let algorithm = match input.signing_algorithm {
                 Some(name) => {
                     signing_algorithm_from_name(name).ok_or(TokenPortError::Unexpected)?
                 }
-                None => snapshot.active_alg,
+                None => generation.snapshot.active_alg,
             };
             let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("token-introspection+jwt".to_owned());
-            let claims = serde_json::json!({
-                "iss": input.issuer,
-                "aud": input.audience,
-                "iat": Utc::now().timestamp(),
-                "token_introspection": input.body,
-            });
-            self.encode_jwt(SigningPurpose::Introspection, &header, &claims)
-                .await
-                .map_err(|_| TokenPortError::Unavailable)
+            let claims = IntrospectionResponseClaims {
+                aud: input.audience,
+                iat: Utc::now().timestamp(),
+                iss: input.issuer,
+                token_introspection: input.body,
+            };
+            crate::model::encode_jwt_for_generation(
+                &generation,
+                &self.inner.health,
+                None,
+                SigningPurpose::Introspection,
+                &header,
+                &claims,
+            )
+            .await
+            .map_err(|_| TokenPortError::Unavailable)
         })
     }
+}
+
+/// Cryptographic verification for RP logout hints uses the currently
+/// published generation's prepared public key. Expiry is intentionally returned
+/// to the logout policy, which independently requires a current/recent session.
+impl KeyManager {
+    pub fn decode_id_token_hint(
+        &self,
+        issuer: &str,
+        token: &str,
+    ) -> Option<(nazo_auth::IdTokenHintClaims, i64)> {
+        let header = nazo_crypto::jwt::decode_header(token).ok()?;
+        if header.typ.as_deref().is_some_and(|typ| typ != "JWT")
+            || crate::signing_algorithm_name(header.alg).is_none()
+        {
+            return None;
+        }
+        let snapshot = self.snapshot();
+        let key = snapshot.verification_key(header.kid.as_deref()?)?;
+        if key.prepared.algorithm != header.alg {
+            return None;
+        }
+        let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
+        validation.validate_aud = false;
+        validation.validate_exp = false;
+        validation.set_issuer(&[issuer]);
+        let data =
+            nazo_crypto::jwt::decode::<LogoutHintClaims>(token, &key.prepared.key, &validation)
+                .ok()?;
+        Some((data.claims.hint, data.claims.exp))
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct LogoutHintClaims {
+    #[serde(flatten)]
+    hint: nazo_auth::IdTokenHintClaims,
+    exp: i64,
 }
 
 #[cfg(test)]

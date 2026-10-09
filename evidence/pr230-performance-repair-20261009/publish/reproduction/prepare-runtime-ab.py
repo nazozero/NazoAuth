@@ -1,0 +1,10 @@
+from pathlib import Path
+import json,hashlib,subprocess
+p=Path('/workspace');e=p/'evidence/pr230-performance-repair-20261009';old=p/'evidence/pr230-bottleneck-20261009/publish'
+aff=json.loads(subprocess.check_output(['docker','exec','nazoauth-perf-runner-20261009','python3','-c','import os,json;print(json.dumps(sorted(os.sched_getaffinity(0))))'],text=True));assert len(aff)>=49
+(e/'allowed-application-container-cpus.json').write_text(json.dumps(aff));print('container available CPUs',len(aff))
+for key,threads in [('R16',None),('R02','2'),('R16B',None)]:
+ out=e/key;(out/'requests').mkdir(parents=True,exist_ok=True);a=json.loads((e/'image-baseline.json').read_text());sha=a['source_sha'];r=json.loads((old/'Q32/requests/Q32.json').read_text());m=json.loads((old/'Q32/requests/manifest.json').read_text());images={k:json.loads((e/('image-'+k+'.json')).read_text())['image'] for k in ['load','keyset','receiver']}
+ r.update(name='r230-repair-'+key.lower()+'-20261009',request_key=key,arm='A',source_sha=sha,source_tree=subprocess.check_output(['git','-C',str(p),'rev-parse',sha+'^{tree}'],text=True).strip(),image=a['image'],expected_binary_sha256=a['binary_sha256'],runner_image=images['load'],helpers={k:images[k] for k in ['keyset','receiver']},diagnostic_only=True,diagnostic_purpose='only Tokio owner worker count changes; original load and pool32',app_cpus=aff[:16],postgres_cpus=aff[16:32],valkey_cpus=aff[32:33],infra_cpus=aff[33:]);r['app_env_overrides']['RUST_LOG']='warn';r['app_env_overrides']['DATABASE_MAX_CONNECTIONS']='32';r['pool_connections']=32
+ if threads:r['app_env_overrides']['TOKIO_WORKER_THREADS']=threads
+ f=out/'requests'/f'{key}.json';f.write_text(json.dumps(r,indent=2));m.update(project=r['name'],source_sha=sha,app_image=a['image'],runner_image=images['load'],helpers=r['helpers'],cpus={'allowed':aff},decision_follow=False,diagnostic_only=True,requests={key:{'path':str(f).replace('/workspace','/src',1),'sha256':hashlib.sha256(f.read_bytes()).hexdigest()}});(out/'requests/manifest.json').write_text(json.dumps(m,indent=2));print(key,r['rate'],r['pre_vus'])

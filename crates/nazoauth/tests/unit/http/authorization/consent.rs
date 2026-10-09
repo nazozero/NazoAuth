@@ -78,12 +78,17 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("sid-secret".to_owned()),
         acr: Some("urn:mace:incommon:iap:silver".to_owned()),
-        userinfo_claims: vec!["email".to_owned()],
-        userinfo_claim_requests: vec![],
-        id_token_claims: vec!["auth_time".to_owned()],
-        id_token_claim_requests: vec![],
-        code_challenge: Some("challenge-material".to_owned()),
-        code_challenge_method: Some("S256".to_owned()),
+        userinfo_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        id_token_claim_requests: ((vec!["auth_time".to_owned()])
+            .into_iter()
+            .map(nazo_auth::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        pkce: (Some("challenge-material".to_owned())).into(),
         dpop_jkt: Some("dpop-binding".to_owned()),
         mtls_x5t_s256: Some("mtls-binding".to_owned()),
         pushed_request_uri: Some("urn:ietf:params:oauth:request_uri:par-1".to_owned()),
@@ -91,7 +96,7 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
         signed_authorization_response_required: None,
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
-        issued_at: Utc::now(),
+
         expires_at: Utc::now() + Duration::minutes(5),
     }
 }

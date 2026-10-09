@@ -1,5 +1,3 @@
-use nazo_auth::OidcClaimRequest;
-
 use std::collections::HashMap;
 
 pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
@@ -40,13 +38,6 @@ pub(super) fn reauth_nonce_parameter() -> &'static str {
     REAUTH_NONCE_PARAMETER
 }
 
-pub(super) fn claim_request_names(requests: &[OidcClaimRequest]) -> Vec<String> {
-    requests
-        .iter()
-        .map(|request| request.name.clone())
-        .collect()
-}
-
 pub(super) fn preserve_verified_dpop_binding(
     q: &mut HashMap<String, String>,
     dpop_jkt: Option<&str>,
@@ -75,7 +66,9 @@ pub(super) fn authorization_login_query(
     original: Option<&HashMap<String, String>>,
     request_uri: Option<&String>,
 ) -> HashMap<String, String> {
-    if request_uri.is_some() {
+    if request_uri.is_some()
+        || original.is_some_and(|q| q.contains_key("request") || q.contains_key("request_uri"))
+    {
         original.cloned().unwrap_or_else(|| expanded.clone())
     } else {
         expanded.clone()

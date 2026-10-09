@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "-p", "nazo-persistence", "--all-features", "--locked", "audit_wire"], "exit": 0, "seconds": 0.1797272120602429}

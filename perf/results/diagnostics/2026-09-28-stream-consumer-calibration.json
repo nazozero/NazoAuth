@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "scope": "Offline forensic replay: first 300000 retained Point rows from multi-cap-introspect-r16000-w60-1790563254 repeated eight times; no new network operations or capacity claim",
+  "source_point": "multi-cap-introspect-r16000-w60-1790563254",
+  "observer_failure": "Original live point INVALID: lag_max_s 66.302, 28958562 points, no parse/reader errors",
+  "parallel_policy": "Four metric shards; every Point validated; five-second lag gate unchanged; per-shard forensic budget one quarter of512MiB; native k6 quantiles unchanged",
+  "microbench": [
+    {
+      "version": "baseline",
+      "sample_points": 2400000,
+      "input_block_sha256": "811ae0bf558f2380269f1e8f42a1aa6216b2695787bbfc32cc447e5894041e01",
+      "elapsed_s": 11.339392172871158,
+      "state_sha256": "3fc964188cc278250582855720ce2579a1d4786ca29b1c84192298c7617271f5",
+      "stats": {
+        "points": 2400000,
+        "parse_errors": 0,
+        "reader_error": null,
+        "bins": 9,
+        "first_ts": 1790563306.427045,
+        "last_ts": 1790563314.648626,
+        "first_utc": "2026-09-28T10:41:46.427045+08:00",
+        "last_utc": "2026-09-28T10:41:54.648626+08:00",
+        "vus_seen": 0,
+        "lag_max_s": 1830.392,
+        "lag_over_5s": 2400000,
+        "diag_budget_exceeded": 231445,
+        "diag_overflow": true,
+        "diag_overflow_dropped": 77631,
+        "max_diag_bytes": 536870912
+      }
+    },
+    {
+      "version": "sharded",
+      "sample_points": 2400000,
+      "input_block_sha256": "811ae0bf558f2380269f1e8f42a1aa6216b2695787bbfc32cc447e5894041e01",
+      "elapsed_s": 5.575342359952629,
+      "state_sha256": "3fc964188cc278250582855720ce2579a1d4786ca29b1c84192298c7617271f5",
+      "stats": {
+        "points": 2400000,
+        "parse_errors": 0,
+        "reader_error": null,
+        "bins": 9,
+        "first_ts": 1790563306.427045,
+        "last_ts": 1790563314.648626,
+        "first_utc": "2026-09-28T10:41:46.427045+08:00",
+        "last_utc": "2026-09-28T10:41:54.648626+08:00",
+        "vus_seen": 0,
+        "lag_max_s": 1836.719,
+        "lag_over_5s": 2400000,
+        "diag_budget_exceeded": 203114,
+        "diag_overflow": true,
+        "diag_overflow_dropped": 855511,
+        "max_diag_bytes": 536870912,
+        "stream_workers": 4,
+        "shard_points": [
+          1142800,
+          81312,
+          135848,
+          1040040
+        ],
+        "max_diag_bytes_per_shard": 134217728
+      }
+    }
+  ],
+  "patched_file_sha256": "a8ca5212cee1a72471f3069a9c49c6a6bb7963849dbcea18c405ff492228d223"
+}

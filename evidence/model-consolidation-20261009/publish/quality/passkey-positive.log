@@ -1,0 +1,16 @@
+   Compiling nazo-identity v0.2.16 (/src/crates/identity)
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-key-management v0.2.16 (/src/crates/key-management)
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 20.18s
+     Running unittests src/lib.rs (target/debug/deps/nazo_postgres-d13d9a85d9dbf20f)
+
+running 4 tests
+test convert::identity::passkey_tests::malformed_owned_credential_keeps_the_existing_consistency_failure ... ok
+test convert::identity::passkey_tests::owned_credential_value_keeps_existing_webauthn_key_material_and_wire ... ok
+test convert::identity::tests::compact_passkey_material_has_one_id_and_counter_authority ... ok
+test convert::identity::tests::passkey_adapter_rejects_conflicting_credential_authorities ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.00s
+

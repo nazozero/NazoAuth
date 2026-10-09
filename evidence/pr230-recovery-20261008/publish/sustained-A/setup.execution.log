@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/src/evidence/pr230-recovery-20261008/sustained-wrapper.py", line 6, in <module>
+    assert hashlib.sha256((pathlib.Path('/src/evidence/pr230-recovery-20261008')/leaf).read_bytes()).hexdigest()==digest,leaf
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: pool-diagnostic.py

@@ -256,6 +256,7 @@ pub async fn token_native_sso_exchange(
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
+    client_attestation_jkt: Option<&str>,
 ) -> Result<TokenEndpointSuccess, OAuthEndpointError> {
     if !issuance.permits(nazo_runtime_modules::ModuleId::NativeSso) {
         return Err(OAuthEndpointError::token(
@@ -373,6 +374,15 @@ pub async fn token_native_sso_exchange(
         Ok(scopes) => scopes,
         Err(response) => return Err(response),
     };
+    let audiences = vec![issuance.config.default_audience().to_owned()];
+    if !crate::domain::client_policy::audiences_allowed(client, &audiences) {
+        return Err(OAuthEndpointError::token(
+            StatusCode::BAD_REQUEST,
+            "invalid_target",
+            "Native SSO default access-token audience is not allowed for this client.",
+            false,
+        ));
+    }
     let subject = match native_sso_subject_for_client(issuance.config, secret.user_id, client) {
         Ok(subject) => subject,
         Err(error) => {
@@ -395,21 +405,26 @@ pub async fn token_native_sso_exchange(
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: Some(nazo_auth::NativeSsoSourceFence {
+                tenant_id: secret.tenant_id,
+                user_id: secret.user_id,
+                source_client_id: secret.source_client_id,
+                family_id: secret.refresh_token_family_id,
+                device_secret_expires_at: secret.expires_at,
+            }),
             user_id: Some(secret.user_id),
             prepared_subject: None,
             subject,
             scopes,
             authorization_details: json!([]),
-            audiences: vec![issuance.config.default_audience().to_owned()],
+            audiences,
             nonce: None,
             auth_time: Some(claims.auth_time),
             amr: claims.amr,
             oidc_sid: Some(secret.sid),
             acr: None,
-            userinfo_claims: Vec::new(),
-            userinfo_claim_requests: Vec::new(),
-            id_token_claims: Vec::new(),
-            id_token_claim_requests: Vec::new(),
+            userinfo_claim_requests: (Vec::new()).into(),
+            id_token_claim_requests: (Vec::new()).into(),
             refresh_id_token_sid: None,
             include_refresh: true,
             refresh_token_policy: RefreshTokenPolicy::IssueNew,
@@ -417,8 +432,9 @@ pub async fn token_native_sso_exchange(
             refresh_token_dpop_jkt: dpop_jkt,
             mtls_x5t_s256: mtls_x5t_s256.clone(),
             refresh_token_mtls_x5t_s256: mtls_x5t_s256,
-            refresh_token_client_attestation_jkt: None,
-            refresh_token_scopes: None,
+            refresh_token_client_attestation_jkt: client_attestation_jkt.map(str::to_owned),
+            refresh_authority: None,
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor: None,
             issued_token_type: Some("urn:ietf:params:oauth:token-type:access_token".to_owned()),

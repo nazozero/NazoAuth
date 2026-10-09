@@ -1,0 +1,359 @@
+--- dc72/perf/tools/single_instance_scaling.py
++++ task-local/harness/perf/tools/single_instance_scaling.py
+@@ -568,6 +568,46 @@
+     return evidence
+ 
+ 
++def _stage_receiver_tls_volume(run_id: str, tls_host: str) -> None:
++    volume = f"{PROJECT}-anchor-tls"
++    inspected = dc("volume", "inspect", volume, "--format", "{{json .Labels}}", check=False)
++    if inspected.returncode == 0:
++        labels = json.loads(inspected.stdout or "{}")
++        if (labels or {}).get(SIS_LABEL) != PROJECT:
++            raise RuntimeError("TLS volume exists without matching task owner")
++    else:
++        dc("volume", "create", "--label", f"{SIS_LABEL}={PROJECT}", volume)
++    name = f"{PROJECT}-anchor-tls-stage"
++    existing = dc("inspect", name, check=False)
++    if existing.returncode == 0:
++        labels = dc("inspect", name, "--format", "{{json .Config.Labels}}", check=False)
++        if (json.loads(labels.stdout or "{}") or {}).get(SIS_LABEL) != PROJECT:
++            raise RuntimeError("TLS staging container exists without matching task owner")
++        dc("rm", "-f", name)
++    dc("run", "-d", "--name", name, "--label", f"{SIS_LABEL}={PROJECT}",
++       "-v", f"{volume}:/tls", "--entrypoint", "sh", PERF_IMAGE, "-c", "sleep 120")
++    try:
++        dc("exec", name, "mkdir", "-p", f"/tls/{run_id}")
++        for filename, mode in (("receiver.crt", "0444"), ("receiver.key", "0400")):
++            source = str(Path(tls_host) / filename)
++            destination = f"/tls/{run_id}/{filename}"
++            sh(["docker", "cp", source, f"{name}:{destination}"])
++            dc("exec", name, "chmod", mode, destination)
++            expected = sh(["sha256sum", source]).stdout.split()[0]
++            actual = dc("exec", name, "sha256sum", destination).stdout.split()[0]
++            if expected != actual:
++                raise RuntimeError(f"TLS staging SHA256 mismatch for {filename}")
++    finally:
++        dc("rm", "-f", name, check=False)
++
++
++def _point_compose(*args: str, **kwargs) -> subprocess.CompletedProcess:
++    point_name = CURRENT_POINT.get("name", "unknown")
++    override = RESULTS / f"confirm-override-{point_name}.yml"
++    return dc("compose", "-f", COMPOSE_FILE, "-f", str(override),
++              "-p", PROJECT, *args, **kwargs)
++
++
+ def audit_pair_up(run_id: str, depid: str) -> dict:
+     """Launch the audit receiver + worker exactly like soak_run.sh."""
+     tls_host = f"{WORKSPACE}/perf-results/anchor-tls/{run_id}"
+@@ -575,6 +615,7 @@
+     cert, key, verify_key_holder = _gen_receiver_cert(f"sis-rcv-{run_id}")
+     (Path(tls_host) / "receiver.crt").write_text(cert)
+     (Path(tls_host) / "receiver.key").write_text(key)
++    _stage_receiver_tls_volume(run_id, tls_host)
+     token = _rand_hex(32)
+     seed = _rand_b64url(32)
+     psql(
+@@ -599,7 +640,7 @@
+         "public.nazo_security_audit_shared_anchor_health() "
+         "TO nazoauth_perf_exporter;")
+     rcv_name = f"sis-rcv-{run_id}"
+-    compose("run", "-d", "--name", rcv_name, "--no-deps",
++    _point_compose("run", "-d", "--name", rcv_name, "--no-deps",
+             "-e", "ANCHOR_RECEIVER_LISTEN=0.0.0.0:9443",
+             "-e", f"ANCHOR_RECEIVER_TLS_CERT=/run/anchor-tls/{run_id}/receiver.crt",
+             "-e", f"ANCHOR_RECEIVER_TLS_KEY=/run/anchor-tls/{run_id}/receiver.key",
+@@ -620,7 +661,7 @@
+     if not verify_key:
+         raise RuntimeError("audit receiver pubkey unavailable")
+     worker_name = f"sis-worker-{run_id}"
+-    compose("run", "-d", "--name", worker_name, "--no-deps",
++    _point_compose("run", "-d", "--name", worker_name, "--no-deps",
+             "-e", "AUDIT_ANCHOR_MODE=optional",
+             "-e", f"DEPLOYMENT_ID={depid}",
+             "-e", f"AUDIT_ANCHOR_URL=https://{rcv_name}:9443/checkpoint",
+@@ -683,39 +724,99 @@
+ # samplers / observers
+ # ---------------------------------------------------------------------
+ 
++def sampler_output_volume(run_id: str) -> str:
++    return f"{PROJECT}-{run_id}-metrics"
++
++
++def sampler_tools_volume() -> str:
++    return f"{PROJECT}-sampler-tools"
++
++
++def _stage_proc_detail_script(run_id: str) -> None:
++    volume = sampler_tools_volume()
++    dc("volume", "create", "--label", f"{SIS_LABEL}={PROJECT}", volume, check=False)
++    stage = f"{PROJECT}-proc-tool-stage-{run_id}"
++    proc = dc("run", "-d", "--name", stage, "--label", f"{SIS_LABEL}={PROJECT}",
++              "-v", f"{volume}:/tools", "--entrypoint", "sh", PERF_IMAGE, "-c", "sleep 60")
++    try:
++        dc("cp", f"{TOOLS}/proc_detail_sampler.py", f"{stage}:/tools/proc_detail_sampler.py")
++        expected = file_sha256(f"{TOOLS}/proc_detail_sampler.py")
++        actual = dcx(stage, ["sha256sum", "/tools/proc_detail_sampler.py"]).stdout.split()[0]
++        if actual != expected:
++            raise RuntimeError("staged proc-detail sampler SHA256 mismatch")
++    finally:
++        dc("rm", "-f", stage, check=False)
++
++
+ def start_samplers(run_id: str, out_host: str, tick: int = 2) -> dict:
+-    """soak_sampler.py (pg/vk/app metrics) + proc_detail_sampler.py."""
++    """Start task-scoped samplers with task-owned output/tool volumes."""
++    _stage_proc_detail_script(run_id)
++    out_volume = sampler_output_volume(run_id)
++    dc("volume", "create", "--label", f"{SIS_LABEL}={PROJECT}", out_volume, check=False)
+     sampler = f"sis-sampler-{run_id}"
+     _remove_owned_by_name(sampler)
+     proc = dc("run", "-d", "--name", sampler, "--network", NETWORK,
+-              "--label", f"{SIS_LABEL}={PROJECT}",
+-              "-v", f"{TOOLS}/soak_sampler.py:/tmp/sampler.py:ro",
+-              "-v", f"{out_host}:/out",
++              "--label", f"{SIS_LABEL}={PROJECT}", "-v", f"{out_volume}:/out",
+               "-e", f"RUN_ID={run_id}", "-e", "OUT_PATH=/out/soak-metrics.jsonl",
+-              "-e", f"INTERVAL_S={tick}",
+-              PERF_IMAGE, "python3", "/tmp/sampler.py")
++              "-e", f"INTERVAL_S={tick}", PERF_IMAGE, "python3", "/perf/tools/soak_sampler.py")
+     _record_extra(proc.stdout, sampler, "sampler")
+     detail = f"sis-proc-{run_id}"
+     _remove_owned_by_name(detail)
+     proc = dc("run", "-d", "--name", detail, "--network", NETWORK,
+               "--label", f"{SIS_LABEL}={PROJECT}",
+               "-v", "/var/run/docker.sock:/var/run/docker.sock",
+-              "-v", f"{TOOLS}/proc_detail_sampler.py:/tmp/proc.py:ro",
+-              "-v", f"{out_host}:/out",
++              "-v", f"{sampler_tools_volume()}:/task-tools:ro", "-v", f"{out_volume}:/out",
+               "-e", f"RUN_ID={run_id}", "-e", "OUT_PATH=/out/proc-detail.jsonl",
+-              "-e", f"TICK_S={max(tick, 5)}",
+-              "-e", f"PROJECT={PROJECT}",
+-              PERF_IMAGE, "python3", "/tmp/proc.py")
++              "-e", f"TICK_S={max(tick, 5)}", "-e", f"PROJECT={PROJECT}",
++              "-e", f"SIS_LABEL={SIS_LABEL}", PERF_IMAGE, "python3", "/task-tools/proc_detail_sampler.py")
+     _record_extra(proc.stdout, detail, "proc_detail")
+     infra = format_cpu_list(CURRENT_POINT["infra_cpus"])
+     pin_container(sampler, infra)
+     pin_container(detail, infra)
+-    return {"sampler": sampler, "proc_detail": detail, "interval_s": tick}
++    return {"sampler": sampler, "proc_detail": detail, "interval_s": tick,
++            "output_volume": out_volume}
++
++
++def _collect_sampler_file(container: str, filename: str, out_host: str | Path) -> dict:
++    out_dir = Path(out_host)
++    out_dir.mkdir(parents=True, exist_ok=True)
++    target = out_dir / filename
++    staged = target.with_name(target.name + ".stage")
++    staged.unlink(missing_ok=True)
++    proc = dc("cp", f"{container}:/out/{filename}", str(staged), check=False)
++    if proc.returncode == 0:
++        staged.replace(target)
++    else:
++        staged.unlink(missing_ok=True)
++    return {"container": container, "file": filename, "copied": proc.returncode == 0,
++            "error": proc.stderr[-500:] if proc.returncode else None}
++
++
++def stop_samplers(run_id: str, out_host: str | Path | None = None, remove: bool = True) -> list[dict]:
++    collected = []
++    for name, filename in ((f"sis-sampler-{run_id}", "soak-metrics.jsonl"),
++                           (f"sis-proc-{run_id}", "proc-detail.jsonl")):
++        dc("stop", name, check=False)
++        if out_host is not None:
++            collected.append(_collect_sampler_file(name, filename, out_host))
++        if remove:
++            _remove_owned_by_name(name)
++    return collected
++
++
++def stop_residency_observer(run_id: str, out_host: str | Path | None = None, remove: bool = True) -> dict:
++    name = f"sis-residency-{run_id}"
++    dc("stop", name, check=False)
++    result = (_collect_sampler_file(name, "residency.jsonl", out_host)
++              if out_host is not None else {"copied": False})
++    if remove:
++        _remove_owned_by_name(name)
++    return result
+ 
+ 
+-def stop_samplers(run_id: str) -> None:
+-    for name in (f"sis-sampler-{run_id}", f"sis-proc-{run_id}"):
+-        _remove_owned_by_name(name, stop=True)
++def cleanup_sampler_volume(run_id: str) -> None:
++    dc("volume", "rm", sampler_output_volume(run_id), check=False)
++    dc("volume", "rm", sampler_tools_volume(), check=False)
+ 
+ 
+ # ---------------------------------------------------------------------
+@@ -871,6 +972,8 @@
+                           ).stdout.strip()
+                 ch["detail"] = f"container_not_running:exit={code or '?'}"
+                 continue
++            ch["output_collect"] = _collect_sampler_file(
++                cname, path.name, path.parent)
+             meta = _meta_sha_ok(path, src)
+             ch["meta_ok"] = meta
+             if meta is True:
+@@ -1457,6 +1560,13 @@
+     oom = dc("inspect", main, "--format", "{{.State.OOMKilled}}",
+              check=False).stdout.strip()
+     log = dc("logs", main, check=False)
++    # Remote CNB Docker does not expose daemon-side bind output to this
++    # task container. Docker API copy streams runner artifacts into the
++    # task filesystem before the one-off container is removed.
++    main_copy = dc("cp", f"{main}:/out/.", str(out_dir / "load"),
++                   check=False)
++    main_output_files = sorted(
++        f.name for f in (out_dir / "load").iterdir() if f.is_file())
+     (out_dir / "load" / "run.log").write_text(
+         log.stdout + log.stderr, encoding="utf-8", errors="replace")
+     dc("rm", "-f", main, check=False)
+@@ -1480,7 +1590,12 @@
+         code = dc("inspect", name, "--format",
+                   "{{.State.ExitCode}}", check=False).stdout.strip()
+         slog = dc("logs", name, check=False)
+-        (out_dir / sc["name"] / "run.log").write_text(
++        sc_out_dir = out_dir / sc["name"]
++        sc_copy = dc("cp", f"{name}:/out/.", str(sc_out_dir),
++                     check=False)
++        sc_output_files = sorted(
++            f.name for f in sc_out_dir.iterdir() if f.is_file())
++        (sc_out_dir / "run.log").write_text(
+             slog.stdout + slog.stderr, encoding="utf-8", errors="replace")
+         summary_ok = (out_dir / sc["name"] / "latest.json").exists() or any(
+             (out_dir / sc["name"]).glob("*.summary.json"))
+@@ -1488,6 +1603,8 @@
+             "name": sc["name"], "container": name,
+             "exit_code": code or "unknown", "interrupted": interrupted,
+             "terminal_summary": summary_ok,
++            "output_copy_exit_code": sc_copy.returncode,
++            "output_files": sc_output_files,
+         })
+         _remove_owned_by_name(name)
+         load_seconds = max(load_seconds, end_ts - start_ts)
+@@ -1498,6 +1615,8 @@
+         "load_status": load_status,
+         "started_ts": start_ts, "ended_ts": end_ts,
+         "load_seconds": round(load_seconds, 1),
++        "main_output_copy_exit_code": main_copy.returncode,
++        "main_output_files": main_output_files,
+         "sidecars": side_results,
+     }
+ 
+--- dc72/perf/tools/point_runner.py
++++ task-local/harness/perf/tools/point_runner.py
+@@ -430,6 +430,37 @@
+     os.chmod(path, 0o755)
+ 
+ 
++def _stage_pinset_volume() -> None:
++    path = Path(sis.BIN_DIR) / "pinset"
++    volume = f"{sis.PROJECT}-pinbin"
++    inspected = sis.dc("volume", "inspect", volume, "--format", "{{json .Labels}}", check=False)
++    if inspected.returncode == 0:
++        labels = json.loads(inspected.stdout or "{}")
++        if (labels or {}).get(sis.SIS_LABEL) != sis.PROJECT:
++            raise RuntimeError("pinset volume exists without matching task owner")
++    else:
++        sis.dc("volume", "create", "--label", f"{sis.SIS_LABEL}={sis.PROJECT}", volume)
++    name = f"{sis.PROJECT}-pinset-stage"
++    existing = sis.dc("inspect", name, check=False)
++    if existing.returncode == 0:
++        labels = sis.dc("inspect", name, "--format", "{{json .Config.Labels}}", check=False)
++        if (json.loads(labels.stdout or "{}") or {}).get(sis.SIS_LABEL) != sis.PROJECT:
++            raise RuntimeError("pinset staging container exists without matching task owner")
++        sis.dc("rm", "-f", name)
++    sis.dc("run", "-d", "--name", name, "--label", f"{sis.SIS_LABEL}={sis.PROJECT}",
++           "-v", f"{volume}:/pinbin", "--entrypoint", "sh", sis.PERF_IMAGE,
++           "-c", "sleep 120")
++    try:
++        sis.sh(["docker", "cp", str(path), f"{name}:/pinbin/pinset"])
++        sis.dc("exec", name, "chmod", "0555", "/pinbin/pinset")
++        expected = sis.sh(["sha256sum", str(path)]).stdout.split()[0]
++        actual = sis.dc("exec", name, "sha256sum", "/pinbin/pinset").stdout.split()[0]
++        if expected != actual:
++            raise RuntimeError("pinset volume copy SHA256 mismatch")
++    finally:
++        sis.dc("rm", "-f", name, check=False)
++
++
+ def keyset_fingerprint() -> dict:
+     """sha256 of every file in the key dir inside the running app
+     container (key PEMs are root:600, so exec as root) — proves all
+@@ -464,6 +495,7 @@
+         sis.dc("tag", point["image"], f"{sis.PROJECT}-{svc}")
+ 
+     _ensure_pinset_binary()
++    _stage_pinset_volume()
+     app_cpus = sis.format_cpu_list(point["app_cpus"])
+     infra_cpus = sis.format_cpu_list(point["infra_cpus"])
+     # One override for every compose invocation of this point:
+@@ -494,9 +526,19 @@
+         f"{env_block}"
+         "    volumes:\n"
+         f"      - {KEYSET_VOLUME}:/var/lib/nazo_oauth\n"
+-        f"      - {sis.BIN_DIR}:/pinbin:ro\n"
++        f"      - {sis.PROJECT}-pinbin:/pinbin:ro\n"
++        "  audit-receiver:\n"
++        "    volumes:\n"
++        f"      - {sis.PROJECT}-anchor-tls:/run/anchor-tls:ro\n"
++        "  audit-worker:\n"
++        "    volumes:\n"
++        f"      - {sis.PROJECT}-anchor-tls:/run/anchor-tls:ro\n"
+         "volumes:\n"
+         f"  {KEYSET_VOLUME}:\n"
++        "    external: true\n"
++        f"  {sis.PROJECT}-pinbin:\n"
++        "    external: true\n"
++        f"  {sis.PROJECT}-anchor-tls:\n"
+         "    external: true\n")
+     up_args = ("compose", "-f", sis.COMPOSE_FILE, "-f", str(override),
+                "-p", sis.PROJECT)
+@@ -621,13 +663,13 @@
+             proc = sis.dc(
+                 "run", "-d", "--name", obs_name, "--network", sis.NETWORK,
+                 "--label", f"{sis.SIS_LABEL}={sis.PROJECT}",
+-                "-v", f"{sis.TOOLS}/residency_observer.py:/tmp/obs.py:ro",
+-                "-v", f"{out_dir}:/out",
++                "-v", f"{sis.sampler_output_volume(run_id)}:/out",
+                 "-e", f"RUN_ID={run_id}",
+                 "-e", "OUT_PATH=/out/residency.jsonl",
+                 "-e", f"INTERVAL_S={obs.get('interval_s', 0.25)}",
+                 "-e", f"RUNTIME_ROLE={obs['runtime_role']}",
+-                sis.PERF_IMAGE, "python3", "/tmp/obs.py")
++                sis.PERF_IMAGE, "python3",
++                "/perf/tools/residency_observer.py")
+             sis._record_extra(proc.stdout, obs_name, "residency_observer")
+             sis.pin_container(obs_name, sis.format_cpu_list(
+                 point["infra_cpus"]))
+@@ -691,7 +733,10 @@
+         rec["wal_delta"] = sis.wal_delta(wal_pre, wal_post)
+         rec["app_log_scan"] = sis.app_log_scan(rec["load"]["started_ts"])
+         rec["container_health"] = sis.container_health()
+-        sis.stop_samplers(run_id)
++        rec["sampler_output_collect"] = sis.stop_samplers(run_id, out_dir)
++        if point.get("residency_observer"):
++            rec["residency_output_collect"] = sis.stop_residency_observer(
++                run_id, out_dir)
+ 
+         summary_files = list((out_dir / "load").glob("*.summary.json"))
+         rec["summary_files"] = [f.name for f in summary_files]
+@@ -822,10 +867,11 @@
+         rec["error"] = f"{type(e).__name__}: {e}"[:500]
+     finally:
+         rec["elapsed_s"] = round(time.time() - started, 1)
+-        sis.stop_samplers(run_id)
+-        if point.get("residency_observer"):
+-            sis._remove_owned_by_name(f"sis-residency-{run_id}",
+-                                      stop=True)
++        if "sampler_output_collect" not in rec:
++            rec["sampler_output_collect"] = sis.stop_samplers(run_id, out_dir)
++        if point.get("residency_observer") and "residency_output_collect" not in rec:
++            rec["residency_output_collect"] = sis.stop_residency_observer(
++                run_id, out_dir)
+         sis.jdump(out_dir / "point.json", rec)
+     return rec
+ 

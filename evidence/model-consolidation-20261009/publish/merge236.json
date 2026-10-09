@@ -1,0 +1,15 @@
+{
+  "before": "749646824c41a3c92be709ebcc764609b33f9f93",
+  "merged": "9c2a6e82af2aa5639f566d33601951f644e37791",
+  "after": "705f28714c3d2e0509d801cd487775511ad07c76",
+  "removed": [
+    ".github/model-refactor-stage-a.py",
+    ".github/model-refactor-stage-b.py",
+    ".github/model-refactor-stage-c.py",
+    ".github/model-refactor-stage-d.py",
+    ".github/workflows/model-audit-snapshot.yml",
+    ".github/workflows/model-audit-types.yml",
+    ".github/workflows/model-refactor-check.yml",
+    ".github/workflows/model-inventory.yml"
+  ]
+}

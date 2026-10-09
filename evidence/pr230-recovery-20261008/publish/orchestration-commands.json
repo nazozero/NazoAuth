@@ -1,0 +1,1218 @@
+[
+  {
+    "script": "recovery-read-task.py",
+    "script_sha256": "4e5f723780c0cf092abcc6575e12dfcf175fa6224c2c3ee4f126128a8d6f9bf8",
+    "exit": 0,
+    "seconds": 0.40600000019185245,
+    "utc": "2026-10-08T12:17:58.650512+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-inspect-code.py",
+    "script_sha256": "b97a49453468b6d740170e0c9f382ccd2ba846f59907254f1306a99454a7cbff",
+    "exit": 0,
+    "seconds": 0.43700000015087426,
+    "utc": "2026-10-08T12:18:42.019886+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-prepare.py",
+    "script_sha256": "1e78e7782af6ad6a09f3a7c0b4aa4f7466a44fe3a7222d7055fdebaaebce10f7",
+    "exit": 1,
+    "seconds": 0.46800000010989606,
+    "utc": "2026-10-08T12:19:57.358371+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-prepare.py",
+    "script_sha256": "66ae98295ff48efdcebdab61ffb2f1b4f082561e6d0584dc98f0035be26cbc42",
+    "exit": 0,
+    "seconds": 0.5310000001918525,
+    "utc": "2026-10-08T12:20:09.105456+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-fixtures.py",
+    "script_sha256": "1d05c6ff245e5ede01d1a55441ff70f35111ec6b0f045d11aa44fc7bfe06fc1f",
+    "exit": 0,
+    "seconds": 0.32800000021234155,
+    "utc": "2026-10-08T12:21:54.521660+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-harness.py",
+    "script_sha256": "d07bb63576e7ce2794596d2497329624189f63683cc399a76d19e75436a1f06a",
+    "exit": 0,
+    "seconds": 0.4690000000409782,
+    "utc": "2026-10-08T12:22:16.296603+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-harness.py",
+    "script_sha256": "d9c90b6b31e041202cc1199719232976f1a1ab9177c9ff231a9618d2d6aadb3b",
+    "exit": 0,
+    "seconds": 0.48400000017136335,
+    "utc": "2026-10-08T12:22:34.643944+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-controller.py",
+    "script_sha256": "c8c24e64ff528eff54eb7952a8e67f556fdadf7c76f52849b6f941bbc2fd3b4c",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T12:23:03.769283+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-negative.py",
+    "script_sha256": "f37def3edfeebc739266ccdda200e49a5dc01dd19cd528aaf2994af1ffca3c09",
+    "exit": 0,
+    "seconds": 147.98400000017136,
+    "utc": "2026-10-08T12:23:27.778708+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-targeted.py",
+    "script_sha256": "c4a8e06d49ea66454dd2022e2f098dffadc04dc0f375e9c955bf29bcb29e027b",
+    "exit": 1,
+    "seconds": 239.9220000000205,
+    "utc": "2026-10-08T12:28:48.155602+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-maintenance-investigate.py",
+    "script_sha256": "8c96d2822e036081d361facf5a332de771172d1c426a01def6df3624cb0a8ae2",
+    "exit": 0,
+    "seconds": 0.4059999999590218,
+    "utc": "2026-10-08T12:29:55.046740+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-fresh-fixture.py",
+    "script_sha256": "b2a6f308cd8986bf4354b95f17fa70aa351b4ccac6b8b0fdb9b7b68e07792ba2",
+    "exit": 0,
+    "seconds": 0.7810000001918525,
+    "utc": "2026-10-08T12:30:49.399029+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-remaining-targets.py",
+    "script_sha256": "7e4b2fa3e92fa3a1478a4299e2a9091d46ec1cc3a5913be596faba947c81e7a7",
+    "exit": 0,
+    "seconds": 183.71900000004098,
+    "utc": "2026-10-08T12:34:29.915329+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-images.py",
+    "script_sha256": "178b37624ebf188515fc1fd0173ee4211feedca3aa7ded6a3e037d28490a2107",
+    "exit": 1,
+    "seconds": 4.343000000109896,
+    "utc": "2026-10-08T12:37:37.735166+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-images.py",
+    "script_sha256": "0b1ccebe2368660eb21b9ba5f32776b1124b1f94f25a75e25fa06116fc567a6b",
+    "exit": 0,
+    "seconds": 6.422000000020489,
+    "utc": "2026-10-08T12:38:06.246978+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-plan.py",
+    "script_sha256": "c8572a94a5e81c4c80c7cf53ea0eb327c5be95daaeb90fffda4565cb7169a8bc",
+    "exit": 0,
+    "seconds": 0.6409999998286366,
+    "utc": "2026-10-08T12:38:17.908675+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-execute.py",
+    "script_sha256": "0de5f3fb25a209bb5d1a43dad3f607e920d11a88a6c359bc02a93608b6cf3026",
+    "exit": 1,
+    "seconds": 0.375,
+    "utc": "2026-10-08T12:45:54.505895+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-progress.py",
+    "script_sha256": "fcf0ba4aba6fc0a5f79d841bde0b71ff4324f61dc076745787ca368c67a54549",
+    "exit": 0,
+    "seconds": 0.4529999999795109,
+    "utc": "2026-10-08T12:46:28.907764+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-current.py",
+    "script_sha256": "0a23c0b02d5b75fa55b322192ec0672728a4013a6c84650520b51fa2dbf53ac1",
+    "exit": 0,
+    "seconds": 0.31299999984912574,
+    "utc": "2026-10-08T12:46:38.037322+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analysis-inspect.py",
+    "script_sha256": "80932a540dc2d008bbfebfba4e0de3a0b8da9ec32ff01dc78036b73f58e8289a",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T12:46:46.835261+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-review-code.py",
+    "script_sha256": "b310ef252b9350478ed5426b96705fe8754ac791665330592a1cc8b937f7ba20",
+    "exit": 0,
+    "seconds": 0.5629999998491257,
+    "utc": "2026-10-08T12:47:16.705824+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-live.py",
+    "script_sha256": "84b95cee509c4f73f3ec03ab1fcfe550c97507deab40a168e0f22a8d5c121df2",
+    "exit": 0,
+    "seconds": 0.375,
+    "utc": "2026-10-08T12:47:29.639278+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-testing-read.py",
+    "script_sha256": "a9d637b5885056404f4c82af99427fdd24381c51c687a1ee4579547420d99612",
+    "exit": 0,
+    "seconds": 0.43700000015087426,
+    "utc": "2026-10-08T12:47:40.106528+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-boundary-review.py",
+    "script_sha256": "b08170b159e7ed3f3ecdd30baaa8333942fb60ba26639348d468c6ceb04ad835",
+    "exit": 0,
+    "seconds": 0.5470000000204891,
+    "utc": "2026-10-08T12:48:00.549983+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-production-diff.py",
+    "script_sha256": "be88024ffb70ddc5a5b3d4127f1935f584ebf408d541b32d7e4490a6dbf1a72f",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T12:48:08.141800+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-test-review.py",
+    "script_sha256": "7f3d0c423f5ec246b3ab31c4456b97d9201ccb02e959d53b33672619afa2c14a",
+    "exit": 0,
+    "seconds": 0.45300000021234155,
+    "utc": "2026-10-08T12:48:17.645178+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-journal-inspect.py",
+    "script_sha256": "44293ee8f1acacc517be383b832e9ef7bec27e5e11bc47856786db3d6e8f613d",
+    "exit": 0,
+    "seconds": 0.34300000010989606,
+    "utc": "2026-10-08T12:48:43.653968+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-journal-schema.py",
+    "script_sha256": "9ffe25a88e4f13bded8d1e667384238dca95295283d51e346ac114b088c664df",
+    "exit": 0,
+    "seconds": 0.4220000000204891,
+    "utc": "2026-10-08T12:48:50.792228+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-live.py",
+    "script_sha256": "6bdd5dfa9008eda11c37f5c812f886f2ddc60465f40f52d6b660c82d557fc5f6",
+    "exit": 0,
+    "seconds": 0.5310000001918525,
+    "utc": "2026-10-08T12:49:08.656448+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-live-phase.py",
+    "script_sha256": "4313361f1b7b7d34f17571742d44812a8f7ec70b75cfec78939b6700e9c816d2",
+    "exit": 0,
+    "seconds": 0.4369999999180436,
+    "utc": "2026-10-08T12:49:30.874875+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-live-errors.py",
+    "script_sha256": "6be49d43eb03a3433b58918320d8b230c4b322b2a63a8c4c26f59862fc577d9e",
+    "exit": 0,
+    "seconds": 0.4369999999180436,
+    "utc": "2026-10-08T12:49:43.873122+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-export-loop.py",
+    "script_sha256": "26fae955643975253fa2e784cbc5ab3c631a8218b4084776615a2024cbdc7ae2",
+    "exit": 0,
+    "seconds": 0.42199999978765845,
+    "utc": "2026-10-08T12:50:13.952010+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-recovery-window.py",
+    "script_sha256": "c4eaad5fce0fa38569b278023c300eac4abf30799c81b1c21da2f50403281212",
+    "exit": 0,
+    "seconds": 0.3899999998975545,
+    "utc": "2026-10-08T12:50:34.696547+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-live-phase.py",
+    "script_sha256": "4313361f1b7b7d34f17571742d44812a8f7ec70b75cfec78939b6700e9c816d2",
+    "exit": 0,
+    "seconds": 0.43700000015087426,
+    "utc": "2026-10-08T12:51:34.105513+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-result-poll.py",
+    "script_sha256": "05925c0bf7f2d39b1fcae3b9e4adfd75c5d5e2740d5242b9f4a962ebaebb4340",
+    "exit": 0,
+    "seconds": 0.4690000000409782,
+    "utc": "2026-10-08T12:52:48.937740+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-policy-read.py",
+    "script_sha256": "8995cf52291b89e2f076be536a67ea85437aab51a7acd34dae79cb1b3510d1b6",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T12:53:00.149147+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-existing-test.py",
+    "script_sha256": "d9166714f81b724358ee5c08b4cfc5f5bd8eea382e4ce2a315322e5f78baf03d",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T12:53:18.071642+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-execute.py",
+    "script_sha256": "3f7587bd126fd023c68ddaea9f9c0c9a8f7211fe82363b8727ca1b247661fb4c",
+    "exit": 0,
+    "seconds": 509.68699999991804,
+    "utc": "2026-10-08T12:54:41.704098+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-result-schema.py",
+    "script_sha256": "1fb2de121dfb0c06149935a2a1285dc7ee3edb0cc241782c9b1f9ddc589a2015",
+    "exit": 0,
+    "seconds": 0.4220000000204891,
+    "utc": "2026-10-08T12:55:11.272086+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-fault.py",
+    "script_sha256": "300f05b0493f1c62b93aea16de8d7c7e9341ff010c5bf36db444954c95308a7d",
+    "exit": 0,
+    "seconds": 1.3910000000614673,
+    "utc": "2026-10-08T12:56:12.763182+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-fix-progress.py",
+    "script_sha256": "2eb27b29a6cc2966ffd190028b0285f414fd7d157f58fd46345cbea9195537a2",
+    "exit": 0,
+    "seconds": 0.40600000019185245,
+    "utc": "2026-10-08T12:56:34.645790+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-preserve-initial.py",
+    "script_sha256": "b27b70e107a155bee7f357dad4ff60252a8ff7688dc6d54e50175f6491cc2130",
+    "exit": 0,
+    "seconds": 0.32899999991059303,
+    "utc": "2026-10-08T12:57:18.552714+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-fix-progress.py",
+    "script_sha256": "2eb27b29a6cc2966ffd190028b0285f414fd7d157f58fd46345cbea9195537a2",
+    "exit": 0,
+    "seconds": 0.39099999982863665,
+    "utc": "2026-10-08T12:57:32.124930+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-python-gates.py",
+    "script_sha256": "847f1b9daabf2404164767f5d66bc86dd2d21b0b6deb306d3237d025f1abde67",
+    "exit": 0,
+    "seconds": 0.3600000001024455,
+    "utc": "2026-10-08T12:57:44.803209+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-python-list.py",
+    "script_sha256": "f443a373f5e6dbf774295a6b89e9cf157edf2ccff6d184ab2c5443f71429ed1b",
+    "exit": 0,
+    "seconds": 0.375,
+    "utc": "2026-10-08T12:57:50.514419+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-fix-gate.py",
+    "script_sha256": "d49e6474122cac39041b55c78c81d0857847fce83f50f5efc1c2a93ebc72686b",
+    "exit": 0,
+    "seconds": 252.875,
+    "utc": "2026-10-08T12:59:00.845928+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-images.py",
+    "script_sha256": "0b1ccebe2368660eb21b9ba5f32776b1124b1f94f25a75e25fa06116fc567a6b",
+    "exit": 0,
+    "seconds": 6.780999999959022,
+    "utc": "2026-10-08T12:59:26.941567+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-plan-fixed.py",
+    "script_sha256": "771acf77e32993380e66a9825a2f0757bdb0a9abfa7a2b824e118309636aa0de",
+    "exit": 0,
+    "seconds": 0.7660000000614673,
+    "utc": "2026-10-08T12:59:36.589277+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-save-candidate.py",
+    "script_sha256": "c05462cecdbb6ab6017369a585b0374d0d708330ce7ed25e39cdd7934d3736df",
+    "exit": 0,
+    "seconds": 0.6089999999385327,
+    "utc": "2026-10-08T13:00:26.034670+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-live-fixed.py",
+    "script_sha256": "c7f465fe47eeb59b529a1dd9a14b3ff7cb7c98f647c3ac2a2758a8226630578f",
+    "exit": 0,
+    "seconds": 0.4850000001024455,
+    "utc": "2026-10-08T13:01:48.424870+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-batch-progress.py",
+    "script_sha256": "2e7991108232a84ef56d64fe248f86188228d8cb56ca665e25afcc4bf1000094",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T13:02:21.553334+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-live-fixed.py",
+    "script_sha256": "c7f465fe47eeb59b529a1dd9a14b3ff7cb7c98f647c3ac2a2758a8226630578f",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T13:02:49.951453+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-db-counts.py",
+    "script_sha256": "adabdd42e63a424f549074305136369c898c418922b01a86bfb9105640ac63b1",
+    "exit": 0,
+    "seconds": 0.5319999998901039,
+    "utc": "2026-10-08T13:03:04.428387+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-chain-review.py",
+    "script_sha256": "dd0e70c2942ec702bcc5a7b487a56986098403a1beb7e17e60558a0dd8941117",
+    "exit": 0,
+    "seconds": 0.375,
+    "utc": "2026-10-08T13:04:44.892951+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-live-fixed.py",
+    "script_sha256": "c7f465fe47eeb59b529a1dd9a14b3ff7cb7c98f647c3ac2a2758a8226630578f",
+    "exit": 0,
+    "seconds": 0.5470000000204891,
+    "utc": "2026-10-08T13:05:22.204564+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-evidence-check.py",
+    "script_sha256": "a95b585623b5e04ae35a14b7180cfa3f64f6ab9f9bec0448b05cfb9018336ca5",
+    "exit": 0,
+    "seconds": 0.375,
+    "utc": "2026-10-08T13:06:57.514932+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-batch-progress.py",
+    "script_sha256": "2e7991108232a84ef56d64fe248f86188228d8cb56ca665e25afcc4bf1000094",
+    "exit": 0,
+    "seconds": 0.39099999982863665,
+    "utc": "2026-10-08T13:08:05.288551+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-fault.py",
+    "script_sha256": "addf0bf4293a5766d56824c4f089d15b82005e3cf5244ae0f89271e9e18292ec",
+    "exit": 0,
+    "seconds": 2.719000000040978,
+    "utc": "2026-10-08T13:08:22.918091+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-batch-progress.py",
+    "script_sha256": "2e7991108232a84ef56d64fe248f86188228d8cb56ca665e25afcc4bf1000094",
+    "exit": 0,
+    "seconds": 0.46800000010989606,
+    "utc": "2026-10-08T13:10:20.727978+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-retry-bound.py",
+    "script_sha256": "9f4e3b8e7502a66b2f16953ec56becc1603adeb62b78bf6a678bd285611a7527",
+    "exit": 0,
+    "seconds": 0.4690000000409782,
+    "utc": "2026-10-08T13:12:46.417732+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-live-repeat.py",
+    "script_sha256": "e084417fcf585adee307c080b667c8fb0d821dcfd16f37ccaaf9c79a022c57c0",
+    "exit": 0,
+    "seconds": 0.4220000000204891,
+    "utc": "2026-10-08T13:12:55.549279+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-live-repeat.py",
+    "script_sha256": "e084417fcf585adee307c080b667c8fb0d821dcfd16f37ccaaf9c79a022c57c0",
+    "exit": 0,
+    "seconds": 0.3279999999795109,
+    "utc": "2026-10-08T13:15:09.070190+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-fixed-counts.py",
+    "script_sha256": "95826bd95055da2a941140cd384e07ed7a7b5e830f64db734aec8d3f4f2445c2",
+    "exit": 0,
+    "seconds": 0.3589999999385327,
+    "utc": "2026-10-08T13:15:57.237888+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-call-levels.py",
+    "script_sha256": "9b64025af988d14b3b2534e8c195a36d151bd2cea3fc8c8cb5890d27bf781a26",
+    "exit": 0,
+    "seconds": 0.5309999999590218,
+    "utc": "2026-10-08T13:16:22.111845+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-batch-progress.py",
+    "script_sha256": "2e7991108232a84ef56d64fe248f86188228d8cb56ca665e25afcc4bf1000094",
+    "exit": 0,
+    "seconds": 0.45399999991059303,
+    "utc": "2026-10-08T13:18:00.430410+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-fault.py",
+    "script_sha256": "8c8bd3a7580a60b4292a906fa8a5ba96cfb703c448921efa4f33bcb5a7145da6",
+    "exit": 0,
+    "seconds": 4.577999999979511,
+    "utc": "2026-10-08T13:18:12.570751+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-recovery-proof.py",
+    "script_sha256": "8cf6e050b067523af1fa74550db8c22e930e7ba01e7da8dd155bc1bab73a9555",
+    "exit": 0,
+    "seconds": 0.43700000015087426,
+    "utc": "2026-10-08T13:18:19.849489+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-short-progress.py",
+    "script_sha256": "dfdcd56552cccf6ed6bc8b8396c8528f4a25ecf1bafd7e96af57289dfe0917da",
+    "exit": 0,
+    "seconds": 0.4220000000204891,
+    "utc": "2026-10-08T13:20:22.305249+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-save-state.py",
+    "script_sha256": "3b60ba07fbbe00a4e3e1f4210b12474ced9be48abc3293a650fbabfb236c47ce",
+    "exit": 0,
+    "seconds": 0.43700000015087426,
+    "utc": "2026-10-08T13:21:40.727793+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-sampler-review.py",
+    "script_sha256": "c81d75c38ca8a4b74db86ef3832c6632f092a525e99abf2cacd2e1f70e61636f",
+    "exit": 0,
+    "seconds": 0.4529999999795109,
+    "utc": "2026-10-08T13:22:06.265222+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-proc-review.py",
+    "script_sha256": "af882cd1a82db33d529ae23910a09231099f4d701e2c1fd9458b8ead0a633cad",
+    "exit": 0,
+    "seconds": 0.3279999999795109,
+    "utc": "2026-10-08T13:22:12.540553+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-short-progress.py",
+    "script_sha256": "dfdcd56552cccf6ed6bc8b8396c8528f4a25ecf1bafd7e96af57289dfe0917da",
+    "exit": 0,
+    "seconds": 0.35900000017136335,
+    "utc": "2026-10-08T13:24:23.603259+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.46899999980814755,
+    "utc": "2026-10-08T13:26:36.072213+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-execute-final.py",
+    "script_sha256": "db669e3b4336c18163df197ed2a58ff85940e4f2c554385e390d750ce4b21885",
+    "exit": 2,
+    "seconds": 1620.3279999999795,
+    "utc": "2026-10-08T13:26:36.997743+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-schema.py",
+    "script_sha256": "a46119db9603a94ae85860927f5ce5bc06d96582aefc8eb589595628865ba0f6",
+    "exit": 0,
+    "seconds": 0.46899999980814755,
+    "utc": "2026-10-08T13:28:17.861836+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.4059999999590218,
+    "utc": "2026-10-08T13:30:47.340653+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.3910000000614673,
+    "utc": "2026-10-08T13:33:17.430981+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-budget-read.py",
+    "script_sha256": "00803233ebffed36528c340a279ef0b7359f0ad1d8e8a00c8bba130ea956dc35",
+    "exit": 0,
+    "seconds": 0.375,
+    "utc": "2026-10-08T13:36:07.116394+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.4529999999795109,
+    "utc": "2026-10-08T13:36:48.159025+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-disabled-path.py",
+    "script_sha256": "c900e75149da7a3d3ea282a57b6c053b402570958dfd60a83b255dcb79a3a2db",
+    "exit": 0,
+    "seconds": 0.4529999999795109,
+    "utc": "2026-10-08T13:38:27.345117+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-disabled-entry.py",
+    "script_sha256": "50020af5fe68a41315db43984d741607e5ace6c6306ee2df91ff7d08e87754ef",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T13:38:38.717562+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-diagnostic.py",
+    "script_sha256": "b8e2cf0773bfc1cecdc6332162ff192b049004744cae950d5fce17930db6b395",
+    "exit": 0,
+    "seconds": 0.4529999999795109,
+    "utc": "2026-10-08T13:39:30.226550+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-pool-wrapper.py",
+    "script_sha256": "012b667f0942e19f1978080efb7cbb8c6cb9755ed1bca53901ee69f5c7802b93",
+    "exit": 0,
+    "seconds": 0.4369999999180436,
+    "utc": "2026-10-08T13:40:15.993610+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-pool-pin-read.py",
+    "script_sha256": "c9fdb7f89418a83e4df830ce0fcf6c9aafbedb8693f881dfd5b725638757904e",
+    "exit": 0,
+    "seconds": 0.34300000010989606,
+    "utc": "2026-10-08T13:40:31.903550+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-diagnostic-plan.py",
+    "script_sha256": "52d0a8c8c269ac31a1039b824a2a409f9c5b7def73687ba2b7a32a3ec129c124",
+    "exit": 0,
+    "seconds": 0.5309999999590218,
+    "utc": "2026-10-08T13:41:27.445116+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.40600000019185245,
+    "utc": "2026-10-08T13:41:56.726885+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.45399999991059303,
+    "utc": "2026-10-08T13:44:45.428501+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.3910000000614673,
+    "utc": "2026-10-08T13:47:29.005635+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.4059999999590218,
+    "utc": "2026-10-08T13:52:04.290248+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.4220000000204891,
+    "utc": "2026-10-08T13:55:53.557617+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-execute-perf-rest.py",
+    "script_sha256": "2468cadf989eef038f365cd0f745234dcd55e088553729223de24fbb91629364",
+    "exit": 1,
+    "seconds": 1687.2970000000205,
+    "utc": "2026-10-08T13:59:52.337730+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-wrappers.py",
+    "script_sha256": "47c56dc6689098cb059263abbc2007eb17de36cb1e283744865ededd22930dbc",
+    "exit": 0,
+    "seconds": 0.42100000008940697,
+    "utc": "2026-10-08T14:02:42.353639+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-fix-manifest.py",
+    "script_sha256": "bba010287006c1831c1e3f86a6144271fe6a5b0de1ff05162466b8723423cd34",
+    "exit": 0,
+    "seconds": 0.4380000000819564,
+    "utc": "2026-10-08T14:02:58.427947+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-execute-sustained.py",
+    "script_sha256": "1d9bf5bce030b23254e126c4c7a764925f9650d4c5d33cb4949fb538f2a4ad56",
+    "exit": 1,
+    "seconds": 0.5779999999795109,
+    "utc": "2026-10-08T14:02:59.083075+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-manifest.py",
+    "script_sha256": "d3371cba36ed91eb9fabab19184078746ac4140470bdd1df0b32e46679719a17",
+    "exit": 0,
+    "seconds": 0.43700000015087426,
+    "utc": "2026-10-08T14:03:12.150842+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-fix-manifest.py",
+    "script_sha256": "51894f470ea4bbfdba038b5f7b5fadbcb81d932de5df5aedaaadc529489b70d9",
+    "exit": 0,
+    "seconds": 0.4380000000819564,
+    "utc": "2026-10-08T14:03:26.299158+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-progress.py",
+    "script_sha256": "f1eb182dcfa141d50c0c8a83e236fdbc466c8d4d289242df928d96d97104f7b3",
+    "exit": 0,
+    "seconds": 0.45300000021234155,
+    "utc": "2026-10-08T14:03:51.152229+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-scope.py",
+    "script_sha256": "748f1eb497bd7001bae25f81ed462b10c6a404099306cde8971d94adb4c58e4d",
+    "exit": 0,
+    "seconds": 0.4059999999590218,
+    "utc": "2026-10-08T14:04:01.738910+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-sustained-progress.py",
+    "script_sha256": "30f16d51c9c3603ef69f99c3ae62622ffe8eba1a389ec23ea5f6cf1af6cb01a7",
+    "exit": 0,
+    "seconds": 0.3589999999385327,
+    "utc": "2026-10-08T14:04:40.790102+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-sustained-progress.py",
+    "script_sha256": "30f16d51c9c3603ef69f99c3ae62622ffe8eba1a389ec23ea5f6cf1af6cb01a7",
+    "exit": 0,
+    "seconds": 0.4529999999795109,
+    "utc": "2026-10-08T14:07:14.663195+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-maintenance.py",
+    "script_sha256": "2ffb7ca44348b237d72580ebef7d092c5c381acdc30063b360c17b36208ac85f",
+    "exit": 0,
+    "seconds": 0.625,
+    "utc": "2026-10-08T14:07:49.977701+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-perf-schema.py",
+    "script_sha256": "09778442e21ec223b358a78510e7faea691b0a96570fbd25f8f615e08bd022c9",
+    "exit": 0,
+    "seconds": 0.5629999998491257,
+    "utc": "2026-10-08T14:08:25.287509+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-sustained-progress.py",
+    "script_sha256": "30f16d51c9c3603ef69f99c3ae62622ffe8eba1a389ec23ea5f6cf1af6cb01a7",
+    "exit": 0,
+    "seconds": 0.4380000000819564,
+    "utc": "2026-10-08T14:10:32.003298+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-maintenance-observe.py",
+    "script_sha256": "1808be539268d7c9cf94f5a9aab19c921a8e2237cc0ad5183977ee3de00437ea",
+    "exit": 0,
+    "seconds": 257.9220000000205,
+    "utc": "2026-10-08T14:11:13.187026+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-test-evidence-index.py",
+    "script_sha256": "59a389a4cc995178531bd14dbdbcc944e120ef1815fa973c80837e18a6246cb8",
+    "exit": 0,
+    "seconds": 0.35999999986961484,
+    "utc": "2026-10-08T14:11:45.330785+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-sustained-progress.py",
+    "script_sha256": "30f16d51c9c3603ef69f99c3ae62622ffe8eba1a389ec23ea5f6cf1af6cb01a7",
+    "exit": 0,
+    "seconds": 0.4690000000409782,
+    "utc": "2026-10-08T14:13:09.083602+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-upload-report-template.py",
+    "script_sha256": "e847668370d0bc8c5bba6060b7f4f22e36cb9e33d8af7c4fbc300556674eef0e",
+    "exit": 0,
+    "seconds": 0.5939999998081475,
+    "utc": "2026-10-08T14:14:59.447246+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-sustained-progress.py",
+    "script_sha256": "30f16d51c9c3603ef69f99c3ae62622ffe8eba1a389ec23ea5f6cf1af6cb01a7",
+    "exit": 0,
+    "seconds": 0.5779999999795109,
+    "utc": "2026-10-08T14:16:55.828316+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-execute-sustained.py",
+    "script_sha256": "b38c88cb6722a9f3d9b794b99e8b07e53e2d6234795e92651506f980836b2b42",
+    "exit": 0,
+    "seconds": 847.3279999999795,
+    "utc": "2026-10-08T14:17:33.710548+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-wait-sustained.py",
+    "script_sha256": "69f7942b15ab6f816f1f2e9dcd66f5da017ecf475357cf80307d3a5b76988599",
+    "exit": 0,
+    "seconds": 390.4220000000205,
+    "utc": "2026-10-08T14:17:48.550427+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-sustained-files.py",
+    "script_sha256": "3f764582db67dad888df4777040d443078dc31a6c1d5de6452cb7e973cfc2773",
+    "exit": 0,
+    "seconds": 0.375,
+    "utc": "2026-10-08T14:18:07.001445+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-tail-state.py",
+    "script_sha256": "babefab5d4afe24eca2d08f730fe668b8169a5c521e43372e6919d0cfadee6b8",
+    "exit": 0,
+    "seconds": 0.5470000000204891,
+    "utc": "2026-10-08T14:19:25.835464+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-ledger.py",
+    "script_sha256": "878794e649de1bcd6a4976771a25fb77ee35b01913774b04490a13b2b9d520f7",
+    "exit": 0,
+    "seconds": 0.4529999999795109,
+    "utc": "2026-10-08T14:19:49.909896+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-retention.py",
+    "script_sha256": "452d5b732438105bd136033038238511934708d9a7054343c44da4549b07c46b",
+    "exit": 0,
+    "seconds": 0.5470000000204891,
+    "utc": "2026-10-08T14:20:02.174016+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-execute-diagnostic.py",
+    "script_sha256": "8612c1799a3fdf5c98a368539985cdcea33b758714bf0228589931f540360f47",
+    "exit": 0,
+    "seconds": 214.59400000004098,
+    "utc": "2026-10-08T14:21:23.209134+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-diag-sched-observe.py",
+    "script_sha256": "d4278d2ea8bc6ab6174649f9f7c8ce3641bffde98fe82e1a8dd49f71a126a327",
+    "exit": 0,
+    "seconds": 183.46900000004098,
+    "utc": "2026-10-08T14:21:27.798525+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-final-fixtures.py",
+    "script_sha256": "0548ba206d90e4d248a36691b35ee05298ce308d0d6f985506941e3c8184f87f",
+    "exit": 0,
+    "seconds": 5.156999999890104,
+    "utc": "2026-10-08T14:21:28.427165+00:00",
+    "surface": "CNB outer orchestration"
+  },
+  {
+    "script": "recovery-tail-state.py",
+    "script_sha256": "babefab5d4afe24eca2d08f730fe668b8169a5c521e43372e6919d0cfadee6b8",
+    "exit": 0,
+    "seconds": 0.46800000010989606,
+    "utc": "2026-10-08T14:21:40.107921+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-perf.py",
+    "script_sha256": "b5ccd359ebf4c3efae25f453a0d675ed4bf05500e63178fad72e9fccf96c6835",
+    "exit": 0,
+    "seconds": 0.6720000000204891,
+    "utc": "2026-10-08T14:22:13.416933+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-storage.py",
+    "script_sha256": "6975d37a739946763f3773f30664140367308c80f87a77a84abae4ca6ffc0c12",
+    "exit": 0,
+    "seconds": 0.5310000001918525,
+    "utc": "2026-10-08T14:22:14.020927+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-fault.py",
+    "script_sha256": "8c8bd3a7580a60b4292a906fa8a5ba96cfb703c448921efa4f33bcb5a7145da6",
+    "exit": 0,
+    "seconds": 6.078999999910593,
+    "utc": "2026-10-08T14:22:20.183167+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-perf-diagnostic.py",
+    "script_sha256": "275456f121851c604857c41ec14a2f81f9fe66aa916a9b840d0b6df3aa324d7e",
+    "exit": 0,
+    "seconds": 0.46800000010989606,
+    "utc": "2026-10-08T14:22:35.605997+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-diag.py",
+    "script_sha256": "76810d141d9fe9fc10c97ddcd3e6564838bf606c69fa6cce7c6f9b52d53c6869",
+    "exit": 0,
+    "seconds": 0.4839999999385327,
+    "utc": "2026-10-08T14:22:36.189852+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-extra.py",
+    "script_sha256": "a0387a9e7cf53963927cab19f54a18b306b34f3e14cf8abd666de0ff29817a21",
+    "exit": 0,
+    "seconds": 3.702999999979511,
+    "utc": "2026-10-08T14:23:26.081100+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-gates-progress.py",
+    "script_sha256": "3520ce2373f81606f035b284728040db220356c163c71d063f26d2cc15ef74b7",
+    "exit": 0,
+    "seconds": 0.5470000000204891,
+    "utc": "2026-10-08T14:24:01.679381+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-analysis.py",
+    "script_sha256": "4131f86d66e2428fe72766a05f6558160672df27f3f14def6ebd7959d8e4c73d",
+    "exit": 0,
+    "seconds": 0.3589999999385327,
+    "utc": "2026-10-08T14:24:32.120019+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-diag-schema.py",
+    "script_sha256": "5f738722434b5c718b02a7ab706339b411910a01ece58ced1fedca3b1302f25a",
+    "exit": 0,
+    "seconds": 1.0940000000409782,
+    "utc": "2026-10-08T14:24:54.047641+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-cap-metrics.py",
+    "script_sha256": "de9485843027b0f7bd9fa9b64314f635525836ab502f212863a025ea952cbf2b",
+    "exit": 0,
+    "seconds": 0.75,
+    "utc": "2026-10-08T14:25:16.385614+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-latency.py",
+    "script_sha256": "8bd006c7d4a2b16f1897626e7e124fa3cc4da75161c1f86955207b6cf83b7dd3",
+    "exit": 0,
+    "seconds": 3.125,
+    "utc": "2026-10-08T14:26:02.548233+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-correlated.py",
+    "script_sha256": "9de49301011a42e661869adc7e04d9d0192f15c6a0ff44e66e349bc3211abc62",
+    "exit": 0,
+    "seconds": 0.35900000017136335,
+    "utc": "2026-10-08T14:26:49.903288+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-public-scan.py",
+    "script_sha256": "c4d11b65892e8cc28e2daf305fd92f99b38b111af6effedce280021ced033daf",
+    "exit": 0,
+    "seconds": 1.6399999998975545,
+    "utc": "2026-10-08T14:27:55.703729+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-write-conclusions.py",
+    "script_sha256": "44f1993d005b57a3d4a54cc7988f0c702d1afa09335552dab5c682100b08883b",
+    "exit": 0,
+    "seconds": 0.5620000001508743,
+    "utc": "2026-10-08T14:30:38.482432+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-gates-progress.py",
+    "script_sha256": "3520ce2373f81606f035b284728040db220356c163c71d063f26d2cc15ef74b7",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T14:30:54.575636+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-source-proof.py",
+    "script_sha256": "042a96c37dcc3a2e83c58f52c1788227a8c1689a6d181a0a0a3f97d4d8ab23e7",
+    "exit": 0,
+    "seconds": 0.8129999998491257,
+    "utc": "2026-10-08T14:31:35.705174+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-point-latency.py",
+    "script_sha256": "b7cff35f733fc308909bc8f5550003623626f5efb5c87cd5f951b0fd9bd71401",
+    "exit": 0,
+    "seconds": 4.811999999918044,
+    "utc": "2026-10-08T14:33:51.948576+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-mixed-files.py",
+    "script_sha256": "78ad918fdeab497fedb83246cbc3add9351c4c1658298089d044197b005b4916",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T14:34:05.792809+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-gates-progress.py",
+    "script_sha256": "3520ce2373f81606f035b284728040db220356c163c71d063f26d2cc15ef74b7",
+    "exit": 0,
+    "seconds": 0.5,
+    "utc": "2026-10-08T14:34:06.373217+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-read-window-schema.py",
+    "script_sha256": "6cc93db9ad526eb569d1daad74c467e90458612fdebcc552f54dd055a16156c4",
+    "exit": 0,
+    "seconds": 0.39000000013038516,
+    "utc": "2026-10-08T14:34:33.478357+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-analyze-point-latency.py",
+    "script_sha256": "01b3e8f037c339bf96d32e23b1a9b51adf2b29b96557b2fc71bd0ea9f7771d22",
+    "exit": 0,
+    "seconds": 4.8600000001024455,
+    "utc": "2026-10-08T14:35:14.309030+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-note-diagnostic-boundary.py",
+    "script_sha256": "d1664425d4231978c2e2272dad5141e4ed71f06a84d94036e921f5ee21837d35",
+    "exit": 0,
+    "seconds": 0.4059999999590218,
+    "utc": "2026-10-08T14:35:48.485827+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-gates-progress.py",
+    "script_sha256": "3520ce2373f81606f035b284728040db220356c163c71d063f26d2cc15ef74b7",
+    "exit": 0,
+    "seconds": 0.4220000000204891,
+    "utc": "2026-10-08T14:36:28.916218+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-upload-reproduction.py",
+    "script_sha256": "9a3f9203f1f55e300855e4cce58cdca6da8dfd65c94ba1a2617f96311e7e5fc4",
+    "exit": 0,
+    "seconds": 0.4059999999590218,
+    "utc": "2026-10-08T14:37:51.920803+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-small-audit.py",
+    "script_sha256": "69aa0873c5d598bd552b2beeb529bac5655fbb84cac2d6b347d081069779b1c9",
+    "exit": 0,
+    "seconds": 0.6569999998901039,
+    "utc": "2026-10-08T14:38:38.674165+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-baseline-docs.py",
+    "script_sha256": "f50793027bb253a22dbbc31cf39bd4275fb84ba81cee824ceddba700c87ecec0",
+    "exit": 0,
+    "seconds": 0.48499999986961484,
+    "utc": "2026-10-08T14:38:59.086664+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-security-progress.py",
+    "script_sha256": "826cf49f18d779c28694bd186efe1f22bdf4e63705cd404e74685576edef2541",
+    "exit": 0,
+    "seconds": 0.4850000001024455,
+    "utc": "2026-10-08T14:39:35.435638+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-gates-progress.py",
+    "script_sha256": "3520ce2373f81606f035b284728040db220356c163c71d063f26d2cc15ef74b7",
+    "exit": 0,
+    "seconds": 0.4690000000409782,
+    "utc": "2026-10-08T14:40:47.083397+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-check-patch-artifacts.py",
+    "script_sha256": "d027e08e2b78c05cd7cbf5a8ab9f786f648a9b2a5f2163ecf6df2db034a6b43d",
+    "exit": 0,
+    "seconds": 0.5309999999590218,
+    "utc": "2026-10-08T14:41:21.082693+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-check-patch-artifacts.py",
+    "script_sha256": "4ff8e7464f3b6591913cc249481fa93ef8877874630ae06ce9f4ff6f65d9a96c",
+    "exit": 0,
+    "seconds": 0.6879999998491257,
+    "utc": "2026-10-08T14:41:29.093902+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-patch-report-links.py",
+    "script_sha256": "ac3b31e435aa48f6d2c101e50736cb5230e4a42dc2e4f436bd919736b0aed16e",
+    "exit": 0,
+    "seconds": 0.45300000021234155,
+    "utc": "2026-10-08T14:42:28.524581+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-gates-compact.py",
+    "script_sha256": "61f795f5c5cb53a4f65f661189bca9440b42baf430dcaca8f3f4a8964873b653",
+    "exit": 0,
+    "seconds": 0.43799999984912574,
+    "utc": "2026-10-08T14:42:49.216205+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-gates-compact.py",
+    "script_sha256": "61f795f5c5cb53a4f65f661189bca9440b42baf430dcaca8f3f4a8964873b653",
+    "exit": 0,
+    "seconds": 0.5160000000614673,
+    "utc": "2026-10-08T14:44:56.592443+00:00",
+    "surface": "existing isolated test container /src"
+  },
+  {
+    "script": "recovery-check-stage-scope.py",
+    "script_sha256": "27649ce9b75a1c73fd71844c65e3df2fdb06144f0b6217fbf397c35ded9484d6",
+    "exit": 0,
+    "seconds": 0.3910000000614673,
+    "utc": "2026-10-08T14:45:30.061308+00:00",
+    "surface": "existing isolated test container /src"
+  }
+]

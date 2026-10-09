@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "-p", "nazo-oauth-server", "--all-features", "--locked", "--lib", "token::issue::refresh_persistence"], "exit": 0, "seconds": 11.229750148020685}

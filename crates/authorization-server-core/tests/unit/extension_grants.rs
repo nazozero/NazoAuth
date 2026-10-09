@@ -34,6 +34,9 @@ fn exchange_policy<'a>(
 
 fn access_claims(tenant_id: Uuid) -> Claims {
     Claims {
+        authorization_id: None,
+        client_epoch: None,
+        user_epoch: None,
         iss: "https://issuer.example".to_owned(),
         sub: "subject".to_owned(),
         tenant_id: tenant_id.to_string(),
@@ -50,8 +53,7 @@ fn access_claims(tenant_id: Uuid) -> Claims {
         exp: 1_700_000_100,
         cnf: None,
         act: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
+        userinfo_claim_requests: (Vec::new()).into(),
     }
 }
 
@@ -108,9 +110,9 @@ fn empty_but_present_grant_tokens_reach_crypto_validation() {
     let tenant_id = Uuid::nil();
     let exchange = admit_token_exchange(
         &TokenExchangeRequestInput {
-            subject_token: Some(String::new()),
-            subject_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
-            audiences: audiences.clone(),
+            subject_token: Some(""),
+            subject_token_type: Some(ACCESS_TOKEN_TYPE),
+            audiences: &audiences,
             ..TokenExchangeRequestInput::default()
         },
         exchange_policy(&scopes, &audiences, tenant_id),
@@ -125,20 +127,20 @@ fn token_exchange_type_scope_and_target_policy_is_explicit() {
     let audiences = vec!["https://api.example".to_owned()];
     let tenant_id = Uuid::now_v7();
     let request = TokenExchangeRequestInput {
-        subject_token: Some("subject-token".to_owned()),
-        subject_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
+        subject_token: Some("subject-token"),
+        subject_token_type: Some(ACCESS_TOKEN_TYPE),
         actor_token: None,
         actor_token_type: None,
-        requested_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
-        scope: Some("read".to_owned()),
-        audiences: audiences.clone(),
+        requested_token_type: Some(ACCESS_TOKEN_TYPE),
+        scope: Some("read"),
+        audiences: &audiences,
     };
     let admitted = admit_token_exchange(&request, exchange_policy(&scopes, &audiences, tenant_id))
         .expect("valid exchange request");
-    assert_eq!(admitted.requested_scope.as_deref(), Some("read"));
+    assert_eq!(admitted.requested_scope, Some("read"));
 
     let mut unsupported = request;
-    unsupported.requested_token_type = Some("urn:example:unknown".to_owned());
+    unsupported.requested_token_type = Some("urn:example:unknown");
     assert_eq!(
         admit_token_exchange(
             &unsupported,
@@ -157,10 +159,10 @@ fn token_exchange_multi_target_fails_closed_on_any_denied_target() {
     ];
     let tenant_id = Uuid::now_v7();
     let request = TokenExchangeRequestInput {
-        subject_token: Some("subject-token".to_owned()),
-        subject_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
-        requested_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
-        audiences: audiences.clone(),
+        subject_token: Some("subject-token"),
+        subject_token_type: Some(ACCESS_TOKEN_TYPE),
+        requested_token_type: Some(ACCESS_TOKEN_TYPE),
+        audiences: &audiences,
         ..TokenExchangeRequestInput::default()
     };
 
@@ -169,7 +171,9 @@ fn token_exchange_multi_target_fails_closed_on_any_denied_target() {
     assert_eq!(admitted.audiences, audiences);
 
     let mut denied = request;
-    denied.audiences.push("https://denied.example".to_owned());
+    let mut denied_audiences = audiences.clone();
+    denied_audiences.push("https://denied.example".to_owned());
+    denied.audiences = &denied_audiences;
     assert_eq!(
         admit_token_exchange(&denied, exchange_policy(&scopes, &audiences, tenant_id)),
         Err(TokenExchangeError::InvalidTarget)
@@ -322,4 +326,41 @@ fn actor_claim_requires_same_client_and_rejects_sender_constraint() {
         token_exchange_actor_claim(&actor, policy),
         Err(TokenExchangeError::InvalidGrant)
     );
+}
+
+#[test]
+fn admitted_raw_assertions_and_exchange_tokens_borrow_the_original_buffers() {
+    let scopes = vec!["read".to_owned()];
+    let audiences = vec!["https://api.example".to_owned()];
+    let raw = "raw-jwt".repeat(4096);
+    let jwt = admit_jwt_bearer_grant(
+        Some(&raw),
+        Some("read"),
+        &audiences,
+        jwt_policy(&scopes, &audiences),
+    )
+    .unwrap();
+    assert_eq!(jwt.assertion.as_ptr(), raw.as_ptr());
+    let actor = "actor-jwt".repeat(4096);
+    let request = TokenExchangeRequestInput {
+        subject_token: Some(&raw),
+        subject_token_type: Some(ACCESS_TOKEN_TYPE),
+        actor_token: Some(&actor),
+        actor_token_type: Some(ACCESS_TOKEN_TYPE),
+        scope: Some("read"),
+        audiences: &audiences,
+        ..TokenExchangeRequestInput::default()
+    };
+    let admitted = admit_token_exchange(
+        &request,
+        exchange_policy(&scopes, &audiences, Uuid::now_v7()),
+    )
+    .unwrap();
+    assert_eq!(admitted.subject_token.as_ptr(), raw.as_ptr());
+    assert_eq!(admitted.actor_token.unwrap().as_ptr(), actor.as_ptr());
+    fn send<T: Send>(_: T) {}
+    send(async move {
+        std::future::ready(()).await;
+        admitted.subject_token.len()
+    });
 }

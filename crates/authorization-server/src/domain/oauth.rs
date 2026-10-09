@@ -5,13 +5,15 @@ use serde_json::Value;
 use uuid::Uuid;
 
 pub use nazo_auth::{
-    AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
-    OidcClaimRequest, PushedAuthorizationRequest,
+    AuthorizationCodeState, CodePayload, ConsentPayload, PreparedTokenSubject,
+    PushedAuthorizationRequest,
 };
 
 /// token 签发函数所需的归一化输入。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefreshTokenPolicy {
+    /// This grant neither creates nor uses a refresh-token family.
+    NoRefresh,
     IssueNew,
     Rotate {
         family_id: Uuid,
@@ -26,16 +28,9 @@ pub enum RefreshTokenPolicy {
         successor_id: Uuid,
         retry_started_at: DateTime<Utc>,
     },
+    /// Reuse an existing refresh authority without replacing its member.
+    /// Its source is still checked under the final issuance transaction's lock.
     PreserveExisting,
-}
-
-/// Request-local subject claims snapshot for grants that already loaded the
-/// active subject once (CIBA). It exists only for this TokenIssue's lifetime:
-/// it is never serialized, persisted, or cached, and it is not the final
-/// authority — the commit still revalidates the principal under its lock.
-pub struct PreparedTokenSubject {
-    pub tenant_id: Uuid,
-    pub claims: nazo_identity::SubjectClaims,
 }
 
 pub struct TokenIssue {
@@ -50,14 +45,15 @@ pub struct TokenIssue {
     pub amr: Vec<String>,
     pub oidc_sid: Option<String>,
     pub acr: Option<String>,
-    pub userinfo_claims: Vec<String>,
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
-    pub id_token_claims: Vec<String>,
-    pub id_token_claim_requests: Vec<OidcClaimRequest>,
+    pub userinfo_claim_requests: nazo_auth::UserinfoClaimRequests,
+    pub id_token_claim_requests: nazo_auth::IdTokenClaimRequests,
     /// `None` means this is not a refresh issuance. `Some(None)` records that
     /// the original ID Token omitted `sid`; `Some(Some(value))` preserves the
     /// exact SID emitted by the original ID Token (including Native SSO).
     pub refresh_id_token_sid: Option<Option<String>>,
+    /// Whether this issuance permits a refresh-token response, subject to the
+    /// client and scope policy. NoRefresh requires false; disabling a response
+    /// never removes an existing refresh authority from the final commit.
     pub include_refresh: bool,
     pub refresh_token_policy: RefreshTokenPolicy,
     pub dpop_jkt: Option<String>,
@@ -65,21 +61,31 @@ pub struct TokenIssue {
     pub mtls_x5t_s256: Option<String>,
     pub refresh_token_mtls_x5t_s256: Option<String>,
     pub refresh_token_client_attestation_jkt: Option<String>,
-    /// Original refresh-token authorization. A refresh request may narrow the
-    /// access-token scope, but RFC 6749 requires a rotated refresh token to
-    /// retain the scope of the token presented by the client.
-    pub refresh_token_scopes: Option<Vec<String>>,
+    /// The original refresh authority, retained even when no replacement RT
+    /// is issued. The durable commit revalidates this exact source.
+    pub refresh_authority: Option<nazo_auth::RefreshTokenAuthority>,
+    /// Source family fenced separately from the destination refresh family.
+    pub native_sso_source: Option<nazo_auth::NativeSsoSourceFence>,
+    /// Original resources of a newly redeemed authorization grant. This is
+    /// only used to create a family; subsequent refreshes use their authority.
+    pub refresh_grant_audiences: Option<Vec<String>>,
     pub authorization_code_hash: Option<String>,
     pub actor: Option<Value>,
     pub issued_token_type: Option<String>,
     pub native_sso: Option<NativeSsoTokenBinding>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NativeSsoTokenBinding {
     pub device_secret: String,
     pub ds_hash: String,
     pub sid: String,
+}
+
+impl std::fmt::Debug for NativeSsoTokenBinding {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("NativeSsoTokenBinding([REDACTED])")
+    }
 }
 
 #[cfg(test)]

@@ -4,7 +4,15 @@
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use diesel_async::{AsyncConnection as _, AsyncPgConnection, SimpleAsyncConnection as _};
+use diesel::{
+    QueryableByName,
+    connection::InstrumentationEvent,
+    sql_query,
+    sql_types::{Bool, SmallInt, Uuid as DieselUuid},
+};
+use diesel_async::{
+    AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
+};
 use ed25519_dalek::{Signer as _, SigningKey};
 use nazo_operator_protocol::{
     RECOVERY_KDF_ID, RecoveryProposal, RecoveryRootRotation, derive_recovery_seed,
@@ -22,7 +30,9 @@ use uuid::Uuid;
 
 mod support;
 
-use support::{run_isolated_application_migrations, schema_database_url};
+use support::{
+    query_counter::QueryCounter, run_isolated_application_migrations, schema_database_url,
+};
 
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -35,6 +45,13 @@ fn database_url() -> Option<String> {
 }
 
 async fn isolated(case: &str) -> Option<(String, RecoveryRootRepository)> {
+    isolated_with_pool_size(case, 8).await
+}
+
+async fn isolated_with_pool_size(
+    case: &str,
+    max_connections: usize,
+) -> Option<(String, RecoveryRootRepository)> {
     let database_url = database_url()?;
     let schema = format!("controller_recovery_{}_{}", case, Uuid::now_v7().simple());
     let mut coordinator = AsyncPgConnection::establish(&database_url)
@@ -48,8 +65,32 @@ async fn isolated(case: &str) -> Option<(String, RecoveryRootRepository)> {
     run_isolated_application_migrations(&isolated_url).await;
     Some((
         isolated_url.clone(),
-        RecoveryRootRepository::new(create_pool(isolated_url, 8).expect("pool should create")),
+        RecoveryRootRepository::new(
+            create_pool(isolated_url, max_connections).expect("pool should create"),
+        ),
     ))
+}
+
+#[derive(QueryableByName)]
+struct AttemptState {
+    #[diesel(sql_type = SmallInt)]
+    attempts: i16,
+    #[diesel(sql_type = Bool)]
+    consumed: bool,
+}
+
+async fn attempt_state(url: &str, challenge_id: Uuid) -> AttemptState {
+    let mut connection = AsyncPgConnection::establish(url)
+        .await
+        .expect("fixture connection");
+    sql_query(
+        "SELECT attempts, consumed_at IS NOT NULL AS consumed
+         FROM controller_recovery_challenges WHERE challenge_id = $1",
+    )
+    .bind::<DieselUuid, _>(challenge_id)
+    .get_result(&mut connection)
+    .await
+    .expect("fixture challenge state")
 }
 
 fn at(seconds: i64) -> DateTime<Utc> {
@@ -496,7 +537,7 @@ async fn concurrent_rotations_cannot_install_one_recovery_key_twice() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn challenges_are_refused_while_any_controller_is_admitted_and_single_pending() {
-    let Some((_url, repository)) = isolated("gate").await else {
+    let Some((url, repository)) = isolated_with_pool_size("gate_p1", 1).await else {
         return;
     };
     let deployment = "deployment-recovery-gate";
@@ -589,8 +630,9 @@ async fn challenges_are_refused_while_any_controller_is_admitted_and_single_pend
     // Burn the outstanding challenge through its attempt cap; afterwards a
     // new challenge may be issued again because the dead one stops blocking.
     for attempt in 0..MAX_RECOVERY_CHALLENGE_ATTEMPTS {
-        let outcome = repository
-            .submit_recovery_challenge(
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.submit_recovery_challenge(
                 submission(
                     deployment,
                     issued.challenge_id,
@@ -598,11 +640,19 @@ async fn challenges_are_refused_while_any_controller_is_admitted_and_single_pend
                     &[0xffu8; 64],
                 ),
                 at(7 + i64::from(attempt)),
-            )
-            .await
-            .expect_err("wrong signature must fail");
+            ),
+        )
+        .await
+        .expect("a rejected submission must not wait for a second pool connection")
+        .expect_err("wrong signature must fail");
         assert!(matches!(outcome, RecoveryRootError::InvalidSignature));
     }
+    let state = attempt_state(&url, issued.challenge_id).await;
+    assert_eq!(i32::from(state.attempts), MAX_RECOVERY_CHALLENGE_ATTEMPTS);
+    assert!(
+        state.consumed,
+        "the fifth rejected answer must close the challenge"
+    );
     let dead = repository
         .submit_recovery_challenge(
             submission(
@@ -640,7 +690,7 @@ async fn challenges_are_refused_while_any_controller_is_admitted_and_single_pend
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn accepted_recovery_revokes_everything_installs_one_slot_and_rotates_the_root() {
-    let Some((url, repository)) = isolated("commit").await else {
+    let Some((url, repository)) = isolated_with_pool_size("commit_p1", 1).await else {
         return;
     };
     let registry = registry_repository(&url).await;
@@ -685,14 +735,23 @@ async fn accepted_recovery_revokes_everything_installs_one_slot_and_rotates_the_
     // Wrong nonce fails without consuming anything but the attempt counter.
     let mut wrong_nonce = issued.nonce;
     wrong_nonce[0] ^= 1;
-    let nonce_failure = repository
-        .submit_recovery_challenge(
+    let nonce_failure = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        repository.submit_recovery_challenge(
             submission(deployment, issued.challenge_id, &wrong_nonce, &signature),
             at(11),
-        )
-        .await
-        .expect_err("wrong nonce must fail");
+        ),
+    )
+    .await
+    .expect("nonce rejection must finish with the only pool connection")
+    .expect_err("wrong nonce must fail");
     assert!(matches!(nonce_failure, RecoveryRootError::NonceMismatch));
+    let state = attempt_state(&url, issued.challenge_id).await;
+    assert_eq!(
+        state.attempts, 1,
+        "the counter survives the rejected transaction"
+    );
+    assert!(!state.consumed);
 
     // The correct answer atomically commits the whole recovery.
     let commit: RecoveredSlotCommit = repository
@@ -703,6 +762,15 @@ async fn accepted_recovery_revokes_everything_installs_one_slot_and_rotates_the_
         .await
         .expect("signed answer must commit");
     assert_eq!(commit.recovery_generation, 2);
+    let retry = repository
+        .submit_recovery_challenge(
+            submission(deployment, issued.challenge_id, &issued.nonce, &signature),
+            at(13),
+        )
+        .await
+        .expect("an exact receipt retry also works with pool size one");
+    assert_eq!(retry, commit);
+    assert_eq!(attempt_state(&url, issued.challenge_id).await.attempts, 1);
     validate_controller_id(&commit.slot.controller_id)
         .expect("the recovered slot gets a freshly assigned UUIDv7 controller_id");
     assert_eq!(commit.slot.status, ControllerSlotStatus::Active);
@@ -1130,4 +1198,288 @@ async fn recovery_submission_waits_for_the_deployment_identity_lock() {
         .await
         .expect("submission completes once the lock releases");
     assert_eq!(commit.slot.kid, kid_of(&controller_key_for_slot(40)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
+    let Some((url, repository)) = isolated("hist_fail").await else {
+        return;
+    };
+    let deployment = format!("deployment-history-failure-{}", Uuid::now_v7());
+    let deployment = deployment.as_str();
+    let first = recovery_material(deployment, 1);
+    let second = recovery_material(deployment, 2);
+    let third = recovery_material(deployment, 3);
+    enroll_root(&repository, deployment, &first, at(0)).await;
+    let before = repository.current_root(deployment).await.unwrap().unwrap();
+    let pending = repository
+        .issue_recovery_challenge(challenge_input(deployment, 60, &third, &first), at(1))
+        .await
+        .unwrap();
+    let rotation = second.rotation(deployment);
+    let approval = repository
+        .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), at(2))
+        .await
+        .unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    connection
+        .batch_execute(
+            "ALTER TABLE controller_recovery_root_key_history
+             ADD CONSTRAINT injected_history_failure CHECK (false) NOT VALID",
+        )
+        .await
+        .unwrap();
+    let error = repository
+        .commit_rotation(
+            &approval.token,
+            deployment,
+            &rotation.action_sha256(),
+            second.root_input(deployment),
+            at(3),
+        )
+        .await
+        .expect_err("failed history insertion must abort the complete rotation");
+    assert!(matches!(
+        error,
+        RecoveryRotationError::Mutation(RecoveryRootError::Transport(_))
+    ));
+    assert_eq!(
+        repository.current_root(deployment).await.unwrap().unwrap(),
+        before
+    );
+    let pending_state = attempt_state(&url, pending.challenge_id).await;
+    assert_eq!(pending_state.attempts, 0);
+    assert!(!pending_state.consumed);
+    connection
+        .batch_execute(
+            "ALTER TABLE controller_recovery_root_key_history DROP CONSTRAINT injected_history_failure",
+        )
+        .await
+        .unwrap();
+    let replaced = repository
+        .commit_rotation(
+            &approval.token,
+            deployment,
+            &rotation.action_sha256(),
+            second.root_input(deployment),
+            at(4),
+        )
+        .await
+        .expect("failed history insertion must also roll back approval consumption");
+    assert_eq!(replaced.generation, 2);
+    assert_eq!(replaced.created_at, before.created_at);
+    assert_eq!(replaced.kdf, before.kdf);
+    assert_eq!(replaced.updated_at, at(4));
+    assert_eq!(
+        replaced,
+        repository.current_root(deployment).await.unwrap().unwrap()
+    );
+    assert!(attempt_state(&url, pending.challenge_id).await.consumed);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn generation_exhaustion_rolls_back_the_root_and_approval() {
+    let Some((url, repository)) = isolated("gen_max").await else {
+        return;
+    };
+    let deployment = format!("deployment-generation-exhaustion-{}", Uuid::now_v7());
+    let deployment = deployment.as_str();
+    let first = recovery_material(deployment, 1);
+    let second = recovery_material(deployment, 2);
+    enroll_root(&repository, deployment, &first, at(0)).await;
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    sql_query("UPDATE controller_recovery_roots SET generation = $2 WHERE deployment_id = $1")
+        .bind::<diesel::sql_types::Varchar, _>(deployment)
+        .bind::<diesel::sql_types::Integer, _>(i32::MAX)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let before = repository.current_root(deployment).await.unwrap().unwrap();
+    let rotation = second.rotation(deployment);
+    let approval = repository
+        .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), at(1))
+        .await
+        .unwrap();
+    let error = repository
+        .commit_rotation(
+            &approval.token,
+            deployment,
+            &rotation.action_sha256(),
+            second.root_input(deployment),
+            at(2),
+        )
+        .await
+        .expect_err("generation overflow must fail closed");
+    assert!(matches!(
+        error,
+        RecoveryRotationError::Mutation(RecoveryRootError::Transport(_))
+    ));
+    assert_eq!(
+        repository.current_root(deployment).await.unwrap().unwrap(),
+        before
+    );
+    sql_query("UPDATE controller_recovery_roots SET generation = $2 WHERE deployment_id = $1")
+        .bind::<diesel::sql_types::Varchar, _>(deployment)
+        .bind::<diesel::sql_types::Integer, _>(i32::MAX - 1)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let replaced = repository
+        .commit_rotation(
+            &approval.token,
+            deployment,
+            &rotation.action_sha256(),
+            second.root_input(deployment),
+            at(3),
+        )
+        .await
+        .expect("overflow must leave both approval and fresh key available for retry");
+    assert_eq!(replaced.generation, i32::MAX);
+    assert_eq!(replaced.recovery_public_key, second.public_key);
+    assert_eq!(replaced.created_at, before.created_at);
+    assert_eq!(replaced.kdf, before.kdf);
+    assert_eq!(
+        replaced,
+        repository.current_root(deployment).await.unwrap().unwrap()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn root_enrollment_and_replacement_return_rows_in_six_data_queries() {
+    let Some((url, _fixture)) = isolated("root_rows").await else {
+        return;
+    };
+    let pool = create_pool(url, 1).unwrap();
+    let counter = QueryCounter::new();
+    let mut connection = pool.get().await.unwrap();
+    connection.set_instrumentation(counter.clone());
+    drop(connection);
+    let repository = RecoveryRootRepository::new(pool);
+    let deployment = format!("deployment-root-returning-{}", Uuid::now_v7());
+    let deployment = deployment.as_str();
+    let mut first_created_at = None;
+    for generation in [1u8, 2] {
+        let material = recovery_material(deployment, generation);
+        let rotation = material.rotation(deployment);
+        let now = at(i64::from(generation));
+        let approval = repository
+            .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), now)
+            .await
+            .unwrap();
+        let before = counter.snapshot();
+        let root = repository
+            .commit_rotation(
+                &approval.token,
+                deployment,
+                &rotation.action_sha256(),
+                material.root_input(deployment),
+                now,
+            )
+            .await
+            .unwrap();
+        let evidence = counter.since(before);
+        assert_eq!(evidence.data_queries, 6);
+        assert_eq!(evidence.begins, 1);
+        assert_eq!(evidence.commits, 1);
+        assert_eq!(evidence.rollbacks, 0);
+        assert_eq!(evidence.failed_queries, 0);
+        assert_eq!(root.generation, i32::from(generation));
+        assert_eq!(root.kdf, RECOVERY_KDF_ID);
+        assert_eq!(root.updated_at, now);
+        assert_eq!(root.created_at, *first_created_at.get_or_insert(now));
+        assert_eq!(
+            root,
+            repository.current_root(deployment).await.unwrap().unwrap()
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn failed_rollback_does_not_reuse_a_connection_for_the_counter() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    #[derive(QueryableByName)]
+    struct BackendPid {
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        pid: i32,
+    }
+    #[derive(QueryableByName)]
+    struct Termination {
+        #[diesel(sql_type = Bool)]
+        terminated: bool,
+    }
+
+    let Some((url, _fixture)) = isolated("rollback_loss").await else {
+        return;
+    };
+    let pool = create_pool(url.clone(), 1).unwrap();
+    let repository = RecoveryRootRepository::new(pool.clone());
+    let deployment = format!("deployment-rollback-loss-{}", Uuid::now_v7());
+    let deployment = deployment.as_str();
+    let first = recovery_material(deployment, 1);
+    let second = recovery_material(deployment, 2);
+    enroll_root(&repository, deployment, &first, at(0)).await;
+    let before = repository.current_root(deployment).await.unwrap().unwrap();
+    let issued = repository
+        .issue_recovery_challenge(challenge_input(deployment, 70, &second, &first), at(1))
+        .await
+        .unwrap();
+    let mut connection = pool.get().await.unwrap();
+    let pid = sql_query("SELECT pg_backend_pid() AS pid")
+        .get_result::<BackendPid>(&mut connection)
+        .await
+        .unwrap();
+    let mut killer = AsyncPgConnection::establish(&url).await.unwrap();
+    let rollback_interrupted = Arc::new(AtomicBool::new(false));
+    let attempted_counter = Arc::new(AtomicBool::new(false));
+    let interrupted = rollback_interrupted.clone();
+    let attempted = attempted_counter.clone();
+    connection.set_instrumentation(move |event: InstrumentationEvent<'_>| {
+        if let InstrumentationEvent::StartQuery { query, .. } = &event
+            && query.to_string().contains("SET attempts = attempts + 1")
+        {
+            attempted.store(true, Ordering::SeqCst);
+        }
+        if matches!(&event, InstrumentationEvent::RollbackTransaction { .. })
+            && !interrupted.swap(true, Ordering::SeqCst)
+        {
+            // Interrupt this fixture's own backend before its ROLLBACK.
+            let result = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    sql_query("SELECT pg_terminate_backend($1) AS terminated")
+                        .bind::<diesel::sql_types::Integer, _>(pid.pid)
+                        .get_result::<Termination>(&mut killer)
+                        .await
+                        .expect("the fixture must be able to terminate its own backend")
+                })
+            });
+            assert!(result.terminated);
+        }
+    });
+    drop(connection);
+    let mut wrong_nonce = issued.nonce;
+    wrong_nonce[0] ^= 1;
+    let error = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        repository.submit_recovery_challenge(
+            submission(deployment, issued.challenge_id, &wrong_nonce, &[0u8; 64]),
+            at(2),
+        ),
+    )
+    .await
+    .expect("a failed rollback must return without another pool checkout")
+    .expect_err("rollback transport failure must fail closed");
+    assert!(matches!(error, RecoveryRootError::Transport(_)));
+    assert!(rollback_interrupted.as_ref().load(Ordering::SeqCst));
+    assert!(!attempted_counter.as_ref().load(Ordering::SeqCst));
+    let state = attempt_state(&url, issued.challenge_id).await;
+    assert_eq!(state.attempts, 0);
+    assert!(!state.consumed);
+    assert_eq!(
+        repository.current_root(deployment).await.unwrap().unwrap(),
+        before
+    );
 }

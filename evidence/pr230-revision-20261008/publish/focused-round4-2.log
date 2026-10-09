@@ -1,0 +1,10 @@
+   Compiling nazoauth v0.2.16 (/src/crates/nazoauth)
+    Finished `test` profile [unoptimized] target(s) in 44.41s
+     Running unittests src/lib.rs (target/debug/deps/nazoauth-c68d2b62cddbc16e)
+
+running 1 test
+test http::admin::mtls_trust::tests::required_unknown::bundle_export_waits_for_real_required_audit_commit_and_rejects_late_failure ... mTLS bundle HTTP: deferred PG commit error -> 503/no attachment/no row; restored commit -> 200/attachment/exactly one Required event
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1453 filtered out; finished in 0.25s
+

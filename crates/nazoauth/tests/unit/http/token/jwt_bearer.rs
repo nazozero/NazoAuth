@@ -77,6 +77,8 @@ pub(crate) async fn token_jwt_bearer(
         token_jwt_bearer_with_service(
             &service,
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::JwtBearer),
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,
@@ -493,4 +495,78 @@ async fn jwt_bearer_replay_rejects_a_consumed_jti_after_a_committed_issuance() {
         Some(oauth_error_code(response).await.as_str()),
         Some("invalid_grant")
     );
+}
+
+#[actix_web::test]
+async fn jwt_bearer_invalid_scope_does_not_consume_the_valid_signed_assertion() {
+    let Some(state) = live_jwt_bearer_state().await else {
+        return;
+    };
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let client_id = format!("jwt-pure-admission-{}", Uuid::now_v7());
+    let client = jwt_bearer_client(&client_id, "pure-admission-kid", &key);
+    let assertion = signed_jwt_bearer_assertion(
+        &client_id,
+        "pure-admission-kid",
+        &key,
+        json!({"jti": format!("pure-admission-{}", Uuid::now_v7())}),
+    );
+    let validated =
+        validate_jwt_bearer_assertion(&jwt_bearer_settings(), &client, &assertion).unwrap();
+    let mut form = jwt_bearer_form(Some(&assertion));
+    form.scope = Some("administrator".to_owned());
+    let request = TestRequest::post().uri("/token").to_http_request();
+    let response = token_jwt_bearer(&state, &request, &client, &form, None).await;
+    assert_eq!(oauth_error_code(response).await, "invalid_scope");
+    consume_jwt_bearer_assertion(&state, &client, &validated)
+        .await
+        .expect("pure denial must not consume the grant's original replay identity");
+    assert!(matches!(
+        consume_jwt_bearer_assertion(&state, &client, &validated).await,
+        Err(JwtBearerAssertionError::ReplayDetected)
+    ));
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_dispatch_jwt_bearer_after_verified_assertion() {
+    use crate::http::token::issue::test_support::{
+        assert_expired_grant_dispatch_response, token_with_expired_grant_commit,
+    };
+    let mut state = live_jwt_bearer_issuance_state()
+        .await
+        .expect("JWT bearer commit regression requires isolated PostgreSQL and Valkey");
+    state.keyset =
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let id = format!("jwt-expired-commit-{}", Uuid::now_v7());
+    let mut client = jwt_bearer_client(&id, "jwt-expired-commit-kid", &key);
+    let secret = format!("jwt-commit-fixture-{}", Uuid::now_v7());
+    client.token_endpoint_auth_method = "client_secret_post".to_owned();
+    let secret_hash = crate::test_support::hash_client_secret_fixture(
+        &secret,
+        &state.settings.protocol.client_secret_pepper,
+    );
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(&client, Some(&secret_hash), None)
+        .await
+        .unwrap();
+    let assertion = signed_jwt_bearer_assertion(&id, "jwt-expired-commit-kid", &key, json!({}));
+    let request = TestRequest::post()
+        .uri("/token")
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        ))
+        .to_http_request();
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", JWT_BEARER_GRANT_TYPE)
+        .append_pair("client_id", &id)
+        .append_pair("client_secret", &secret)
+        .append_pair("assertion", &assertion)
+        .append_pair("scope", "accounts")
+        .finish();
+    let (response, commits) =
+        token_with_expired_grant_commit(&state, request, actix_web::web::Bytes::from(body)).await;
+    assert_expired_grant_dispatch_response(&state, &client, response, commits, "invalid_grant")
+        .await;
 }

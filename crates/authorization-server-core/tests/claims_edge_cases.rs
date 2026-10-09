@@ -26,6 +26,9 @@ fn access_token_claims_includes_all_required_jwt_fields() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "alice",
             user_id: Some(user_id),
@@ -34,11 +37,13 @@ fn access_token_claims_includes_all_required_jwt_fields() {
             audiences: &audiences,
             scopes: &scopes,
             authorization_details: &ad,
-            userinfo_claims: &["email".to_owned(), "name".to_owned()],
-            userinfo_claim_requests: &[],
+            userinfo_claim_requests: &(["email".to_owned(), "name".to_owned()])
+                .into_iter()
+                .map(nazo_auth::OidcClaimRequest::named)
+                .collect::<Vec<_>>(),
             ttl: 3600,
-            dpop_jkt: Some("dpop-thumbprint"),
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Dpop("dpop-thumbprint"),
+
             actor: None,
         },
         1_000_000,
@@ -64,7 +69,10 @@ fn access_token_claims_includes_all_required_jwt_fields() {
     assert_eq!(cnf.jkt.as_deref(), Some("dpop-thumbprint"));
     assert!(cnf.x5t_s256.is_none());
 
-    assert_eq!(claims.userinfo_claims, vec!["email", "name"]);
+    assert_eq!(
+        claims.userinfo_claim_requests.names(),
+        vec!["email", "name"]
+    );
 }
 
 #[test]
@@ -77,6 +85,9 @@ fn access_token_claims_include_user_id_only_for_public_user_subject() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: &user_id.to_string(),
             user_id: Some(user_id),
@@ -85,11 +96,10 @@ fn access_token_claims_include_user_id_only_for_public_user_subject() {
             audiences: &audiences,
             scopes: &scopes,
             authorization_details: &ad,
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 3600,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         1_000_000,
@@ -108,6 +118,9 @@ fn access_token_claims_client_credentials_omits_user_id() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "service-client",
             user_id: None,
@@ -116,11 +129,10 @@ fn access_token_claims_client_credentials_omits_user_id() {
             audiences: &["resource://api".to_owned()],
             scopes: &scopes,
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 120,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         2_000_000,
@@ -139,6 +151,9 @@ fn access_token_claims_cnf_is_none_when_sender_constraints_are_absent() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -147,11 +162,10 @@ fn access_token_claims_cnf_is_none_when_sender_constraints_are_absent() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -162,32 +176,10 @@ fn access_token_claims_cnf_is_none_when_sender_constraints_are_absent() {
 }
 
 #[test]
-fn access_token_claims_cnf_is_none_when_both_dpop_and_mtls_are_present() {
-    let claims = access_token_claims(
-        "https://issuer.example",
-        AccessTokenClaimsInput {
-            tenant_id: DEFAULT_TENANT_ID,
-            subject: "user-1",
-            user_id: None,
-            subject_type: "client",
-            client_id: "client-1",
-            audiences: &["resource://default".to_owned()],
-            scopes: &["read".to_owned()],
-            authorization_details: &json!([]),
-            userinfo_claims: &[],
-            userinfo_claim_requests: &[],
-            ttl: 60,
-            dpop_jkt: Some("dpop-jkt"),
-            mtls_x5t_s256: Some("mtls-x5t"),
-            actor: None,
-        },
-        0,
-        "jti-bothcnf",
-    );
-
-    assert!(
-        claims.cnf.is_none(),
-        "cnf must be omitted when both DPoP and mTLS are supplied (ambiguous binding)"
+fn access_token_claims_reject_ambiguous_sender_binding_before_construction() {
+    assert_eq!(
+        nazo_auth::validate_sender_constraint(Some("dpop-jkt"), Some("mtls-x5t")),
+        Err(nazo_auth::TokenPortError::InvalidSenderConstraint),
     );
 }
 
@@ -196,6 +188,9 @@ fn access_token_claims_cnf_with_mtls_x5t_only() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -204,11 +199,12 @@ fn access_token_claims_cnf_with_mtls_x5t_only() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: Some("mtls-cert-thumbprint"),
+            sender_constraint: nazo_auth::AppliedSenderConstraint::MutualTls(
+                "mtls-cert-thumbprint",
+            ),
+
             actor: None,
         },
         0,
@@ -230,6 +226,9 @@ fn access_token_claims_multiple_audiences_produces_json_array() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -238,11 +237,10 @@ fn access_token_claims_multiple_audiences_produces_json_array() {
             audiences: &audiences,
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -265,6 +263,9 @@ fn access_token_claims_single_audience_is_json_string_not_array() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -273,11 +274,10 @@ fn access_token_claims_single_audience_is_json_string_not_array() {
             audiences: &audiences,
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -293,6 +293,9 @@ fn access_token_claims_empty_audience_is_empty_json_array() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -301,11 +304,10 @@ fn access_token_claims_empty_audience_is_empty_json_array() {
             audiences: &audiences,
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -320,6 +322,9 @@ fn access_token_claims_zero_ttl_produces_exp_equal_to_iat() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -328,11 +333,10 @@ fn access_token_claims_zero_ttl_produces_exp_equal_to_iat() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 0,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         500,
@@ -354,6 +358,9 @@ fn access_token_claims_scope_is_sorted_alphabetically() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -362,11 +369,10 @@ fn access_token_claims_scope_is_sorted_alphabetically() {
             audiences: &["resource://default".to_owned()],
             scopes: &scopes,
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -382,6 +388,9 @@ fn access_token_claims_empty_scope_is_empty_string() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -390,11 +399,10 @@ fn access_token_claims_empty_scope_is_empty_string() {
             audiences: &["resource://default".to_owned()],
             scopes: &scopes,
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -409,6 +417,9 @@ fn access_token_claims_empty_authorization_details_is_empty_array() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: None,
@@ -417,11 +428,10 @@ fn access_token_claims_empty_authorization_details_is_empty_array() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,
@@ -450,6 +460,9 @@ fn access_token_claims_carries_userinfo_claim_requests() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "user-1",
             user_id: Some(Uuid::now_v7()),
@@ -458,11 +471,10 @@ fn access_token_claims_carries_userinfo_claim_requests() {
             audiences: &["resource://default".to_owned()],
             scopes: &["openid".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &requests,
             ttl: 60,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         0,

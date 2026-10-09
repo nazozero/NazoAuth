@@ -1,0 +1,79 @@
+{
+  "contract": "cap-scenario-window-v1",
+  "valid": true,
+  "consistent": true,
+  "problems": [],
+  "fields": {
+    "bucket_count": {
+      "distinct": 1,
+      "values": [
+        2
+      ]
+    },
+    "bucket_ms": {
+      "distinct": 1,
+      "values": [
+        60000
+      ]
+    },
+    "clock_ok": {
+      "distinct": 1,
+      "values": [
+        1
+      ]
+    },
+    "duration_ms": {
+      "distinct": 1,
+      "values": [
+        75000
+      ]
+    },
+    "measure_end_ms": {
+      "distinct": 1,
+      "values": [
+        1791479949148.0
+      ]
+    },
+    "measure_offset_ms": {
+      "distinct": 1,
+      "values": [
+        15000
+      ]
+    },
+    "measure_start_ms": {
+      "distinct": 1,
+      "values": [
+        1791479889148.0
+      ]
+    },
+    "scenario_start_ms": {
+      "distinct": 1,
+      "values": [
+        1791479874148.0
+      ]
+    }
+  },
+  "vus_seen": 0,
+  "points": 1155590,
+  "parse_errors": 0,
+  "reader_error": null,
+  "measurement_cohort": {
+    "window_start_s": 1791479889.148,
+    "window_end_s": 1791479949.148,
+    "measure_started_exact": 27609,
+    "measure_completed_exact": 27609,
+    "measure_dropped_exact": 20391,
+    "measure_scheduled_observed": 48000,
+    "measure_drop_fraction": 0.424812,
+    "measure_outcomes": {
+      "success": 27609
+    },
+    "measure_outcome_sum": 27609,
+    "drops_pre_window": 4666,
+    "drops_post_window": 1,
+    "drops_pending_unclassified": 0,
+    "pending_drops_overflow": false,
+    "valid": true,
+    "problems": []
+  }
+}

@@ -20,11 +20,11 @@ use super::{
     AuthorizationRequestContext, AuthorizationResponseClientPolicy, AuthorizationResponseRedirect,
     apply_request_object_with_context, authorization_login_query,
     authorization_login_url_with_context, authorization_oauth_error_redirect,
-    authorization_response_redirect_with_context, claim_request_names,
-    consume_reauth_nonce_with_context, credential_configuration_ids,
-    is_pushed_authorization_request_uri, issue_authorization_code_without_interaction_with_context,
+    authorization_response_redirect_with_context, consume_reauth_nonce_with_context,
+    credential_configuration_ids, is_pushed_authorization_request_uri,
+    issue_authorization_code_without_interaction_with_context,
     outer_request_uri_parameters_match_pushed, preserve_verified_dpop_binding,
-    runtime_authorization_capability_error, user_grant_covers_requested_scopes_with_context,
+    runtime_authorization_capability_error,
 };
 
 pub(crate) async fn authorize_request_with_context(
@@ -36,14 +36,27 @@ pub(crate) async fn authorize_request_with_context(
         return Err(response);
     }
 
-    let original_authorization_query = q.get("request_uri").is_some().then(|| q.clone());
     let reauth_started_at = consume_reauth_nonce_with_context(context, q).await;
+    let original_authorization_query =
+        (q.contains_key("request_uri") || q.contains_key("request")).then(|| q.clone());
+    // RFC 9101 section 5 and RFC 9126 section 4 require client_id in the
+    // authorization request itself, including when a PAR handle is supplied.
+    // Check before replacing the outer parameters with stored PAR parameters.
+    if !q.contains_key("client_id") {
+        return Err(OAuthEndpointError::json(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "缺少 client_id.",
+        ));
+    }
     let mut pushed_dpop_jkt = None;
     let mut pushed_mtls_x5t_s256 = None;
     let mut consumed_request_uri_error: Option<&'static str> = None;
     let mut used_pushed_authorization_request = false;
     let mut pending_pushed_request_uri = None;
     let mut pending_pushed_request_digest = None;
+    let mut pending_pushed_request_expires_at = None;
+    let mut pending_pushed_request_version = None;
     let mut pending_external_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         if !is_pushed_authorization_request_uri(&request_uri) {
@@ -71,7 +84,8 @@ pub(crate) async fn authorize_request_with_context(
                     ));
                 }
             };
-            if let Some(pushed) = pushed {
+            if let Some(snapshot) = pushed {
+                let pushed = snapshot.payload;
                 if q.get("client_id")
                     .is_some_and(|client_id| client_id != &pushed.client_id)
                 {
@@ -99,6 +113,8 @@ pub(crate) async fn authorize_request_with_context(
                         used_pushed_authorization_request = true;
                         pending_pushed_request_uri = Some(request_uri);
                         pending_pushed_request_digest = Some(digest);
+                        pending_pushed_request_expires_at = Some(pushed.expires_at);
+                        pending_pushed_request_version = Some(snapshot.version);
                         *q = pushed.params;
                     }
                 }
@@ -114,14 +130,6 @@ pub(crate) async fn authorize_request_with_context(
 
     if let Some(response) = runtime_authorization_capability_error(context, q) {
         return Err(response);
-    }
-
-    if !q.contains_key("client_id")
-        && let Some(request_object) = q.get("request")
-        && let Some(client_id) =
-            super::unverified_request_object_client_id(context.request_object_keys, request_object)
-    {
-        q.insert("client_id".to_owned(), client_id);
     }
 
     let Some(client_id) = q.get("client_id") else {
@@ -197,9 +205,11 @@ pub(crate) async fn authorize_request_with_context(
         }
     }
     let direct_request_object_present = q.contains_key("request");
-    let request_object_error = apply_request_object_with_context(context, q, &mut client)
-        .await
-        .err();
+    let (request_object_replay, request_object_error) =
+        match apply_request_object_with_context(context, q, &mut client, None).await {
+            Ok(replay) => (replay, None),
+            Err(error) => (None, Some(error)),
+        };
     if let Some(response) = runtime_authorization_capability_error(context, q) {
         return Err(response);
     }
@@ -339,6 +349,7 @@ pub(crate) async fn authorize_request_with_context(
     match nazo_auth::authorization_session_decision(
         session.as_ref().map(|session| AuthorizationSession {
             auth_time: session.auth_time,
+            auth_time_micros: session.auth_time_micros,
         }),
         normalized.prompt,
         normalized.max_age,
@@ -388,6 +399,12 @@ pub(crate) async fn authorize_request_with_context(
             };
         }
         AuthorizationSessionDecision::Continue => {}
+    }
+    if let Some(replay) = request_object_replay.as_ref()
+        && let Err(error) = context.service.consume_request_object_replay(replay).await
+    {
+        return authorization_oauth_error_redirect(context, &redirect_uri, error.oauth_error(), q)
+            .await;
     }
     let session = session.expect("authorization session policy allowed continuation");
     if let Some(issuer_state) = q.get("issuer_state") {
@@ -499,12 +516,9 @@ pub(crate) async fn authorize_request_with_context(
         amr: session.amr,
         oidc_sid: Some(session.oidc_sid),
         acr: normalized.acr,
-        userinfo_claims: claim_request_names(&normalized.requested_claims.userinfo),
-        userinfo_claim_requests: normalized.requested_claims.userinfo,
-        id_token_claims: claim_request_names(&normalized.requested_claims.id_token),
-        id_token_claim_requests: normalized.requested_claims.id_token,
-        code_challenge: normalized.code_challenge,
-        code_challenge_method: normalized.code_challenge_method,
+        userinfo_claim_requests: (normalized.requested_claims.userinfo).into(),
+        id_token_claim_requests: (normalized.requested_claims.id_token).into(),
+        pkce: normalized.code_challenge.into(),
         dpop_jkt,
         mtls_x5t_s256,
         pushed_request_uri: pending_pushed_request_uri,
@@ -512,16 +526,16 @@ pub(crate) async fn authorize_request_with_context(
         signed_authorization_response_required: Some(signed_response_required),
         session_management_allowed: Some(client_policy.session_management),
         authorization_code_ttl_seconds: Some(authorization_code_ttl_seconds),
-        issued_at: now,
+
         expires_at: now + Duration::seconds(authorization_code_ttl_seconds as i64),
     };
     if normalized.prompt.none {
         if !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
             &payload.scopes,
-            &payload.userinfo_claims,
+            &payload.userinfo_claim_requests,
         ) || !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
             &payload.scopes,
-            &payload.id_token_claims,
+            &payload.id_token_claim_requests,
         ) {
             return authorization_oauth_error_redirect(
                 context,
@@ -531,33 +545,16 @@ pub(crate) async fn authorize_request_with_context(
             )
             .await;
         }
-        match user_grant_covers_requested_scopes_with_context(
+        // The accepting owner checks live grant coverage and returns the
+        // existing consent_required outcome when current coverage is absent.
+        return issue_authorization_code_without_interaction_with_context(
             context,
-            payload.user_id,
-            client.id,
-            &payload.scopes,
-            &payload.resource_indicators,
-            &payload.authorization_details,
+            facts,
+            payload,
+            pending_pushed_request_expires_at,
+            pending_pushed_request_version.as_deref(),
         )
-        .await
-        {
-            Ok(true) => {
-                return issue_authorization_code_without_interaction_with_context(
-                    context, facts, payload,
-                )
-                .await;
-            }
-            Ok(false) => {
-                return authorization_oauth_error_redirect(
-                    context,
-                    &redirect_uri,
-                    "consent_required",
-                    q,
-                )
-                .await;
-            }
-            Err(response) => return Err(response),
-        }
+        .await;
     }
     if let Err(error) = context
         .service

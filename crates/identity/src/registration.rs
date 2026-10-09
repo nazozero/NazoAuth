@@ -17,10 +17,16 @@ pub struct RegistrationServiceConfig {
     pub code_ttl_seconds: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum SendVerificationCodeOutcome {
     Suppressed,
     Sent { code: String },
+}
+
+impl std::fmt::Debug for SendVerificationCodeOutcome {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SendVerificationCodeOutcome([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,11 +39,17 @@ pub enum SendVerificationCodeError {
     Delivery(RepositoryError),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RegisterLocalAccountInput {
     pub email: String,
     pub verification_code: String,
     pub password: String,
+}
+
+impl std::fmt::Debug for RegisterLocalAccountInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RegisterLocalAccountInput([REDACTED])")
+    }
 }
 
 /// Minimal identity projection returned to the public registration transport.
@@ -142,11 +154,13 @@ where
         {
             return Ok(SendVerificationCodeOutcome::Suppressed);
         }
+        let owner = Uuid::now_v7().to_string();
         if !self
             .verification
             .reserve_peer_send(
                 self.tenant.tenant_id,
                 peer_subject,
+                &owner,
                 self.config.send_peer_cooldown_seconds,
             )
             .await
@@ -159,6 +173,7 @@ where
             .reserve_email_send(
                 self.tenant.tenant_id,
                 normalized_email,
+                &owner,
                 self.config.send_cooldown_seconds,
             )
             .await
@@ -167,7 +182,7 @@ where
             Err(error) => {
                 let _ = self
                     .verification
-                    .release_peer_send(self.tenant.tenant_id, peer_subject)
+                    .release_peer_send(self.tenant.tenant_id, peer_subject, &owner)
                     .await;
                 return Err(SendVerificationCodeError::Reservation(error));
             }
@@ -175,7 +190,7 @@ where
         if !email_reserved {
             let _ = self
                 .verification
-                .release_peer_send(self.tenant.tenant_id, peer_subject)
+                .release_peer_send(self.tenant.tenant_id, peer_subject, &owner)
                 .await;
             return Ok(SendVerificationCodeOutcome::Suppressed);
         }
@@ -184,7 +199,7 @@ where
         let password_hash = match self.secret_hashes.hash_secret(code.clone()).await {
             Ok(password_hash) => password_hash,
             Err(error) => {
-                self.release_send_reservations(normalized_email, peer_subject)
+                self.release_send_reservations(normalized_email, peer_subject, &owner)
                     .await;
                 return Err(SendVerificationCodeError::CodeHash(error));
             }
@@ -194,12 +209,19 @@ where
             .store_code(
                 self.tenant.tenant_id,
                 normalized_email,
+                &owner,
                 password_hash,
                 self.config.code_ttl_seconds,
             )
             .await
         {
-            self.release_send_reservations(normalized_email, peer_subject)
+            // A timed-out store may have completed; only our owned code may
+            // be removed while releasing the reservations we acquired.
+            let _ = self
+                .verification
+                .delete_code(self.tenant.tenant_id, normalized_email, &owner)
+                .await;
+            self.release_send_reservations(normalized_email, peer_subject, &owner)
                 .await;
             return Err(SendVerificationCodeError::CodeStore(error));
         }
@@ -210,9 +232,9 @@ where
         {
             let _ = self
                 .verification
-                .delete_code(self.tenant.tenant_id, normalized_email)
+                .delete_code(self.tenant.tenant_id, normalized_email, &owner)
                 .await;
-            self.release_send_reservations(normalized_email, peer_subject)
+            self.release_send_reservations(normalized_email, peer_subject, &owner)
                 .await;
             return Err(SendVerificationCodeError::Delivery(error));
         }
@@ -286,14 +308,14 @@ where
         Ok(account)
     }
 
-    async fn release_send_reservations(&self, email: &str, peer_subject: &str) {
+    async fn release_send_reservations(&self, email: &str, peer_subject: &str, owner: &str) {
         let _ = self
             .verification
-            .release_peer_send(self.tenant.tenant_id, peer_subject)
+            .release_peer_send(self.tenant.tenant_id, peer_subject, owner)
             .await;
         let _ = self
             .verification
-            .release_email_send(self.tenant.tenant_id, email)
+            .release_email_send(self.tenant.tenant_id, email, owner)
             .await;
     }
 }

@@ -63,7 +63,6 @@ fn pkce_policy_client() -> ClientRow {
             backchannel_token_delivery_mode: "poll".to_owned(),
             backchannel_client_notification_endpoint: None,
             backchannel_authentication_request_signing_alg: None,
-            backchannel_user_code_parameter: false,
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             subject_type: "public".to_owned(),
@@ -78,8 +77,7 @@ fn pkce_policy_client() -> ClientRow {
 fn baseline_confidential_oidc_compatibility_does_not_weaken_hardened_clients() {
     let mut client = pkce_policy_client();
     let mut payload = code_payload(false);
-    payload.code_challenge = None;
-    payload.code_challenge_method = None;
+    payload.pkce = (None).into();
     payload.nonce = Some("per-transaction-nonce".to_owned());
 
     assert!(!authorization_code_requires_pkce(&client, &payload));

@@ -892,3 +892,90 @@ fn rejects_target_uri_userinfo_and_non_ascii_covered_values() {
         VerifyError::MissingComponent
     );
 }
+
+#[test]
+fn digest_evidence_preserves_request_checks_and_rejects_body_or_field_substitution() {
+    use nazo_http_signatures::{BodyDigest, parse_request_for_verification_with_digest};
+
+    let headers = headers();
+    let digest = BodyDigest::from_field(headers[2].1, BODY).unwrap();
+    let (_, fields) = fixture();
+    let verified = parse_request_for_verification_with_digest(
+        request("POST", "https://api.example/fapi/resource", &headers, BODY),
+        fields,
+        policy(),
+        Some(&digest),
+    )
+    .unwrap();
+    let (_, fields) = fixture();
+    let original = parse(fields).unwrap();
+    assert_eq!(verified.signature_base(), original.signature_base());
+    assert_eq!(verified.replay_fingerprint(), original.replay_fingerprint());
+
+    let changed_body = br#"{"amount":11}"#;
+    let (_, fields) = fixture();
+    assert_eq!(
+        parse_request_for_verification_with_digest(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &headers,
+                changed_body
+            ),
+            fields,
+            policy(),
+            Some(&digest),
+        )
+        .unwrap_err(),
+        VerifyError::DigestMismatch,
+    );
+    let mut changed_headers = headers;
+    changed_headers[2].1 = "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:";
+    let (_, fields) = fixture();
+    assert_eq!(
+        parse_request_for_verification_with_digest(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &changed_headers,
+                BODY
+            ),
+            fields,
+            policy(),
+            Some(&digest),
+        )
+        .unwrap_err(),
+        VerifyError::DigestMismatch,
+    );
+    let mut duplicate_headers = headers.to_vec();
+    duplicate_headers.push(headers[2]);
+    let (_, fields) = fixture();
+    assert_eq!(
+        parse_request_for_verification_with_digest(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &duplicate_headers,
+                BODY
+            ),
+            fields,
+            policy(),
+            Some(&digest),
+        )
+        .unwrap_err(),
+        VerifyError::DigestMismatch,
+    );
+    let (_, mut fields) = fixture();
+    remove_component(&mut fields, "content-digest");
+    assert_eq!(
+        parse_request_for_verification_with_digest(
+            request("POST", "https://api.example/fapi/resource", &headers, BODY),
+            fields,
+            policy(),
+            Some(&digest),
+        )
+        .unwrap_err(),
+        VerifyError::MissingComponent,
+    );
+    assert!(BodyDigest::from_field(headers[2].1, changed_body).is_none());
+}

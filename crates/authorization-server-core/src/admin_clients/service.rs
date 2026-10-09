@@ -63,12 +63,49 @@ where
         &self,
         request: CreateClientRequest,
     ) -> Result<CreatedClient, AdminClientError> {
-        let prepared = self.prepare_registration(request).await?;
-        let issued_secret = prepared.issued_secret.clone();
-        let client = insert_prepared_client(&self.repository, &prepared).await?;
+        let mut prepared = self.prepare_registration(request).await?.into_write();
+        let client = self
+            .repository
+            .insert(
+                &prepared.client,
+                prepared.client_secret_hash.as_deref(),
+                prepared.registration_access_token_blake3.as_deref(),
+            )
+            .await
+            .map_err(AdminClientError::Write)?;
+        validate_inserted_context(&prepared.client, &client)?;
+        let issued_secret = prepared.issued_secret.take_after_commit();
         Ok(CreatedClient {
             client,
             issued_secret,
+        })
+    }
+
+    /// Administrative HTTP creation uses the accepting owner that binds current
+    /// actor authority and canonical Required outcome before exposing the secret.
+    pub async fn create_with_required_audit(
+        &self,
+        request: CreateClientRequest,
+        actor_id: Uuid,
+        source_ip_hash: &str,
+    ) -> Result<CreatedClient, AdminClientError> {
+        let mut prepared = self.prepare_registration(request).await?.into_write();
+        let client = &prepared.client;
+        let inserted = self
+            .repository
+            .insert_with_required_audit(
+                client,
+                prepared.client_secret_hash.as_deref(),
+                prepared.registration_access_token_blake3.as_deref(),
+                actor_id,
+                source_ip_hash,
+            )
+            .await
+            .map_err(AdminClientError::Write)?;
+        validate_inserted_context(client, &inserted)?;
+        Ok(CreatedClient {
+            client: inserted,
+            issued_secret: prepared.issued_secret.take_after_commit(),
         })
     }
 
@@ -94,19 +131,42 @@ where
         client_id: &str,
         request: PatchClientRequest,
     ) -> Result<OAuthClient, AdminClientError> {
-        let current = self.detail(client_id).await?;
+        let (expected, updated) = self.prepare_update(client_id, request).await?;
+        self.repository
+            .update(&expected, &updated)
+            .await
+            .map_err(AdminClientError::Write)
+    }
+
+    pub async fn update_with_required_audit(
+        &self,
+        client_id: &str,
+        request: PatchClientRequest,
+        actor_id: Uuid,
+        source_ip_hash: &str,
+    ) -> Result<OAuthClient, AdminClientError> {
+        let (expected, updated) = self.prepare_update(client_id, request).await?;
+        self.repository
+            .update_with_required_audit(&expected, &updated, actor_id, source_ip_hash)
+            .await
+            .map_err(AdminClientError::Write)
+    }
+
+    async fn prepare_update(
+        &self,
+        client_id: &str,
+        request: PatchClientRequest,
+    ) -> Result<(OAuthClient, OAuthClient), AdminClientError> {
+        let expected = self.detail(client_id).await?;
         let updated = super::patch::prepare_client_patch(
-            current,
+            expected.clone(),
             request,
             &self.policy,
             &self.sector_identifiers,
             &self.crypto,
         )
         .await?;
-        self.repository
-            .update(&updated)
-            .await
-            .map_err(AdminClientError::Write)
+        Ok((expected, updated))
     }
 }
 
@@ -114,15 +174,7 @@ pub async fn insert_prepared_client<R: AdminClientRepositoryPort>(
     repository: &R,
     prepared: &PreparedClientRegistration,
 ) -> Result<OAuthClient, AdminClientError> {
-    let client = OAuthClient {
-        id: Uuid::now_v7(),
-        tenant_id: prepared.tenant.tenant_id.as_uuid(),
-        realm_id: prepared.tenant.realm_id.as_uuid(),
-        organization_id: prepared.tenant.organization_id.as_uuid(),
-        registration: prepared.registration.clone(),
-        require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
-        is_active: true,
-    };
+    let client = prepared_client(prepared);
     let inserted = repository
         .insert(
             &client,
@@ -131,6 +183,26 @@ pub async fn insert_prepared_client<R: AdminClientRepositoryPort>(
         )
         .await
         .map_err(AdminClientError::Write)?;
+    validate_inserted_context(&client, &inserted)?;
+    Ok(inserted)
+}
+
+fn prepared_client(prepared: &PreparedClientRegistration) -> OAuthClient {
+    OAuthClient {
+        id: Uuid::now_v7(),
+        tenant_id: prepared.tenant.tenant_id.as_uuid(),
+        realm_id: prepared.tenant.realm_id.as_uuid(),
+        organization_id: prepared.tenant.organization_id.as_uuid(),
+        registration: prepared.registration.clone(),
+        require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
+        is_active: true,
+    }
+}
+
+fn validate_inserted_context(
+    client: &OAuthClient,
+    inserted: &OAuthClient,
+) -> Result<(), AdminClientError> {
     if inserted.tenant_id != client.tenant_id
         || inserted.realm_id != client.realm_id
         || inserted.organization_id != client.organization_id
@@ -139,7 +211,7 @@ pub async fn insert_prepared_client<R: AdminClientRepositoryPort>(
             "客户端写入后租户边界不匹配".to_owned(),
         ));
     }
-    Ok(inserted)
+    Ok(())
 }
 
 #[cfg(test)]

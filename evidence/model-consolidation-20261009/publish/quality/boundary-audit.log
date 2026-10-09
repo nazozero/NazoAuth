@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized] target(s) in 0.13s
+     Running unittests src/lib.rs (target/debug/deps/nazo_persistence-0c90794c4492f67d)
+
+running 3 tests
+test audit_wire::tests::escaped_payload_counts_match_final_json_and_maximum_singleton_bound ... ok
+test audit_wire::tests::payload_representation_is_opaque_and_never_recanonicalized_by_wire_encoder ... ok
+test audit_wire::tests::shared_encoder_matches_frozen_legacy_anchor_v2_wire_bytes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.01s
+

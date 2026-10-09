@@ -8,7 +8,7 @@ repository.workspace = true
 [dependencies]
 base64.workspace = true
 chrono.workspace = true
-http = "1.4.2"
+http = "1.5.0"
 nazo-crypto = { workspace = true, features = ["jose"] }
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }

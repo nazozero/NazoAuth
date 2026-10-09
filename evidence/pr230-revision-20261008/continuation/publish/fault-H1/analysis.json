@@ -1,0 +1,566 @@
+{
+  "source_sha": "ec4d98e13ff652b2039fb3a3da393b27bbcbda82",
+  "fixture": "Required, freshness/max_lag 10s, 200 Telemetry reads/s + 1 Required disclosure/s",
+  "phases": {
+    "healthy": [
+      0,
+      40
+    ],
+    "receiver_http500": [
+      40,
+      90
+    ],
+    "recovery": [
+      90,
+      135
+    ],
+    "permanent_rejection": [
+      135,
+      185
+    ],
+    "recovery_after_operator_unblock": [
+      185,
+      240
+    ],
+    "stop_and_drain": [
+      240,
+      400
+    ]
+  },
+  "provenance": {
+    "point": "r230-fault-h1-20261008",
+    "source_sha": "ec4d98e13ff652b2039fb3a3da393b27bbcbda82",
+    "app_image_ref": "sha256:992f6f09cc7450f5c4e3bc0507dcb954c0495cf2e75c0bb93f67b917cf1a4b1a",
+    "app_image_id": "sha256:992f6f09cc7450f5c4e3bc0507dcb954c0495cf2e75c0bb93f67b917cf1a4b1a",
+    "binary_path": "/usr/local/bin/nazoauth",
+    "binary_sha256": "0b61ace5f8f6c61c3e88e15aab776081bba4840b88b3ada517c72a0ed952bfc7",
+    "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "pg_max_wal_size": "8GB",
+    "pg_checkpoint_timeout": "5min",
+    "pg_checkpoint_completion_target": "0.9",
+    "pg_fsync": "on",
+    "pg_synchronous_commit": "on",
+    "pg_full_page_writes": "on",
+    "pg_shared_buffers": "128MB",
+    "pg_max_connections": "100",
+    "pg_track_io_timing": "on",
+    "applied_migrations_sha256": "9e48968456c46a69c0460d8e4ea5435a2494381ec452ee661dd36f45ae329c68",
+    "app_image_revision": "ec4d98e13ff652b2039fb3a3da393b27bbcbda82",
+    "app_source_sha_file": "ec4d98e13ff652b2039fb3a3da393b27bbcbda82",
+    "source_sha_registered": true,
+    "source_sha_eq_image_revision": true,
+    "source_sha_eq_file": true,
+    "runner_image_ref": "sha256:182d72b35f420f4d33d03388def1a789f8ad70c418d39ade0a9a4c05f954c3ab",
+    "runner_image_id": "sha256:182d72b35f420f4d33d03388def1a789f8ad70c418d39ade0a9a4c05f954c3ab",
+    "runner_image_revision": "unknown",
+    "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+    "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+    "k6_oauth_eq_workspace": true
+  },
+  "app_audit_configuration": {
+    "RUST_LOG": "warn,audit.persistence=debug",
+    "AUDIT_ANCHOR_FRESHNESS_SECONDS": "10",
+    "AUDIT_ANCHOR_MAX_LAG_SECONDS": "10",
+    "AUDIT_ANCHOR_MODE": "required",
+    "DATABASE_MAX_CONNECTIONS": "32"
+  },
+  "sampler_health": {
+    "ok": true,
+    "checks": {
+      "soak": {
+        "container": "sis-sampler-r230-fault-h1-20261008",
+        "running": true,
+        "meta_ok": true,
+        "detail": "ok"
+      },
+      "proc": {
+        "container": "sis-proc-r230-fault-h1-20261008",
+        "running": true,
+        "meta_ok": true,
+        "detail": "ok"
+      }
+    },
+    "real_sample_ok": true
+  },
+  "load_exit": 0,
+  "error": null,
+  "cleanup_error": null,
+  "drain": {
+    "pending": 0,
+    "last_sequence": 16848,
+    "anchor_sequence": 16848,
+    "drained": true,
+    "total": 0,
+    "exported_retained": 0
+  },
+  "audit_final": {
+    "receiver_state": {
+      "accepted": 328,
+      "checkpoint": {
+        "accepted_batches": 327,
+        "accepted_events": 16848,
+        "batch_digest": "GPi8KtDTyzHxSvBpIEHukxUPphz92A8fnWl6rutwPfk",
+        "checkpoint_kind": "batch",
+        "deployment_id": "01a11ada-4b99-70fd-ae5c-47c1d3662b8b",
+        "last_hash": "vL82huxM6fVIIB63F4urS42CtGc4h-QZcaY9KAtbsZo",
+        "last_sequence": 16848,
+        "updated_at": "2026-10-08T09:38:06.889060650Z"
+      },
+      "duplicates": 1,
+      "fault": "none",
+      "rejected": 1,
+      "requests": 343,
+      "collected": true
+    },
+    "receiver_checkpoint": {
+      "deployment_id": "01a11ada-4b99-70fd-ae5c-47c1d3662b8b",
+      "checkpoint_kind": "batch",
+      "last_sequence": 16848,
+      "last_hash": "vL82huxM6fVIIB63F4urS42CtGc4h-QZcaY9KAtbsZo",
+      "batch_digest": "GPi8KtDTyzHxSvBpIEHukxUPphz92A8fnWl6rutwPfk",
+      "accepted_batches": 327,
+      "accepted_events": 16848,
+      "updated_at": "2026-10-08T09:38:06.889060650Z",
+      "collected": true
+    },
+    "db": {
+      "collected": true,
+      "pending": 0,
+      "total": 0,
+      "exported_retained": 0,
+      "last_sequence": 16848,
+      "last_hash": "bcbf3686ec4ce9f548201eb7178bab4b8d82b4673887e41971a63d280b5bb19a",
+      "anchor_deployment_id": "01a11ada-4b99-70fd-ae5c-47c1d3662b8b",
+      "anchor_sequence": 16848,
+      "anchor_hash": "bcbf3686ec4ce9f548201eb7178bab4b8d82b4673887e41971a63d280b5bb19a"
+    }
+  },
+  "phase_results": [
+    {
+      "phase": "healthy",
+      "start": 0,
+      "end": 40,
+      "http": {
+        "telemetry:200": 7800,
+        "required:200": 39
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        1,
+        32,
+        359
+      ],
+      "anchor_first_last": [
+        0,
+        7002
+      ],
+      "oldest_pending_max_s": 1.779887
+    },
+    {
+      "phase": "http500_grace",
+      "start": 40,
+      "end": 60,
+      "http": {
+        "telemetry:200": 4000,
+        "required:200": 12,
+        "required:503": 8
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        92,
+        2210,
+        2210
+      ],
+      "anchor_first_last": [
+        7951,
+        7951
+      ],
+      "oldest_pending_max_s": 15.449737
+    },
+    {
+      "phase": "http500_unhealthy",
+      "start": 60,
+      "end": 90,
+      "http": {
+        "telemetry:200": 6000,
+        "required:503": 30
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        2210,
+        2210,
+        2210
+      ],
+      "anchor_first_last": [
+        7951,
+        7951
+      ],
+      "oldest_pending_max_s": 45.45058
+    },
+    {
+      "phase": "recovery",
+      "start": 90,
+      "end": 135,
+      "http": {
+        "telemetry:200": 9000,
+        "required:503": 38,
+        "required:200": 7
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        2210,
+        65,
+        2210
+      ],
+      "anchor_first_last": [
+        7951,
+        10809
+      ],
+      "oldest_pending_max_s": 76.236516
+    },
+    {
+      "phase": "permanent_rejection",
+      "start": 135,
+      "end": 185,
+      "http": {
+        "telemetry:200": 10000,
+        "required:503": 50
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        64,
+        64,
+        64
+      ],
+      "anchor_first_last": [
+        11003,
+        11003
+      ],
+      "oldest_pending_max_s": 125.280493
+    },
+    {
+      "phase": "recovery_after_unblock",
+      "start": 185,
+      "end": 240,
+      "http": {
+        "telemetry:200": 11000,
+        "required:503": 34,
+        "required:200": 21
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        64,
+        0,
+        66
+      ],
+      "anchor_first_last": [
+        11003,
+        12495
+      ],
+      "oldest_pending_max_s": 168.880601
+    },
+    {
+      "phase": "stop_drain",
+      "start": 240,
+      "end": 401,
+      "http": {
+        "required:503": 2,
+        "telemetry:200": 201
+      },
+      "scheduled_drop": 0,
+      "pending_first_last_max": [
+        64,
+        0,
+        64
+      ],
+      "anchor_first_last": [
+        12624,
+        16848
+      ],
+      "oldest_pending_max_s": 215.233246
+    }
+  ],
+  "events": [
+    {
+      "kind": "fault_transition",
+      "seconds": 40.00941914389841,
+      "mode": "http_500",
+      "status": 200
+    },
+    {
+      "kind": "fault_transition",
+      "seconds": 90.00373875093646,
+      "mode": "none",
+      "status": 200
+    },
+    {
+      "kind": "fault_transition",
+      "seconds": 135.00400354200974,
+      "mode": "reject_permanent",
+      "status": 200
+    },
+    {
+      "kind": "fault_transition",
+      "seconds": 185.0039942888543,
+      "mode": "none",
+      "status": 200
+    },
+    {
+      "kind": "operator_unblock",
+      "seconds": 185.00856677093543,
+      "result": true
+    },
+    {
+      "kind": "load_stopped",
+      "seconds": 240.00170076498762
+    }
+  ],
+  "queue_accounting": {
+    "telemetry_http_200": 48001,
+    "required_http_200": 79,
+    "worker_persisted_events": 16847,
+    "telemetry_queue_full_rejections": 31233,
+    "inferred_unpersisted_accepted_events": 0,
+    "inference": "HTTP Telemetry reads each enqueue one event; Required 200 corresponds to one worker event; registration commits in business SQL. Counts are derived, not an internal queue gauge.",
+    "sampled_inferred_max": 4160,
+    "sampled_inferred_last": 0,
+    "inference_timing_limit": "HTTP completion and log timestamps can straddle sampling boundaries; this is accounting, not a direct internal gauge."
+  },
+  "app_rss_kb": {
+    "first": 42760,
+    "last": 51196,
+    "max": 51280
+  },
+  "storage": {
+    "first": {
+      "ts": 1791451911.972715,
+      "pending": 1,
+      "oldest_pending_s": 0.009677,
+      "pending_by_type": {
+        "dynamic_client_registered": 1
+      },
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "family_eligible": 0,
+      "family_live": 0,
+      "contract_orphan": 0,
+      "spent_eligible": 0,
+      "spent_retained": 0,
+      "anchor": 0,
+      "observed_at": 1791451910.220076,
+      "blocked": null,
+      "db_bytes": 12662463,
+      "tables": [
+        {
+          "relname": "security_audit_events",
+          "table_bytes": 16384,
+          "index_bytes": 57344,
+          "n_tup_ins": 1,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_token_issuances",
+          "table_bytes": 8192,
+          "index_bytes": 40960,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "security_audit_chain_entries",
+          "table_bytes": 8192,
+          "index_bytes": 24576,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_contracts",
+          "table_bytes": 8192,
+          "index_bytes": 16384,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_families",
+          "table_bytes": 8192,
+          "index_bytes": 57344,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_spent_tokens",
+          "table_bytes": 8192,
+          "index_bytes": 24576,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        }
+      ],
+      "locks": [
+        {
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "n": 4,
+          "xact_age_s": null
+        }
+      ]
+    },
+    "last": {
+      "ts": 1791452311.961298,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "pending_by_type": {},
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "family_eligible": 0,
+      "family_live": 0,
+      "contract_orphan": 0,
+      "spent_eligible": 0,
+      "spent_retained": 0,
+      "anchor": 16848,
+      "observed_at": 1791452311.211921,
+      "blocked": null,
+      "db_bytes": 14735039,
+      "tables": [
+        {
+          "relname": "security_audit_events",
+          "table_bytes": 24576,
+          "index_bytes": 655360,
+          "n_tup_ins": 16848,
+          "n_tup_del": 16848,
+          "n_dead_tup": 0,
+          "autovacuum_count": 6
+        },
+        {
+          "relname": "oauth_token_issuances",
+          "table_bytes": 8192,
+          "index_bytes": 40960,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "security_audit_chain_entries",
+          "table_bytes": 24576,
+          "index_bytes": 1351680,
+          "n_tup_ins": 16848,
+          "n_tup_del": 16848,
+          "n_dead_tup": 0,
+          "autovacuum_count": 6
+        },
+        {
+          "relname": "oauth_refresh_contracts",
+          "table_bytes": 8192,
+          "index_bytes": 16384,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_families",
+          "table_bytes": 8192,
+          "index_bytes": 57344,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        },
+        {
+          "relname": "oauth_refresh_spent_tokens",
+          "table_bytes": 8192,
+          "index_bytes": 24576,
+          "n_tup_ins": 0,
+          "n_tup_del": 0,
+          "n_dead_tup": 0,
+          "autovacuum_count": 0
+        }
+      ],
+      "locks": [
+        {
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "n": 10,
+          "xact_age_s": null
+        }
+      ]
+    },
+    "max_pending": 2210,
+    "max_oldest_pending_s": 215.233246
+  },
+  "checks": {
+    "load_completed": true,
+    "required_fail_closed_http500": true,
+    "queue_saturation_observed": true,
+    "worker_accounting_converged": true,
+    "pending_zero_last": true,
+    "http500_no_post_gate_worker_writes": true,
+    "http500_required_fail_closed": true,
+    "permanent_no_post_gate_worker_writes": true,
+    "permanent_required_fail_closed": true,
+    "receiver_db_checkpoint_match": true,
+    "cleanup_completed": true,
+    "fault_transitions_confirmed": true,
+    "operator_unblock_confirmed": true,
+    "permanent_rejection_observed": true,
+    "final_block_cleared": true,
+    "idle_heartbeat_observed": true
+  },
+  "post_gate_observation": {
+    "http500": {
+      "worker_persisted_events": 0,
+      "required_200": 0,
+      "required_503": 30,
+      "blocked_samples": 0
+    },
+    "permanent": {
+      "worker_persisted_events": 0,
+      "required_200": 0,
+      "required_503": 30,
+      "blocked_samples": 6
+    }
+  },
+  "idle_distinct_observed_at": 5,
+  "idle_heartbeat_basis": "Producer stopped; after last durable worker append; pending zero and final anchor unchanged. Distinct observed_at then cannot be attributed to a later ACK.",
+  "actual_exporter_sql": [
+    {
+      "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+      "calls": 327,
+      "total_exec_ms": 676.4196830000004,
+      "mean_exec_ms": 2.0685617217125394
+    },
+    {
+      "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+      "calls": 327,
+      "total_exec_ms": 792.0067549999997,
+      "mean_exec_ms": 2.422039006116207
+    },
+    {
+      "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+      "calls": 175,
+      "total_exec_ms": 36.71962800000002,
+      "mean_exec_ms": 0.20982644571428583
+    },
+    {
+      "query": "SELECT public.nazo_fail_security_audit_batch($1, $2, $3, $4) AS changed",
+      "calls": 8,
+      "total_exec_ms": 1.627116,
+      "mean_exec_ms": 0.2033895
+    }
+  ],
+  "sample_counts": {
+    "http_seconds": 401,
+    "storage": 81
+  }
+}

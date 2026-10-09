@@ -195,11 +195,14 @@ def per_bucket_pool(residency_rows: list[dict], window_start_s: float,
         i = _bucket_index(r["ts"] * 1000, window_start_s * 1000)
         if i < 1 or i > n_buckets:
             continue
-        b = acc.setdefault(i, {"waiting": [], "checked": []})
         p = r["pool"]
-        b["waiting"].append(float(p.get("waiting", 0) or 0))
-        con = p.get("con", p.get("size", 0)) or 0
-        idle = p.get("idle", 0) or 0
+        con = p.get("con", p.get("size"))
+        idle = p.get("idle")
+        waiting = p.get("waiting")
+        if con is None or idle is None or waiting is None:
+            continue
+        b = acc.setdefault(i, {"waiting": [], "checked": []})
+        b["waiting"].append(float(waiting))
         b["checked"].append(float(con) - float(idle))
     return {
         i: {"waiting_mean": round(sum(v["waiting"]) / len(v["waiting"]), 1),
@@ -298,7 +301,16 @@ def sustained_cliff(buckets: dict[int, dict],
                for i in win):
             triggers.append({"rule": "C_rate_under_2850",
                              "buckets": win})
-    return {"sustained_cliff": bool(triggers), "triggers": triggers}
+    pool_observed = bool(ids) and all(i in pool for i in ids)
+    return {
+        "sustained_cliff": bool(triggers),
+        "triggers": triggers,
+        "B_pool_exhaustion": "OBSERVED" if pool_observed else "UNVERIFIED",
+        "overall_rule_scope": (
+            "A_latency, B_pool_exhaustion, C_rate_under_2850"
+            if pool_observed else "observable A_latency and C_rate_under_2850 only"
+        ),
+    }
 
 
 def anomaly_buckets(buckets: dict[int, dict],

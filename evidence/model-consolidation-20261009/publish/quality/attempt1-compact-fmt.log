@@ -1,0 +1,24 @@
+error: an inner attribute is not permitted in this context
+ --> /src/crates/authorization-server-core/src/lib.rs:3:1
+  |
+3 | #![forbid(unsafe_code)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: inner attributes, like `#![no_std]`, annotate the item enclosing them, and are usually found at the beginning of source files
+  = note: outer attributes, like `#[test]`, annotate the item following them
+
+error[E0753]: expected outer doc comment
+ --> /src/crates/authorization-server-core/src/lib.rs:5:1
+  |
+5 | //! Runtime- and infrastructure-free authorization-server policy.
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+6 |
+7 | mod admin_clients;
+  | ------------------ the inner doc comment doesn't annotate this module
+  |
+help: to annotate the module, change the doc comment from inner to outer style
+  |
+5 - //! Runtime- and infrastructure-free authorization-server policy.
+5 + /// Runtime- and infrastructure-free authorization-server policy.
+  |
+

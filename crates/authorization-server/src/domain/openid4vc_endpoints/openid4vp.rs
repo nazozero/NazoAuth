@@ -435,6 +435,7 @@ impl PresentationOperations for ServerPresentationOperations {
             };
             match self.store.find_by_create_request(idempotency).await {
                 Ok(Some(existing)) => {
+                    validate_retained_request_profile(&existing.request)?;
                     return self.create_response(
                         &existing,
                         &input.create_request_jti,
@@ -520,7 +521,7 @@ impl PresentationOperations for ServerPresentationOperations {
             let request = AuthorizationRequest {
                 client_id: client_id.clone(),
                 response_type: "vp_token".to_owned(),
-                response_mode: mode.as_str().to_owned(),
+                response_mode: mode,
                 response_uri: response_uri.clone(),
                 nonce: random_urlsafe_token(),
                 state: random_urlsafe_token(),
@@ -554,7 +555,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 id,
                 client_id_prefix: prefix,
                 request_method: method,
-                response_mode: mode,
+
                 wallet_authorization_endpoint,
                 request: request.clone(),
                 request_object,
@@ -576,6 +577,7 @@ impl PresentationOperations for ServerPresentationOperations {
                     self.create_response(&transaction, &input.create_request_jti, &request_sha256)
                 }
                 Ok(PresentationCreateOutcome::Existing(existing)) => {
+                    validate_retained_request_profile(&existing.request)?;
                     self.create_response(&existing, &input.create_request_jti, &request_sha256)
                 }
                 Err(PresentationStoreError::IdempotencyConflict) => Err(vp_error(
@@ -600,6 +602,13 @@ impl PresentationOperations for ServerPresentationOperations {
         wallet_nonce: Option<&'a str>,
     ) -> PresentationFuture<'a, Result<PresentationResponseBody, PresentationHttpError>> {
         Box::pin(async move {
+            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+                return Err(vp_error(
+                    503,
+                    "temporarily_unavailable",
+                    "Presentation verifier is unavailable.",
+                ));
+            }
             let mut transaction = self
                 .store
                 .request(transaction_id, Utc::now())
@@ -618,6 +627,7 @@ impl PresentationOperations for ServerPresentationOperations {
                         "Presentation request URI is invalid.",
                     )
                 })?;
+            validate_retained_request_profile(&transaction.request)?;
             if matches!(
                 transaction.request_method,
                 RequestMethod::RequestUriSignedPost
@@ -649,6 +659,7 @@ impl PresentationOperations for ServerPresentationOperations {
                             "Presentation request URI is invalid.",
                         )
                     })?;
+                validate_retained_request_profile(&transaction.request)?;
                 let lease = self.crypto.prepare_signing().map_err(|_| {
                     vp_error(503, "server_error", "Presentation request signing failed.")
                 })?;
@@ -688,6 +699,13 @@ impl PresentationOperations for ServerPresentationOperations {
         input: PresentationResponseInput,
     ) -> PresentationFuture<'a, Result<Option<String>, PresentationHttpError>> {
         Box::pin(async move {
+            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+                return Err(vp_error(
+                    503,
+                    "temporarily_unavailable",
+                    "Presentation verifier is unavailable.",
+                ));
+            }
             let transaction = self
                 .store
                 .request(transaction_id, Utc::now())
@@ -706,14 +724,15 @@ impl PresentationOperations for ServerPresentationOperations {
                         "Presentation transaction is invalid.",
                     )
                 })?;
+            validate_retained_request_profile(&transaction.request)?;
             let response: AuthorizationResponse = match input {
                 PresentationResponseInput::DirectPost(response)
-                    if transaction.response_mode == ResponseMode::DirectPost =>
+                    if transaction.request.response_mode == ResponseMode::DirectPost =>
                 {
                     response
                 }
                 PresentationResponseInput::DirectPostJwt(encoded)
-                    if transaction.response_mode == ResponseMode::DirectPostJwt =>
+                    if transaction.request.response_mode == ResponseMode::DirectPostJwt =>
                 {
                     let key: [u8; 32] = transaction
                         .response_encryption_private_key
@@ -766,7 +785,7 @@ impl PresentationOperations for ServerPresentationOperations {
                         %error,
                         "OpenID4VP presentation verification rejected a response"
                     );
-                    vp_error(400, "invalid_request", "Presentation verification failed.")
+                    map_presentation_error(error)
                 })?;
             Ok(Some(format!(
                 "{}/openid4vp/complete/{transaction_id}",
@@ -781,6 +800,13 @@ impl PresentationOperations for ServerPresentationOperations {
     ) -> PresentationFuture<'a, Result<nazo_openid4vp::PresentationResult, PresentationHttpError>>
     {
         Box::pin(async move {
+            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+                return Err(vp_error(
+                    503,
+                    "temporarily_unavailable",
+                    "Presentation verifier is unavailable.",
+                ));
+            }
             self.store
                 .result(transaction_id, Utc::now())
                 .await
@@ -795,4 +821,16 @@ impl PresentationOperations for ServerPresentationOperations {
                 .ok_or_else(|| vp_error(404, "not_found", "Presentation result is not available."))
         })
     }
+}
+
+fn validate_retained_request_profile(
+    request: &AuthorizationRequest,
+) -> Result<(), PresentationHttpError> {
+    request.validate().map_err(|_| {
+        vp_error(
+            400,
+            "invalid_request",
+            "Stored presentation request profile is unsupported.",
+        )
+    })
 }

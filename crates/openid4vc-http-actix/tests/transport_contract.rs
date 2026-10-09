@@ -438,6 +438,7 @@ struct NotificationIssuer {
 
 struct SuccessfulIssuer {
     response: CredentialResponseBody,
+    status: nazo_openid4vci::application::CredentialResponseStatus,
     dpop_nonce: Option<String>,
 }
 
@@ -445,6 +446,7 @@ impl SuccessfulIssuer {
     fn response(&self) -> CredentialEndpointResponse<CredentialResponseBody> {
         CredentialEndpointResponse {
             body: self.response.clone(),
+            status: self.status,
             dpop_nonce: self.dpop_nonce.clone(),
         }
     }
@@ -500,6 +502,7 @@ impl CredentialIssuerOperations for SuccessfulIssuer {
         Box::pin(async move {
             Ok(CredentialEndpointResponse {
                 body: (),
+                status: nazo_openid4vci::application::CredentialResponseStatus::Issued,
                 dpop_nonce,
             })
         })
@@ -576,6 +579,7 @@ impl CredentialIssuerOperations for NotificationIssuer {
         Box::pin(async {
             Ok(CredentialEndpointResponse {
                 body: (),
+                status: nazo_openid4vci::application::CredentialResponseStatus::Issued,
                 dpop_nonce: None,
             })
         })
@@ -814,16 +818,34 @@ async fn credential_endpoint_preserves_dpop_nonce_challenge_error() {
 
 #[actix_web::test]
 async fn credential_success_returns_next_dpop_nonce_for_json_and_jwt_responses() {
-    for (response_body, content_type) in [
-        (immediate_response(), "application/json"),
+    use nazo_openid4vci::application::CredentialResponseStatus::{Deferred, Issued};
+    for (response_body, content_type, status) in [
+        (immediate_response(), "application/json", Issued),
         (
             CredentialResponseBody::Jwt("encrypted.credential.response".to_owned()),
             "application/jwt",
+            Issued,
+        ),
+        (
+            CredentialResponseBody::Json(nazo_openid4vci::CredentialResponse {
+                credentials: None,
+                transaction_id: Some("pending".to_owned()),
+                notification_id: None,
+                interval: Some(5),
+            }),
+            "application/json",
+            Deferred,
+        ),
+        (
+            CredentialResponseBody::Jwt("opaque.encrypted.deferred.response".to_owned()),
+            "application/jwt",
+            Deferred,
         ),
     ] {
         let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
             Arc::new(SuccessfulIssuer {
                 response: response_body,
+                status,
                 dpop_nonce: Some("next-resource-nonce".to_owned()),
             }),
             b"management-token".to_vec(),
@@ -846,7 +868,7 @@ async fn credential_success_returns_next_dpop_nonce_for_json_and_jwt_responses()
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status().as_u16(), status.http_status());
         assert_eq!(
             response.headers().get("content-type").unwrap(),
             content_type
@@ -864,6 +886,7 @@ async fn deferred_and_notification_success_return_next_dpop_nonce() {
     let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
         Arc::new(SuccessfulIssuer {
             response: immediate_response(),
+            status: nazo_openid4vci::application::CredentialResponseStatus::Issued,
             dpop_nonce: Some("next-resource-nonce".to_owned()),
         }),
         b"management-token".to_vec(),
@@ -924,6 +947,7 @@ async fn bearer_success_does_not_emit_a_dpop_nonce() {
     let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
         Arc::new(SuccessfulIssuer {
             response: immediate_response(),
+            status: nazo_openid4vci::application::CredentialResponseStatus::Issued,
             dpop_nonce: None,
         }),
         b"management-token".to_vec(),

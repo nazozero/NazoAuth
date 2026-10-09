@@ -1,0 +1,25 @@
+{
+  "scope": "Only application container /proc/1/task/*/schedstat; no host enumeration; same 5s observation for A and B",
+  "points": [
+    "p03-A",
+    "p03-B",
+    "p04-A",
+    "p04-B",
+    "p06-A",
+    "p06-B",
+    "p10-A",
+    "p10-B",
+    "sustained-A",
+    "sustained-B"
+  ],
+  "seconds": 3268.146875997074,
+  "complete": true,
+  "command": [
+    "docker",
+    "exec",
+    "<exact owned app container>",
+    "sh",
+    "-c",
+    "for f in /proc/1/task/[0-9]*/schedstat; do d=${f%/schedstat}; printf \"%s \" \"${d##*/}\"; cat \"$f\"; done"
+  ]
+}

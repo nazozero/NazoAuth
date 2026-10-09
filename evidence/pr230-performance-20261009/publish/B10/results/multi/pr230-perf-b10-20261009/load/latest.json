@@ -1,0 +1,220 @@
+[
+  {
+    "profile": "capacity",
+    "scenario": "cap_revoke",
+    "elapsed_seconds": 80.441,
+    "status": "target_miss",
+    "k6_exit_code": 0,
+    "k6": {
+      "http_reqs": 154605,
+      "rps": 2012.195,
+      "error_rate": 0.0,
+      "iterations_completed": 30921,
+      "dropped_iterations": 41080,
+      "dropped_per_s": 534.659,
+      "drop_fraction": 0.570548,
+      "scheduled_estimate": 72001,
+      "latency_ms": {
+        "p50": 408.298,
+        "p95": 1006.621,
+        "p99": 1208.844
+      },
+      "full_run": {
+        "iterations_completed": 30921,
+        "dropped_iterations": 41080,
+        "drop_fraction": 0.570548,
+        "http_latency_ms": {
+          "p50": 408.298,
+          "p95": 1006.621,
+          "p99": 1208.844
+        }
+      },
+      "measure": {
+        "ops": 24655,
+        "ops_per_s": 410.917,
+        "ops_per_s_basis": "scenario_window",
+        "successful_ops_per_s": 410.917,
+        "errors": 0,
+        "outcomes": {
+          "success": 24655,
+          "expected_rejection": 0,
+          "local_no_request": 0,
+          "unexpected": 0,
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "iterations": {
+          "measure_begins": 24655,
+          "legacy_rule_begins": 24860,
+          "late_vu_measured_only": 0,
+          "late_vu_fraction": 0.0,
+          "begins_total": 30921,
+          "ends_total": 30921
+        },
+        "subject_lifecycle": {
+          "initial_mint": 992,
+          "refresh_update": 0,
+          "expired_reauth": 29929
+        },
+        "legacy_rule_ops": 24860,
+        "scheduled": 57600,
+        "started": 24655,
+        "completed": 24655,
+        "unfinished": 0,
+        "dropped": 32945,
+        "drop_fraction": 0.571962,
+        "schedule_delta": -32945,
+        "drop_lower_bound": 32945,
+        "drop_upper_bound": 32945,
+        "drop_fraction_upper": 0.571962,
+        "boundary_overshoot": 0,
+        "pre_measure_drops_estimate": 8134,
+        "cohort_problems": [],
+        "cohort_valid": true,
+        "latency_ms": {
+          "p50": 528.0,
+          "p95": 740.0,
+          "p99": 818.0
+        },
+        "iteration_ms": {
+          "p50": 2415.0,
+          "p95": 2851.0,
+          "p99": 2993.0
+        },
+        "measurement_contract": {
+          "scenario_clock_ok": 1,
+          "scenario_start_ms": 1791480076060,
+          "window_seconds": 60,
+          "cap_measure_start_ms": 0,
+          "bucket_ms": 60000,
+          "divergent_vus": false,
+          "contract": "cap-scenario-window-v1",
+          "window_start_ms": 1791480091060,
+          "window_end_ms": 1791480151060,
+          "duration_ms": 75000,
+          "measure_offset_ms": 15000,
+          "warmup_ms": 15000,
+          "bucket_count": 2
+        },
+        "contract_problems": [],
+        "window_valid": true
+      }
+    },
+    "measurement_evidence": {
+      "window_valid": true,
+      "window_problems": [],
+      "parse_errors": 0,
+      "reader_error": null,
+      "lag_over_5s": 0,
+      "diag_overflow": false
+    },
+    "steps": [
+      {
+        "step": "cap_bootstrap",
+        "http_reqs": 30921,
+        "rps": 402.439,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 342.092,
+          "p95": 507.268,
+          "p99": 595.414
+        }
+      },
+      {
+        "step": "revoke",
+        "http_reqs": 30921,
+        "rps": 402.439,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 541.646,
+          "p95": 772.669,
+          "p99": 847.441
+        }
+      }
+    ],
+    "error_breakdown": [],
+    "postgres": {
+      "statement_calls": 1953737,
+      "total_statement_ms": 211375.677,
+      "mean_statement_ms": 0.108,
+      "rows": 2127896,
+      "database_bytes": 154203839,
+      "statements_per_http_request": 12.637
+    },
+    "collection_contract": "blackbox-db-v1",
+    "db_pool": null,
+    "application_pool_observation": {
+      "field": "application_pool",
+      "delta": null,
+      "status": "UNAVAILABLE",
+      "reason": "application performance collection removed"
+    },
+    "valkey": {
+      "keyspace_hits": 495801,
+      "keyspace_misses": 164,
+      "commands_processed": 1054863,
+      "expired_keys": 2,
+      "db0_keys": 30923
+    },
+    "containers": {
+      "by_container": {
+        "pr230-perf-b10-20261009-nazoauth-1": {
+          "service": "nazoauth",
+          "samples": 25,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "pr230-perf-b10-20261009-postgres-1": {
+          "service": "postgres",
+          "samples": 25,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "pr230-perf-b10-20261009-valkey-1": {
+          "service": "valkey",
+          "samples": 25,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      },
+      "by_service": {
+        "nazoauth": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "valkey": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "postgres": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      }
+    },
+    "load_model": {
+      "executor": "constant-arrival-rate",
+      "target_rate": 960,
+      "time_unit": "1s",
+      "duration": "75s",
+      "app_replicas": 1,
+      "observed_app_instances": 1
+    }
+  }
+]

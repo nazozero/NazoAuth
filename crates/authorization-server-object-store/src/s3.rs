@@ -26,7 +26,7 @@ const TENANT_PREFIX: &str = "avatars";
 
 /// All S3-compatible object-store connection details.  This concrete adapter
 /// deliberately does not leak S3 SDK values through the server or domain.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct S3AvatarObjectStoreConfig {
     pub endpoint: String,
@@ -36,6 +36,12 @@ pub struct S3AvatarObjectStoreConfig {
     pub secret_key: String,
     #[serde(default = "default_path_style")]
     pub path_style: bool,
+}
+
+impl std::fmt::Debug for S3AvatarObjectStoreConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("S3AvatarObjectStoreConfig([REDACTED])")
+    }
 }
 
 fn default_path_style() -> bool {
@@ -319,7 +325,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
             let object_key = self.staging_key(staging_object_id)?;
             let response = self
                 .signed_request(
-                    http::Method::HEAD,
+                    http::Method::GET,
                     &object_key,
                     http::HeaderMap::new(),
                     Vec::new(),
@@ -341,21 +347,8 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
                 .and_then(|v| v.to_str().ok())
                 .ok_or(AvatarStorageError::InvalidState)?
                 .to_owned();
-            // Bind the bytes handed to the image decoder to the same object
-            // version later supplied to CopyObject. Without this conditional
-            // GET, a client could replace staging between HEAD and GET, then
-            // restore the old ETag before copy and publish unvalidated bytes.
-            let mut headers = http::HeaderMap::new();
-            headers.insert(
-                "if-match",
-                version
-                    .parse()
-                    .map_err(|_| AvatarStorageError::InvalidState)?,
-            );
-            let response = self
-                .signed_request(http::Method::GET, &object_key, headers, Vec::new())
-                .await?;
-            ensure_status(response.status().as_u16())?;
+            // Metadata and bounded bytes come from this one GET snapshot.
+            // Its ETag remains the CopyObject source-if-match authority.
             let mut bytes = Vec::with_capacity(content_length as usize);
             let mut stream = response.bytes_stream();
             while let Some(chunk) = stream.next().await {
@@ -364,6 +357,9 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
                     return Err(AvatarStorageError::InvalidState);
                 }
                 bytes.extend_from_slice(&chunk);
+            }
+            if bytes.len() as u64 != content_length {
+                return Err(AvatarStorageError::InvalidState);
             }
             Ok(AvatarStagedObject { bytes, version })
         })
@@ -430,7 +426,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
             let object_key = self.final_key(final_object_id)?;
             let response = self
                 .signed_request(
-                    http::Method::HEAD,
+                    http::Method::GET,
                     &object_key,
                     http::HeaderMap::new(),
                     Vec::new(),
@@ -443,15 +439,6 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
                 .and_then(|v| v.to_str().ok())
                 .and_then(AvatarContentType::parse)
                 .ok_or(AvatarStorageError::InvalidState)?;
-            let response = self
-                .signed_request(
-                    http::Method::GET,
-                    &object_key,
-                    http::HeaderMap::new(),
-                    Vec::new(),
-                )
-                .await?;
-            ensure_status(response.status().as_u16())?;
             Ok(AvatarObject {
                 bytes: response.bytes().await.map_err(unavailable)?.to_vec(),
                 content_type,

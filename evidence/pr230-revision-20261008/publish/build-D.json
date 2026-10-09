@@ -1,0 +1,18 @@
+{
+  "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+  "utc": "2026-10-08T03:54:31.750686+00:00",
+  "command": [
+    "cargo",
+    "build",
+    "--release",
+    "--locked",
+    "--package",
+    "nazoauth",
+    "--bin",
+    "nazoauth"
+  ],
+  "exit": 0,
+  "seconds": 162.50670513277873,
+  "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-3.log",
+  "binary_sha256": "e6d526f5076a8a52a70b8faf0f04d341595cf6240a9d05884e291c120140ee97"
+}

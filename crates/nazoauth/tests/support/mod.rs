@@ -1,3 +1,6 @@
+pub(crate) mod admin_mutations;
+pub(crate) mod federation_binding;
+pub(crate) mod local_avatar;
 #[path = "../unit/http/token/response_body.rs"]
 pub(crate) mod token_response_body;
 
@@ -8,8 +11,10 @@ pub(crate) mod client_auth_keys;
 #[allow(unused_imports)]
 pub(crate) use client_auth_keys::CountingJwksResolver;
 
+mod attestation_replay;
 #[path = "counting_ports.rs"]
 pub(crate) mod counting_ports;
+pub(crate) use attestation_replay::UnknownAttestationAck;
 #[allow(unused_imports)]
 pub(crate) use counting_ports::{CountingAuthorizationRepository, CountingTokenRepository};
 
@@ -180,7 +185,8 @@ pub(crate) fn token_issuance_repository(
 }
 
 pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
-    static PROCESS_AUDIT_POOL: OnceLock<nazo_postgres::DbPool> = OnceLock::new();
+    static PROCESS_AUDIT_POOL: OnceLock<(tokio::runtime::Runtime, nazo_postgres::DbPool)> =
+        OnceLock::new();
 
     // The production audit sink is process-lifetime state.  Some endpoint tests
     // intentionally use a pool whose search_path points at a small isolated
@@ -189,12 +195,23 @@ pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
     // own.  Keep the process-lifetime test sink on the canonical public test
     // database; focused repositories continue to use their caller-provided
     // pool below.
-    let audit_pool = PROCESS_AUDIT_POOL.get_or_init(|| {
+    let (runtime, audit_pool) = PROCESS_AUDIT_POOL.get_or_init(|| {
         let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
             .expect("database-backed tests require NAZO_TEST_DATABASE_URL or DATABASE_URL");
-        nazo_postgres::create_pool(database_url, 4)
-            .expect("test durable audit database pool should build")
+        // The shared sink outlives each test's runtime. Its connection
+        // drivers need the same process lifetime as the pool itself.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("process audit fixture runtime should build");
+        let pool = {
+            let _entered = runtime.enter();
+            nazo_postgres::create_pool(database_url, 4)
+                .expect("test durable audit database pool should build")
+        };
+        (runtime, pool)
     });
     let preflight = crate::adapters::audit_anchor::AuditAnchorPreflight::new(
         crate::adapters::audit_anchor::AuditAnchorPreflightConfig {
@@ -205,6 +222,9 @@ pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {
         },
     )
     .expect("test audit anchor preflight config is valid");
+    // The process-lifetime sink's workers must survive the installing test,
+    // just like the pool's connection drivers above.
+    let _entered = runtime.enter();
     crate::adapters::audit::install_persistent_audit_sink(
         std::sync::Arc::new(nazo_postgres::AuditLedgerRepository::new(
             audit_pool.clone(),
@@ -281,7 +301,8 @@ pub(crate) fn registration_service(
         std::sync::Arc::new(
             crate::adapters::email::SmtpVerificationEmailDelivery::from_delivery(
                 &identity.email.delivery,
-            ),
+            )
+            .expect("valid test SMTP configuration"),
         ),
         state.settings.tenant.context,
         nazo_identity::RegistrationServiceConfig {
@@ -296,6 +317,10 @@ pub(crate) fn registration_service(
 pub(crate) fn passkey_service(
     state: &TestInfrastructure,
 ) -> actix_web::web::Data<nazo_oauth_server::services::LocalPasskeyService> {
+    // This suite must not depend on another test installing Required audit.
+    if std::env::var_os("DATABASE_URL").is_some() {
+        initialize_audit_dependencies(&state.diesel_db);
+    }
     let passkey = &state.settings.identity.passkey;
     let session = &state.settings.session;
     actix_web::web::Data::new(nazo_oauth_server::services::LocalPasskeyService::new(
@@ -321,6 +346,7 @@ pub(crate) fn passkey_service(
             strict_base64: passkey.strict_base64,
             ceremony_ttl_seconds: nazo_oauth_server::services::PASSKEY_CEREMONY_TTL_SECONDS,
             session_ttl_seconds: session.session_ttl_seconds,
+            pending_mfa_session_ttl_seconds: session.pending_mfa_session_ttl_seconds,
         },
     ))
 }
@@ -328,6 +354,11 @@ pub(crate) fn passkey_service(
 pub(crate) fn federation_service(
     state: &TestInfrastructure,
 ) -> actix_web::web::Data<nazo_oauth_server::services::LocalFederationService> {
+    // Required federation evidence must use the same process-lifetime audit
+    // fixture as other identity consumers, including when this suite runs alone.
+    if std::env::var_os("DATABASE_URL").is_some() {
+        initialize_audit_dependencies(&state.diesel_db);
+    }
     actix_web::web::Data::new(nazo_oauth_server::services::LocalFederationService::new(
         nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
         std::sync::Arc::new(nazo_valkey::AuthenticationStore::new(
@@ -354,14 +385,17 @@ pub(crate) fn federation_http_config(
 ) -> actix_web::web::Data<crate::http::auth::federation::FederationHttpConfig> {
     let session = &state.settings.session;
     let federation = &state.settings.identity.federation;
-    actix_web::web::Data::new(crate::http::auth::federation::FederationHttpConfig::new(
-        federation.providers.clone(),
-        federation.saml_gateway.clone(),
-        session.session_cookie_name.as_str(),
-        session.csrf_cookie_name.as_str(),
-        session.session_ttl_seconds,
-        session.cookie_secure,
-    ))
+    actix_web::web::Data::new(
+        crate::http::auth::federation::FederationHttpConfig::new(
+            federation.providers.clone(),
+            federation.saml_gateway.clone(),
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            session.session_ttl_seconds,
+            session.cookie_secure,
+        )
+        .expect("federation HTTP configuration"),
+    )
 }
 
 pub(crate) fn auth_request_limiter(
@@ -516,4 +550,44 @@ pub(crate) fn test_key_manager_with_auxiliary(
     algorithm: jsonwebtoken::Algorithm,
 ) -> nazo_key_management::KeyManager {
     nazo_key_management::KeyManager::for_test_with_auxiliary(algorithm)
+}
+
+/// Signed, fresh DPoP fixture. Validation and thumbprint derivation remain in
+/// the production sender-constraint implementation.
+pub(crate) fn dpop_token_request(
+    settings: &crate::settings::Settings,
+    key: &ClientSigningFixture,
+) -> actix_web::HttpRequest {
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
+    header.typ = Some("dpop+jwt".to_owned());
+    header.jwk = Some(serde_json::from_value(key.public_jwk("dpop-test")).unwrap());
+    let claims = json!({"jti":uuid::Uuid::now_v7().to_string(),"htm":"POST","htu":format!("{}/token",settings.endpoint.issuer.trim_end_matches('/')),"iat":chrono::Utc::now().timestamp()});
+    actix_web::test::TestRequest::post()
+        .uri("/token")
+        .insert_header(("dpop", key.encode_jwt(&header, &claims)))
+        .to_http_request()
+}
+
+#[test]
+fn dpop_token_fixture_has_valid_signature_and_target() {
+    let settings =
+        crate::settings::Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let request = dpop_token_request(&settings, &key);
+    let proof = request.headers().get("dpop").unwrap().to_str().unwrap();
+    let target = format!("{}/token", settings.endpoint.issuer.trim_end_matches('/'));
+    let result = nazo_auth::DpopProofVerifier.verify_at(
+        nazo_auth::DpopProofRequest {
+            proof: Some(proof),
+            method: "POST",
+            target_uris: &[target.as_str()],
+            expected_jkt: None,
+            access_token: None,
+        },
+        chrono::Utc::now().timestamp(),
+    );
+    assert!(
+        result.is_ok(),
+        "signed DPoP fixture must validate: {result:?}"
+    );
 }

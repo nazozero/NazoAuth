@@ -47,6 +47,55 @@ async fn database_fixture() -> (
     (manager, repository, tenant_id, wrapping_keys)
 }
 
+#[tokio::test]
+async fn external_registration_rejects_unusable_verification_material_without_persisting() {
+    let (manager, repository, tenant_id, wrapping_keys) = database_fixture().await;
+    let before = repository.snapshot().unwrap();
+    let generation = manager.snapshot();
+    let material =
+        crate::serialization::generate_key_material(nazo_crypto::jwt::Algorithm::ES256).unwrap();
+    let mut wrong_usage = crate::serialization::public_jwk_from_private_der(
+        "invalid-external",
+        nazo_crypto::jwt::Algorithm::ES256,
+        &material.private_pkcs8_der,
+    )
+    .unwrap();
+    wrong_usage["key_ops"] = json!(["sign"]);
+
+    for public_jwk in [
+        json!({
+            "kty": "EC", "crv": "P-256", "alg": "ES256", "use": "sig",
+            "kid": "invalid-external",
+            "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+        }),
+        wrong_usage,
+    ] {
+        assert!(
+            manager
+                .database_register_external(crate::ExternalKeyRegistration {
+                    kid: "invalid-external".to_owned(),
+                    algorithm: nazo_crypto::jwt::Algorithm::ES256,
+                    key_ref: "kms://unit/invalid-external".to_owned(),
+                    public_jwk,
+                })
+                .await
+                .is_err()
+        );
+        let after = repository.snapshot().unwrap();
+        assert_eq!(after.revision, before.revision);
+        assert_eq!(after.public_metadata, before.public_metadata);
+        assert_eq!(
+            after.encrypted_private_material,
+            before.encrypted_private_material
+        );
+        assert!(Arc::ptr_eq(&manager.snapshot(), &generation));
+    }
+    KeyManager::load_or_create_database(settings(), None, tenant_id, repository, wrapping_keys)
+        .await
+        .expect("rejected external material must leave the persisted generation restartable");
+}
+
 struct Openid4vcFixture {
     material: Openid4vcMaterial,
     private_key_pem: String,
@@ -778,4 +827,92 @@ async fn openid4vc_revoked_active_leaf_cannot_prepare_signing() {
         .err()
         .expect("revoked active DS must not sign");
     assert!(error.to_string().contains("revoked"));
+}
+
+#[tokio::test]
+async fn bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Conflicts {
+        inner: Arc<MemorySigningKeyRepository>,
+        remaining: AtomicUsize,
+        calls: AtomicUsize,
+    }
+    impl SigningKeyRepository for Conflicts {
+        fn load(&self) -> crate::SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
+            self.inner.load()
+        }
+        fn create_if_absent(
+            &self,
+            candidate: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
+            self.inner.create_if_absent(candidate)
+        }
+        fn compare_and_swap(
+            &self,
+            expected: i64,
+            candidate: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                if self
+                    .remaining
+                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                    .is_ok()
+                {
+                    Ok(SigningKeysetCompareAndSwapResult::Conflict(
+                        self.inner.snapshot().unwrap(),
+                    ))
+                } else {
+                    self.inner.compare_and_swap(expected, candidate).await
+                }
+            })
+        }
+    }
+    let (_, repository, tenant_id, wrapping_keys) = database_fixture().await;
+    let before = repository.snapshot().unwrap();
+    let conflicts = Arc::new(Conflicts {
+        inner: repository.clone(),
+        remaining: AtomicUsize::new(MAX_CAS_ATTEMPTS),
+        calls: AtomicUsize::new(0),
+    });
+    let binding = DatabaseKeysetBinding {
+        tenant_id,
+        repository: conflicts.clone(),
+        wrapping_keys,
+        external_signer: None,
+    };
+    let error = update(&binding, &settings(), false, |payload| {
+        payload["fixture_mutation"] = json!(true);
+        Ok(true)
+    })
+    .await
+    .err()
+    .unwrap();
+    assert!(
+        error
+            .context("caller context")
+            .is::<crate::SigningKeyRepositoryUnavailable>()
+    );
+    assert_eq!(conflicts.calls.load(Ordering::SeqCst), MAX_CAS_ATTEMPTS);
+    assert_eq!(repository.snapshot().unwrap().revision, before.revision);
+    update(&binding, &settings(), false, |payload| {
+        if payload.get("fixture_mutation") == Some(&json!(true)) {
+            return Ok(false);
+        }
+        payload["fixture_mutation"] = json!(true);
+        Ok(true)
+    })
+    .await
+    .unwrap();
+    let committed = repository.snapshot().unwrap().revision;
+    update(&binding, &settings(), false, |payload| {
+        if payload.get("fixture_mutation") == Some(&json!(true)) {
+            return Ok(false);
+        }
+        payload["fixture_mutation"] = json!(true);
+        Ok(true)
+    })
+    .await
+    .unwrap();
+    assert_eq!(repository.snapshot().unwrap().revision, committed);
 }

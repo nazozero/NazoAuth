@@ -199,20 +199,27 @@ fn authorization_code_token_issue_creates_native_sso_binding_for_device_sso_scop
 fn authorization_code_token_issue_preserves_requested_oidc_claims_and_acr() {
     let mut payload = code_payload(true);
     payload.acr = Some("urn:example:acr:phishing-resistant".to_owned());
-    payload.userinfo_claims = vec!["name".to_owned(), "email".to_owned()];
-    payload.userinfo_claim_requests = vec![OidcClaimRequest {
-        name: "email".to_owned(),
-        essential: true,
-        value: Some(json!("alice@example.com")),
-        values: Vec::new(),
-    }];
-    payload.id_token_claims = vec!["auth_time".to_owned(), "sid".to_owned()];
-    payload.id_token_claim_requests = vec![OidcClaimRequest {
-        name: "acr".to_owned(),
-        essential: true,
-        value: Some(json!("urn:example:acr:phishing-resistant")),
-        values: Vec::new(),
-    }];
+    payload.userinfo_claim_requests = (vec![
+        OidcClaimRequest::named("name"),
+        OidcClaimRequest {
+            name: "email".to_owned(),
+            essential: true,
+            value: Some(json!("alice@example.com")),
+            values: Vec::new(),
+        },
+    ])
+    .into();
+    payload.id_token_claim_requests = (vec![
+        OidcClaimRequest::named("auth_time"),
+        OidcClaimRequest::named("sid"),
+        OidcClaimRequest {
+            name: "acr".to_owned(),
+            essential: true,
+            value: Some(json!("urn:example:acr:phishing-resistant")),
+            values: Vec::new(),
+        },
+    ])
+    .into();
 
     let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
         payload,
@@ -230,12 +237,85 @@ fn authorization_code_token_issue_preserves_requested_oidc_claims_and_acr() {
         issue.acr.as_deref(),
         Some("urn:example:acr:phishing-resistant")
     );
-    assert_eq!(issue.userinfo_claims, vec!["name", "email"]);
-    assert_eq!(issue.userinfo_claim_requests.len(), 1);
-    assert_eq!(issue.userinfo_claim_requests[0].name, "email");
-    assert!(issue.userinfo_claim_requests[0].essential);
-    assert_eq!(issue.id_token_claims, vec!["auth_time", "sid"]);
-    assert_eq!(issue.id_token_claim_requests.len(), 1);
-    assert_eq!(issue.id_token_claim_requests[0].name, "acr");
-    assert!(issue.id_token_claim_requests[0].essential);
+    assert_eq!(issue.userinfo_claim_requests.names(), vec!["name", "email"]);
+    assert_eq!(issue.userinfo_claim_requests.len(), 2);
+    assert_eq!(issue.userinfo_claim_requests[1].name, "email");
+    assert!(issue.userinfo_claim_requests[1].essential);
+    assert_eq!(
+        issue.id_token_claim_requests.names(),
+        vec!["auth_time", "sid", "acr"]
+    );
+    assert_eq!(issue.id_token_claim_requests.len(), 3);
+    assert_eq!(issue.id_token_claim_requests[2].name, "acr");
+    assert!(issue.id_token_claim_requests[2].essential);
+}
+
+#[test]
+fn authorization_code_subset_access_keeps_the_full_initial_refresh_resource_grant() {
+    let mut payload = code_payload(true);
+    payload.resource_indicators = vec!["resource://a".to_owned(), "resource://b".to_owned()];
+    let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
+        payload,
+        subject: "subject-1".to_owned(),
+        audiences: vec!["resource://a".to_owned()],
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        code_hash: "code-hash".to_owned(),
+        refresh_token_dpop_jkt: None,
+        refresh_token_mtls_x5t_s256: None,
+        refresh_token_client_attestation_jkt: None,
+    });
+    assert_eq!(issue.audiences, vec!["resource://a"]);
+    assert_eq!(
+        issue.refresh_grant_audiences,
+        Some(vec!["resource://a".to_owned(), "resource://b".to_owned()])
+    );
+    assert!(issue.refresh_authority.is_none());
+}
+
+#[actix_web::test]
+async fn protocol_grant_expired_dispatch_authorization_code_after_holder_validation() {
+    use crate::http::token::issue::test_support::{
+        assert_expired_grant_dispatch_response, token_with_expired_grant_commit,
+    };
+    let fixture = LiveAuthorizationCodeFixture::new_with_settings_and_keyset(
+        LiveAuthorizationCodeFixture::settings(),
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256),
+    )
+    .await
+    .expect("code commit regression requires isolated PostgreSQL and Valkey");
+    let user = fixture.insert_user().await;
+    let mut client = live_client(&format!("code-expired-commit-{}", Uuid::now_v7()));
+    client.client_type = "public".to_owned();
+    client.token_endpoint_auth_method = "none".to_owned();
+    fixture.insert_client(&client).await;
+    let code = format!("code-commit-{}", Uuid::now_v7());
+    let mut payload = payload_for_client(&client);
+    payload.user_id = user.id;
+    fixture
+        .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+        .await;
+    let form = form_for_code(&code);
+    let request = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", "authorization_code")
+        .append_pair("client_id", &client.client_id)
+        .append_pair("code", &code)
+        .append_pair("redirect_uri", form.redirect_uri.as_deref().unwrap())
+        .append_pair("code_verifier", form.code_verifier.as_deref().unwrap())
+        .finish();
+    let (response, commits) =
+        token_with_expired_grant_commit(&fixture.state, request, actix_web::web::Bytes::from(body))
+            .await;
+    assert_expired_grant_dispatch_response(
+        &fixture.state,
+        &client,
+        response,
+        commits,
+        "invalid_grant",
+    )
+    .await;
 }

@@ -10,8 +10,8 @@ timeout, and partial-outage rules for both.
 
 | Store | State | Loss impact | Recovery expectation |
 | --- | --- | --- | --- |
-| PostgreSQL | users, clients, grants, refresh tokens, access-token revocation state, client metadata, audit-relevant durable rows | durable account, client, token, and grant state can be lost or rolled back | restore from tested backups or promote a consistent replica |
-| Valkey | sessions, authorization codes, PAR handles, DPoP proof replay keys, client assertion replay keys, rate-limit counters, consent transaction state | in-flight browser/API transactions fail; replay/rate controls must not silently weaken | fail closed for security-sensitive paths; restart transactions after recovery |
+| PostgreSQL | users, clients, grants, refresh tokens, access-token revocation state, client metadata, committed authorization-decision facts and consumption fences, audit-relevant durable rows | durable account, client, token, and grant state can be lost or rolled back | restore from tested backups or promote a consistent replica |
+| Valkey | sessions, authorization codes, PAR handles, DPoP proof replay keys, client assertion replay keys, rate-limit counters, immutable consent preparation | in-flight browser/API transactions fail; replay/rate controls must not silently weaken | fail closed for security-sensitive paths; restart transactions after recovery |
 | PostgreSQL signing-key generation + deployment wrapping root | active, prepublished, and retained token-signing private/public keys plus request-object recipient | issued tokens can become unverifiable or signing continuity can break | restore the matching encrypted row and wrapping root before serving traffic |
 | Configured avatar storage | tenant-isolated local files or S3-compatible objects | profile media can be lost or desynchronized from PostgreSQL metadata | restore objects and metadata consistently; independent local disks are not shared storage |
 
@@ -95,27 +95,71 @@ the host. There is no leader election: each instance runs its own worker, and
 per-family advisory locks plus `FOR UPDATE SKIP LOCKED` keep concurrent
 instances from double-processing the same rows.
 
-- The first batch runs immediately at startup; each subsequent batch starts 60
-  seconds after the previous batch completes.
+- The first batch runs immediately at startup. A saturated batch immediately
+  schedules another, yielding between batches, until no category is saturated
+  or the cycle reaches its 30-second scheduling budget. There is no batch-count
+  cap. A drained cycle waits 60 seconds; a budget-limited cycle waits its own
+  elapsed duration before continuing, keeping sustained catch-up at no more
+  than half of wall time. An in-flight bounded batch finishes normally even if
+  it crosses the budget. Cycle logs report stop reason, batches, rows, issuance
+  rows, elapsed time and the next delay; individual batch logs are debug-only.
 - Each batch is bounded: at most 256 expired-state candidates per category and
   256 refresh-token families per pass. Backlog drains across successive
-  batches, not in one unbounded transaction.
+  batches, not in one unbounded transaction. Orphan contracts and credential
+  grants scan at most 256 age-eligible parent keys before checking references
+  and taking `FOR UPDATE SKIP LOCKED`; a separate READ COMMITTED delete rechecks
+  references while those parent locks are held. Composite age/key indexes
+  support forward progress without scanning live grants or sorting an entire
+  expiry bucket. Process-local cursors advance past referenced and locked keys,
+  keep a fixed cutoff for each pass, and wrap after its final page. Clones share
+  progress; restart only repeats a scan. Cursor updates follow successful commit.
+  Saturation includes a full scan page even when it deleted nothing, so later
+  orphans cannot be starved by referenced parents at the head. These bounds do
+  not bound physical I/O from dead tuples or replace normal PostgreSQL vacuum;
+  the scheduling budget cannot interrupt an in-flight query.
 - Refresh-token leaf reclaim takes the same family advisory lock used by
   refresh-token writers (`pg_try_advisory_xact_lock`). A family whose lock is
-  held by an active writer is skipped for that pass, and lock-free rows are
-  rechecked inside the reclaim transaction. Families with an active successor
-  are never reclaimed.
-- Inside still-live families, members that are expired and past the
-  lost-response window (60 s after revocation) are rewritten to a terminal
-  stub in bounded batches: payload columns are tombstoned, the chain edge is
-  unlinked, and only the hash-to-family mapping is retained so reuse
-  detection and family compromise keep working until the family itself is
-  reclaimed.
+  held by an active writer or PreserveExisting reader is skipped for that pass,
+  and lock-free rows are rechecked inside the reclaim transaction. A batch uses
+  one candidate read,
+  one bounded advisory-lock query and one bulk delete. The delete is a separate
+  READ COMMITTED statement so it sees a rotation committed before lock acquisition.
+  Families with an active successor are never reclaimed. PreserveExisting token
+  issuance takes that advisory lock in shared mode plus `FOR SHARE OF f`
+  through its final commit. Independent preserves can overlap; the advisory
+  lock keeps reclaim nonblocking, while the row lock also fences direct
+  UPDATE/DELETE revokers that do not take the advisory lock. PreserveExisting
+  cannot issue from a source retired or revoked before that locked check. Expiry
+  is checked after source lock acquisition.
+- Expired spent proofs are removed at their own expiry. Unbound public families
+  retain all unexpired proofs; confidential or actually DPoP/mTLS-bound families
+  retain at most 64. Family deletion cascades remaining proofs. The public
+  footprint depends on rotation rate × original token TTL plus cleanup lag;
+  the 60-second normal maintenance delay is not a deletion SLA.
+- Before migration `20261001000500`, stop old token writers. The migration
+  revokes existing unbound public refresh families once, with transactional
+  audit evidence, because previously trimmed opaque history cannot be restored.
+  These clients need fresh authorization; confidential/sender-bound families
+  are unaffected by the cutover. Do not mix old/new issuers or expect rollback
+  to revive revoked credentials. See the [upgrade contract](../protocol/refresh-token-rotation.md#upgrade-and-rollback-boundary).
+  The current family row remains authoritative until its current token expires.
+- Capacity retirement removes the family and its proofs in the issuance
+  transaction, retaining its Required audit. Orphan contract deletion runs only
+  in maintenance after a one-hour creation grace and an indexed reference check.
+- OpenID4VCI offers, nonces, deferred credentials, notifications and response
+  replays are reclaimed at their own expiry. Credential access grants remain
+  until expiry plus the access-token clock-skew allowance (60 seconds), because
+  they still resolve access-token ownership in that interval. Each child table
+  is reclaimed in its own bounded batch; a grant is deleted only when no child
+  remains, preventing unbounded cascading deletes. Credential authorization
+  datasets and audit history are not expiration-sweep categories.
 - A failed batch logs a warning; the worker waits for the next interval
   instead of retrying in a tight loop. The worker is aborted and awaited
   during shutdown.
-- Covered state: expired consumed grants, consumed token-issuance rows, SCIM
-  security/audit events past retention, completed backchannel-logout
+- Covered state: expired consumed grants, SingleUse receipts and remaining legacy
+  token-issuance rows (Fresh issuance creates none), SCIM
+  security events and historical SCIM audit rows past retention (successful
+  credential use now emits only the unified audit event), completed backchannel-logout
   deliveries, expired access-token revocations, and expired OpenID4VP
   presentation requests.
 
@@ -135,7 +179,21 @@ controls:
 - selected persistence policy: AOF or managed persistence for faster recovery, or documented acceptance of losing transient security state
 - failover tests that include in-flight sessions, PAR handles, authorization codes, and replay caches
 
-Valkey is not the durable source of truth. Losing it invalidates or interrupts transient flows rather than weakening replay prevention.
+Valkey is not the durable source of truth for durable grants. Losing a
+transient payload interrupts its flow, but losing an acknowledged replay marker
+can permit an externally signed proof to be presented again. Keep ingress closed
+across uncertain marker loss until the relevant proof acceptance windows are
+drained or their trust/credentials are invalidated. A namespace change alone
+does not invalidate those proofs.
+
+Client-attestation token/PAR consumption checks the signed absolute interval
+against Valkey `TIME` and writes NX/EXAT in the same atomic script. Preserve
+unexpired markers, ensure owner-clock continuity, and quiesce old TTL-based
+consumers during upgrade. An unknown ACK fails closed, while an ACK lost after
+NX may leave a committed marker. See the
+[client-attestation replay cutover](../protocol/client-attestation-replay.md#clock-failover-and-upgrade-requirements)
+for the required clock bound and ingress boundary; there is no unconditional
+fixed-duration wait when that bound cannot be established.
 
 ## Valkey Timeouts
 
@@ -159,8 +217,9 @@ When Valkey is unavailable or times out:
 | PAR | pushed request storage and lookup fail closed; authorization requests must not fall back to unsigned or unpushed parameters in FAPI/PAR-required profiles |
 | DPoP replay cache | proof replay checks fail closed; a token must not be issued or accepted without replay state when the profile requires it |
 | `private_key_jwt` replay cache | assertion `jti` storage failures reject the assertion |
+| Client-attestation PoP | unavailable/unknown atomic window consumption returns `503` before token/PAR publication; an existing marker or expired owner window rejects authentication |
 | Rate limiting | rate-limit storage errors fail closed for protected auth/token-management paths instead of disabling limits |
-| Consent transactions | consent state lookup or consumption failures reject the transaction |
+| Consent preparation | missing/unavailable preparation fails closed before decision commit. After durable commit, preparation-disposal failure cannot release its consumption fence or undo the grant. Code-store failure still prevents a successful response |
 
 The CI real HTTP matrix includes Valkey outage injection to verify externally visible fail-closed behavior.
 
@@ -202,3 +261,39 @@ Managed mdoc certificates, IACA private material and revocation facts use the
 shared encrypted tenant keyset. See [import, rotation, and revocation](mdoc-shared-state.md).
 Import accepts complete externally prepared material for an existing current
 keyset; it is not an automatic historical-format conversion.
+
+### Token principal epoch upgrade
+
+The token-state reduction release requires a coordinated application upgrade:
+stop admission and drain old instances, apply the additive migrations, upgrade
+all authorization-server and online protected-resource instances, then reopen
+admission. Old binaries do not check the new signed principal epochs; do not
+mix them with instances issuing epoch-bound tokens. Pre-upgrade tokens remain
+supported through their original JTI/ownership records and retention policy.
+After new issuance starts, application rollback to an epoch-unaware release is
+not supported. Database downgrade is explicitly refused by the principal-state
+migration. This changes no standalone offline-verifier revocation guarantee.
+
+## Authorization-code identity cutover
+
+Migration `20261003000100_authorization_code_identity` requires closed ingress,
+drained and isolated old issuers, and expiration/invalidation of old pending codes
+under a new transient-state epoch. Historical receipts remain lookup-only; the
+new constraint rejects old single-use writers rather than allowing mixed identity
+schemes. A down migration cannot remove live version-two fences. Follow the full
+[upgrade and rollback contract](../protocol/authorization-code-redemption.md#coordinated-upgrade)
+before reopening ingress; an isolated old primary must stay isolated.
+
+## Authorization-decision ownership cutover
+
+Do not mix old cache-consumption authority and new durable-decision authority
+for authorization requests. Quiesce/drain the old authorization handlers before
+activating the new adapter contract across all serving instances. Apply the
+corresponding migration first. Existing authorization-code redemption retains
+its prior SingleUse fence; this change does not weaken that boundary.
+
+Do not roll back while retained or unexported decision facts remain. The
+audit checkpoint is not permission to drop a still-live consent/PAR fence.
+Restore durable grant state and decision facts from the same consistency
+boundary. Losing transient payloads can fail outstanding flows but must not
+permit an already committed decision to execute again.

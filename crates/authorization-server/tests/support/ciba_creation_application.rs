@@ -83,7 +83,7 @@ fn creation_persists_pending_state_and_audit_before_returning_poll_or_ping_handl
                 ports.calls(),
                 [
                     "account",
-                    "audit_preflight",
+                    "audit_dynamic_readiness",
                     "audit_intent",
                     "create",
                     "audit_result"
@@ -214,5 +214,86 @@ fn ciba_creation_rejects_inactive_client_and_reports_account_repository_failure(
             .expect("account store failure must propagate");
         assert_eq!(fields(&error).status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(ports.calls(), ["account"]);
+    });
+}
+
+#[test]
+fn short_creation_validity_starts_after_required_audit_and_request_replay_complete() {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    block_on(async {
+        let keys = nazo_key_management::KeyManager::for_test(jsonwebtoken::Algorithm::PS256);
+        let mut client = client();
+        client.jwks = Some(keys.snapshot().jwks());
+        client.backchannel_authentication_request_signing_alg = Some("PS256".to_owned());
+        let kid = keys.snapshot().verification_keys[0].kid.clone();
+        let now = chrono::Utc::now().timestamp();
+        let input = format!("{}.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg":"PS256","kid":kid,"typ":"oauth-authz-req+jwt"})).unwrap()), URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"iss":"client-1","aud":"https://issuer.example","iat":now,"nbf":now,"exp":now+60,"scope":"openid","login_hint":"alice@example.test","requested_expiry":1,"jti":Uuid::now_v7().to_string()})).unwrap()));
+        let signature = nazo_auth::Signer::sign(
+            &keys,
+            nazo_auth::SignRequest {
+                purpose: nazo_auth::SigningPurpose::IdToken,
+                algorithm: "PS256",
+                signing_input: input.as_bytes(),
+            },
+        )
+        .await
+        .unwrap();
+        let mut request = BackchannelAuthenticationForm {
+            client_id: Some("client-1".into()),
+            client_secret: Some("test-secret".into()),
+            ..Default::default()
+        };
+        request.request = Some(format!(
+            "{input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.as_bytes())
+        ));
+        let (application, ports, _, authorization) = creation_fixture(AuditFailure::None, client);
+        ports.audit_delay_ms.store(1_100, Ordering::Relaxed);
+        authorization
+            .ports
+            .ciba_replay_delay_ms
+            .store(1_100, Ordering::Relaxed);
+        *authorization.ports.ciba_request_replay.lock().unwrap() = Some(Ok(true));
+        let started = std::time::Instant::now();
+        let response = create(&application, request).await.unwrap();
+        assert!(started.elapsed() >= std::time::Duration::from_millis(2_200));
+        assert_eq!(response.expires_in, 1);
+        let now = chrono::Utc::now().timestamp();
+        let state = ports.state.lock().unwrap();
+        assert_eq!(state.issued_at, now);
+        assert_eq!(state.expires_at, now + 1);
+        assert_eq!(
+            *ports.create_deadlines.lock().unwrap(),
+            [Some(state.expires_at)]
+        );
+        assert!(ports.calls().contains(&"audit_result"));
+        assert!(
+            authorization
+                .ports
+                .calls()
+                .contains(&"ciba_request_object_replay")
+        );
+    });
+}
+
+#[test]
+fn delayed_create_crossing_authorization_expiry_cannot_report_success_while_retention_is_live() {
+    block_on(async {
+        let (application, ports, _, _) = creation_fixture(AuditFailure::None, client());
+        ports.create_delay_ms.store(1_100, Ordering::Relaxed);
+        let mut request = form();
+        request.requested_expiry_seconds = Some(1);
+        let error = create(&application, request)
+            .await
+            .err()
+            .expect("atomic authorization deadline must reject delayed creation");
+        assert_eq!(fields(&error).status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!ports.calls().contains(&"create"));
+        assert!(!ports.calls().contains(&"audit_result"));
+        assert_eq!(
+            ports.create_deadlines.lock().unwrap().len(),
+            1,
+            "deadline failure must not generate a new handle or retry"
+        );
     });
 }

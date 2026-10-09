@@ -12,7 +12,8 @@ use crate::{
     ports::{
         AccessRequestRepositoryPort, AuthorizedApplication, AuthorizedApplicationRepositoryPort,
         DeliveryConsume, DeliveryStorePort, FederationLink, FederationLinkRepositoryPort,
-        GrantSummaryRepositoryPort, ProfileRepositoryPort, ProfileUpdate, RepositoryError,
+        FederationLinkSummary, GrantSummaryRepositoryPort, ProfileRepositoryPort, ProfileUpdate,
+        RepositoryError,
     },
 };
 
@@ -576,23 +577,44 @@ where
             .map_err(DeliveryReadError::DeliveryStore)?
             .ok_or(DeliveryReadError::Invalid)?;
         let Some(claim) = delivery_claim(&stored.value) else {
-            let _ = self.deliveries.delete(account.user_id(), &token).await;
+            // A requester can arrive after PG approval but before exact
+            // publication. Only the producer owns that unpublished stage;
+            // leave it retryable under its original TTL.
+            if stored.value.get("delivery_state").and_then(Value::as_str) == Some("committed") {
+                let _ = self
+                    .deliveries
+                    .retire(account.user_id(), &token, &stored)
+                    .await;
+            }
             return Err(DeliveryReadError::Invalid);
         };
+        if claim.request_id != request_id
+            || stored.value["user_id"] != serde_json::json!(account.user_id().as_uuid())
+        {
+            let _ = self
+                .deliveries
+                .retire(account.user_id(), &token, &stored)
+                .await;
+            return Err(DeliveryReadError::Invalid);
+        }
         match self
             .requests
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 account.tenant().tenant_id,
                 account.user_id(),
                 claim.request_id,
                 claim.approved_client_id,
                 &claim.client_id,
+                stored.secret_binding.as_deref(),
             )
             .await
         {
             Ok(true) => {}
             Ok(false) => {
-                let _ = self.deliveries.delete(account.user_id(), &token).await;
+                let _ = self
+                    .deliveries
+                    .retire(account.user_id(), &token, &stored)
+                    .await;
                 return Err(DeliveryReadError::Invalid);
             }
             Err(error) => return Err(DeliveryReadError::Repository(error)),
@@ -691,6 +713,15 @@ impl FederationLinksService {
     ) -> Result<Vec<FederationLink>, RepositoryError> {
         self.links
             .list(account.tenant().tenant_id, account.user_id())
+            .await
+    }
+
+    pub async fn list_summaries(
+        &self,
+        account: &PublicAccount,
+    ) -> Result<Vec<FederationLinkSummary>, RepositoryError> {
+        self.links
+            .list_summaries(account.tenant().tenant_id, account.user_id())
             .await
     }
 

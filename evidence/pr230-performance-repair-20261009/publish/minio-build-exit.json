@@ -1,0 +1,1 @@
+{"command": ["docker", "build", "-t", "nazoauth-perf-unit-minio:20261009", "-"], "fixture_source": "tests/fixtures/minio/Containerfile", "fixture_sha256": "b6021f069dbbc5fb6db0a9c2070ed6fd7bf3ed5218001cf36e73e99b9cb8e8b7", "context": "only exact fixture Dockerfile; source downloads pinned in it", "exit": 0, "seconds": 66.9249188741669}

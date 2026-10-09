@@ -1,0 +1,5 @@
+{
+  "DEPLOYMENT_ID": "01a11bd3-cb38-72d0-b86c-1b28656ae5b4",
+  "AUDIT_ANCHOR_MODE": "required",
+  "DATABASE_MAX_CONNECTIONS": "32"
+}

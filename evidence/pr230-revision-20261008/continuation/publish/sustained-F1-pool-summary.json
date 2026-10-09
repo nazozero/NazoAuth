@@ -1,0 +1,8 @@
+{
+  "point": "sustained-F1",
+  "maintenance_acquisitions": 457,
+  "p50_ms": 81.612,
+  "p95_ms": 137.857,
+  "p99_ms": 158.089,
+  "max_waiters": 960
+}

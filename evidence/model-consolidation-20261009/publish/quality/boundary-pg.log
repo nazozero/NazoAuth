@@ -1,0 +1,135 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+warning: unused import: `ResponseMode`
+  --> crates/persistence-postgres/tests/openid4vc.rs:23:45
+   |
+23 |     PresentationTransaction, RequestMethod, ResponseMode,
+   |                                             ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nazo-postgres` (test "openid4vc") generated 1 warning (run `cargo fix --test "openid4vc" -p nazo-postgres` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 25.44s
+     Running tests/identity_repositories.rs (target/debug/deps/identity_repositories-3c555c2f11e937fc)
+
+running 61 tests
+test access_request_boundary_has_no_server_diesel_or_forwarding_support_layer ... ok
+test active_subject_id_by_tenant_id_returns_the_live_principal_subject ... ok
+test active_subject_id_fails_closed_on_corrupt_principal_rows ... ok
+test active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users ... ok
+test active_subject_id_read_projects_only_the_seven_principal_columns ... ok
+test admin_partial_update_validates_final_role_level_before_commit ... ok
+test admin_user_page_is_tenant_scoped_at_the_query_boundary ... ok
+test admin_user_required::admin_user_required_current_actor_context_and_hierarchy_denials_commit_no_success ... ok
+test admin_user_required::admin_user_required_hidden_committed_ack_returns_no_account_receipt ... ok
+test admin_user_required::admin_user_required_ledger_failure_rolls_back_create_patch_and_noop_outcome ... ok
+test admin_user_required::admin_user_required_ports_have_no_bare_mutation_fallback ... ok
+test application_projection_filters_mixed_scope_elements ... ok
+test authentication_snapshot_matches_the_split_client_and_salt_reads ... ok
+test authorized_admin_update_serializes_hierarchy_and_audit_in_one_transaction ... ok
+test backup_code_batch_replacement_clears_empty_and_rolls_back_invalid_batches ... ok
+test backup_code_is_consumed_once_atomically ... ok
+test client_registration_keeps_plaintext_out_of_protocol_core_and_postgres ... ok
+test client_secret_comparison_returns_only_salt_and_database_equality ... ok
+test concurrent_federated_create_is_idempotent_with_one_connection_and_tenant_scoped ... ok
+test concurrent_totp_enrollment_confirmation_has_one_audited_winner ... ok
+test failed_totp_enrollment_confirmation_is_durably_audited_without_state_change ... ok
+test federated_unique_conflict_recovery_returns_current_inactive_account ... ok
+test identity_claim_boundaries_use_narrow_single_snapshot_reads ... ok
+test identity_display_projections_preserve_metadata_and_tenant_user_scope ... ok
+test inactive_account_has_no_issuable_subject_claims ... ok
+test mfa_backup_code_bounds_and_enrollment_conflict_are_explicit ... ok
+test mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_device ... ok
+test mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe ... ok
+test mfa_generation::mfa_clear_committed_unknown_retry_cannot_clear_formal_g2 ... ok
+test mfa_generation::mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_field ... ok
+test mfa_generation::mfa_clear_generation_lock_orders_formal_g2_install_after_commit ... ok
+test mfa_generation::mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes ... ok
+test mfa_generation::mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_code_disclosure ... ok
+test mfa_generation::mfa_disable_required_ledger_failure_rolls_back_current_generation_and_dependents ... ok
+test mfa_generation::mfa_regeneration_required_ledger_and_inactive_actor_preserve_exact_old_backups ... ok
+test mfa_generation::mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier ... ok
+test mfa_generation_fences_late_remember_and_regeneration_after_clear_and_reenrollment ... ok
+test mfa_two_consumed_backup_proofs_regenerate_serially_without_generation_lock_cycle ... ok
+test oauth_client_persistence_contract_distinguishes_lifetimes_from_character_literals ... ok
+test oauth_client_persistence_contract_ignores_documentation_and_cfg_test_items ... ok
+test oauth_client_persistence_contract_keeps_scanning_after_cfg_test_items ... ok
+test oauth_client_persistence_contract_rejects_aliases_declarations_imports_and_raw_sql ... ok
+test oauth_client_persistence_contract_skips_cfg_test_items_with_const_generics ... ok
+test oauth_client_queries_cross_the_persistence_port_without_a_server_postgres_dependency ... ok
+test oauth_client_repository_keeps_records_private_and_returns_domain_clients ... ok
+test passkey_and_federation_uniqueness_are_typed_conflicts ... ok
+test passkey_counter_update_is_monotonic_compare_and_set ... ok
+test profile_update_cannot_restore_stale_phone_verification ... ok
+test profile_update_persists_only_the_typed_profile_projection ... ok
+test repositories_accept_validated_tenant_and_user_ids ... ok
+test scim_replace_returns_domain_claims_from_one_transaction ... ok
+test seed_upsert_is_atomic_and_preserves_unmanaged_client_state ... ok
+test seed_upsert_persists_jarm_algorithm_on_insert_and_conflict_update ... ok
+test server_has_no_identity_rows_or_identity_diesel_queries ... ok
+test server_mfa_verification_does_not_query_migrated_tables_directly ... ok
+test subject_claims_reject_invalid_persisted_role_invariant ... ok
+test system_tenant_admin_outcomes_preserve_cross_tenant_audit_and_rollback ... ok
+test totp_enrollment_orders_cross_store_changes_for_safe_recovery ... ok
+test totp_last_step_compare_and_set_has_one_concurrent_winner ... ok
+test totp_verification_classification_and_audit_are_atomic_and_replay_safe ... ok
+test user_lookup_is_tenant_scoped ... ok
+
+test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.83s
+
+     Running tests/mfa_key_ring.rs (target/debug/deps/mfa_key_ring-7d7a26939b864e8c)
+
+running 1 test
+test totp_key_ring_requires_distinct_non_empty_versioned_keys ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/openid4vc.rs (target/debug/deps/openid4vc-6b511845de8bf5ab)
+
+running 37 tests
+test access_upsert_conflict_with_a_different_identity_is_a_noop ... ok
+test access_upsert_preserves_the_revocation_marker ... ok
+test access_upsert_updates_each_mutable_projection_column ... ok
+test anonymous_pre_authorized_persist_never_reads_client_rows ... ok
+test anonymous_pre_authorized_persist_writes_the_upsert_row_shape ... ok
+test concurrent_deferred_claims_lease_to_one_owner ... ok
+test concurrent_identical_access_upserts_are_noops ... ok
+test corrupt_deferred_payload_rolls_back_the_claim_lease ... ok
+test credential_dataset_mutations_require_an_active_admin_and_are_audited_atomically ... ok
+test credential_persistence_rejects_binding_conflicts_and_accepts_exact_retries ... ok
+test credential_proof_origin_migration_preserves_legacy_and_guards_anonymous_rollback ... ok
+test deferred_access_join_is_guaranteed_by_the_schema ... ok
+test deferred_claim_rejects_unclaimable_rows_without_leasing ... ok
+test deferred_claim_returns_joined_domain_state_and_writes_the_lease ... ok
+test deferred_claim_supports_grants_without_dpop_binding ... ok
+test deferred_locked_projection_rechecks_waited_facts_and_discards_cancelled_owner ... ok
+test deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transaction ... ok
+test deferred_reverse_grant_pairs_wait_on_the_sorted_first_lock_and_both_commit ... ok
+test identical_access_upsert_leaves_the_row_version_untouched ... ok
+test issuance_store_covers_atomic_recovery_and_terminal_error_boundaries ... ok
+test managed_dataset_required::cancelled_dataset_required_owner_releases_peer_row_lock_without_pool_checkout ... ok
+test managed_dataset_required::dataset_fault_contract_rejects_suppressed_effect_source_and_required_events ... ok
+test managed_dataset_required::dataset_owner_rechecks_actor_and_subject_after_real_row_lock_wait ... ok
+test managed_dataset_required::dataset_put_returns_actual_stored_validity_before_ack ... ok
+test managed_dataset_required::dataset_real_noop_does_not_append_accepting_evidence ... ok
+test managed_dataset_required::required_dataset_append_fault_rolls_back_exact_ciphertext_source_events_and_ledger ... ok
+test notification_identical_concurrent_retries_preserve_first_event_and_occurrence ... ok
+test openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and_encrypted_at_rest ... ok
+test pre_authorized_persist_distinguishes_mismatched_and_inactive_clients ... ok
+test pre_authorized_persist_holds_the_client_lock_until_deactivation_wins ... ok
+test pre_authorized_persist_rejects_a_client_deactivated_after_authentication ... ok
+test pre_authorized_verification_rechecks_snapshot_expiry_and_busy_result ... ok
+test pre_authorized_verification_releases_the_pool_and_has_one_consumer ... ok
+test presentation_completion_rechecks_owner_clock_after_pool_and_record_waits ... ok
+test recoverable_issuance_leases_commit_responses_and_deferred_credentials_once ... ok
+test refreshed_access_continues_only_its_original_credential_intent_after_source_expiry ... ok
+test revoked_access_grants_stay_revoked_through_every_persist_path ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.84s
+
+     Running tests/presentation_mode_migration.rs (target/debug/deps/presentation_mode_migration-ac1fef0e57c56f50)
+
+running 1 test
+test presentation_mode_migration_preserves_requests_and_refuses_conflicting_history ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

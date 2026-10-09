@@ -50,8 +50,28 @@ pub struct OidcClaimRequest {
     pub values: Vec<Value>,
 }
 
+impl OidcClaimRequest {
+    /// An explicit request with no additional value constraint.
+    #[must_use]
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            essential: false,
+            value: None,
+            values: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Claims {
+    /// Issuer-owned authorization instance. Old tokens remain token-bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_epoch: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_epoch: Option<i64>,
     pub iss: String,
     pub sub: String,
     pub tenant_id: String,
@@ -72,13 +92,14 @@ pub struct Claims {
     pub cnf: Option<ConfirmationClaims>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub act: Option<Value>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
+    #[serde(flatten, skip_serializing_if = "Vec::is_empty")]
+    pub userinfo_claim_requests: crate::UserinfoClaimRequests,
 }
 
 pub struct AccessTokenClaimsInput<'a> {
+    pub authorization_id: Option<Uuid>,
+    pub client_epoch: Option<i64>,
+    pub user_epoch: Option<i64>,
     pub tenant_id: Uuid,
     pub subject: &'a str,
     pub user_id: Option<Uuid>,
@@ -87,11 +108,10 @@ pub struct AccessTokenClaimsInput<'a> {
     pub audiences: &'a [String],
     pub scopes: &'a [String],
     pub authorization_details: &'a Value,
-    pub userinfo_claims: &'a [String],
     pub userinfo_claim_requests: &'a [OidcClaimRequest],
     pub ttl: i64,
-    pub dpop_jkt: Option<&'a str>,
-    pub mtls_x5t_s256: Option<&'a str>,
+    pub sender_constraint: crate::AppliedSenderConstraint<'a>,
+
     pub actor: Option<&'a Value>,
 }
 
@@ -103,6 +123,9 @@ pub fn access_token_claims(
     jti: &str,
 ) -> Claims {
     Claims {
+        authorization_id: input.authorization_id,
+        client_epoch: input.client_epoch,
+        user_epoch: input.user_epoch,
         iss: issuer.to_owned(),
         sub: input.subject.to_owned(),
         tenant_id: input.tenant_id.to_string(),
@@ -117,20 +140,19 @@ pub fn access_token_claims(
         iat: now,
         nbf: now,
         exp: now + input.ttl,
-        cnf: match (input.dpop_jkt, input.mtls_x5t_s256) {
-            (Some(jkt), None) => Some(ConfirmationClaims {
+        cnf: match input.sender_constraint {
+            crate::AppliedSenderConstraint::Dpop(jkt) => Some(ConfirmationClaims {
                 jkt: Some(jkt.to_owned()),
                 x5t_s256: None,
             }),
-            (None, Some(x5t_s256)) => Some(ConfirmationClaims {
+            crate::AppliedSenderConstraint::MutualTls(x5t_s256) => Some(ConfirmationClaims {
                 jkt: None,
                 x5t_s256: Some(x5t_s256.to_owned()),
             }),
-            _ => None,
+            crate::AppliedSenderConstraint::Bearer => None,
         },
         act: input.actor.cloned(),
-        userinfo_claims: input.userinfo_claims.to_vec(),
-        userinfo_claim_requests: input.userinfo_claim_requests.to_vec(),
+        userinfo_claim_requests: (input.userinfo_claim_requests.to_vec()).into(),
     }
 }
 

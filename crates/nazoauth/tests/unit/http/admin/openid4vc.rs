@@ -187,9 +187,12 @@ impl LiveOpenid4vcAdminFixture {
         .expect("runtime module fixture should build");
         let proof_validator = Openid4vcProofValidator::new(json!({"keys": []}))
             .expect("proof validator fixture should build");
-        let store: Arc<dyn nazo_persistence::Openid4vciStore> = Arc::new(
-            nazo_postgres::Openid4vciRepository::new(diesel_db.clone(), [0x51; 32]),
-        );
+        let store: Arc<dyn nazo_persistence::Openid4vciStore> =
+            Arc::new(nazo_postgres::Openid4vciRepository::new(
+                diesel_db.clone(),
+                [0x51; 32],
+                Arc::new(crate::bootstrap::LoginPasswordVerifier),
+            ));
         let users: Arc<dyn nazo_persistence::Openid4vcSubjectStore> =
             Arc::new(nazo_postgres::UserRepository::new(diesel_db.clone()));
         let datasets: Arc<dyn nazo_persistence::Openid4vciDatasetStore> = Arc::new(
@@ -328,6 +331,14 @@ impl LiveOpenid4vcAdminFixture {
     }
 
     async fn endpoint_with_admission(&self, enabled: bool) -> Data<CredentialDatasetAdminService> {
+        self.endpoint_with_dataset_store(enabled, None).await
+    }
+
+    async fn endpoint_with_dataset_store(
+        &self,
+        enabled: bool,
+        dataset_store: Option<Arc<dyn nazo_persistence::Openid4vciDatasetStore>>,
+    ) -> Data<CredentialDatasetAdminService> {
         let mut settings = (*self.state.settings).clone();
         settings.modules.enable_openid4vci_issuer = enabled;
         let token_service = Arc::new(ServerTokenService::new(
@@ -362,17 +373,22 @@ impl LiveOpenid4vcAdminFixture {
         .expect("runtime module fixture should build");
         let proof_validator = Openid4vcProofValidator::new(json!({"keys": []}))
             .expect("proof validator fixture should build");
-        let store: Arc<dyn nazo_persistence::Openid4vciStore> = Arc::new(
-            nazo_postgres::Openid4vciRepository::new(self.state.diesel_db.clone(), [0x51; 32]),
-        );
+        let store: Arc<dyn nazo_persistence::Openid4vciStore> =
+            Arc::new(nazo_postgres::Openid4vciRepository::new(
+                self.state.diesel_db.clone(),
+                [0x51; 32],
+                Arc::new(crate::bootstrap::LoginPasswordVerifier),
+            ));
         let users: Arc<dyn nazo_persistence::Openid4vcSubjectStore> = Arc::new(
             nazo_postgres::UserRepository::new(self.state.diesel_db.clone()),
         );
-        let datasets: Arc<dyn nazo_persistence::Openid4vciDatasetStore> =
-            Arc::new(nazo_postgres::Openid4vciDatasetRepository::new(
-                self.state.diesel_db.clone(),
-                [0x51; 32],
-            ));
+        let datasets: Arc<dyn nazo_persistence::Openid4vciDatasetStore> = dataset_store
+            .unwrap_or_else(|| {
+                Arc::new(nazo_postgres::Openid4vciDatasetRepository::new(
+                    self.state.diesel_db.clone(),
+                    [0x51; 32],
+                ))
+            });
         let operations = ServerCredentialIssuerOperations::new(
             store,
             users,
@@ -394,6 +410,9 @@ impl LiveOpenid4vcAdminFixture {
         Data::new(CredentialDatasetAdminService::new(Arc::new(operations)))
     }
 }
+
+#[path = "openid4vc/managed_dataset_unknown.rs"]
+mod managed_dataset_unknown;
 
 async fn credential_key_material() -> (KeyManager, String, String, String) {
     let settings = KeySettings {

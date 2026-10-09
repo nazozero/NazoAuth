@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "diagnostic_only": true,
+  "scenario": "cap_introspect",
+  "offered_ops_s": 16000,
+  "window_s": 60,
+  "vus": 1024,
+  "users": 256,
+  "pool_connections": 64,
+  "stream_workers": 4,
+  "application_source_sha": "ac266e7a93749694022efd1aeea6ed4d316fbbcc",
+  "runner_image": "sha256:d7b48e8d9aae564a6ce74b5e648ea940d0100579f50e3bd1fbf083439c0570b8",
+  "k6_upstream_sha": "00a9a1b7f552d6bb4337278b10ae25aac0f4e666",
+  "k6_profile": {
+    "point": "multi-cap-introspect-r16000-w60-1790567388",
+    "sha256": "36e22116c2982bef584d56f2de756986b64bd60d8c6b816ccca8354e7f26009a",
+    "bytes": 155458,
+    "sample_window_s": 15,
+    "sampled_cpu_s": 104.8,
+    "json_flush_cpu_s": 14.67,
+    "json_flush_share": 0.14,
+    "tag_json_cpu_s": 7.22,
+    "tag_json_scope": "within JSON-flush stacks; included in 14.67s"
+  },
+  "unprofiled_control": {
+    "point": "multi-cap-introspect-r16000-w60-1790567006",
+    "verdict": "INVALID",
+    "analyzer_lag_max_s": 26.281,
+    "points": 28899054,
+    "parse_errors": 0,
+    "reader_error": null,
+    "complete_operation_p95_ms": 2,
+    "complete_operation_p99_ms": 17
+  },
+  "conclusion": "JSON flusher consumes approximately one CPU and limits evidence transport; no backend upper bound established",
+  "proposed_patch_sha256": "5501e9c3aaf887be1f9de6ccf38d26601721ea7678d92182254d9a97c368d1be",
+  "validation_status": "Go 1.26.5 output and metrics package tests passed; unprofiled live validation pending",
+  "native_package_validation": {
+    "go": "go1.26.5 windows/amd64",
+    "packages": [
+      "internal/output/json",
+      "metrics"
+    ],
+    "test_functions": 57,
+    "result": "PASS"
+  },
+  "ci_native_image_validation": {
+    "commit": "a5f306ab42134f5b5c38e08aaf23a5fc12211d6d",
+    "run_url": "https://github.com/nazozero/NazoAuth/actions/runs/36376075148",
+    "build_step_s": 94,
+    "native_json_tail_test": "PASS"
+  },
+  "cold_tail_control": {
+    "point": "multi-oidc-cold-login-refresh-r52-w180-1790568494",
+    "effective_window_s": 180,
+    "verdict": "INVALID",
+    "main_business_gate": "passed",
+    "health_all_pass": true,
+    "complete_operation_p95_ms": 179,
+    "complete_operation_p99_ms": 187,
+    "analyzer_lag_max_s": 5.148,
+    "points_over_lag_gate": 423,
+    "parse_errors": 0,
+    "reader_error": null,
+    "code_observation": "parent FIFO writer was closed after StatsSampler.__exit__, which may wait five seconds",
+    "repair": "deliver EOF before sampler shutdown on success and subprocess exceptions",
+    "repair_validation": "source lifecycle regression PASS for success and error; runtime retest pending"
+  }
+}

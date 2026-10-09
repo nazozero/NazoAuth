@@ -135,7 +135,7 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
     let scim_storage = &startup.settings.storage;
     let scim_service = nazo_identity::scim::ScimService::new(
         persistence.scim_repository(scim_storage.scim_event_retention_seconds),
-        persistence.scim_credential_audit(),
+        persistence.scim_credentials(),
     );
     let scim_client_ip = ClientIpConfig::new(
         &scim_endpoint_settings.trusted_proxy_cidrs,

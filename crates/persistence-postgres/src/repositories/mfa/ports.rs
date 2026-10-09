@@ -3,7 +3,7 @@ use nazo_identity::{
     TenantId, UserId,
     ports::{
         BackupCodeCandidate, EncodedSecretHash, MfaRepositoryPort, RepositoryFuture,
-        TotpCredential, TotpEnrollment, TotpVerificationOutcome,
+        TotpEnrollment, TotpVerificationOutcome,
     },
 };
 
@@ -52,6 +52,29 @@ impl MfaRepositoryPort for MfaRepository {
         })
     }
 
+    fn verify_and_confirm_totp_with_required_audit<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &'a str,
+        timestamp: i64,
+        hashes: Vec<EncodedSecretHash>,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
+        Box::pin(async move {
+            MfaRepository::verify_and_confirm_totp_with_required_audit(
+                self,
+                tenant_id,
+                user_id,
+                code,
+                timestamp,
+                hashes.into_iter().map(|h| h.as_str().to_owned()).collect(),
+                source_ip_hash,
+            )
+            .await
+        })
+    }
+
     fn record_invalid_totp_attempt(
         &self,
         tenant_id: TenantId,
@@ -73,24 +96,6 @@ impl MfaRepositoryPort for MfaRepository {
         })
     }
 
-    fn totp_credential<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpCredential>> {
-        Box::pin(async move { self.totp_credential(tenant_id, user_id).await })
-    }
-    fn compare_and_set_totp_step<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        step: i64,
-    ) -> RepositoryFuture<'a, bool> {
-        Box::pin(async move {
-            self.compare_and_set_totp_step(tenant_id, user_id, step)
-                .await
-        })
-    }
     fn backup_code_candidates(
         &self,
         tenant_id: TenantId,
@@ -104,7 +109,7 @@ impl MfaRepositoryPort for MfaRepository {
         tenant_id: TenantId,
         user_id: UserId,
         candidate_id: uuid::Uuid,
-    ) -> RepositoryFuture<'_, bool> {
+    ) -> RepositoryFuture<'_, Option<uuid::Uuid>> {
         Box::pin(async move {
             self.consume_backup_code_candidate(tenant_id, user_id, candidate_id)
                 .await
@@ -126,12 +131,14 @@ impl MfaRepositoryPort for MfaRepository {
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: uuid::Uuid,
         hashes: Vec<EncodedSecretHash>,
-    ) -> RepositoryFuture<'a, ()> {
+    ) -> RepositoryFuture<'a, bool> {
         Box::pin(async move {
             self.replace_backup_code_hashes(
                 tenant_id,
                 user_id,
+                credential_id,
                 hashes
                     .into_iter()
                     .map(|hash| hash.as_str().to_owned())
@@ -140,25 +147,77 @@ impl MfaRepositoryPort for MfaRepository {
             .await
         })
     }
-    fn clear_mfa_state<'a>(
+    fn replace_backup_code_hashes_with_required_audit<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, ()> {
-        Box::pin(async move { self.clear_mfa_state(tenant_id, user_id).await })
+        credential_id: uuid::Uuid,
+        hashes: Vec<EncodedSecretHash>,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            MfaRepository::replace_backup_code_hashes_with_required_audit(
+                self,
+                tenant_id,
+                user_id,
+                credential_id,
+                hashes.into_iter().map(|h| h.as_str().to_owned()).collect(),
+                source_ip_hash,
+            )
+            .await
+        })
+    }
+
+    fn clear_mfa_state_if_current<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: uuid::Uuid,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            self.clear_mfa_state_if_current(tenant_id, user_id, credential_id)
+                .await
+        })
+    }
+
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: uuid::Uuid,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            MfaRepository::clear_mfa_state_if_current_with_required_audit(
+                self,
+                tenant_id,
+                user_id,
+                credential_id,
+                source_ip_hash,
+            )
+            .await
+        })
     }
 
     fn remember_device(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: uuid::Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> RepositoryFuture<'_, ()> {
+    ) -> RepositoryFuture<'_, bool> {
         Box::pin(async move {
-            self.remember_device(tenant_id, user_id, token_hash, user_agent_hash, expires_at)
-                .await
+            self.remember_device(
+                tenant_id,
+                user_id,
+                credential_id,
+                token_hash,
+                user_agent_hash,
+                expires_at,
+            )
+            .await
         })
     }
 }

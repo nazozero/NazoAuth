@@ -28,7 +28,7 @@ pub(super) async fn build(
             .data_encryption_key
             .expect("enabled OpenID4VC modules require a data encryption key")
     });
-    let trust_policy_store = data_key.map(|key| persistence.openid4vc_trust_policies(key));
+    let trust_policy_store = openid4vc_enabled.then(|| persistence.openid4vc_trust_policies());
     let openid4vc_crypto = if openid4vc_enabled {
         Some(
             Openid4vcCredentialCrypto::new_with_policies(
@@ -74,7 +74,8 @@ pub(super) async fn build(
     let (credential_issuer_endpoint, credential_dataset_admin, credential_issuer_operations) =
         if settings.modules.enable_openid4vci_issuer {
             let data_key = data_key.expect("enabled OpenID4VCI requires a data encryption key");
-            let issuance_store = persistence.openid4vci_store(data_key);
+            let issuance_store = persistence
+                .openid4vci_store(data_key, Arc::new(crate::bootstrap::LoginPasswordVerifier));
             let subject_store = persistence.openid4vc_subjects();
             let dataset_store = persistence.openid4vci_datasets(data_key);
             let proof_validator = Openid4vcProofValidator::new(

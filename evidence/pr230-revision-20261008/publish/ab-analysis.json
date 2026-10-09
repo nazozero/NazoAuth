@@ -1,0 +1,4638 @@
+[
+  {
+    "point": "p03-A1",
+    "verdict": "FAIL",
+    "source_sha": "67f836f2b616e811ce9a20bb857a01ea9517b42b",
+    "ops_s": 400.017,
+    "latency_ms": {
+      "p50": 6.0,
+      "p95": 38.0,
+      "p99": 73.0
+    },
+    "dropped": 0,
+    "started": 24001,
+    "completed": 24001,
+    "outcomes": {
+      "success": 24001
+    },
+    "wal_per_success": 3129.448,
+    "cpu_cores": {
+      "app": 0.66,
+      "postgres": 0.88
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 5129760,
+    "main_verdict": "PASS",
+    "sidecars": {
+      "argon2": {
+        "verdict": "PASS",
+        "ops_s": 1.0,
+        "latency_ms": {
+          "p50": 377.0,
+          "p95": 457.29999999999995,
+          "p99": 491.64
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 135
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "ops_s": 13.0,
+        "latency_ms": {
+          "p50": 2.0,
+          "p95": 17.0,
+          "p99": 28.0
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 1755
+        }
+      },
+      "fapi": {
+        "verdict": "FAIL",
+        "ops_s": 2.0,
+        "latency_ms": {
+          "p50": 50.0,
+          "p95": 129.0,
+          "p99": 160.79000000000002
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 270
+        }
+      },
+      "refresh": {
+        "verdict": "PASS",
+        "ops_s": 38.0,
+        "latency_ms": {
+          "p50": 10.0,
+          "p95": 38.0,
+          "p99": 53.0
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 5130
+        }
+      }
+    },
+    "storage": {
+      "span_s": 169.71939897537231,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12555967
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 941,
+        "contract_orphan": 175,
+        "decision_eligible": 692,
+        "decision_retained": 2802,
+        "spent_eligible": 0,
+        "spent_retained": 4704,
+        "db_bytes": 60937919
+      },
+      "max": {
+        "pending": 803,
+        "oldest_pending_s": 1.90911,
+        "family_eligible": 3622,
+        "family_live": 941,
+        "contract_orphan": 175,
+        "decision_eligible": 3918,
+        "decision_retained": 5790,
+        "spent_eligible": 3443,
+        "spent_retained": 4714,
+        "db_bytes": 60937919
+      },
+      "physical_db_delta_bytes": 48381952,
+      "live_samples": [
+        {
+          "ts": 1791428862.258688,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428867.330418,
+          "pending": 46,
+          "oldest_pending_s": 0.141543,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428872.419198,
+          "pending": 9,
+          "oldest_pending_s": 0.022453,
+          "family_eligible": 15,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 9
+        },
+        {
+          "ts": 1791428877.496904,
+          "pending": 5,
+          "oldest_pending_s": 0.004721,
+          "family_eligible": 240,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 176
+        },
+        {
+          "ts": 1791428882.623203,
+          "pending": 7,
+          "oldest_pending_s": 0.004879,
+          "family_eligible": 525,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 436
+        },
+        {
+          "ts": 1791428887.709261,
+          "pending": 15,
+          "oldest_pending_s": 0.025453,
+          "family_eligible": 854,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 751
+        },
+        {
+          "ts": 1791428892.811553,
+          "pending": 16,
+          "oldest_pending_s": 0.053343,
+          "family_eligible": 1186,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1103
+        },
+        {
+          "ts": 1791428897.926112,
+          "pending": 6,
+          "oldest_pending_s": 0.005341,
+          "family_eligible": 1513,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1400
+        },
+        {
+          "ts": 1791428903.1531,
+          "pending": 671,
+          "oldest_pending_s": 1.390802,
+          "family_eligible": 191,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 193
+        },
+        {
+          "ts": 1791428908.260319,
+          "pending": 17,
+          "oldest_pending_s": 0.018712,
+          "family_eligible": 509,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 476
+        },
+        {
+          "ts": 1791428913.415511,
+          "pending": 295,
+          "oldest_pending_s": 0.650043,
+          "family_eligible": 824,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 743
+        },
+        {
+          "ts": 1791428918.520794,
+          "pending": 7,
+          "oldest_pending_s": 0.005633,
+          "family_eligible": 1119,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 1043
+        },
+        {
+          "ts": 1791428923.655722,
+          "pending": 9,
+          "oldest_pending_s": 0.011645,
+          "family_eligible": 1434,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 1338
+        },
+        {
+          "ts": 1791428928.730583,
+          "pending": 26,
+          "oldest_pending_s": 0.047812,
+          "family_eligible": 1757,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 1647
+        },
+        {
+          "ts": 1791428933.88865,
+          "pending": 14,
+          "oldest_pending_s": 0.023456,
+          "family_eligible": 2108,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 1984
+        },
+        {
+          "ts": 1791428938.968954,
+          "pending": 19,
+          "oldest_pending_s": 0.020304,
+          "family_eligible": 2419,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 2248
+        },
+        {
+          "ts": 1791428944.048056,
+          "pending": 99,
+          "oldest_pending_s": 0.211839,
+          "family_eligible": 2710,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 2507
+        },
+        {
+          "ts": 1791428949.122314,
+          "pending": 646,
+          "oldest_pending_s": 1.363714,
+          "family_eligible": 3032,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 2850
+        },
+        {
+          "ts": 1791428954.204161,
+          "pending": 425,
+          "oldest_pending_s": 0.9936,
+          "family_eligible": 3343,
+          "contract_orphan": 87,
+          "decision_eligible": 0,
+          "spent_eligible": 3150
+        },
+        {
+          "ts": 1791428959.28321,
+          "pending": 254,
+          "oldest_pending_s": 0.58483,
+          "family_eligible": 3622,
+          "contract_orphan": 87,
+          "decision_eligible": 243,
+          "spent_eligible": 3443
+        },
+        {
+          "ts": 1791428964.375432,
+          "pending": 208,
+          "oldest_pending_s": 0.47601,
+          "family_eligible": 235,
+          "contract_orphan": 146,
+          "decision_eligible": 254,
+          "spent_eligible": 238
+        },
+        {
+          "ts": 1791428969.460142,
+          "pending": 15,
+          "oldest_pending_s": 0.020339,
+          "family_eligible": 547,
+          "contract_orphan": 146,
+          "decision_eligible": 619,
+          "spent_eligible": 579
+        },
+        {
+          "ts": 1791428974.587759,
+          "pending": 803,
+          "oldest_pending_s": 1.827964,
+          "family_eligible": 827,
+          "contract_orphan": 146,
+          "decision_eligible": 939,
+          "spent_eligible": 890
+        },
+        {
+          "ts": 1791428979.671555,
+          "pending": 257,
+          "oldest_pending_s": 0.586199,
+          "family_eligible": 1152,
+          "contract_orphan": 146,
+          "decision_eligible": 1275,
+          "spent_eligible": 1190
+        },
+        {
+          "ts": 1791428984.772424,
+          "pending": 201,
+          "oldest_pending_s": 0.445386,
+          "family_eligible": 1449,
+          "contract_orphan": 146,
+          "decision_eligible": 1607,
+          "spent_eligible": 1492
+        },
+        {
+          "ts": 1791428989.866765,
+          "pending": 66,
+          "oldest_pending_s": 1.353197,
+          "family_eligible": 1513,
+          "contract_orphan": 146,
+          "decision_eligible": 1940,
+          "spent_eligible": 1538
+        },
+        {
+          "ts": 1791428994.94802,
+          "pending": 15,
+          "oldest_pending_s": 0.251532,
+          "family_eligible": 1519,
+          "contract_orphan": 146,
+          "decision_eligible": 2288,
+          "spent_eligible": 1540
+        },
+        {
+          "ts": 1791429000.035145,
+          "pending": 61,
+          "oldest_pending_s": 1.205364,
+          "family_eligible": 1524,
+          "contract_orphan": 146,
+          "decision_eligible": 2618,
+          "spent_eligible": 1542
+        },
+        {
+          "ts": 1791429005.158977,
+          "pending": 2,
+          "oldest_pending_s": 0.011574,
+          "family_eligible": 1529,
+          "contract_orphan": 146,
+          "decision_eligible": 2910,
+          "spent_eligible": 1550
+        },
+        {
+          "ts": 1791429010.333542,
+          "pending": 47,
+          "oldest_pending_s": 0.951764,
+          "family_eligible": 1534,
+          "contract_orphan": 146,
+          "decision_eligible": 3242,
+          "spent_eligible": 1560
+        },
+        {
+          "ts": 1791429015.422161,
+          "pending": 94,
+          "oldest_pending_s": 1.90911,
+          "family_eligible": 1539,
+          "contract_orphan": 146,
+          "decision_eligible": 3563,
+          "spent_eligible": 1565
+        },
+        {
+          "ts": 1791429020.534596,
+          "pending": 33,
+          "oldest_pending_s": 0.795136,
+          "family_eligible": 1543,
+          "contract_orphan": 146,
+          "decision_eligible": 3918,
+          "spent_eligible": 1571
+        },
+        {
+          "ts": 1791429025.632582,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 175,
+          "decision_eligible": 296,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429030.732721,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 175,
+          "decision_eligible": 605,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429031.978087,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 175,
+          "decision_eligible": 692,
+          "spent_eligible": 0
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 179.4265480041504,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 47224,
+          "calls_s": 263.19405085421164,
+          "total_exec_ms": 8188.386155999961,
+          "mean_exec_ms": 0.17339459080128666,
+          "rows": 47224
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 7773,
+          "calls_s": 43.32134840949066,
+          "total_exec_ms": 2078.1369949999985,
+          "mean_exec_ms": 0.2673532735108708,
+          "rows": 7773
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 3077,
+          "calls_s": 17.149078741284285,
+          "total_exec_ms": 369.6247919999992,
+          "mean_exec_ms": 0.12012505427364291,
+          "rows": 3077
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 3077,
+          "calls_s": 17.149078741284285,
+          "total_exec_ms": 857.5892069999995,
+          "mean_exec_ms": 0.2787095245368864,
+          "rows": 3077
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 3077,
+          "calls_s": 17.149078741284285,
+          "total_exec_ms": 862.4522789999978,
+          "mean_exec_ms": 0.28028998342541367,
+          "rows": 54997
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 3015,
+          "calls_s": 16.803533443279857,
+          "total_exec_ms": 3726.202588999993,
+          "mean_exec_ms": 1.2358880892205615,
+          "rows": 3015
+        }
+      ]
+    },
+    "exported_events": 54997,
+    "exported_batches": 3015,
+    "exported_mean_batch": 18.24112769485904,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 3999,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 129.0,
+        "mean_ms": 11.145036259064765,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 4001,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 130.0,
+        "mean_ms": 12.055236190952263,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 3997,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 147.0,
+        "mean_ms": 11.31998999249437,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 4002,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 168.0,
+        "mean_ms": 12.740129935032483,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 4000,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 92.0,
+        "mean_ms": 9.5425,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 3920,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 145.0,
+        "mean_ms": 11.903061224489797,
+        "drop": 0,
+        "http_errors": 0
+      }
+    ]
+  },
+  {
+    "point": "p03-B1",
+    "verdict": "FAIL",
+    "source_sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "ops_s": 400.0,
+    "latency_ms": {
+      "p50": 27.0,
+      "p95": 156.0,
+      "p99": 213.0
+    },
+    "dropped": 0,
+    "started": 24000,
+    "completed": 24000,
+    "outcomes": {
+      "success": 24000
+    },
+    "wal_per_success": 3245.678,
+    "cpu_cores": {
+      "app": 0.64,
+      "postgres": 1.03
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 5151992,
+    "main_verdict": "FAIL",
+    "sidecars": {
+      "argon2": {
+        "verdict": "PASS",
+        "ops_s": 1.0,
+        "latency_ms": {
+          "p50": 567.0,
+          "p95": 718.6999999999999,
+          "p99": 761.9399999999999
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 135
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "ops_s": 13.0,
+        "latency_ms": {
+          "p50": 5.0,
+          "p95": 23.0,
+          "p99": 41.0
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 1755
+        }
+      },
+      "fapi": {
+        "verdict": "FAIL",
+        "ops_s": 2.0,
+        "latency_ms": {
+          "p50": 195.0,
+          "p95": 278.54999999999995,
+          "p99": 318.72
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 270
+        }
+      },
+      "refresh": {
+        "verdict": "PASS",
+        "ops_s": 38.0,
+        "latency_ms": {
+          "p50": 50.0,
+          "p95": 92.0,
+          "p99": 110.71000000000004
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 5130
+        }
+      }
+    },
+    "storage": {
+      "span_s": 178.02731108665466,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12482239
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 10,
+        "family_live": 941,
+        "contract_orphan": 0,
+        "decision_eligible": 1851,
+        "decision_retained": 2504,
+        "spent_eligible": 2,
+        "spent_retained": 4651,
+        "db_bytes": 50468543
+      },
+      "max": {
+        "pending": 341,
+        "oldest_pending_s": 2.00603,
+        "family_eligible": 3548,
+        "family_live": 941,
+        "contract_orphan": 0,
+        "decision_eligible": 3253,
+        "decision_retained": 5796,
+        "spent_eligible": 3450,
+        "spent_retained": 4651,
+        "db_bytes": 53073599
+      },
+      "physical_db_delta_bytes": 37986304,
+      "live_samples": [
+        {
+          "ts": 1791429500.8364,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429506.014871,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429511.252347,
+          "pending": 16,
+          "oldest_pending_s": 0.019275,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429516.493965,
+          "pending": 21,
+          "oldest_pending_s": 0.039364,
+          "family_eligible": 89,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 32
+        },
+        {
+          "ts": 1791429521.730799,
+          "pending": 48,
+          "oldest_pending_s": 0.043362,
+          "family_eligible": 362,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 264
+        },
+        {
+          "ts": 1791429527.003505,
+          "pending": 31,
+          "oldest_pending_s": 0.076145,
+          "family_eligible": 718,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 657
+        },
+        {
+          "ts": 1791429532.223603,
+          "pending": 341,
+          "oldest_pending_s": 0.686334,
+          "family_eligible": 254,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 251
+        },
+        {
+          "ts": 1791429537.505453,
+          "pending": 23,
+          "oldest_pending_s": 0.029735,
+          "family_eligible": 604,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 599
+        },
+        {
+          "ts": 1791429542.783306,
+          "pending": 20,
+          "oldest_pending_s": 0.039096,
+          "family_eligible": 933,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 912
+        },
+        {
+          "ts": 1791429548.025646,
+          "pending": 45,
+          "oldest_pending_s": 0.099337,
+          "family_eligible": 1259,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1230
+        },
+        {
+          "ts": 1791429553.28775,
+          "pending": 30,
+          "oldest_pending_s": 0.046987,
+          "family_eligible": 1571,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1529
+        },
+        {
+          "ts": 1791429558.497861,
+          "pending": 32,
+          "oldest_pending_s": 0.071874,
+          "family_eligible": 1910,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1859
+        },
+        {
+          "ts": 1791429563.704236,
+          "pending": 198,
+          "oldest_pending_s": 0.415083,
+          "family_eligible": 2230,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 2187
+        },
+        {
+          "ts": 1791429568.93194,
+          "pending": 10,
+          "oldest_pending_s": 0.002754,
+          "family_eligible": 2552,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 2492
+        },
+        {
+          "ts": 1791429574.11795,
+          "pending": 13,
+          "oldest_pending_s": 0.028916,
+          "family_eligible": 2873,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 2817
+        },
+        {
+          "ts": 1791429579.421456,
+          "pending": 16,
+          "oldest_pending_s": 0.011619,
+          "family_eligible": 3202,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 3137
+        },
+        {
+          "ts": 1791429584.613045,
+          "pending": 23,
+          "oldest_pending_s": 0.06498,
+          "family_eligible": 3548,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 3450
+        },
+        {
+          "ts": 1791429589.9955,
+          "pending": 18,
+          "oldest_pending_s": 0.030721,
+          "family_eligible": 59,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 65
+        },
+        {
+          "ts": 1791429595.141514,
+          "pending": 63,
+          "oldest_pending_s": 0.120718,
+          "family_eligible": 359,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 364
+        },
+        {
+          "ts": 1791429600.255841,
+          "pending": 33,
+          "oldest_pending_s": 0.065963,
+          "family_eligible": 652,
+          "contract_orphan": 0,
+          "decision_eligible": 251,
+          "spent_eligible": 676
+        },
+        {
+          "ts": 1791429605.487922,
+          "pending": 54,
+          "oldest_pending_s": 0.105109,
+          "family_eligible": 959,
+          "contract_orphan": 0,
+          "decision_eligible": 577,
+          "spent_eligible": 985
+        },
+        {
+          "ts": 1791429610.673479,
+          "pending": 28,
+          "oldest_pending_s": 0.072761,
+          "family_eligible": 1280,
+          "contract_orphan": 0,
+          "decision_eligible": 866,
+          "spent_eligible": 1290
+        },
+        {
+          "ts": 1791429615.912289,
+          "pending": 48,
+          "oldest_pending_s": 0.085356,
+          "family_eligible": 1606,
+          "contract_orphan": 0,
+          "decision_eligible": 1258,
+          "spent_eligible": 1598
+        },
+        {
+          "ts": 1791429621.118055,
+          "pending": 53,
+          "oldest_pending_s": 0.108483,
+          "family_eligible": 1922,
+          "contract_orphan": 0,
+          "decision_eligible": 1574,
+          "spent_eligible": 1945
+        },
+        {
+          "ts": 1791429626.351062,
+          "pending": 35,
+          "oldest_pending_s": 0.075943,
+          "family_eligible": 2280,
+          "contract_orphan": 0,
+          "decision_eligible": 1942,
+          "spent_eligible": 2285
+        },
+        {
+          "ts": 1791429631.508542,
+          "pending": 93,
+          "oldest_pending_s": 1.882316,
+          "family_eligible": 2309,
+          "contract_orphan": 0,
+          "decision_eligible": 2268,
+          "spent_eligible": 2325
+        },
+        {
+          "ts": 1791429636.647324,
+          "pending": 19,
+          "oldest_pending_s": 0.313632,
+          "family_eligible": 2314,
+          "contract_orphan": 0,
+          "decision_eligible": 2597,
+          "spent_eligible": 2327
+        },
+        {
+          "ts": 1791429641.866266,
+          "pending": 99,
+          "oldest_pending_s": 2.00603,
+          "family_eligible": 2319,
+          "contract_orphan": 0,
+          "decision_eligible": 2922,
+          "spent_eligible": 2336
+        },
+        {
+          "ts": 1791429647.059664,
+          "pending": 91,
+          "oldest_pending_s": 1.803475,
+          "family_eligible": 2324,
+          "contract_orphan": 0,
+          "decision_eligible": 3253,
+          "spent_eligible": 2343
+        },
+        {
+          "ts": 1791429652.219488,
+          "pending": 24,
+          "oldest_pending_s": 0.567555,
+          "family_eligible": 1,
+          "contract_orphan": 0,
+          "decision_eligible": 114,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429657.429914,
+          "pending": 38,
+          "oldest_pending_s": 0.895916,
+          "family_eligible": 6,
+          "contract_orphan": 0,
+          "decision_eligible": 438,
+          "spent_eligible": 1
+        },
+        {
+          "ts": 1791429662.627654,
+          "pending": 86,
+          "oldest_pending_s": 1.942073,
+          "family_eligible": 10,
+          "contract_orphan": 0,
+          "decision_eligible": 774,
+          "spent_eligible": 2
+        },
+        {
+          "ts": 1791429667.786005,
+          "pending": 25,
+          "oldest_pending_s": 0.592869,
+          "family_eligible": 10,
+          "contract_orphan": 0,
+          "decision_eligible": 1113,
+          "spent_eligible": 2
+        },
+        {
+          "ts": 1791429672.964478,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 10,
+          "contract_orphan": 0,
+          "decision_eligible": 1461,
+          "spent_eligible": 2
+        },
+        {
+          "ts": 1791429678.088572,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 10,
+          "contract_orphan": 0,
+          "decision_eligible": 1800,
+          "spent_eligible": 2
+        },
+        {
+          "ts": 1791429678.863711,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 10,
+          "contract_orphan": 0,
+          "decision_eligible": 1851,
+          "spent_eligible": 2
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 194.54017782211304,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 47323,
+          "calls_s": 243.25566332766493,
+          "total_exec_ms": 11535.129621999875,
+          "mean_exec_ms": 0.2437531353041835,
+          "rows": 47323
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 7832,
+          "calls_s": 40.25903588492428,
+          "total_exec_ms": 2694.019262000004,
+          "mean_exec_ms": 0.34397590168539377,
+          "rows": 7832
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 2306,
+          "calls_s": 11.853592537108707,
+          "total_exec_ms": 1190.8699839999997,
+          "mean_exec_ms": 0.5164223694709452,
+          "rows": 55155
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 2306,
+          "calls_s": 11.853592537108707,
+          "total_exec_ms": 910.1611509999997,
+          "mean_exec_ms": 0.3946926066782306,
+          "rows": 2306
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 2268,
+          "calls_s": 11.658260136237011,
+          "total_exec_ms": 5088.724526000014,
+          "mean_exec_ms": 2.2437056992945386,
+          "rows": 2268
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 38,
+          "calls_s": 0.19533240087169595,
+          "total_exec_ms": 8.619977,
+          "mean_exec_ms": 0.2268415,
+          "rows": 38
+        }
+      ]
+    },
+    "exported_events": 55155,
+    "exported_batches": 2268,
+    "exported_mean_batch": 24.31878306878307,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 3995,
+        "p99_hist_upper_ms": 500,
+        "max_ms": 284.0,
+        "mean_ms": 44.71639549436796,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 3995,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 254.0,
+        "mean_ms": 41.78998748435544,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 4013,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 269.0,
+        "mean_ms": 34.72663842511837,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 3995,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 254.0,
+        "mean_ms": 35.516896120150186,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 3988,
+        "p99_hist_upper_ms": 500,
+        "max_ms": 438.0,
+        "mean_ms": 52.41599799398195,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 3868,
+        "p99_hist_upper_ms": 500,
+        "max_ms": 344.0,
+        "mean_ms": 52.52249224405377,
+        "drop": 0,
+        "http_errors": 0
+      }
+    ]
+  },
+  {
+    "point": "p04-A1",
+    "verdict": "FAIL",
+    "source_sha": "67f836f2b616e811ce9a20bb857a01ea9517b42b",
+    "ops_s": 1508.433,
+    "latency_ms": {
+      "p50": 434.0,
+      "p95": 1615.0,
+      "p99": 1795.0
+    },
+    "dropped": 5491,
+    "started": 90506,
+    "completed": 90506,
+    "outcomes": {
+      "success": 90506
+    },
+    "wal_per_success": 3403.366,
+    "cpu_cores": {
+      "app": 2.76,
+      "postgres": 3.69
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 21032640,
+    "main_verdict": "FAIL",
+    "sidecars": {
+      "argon2": {
+        "verdict": "FAIL",
+        "ops_s": 4.215,
+        "latency_ms": {
+          "p50": 1892.0,
+          "p95": 2836.4,
+          "p99": 3898.2400000000002
+        },
+        "dropped": 511,
+        "outcomes": {
+          "success": 569
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "ops_s": 200.0,
+        "latency_ms": {
+          "p50": 1.0,
+          "p95": 7.0,
+          "p99": 12.0099999999984
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 27000
+        }
+      },
+      "fapi": {
+        "verdict": "FAIL",
+        "ops_s": 21.252,
+        "latency_ms": {
+          "p50": 1422.0,
+          "p95": 2011.6,
+          "p99": 2660.2800000000007
+        },
+        "dropped": 1181,
+        "outcomes": {
+          "success": 2869
+        }
+      },
+      "refresh": {
+        "verdict": "FAIL",
+        "ops_s": 238.141,
+        "latency_ms": {
+          "p50": 83.0,
+          "p95": 628.0,
+          "p99": 759.5600000000013
+        },
+        "dropped": 48851,
+        "outcomes": {
+          "success": 32149
+        }
+      }
+    },
+    "storage": {
+      "span_s": 178.789470911026,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12482239
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 512,
+        "family_live": 10240,
+        "contract_orphan": 1434,
+        "decision_eligible": 6848,
+        "decision_retained": 13098,
+        "spent_eligible": 101,
+        "spent_retained": 13701,
+        "db_bytes": 221558463
+      },
+      "max": {
+        "pending": 635,
+        "oldest_pending_s": 0.50685,
+        "family_eligible": 11955,
+        "family_live": 10240,
+        "contract_orphan": 1434,
+        "decision_eligible": 6848,
+        "decision_retained": 22473,
+        "spent_eligible": 10874,
+        "spent_retained": 14050,
+        "db_bytes": 221943487
+      },
+      "physical_db_delta_bytes": 209076224,
+      "live_samples": [
+        {
+          "ts": 1791430097.151431,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430108.515419,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430113.740366,
+          "pending": 16,
+          "oldest_pending_s": 0.08144,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430118.924624,
+          "pending": 43,
+          "oldest_pending_s": 0.427758,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430124.071748,
+          "pending": 83,
+          "oldest_pending_s": 0.211903,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430129.380174,
+          "pending": 170,
+          "oldest_pending_s": 0.481299,
+          "family_eligible": 6,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1
+        },
+        {
+          "ts": 1791430134.58058,
+          "pending": 130,
+          "oldest_pending_s": 0.294898,
+          "family_eligible": 25,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 17
+        },
+        {
+          "ts": 1791430139.797532,
+          "pending": 135,
+          "oldest_pending_s": 0.365314,
+          "family_eligible": 75,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 36
+        },
+        {
+          "ts": 1791430145.00352,
+          "pending": 314,
+          "oldest_pending_s": 0.316995,
+          "family_eligible": 211,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 55
+        },
+        {
+          "ts": 1791430150.206195,
+          "pending": 219,
+          "oldest_pending_s": 0.217439,
+          "family_eligible": 462,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 91
+        },
+        {
+          "ts": 1791430155.437268,
+          "pending": 221,
+          "oldest_pending_s": 0.298801,
+          "family_eligible": 853,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 198
+        },
+        {
+          "ts": 1791430160.995725,
+          "pending": 288,
+          "oldest_pending_s": 0.381906,
+          "family_eligible": 1525,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 434
+        },
+        {
+          "ts": 1791430166.313284,
+          "pending": 167,
+          "oldest_pending_s": 0.156538,
+          "family_eligible": 2460,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 954
+        },
+        {
+          "ts": 1791430171.745016,
+          "pending": 206,
+          "oldest_pending_s": 0.220679,
+          "family_eligible": 3623,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1707
+        },
+        {
+          "ts": 1791430177.222828,
+          "pending": 523,
+          "oldest_pending_s": 0.433029,
+          "family_eligible": 5263,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 2968
+        },
+        {
+          "ts": 1791430182.541212,
+          "pending": 167,
+          "oldest_pending_s": 0.233371,
+          "family_eligible": 6206,
+          "contract_orphan": 66,
+          "decision_eligible": 0,
+          "spent_eligible": 3841
+        },
+        {
+          "ts": 1791430187.927637,
+          "pending": 207,
+          "oldest_pending_s": 0.169634,
+          "family_eligible": 6037,
+          "contract_orphan": 616,
+          "decision_eligible": 0,
+          "spent_eligible": 4548
+        },
+        {
+          "ts": 1791430193.304656,
+          "pending": 258,
+          "oldest_pending_s": 0.276803,
+          "family_eligible": 5728,
+          "contract_orphan": 927,
+          "decision_eligible": 0,
+          "spent_eligible": 4841
+        },
+        {
+          "ts": 1791430198.615584,
+          "pending": 325,
+          "oldest_pending_s": 0.280361,
+          "family_eligible": 5705,
+          "contract_orphan": 1059,
+          "decision_eligible": 0,
+          "spent_eligible": 5026
+        },
+        {
+          "ts": 1791430204.305497,
+          "pending": 240,
+          "oldest_pending_s": 0.228486,
+          "family_eligible": 5817,
+          "contract_orphan": 1129,
+          "decision_eligible": 26,
+          "spent_eligible": 5358
+        },
+        {
+          "ts": 1791430209.788717,
+          "pending": 215,
+          "oldest_pending_s": 0.374104,
+          "family_eligible": 5862,
+          "contract_orphan": 1174,
+          "decision_eligible": 330,
+          "spent_eligible": 5473
+        },
+        {
+          "ts": 1791430215.461155,
+          "pending": 296,
+          "oldest_pending_s": 0.303802,
+          "family_eligible": 6612,
+          "contract_orphan": 1189,
+          "decision_eligible": 678,
+          "spent_eligible": 6148
+        },
+        {
+          "ts": 1791430220.998456,
+          "pending": 543,
+          "oldest_pending_s": 0.45324,
+          "family_eligible": 7835,
+          "contract_orphan": 1189,
+          "decision_eligible": 1610,
+          "spent_eligible": 7212
+        },
+        {
+          "ts": 1791430226.561756,
+          "pending": 449,
+          "oldest_pending_s": 0.396888,
+          "family_eligible": 9254,
+          "contract_orphan": 1189,
+          "decision_eligible": 2538,
+          "spent_eligible": 8551
+        },
+        {
+          "ts": 1791430231.976293,
+          "pending": 635,
+          "oldest_pending_s": 0.50685,
+          "family_eligible": 10610,
+          "contract_orphan": 1189,
+          "decision_eligible": 3944,
+          "spent_eligible": 9856
+        },
+        {
+          "ts": 1791430237.351893,
+          "pending": 87,
+          "oldest_pending_s": 0.065193,
+          "family_eligible": 11753,
+          "contract_orphan": 1189,
+          "decision_eligible": 5348,
+          "spent_eligible": 10841
+        },
+        {
+          "ts": 1791430242.860189,
+          "pending": 52,
+          "oldest_pending_s": 0.101567,
+          "family_eligible": 11955,
+          "contract_orphan": 1189,
+          "decision_eligible": 6744,
+          "spent_eligible": 10874
+        },
+        {
+          "ts": 1791430248.44739,
+          "pending": 78,
+          "oldest_pending_s": 0.136551,
+          "family_eligible": 1735,
+          "contract_orphan": 1332,
+          "decision_eligible": 0,
+          "spent_eligible": 1235
+        },
+        {
+          "ts": 1791430254.051366,
+          "pending": 55,
+          "oldest_pending_s": 0.044047,
+          "family_eligible": 172,
+          "contract_orphan": 1434,
+          "decision_eligible": 1108,
+          "spent_eligible": 37
+        },
+        {
+          "ts": 1791430259.544584,
+          "pending": 70,
+          "oldest_pending_s": 0.104723,
+          "family_eligible": 384,
+          "contract_orphan": 1434,
+          "decision_eligible": 2511,
+          "spent_eligible": 82
+        },
+        {
+          "ts": 1791430264.981107,
+          "pending": 70,
+          "oldest_pending_s": 0.083295,
+          "family_eligible": 512,
+          "contract_orphan": 1434,
+          "decision_eligible": 4055,
+          "spent_eligible": 101
+        },
+        {
+          "ts": 1791430270.303711,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 512,
+          "contract_orphan": 1434,
+          "decision_eligible": 5483,
+          "spent_eligible": 101
+        },
+        {
+          "ts": 1791430275.940902,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 512,
+          "contract_orphan": 1434,
+          "decision_eligible": 6848,
+          "spent_eligible": 101
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 197.1690845489502,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 180660,
+          "calls_s": 916.2694060951956,
+          "total_exec_ms": 52325.3148880002,
+          "mean_exec_ms": 0.2896342017491431,
+          "rows": 180660
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 29907,
+          "calls_s": 151.6819945095152,
+          "total_exec_ms": 9974.887921000118,
+          "mean_exec_ms": 0.33353020767713637,
+          "rows": 29907
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 1605,
+          "calls_s": 8.140221392576048,
+          "total_exec_ms": 2829.3341980000005,
+          "mean_exec_ms": 1.7628250454828662,
+          "rows": 1605
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 1605,
+          "calls_s": 8.140221392576048,
+          "total_exec_ms": 3437.759273000001,
+          "mean_exec_ms": 2.1419060890965738,
+          "rows": 210597
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 1605,
+          "calls_s": 8.140221392576048,
+          "total_exec_ms": 453.253361,
+          "mean_exec_ms": 0.28240084797507786,
+          "rows": 1605
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 1584,
+          "calls_s": 8.033713822953558,
+          "total_exec_ms": 23686.130694999993,
+          "mean_exec_ms": 14.95336533775252,
+          "rows": 1584
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event(item.event_id, item.event_type, item.event_category, item.payload, item.occurred_at) AS changed FROM unnest($1, ",
+          "calls": 15,
+          "calls_s": 0.07607683544463596,
+          "total_exec_ms": 11.481978999999999,
+          "mean_exec_ms": 0.7654652666666666,
+          "rows": 30
+        }
+      ]
+    },
+    "exported_events": 210597,
+    "exported_batches": 1584,
+    "exported_mean_batch": 132.9526515151515,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 15030,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1786.0,
+        "mean_ms": 457.00612109115104,
+        "drop": 442,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 15786,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1713.0,
+        "mean_ms": 528.41467122767,
+        "drop": 191,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 14985,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1845.0,
+        "mean_ms": 624.6834834834834,
+        "drop": 1011,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 14556,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1980.0,
+        "mean_ms": 651.9501923605386,
+        "drop": 1685,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 14341,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 2002.0,
+        "mean_ms": 634.9790809566975,
+        "drop": 1424,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 15284,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1891.0,
+        "mean_ms": 579.3037163046323,
+        "drop": 738,
+        "http_errors": 0
+      }
+    ]
+  },
+  {
+    "point": "p04-B1",
+    "verdict": "FAIL",
+    "source_sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "ops_s": 1562.117,
+    "latency_ms": {
+      "p50": 363.0,
+      "p95": 1418.0,
+      "p99": 1674.0
+    },
+    "dropped": 2273,
+    "started": 93727,
+    "completed": 93727,
+    "outcomes": {
+      "success": 93727
+    },
+    "wal_per_success": 3537.831,
+    "cpu_cores": {
+      "app": 3.0,
+      "postgres": 3.94
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 23563144,
+    "main_verdict": "FAIL",
+    "sidecars": {
+      "argon2": {
+        "verdict": "FAIL",
+        "ops_s": 4.97,
+        "latency_ms": {
+          "p50": 1350.0,
+          "p95": 2566.5,
+          "p99": 2745.499999999998
+        },
+        "dropped": 409,
+        "outcomes": {
+          "success": 671
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "ops_s": 200.0,
+        "latency_ms": {
+          "p50": 1.0,
+          "p95": 6.0,
+          "p99": 10.0
+        },
+        "dropped": 0,
+        "outcomes": {
+          "success": 27000
+        }
+      },
+      "fapi": {
+        "verdict": "FAIL",
+        "ops_s": 24.77,
+        "latency_ms": {
+          "p50": 970.5,
+          "p95": 1806.0,
+          "p99": 1937.7100000000005
+        },
+        "dropped": 706,
+        "outcomes": {
+          "success": 3344
+        }
+      },
+      "refresh": {
+        "verdict": "FAIL",
+        "ops_s": 280.207,
+        "latency_ms": {
+          "p50": 43.0,
+          "p95": 561.0,
+          "p99": 640.7300000000032
+        },
+        "dropped": 43173,
+        "outcomes": {
+          "success": 37828
+        }
+      }
+    },
+    "storage": {
+      "span_s": 179.573814868927,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12498623
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 404,
+        "family_live": 10240,
+        "contract_orphan": 0,
+        "decision_eligible": 6255,
+        "decision_retained": 13169,
+        "spent_eligible": 59,
+        "spent_retained": 13724,
+        "db_bytes": 238606015
+      },
+      "max": {
+        "pending": 2132,
+        "oldest_pending_s": 1.394916,
+        "family_eligible": 12770,
+        "family_live": 10240,
+        "contract_orphan": 473,
+        "decision_eligible": 8166,
+        "decision_retained": 23429,
+        "spent_eligible": 11272,
+        "spent_retained": 14032,
+        "db_bytes": 238606015
+      },
+      "physical_db_delta_bytes": 226107392,
+      "live_samples": [
+        {
+          "ts": 1791429798.306729,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429807.760653,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429812.998678,
+          "pending": 47,
+          "oldest_pending_s": 1.394916,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429818.21766,
+          "pending": 55,
+          "oldest_pending_s": 0.342259,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429823.41101,
+          "pending": 73,
+          "oldest_pending_s": 0.272768,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791429828.755229,
+          "pending": 211,
+          "oldest_pending_s": 0.258637,
+          "family_eligible": 5,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1
+        },
+        {
+          "ts": 1791429833.968218,
+          "pending": 279,
+          "oldest_pending_s": 0.094629,
+          "family_eligible": 57,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 46
+        },
+        {
+          "ts": 1791429839.181853,
+          "pending": 177,
+          "oldest_pending_s": 0.199327,
+          "family_eligible": 225,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 74
+        },
+        {
+          "ts": 1791429844.436856,
+          "pending": 319,
+          "oldest_pending_s": 0.362221,
+          "family_eligible": 475,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 112
+        },
+        {
+          "ts": 1791429849.665092,
+          "pending": 269,
+          "oldest_pending_s": 0.23315,
+          "family_eligible": 815,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 201
+        },
+        {
+          "ts": 1791429855.229191,
+          "pending": 168,
+          "oldest_pending_s": 0.256574,
+          "family_eligible": 1442,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 416
+        },
+        {
+          "ts": 1791429860.701864,
+          "pending": 283,
+          "oldest_pending_s": 0.309051,
+          "family_eligible": 2358,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 851
+        },
+        {
+          "ts": 1791429866.046705,
+          "pending": 452,
+          "oldest_pending_s": 0.115841,
+          "family_eligible": 3708,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 1689
+        },
+        {
+          "ts": 1791429871.414346,
+          "pending": 590,
+          "oldest_pending_s": 0.278759,
+          "family_eligible": 5017,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 2620
+        },
+        {
+          "ts": 1791429876.914916,
+          "pending": 850,
+          "oldest_pending_s": 0.503452,
+          "family_eligible": 6190,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 3591
+        },
+        {
+          "ts": 1791429882.404648,
+          "pending": 1449,
+          "oldest_pending_s": 0.919765,
+          "family_eligible": 7747,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 4948
+        },
+        {
+          "ts": 1791429887.736656,
+          "pending": 1456,
+          "oldest_pending_s": 0.812429,
+          "family_eligible": 9065,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 6168
+        },
+        {
+          "ts": 1791429893.29387,
+          "pending": 2132,
+          "oldest_pending_s": 0.97171,
+          "family_eligible": 8899,
+          "contract_orphan": 473,
+          "decision_eligible": 0,
+          "spent_eligible": 7059
+        },
+        {
+          "ts": 1791429898.814137,
+          "pending": 446,
+          "oldest_pending_s": 0.292595,
+          "family_eligible": 8071,
+          "contract_orphan": 104,
+          "decision_eligible": 0,
+          "spent_eligible": 6946
+        },
+        {
+          "ts": 1791429904.308223,
+          "pending": 130,
+          "oldest_pending_s": 0.139439,
+          "family_eligible": 8165,
+          "contract_orphan": 13,
+          "decision_eligible": 499,
+          "spent_eligible": 7273
+        },
+        {
+          "ts": 1791429909.912865,
+          "pending": 234,
+          "oldest_pending_s": 0.28979,
+          "family_eligible": 8123,
+          "contract_orphan": 54,
+          "decision_eligible": 77,
+          "spent_eligible": 7399
+        },
+        {
+          "ts": 1791429915.356078,
+          "pending": 371,
+          "oldest_pending_s": 0.311317,
+          "family_eligible": 8270,
+          "contract_orphan": 5,
+          "decision_eligible": 42,
+          "spent_eligible": 7655
+        },
+        {
+          "ts": 1791429920.876928,
+          "pending": 411,
+          "oldest_pending_s": 0.224387,
+          "family_eligible": 8384,
+          "contract_orphan": 2,
+          "decision_eligible": 804,
+          "spent_eligible": 7695
+        },
+        {
+          "ts": 1791429926.36661,
+          "pending": 295,
+          "oldest_pending_s": 0.246417,
+          "family_eligible": 10044,
+          "contract_orphan": 2,
+          "decision_eligible": 2351,
+          "spent_eligible": 9193
+        },
+        {
+          "ts": 1791429931.682611,
+          "pending": 395,
+          "oldest_pending_s": 0.104901,
+          "family_eligible": 11476,
+          "contract_orphan": 2,
+          "decision_eligible": 3729,
+          "spent_eligible": 10532
+        },
+        {
+          "ts": 1791429937.348519,
+          "pending": 35,
+          "oldest_pending_s": 0.039163,
+          "family_eligible": 12342,
+          "contract_orphan": 2,
+          "decision_eligible": 5299,
+          "spent_eligible": 11183
+        },
+        {
+          "ts": 1791429943.120457,
+          "pending": 58,
+          "oldest_pending_s": 0.042476,
+          "family_eligible": 12552,
+          "contract_orphan": 2,
+          "decision_eligible": 6714,
+          "spent_eligible": 11226
+        },
+        {
+          "ts": 1791429948.694209,
+          "pending": 66,
+          "oldest_pending_s": 0.06052,
+          "family_eligible": 12770,
+          "contract_orphan": 2,
+          "decision_eligible": 8166,
+          "spent_eligible": 11272
+        },
+        {
+          "ts": 1791429954.105373,
+          "pending": 84,
+          "oldest_pending_s": 0.062226,
+          "family_eligible": 504,
+          "contract_orphan": 63,
+          "decision_eligible": 0,
+          "spent_eligible": 108
+        },
+        {
+          "ts": 1791429959.410617,
+          "pending": 29,
+          "oldest_pending_s": 0.028708,
+          "family_eligible": 198,
+          "contract_orphan": 0,
+          "decision_eligible": 1447,
+          "spent_eligible": 42
+        },
+        {
+          "ts": 1791429964.866985,
+          "pending": 30,
+          "oldest_pending_s": 0.029289,
+          "family_eligible": 374,
+          "contract_orphan": 0,
+          "decision_eligible": 2852,
+          "spent_eligible": 59
+        },
+        {
+          "ts": 1791429970.274502,
+          "pending": 18,
+          "oldest_pending_s": 0.013484,
+          "family_eligible": 404,
+          "contract_orphan": 0,
+          "decision_eligible": 4277,
+          "spent_eligible": 59
+        },
+        {
+          "ts": 1791429975.763913,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 404,
+          "contract_orphan": 0,
+          "decision_eligible": 5692,
+          "spent_eligible": 59
+        },
+        {
+          "ts": 1791429977.880544,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 404,
+          "contract_orphan": 0,
+          "decision_eligible": 6255,
+          "spent_eligible": 59
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 200.13693499565125,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 197763,
+          "calls_s": 988.1384463307444,
+          "total_exec_ms": 54980.31260900046,
+          "mean_exec_ms": 0.27801111739304346,
+          "rows": 197763
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 31841,
+          "calls_s": 159.09607090111513,
+          "total_exec_ms": 10259.128636999909,
+          "mean_exec_ms": 0.32219869467039064,
+          "rows": 31841
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 1919,
+          "calls_s": 9.588435038448539,
+          "total_exec_ms": 3655.3081920000063,
+          "mean_exec_ms": 1.9047984325169391,
+          "rows": 229630
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 1919,
+          "calls_s": 9.588435038448539,
+          "total_exec_ms": 3415.604956999998,
+          "mean_exec_ms": 1.7798879400729537,
+          "rows": 1919
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 1897,
+          "calls_s": 9.478510301165649,
+          "total_exec_ms": 25956.732075999887,
+          "mean_exec_ms": 13.683042739061618,
+          "rows": 1897
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 22,
+          "calls_s": 0.10992473728289101,
+          "total_exec_ms": 7.950671,
+          "mean_exec_ms": 0.3613941363636364,
+          "rows": 22
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event(item.event_id, item.event_type, item.event_category, item.payload, item.occurred_at) AS changed FROM unnest($1, ",
+          "calls": 13,
+          "calls_s": 0.06495552657625378,
+          "total_exec_ms": 5.466453,
+          "mean_exec_ms": 0.4204963846153846,
+          "rows": 26
+        }
+      ]
+    },
+    "exported_events": 229630,
+    "exported_batches": 1897,
+    "exported_mean_batch": 121.04902477596204,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 15395,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1858.0,
+        "mean_ms": 495.86950308541736,
+        "drop": 386,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 15181,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1777.0,
+        "mean_ms": 505.91878005401486,
+        "drop": 694,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 15339,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1821.0,
+        "mean_ms": 577.4535497750832,
+        "drop": 611,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 15626,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1771.0,
+        "mean_ms": 577.0900422372968,
+        "drop": 582,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 16174,
+        "p99_hist_upper_ms": 2000,
+        "max_ms": 1482.0,
+        "mean_ms": 422.77952269073825,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 15501,
+        "p99_hist_upper_ms": 1000,
+        "max_ms": 1080.0,
+        "mean_ms": 326.5860912199213,
+        "drop": 0,
+        "http_errors": 0
+      }
+    ]
+  },
+  {
+    "point": "p06-A1",
+    "verdict": "PASS",
+    "source_sha": "67f836f2b616e811ce9a20bb857a01ea9517b42b",
+    "ops_s": 800.0,
+    "latency_ms": {
+      "p50": 16.0,
+      "p95": 32.0,
+      "p99": 60.0
+    },
+    "dropped": 0,
+    "started": 48000,
+    "completed": 48000,
+    "outcomes": {
+      "success": 48000
+    },
+    "wal_per_success": 10702.882,
+    "cpu_cores": {
+      "app": 2.43,
+      "postgres": 4.44
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 23786712,
+    "main_verdict": "PASS",
+    "sidecars": {},
+    "storage": {
+      "span_s": 88.56594705581665,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12727999
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 7697,
+        "family_live": 9920,
+        "contract_orphan": 992,
+        "decision_eligible": 0,
+        "decision_retained": 60000,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 293795519
+      },
+      "max": {
+        "pending": 3269,
+        "oldest_pending_s": 1.999977,
+        "family_eligible": 38101,
+        "family_live": 9920,
+        "contract_orphan": 992,
+        "decision_eligible": 0,
+        "decision_retained": 60000,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 293795519
+      },
+      "physical_db_delta_bytes": 281067520,
+      "live_samples": [
+        {
+          "ts": 1791428122.106525,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428127.186506,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428132.32919,
+          "pending": 464,
+          "oldest_pending_s": 0.213354,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428137.438651,
+          "pending": 3269,
+          "oldest_pending_s": 1.999977,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428142.566712,
+          "pending": 71,
+          "oldest_pending_s": 0.020027,
+          "family_eligible": 940,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428147.71188,
+          "pending": 761,
+          "oldest_pending_s": 0.272562,
+          "family_eligible": 5063,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428152.879069,
+          "pending": 1178,
+          "oldest_pending_s": 0.433564,
+          "family_eligible": 9201,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428158.016727,
+          "pending": 1299,
+          "oldest_pending_s": 0.501854,
+          "family_eligible": 13306,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428163.186655,
+          "pending": 84,
+          "oldest_pending_s": 0.035809,
+          "family_eligible": 17440,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428168.340723,
+          "pending": 130,
+          "oldest_pending_s": 0.047905,
+          "family_eligible": 21565,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428173.52557,
+          "pending": 1365,
+          "oldest_pending_s": 0.510635,
+          "family_eligible": 25711,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428178.665541,
+          "pending": 66,
+          "oldest_pending_s": 0.020449,
+          "family_eligible": 29827,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428183.820056,
+          "pending": 125,
+          "oldest_pending_s": 0.037272,
+          "family_eligible": 33950,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428189.005953,
+          "pending": 115,
+          "oldest_pending_s": 0.034538,
+          "family_eligible": 38101,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428194.237293,
+          "pending": 74,
+          "oldest_pending_s": 0.023327,
+          "family_eligible": 23340,
+          "contract_orphan": 992,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428199.442821,
+          "pending": 174,
+          "oldest_pending_s": 0.059198,
+          "family_eligible": 3076,
+          "contract_orphan": 992,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428204.689565,
+          "pending": 65,
+          "oldest_pending_s": 0.018022,
+          "family_eligible": 7273,
+          "contract_orphan": 992,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428209.905748,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 7697,
+          "contract_orphan": 992,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428210.672472,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 7697,
+          "contract_orphan": 992,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 102.18067383766174,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 111072,
+          "calls_s": 1087.015732314158,
+          "total_exec_ms": 18895.661296000108,
+          "mean_exec_ms": 0.17012083419763854,
+          "rows": 111072
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 60000,
+          "calls_s": 587.1951881558762,
+          "total_exec_ms": 14022.68323,
+          "mean_exec_ms": 0.23371138716666667,
+          "rows": 60000
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 2128,
+          "calls_s": 20.825856006595075,
+          "total_exec_ms": 299.29305400000044,
+          "mean_exec_ms": 0.14064523214285735,
+          "rows": 2128
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 2128,
+          "calls_s": 20.825856006595075,
+          "total_exec_ms": 1485.6718109999958,
+          "mean_exec_ms": 0.6981540465225544,
+          "rows": 2128
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 2128,
+          "calls_s": 20.825856006595075,
+          "total_exec_ms": 1696.5379719999983,
+          "mean_exec_ms": 0.7972452875939842,
+          "rows": 171072
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 2108,
+          "calls_s": 20.63012427720978,
+          "total_exec_ms": 9243.892658999981,
+          "mean_exec_ms": 4.38514832020872,
+          "rows": 2108
+        }
+      ]
+    },
+    "exported_events": 171072,
+    "exported_batches": 2110,
+    "exported_mean_batch": 81.07677725118484,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 7994,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 122.0,
+        "mean_ms": 21.923942957217914,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 8003,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 209.0,
+        "mean_ms": 19.5662876421342,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 7999,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 94.0,
+        "mean_ms": 17.890486310788848,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 8001,
+        "p99_hist_upper_ms": 50,
+        "max_ms": 150.0,
+        "mean_ms": 17.048868891388576,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 7995,
+        "p99_hist_upper_ms": 50,
+        "max_ms": 89.0,
+        "mean_ms": 17.674421513445903,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 7383,
+        "p99_hist_upper_ms": 50,
+        "max_ms": 62.0,
+        "mean_ms": 17.4819179195449,
+        "drop": 0,
+        "http_errors": 0
+      }
+    ],
+    "low_required": {
+      "n": 30,
+      "successes": 30,
+      "p50": 19.23253107815981,
+      "p95": 21.654958836734295,
+      "p99": 28.14615098759532
+    }
+  },
+  {
+    "point": "p06-B1",
+    "verdict": "PASS",
+    "source_sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "ops_s": 800.0,
+    "latency_ms": {
+      "p50": 21.0,
+      "p95": 95.0,
+      "p99": 127.0
+    },
+    "dropped": 0,
+    "started": 48000,
+    "completed": 48000,
+    "outcomes": {
+      "success": 48000
+    },
+    "wal_per_success": 10901.361,
+    "cpu_cores": {
+      "app": 2.38,
+      "postgres": 5.84
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 23800448,
+    "main_verdict": "PASS",
+    "sidecars": {},
+    "storage": {
+      "span_s": 89.88320302963257,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12662463
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 9920,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 60001,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 303363775
+      },
+      "max": {
+        "pending": 3695,
+        "oldest_pending_s": 1.520092,
+        "family_eligible": 44607,
+        "family_live": 9920,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 60001,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 303363775
+      },
+      "physical_db_delta_bytes": 290701312,
+      "live_samples": [
+        {
+          "ts": 1791428313.437699,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428318.519349,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428323.725325,
+          "pending": 1200,
+          "oldest_pending_s": 0.688862,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428328.873924,
+          "pending": 66,
+          "oldest_pending_s": 0.030073,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428334.085913,
+          "pending": 109,
+          "oldest_pending_s": 0.036129,
+          "family_eligible": 2176,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428339.208911,
+          "pending": 71,
+          "oldest_pending_s": 0.022102,
+          "family_eligible": 2438,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428344.469752,
+          "pending": 36,
+          "oldest_pending_s": 0.008449,
+          "family_eligible": 3968,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428349.677317,
+          "pending": 212,
+          "oldest_pending_s": 0.073771,
+          "family_eligible": 8186,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428354.909737,
+          "pending": 202,
+          "oldest_pending_s": 0.075283,
+          "family_eligible": 12368,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428360.102658,
+          "pending": 373,
+          "oldest_pending_s": 0.135141,
+          "family_eligible": 16528,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428365.229342,
+          "pending": 3695,
+          "oldest_pending_s": 1.520092,
+          "family_eligible": 20632,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428370.530843,
+          "pending": 296,
+          "oldest_pending_s": 0.066608,
+          "family_eligible": 24860,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428375.732572,
+          "pending": 3492,
+          "oldest_pending_s": 1.448331,
+          "family_eligible": 29030,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428380.883154,
+          "pending": 1008,
+          "oldest_pending_s": 0.398726,
+          "family_eligible": 33152,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428386.176101,
+          "pending": 642,
+          "oldest_pending_s": 0.242826,
+          "family_eligible": 37380,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428391.414673,
+          "pending": 929,
+          "oldest_pending_s": 0.385299,
+          "family_eligible": 41570,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428396.553841,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 44607,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428401.675542,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 6207,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428403.320902,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 102.12248611450195,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 111074,
+          "calls_s": 1087.6546804340564,
+          "total_exec_ms": 21245.166752999965,
+          "mean_exec_ms": 0.19127038508561828,
+          "rows": 111074
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 60001,
+          "calls_s": 587.53955453773,
+          "total_exec_ms": 14567.151499000072,
+          "mean_exec_ms": 0.2427818119531353,
+          "rows": 60001
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 1324,
+          "calls_s": 12.964823423075526,
+          "total_exec_ms": 1696.985403000001,
+          "mean_exec_ms": 1.2817110294561942,
+          "rows": 1324
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 1324,
+          "calls_s": 12.964823423075526,
+          "total_exec_ms": 1015.134949000001,
+          "mean_exec_ms": 0.7667182394259826,
+          "rows": 171075
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 1307,
+          "calls_s": 12.798356657069268,
+          "total_exec_ms": 21808.107104000002,
+          "mean_exec_ms": 16.6856213496557,
+          "rows": 1307
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 17,
+          "calls_s": 0.16646676600625673,
+          "total_exec_ms": 3.3547510000000003,
+          "mean_exec_ms": 0.19733829411764708,
+          "rows": 17
+        }
+      ]
+    },
+    "exported_events": 171075,
+    "exported_batches": 1311,
+    "exported_mean_batch": 130.49199084668192,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 7930,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 224.0,
+        "mean_ms": 56.99029003783102,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 8073,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 202.0,
+        "mean_ms": 44.14591849374458,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 8004,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 221.0,
+        "mean_ms": 27.942028985507246,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 7998,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 124.0,
+        "mean_ms": 21.655913978494624,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 7996,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 142.0,
+        "mean_ms": 27.26550775387694,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 7364,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 158.0,
+        "mean_ms": 26.83188484519283,
+        "drop": 0,
+        "http_errors": 0
+      }
+    ],
+    "low_required": {
+      "n": 30,
+      "successes": 30,
+      "p50": 7.535739801824093,
+      "p95": 9.639505064114928,
+      "p99": 16.19772589765489
+    }
+  },
+  {
+    "point": "p10-A1",
+    "verdict": "FAIL",
+    "source_sha": "67f836f2b616e811ce9a20bb857a01ea9517b42b",
+    "ops_s": 959.983,
+    "latency_ms": {
+      "p50": 43.0,
+      "p95": 120.0,
+      "p99": 163.0
+    },
+    "dropped": 0,
+    "started": 57599,
+    "completed": 57599,
+    "outcomes": {
+      "success": 57599
+    },
+    "wal_per_success": 10910.649,
+    "cpu_cores": {
+      "app": 3.01,
+      "postgres": 6.45
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 27893672,
+    "main_verdict": "FAIL",
+    "sidecars": {},
+    "storage": {
+      "span_s": 89.99787282943726,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12498623
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 40040,
+        "family_live": 992,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 72001,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 335247039
+      },
+      "max": {
+        "pending": 5721,
+        "oldest_pending_s": 2.01112,
+        "family_eligible": 40040,
+        "family_live": 1040,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 72001,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 335247039
+      },
+      "physical_db_delta_bytes": 322748416,
+      "live_samples": [
+        {
+          "ts": 1791428682.765114,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428687.901307,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428693.011589,
+          "pending": 138,
+          "oldest_pending_s": 0.037918,
+          "family_eligible": 3249,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428698.198545,
+          "pending": 1713,
+          "oldest_pending_s": 0.558451,
+          "family_eligible": 8194,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428703.368941,
+          "pending": 2730,
+          "oldest_pending_s": 0.878372,
+          "family_eligible": 13192,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428708.600977,
+          "pending": 207,
+          "oldest_pending_s": 0.057587,
+          "family_eligible": 18133,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428713.788289,
+          "pending": 182,
+          "oldest_pending_s": 0.057018,
+          "family_eligible": 23183,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428719.02492,
+          "pending": 1567,
+          "oldest_pending_s": 0.55834,
+          "family_eligible": 27355,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428724.250743,
+          "pending": 485,
+          "oldest_pending_s": 0.177152,
+          "family_eligible": 1260,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428729.477405,
+          "pending": 55,
+          "oldest_pending_s": 0.048933,
+          "family_eligible": 6270,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428734.747025,
+          "pending": 131,
+          "oldest_pending_s": 0.030735,
+          "family_eligible": 11269,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428740.036437,
+          "pending": 201,
+          "oldest_pending_s": 0.067781,
+          "family_eligible": 16426,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428745.252135,
+          "pending": 1314,
+          "oldest_pending_s": 0.490072,
+          "family_eligible": 21371,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428750.458664,
+          "pending": 5721,
+          "oldest_pending_s": 2.01112,
+          "family_eligible": 26383,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428755.681229,
+          "pending": 3705,
+          "oldest_pending_s": 1.230589,
+          "family_eligible": 31459,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428760.921548,
+          "pending": 201,
+          "oldest_pending_s": 0.040393,
+          "family_eligible": 36474,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428766.097123,
+          "pending": 637,
+          "oldest_pending_s": 1.626617,
+          "family_eligible": 40040,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428771.263306,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 40040,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428772.762987,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 40040,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 101.70493340492249,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 144002,
+          "calls_s": 1415.8801857396463,
+          "total_exec_ms": 29775.47618499992,
+          "mean_exec_ms": 0.20677126835043902,
+          "rows": 144002
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 72001,
+          "calls_s": 707.9400928698232,
+          "total_exec_ms": 17276.981264999748,
+          "mean_exec_ms": 0.23995474042026843,
+          "rows": 72001
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 1306,
+          "calls_s": 12.841068336384064,
+          "total_exec_ms": 2695.942322999998,
+          "mean_exec_ms": 2.064274366768758,
+          "rows": 1306
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 1306,
+          "calls_s": 12.841068336384064,
+          "total_exec_ms": 1599.688205,
+          "mean_exec_ms": 1.2248761140888207,
+          "rows": 216003
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 1306,
+          "calls_s": 12.841068336384064,
+          "total_exec_ms": 230.13157599999957,
+          "mean_exec_ms": 0.1762110076569675,
+          "rows": 1306
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 1287,
+          "calls_s": 12.654253406528554,
+          "total_exec_ms": 10962.90688300001,
+          "mean_exec_ms": 8.518187166278175,
+          "rows": 1287
+        }
+      ]
+    },
+    "exported_events": 216003,
+    "exported_batches": 1287,
+    "exported_mean_batch": 167.83449883449885,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 9589,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 200.0,
+        "mean_ms": 50.99530712274481,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 9615,
+        "p99_hist_upper_ms": 500,
+        "max_ms": 309.0,
+        "mean_ms": 65.44482579303173,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 9512,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 196.0,
+        "mean_ms": 54.84240958788898,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 9629,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 210.0,
+        "mean_ms": 53.40720739432963,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 9668,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 214.0,
+        "mean_ms": 50.1886636326024,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 9230,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 148.0,
+        "mean_ms": 41.276923076923076,
+        "drop": 0,
+        "http_errors": 0
+      }
+    ]
+  },
+  {
+    "point": "p10-B1",
+    "verdict": "FAIL",
+    "source_sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "ops_s": 960.017,
+    "latency_ms": {
+      "p50": 36.0,
+      "p95": 104.0,
+      "p99": 158.0
+    },
+    "dropped": 0,
+    "started": 57601,
+    "completed": 57601,
+    "outcomes": {
+      "success": 57601
+    },
+    "wal_per_success": 10690.566,
+    "cpu_cores": {
+      "app": 3.05,
+      "postgres": 6.09
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 27881128,
+    "main_verdict": "FAIL",
+    "sidecars": {},
+    "storage": {
+      "span_s": 89.702232837677,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12498623
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 42081,
+        "family_live": 992,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 72001,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 316823231
+      },
+      "max": {
+        "pending": 4187,
+        "oldest_pending_s": 1.46907,
+        "family_eligible": 42081,
+        "family_live": 1029,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 72001,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 316823231
+      },
+      "physical_db_delta_bytes": 304324608,
+      "live_samples": [
+        {
+          "ts": 1791428502.355987,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428507.455197,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428512.656359,
+          "pending": 145,
+          "oldest_pending_s": 0.037249,
+          "family_eligible": 2270,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428517.812671,
+          "pending": 2431,
+          "oldest_pending_s": 0.832438,
+          "family_eligible": 7194,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428522.946922,
+          "pending": 164,
+          "oldest_pending_s": 0.041182,
+          "family_eligible": 12148,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428528.129282,
+          "pending": 83,
+          "oldest_pending_s": 0.024793,
+          "family_eligible": 17080,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428533.358704,
+          "pending": 133,
+          "oldest_pending_s": 0.043362,
+          "family_eligible": 22135,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428538.603332,
+          "pending": 216,
+          "oldest_pending_s": 0.055048,
+          "family_eligible": 21780,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428543.809616,
+          "pending": 112,
+          "oldest_pending_s": 0.029847,
+          "family_eligible": 2258,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428549.005032,
+          "pending": 101,
+          "oldest_pending_s": 0.028327,
+          "family_eligible": 7241,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428554.208285,
+          "pending": 123,
+          "oldest_pending_s": 0.056069,
+          "family_eligible": 12192,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428559.365041,
+          "pending": 2119,
+          "oldest_pending_s": 0.752454,
+          "family_eligible": 17135,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428564.608441,
+          "pending": 72,
+          "oldest_pending_s": 0.026076,
+          "family_eligible": 22145,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428569.807707,
+          "pending": 4187,
+          "oldest_pending_s": 1.46907,
+          "family_eligible": 27196,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428575.040341,
+          "pending": 110,
+          "oldest_pending_s": 0.02915,
+          "family_eligible": 32240,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428580.287689,
+          "pending": 302,
+          "oldest_pending_s": 0.061584,
+          "family_eligible": 37230,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428585.45,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 42081,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428590.582108,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 42081,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791428592.05822,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 42081,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 101.25980305671692,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 144002,
+          "calls_s": 1422.104286726122,
+          "total_exec_ms": 29775.49052500006,
+          "mean_exec_ms": 0.20677136793239023,
+          "rows": 144002
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 72001,
+          "calls_s": 711.052143363061,
+          "total_exec_ms": 17534.70976599987,
+          "mean_exec_ms": 0.24353425321870348,
+          "rows": 72001
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 1850,
+          "calls_s": 18.26983604702244,
+          "total_exec_ms": 3174.9524449999976,
+          "mean_exec_ms": 1.7161905108108095,
+          "rows": 1850
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 1850,
+          "calls_s": 18.26983604702244,
+          "total_exec_ms": 1745.596986999998,
+          "mean_exec_ms": 0.9435659389189179,
+          "rows": 216003
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 1833,
+          "calls_s": 18.101951067130884,
+          "total_exec_ms": 11917.956906000003,
+          "mean_exec_ms": 6.501885927986908,
+          "rows": 1833
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 17,
+          "calls_s": 0.16788497989155757,
+          "total_exec_ms": 3.691892,
+          "mean_exec_ms": 0.21717011764705885,
+          "rows": 17
+        }
+      ]
+    },
+    "exported_events": 216003,
+    "exported_batches": 1833,
+    "exported_mean_batch": 117.84124386252046,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 9598,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 267.0,
+        "mean_ms": 43.19743696603459,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 9561,
+        "p99_hist_upper_ms": 100,
+        "max_ms": 169.0,
+        "mean_ms": 37.57598577554649,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 9598,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 192.0,
+        "mean_ms": 49.28547614086268,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 9645,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 199.0,
+        "mean_ms": 43.350233281493004,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 9576,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 190.0,
+        "mean_ms": 41.394632414369255,
+        "drop": 0,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 8938,
+        "p99_hist_upper_ms": 200,
+        "max_ms": 243.0,
+        "mean_ms": 59.68404564779593,
+        "drop": 0,
+        "http_errors": 0
+      }
+    ]
+  },
+  {
+    "point": "sustained-B1",
+    "verdict": "FAIL",
+    "source_sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "ops_s": 307.128,
+    "latency_ms": {
+      "p50": 3264.0,
+      "p95": 3916.0,
+      "p99": 4289.18
+    },
+    "dropped": 117510,
+    "started": 55283,
+    "completed": 55283,
+    "outcomes": {
+      "success": 55283
+    },
+    "wal_per_success": 11151.665,
+    "cpu_cores": {
+      "app": 1.17,
+      "postgres": 2.58
+    },
+    "unverified_internal_gates": {
+      "queue_dropped_zero": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "pending_zero_post_drain": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      },
+      "enqueued_eq_persisted": {
+        "status": "UNVERIFIED",
+        "value": null,
+        "reason": "in-process best-effort queue collection removed"
+      }
+    },
+    "collector_complete": true,
+    "valkey_bytes": 18222616,
+    "main_verdict": "FAIL",
+    "sidecars": {},
+    "storage": {
+      "span_s": 301.94509100914,
+      "first": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 0,
+        "contract_orphan": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 12515007
+      },
+      "last": {
+        "pending": 0,
+        "oldest_pending_s": 0,
+        "family_eligible": 0,
+        "family_live": 992,
+        "contract_orphan": 0,
+        "decision_eligible": 1716,
+        "decision_retained": 0,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 219567807
+      },
+      "max": {
+        "pending": 383,
+        "oldest_pending_s": 0.512182,
+        "family_eligible": 42656,
+        "family_live": 1435,
+        "contract_orphan": 0,
+        "decision_eligible": 24417,
+        "decision_retained": 28760,
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "db_bytes": 239703743
+      },
+      "physical_db_delta_bytes": 207052800,
+      "live_samples": [
+        {
+          "ts": 1791430527.542216,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430534.586294,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430539.785044,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430545.052741,
+          "pending": 35,
+          "oldest_pending_s": 0.348124,
+          "family_eligible": 504,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430550.242309,
+          "pending": 54,
+          "oldest_pending_s": 0.282433,
+          "family_eligible": 2284,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430555.43319,
+          "pending": 169,
+          "oldest_pending_s": 0.278167,
+          "family_eligible": 3935,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430560.684334,
+          "pending": 191,
+          "oldest_pending_s": 0.35753,
+          "family_eligible": 5465,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430565.92786,
+          "pending": 111,
+          "oldest_pending_s": 0.301855,
+          "family_eligible": 6956,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430571.187722,
+          "pending": 137,
+          "oldest_pending_s": 0.349472,
+          "family_eligible": 7609,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430576.402439,
+          "pending": 190,
+          "oldest_pending_s": 0.403833,
+          "family_eligible": 8322,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430581.655081,
+          "pending": 314,
+          "oldest_pending_s": 0.426038,
+          "family_eligible": 8644,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430586.92047,
+          "pending": 168,
+          "oldest_pending_s": 0.418967,
+          "family_eligible": 9430,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430592.210043,
+          "pending": 179,
+          "oldest_pending_s": 0.448276,
+          "family_eligible": 9973,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430597.459955,
+          "pending": 383,
+          "oldest_pending_s": 0.512182,
+          "family_eligible": 10698,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430602.796075,
+          "pending": 174,
+          "oldest_pending_s": 0.48592,
+          "family_eligible": 11860,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430608.056542,
+          "pending": 51,
+          "oldest_pending_s": 0.422921,
+          "family_eligible": 13414,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430613.379041,
+          "pending": 156,
+          "oldest_pending_s": 0.434244,
+          "family_eligible": 15282,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430618.656894,
+          "pending": 171,
+          "oldest_pending_s": 0.353549,
+          "family_eligible": 16598,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430623.942895,
+          "pending": 57,
+          "oldest_pending_s": 0.28246,
+          "family_eligible": 18232,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430629.251792,
+          "pending": 238,
+          "oldest_pending_s": 0.271787,
+          "family_eligible": 19826,
+          "contract_orphan": 0,
+          "decision_eligible": 0,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430634.491727,
+          "pending": 60,
+          "oldest_pending_s": 0.201118,
+          "family_eligible": 20408,
+          "contract_orphan": 0,
+          "decision_eligible": 476,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430639.773593,
+          "pending": 135,
+          "oldest_pending_s": 0.293875,
+          "family_eligible": 21186,
+          "contract_orphan": 0,
+          "decision_eligible": 1289,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430645.090233,
+          "pending": 125,
+          "oldest_pending_s": 0.295139,
+          "family_eligible": 21735,
+          "contract_orphan": 0,
+          "decision_eligible": 1980,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430650.365005,
+          "pending": 121,
+          "oldest_pending_s": 0.493468,
+          "family_eligible": 22334,
+          "contract_orphan": 0,
+          "decision_eligible": 2916,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430655.647813,
+          "pending": 230,
+          "oldest_pending_s": 0.356602,
+          "family_eligible": 22931,
+          "contract_orphan": 0,
+          "decision_eligible": 3381,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430660.94953,
+          "pending": 172,
+          "oldest_pending_s": 0.328356,
+          "family_eligible": 24106,
+          "contract_orphan": 0,
+          "decision_eligible": 4076,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430666.174949,
+          "pending": 51,
+          "oldest_pending_s": 0.121865,
+          "family_eligible": 25975,
+          "contract_orphan": 0,
+          "decision_eligible": 5411,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430671.5711,
+          "pending": 105,
+          "oldest_pending_s": 0.323151,
+          "family_eligible": 27826,
+          "contract_orphan": 0,
+          "decision_eligible": 6937,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430676.822612,
+          "pending": 180,
+          "oldest_pending_s": 0.259319,
+          "family_eligible": 29713,
+          "contract_orphan": 0,
+          "decision_eligible": 8780,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430682.135684,
+          "pending": 109,
+          "oldest_pending_s": 0.27402,
+          "family_eligible": 31120,
+          "contract_orphan": 0,
+          "decision_eligible": 10287,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430687.394563,
+          "pending": 26,
+          "oldest_pending_s": 0.243337,
+          "family_eligible": 32650,
+          "contract_orphan": 0,
+          "decision_eligible": 11868,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430692.744142,
+          "pending": 124,
+          "oldest_pending_s": 0.327969,
+          "family_eligible": 33689,
+          "contract_orphan": 0,
+          "decision_eligible": 12692,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430698.099636,
+          "pending": 135,
+          "oldest_pending_s": 0.282588,
+          "family_eligible": 34431,
+          "contract_orphan": 0,
+          "decision_eligible": 13058,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430703.575974,
+          "pending": 264,
+          "oldest_pending_s": 0.457747,
+          "family_eligible": 35173,
+          "contract_orphan": 0,
+          "decision_eligible": 13685,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430708.905731,
+          "pending": 152,
+          "oldest_pending_s": 0.180289,
+          "family_eligible": 35806,
+          "contract_orphan": 0,
+          "decision_eligible": 13893,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430714.25644,
+          "pending": 69,
+          "oldest_pending_s": 0.189157,
+          "family_eligible": 36585,
+          "contract_orphan": 0,
+          "decision_eligible": 14528,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430719.595928,
+          "pending": 76,
+          "oldest_pending_s": 0.186786,
+          "family_eligible": 37155,
+          "contract_orphan": 0,
+          "decision_eligible": 15103,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430725.017997,
+          "pending": 159,
+          "oldest_pending_s": 0.292227,
+          "family_eligible": 38515,
+          "contract_orphan": 0,
+          "decision_eligible": 16792,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430730.410126,
+          "pending": 123,
+          "oldest_pending_s": 0.322727,
+          "family_eligible": 39960,
+          "contract_orphan": 0,
+          "decision_eligible": 18343,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430735.771632,
+          "pending": 182,
+          "oldest_pending_s": 0.406996,
+          "family_eligible": 41612,
+          "contract_orphan": 0,
+          "decision_eligible": 19656,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430741.158294,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 42656,
+          "contract_orphan": 0,
+          "decision_eligible": 21413,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430745.110486,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 42656,
+          "contract_orphan": 0,
+          "decision_eligible": 22534,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430750.407436,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 42656,
+          "contract_orphan": 0,
+          "decision_eligible": 24417,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430755.74691,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 17568,
+          "contract_orphan": 0,
+          "decision_eligible": 1388,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430760.986768,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 1063,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430766.376499,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 2742,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430771.603309,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 4282,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430776.890355,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 5699,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430782.183897,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 7347,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430787.464861,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 8847,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430792.666956,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 11145,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430797.954296,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 12997,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430803.33016,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 14693,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430808.574173,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 16160,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430813.811499,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 17877,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430819.057129,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 10469,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430824.325215,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 1127,
+          "spent_eligible": 0
+        },
+        {
+          "ts": 1791430829.487307,
+          "pending": 0,
+          "oldest_pending_s": 0,
+          "family_eligible": 0,
+          "contract_orphan": 0,
+          "decision_eligible": 1716,
+          "spent_eligible": 0
+        }
+      ]
+    },
+    "sql": {
+      "observation_s": 320.86977648735046,
+      "statements": [
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 180960,
+          "calls_s": 563.9671083422652,
+          "total_exec_ms": 91092.47430299956,
+          "mean_exec_ms": 0.5033845839025175,
+          "rows": 180960
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+          "calls": 120640,
+          "calls_s": 375.9780722281768,
+          "total_exec_ms": 32279.52590899962,
+          "mean_exec_ms": 0.2675690144976759,
+          "rows": 120640
+        },
+        {
+          "role": "nazoauth_perf_runtime",
+          "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+          "calls": 60320,
+          "calls_s": 187.9890361140884,
+          "total_exec_ms": 16387.783659000215,
+          "mean_exec_ms": 0.2716807635775898,
+          "rows": 60320
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+          "calls": 1783,
+          "calls_s": 5.556771409008946,
+          "total_exec_ms": 2086.923224999999,
+          "mean_exec_ms": 1.1704560992708912,
+          "rows": 180960
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+          "calls": 1783,
+          "calls_s": 5.556771409008946,
+          "total_exec_ms": 1185.9081019999987,
+          "mean_exec_ms": 0.6651195187885579,
+          "rows": 1783
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+          "calls": 1721,
+          "calls_s": 5.363546603984518,
+          "total_exec_ms": 36356.87344999992,
+          "mean_exec_ms": 21.125434892504313,
+          "rows": 1721
+        },
+        {
+          "role": "nazoauth_perf_exporter",
+          "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+          "calls": 62,
+          "calls_s": 0.19322480502442774,
+          "total_exec_ms": 19.274682,
+          "mean_exec_ms": 0.31088196774193544,
+          "rows": 62
+        }
+      ]
+    },
+    "exported_events": 180960,
+    "exported_batches": 1721,
+    "exported_mean_batch": 105.14816966879721,
+    "latency_trend_10s_histogram": [
+      {
+        "from_s": 0,
+        "n": 2136,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4431.0,
+        "mean_ms": 3443.189138576779,
+        "drop": 6723,
+        "http_errors": 0
+      },
+      {
+        "from_s": 10,
+        "n": 2747,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4246.0,
+        "mean_ms": 3576.4375682562795,
+        "drop": 6853,
+        "http_errors": 0
+      },
+      {
+        "from_s": 20,
+        "n": 3095,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4234.0,
+        "mean_ms": 3241.626171243942,
+        "drop": 6500,
+        "http_errors": 0
+      },
+      {
+        "from_s": 30,
+        "n": 2978,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 3948.0,
+        "mean_ms": 3296.0732034922767,
+        "drop": 6627,
+        "http_errors": 0
+      },
+      {
+        "from_s": 40,
+        "n": 2875,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4605.0,
+        "mean_ms": 3602.4417391304346,
+        "drop": 6725,
+        "http_errors": 0
+      },
+      {
+        "from_s": 50,
+        "n": 3034,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 3942.0,
+        "mean_ms": 3246.596572181938,
+        "drop": 6565,
+        "http_errors": 0
+      },
+      {
+        "from_s": 60,
+        "n": 2714,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4021.0,
+        "mean_ms": 3564.668754605748,
+        "drop": 6885,
+        "http_errors": 0
+      },
+      {
+        "from_s": 70,
+        "n": 3373,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 3883.0,
+        "mean_ms": 2825.3009190631487,
+        "drop": 6228,
+        "http_errors": 0
+      },
+      {
+        "from_s": 80,
+        "n": 2880,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4175.0,
+        "mean_ms": 3632.5138888888887,
+        "drop": 6714,
+        "http_errors": 0
+      },
+      {
+        "from_s": 90,
+        "n": 2996,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 3820.0,
+        "mean_ms": 3313.8257676902535,
+        "drop": 6611,
+        "http_errors": 0
+      },
+      {
+        "from_s": 100,
+        "n": 3559,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 3628.0,
+        "mean_ms": 2638.799662826637,
+        "drop": 6037,
+        "http_errors": 0
+      },
+      {
+        "from_s": 110,
+        "n": 3636,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 3676.0,
+        "mean_ms": 2908.980198019802,
+        "drop": 5968,
+        "http_errors": 0
+      },
+      {
+        "from_s": 120,
+        "n": 2765,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4185.0,
+        "mean_ms": 3362.5848101265824,
+        "drop": 6835,
+        "http_errors": 0
+      },
+      {
+        "from_s": 130,
+        "n": 2700,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4040.0,
+        "mean_ms": 3486.6655555555553,
+        "drop": 6900,
+        "http_errors": 0
+      },
+      {
+        "from_s": 140,
+        "n": 4105,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4032.0,
+        "mean_ms": 2485.059196102314,
+        "drop": 5495,
+        "http_errors": 0
+      },
+      {
+        "from_s": 150,
+        "n": 3070,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4109.0,
+        "mean_ms": 3239.805211726384,
+        "drop": 6530,
+        "http_errors": 0
+      },
+      {
+        "from_s": 160,
+        "n": 3048,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 3824.0,
+        "mean_ms": 3227.895997375328,
+        "drop": 6556,
+        "http_errors": 0
+      },
+      {
+        "from_s": 170,
+        "n": 2892,
+        "p99_hist_upper_ms": 5000,
+        "max_ms": 4186.0,
+        "mean_ms": 3456.447095435685,
+        "drop": 6168,
+        "http_errors": 0
+      }
+    ]
+  }
+]

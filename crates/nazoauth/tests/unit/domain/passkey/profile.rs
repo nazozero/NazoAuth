@@ -379,7 +379,11 @@ impl LivePasskeyFixture {
         )
         .bind::<SqlUuid, _>(user.tenant_id)
         .bind::<SqlUuid, _>(user.id)
-        .bind::<Text, _>(format!("{credential_id}-{}", Uuid::now_v7().simple()))
+        .bind::<Text, _>(
+            serde_json::from_value::<passkey_auth::PasskeyCredential>(credential.clone())
+                .map(|value| value.id.to_b64url())
+                .unwrap_or_else(|_| format!("{credential_id}-{}", Uuid::now_v7().simple())),
+        )
         .bind::<Jsonb, _>(credential)
         .bind::<Text, _>(label.to_owned())
         .get_result::<DatabasePasskeyFixture>(&mut conn)
@@ -1069,11 +1073,14 @@ async fn delete_passkey_cannot_remove_another_users_credential() {
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&owner, &owner_sid).await;
     fixture.store_session(&attacker, &attacker_sid).await;
+    let owner_credential_id = Uuid::now_v7().as_bytes().to_vec();
     let row = fixture
         .insert_passkey_credential(
             &owner,
-            "owner-credential",
-            json!({"placeholder": true}),
+            &B64URL.encode(&owner_credential_id),
+            json!({"id": owner_credential_id, "counter": 0,
+                "public_key_cose": FakeAuthenticator::new(b"owner-credential").cose_pubkey(),
+                "transports": ["internal"], "aaguid": vec![0_u8; 16]}),
             "Owner key",
         )
         .await;

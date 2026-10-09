@@ -1,0 +1,9 @@
+{
+  "ts": 1791477875.926429,
+  "scenario": "cap_authorization_code",
+  "profile": "capacity",
+  "run_id": "pr230-perf-d2-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791477875.923,
+  "state_ready_run_id": "pr230-perf-d2-20261009"
+}

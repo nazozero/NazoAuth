@@ -181,7 +181,6 @@ if [ "$CKPT_EVIDENCE" = "1" ]; then
   docker run -d --name "$OBS_NAME" --network nazoauth-perf_perf_net \
     -v "$TOOLS/checkpoint_observer.py:/tmp/checkpoint_observer.py:ro" \
     -e DB_URL="postgresql://postgres:postgres@postgres:5432/oauth" \
-    -e APP_METRICS="http://nazoauth:8000/__perf/metrics" \
     -e APP_METRICS_HOST="127.0.0.1:8000" \
     -e APP_IDENTITY="nazoauth-perf-nazoauth-1" \
     -e OUT_PATH=/tmp/ckpt-observer.jsonl \
@@ -227,6 +226,7 @@ GRANT EXECUTE ON FUNCTION
   public.nazo_security_audit_batch_members(),
   public.nazo_claim_security_audit_pending(BIGINT),
   public.nazo_open_security_audit_batch(BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),
+  public.nazo_finalize_security_audit_claim(BIGINT,BYTEA,UUID[],BYTEA[],BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),
   public.nazo_reclaim_security_audit_batch(BYTEA,INTEGER),
   public.nazo_append_security_audit_chain(BIGINT,BYTEA,UUID[],BYTEA[]),
   public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),

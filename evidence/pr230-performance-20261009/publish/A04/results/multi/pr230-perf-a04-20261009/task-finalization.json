@@ -1,0 +1,31 @@
+{
+  "errors": [
+    {
+      "container": "sis-load-pr230-perf-a04-20261009",
+      "reason": "workload still running at finalization"
+    },
+    {
+      "container": "sis-side-argon2-pr230-perf-a04-20261009",
+      "reason": "workload still running at finalization"
+    },
+    {
+      "container": "sis-side-meta-pr230-perf-a04-20261009",
+      "reason": "workload still running at finalization"
+    }
+  ],
+  "stopped": [
+    "sis-load-pr230-perf-a04-20261009",
+    "sis-side-argon2-pr230-perf-a04-20261009",
+    "sis-side-meta-pr230-perf-a04-20261009"
+  ],
+  "terminal_captured": [
+    "sis-load-pr230-perf-a04-20261009",
+    "sis-proc-pr230-perf-a04-20261009",
+    "sis-sampler-pr230-perf-a04-20261009",
+    "sis-side-argon2-pr230-perf-a04-20261009",
+    "sis-side-meta-pr230-perf-a04-20261009"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

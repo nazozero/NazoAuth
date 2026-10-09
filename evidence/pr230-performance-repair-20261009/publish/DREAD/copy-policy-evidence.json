@@ -1,0 +1,307 @@
+{
+  "source_sha": "5005b39182f42c53537ed45ce21a72db7db92af5",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791514518.1228836,
+      "container": "sis-sampler-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514518.1587622,
+      "container": "sis-proc-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514527.9964938,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514528.0896327,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514533.819957,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514534.0589988,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514540.1739774,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514540.8999734,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514546.4709942,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514546.7549858,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514552.233309,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514552.3729782,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514558.0723255,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514558.271161,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514563.8160236,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514564.0769796,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514569.6630957,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514569.808071,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514575.5227354,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514575.8959846,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514581.629645,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514581.7360432,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514587.3856487,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514587.5269437,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514592.7375534,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514592.852995,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514598.1019485,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514598.183533,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514603.8252857,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514603.9644566,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514609.1483243,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514609.2114167,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514614.4901998,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514614.506524,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514614.5254242,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514614.542394,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514614.818077,
+      "container": "sis-load-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514623.153797,
+      "container": "sis-sampler-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514623.1703384,
+      "container": "sis-sampler-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514634.1134787,
+      "container": "sis-proc-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514634.1289535,
+      "container": "sis-proc-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514645.4664166,
+      "container": "sis-sampler-r230-repair-dread-20261009"
+    },
+    {
+      "ts": 1791514645.4875515,
+      "container": "sis-proc-r230-repair-dread-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791514517.8168,
+      "ts_end": 1791514518.003944,
+      "elapsed_ms": 187.1454,
+      "container": "sis-sampler-r230-repair-dread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791514518.0039759,
+      "ts_end": 1791514518.0850532,
+      "elapsed_ms": 81.0785,
+      "container": "sis-proc-r230-repair-dread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791514518.1591787,
+      "ts_end": 1791514518.1946323,
+      "elapsed_ms": 35.4536,
+      "container": "sis-sampler-r230-repair-dread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791514518.1946552,
+      "ts_end": 1791514518.250908,
+      "elapsed_ms": 56.253,
+      "container": "sis-proc-r230-repair-dread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791514614.5596848,
+      "ts_end": 1791514614.6069136,
+      "elapsed_ms": 47.2288,
+      "container": "sis-load-r230-repair-dread-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "7da9095eabd6f5f164146ceead0d6e31dbd3e37c45559cc7780c1c9533b360e6",
+        "owner": "r230-repair-dread-20261009",
+        "running": false,
+        "checked_at": 1791514614.57473,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791514615.1436465,
+      "ts_end": 1791514615.170177,
+      "elapsed_ms": 26.531,
+      "container": "sis-sampler-r230-repair-dread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791514615.1701937,
+      "ts_end": 1791514615.198685,
+      "elapsed_ms": 28.4918,
+      "container": "sis-proc-r230-repair-dread-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791514634.0150278,
+      "ts_end": 1791514634.0646334,
+      "elapsed_ms": 49.6057,
+      "container": "sis-sampler-r230-repair-dread-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "6e8da13d4c6e35fe93faf6378a33b0a923b652a75f402441d9db4804a73795e3",
+        "owner": "r230-repair-dread-20261009",
+        "running": false,
+        "checked_at": 1791514634.0333083,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791514645.126652,
+      "ts_end": 1791514645.1730535,
+      "elapsed_ms": 46.4015,
+      "container": "sis-proc-r230-repair-dread-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "0aa8bb658c1a7d789e2d0a91be347be34b1687470ac37fd6c53d79f96cb9af8d",
+        "owner": "r230-repair-dread-20261009",
+        "running": false,
+        "checked_at": 1791514645.144062,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-r230-repair-dread-20261009",
+    "sis-proc-r230-repair-dread-20261009",
+    "sis-sampler-r230-repair-dread-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-r230-repair-dread-20261009",
+      "sis-proc-r230-repair-dread-20261009",
+      "sis-sampler-r230-repair-dread-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

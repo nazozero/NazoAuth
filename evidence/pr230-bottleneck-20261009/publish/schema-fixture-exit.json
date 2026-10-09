@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--locked", "--all-features", "-p", "nazo-postgres", "--test", "migrations", "pending_migrations_create_all_runtime_module_state_tables", "--", "--exact", "--nocapture"], "exit": 0, "seconds": 53.8405953082256}

@@ -1,7 +1,6 @@
 use crate::services::{ServerAuthorizationService, ServerTokenService};
 use chrono::{DateTime, Utc};
 use nazo_auth::*;
-use nazo_identity::SubjectClaims;
 use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -14,6 +13,16 @@ struct HolderFixture {
 
 #[allow(unused_variables)]
 impl TokenRepositoryPort for HolderFixture {
+    fn token_principal_state<'a>(
+        &'a self,
+        _tenant_id: Uuid,
+        _client_epoch: i64,
+        _user_id: Option<Uuid>,
+        _subject: &'a str,
+    ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+        panic!("unexpected issuance principal lookup")
+    }
+
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
@@ -51,11 +60,12 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'a, Option<RefreshToken>> {
         panic!("unexpected TokenRepositoryPort::inspect_lost_response_successor call")
     }
-    fn active_subject_claims(
-        &self,
+    fn active_subject_claims<'a>(
+        &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'_, Option<SubjectClaims>> {
+        token_subject: &'a str,
+    ) -> TokenFuture<'a, Option<PreparedTokenSubject>> {
         panic!("unexpected TokenRepositoryPort::active_subject_claims call")
     }
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>> {
@@ -65,6 +75,7 @@ impl TokenRepositoryPort for HolderFixture {
         &'a self,
         tenant_id: Uuid,
         jti: &'a str,
+        subject: &'a str,
     ) -> TokenFuture<'a, Option<Uuid>> {
         panic!("unexpected TokenRepositoryPort::active_subject_id_by_access_token call")
     }
@@ -78,7 +89,11 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'a, ()> {
         panic!("unexpected TokenRepositoryPort::revoke_issued_tokens call")
     }
-    fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
+    fn access_token_revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        claims: &'a nazo_auth::Claims,
+    ) -> TokenFuture<'a, bool> {
         panic!("unexpected TokenRepositoryPort::access_token_revoked call")
     }
     fn refresh_family_active(
@@ -158,9 +173,13 @@ impl AuthorizationRepositoryPort for HolderFixture {
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>> {
         panic!("unexpected AuthorizationRepositoryPort::grant call")
     }
-    fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        panic!("unexpected AuthorizationRepositoryPort::upsert_grant call")
+    fn commit_decision(
+        &self,
+        input: nazo_auth::AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
+        panic!("unexpected AuthorizationRepositoryPort::commit_decision call")
     }
+
     fn client_authentication_snapshot<'a>(
         &'a self,
         client_id: &'a str,
@@ -169,6 +188,7 @@ impl AuthorizationRepositoryPort for HolderFixture {
         Box::pin(async move {
             client.map(|client| {
                 client.map(|client| nazo_auth::ClientAuthenticationSnapshot {
+                    client_epoch: 0,
                     client,
                     secret_salt: None,
                 })
@@ -189,19 +209,14 @@ impl AuthorizationStateStorePort for HolderFixture {
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         panic!("unexpected AuthorizationStateStorePort::load_par call")
-    }
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        panic!("unexpected AuthorizationStateStorePort::take_par call")
     }
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::compare_and_delete_par call")
     }
@@ -216,7 +231,7 @@ impl AuthorizationStateStorePort for HolderFixture {
     fn load_consent<'a>(
         &'a self,
         request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         panic!("unexpected AuthorizationStateStorePort::load_consent call")
     }
     fn take_consent<'a>(
@@ -228,7 +243,7 @@ impl AuthorizationStateStorePort for HolderFixture {
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::compare_and_delete_consent call")
     }
@@ -266,10 +281,19 @@ impl AuthorizationStateStorePort for HolderFixture {
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::consume_jar call")
     }
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        _client_id: &'a str,
+        _jti: &'a str,
+        _window: nazo_auth::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        panic!("unexpected AuthorizationStateStorePort::consume_client_attestation_proof call")
+    }
+
     fn consume_private_key_jwt<'a>(
         &'a self,
         client_id: &'a str,
@@ -290,7 +314,7 @@ impl AuthorizationStateStorePort for HolderFixture {
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::consume_ciba_request_object call")
     }

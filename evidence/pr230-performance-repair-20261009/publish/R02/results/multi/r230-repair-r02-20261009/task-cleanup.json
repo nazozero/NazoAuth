@@ -1,0 +1,11 @@
+{
+  "label": "r230-repair-r02-20261009",
+  "key": "R02",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 23.941,
+  "total_elapsed_s": 212.944,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

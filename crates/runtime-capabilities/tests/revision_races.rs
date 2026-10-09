@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::convert::Infallible;
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -44,12 +43,20 @@ struct State {
 struct Repository {
     state: Mutex<State>,
     pause: Pause,
+    compensation_pause: Option<Pause>,
+    completion_pause: Option<Pause>,
+    unknown_completed_state: Option<ModuleState>,
+    observation_failure: AtomicUsize,
 }
 
 impl Repository {
     fn new(pause_at_validation: usize) -> Self {
         Self {
             state: Mutex::new(State::default()),
+            compensation_pause: None,
+            completion_pause: None,
+            unknown_completed_state: None,
+            observation_failure: AtomicUsize::new(0),
             pause: Pause {
                 call: pause_at_validation,
                 entered: Barrier::new(2),
@@ -105,7 +112,7 @@ impl Repository {
 }
 
 impl ModuleStateRepository for Repository {
-    type Error = Infallible;
+    type Error = &'static str;
 
     async fn read_desired(
         &self,
@@ -122,6 +129,28 @@ impl ModuleStateRepository for Repository {
             .desired
             .clone()
             .into_iter()
+            .collect())
+    }
+
+    async fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> Result<Vec<nazo_runtime_modules::ModuleReconcileState>, Self::Error> {
+        let state = self.state.lock().unwrap();
+        Ok(state
+            .desired
+            .iter()
+            .map(|desired| nazo_runtime_modules::ModuleReconcileState {
+                desired: desired.clone(),
+                instance: state
+                    .instance
+                    .as_ref()
+                    .filter(|instance| {
+                        instance.instance_id == instance_id
+                            && instance.module_id == desired.module_id
+                    })
+                    .cloned(),
+            })
             .collect())
     }
 
@@ -223,7 +252,35 @@ impl ModuleStateRepository for Repository {
         }
         state.instance = Some(mutation.change.next.clone());
         state.events.push(mutation.applied_event);
+        drop(state);
+        if self.unknown_completed_state == Some(mutation.change.next.state) {
+            if let Some(pause) = self.completion_pause.as_ref() {
+                pause.entered.wait();
+                pause.release.wait();
+            }
+            return Err("instance_commit_unknown");
+        }
         Ok(CasOutcome::Applied(mutation.change.next))
+    }
+
+    async fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> Result<(), Self::Error> {
+        assert_eq!(
+            observation.event.event_type,
+            ModuleEventType::StaleTransitionDiscarded
+        );
+        assert_eq!(observation.event.before, observation.event.after);
+        let failure = self.observation_failure.load(Ordering::Acquire);
+        if failure == 1 {
+            return Err("observation_unavailable");
+        }
+        self.state.lock().unwrap().events.push(observation.event);
+        if failure == 2 {
+            return Err("observation_commit_unknown");
+        }
+        Ok(())
     }
 
     async fn validate_revision(
@@ -234,11 +291,21 @@ impl ModuleStateRepository for Repository {
         let should_pause = {
             let mut state = self.state.lock().unwrap();
             state.validations += 1;
-            state.validations == self.pause.call
+            (
+                state.validations == self.pause.call,
+                self.compensation_pause
+                    .as_ref()
+                    .is_some_and(|pause| state.validations == pause.call),
+            )
         };
-        if should_pause {
+        if should_pause.0 {
             self.pause.entered.wait();
             self.pause.release.wait();
+        }
+        if should_pause.1 {
+            let pause = self.compensation_pause.as_ref().unwrap();
+            pause.entered.wait();
+            pause.release.wait();
         }
         Ok(self
             .state
@@ -257,6 +324,7 @@ fn catalog() -> ModuleCatalog {
         authorization_code: Duration::from_secs(30),
         refresh_token: Duration::from_secs(30),
         session: Duration::from_secs(30),
+        presentation_transaction: Duration::from_secs(30),
         scim_security_events: Duration::from_secs(30),
     })
     .unwrap()
@@ -702,4 +770,165 @@ fn disable_waits_for_the_removed_snapshot_generations_request_lease() {
             ModuleEventType::TransitionCompleted,
         ]
     );
+}
+
+#[test]
+fn observation_failure_or_unknown_commit_does_not_skip_latest_intent_compensation() {
+    for (failure, expected) in [
+        (1, "observation_unavailable"),
+        (2, "observation_commit_unknown"),
+    ] {
+        let repository = Arc::new(Repository::new(2));
+        repository
+            .observation_failure
+            .store(failure, Ordering::Release);
+        repository.force_desired(7, DesiredMode::Disabled);
+        repository.force_instance(6, ModuleState::Enabled);
+        let registry = Arc::new(registry(Arc::clone(&repository), true));
+        let worker = {
+            let registry = Arc::clone(&registry);
+            std::thread::spawn(move || block_on(registry.reconcile_once(ModuleId::Ciba)))
+        };
+        repository.pause.entered.wait();
+        repository.force_desired(8, DesiredMode::Enabled);
+        repository.pause.release.wait();
+        assert!(matches!(worker.join().unwrap(),
+            Err(nazo_runtime_modules::RegistryError::Repository(error)) if error == expected));
+        assert!(registry.snapshot().admits(ModuleId::Ciba));
+        assert!(!registry.snapshot().draining.contains(&ModuleId::Ciba));
+        let state = repository.state.lock().unwrap();
+        let instance = state.instance.as_ref().unwrap();
+        assert_eq!(instance.state, ModuleState::Draining);
+        assert_eq!(instance.transition_revision, ModuleRevision::new(7));
+        assert_eq!(
+            state
+                .events
+                .iter()
+                .filter(|event| event.event_type == ModuleEventType::StaleTransitionDiscarded)
+                .count(),
+            usize::from(failure == 2)
+        );
+    }
+}
+
+#[test]
+fn compensation_revalidates_a_second_durable_intent_change_after_publication() {
+    let mut repository = Repository::new(2);
+    repository.compensation_pause = Some(Pause {
+        call: 3,
+        entered: Barrier::new(2),
+        release: Barrier::new(2),
+    });
+    let repository = Arc::new(repository);
+    repository.force_desired(7, DesiredMode::Disabled);
+    repository.force_instance(6, ModuleState::Enabled);
+    let registry = Arc::new(registry(Arc::clone(&repository), true));
+    let worker = {
+        let registry = Arc::clone(&registry);
+        std::thread::spawn(move || block_on(registry.reconcile_once(ModuleId::Ciba)))
+    };
+    repository.pause.entered.wait();
+    repository.force_desired(8, DesiredMode::Enabled);
+    repository.pause.release.wait();
+    let pause = repository.compensation_pause.as_ref().unwrap();
+    pause.entered.wait();
+    assert!(registry.snapshot().admits(ModuleId::Ciba));
+    repository.force_desired(9, DesiredMode::Disabled);
+    pause.release.wait();
+    assert_eq!(
+        worker.join().unwrap().unwrap(),
+        ReconcileOutcome::StaleDiscarded
+    );
+    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    assert!(registry.lease(ModuleId::Ciba).is_none());
+}
+
+#[test]
+fn stale_disable_after_stop_cannot_reopen_until_the_new_revision_initializes() {
+    let repository = Arc::new(Repository::new(5));
+    repository.force_desired(7, DesiredMode::Disabled);
+    repository.force_instance(6, ModuleState::Enabled);
+    let registry = Arc::new(registry(Arc::clone(&repository), true));
+    let worker = {
+        let registry = Arc::clone(&registry);
+        std::thread::spawn(move || block_on(registry.reconcile_once(ModuleId::Ciba)))
+    };
+    repository.pause.entered.wait();
+    repository.force_desired(8, DesiredMode::Enabled);
+    repository.pause.release.wait();
+    assert_eq!(
+        worker.join().unwrap().unwrap(),
+        ReconcileOutcome::StaleDiscarded
+    );
+    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    assert!(!registry.snapshot().draining.contains(&ModuleId::Ciba));
+    assert_eq!(
+        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
+        ReconcileOutcome::Enabled
+    );
+    assert!(registry.snapshot().admits(ModuleId::Ciba));
+}
+
+#[test]
+fn unknown_completed_writes_preserve_the_effect_and_align_admission_to_current_intent() {
+    for (target, current) in [
+        (ModuleState::Enabled, ModuleState::Disabled),
+        (ModuleState::Disabled, ModuleState::Enabled),
+        (ModuleState::Disabled, ModuleState::Disabled),
+    ] {
+        let mut repository = Repository::new(usize::MAX);
+        repository.unknown_completed_state = Some(target);
+        repository.completion_pause = Some(Pause {
+            call: 0,
+            entered: Barrier::new(2),
+            release: Barrier::new(2),
+        });
+        let repository = Arc::new(repository);
+        repository.force_desired(
+            7,
+            if target == ModuleState::Enabled {
+                DesiredMode::Enabled
+            } else {
+                DesiredMode::Disabled
+            },
+        );
+        repository.force_instance(6, current);
+        let registry = Arc::new(registry(
+            Arc::clone(&repository),
+            current == ModuleState::Enabled,
+        ));
+        let worker = {
+            let registry = Arc::clone(&registry);
+            std::thread::spawn(move || block_on(registry.reconcile_once(ModuleId::Ciba)))
+        };
+        let pause = repository.completion_pause.as_ref().unwrap();
+        pause.entered.wait();
+        repository.force_desired(
+            8,
+            if target == ModuleState::Enabled {
+                DesiredMode::Disabled
+            } else {
+                DesiredMode::Enabled
+            },
+        );
+        pause.release.wait();
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(nazo_runtime_modules::RegistryError::Repository(
+                "instance_commit_unknown"
+            ))
+        ));
+        assert!(!registry.snapshot().admits(ModuleId::Ciba));
+        assert_eq!(
+            repository
+                .state
+                .lock()
+                .unwrap()
+                .instance
+                .as_ref()
+                .unwrap()
+                .state,
+            target
+        );
+    }
 }

@@ -1,0 +1,5 @@
+from pathlib import Path
+import json,hashlib
+p=Path('/workspace');e=p/'evidence/pr230-performance-repair-20261009'
+for key,origin,imagekey,arm in [('DREADA2','DREAD','diagnostic-read','A'),('DREADB','BREAD','diagnostic-read-after','B')]:
+ out=e/key;(out/'requests').mkdir(parents=True,exist_ok=True);a=json.loads((e/f'image-{imagekey}.json').read_text());r=json.loads((e/origin/'requests'/f'{origin}.json').read_text());m=json.loads((e/origin/'requests/manifest.json').read_text());r.update(name='r230-repair-'+key.lower()+'-20261009',request_key=key,arm=arm,image=a['image'],expected_binary_sha256=a['binary_sha256'],diagnostic_only=True,diagnostic_purpose='paired read connection lifetime and query wake-to-poll ledger; original target and pool size');f=out/'requests'/f'{key}.json';f.write_text(json.dumps(r,indent=2));m.update(project=r['name'],app_image=a['image'],diagnostic_only=True,decision_follow=False,requests={key:{'path':str(f).replace('/workspace','/src',1),'sha256':hashlib.sha256(f.read_bytes()).hexdigest()}});(out/'requests/manifest.json').write_text(json.dumps(m,indent=2));print(key,r['source_sha'],r['rate'],r['pre_vus'])

@@ -1,0 +1,12 @@
+[cap_client_credentials] point 1: target=100 verdict=INVALID rps=None p95=None p99=None drops=None err=None
+[cap_client_credentials] INVALID at 100: missing_or_inconsistent_measurement_contract; search aborted
+[cap_client_credentials] DONE max_10m_pass=None first_fail=None
+{"verdict": "FAIL", "fail_class": "AUDIT_HEALTH_FAILURE", "gate": "no_summary", "failed": ["app_affinity_verified", "postgres_affinity_verified", "valkey_affinity_verified", "service_affinity_verified", "generator_affinity_verified", "unexpected_zero", "oom_none", "no_restarts", "queue_full_zero", "dropped_required_zero", "db_outbox_drained", "audit_reconciled", "journal_contiguous", "active_per_scope_le_10", "spent_per_family_le_64", "expired_backlog_zero", "sidecars_complete", "queue_dropped_zero", "pending_zero_post_drain", "enqueued_eq_persisted", "pool_size_observed", "runtime_backends_match", "capacity_gate_pass"]}
+......./src/perf/tools/ledger_check.py:82: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmph8wtcdlz/ledger.txt' mode='r' encoding='utf-8'>
+  lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+..................................................................................................................................................................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 425 tests in 20.360s
+
+OK

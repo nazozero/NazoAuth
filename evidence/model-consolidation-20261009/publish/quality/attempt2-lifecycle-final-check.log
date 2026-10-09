@@ -1,0 +1,16 @@
+    Checking nazo-http-actix v0.2.16 (/src/crates/http-actix)
+    Checking nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+    Checking nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+error[E0599]: no method named `blake3_digest` found for struct `RefreshContract` in the current scope
+    --> crates/persistence-postgres/tests/refresh_authority.rs:1003:35
+     |
+1003 |         original_contract.clone().blake3_digest(),
+     |                                   ^^^^^^^^^^^^^ method not found in `RefreshContract`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `nazo-postgres` (test "refresh_authority") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

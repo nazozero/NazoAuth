@@ -1,0 +1,9 @@
+{
+  "ts": 1791516601.8932605,
+  "scenario": "oidc_cold_login_refresh",
+  "profile": "capacity",
+  "run_id": "r230-repair-bread03-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791516601.696,
+  "state_ready_run_id": "r230-repair-bread03-20261009"
+}

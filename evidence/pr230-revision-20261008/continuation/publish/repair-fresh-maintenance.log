@@ -1,0 +1,39 @@
+    Finished `test` profile [unoptimized] target(s) in 0.14s
+     Running tests/security_state_maintenance.rs (target/debug/deps/security_state_maintenance-000b481977d09ebc)
+
+running 27 tests
+test acked_audit_rows_leave_the_ledger_and_unacked_rows_stay ... ok
+test active_successor_blocks_ancestor_reclaim ... ok
+test audit_ack_deletes_delivery_rows_atomically ... ok
+test bounded_batch_finishes_before_a_queued_connection_borrower ... ok
+test cancelled_batch_leaves_no_open_transaction_on_pooled_connection ... ok
+test concurrent_batches_do_not_deadlock_or_double_count ... ok
+test concurrent_credential_sweepers_skip_an_uncommitted_child_parent ... ok
+test contract_cleaner_first_fences_writer_and_cancelled_sweeper_discards_connection ... contract cleaner first/commit: writer waited on parent lock then safely referenced or recreated exact contract
+contract cleaner first/rollback: writer waited on parent lock then safely referenced or recreated exact contract
+contract cleaner first/cancel: writer waited on parent lock then safely referenced or recreated exact contract
+ok
+test contract_scan_advances_past_referenced_pages_and_revisits_after_wrap ... ok
+test contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconnect ... contract writer first/commit: locked parent skipped, committed reference retained, unreferenced parent converged after cursor wrap
+contract writer first/rollback: locked parent skipped, committed reference retained, unreferenced parent converged after cursor wrap
+contract writer first/disconnect: locked parent skipped, committed reference retained, unreferenced parent converged after cursor wrap
+ok
+test credential_state_cleanup_is_bounded_and_preserves_live_ownership ... ok
+test expired_issuances_are_reclaimed_in_bounded_batches ... ok
+test expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive ... ok
+test family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate_budget ... ok
+test fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_atomic ... ok
+test grant_scan_advances_past_referenced_pages_and_revisits_after_wrap ... ok
+test large_family_reclaim_stays_bounded_per_batch ... ok
+test live_public_family_keeps_more_than_sixty_four_unexpired_proofs ... ok
+test natural_expiry_refresh_leaf_reclaimed_without_revocation ... ok
+test openid4vp_find_never_deletes_and_create_only_clears_the_same_key ... ok
+test oversized_family_drains_across_bounded_batches_and_reports_saturation ... ok
+test preserve_shared_family_lock_skips_terminal_cleanup ... ok
+test reclaim_scopes_family_authority_to_tenant ... ok
+test revocations_and_scim_and_logout_categories_keep_their_retention ... ok
+test terminal_refresh_proofs_drain_with_one_global_budget_before_parent_delete ... ok
+test three_generation_family_reclaims_whole_chain_in_one_batch ... ok
+test writer_family_lock_skips_locked_family_and_recheck_blocks_late_successor ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.04s

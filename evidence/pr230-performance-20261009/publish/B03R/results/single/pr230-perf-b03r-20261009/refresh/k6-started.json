@@ -1,0 +1,9 @@
+{
+  "ts": 1791481433.4690368,
+  "scenario": "cap_refresh_token",
+  "profile": "capacity",
+  "run_id": "pr230-perf-b03r-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791481433.453,
+  "state_ready_run_id": "pr230-perf-b03r-20261009"
+}

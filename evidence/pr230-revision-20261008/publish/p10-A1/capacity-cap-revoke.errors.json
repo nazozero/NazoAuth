@@ -1,0 +1,14 @@
+{
+ "err_classified{step:revoke}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:cap_bootstrap}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ }
+}

@@ -1,8 +1,8 @@
 use super::fixtures::*;
 use super::*;
 use crate::presentation::{
-    PresentedAccessTokenScheme, http_authorization_headers, http_dpop_headers,
-    presented_authorization_token, query_has_access_token, single_dpop_header,
+    http_authorization_headers, http_dpop_headers, presented_authorization_token,
+    query_has_access_token, single_dpop_header,
 };
 use serde_json::json;
 
@@ -39,8 +39,8 @@ fn authorization_header_parser_accepts_bearer_and_dpop_case_insensitively() {
     let bearer = presented_authorization_token(&["bearer access-token"]).unwrap();
     let dpop = presented_authorization_token(&["DPoP access-token"]).unwrap();
 
-    assert_eq!(bearer, (PresentedAccessTokenScheme::Bearer, "access-token"));
-    assert_eq!(dpop, (PresentedAccessTokenScheme::Dpop, "access-token"));
+    assert_eq!(bearer, (AccessTokenScheme::Bearer, "access-token"));
+    assert_eq!(dpop, (AccessTokenScheme::Dpop, "access-token"));
 }
 
 #[test]

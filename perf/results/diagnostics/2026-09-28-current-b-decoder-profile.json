@@ -1,0 +1,80 @@
+[
+  {
+    "level": 9,
+    "decoder": "json",
+    "elapsed_s": 0.5265161999268457,
+    "input_points": 40000,
+    "compressed_bytes": 241585,
+    "decompressed_sha256": "18dabe5c0b3ba2197cf637231cd35cad3403d018a297c18489b8ade7b3c573aa",
+    "bin_sha256": "3ce11af5b2fb524dddc0ceaa6e68037e08e976fde2e083a918e62fbda8f398a8",
+    "cohort": {
+      "window_start_s": 1790527987.784,
+      "window_end_s": 1790528077.784,
+      "measure_started_exact": 0,
+      "measure_completed_exact": 0,
+      "measure_dropped_exact": 0,
+      "measure_scheduled_observed": 0,
+      "measure_drop_fraction": null,
+      "measure_outcomes": {},
+      "measure_outcome_sum": 0,
+      "drops_pre_window": 1343,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": []
+    }
+  },
+  {
+    "level": 1,
+    "decoder": "json",
+    "elapsed_s": 0.49268989998381585,
+    "input_points": 40000,
+    "compressed_bytes": 346544,
+    "decompressed_sha256": "18dabe5c0b3ba2197cf637231cd35cad3403d018a297c18489b8ade7b3c573aa",
+    "bin_sha256": "3ce11af5b2fb524dddc0ceaa6e68037e08e976fde2e083a918e62fbda8f398a8",
+    "cohort": {
+      "window_start_s": 1790527987.784,
+      "window_end_s": 1790528077.784,
+      "measure_started_exact": 0,
+      "measure_completed_exact": 0,
+      "measure_dropped_exact": 0,
+      "measure_scheduled_observed": 0,
+      "measure_drop_fraction": null,
+      "measure_outcomes": {},
+      "measure_outcome_sum": 0,
+      "drops_pre_window": 1343,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": []
+    }
+  },
+  {
+    "level": 1,
+    "decoder": "orjson",
+    "elapsed_s": 0.3489671000279486,
+    "input_points": 40000,
+    "compressed_bytes": 346544,
+    "decompressed_sha256": "18dabe5c0b3ba2197cf637231cd35cad3403d018a297c18489b8ade7b3c573aa",
+    "bin_sha256": "3ce11af5b2fb524dddc0ceaa6e68037e08e976fde2e083a918e62fbda8f398a8",
+    "cohort": {
+      "window_start_s": 1790527987.784,
+      "window_end_s": 1790528077.784,
+      "measure_started_exact": 0,
+      "measure_completed_exact": 0,
+      "measure_dropped_exact": 0,
+      "measure_scheduled_observed": 0,
+      "measure_drop_fraction": null,
+      "measure_outcomes": {},
+      "measure_outcome_sum": 0,
+      "drops_pre_window": 1343,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": []
+    }
+  }
+]

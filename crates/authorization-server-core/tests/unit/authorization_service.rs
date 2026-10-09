@@ -1,6 +1,6 @@
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use chrono::{Duration, TimeZone, Utc};
@@ -9,22 +9,36 @@ use uuid::Uuid;
 
 use crate::{
     AuthorizationCodeState, ConsentPayload, OAuthClient, PushedAuthorizationRequest,
-    RequestObjectClaims, RequestObjectJtiPolicy, RequestObjectPolicy, ValidatedClientRegistration,
+    RequestObjectClaims, RequestObjectJtiPolicy, RequestObjectPolicy,
 };
 
 use super::{
-    AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
-    AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
-    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
-    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort, GrantWrite,
-    StoredAuthorizationGrant, stored_grant_covers_requested_authorization,
+    AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
+    AuthorizationDecisionCommitResult, AuthorizationDecisionKind, AuthorizationFuture,
+    AuthorizationPortError, AuthorizationRateDimension, AuthorizationRepositoryPort,
+    AuthorizationResponseSignInput, AuthorizationResponseSignerPort, AuthorizationService,
+    AuthorizationStateSnapshot, AuthorizationStateStorePort, PreparedAuthorizationCode,
+    StoredAuthorizationGrant, prepare_authorization_code,
+    stored_grant_covers_requested_authorization,
 };
 
 #[derive(Default)]
 struct RepositoryState {
     client: Mutex<Option<OAuthClient>>,
-    grant_error: Mutex<Option<AuthorizationPortError>>,
-    grant_writes: AtomicUsize,
+    decisions: Mutex<DecisionState>,
+    publication_probe: Mutex<Option<Arc<StoreState>>>,
+    hold_commit_ack: AtomicBool,
+}
+
+/// Bounded persistence double: one lock represents one atomic repository call.
+/// Client/principal/grant policy belongs to the real adapter, so tests configure
+/// its outcome instead of maintaining a second policy implementation here.
+#[derive(Default)]
+struct DecisionState {
+    outcome: Option<Result<AuthorizationDecisionCommitResult, AuthorizationPortError>>,
+    commit_then_error: bool,
+    facts: Vec<AuthorizationDecisionCommit>,
+    grant_writes: usize,
 }
 
 #[derive(Clone, Default)]
@@ -51,10 +65,53 @@ impl AuthorizationRepositoryPort for FakeRepository {
         Box::pin(async { Ok(None) })
     }
 
-    fn upsert_grant<'a>(&'a self, _write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        self.0.grant_writes.fetch_add(1, Ordering::Relaxed);
-        let error = self.0.grant_error.lock().unwrap().take();
-        Box::pin(async move { error.map_or(Ok(()), Err) })
+    fn commit_decision(
+        &self,
+        input: AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, AuthorizationDecisionCommitResult> {
+        Box::pin(async move {
+            let result = (|| {
+                if let Some(store) = self.0.publication_probe.lock().unwrap().as_ref() {
+                    assert!(
+                        store.stored_code.lock().unwrap().is_none(),
+                        "a code must not be published before the repository commits"
+                    );
+                }
+                let mut state = self.0.decisions.lock().unwrap();
+                if let Some(outcome) = state.outcome.take()
+                    && outcome != Ok(AuthorizationDecisionCommitResult::Committed)
+                {
+                    return outcome;
+                }
+                if state.facts.iter().any(|fact| {
+                    fact.tenant_id == input.tenant_id
+                        && (fact.request_id == input.request_id
+                            || input
+                                .pushed_request_uri
+                                .as_ref()
+                                .is_some_and(|uri| fact.pushed_request_uri.as_ref() == Some(uri)))
+                }) {
+                    return Ok(AuthorizationDecisionCommitResult::Conflict);
+                }
+                if input.valid_until <= Utc::now() {
+                    return Ok(AuthorizationDecisionCommitResult::Expired);
+                }
+                assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
+                state.grant_writes +=
+                    usize::from(input.decision == AuthorizationDecisionKind::Approve);
+                state.facts.push(input);
+                if std::mem::take(&mut state.commit_then_error) {
+                    return Err(AuthorizationPortError::Unavailable);
+                }
+                Ok(AuthorizationDecisionCommitResult::Committed)
+            })();
+            if result == Ok(AuthorizationDecisionCommitResult::Committed)
+                && self.0.hold_commit_ack.load(Ordering::Relaxed)
+            {
+                std::future::pending::<()>().await;
+            }
+            result
+        })
     }
 
     fn client_authentication_snapshot<'a>(
@@ -83,6 +140,8 @@ struct StoreState {
     code_error: Mutex<Option<AuthorizationPortError>>,
     jar_error: Mutex<Option<AuthorizationPortError>>,
     delete_error: Mutex<Option<AuthorizationPortError>>,
+    consent_discard_error: Mutex<Option<AuthorizationPortError>>,
+    par_discard_error: Mutex<Option<AuthorizationPortError>>,
     consent_takes: AtomicUsize,
     pushed_takes: AtomicUsize,
     code_deletes: AtomicUsize,
@@ -95,32 +154,32 @@ impl AuthorizationStateStorePort for FakeStore {
     fn load_par<'a>(
         &'a self,
         _request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         let pushed = self.0.pushed.lock().unwrap().clone();
         if let Some(replacement) = self.0.replace_pushed_after_load.lock().unwrap().take() {
             *self.0.pushed.lock().unwrap() = Some(replacement);
         }
-        Box::pin(async move { Ok(pushed) })
-    }
-
-    fn take_par<'a>(
-        &'a self,
-        _request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        self.0.pushed_takes.fetch_add(1, Ordering::Relaxed);
-        let pushed = self.0.pushed.lock().unwrap().take();
-        Box::pin(async move { Ok(pushed) })
+        Box::pin(async move {
+            Ok(pushed.map(|payload| AuthorizationStateSnapshot {
+                version: format!("revision:{}", serde_json::to_value(&payload).unwrap()),
+                payload,
+            }))
+        })
     }
 
     fn compare_and_delete_par<'a>(
         &'a self,
         _request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.0.pushed_takes.fetch_add(1, Ordering::Relaxed);
+        if let Some(error) = self.0.par_discard_error.lock().unwrap().take() {
+            return Box::pin(async move { Err(error) });
+        }
         let mut current = self.0.pushed.lock().unwrap();
         let matches = current.as_ref().is_some_and(|current| {
-            serde_json::to_vec(current).unwrap() == serde_json::to_vec(expected).unwrap()
+            format!("revision:{}", serde_json::to_value(current).unwrap()) == expected
         });
         if matches {
             current.take();
@@ -140,12 +199,17 @@ impl AuthorizationStateStorePort for FakeStore {
     fn load_consent<'a>(
         &'a self,
         _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         let consent = self.0.consent.lock().unwrap().clone();
         if let Some(replacement) = self.0.replace_consent_after_load.lock().unwrap().take() {
             *self.0.consent.lock().unwrap() = Some(replacement);
         }
-        Box::pin(async move { Ok(consent) })
+        Box::pin(async move {
+            Ok(consent.map(|payload| AuthorizationStateSnapshot {
+                version: format!("revision:{}", serde_json::to_value(&payload).unwrap()),
+                payload,
+            }))
+        })
     }
 
     fn take_consent<'a>(
@@ -160,12 +224,15 @@ impl AuthorizationStateStorePort for FakeStore {
     fn compare_and_delete_consent<'a>(
         &'a self,
         _request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.0.consent_takes.fetch_add(1, Ordering::Relaxed);
+        if let Some(error) = self.0.consent_discard_error.lock().unwrap().take() {
+            return Box::pin(async move { Err(error) });
+        }
         let mut current = self.0.consent.lock().unwrap();
         let matches = current.as_ref().is_some_and(|current| {
-            serde_json::to_vec(current).unwrap() == serde_json::to_vec(expected).unwrap()
+            format!("revision:{}", serde_json::to_value(current).unwrap()) == expected
         });
         if matches {
             current.take();
@@ -221,10 +288,19 @@ impl AuthorizationStateStorePort for FakeStore {
         &'a self,
         _client_id: &'a str,
         _jti: &'a str,
-        _ttl_seconds: u64,
+        _expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         let error = self.0.jar_error.lock().unwrap().take();
         Box::pin(async move { error.map_or(Ok(true), Err) })
+    }
+
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        _client_id: &'a str,
+        _jti: &'a str,
+        _window: crate::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        Box::pin(async { Ok(true) })
     }
 
     fn consume_private_key_jwt<'a>(
@@ -249,7 +325,7 @@ impl AuthorizationStateStorePort for FakeStore {
         &'a self,
         _client_id: &'a str,
         _jti: &'a str,
-        _ttl_seconds: u64,
+        _expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         Box::pin(async { Ok(true) })
     }
@@ -297,75 +373,6 @@ impl AuthorizationResponseSignerPort for FakeSigner {
     }
 }
 
-fn registration(client_id: &str) -> ValidatedClientRegistration {
-    ValidatedClientRegistration {
-        client_id: client_id.to_owned(),
-        client_name: "Test client".to_owned(),
-        client_type: "confidential".to_owned(),
-        redirect_uris: vec!["https://client.example/callback".to_owned()],
-        post_logout_redirect_uris: Vec::new(),
-        scopes: vec!["openid".to_owned()],
-        allowed_audiences: Vec::new(),
-        grant_types: vec!["authorization_code".to_owned()],
-        token_endpoint_auth_method: "client_secret_post".to_owned(),
-        subject_type: "public".to_owned(),
-        sector_identifier_uri: None,
-        sector_identifier_host: None,
-        require_dpop_bound_tokens: false,
-        allow_client_assertion_audience_array: false,
-        allow_client_assertion_endpoint_audience: false,
-        require_par_request_object: false,
-        backchannel_logout_uri: None,
-        backchannel_logout_session_required: false,
-        backchannel_token_delivery_mode: "poll".to_owned(),
-        backchannel_client_notification_endpoint: None,
-        backchannel_authentication_request_signing_alg: None,
-        backchannel_user_code_parameter: false,
-        frontchannel_logout_uri: None,
-        frontchannel_logout_session_required: false,
-        tls_client_auth_subject_dn: None,
-        tls_client_auth_cert_sha256: None,
-        tls_client_auth_san_dns: Vec::new(),
-        tls_client_auth_san_uri: Vec::new(),
-        tls_client_auth_san_ip: Vec::new(),
-        tls_client_auth_san_email: Vec::new(),
-        jwks_uri: None,
-        jwks: None,
-        request_uris: Vec::new(),
-        initiate_login_uri: None,
-        presentation: crate::ClientPresentationMetadata::default(),
-        id_token_signed_response_alg: None,
-        id_token_encrypted_response_alg: None,
-        id_token_encrypted_response_enc: None,
-        request_object_signing_alg: None,
-        request_object_encryption_alg: None,
-        request_object_encryption_enc: None,
-        token_endpoint_auth_signing_alg: None,
-        introspection_signed_response_alg: None,
-        introspection_encrypted_response_alg: None,
-        introspection_encrypted_response_enc: None,
-        userinfo_signed_response_alg: None,
-        userinfo_encrypted_response_alg: None,
-        userinfo_encrypted_response_enc: None,
-        authorization_signed_response_alg: None,
-        authorization_encrypted_response_alg: None,
-        authorization_encrypted_response_enc: None,
-        security_policy: crate::ClientSecurityPolicy::default(),
-    }
-}
-
-fn client(tenant_id: Uuid) -> OAuthClient {
-    OAuthClient {
-        id: Uuid::from_u128(20),
-        tenant_id,
-        realm_id: Uuid::from_u128(2),
-        organization_id: Uuid::from_u128(3),
-        registration: registration("client-1"),
-        require_mtls_bound_tokens: false,
-        is_active: true,
-    }
-}
-
 fn consent(user_id: Uuid, request_uri: Option<&str>) -> ConsentPayload {
     let issued_at = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
     ConsentPayload {
@@ -385,12 +392,17 @@ fn consent(user_id: Uuid, request_uri: Option<&str>) -> ConsentPayload {
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("sid-1".to_owned()),
         acr: Some("1".to_owned()),
-        userinfo_claims: vec!["name".to_owned()],
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: vec!["email".to_owned()],
-        id_token_claim_requests: Vec::new(),
-        code_challenge: Some("challenge".to_owned()),
-        code_challenge_method: Some("S256".to_owned()),
+        userinfo_claim_requests: ((vec!["name".to_owned()])
+            .into_iter()
+            .map(crate::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        id_token_claim_requests: ((vec!["email".to_owned()])
+            .into_iter()
+            .map(crate::OidcClaimRequest::named)
+            .collect::<Vec<_>>())
+        .into(),
+        pkce: (Some("challenge".to_owned())).into(),
         dpop_jkt: Some("jkt".to_owned()),
         mtls_x5t_s256: None,
         pushed_request_uri: request_uri.map(str::to_owned),
@@ -398,7 +410,6 @@ fn consent(user_id: Uuid, request_uri: Option<&str>) -> ConsentPayload {
         signed_authorization_response_required: None,
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
-        issued_at,
         expires_at: issued_at + Duration::minutes(10),
     }
 }
@@ -560,18 +571,20 @@ async fn foreign_user_cannot_consume_an_observed_consent_async() {
 }
 
 #[test]
-fn concurrent_consent_admission_has_exactly_one_winner() {
-    futures_executor::block_on(concurrent_consent_admission_has_exactly_one_winner_async());
+fn concurrent_preparation_disposal_removes_only_the_observed_snapshot() {
+    futures_executor::block_on(
+        concurrent_preparation_disposal_removes_only_the_observed_snapshot_async(),
+    );
 }
 
-async fn concurrent_consent_admission_has_exactly_one_winner_async() {
+async fn concurrent_preparation_disposal_removes_only_the_observed_snapshot_async() {
     let owner = Uuid::from_u128(10);
     let store = FakeStore::default();
     *store.0.consent.lock().unwrap() = Some(consent(owner, None));
     let service = service(FakeRepository::default(), store.clone());
 
-    // Both previews observe the same state non-destructively; the
-    // compare-and-delete consume is what serializes the single winner.
+    // Both previews observe the same state non-destructively. Only one
+    // best-effort disposal removes it; this is not the durable decision fence.
     let first = service
         .preview_user_decision("request-1", owner)
         .await
@@ -581,8 +594,8 @@ async fn concurrent_consent_admission_has_exactly_one_winner_async() {
         .await
         .unwrap();
     let (first, second) = futures_util::join!(
-        service.consume_user_decision("request-1", &first),
-        service.consume_user_decision("request-1", &second),
+        service.discard_decision_material("request-1", &first),
+        service.discard_decision_material("request-1", &second),
     );
     let results = [first, second];
     assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
@@ -599,6 +612,88 @@ async fn concurrent_consent_admission_has_exactly_one_winner_async() {
         1
     );
     assert_eq!(store.0.consent_takes.load(Ordering::Relaxed), 2);
+    assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn consent_cleanup_mismatch_does_not_attempt_par_cleanup() {
+    futures_executor::block_on(async {
+        let owner = Uuid::from_u128(10);
+        let store = FakeStore::default();
+        *store.0.consent.lock().unwrap() = Some(consent(owner, Some("request-uri-1")));
+        *store.0.pushed.lock().unwrap() = Some(pushed());
+        let service = service(FakeRepository::default(), store.clone());
+        let preview = service
+            .preview_user_decision("request-1", owner)
+            .await
+            .unwrap();
+        *store.0.consent.lock().unwrap() = Some(consent(Uuid::from_u128(11), None));
+
+        assert!(matches!(
+            service
+                .discard_decision_material("request-1", &preview)
+                .await,
+            Err(AuthorizationDecisionAdmissionError::ConsentMissing)
+        ));
+        assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);
+        assert!(store.0.pushed.lock().unwrap().is_some());
+        assert_eq!(
+            store.0.consent.lock().unwrap().as_ref().unwrap().user_id,
+            Uuid::from_u128(11)
+        );
+    });
+}
+
+#[test]
+fn cleanup_dependency_errors_preserve_the_original_stage_mapping() {
+    futures_executor::block_on(async {
+        for fail_par in [false, true] {
+            for source in [
+                AuthorizationPortError::Unavailable,
+                AuthorizationPortError::Unexpected,
+            ] {
+                let owner = Uuid::from_u128(10);
+                let store = FakeStore::default();
+                *store.0.consent.lock().unwrap() = Some(consent(owner, Some("request-uri-1")));
+                *store.0.pushed.lock().unwrap() = Some(pushed());
+                let service = service(FakeRepository::default(), store.clone());
+                let preview = service
+                    .preview_user_decision("request-1", owner)
+                    .await
+                    .unwrap();
+                if fail_par {
+                    *store.0.par_discard_error.lock().unwrap() = Some(source);
+                } else {
+                    *store.0.consent_discard_error.lock().unwrap() = Some(source);
+                }
+
+                let error = service
+                    .discard_decision_material("request-1", &preview)
+                    .await
+                    .unwrap_err();
+                match error {
+                    AuthorizationDecisionAdmissionError::ConsentReadFailed(actual) => {
+                        assert!(!fail_par);
+                        assert_eq!(actual, source);
+                        assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);
+                        assert!(store.0.consent.lock().unwrap().is_some());
+                    }
+                    AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
+                        consent,
+                        source: actual,
+                    } => {
+                        assert!(fail_par);
+                        assert_eq!(actual, source);
+                        assert_eq!(consent.user_id, owner);
+                        assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 1);
+                        assert!(store.0.consent.lock().unwrap().is_none());
+                    }
+                    other => panic!("cleanup dependency failure became {other:?}"),
+                }
+                assert!(store.0.pushed.lock().unwrap().is_some());
+            }
+        }
+    });
 }
 
 #[test]
@@ -619,7 +714,9 @@ async fn consent_replacement_between_load_and_claim_is_preserved_async() {
         .await
         .unwrap();
     assert!(matches!(
-        service.consume_user_decision("request-1", &preview).await,
+        service
+            .discard_decision_material("request-1", &preview)
+            .await,
         Err(AuthorizationDecisionAdmissionError::ConsentMissing)
     ));
     let retained = store.0.consent.lock().unwrap().clone().unwrap();
@@ -648,7 +745,7 @@ async fn admitted_consent_consumes_its_par_handle_once_async() {
         Some("request-uri-1")
     );
     service
-        .consume_user_decision("request-1", &preview)
+        .discard_decision_material("request-1", &preview)
         .await
         .unwrap();
     assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 1);
@@ -656,13 +753,11 @@ async fn admitted_consent_consumes_its_par_handle_once_async() {
 }
 
 #[test]
-fn missing_par_error_retains_consumed_consent_for_protocol_redirect() {
-    futures_executor::block_on(
-        missing_par_error_retains_consumed_consent_for_protocol_redirect_async(),
-    );
+fn missing_par_preview_retains_consent_for_protocol_redirect() {
+    futures_executor::block_on(missing_par_preview_retains_consent_for_protocol_redirect_async());
 }
 
-async fn missing_par_error_retains_consumed_consent_for_protocol_redirect_async() {
+async fn missing_par_preview_retains_consent_for_protocol_redirect_async() {
     let owner = Uuid::from_u128(10);
     let store = FakeStore::default();
     *store.0.consent.lock().unwrap() = Some(consent(owner, Some("missing-request-uri")));
@@ -684,11 +779,11 @@ async fn missing_par_error_retains_consumed_consent_for_protocol_redirect_async(
 }
 
 #[test]
-fn par_replacement_between_load_and_claim_is_preserved() {
-    futures_executor::block_on(par_replacement_between_load_and_claim_is_preserved_async());
+fn corrupt_par_snapshot_between_load_and_disposal_is_preserved() {
+    futures_executor::block_on(corrupt_par_snapshot_between_load_and_disposal_is_preserved_async());
 }
 
-async fn par_replacement_between_load_and_claim_is_preserved_async() {
+async fn corrupt_par_snapshot_between_load_and_disposal_is_preserved_async() {
     let owner = Uuid::from_u128(10);
     let original = pushed();
     let mut bound_consent = consent(owner, Some("request-uri-1"));
@@ -707,7 +802,7 @@ async fn par_replacement_between_load_and_claim_is_preserved_async() {
         .await
         .unwrap();
     let error = service
-        .consume_user_decision("request-1", &preview)
+        .discard_decision_material("request-1", &preview)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -719,149 +814,421 @@ async fn par_replacement_between_load_and_claim_is_preserved_async() {
         replacement.client_id
     );
     assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 1);
+    assert!(store.0.consent.lock().unwrap().is_none());
 }
 
-#[test]
-fn inactive_client_is_rejected_before_authorization_code_publication() {
-    futures_executor::block_on(
-        inactive_client_is_rejected_before_authorization_code_publication_async(),
-    );
-}
-
-async fn inactive_client_is_rejected_before_authorization_code_publication_async() {
+fn decision_input(
+    kind: AuthorizationDecisionKind,
+    request_id: &str,
+    par: Option<&str>,
+) -> (
+    AuthorizationDecisionCommit,
+    Option<PreparedAuthorizationCode>,
+) {
+    let now = Utc::now();
     let tenant_id = Uuid::from_u128(1);
-    let repository = FakeRepository::default();
-    let mut inactive = client(tenant_id);
-    inactive.is_active = false;
-    *repository.0.client.lock().unwrap() = Some(inactive);
-    let store = FakeStore::default();
-    let service = service(repository.clone(), store.clone());
-    let consent = consent(Uuid::from_u128(10), None);
-
-    assert_eq!(
-        service
-            .approve_consent(AuthorizationApprovalInput {
-                consent: &consent,
-                code_hash: "hash",
-                code_id: "code-id",
-                issued_at: Utc.timestamp_opt(1_700_000_100, 0).unwrap(),
-                code_ttl_seconds: 60,
-                tenant_id,
-            })
-            .await,
-        Err(AuthorizationApprovalError::ClientUnavailable)
-    );
-    assert!(store.0.stored_code.lock().unwrap().is_none());
-    assert_eq!(repository.0.grant_writes.load(Ordering::Relaxed), 0);
-}
-
-#[test]
-fn grant_failure_deletes_the_undisclosed_authorization_code() {
-    futures_executor::block_on(grant_failure_deletes_the_undisclosed_authorization_code_async());
-}
-
-async fn grant_failure_deletes_the_undisclosed_authorization_code_async() {
-    let tenant_id = Uuid::from_u128(1);
-    let repository = FakeRepository::default();
-    *repository.0.client.lock().unwrap() = Some(client(tenant_id));
-    *repository.0.grant_error.lock().unwrap() = Some(AuthorizationPortError::Unavailable);
-    let store = FakeStore::default();
-    let service = service(repository, store.clone());
-    let consent = consent(Uuid::from_u128(10), None);
-
-    assert_eq!(
-        service
-            .approve_consent(AuthorizationApprovalInput {
-                consent: &consent,
-                code_hash: "hash",
-                code_id: "code-id",
-                issued_at: Utc.timestamp_opt(1_700_000_100, 0).unwrap(),
-                code_ttl_seconds: 60,
-                tenant_id,
-            })
-            .await,
-        Err(AuthorizationApprovalError::Commit(
-            AuthorizationApprovalCommitError::GrantWrite {
-                source: AuthorizationPortError::Unavailable,
-                cleanup: None,
-            }
-        ))
-    );
-    assert!(store.0.stored_code.lock().unwrap().is_none());
-    assert_eq!(store.0.code_deletes.load(Ordering::Relaxed), 1);
-}
-
-#[test]
-fn compensation_failure_is_not_silently_discarded() {
-    futures_executor::block_on(compensation_failure_is_not_silently_discarded_async());
-}
-
-async fn compensation_failure_is_not_silently_discarded_async() {
-    let tenant_id = Uuid::from_u128(1);
-    let repository = FakeRepository::default();
-    *repository.0.client.lock().unwrap() = Some(client(tenant_id));
-    *repository.0.grant_error.lock().unwrap() = Some(AuthorizationPortError::Unavailable);
-    let store = FakeStore::default();
-    *store.0.delete_error.lock().unwrap() = Some(AuthorizationPortError::Unavailable);
-    let service = service(repository, store.clone());
-    let consent = consent(Uuid::from_u128(10), None);
-
-    assert_eq!(
-        service
-            .approve_consent(AuthorizationApprovalInput {
-                consent: &consent,
-                code_hash: "hash",
-                code_id: "code-id",
-                issued_at: Utc.timestamp_opt(1_700_000_100, 0).unwrap(),
-                code_ttl_seconds: 60,
-                tenant_id,
-            })
-            .await,
-        Err(AuthorizationApprovalError::Commit(
-            AuthorizationApprovalCommitError::GrantWrite {
-                source: AuthorizationPortError::Unavailable,
-                cleanup: Some(AuthorizationPortError::Unavailable),
-            }
-        ))
-    );
-    assert!(store.0.stored_code.lock().unwrap().is_some());
-}
-
-#[test]
-fn successful_approval_preserves_nonce_and_sender_constraints() {
-    futures_executor::block_on(successful_approval_preserves_nonce_and_sender_constraints_async());
-}
-
-async fn successful_approval_preserves_nonce_and_sender_constraints_async() {
-    let tenant_id = Uuid::from_u128(1);
-    let repository = FakeRepository::default();
-    *repository.0.client.lock().unwrap() = Some(client(tenant_id));
-    let store = FakeStore::default();
-    let service = service(repository.clone(), store.clone());
-    let consent = consent(Uuid::from_u128(10), None);
-    let issued_at = Utc.timestamp_opt(1_700_000_100, 0).unwrap();
-
-    service
-        .approve_consent(AuthorizationApprovalInput {
-            consent: &consent,
+    let mut payload = consent(Uuid::from_u128(10), par);
+    payload.request_id = request_id.into();
+    payload.expires_at = now + Duration::minutes(5);
+    let code = (kind != AuthorizationDecisionKind::Deny).then(|| {
+        prepare_authorization_code(AuthorizationApprovalInput {
+            consent: &payload,
             code_hash: "hash",
             code_id: "code-id",
-            issued_at,
+            issued_at: now,
             code_ttl_seconds: 60,
             tenant_id,
         })
-        .await
-        .unwrap();
+    });
+    (
+        AuthorizationDecisionCommit {
+            tenant_id,
+            user_id: payload.user_id,
+            client_id: payload.client_id.clone(),
+            request_id: payload.request_id.clone(),
+            pushed_request_uri: payload.pushed_request_uri.clone(),
+            valid_until: payload.expires_at,
+            retain_until: payload.expires_at,
+            decision: kind,
+            event_id: Uuid::now_v7(),
+            occurred_at: now,
+            audit_fields: json!({"request_id_hash": "request-hash"}),
+            scopes: payload.scopes.clone(),
+            resource_indicators: payload.resource_indicators.clone(),
+            authorization_details: payload.authorization_details.clone(),
+        },
+        code,
+    )
+}
 
-    let stored = store.0.stored_code.lock().unwrap().clone().unwrap();
-    let AuthorizationCodeState::Pending { payload } = stored else {
-        panic!("approval must publish a pending authorization code")
-    };
-    assert_eq!(payload.code_id, "code-id");
-    assert_eq!(payload.nonce.as_deref(), Some("nonce-1"));
-    assert_eq!(payload.dpop_jkt.as_deref(), Some("jkt"));
-    assert_eq!(payload.code_challenge.as_deref(), Some("challenge"));
-    assert_eq!(payload.issued_at, issued_at);
-    assert_eq!(payload.expires_at, issued_at + Duration::seconds(60));
-    assert_eq!(repository.0.grant_writes.load(Ordering::Relaxed), 1);
+#[test]
+fn failed_or_unknown_decision_never_publishes_a_code() {
+    futures_executor::block_on(async {
+        for outcome in [
+            Ok(AuthorizationDecisionCommitResult::Conflict),
+            Ok(AuthorizationDecisionCommitResult::Expired),
+            Ok(AuthorizationDecisionCommitResult::ClientUnavailable),
+            Ok(AuthorizationDecisionCommitResult::GrantUnavailable),
+            Err(AuthorizationPortError::Unavailable),
+        ] {
+            let repository = FakeRepository::default();
+            repository.0.decisions.lock().unwrap().outcome = Some(outcome);
+            let store = FakeStore::default();
+            let service = service(repository.clone(), store.clone());
+            let (input, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
+            assert!(store.0.stored_code.lock().unwrap().is_none());
+            assert_eq!(service.commit_decision(input, code).await, outcome);
+            assert!(store.0.stored_code.lock().unwrap().is_none());
+            assert_eq!(store.0.code_deletes.load(Ordering::Relaxed), 0);
+            let state = repository.0.decisions.lock().unwrap();
+            assert!(state.facts.is_empty());
+            assert_eq!(state.grant_writes, 0);
+        }
+    });
+}
+
+#[test]
+fn approved_but_undelivered_keeps_fact_grant_and_consumption_fence() {
+    futures_executor::block_on(async {
+        for unknown_commit in [false, true] {
+            let repository = FakeRepository::default();
+            repository.0.decisions.lock().unwrap().commit_then_error = unknown_commit;
+            let store = FakeStore::default();
+            if !unknown_commit {
+                *store.0.code_error.lock().unwrap() = Some(AuthorizationPortError::Unavailable);
+            }
+            let service = service(repository.clone(), store.clone());
+            let (input, code) =
+                decision_input(AuthorizationDecisionKind::Approve, "request", Some("par"));
+            assert_eq!(
+                service.commit_decision(input, code).await,
+                Err(AuthorizationPortError::Unavailable)
+            );
+            assert!(store.0.stored_code.lock().unwrap().is_none());
+            let (retry, code) =
+                decision_input(AuthorizationDecisionKind::Approve, "request", Some("par"));
+            assert_eq!(
+                service.commit_decision(retry, code).await.unwrap(),
+                AuthorizationDecisionCommitResult::Conflict
+            );
+            let (other_consent, code) = decision_input(
+                AuthorizationDecisionKind::PromptNone,
+                "another-request",
+                Some("par"),
+            );
+            assert_eq!(
+                service.commit_decision(other_consent, code).await.unwrap(),
+                AuthorizationDecisionCommitResult::Conflict
+            );
+            assert!(store.0.stored_code.lock().unwrap().is_none());
+            assert_eq!(store.0.code_deletes.load(Ordering::Relaxed), 0);
+            let state = repository.0.decisions.lock().unwrap();
+            assert_eq!(state.facts.len(), 1);
+            assert_eq!(state.grant_writes, 1);
+        }
+    });
+}
+
+#[test]
+fn cancellation_before_decision_ack_never_publishes_a_code() {
+    let repository = FakeRepository::default();
+    repository.0.hold_commit_ack.store(true, Ordering::Relaxed);
+    let store = FakeStore::default();
+    let service = service(repository.clone(), store.clone());
+    let (input, code) =
+        decision_input(AuthorizationDecisionKind::Approve, "cancelled", Some("par"));
+    let retry = input.clone();
+    let retry_code = code.as_ref().map(|code| PreparedAuthorizationCode {
+        tenant_id: code.tenant_id,
+        hash: code.hash.clone(),
+        payload: code.payload.clone(),
+        ttl_seconds: code.ttl_seconds,
+    });
+    let mut pending = Box::pin(service.commit_decision(input, code));
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(std::future::Future::poll(pending.as_mut(), &mut context).is_pending());
+    // The repository has committed, but its durable acknowledgement is held.
+    // Dropping this service future cannot run the later code-publication step.
+    assert_eq!(repository.0.decisions.lock().unwrap().facts.len(), 1);
+    assert!(store.0.stored_code.lock().unwrap().is_none());
+    drop(pending);
+    assert!(store.0.stored_code.lock().unwrap().is_none());
+    assert_eq!(store.0.code_deletes.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        futures_executor::block_on(service.commit_decision(retry, retry_code)).unwrap(),
+        AuthorizationDecisionCommitResult::Conflict
+    );
+    assert!(store.0.stored_code.lock().unwrap().is_none());
+    let state = repository.0.decisions.lock().unwrap();
+    assert_eq!(state.facts.len(), 1);
+    assert_eq!(state.grant_writes, 1);
+}
+
+#[test]
+fn successful_commit_binds_exact_prepared_code_before_publication() {
+    futures_executor::block_on(async {
+        let repository = FakeRepository::default();
+        let store = FakeStore::default();
+        *repository.0.publication_probe.lock().unwrap() = Some(store.0.clone());
+        let service = service(repository.clone(), store.clone());
+        let (input, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
+        let prepared = code.unwrap();
+        let expected_digest = blake3::hash(&serde_json::to_vec(&prepared.payload).unwrap())
+            .to_hex()
+            .to_string();
+        let expires_at = prepared.payload.expires_at;
+        assert!(
+            store.0.stored_code.lock().unwrap().is_none(),
+            "preparation is not publication"
+        );
+        assert!(repository.0.decisions.lock().unwrap().facts.is_empty());
+        assert_eq!(
+            service
+                .commit_decision(input, Some(prepared))
+                .await
+                .unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        let stored = store.0.stored_code.lock().unwrap().clone().unwrap();
+        let AuthorizationCodeState::Pending { payload } = stored else {
+            panic!("a committed approval publishes a pending authorization code")
+        };
+        assert_eq!(payload.code_id, "code-id");
+        assert_eq!(payload.nonce.as_deref(), Some("nonce-1"));
+        assert_eq!(payload.dpop_jkt.as_deref(), Some("jkt"));
+        assert_eq!(payload.pkce.challenge(), Some("challenge"));
+        assert_eq!(payload.expires_at, expires_at);
+        let state = repository.0.decisions.lock().unwrap();
+        assert_eq!(state.grant_writes, 1);
+        assert_eq!(state.facts.len(), 1);
+        assert_eq!(state.facts[0].audit_fields["code_id"], "code-id");
+        assert_eq!(state.facts[0].audit_fields["code_hash"], "hash");
+        assert_eq!(
+            state.facts[0].audit_fields["code_payload_digest"],
+            expected_digest
+        );
+    });
+}
+
+#[test]
+fn deny_and_prompt_none_share_par_fence_without_incrementing_explicit_grants() {
+    futures_executor::block_on(async {
+        for winner in [
+            AuthorizationDecisionKind::Deny,
+            AuthorizationDecisionKind::PromptNone,
+        ] {
+            let repository = FakeRepository::default();
+            let store = FakeStore::default();
+            let service = service(repository.clone(), store.clone());
+            let (input, code) = decision_input(winner, "first", Some("par"));
+            assert_eq!(
+                service.commit_decision(input, code).await.unwrap(),
+                AuthorizationDecisionCommitResult::Committed
+            );
+            assert_eq!(
+                store.0.stored_code.lock().unwrap().is_some(),
+                winner == AuthorizationDecisionKind::PromptNone
+            );
+            for loser in [
+                AuthorizationDecisionKind::Approve,
+                AuthorizationDecisionKind::Deny,
+                AuthorizationDecisionKind::PromptNone,
+            ] {
+                let (input, code) = decision_input(loser, "second", Some("par"));
+                assert_eq!(
+                    service.commit_decision(input, code).await.unwrap(),
+                    AuthorizationDecisionCommitResult::Conflict
+                );
+            }
+            let state = repository.0.decisions.lock().unwrap();
+            assert_eq!(state.facts.len(), 1);
+            assert_eq!(state.grant_writes, 0);
+            if winner == AuthorizationDecisionKind::Deny {
+                assert!(state.facts[0].audit_fields.get("code_id").is_none());
+            }
+        }
+    });
+}
+
+#[test]
+fn mismatched_prepared_authorization_is_rejected_before_repository_commit() {
+    futures_executor::block_on(async {
+        let repository = FakeRepository::default();
+        let store = FakeStore::default();
+        let service = service(repository.clone(), store.clone());
+        let (mut input, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
+        input.scopes.push("unapproved".into());
+        assert_eq!(
+            service.commit_decision(input, code).await,
+            Err(AuthorizationPortError::CorruptData)
+        );
+        assert!(repository.0.decisions.lock().unwrap().facts.is_empty());
+        assert!(store.0.stored_code.lock().unwrap().is_none());
+    });
+}
+
+#[test]
+fn preview_preserves_longest_material_retention_and_shortest_admission_expiry() {
+    futures_executor::block_on(async {
+        let owner = Uuid::from_u128(10);
+        let mut payload = consent(owner, Some("par"));
+        let mut par = pushed();
+        payload.expires_at = Utc::now() + Duration::seconds(30);
+        par.expires_at = payload.expires_at + Duration::minutes(5);
+        let expected_valid_until = payload.expires_at;
+        let expected_retain_until = par.expires_at;
+        let store = FakeStore::default();
+        *store.0.consent.lock().unwrap() = Some(payload);
+        *store.0.pushed.lock().unwrap() = Some(par);
+        let service = service(FakeRepository::default(), store);
+        let preview = service
+            .preview_user_decision("request-1", owner)
+            .await
+            .unwrap();
+        assert_eq!(preview.valid_until(), expected_valid_until);
+        assert_eq!(preview.retain_until(), expected_retain_until);
+    });
+}
+
+#[test]
+fn independent_request_fence_is_tenant_scoped_and_expired_input_cannot_commit() {
+    futures_executor::block_on(async {
+        let repository = FakeRepository::default();
+        let store = FakeStore::default();
+        let service = service(repository.clone(), store.clone());
+        let (input, code) = decision_input(
+            AuthorizationDecisionKind::Deny,
+            "request",
+            Some("first-par"),
+        );
+        assert_eq!(
+            service.commit_decision(input, code).await.unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        let (input, code) = decision_input(
+            AuthorizationDecisionKind::Deny,
+            "request",
+            Some("different-par"),
+        );
+        assert_eq!(
+            service.commit_decision(input, code).await.unwrap(),
+            AuthorizationDecisionCommitResult::Conflict
+        );
+        let (mut input, code) = decision_input(
+            AuthorizationDecisionKind::Deny,
+            "request",
+            Some("first-par"),
+        );
+        input.tenant_id = Uuid::from_u128(2);
+        assert_eq!(
+            service.commit_decision(input, code).await.unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        let (mut input, code) =
+            decision_input(AuthorizationDecisionKind::Approve, "expired-request", None);
+        input.valid_until = Utc::now() - Duration::seconds(1);
+        assert_eq!(
+            service.commit_decision(input, code).await.unwrap(),
+            AuthorizationDecisionCommitResult::Expired
+        );
+        assert_eq!(repository.0.decisions.lock().unwrap().facts.len(), 2);
+        assert!(store.0.stored_code.lock().unwrap().is_none());
+    });
+}
+
+#[test]
+fn competing_decision_kinds_share_one_par_commit() {
+    futures_executor::block_on(async {
+        for first_kind in [
+            AuthorizationDecisionKind::Approve,
+            AuthorizationDecisionKind::Deny,
+            AuthorizationDecisionKind::PromptNone,
+        ] {
+            let repository = FakeRepository::default();
+            let store = FakeStore::default();
+            let service = service(repository.clone(), store.clone());
+            let (first, first_code) =
+                decision_input(first_kind, "first-request", Some("shared-par"));
+            let (second, second_code) = decision_input(
+                AuthorizationDecisionKind::Approve,
+                "second-request",
+                Some("shared-par"),
+            );
+            let (first, second) = futures_util::join!(
+                service.commit_decision(first, first_code),
+                service.commit_decision(second, second_code),
+            );
+            let results = [first.unwrap(), second.unwrap()];
+            assert_eq!(
+                results
+                    .iter()
+                    .filter(|result| **result == AuthorizationDecisionCommitResult::Committed)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                results
+                    .iter()
+                    .filter(|result| **result == AuthorizationDecisionCommitResult::Conflict)
+                    .count(),
+                1
+            );
+            let state = repository.0.decisions.lock().unwrap();
+            assert_eq!(state.facts.len(), 1);
+            assert_eq!(
+                state.grant_writes,
+                usize::from(state.facts[0].decision == AuthorizationDecisionKind::Approve)
+            );
+            assert_eq!(
+                store.0.stored_code.lock().unwrap().is_some(),
+                state.facts[0].decision != AuthorizationDecisionKind::Deny
+            );
+        }
+    });
+}
+
+#[test]
+fn decision_kind_requires_matching_code_presence() {
+    futures_executor::block_on(async {
+        let repository = FakeRepository::default();
+        let store = FakeStore::default();
+        let service = service(repository.clone(), store.clone());
+        let (approve, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
+        assert_eq!(
+            service.commit_decision(approve, None).await,
+            Err(AuthorizationPortError::CorruptData)
+        );
+        let (deny, _) = decision_input(AuthorizationDecisionKind::Deny, "request", None);
+        assert_eq!(
+            service.commit_decision(deny, code).await,
+            Err(AuthorizationPortError::CorruptData)
+        );
+        assert!(repository.0.decisions.lock().unwrap().facts.is_empty());
+        assert!(store.0.stored_code.lock().unwrap().is_none());
+    });
+}
+
+#[test]
+fn code_expiry_extends_retention_without_extending_admission_expiry() {
+    futures_executor::block_on(async {
+        let repository = FakeRepository::default();
+        let store = FakeStore::default();
+        let service = service(repository.clone(), store);
+        let (input, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
+        let valid_until = input.valid_until;
+        let mut prepared = code.unwrap();
+        prepared.payload.expires_at = valid_until + Duration::minutes(5);
+        prepared.ttl_seconds = 600;
+        let code_expiry = prepared.payload.expires_at;
+        assert_eq!(
+            service
+                .commit_decision(input, Some(prepared))
+                .await
+                .unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        let state = repository.0.decisions.lock().unwrap();
+        assert_eq!(state.facts[0].valid_until, valid_until);
+        assert_eq!(state.facts[0].retain_until, code_expiry);
+    });
 }

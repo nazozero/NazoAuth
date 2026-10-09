@@ -1,0 +1,9 @@
+{
+  "ts": 1791510325.9330382,
+  "scenario": "cap_refresh_token",
+  "profile": "capacity",
+  "run_id": "r230-bottleneck-b03-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791510325.897,
+  "state_ready_run_id": "r230-bottleneck-b03-20261009"
+}

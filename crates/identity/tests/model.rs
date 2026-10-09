@@ -1,6 +1,6 @@
 use nazo_identity::{
-    AuthMethod, AuthenticationContext, IdentityModelError, OrganizationId, PostalAddress,
-    Principal, RealmId, SubjectClaims, TenantContext, TenantId, UserId, UserRole,
+    IdentityModelError, OrganizationId, PostalAddress, Principal, RealmId, SubjectClaims,
+    TenantContext, TenantId, UserId, UserRole,
 };
 use uuid::Uuid;
 
@@ -44,32 +44,49 @@ fn principal_and_tenant_context_do_not_require_database_rows() {
 }
 
 #[test]
-fn authentication_context_has_ordered_deduplicated_amr_and_mfa() {
-    let context = AuthenticationContext::new(
-        1_700_000_000,
-        [
-            AuthMethod::Password,
-            AuthMethod::Totp,
-            AuthMethod::Password,
-            AuthMethod::Federated("oidc".to_owned()),
-        ],
-    )
-    .unwrap();
-
-    assert!(context.has_mfa());
-    assert_eq!(context.amr(), ["password", "otp", "oidc", "federated"]);
-    assert!(!context.oidc_sid.trim().is_empty());
-}
-
-#[test]
-fn authentication_context_validates_persisted_metadata() {
-    assert!(AuthenticationContext::from_amr(1_000, ["password"], "sid-1", 1_001).is_ok());
-    assert!(AuthenticationContext::from_amr(0, ["password"], "sid-1", 1_001).is_err());
-    assert!(AuthenticationContext::from_amr(1_032, ["password"], "sid-1", 1_001).is_err());
-    assert!(
-        AuthenticationContext::from_amr(1_000, std::iter::empty::<&str>(), "sid-1", 1_001).is_err()
+fn session_metadata_has_one_amr_source_and_rejects_invalid_time_or_sid() {
+    use nazo_identity::session::{SessionRecord, valid_authentication_metadata};
+    let mut session = SessionRecord::new(
+        UserId::new(id(4)).unwrap(),
+        1_000,
+        vec!["password".to_owned()],
+        false,
+        Some("sid-1".to_owned()),
     );
-    assert!(AuthenticationContext::from_amr(1_000, ["password"], " ", 1_001).is_err());
+    session.add_amr("otp");
+    session.add_amr("mfa");
+    session.add_amr("otp");
+    assert_eq!(session.amr(), ["password", "otp", "mfa"]);
+    assert!(valid_authentication_metadata(
+        session.auth_time(),
+        session.amr(),
+        session.oidc_sid(),
+        1_001
+    ));
+    assert!(!valid_authentication_metadata(
+        0,
+        session.amr(),
+        session.oidc_sid(),
+        1_001
+    ));
+    assert!(!valid_authentication_metadata(
+        1_032,
+        session.amr(),
+        session.oidc_sid(),
+        1_001
+    ));
+    assert!(!valid_authentication_metadata(
+        1_000,
+        &[],
+        session.oidc_sid(),
+        1_001
+    ));
+    assert!(!valid_authentication_metadata(
+        1_000,
+        session.amr(),
+        Some(" "),
+        1_001
+    ));
 }
 
 #[test]

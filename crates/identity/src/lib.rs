@@ -41,13 +41,12 @@ pub use federation::{
     VerifiedExternalIdentity,
 };
 pub use mfa_service::{
-    MfaService, MfaServiceError, MfaServiceErrorKind, PreparedTotpConfirmation,
-    TotpConfirmationOutcome, TotpEnrollmentStart,
+    MfaService, MfaServiceError, MfaServiceErrorKind, MfaVerificationProof,
+    PreparedTotpConfirmation, TotpConfirmationOutcome, TotpEnrollmentStart,
 };
 pub use model::{
-    AccountIdentity, AuthMethod, AuthenticationContext, AuthenticationIdentity, IdentityModelError,
-    LoginIdentity, PasswordHash, PostalAddress, Principal, PublicAccount, SubjectClaims,
-    UserProfile, UserRole,
+    AccountIdentity, AuthenticationIdentity, IdentityModelError, LoginIdentity, PasswordHash,
+    PostalAddress, Principal, PublicAccount, SubjectClaims, UserProfile, UserRole,
 };
 pub use mtls_trust::{
     MtlsTrustAnchorRequest, MtlsTrustAnchorRequestPage, MtlsTrustAnchorStatus,

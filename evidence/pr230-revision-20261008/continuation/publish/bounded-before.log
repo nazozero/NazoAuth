@@ -1,0 +1,19 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 4.23s
+     Running tests/audit_bounded_reads.rs (target/debug/deps/audit_bounded_reads-5f79e092550d1327)
+
+running 1 test
+test exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale ...
+thread 'exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale' (84313) panicked at crates/persistence-postgres/tests/audit_bounded_reads.rs:73:10:
+called `Result::unwrap()` on an `Err` value: DatabaseError(UniqueViolation, "duplicate key value violates unique constraint \"security_audit_chain_entries_event_hash_key\"")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_bounded_reads`

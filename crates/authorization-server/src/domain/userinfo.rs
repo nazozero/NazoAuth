@@ -99,7 +99,7 @@ impl ServerUserinfoOperations {
             access_token_tenant_id(&claims).ok_or(UserinfoError::InvalidTenantBoundary)?;
         let revoked = self
             .token_service
-            .access_token_revoked(tenant_id, &claims.jti)
+            .access_token_revoked(tenant_id, &claims)
             .await
             .map_err(|error| {
                 tracing::warn!(%error, "failed to check userinfo token revocation");
@@ -142,9 +142,8 @@ impl ServerUserinfoOperations {
 
         let scopes = parse_scope(&claims.scope);
         // A directly carried user UUID uses the ordinary subject read; a
-        // pairwise subject resolves ownership through the issuance row's
-        // users join, which already proves the subject is active inside the
-        // verifier acceptance window. The subject read and the client read
+        // pairwise subject resolves through its stable binding (with legacy
+        // issuance fallback). The users join proves the subject is active. The subject read and the client read
         // are one combined snapshot query.
         let (subject_ref, missing_subject) = match claims
             .user_id
@@ -156,7 +155,10 @@ impl ServerUserinfoOperations {
                 UserinfoError::InactiveSubject,
             ),
             None => (
-                nazo_auth::UserinfoSubjectRef::AccessTokenJti(&claims.jti),
+                nazo_auth::UserinfoSubjectRef::AccessToken {
+                    subject: &claims.sub,
+                    jti: &claims.jti,
+                },
                 UserinfoError::InvalidSubject,
             ),
         };
@@ -181,9 +183,7 @@ impl ServerUserinfoOperations {
             &subject_claims,
             &scopes,
             &claims.sub,
-            &claims.userinfo_claims,
             &claims.userinfo_claim_requests,
-            None,
         );
         let response_encryption_configured = client.userinfo_encrypted_response_alg.is_some()
             || client.userinfo_encrypted_response_enc.is_some();
@@ -235,6 +235,9 @@ impl ServerUserinfoOperations {
             }
             (AccessTokenAuthScheme::DPoP, _) => {
                 Err(UserinfoError::Dpop(UserinfoDpopError::TokenNotBound))
+            }
+            (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.jkt.is_some() => {
+                Err(UserinfoError::Dpop(UserinfoDpopError::MissingProof))
             }
             (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.x5t_s256.is_some() => {
                 let expected = cnf.x5t_s256.as_deref().unwrap_or_default();

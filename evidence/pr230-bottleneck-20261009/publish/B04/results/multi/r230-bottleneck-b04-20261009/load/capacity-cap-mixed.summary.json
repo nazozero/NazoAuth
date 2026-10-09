@@ -1,0 +1,295 @@
+{
+  "profile": "capacity",
+  "scenario": "cap_mixed",
+  "elapsed_seconds": 130.721,
+  "status": "target_miss",
+  "k6_exit_code": 0,
+  "k6": {
+    "http_reqs": 176712,
+    "rps": 1454.537,
+    "error_rate": 0.0,
+    "iterations_completed": 119896,
+    "dropped_iterations": 72107,
+    "dropped_per_s": 593.521,
+    "drop_fraction": 0.375551,
+    "scheduled_estimate": 192003,
+    "latency_ms": {
+      "p50": 562.121,
+      "p95": 1241.757,
+      "p99": 1401.202
+    },
+    "full_run": {
+      "iterations_completed": 119896,
+      "dropped_iterations": 72107,
+      "drop_fraction": 0.375551,
+      "http_latency_ms": {
+        "p50": 562.121,
+        "p95": 1241.757,
+        "p99": 1401.202
+      }
+    },
+    "measure": {
+      "ops": 61254,
+      "ops_per_s": 1020.9,
+      "ops_per_s_basis": "scenario_window",
+      "successful_ops_per_s": 1020.9,
+      "errors": 0,
+      "outcomes": {
+        "success": 61254,
+        "expected_rejection": 0,
+        "local_no_request": 0,
+        "unexpected": 0,
+        "prepare_failed": 0,
+        "prepare_local_failed": 0,
+        "prepare_sut_failed": 0
+      },
+      "iterations": {
+        "measure_begins": 61254,
+        "legacy_rule_begins": 62603,
+        "late_vu_measured_only": 0,
+        "late_vu_fraction": 0.0,
+        "begins_total": 119896,
+        "ends_total": 119896
+      },
+      "subject_lifecycle": {
+        "initial_mint": 779,
+        "refresh_update": 18092,
+        "expired_reauth": 0
+      },
+      "legacy_rule_ops": 62603,
+      "scheduled": 96000,
+      "started": 61254,
+      "completed": 61254,
+      "unfinished": 0,
+      "dropped": 34746,
+      "drop_fraction": 0.361938,
+      "schedule_delta": -34746,
+      "drop_lower_bound": 34746,
+      "drop_upper_bound": 34746,
+      "drop_fraction_upper": 0.361938,
+      "boundary_overshoot": 0,
+      "pre_measure_drops_estimate": 37358,
+      "cohort_problems": [],
+      "cohort_valid": true,
+      "latency_ms": {
+        "p50": 721.0,
+        "p95": 2649.0,
+        "p99": 3007.0
+      },
+      "iteration_ms": {
+        "p50": 721.0,
+        "p95": 2649.0,
+        "p99": 3007.47
+      },
+      "measurement_contract": {
+        "duration_ms": 120000,
+        "measure_offset_ms": 60000,
+        "warmup_ms": 60000,
+        "cap_measure_start_ms": 0,
+        "bucket_ms": 60000,
+        "bucket_count": 2,
+        "divergent_vus": false,
+        "contract": "cap-scenario-window-v1",
+        "window_start_ms": 1791510681621,
+        "window_end_ms": 1791510741621,
+        "window_seconds": 60,
+        "scenario_clock_ok": 1,
+        "scenario_start_ms": 1791510621621
+      },
+      "contract_problems": [],
+      "window_valid": true
+    }
+  },
+  "measurement_evidence": {
+    "window_valid": true,
+    "window_problems": [],
+    "parse_errors": 0,
+    "reader_error": null,
+    "lag_over_5s": 0,
+    "diag_overflow": false
+  },
+  "steps": [
+    {
+      "step": "authorize",
+      "http_reqs": 18679,
+      "rps": 153.749,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 448.249,
+        "p95": 589.175,
+        "p99": 658.656
+      }
+    },
+    {
+      "step": "authorize_decision",
+      "http_reqs": 18679,
+      "rps": 153.749,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 471.01,
+        "p95": 613.73,
+        "p99": 684.289
+      }
+    },
+    {
+      "step": "cap_bootstrap",
+      "http_reqs": 779,
+      "rps": 6.412,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 377.256,
+        "p95": 463.151,
+        "p99": 620.572
+      }
+    },
+    {
+      "step": "par_oidc",
+      "http_reqs": 17900,
+      "rps": 147.337,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 454.564,
+        "p95": 594.732,
+        "p99": 659.775
+      }
+    },
+    {
+      "step": "token_authorization_code",
+      "http_reqs": 18679,
+      "rps": 153.749,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 1152.741,
+        "p95": 1417.856,
+        "p99": 1487.314
+      }
+    },
+    {
+      "step": "token_client_credentials",
+      "http_reqs": 29825,
+      "rps": 245.493,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 679.752,
+        "p95": 844.86,
+        "p99": 908.747
+      }
+    },
+    {
+      "step": "token_exchange",
+      "http_reqs": 17994,
+      "rps": 148.111,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 1125.597,
+        "p95": 1370.742,
+        "p99": 1457.739
+      }
+    },
+    {
+      "step": "token_refresh",
+      "http_reqs": 18092,
+      "rps": 148.917,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 911.272,
+        "p95": 1125.668,
+        "p99": 1206.432
+      }
+    },
+    {
+      "step": "userinfo",
+      "http_reqs": 36085,
+      "rps": 297.02,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 447.507,
+        "p95": 580.861,
+        "p99": 649.385
+      }
+    }
+  ],
+  "error_breakdown": [],
+  "postgres": {
+    "statement_calls": 2654722,
+    "total_statement_ms": 392098.806,
+    "mean_statement_ms": 0.148,
+    "rows": 2865709,
+    "database_bytes": 147478207,
+    "statements_per_http_request": 15.023
+  },
+  "collection_contract": "blackbox-db-v1",
+  "db_pool": null,
+  "application_pool_observation": {
+    "field": "application_pool",
+    "delta": null,
+    "status": "UNAVAILABLE",
+    "reason": "application performance collection removed"
+  },
+  "valkey": {
+    "keyspace_hits": 448980,
+    "keyspace_misses": 858,
+    "commands_processed": 955319,
+    "expired_keys": 15,
+    "db0_keys": 33560
+  },
+  "containers": {
+    "by_container": {
+      "r230-bottleneck-b04-20261009-nazoauth-1": {
+        "service": "nazoauth",
+        "samples": 43,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "r230-bottleneck-b04-20261009-postgres-1": {
+        "service": "postgres",
+        "samples": 43,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "r230-bottleneck-b04-20261009-valkey-1": {
+        "service": "valkey",
+        "samples": 43,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    },
+    "by_service": {
+      "valkey": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "nazoauth": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "postgres": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    }
+  },
+  "load_model": {
+    "executor": "constant-arrival-rate",
+    "target_rate": 1600,
+    "time_unit": "1s",
+    "duration": "120s",
+    "app_replicas": 1,
+    "observed_app_instances": 1
+  }
+}

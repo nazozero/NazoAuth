@@ -1,0 +1,22 @@
+{
+  "CODE": {
+    "status": "PASS",
+    "scope": "最终源码所有指定门禁通过，Rust3667通过/4既有ignored（详列范围，PAR已另补跑通过），Python性能回归338通过/0跳过。"
+  },
+  "SECURITY": {
+    "status": "PASS",
+    "scope": "Required立即写且提交确认后成功；真实PG晚期失败/取消/断连、物理连接回收、原TTL与引用竞争回归通过，不把取消强行等同回滚。"
+  },
+  "RECOVERY": {
+    "status": "PASS",
+    "scope": "原时序两次持续恢复25/50秒及重复故障最终50秒；身份/签名对账一致。补充轮首次15秒窗口单独证据不足，未包装为20秒通过。"
+  },
+  "PERFORMANCE": {
+    "status": "FAIL",
+    "scope": "四个Disabled原失败点全部仍FAIL；持续点实际仅约357/960ops/s，B末段P99上升；不以共享CPU自动免责。"
+  },
+  "STORAGE": {
+    "status": "INVALID",
+    "scope": "短测数据有效且部分状态收敛；末次9087个到期decision未覆盖后续清空，不能宣称全面收敛/目标负载长期稳定或全模式磁盘上界。"
+  }
+}

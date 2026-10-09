@@ -42,7 +42,7 @@ Revision-2 corrections over revision-1:
   * Analyzer health (parse errors, reader errors, missing required input)
     propagates into validity; nothing emits a clean verdict on bad input.
 
-Stdlib only; compatible with the perf image python.
+The streaming decoder uses the pinned orjson dependency in the perf image.
 """
 from __future__ import annotations
 
@@ -53,13 +53,22 @@ import math
 import os
 import re
 import sys
+import orjson
+import multiprocessing
+import shutil
+import tempfile
+import hashlib
+from bisect import bisect_right
 from collections import defaultdict
+from functools import lru_cache
 from datetime import datetime, timezone
+from time import time as time_now
 
 # ----------------------------- tuning constants ----------------------------
 OUT_NAME = "capacity-cap-mixed"
 OUTCOME_KEYS = ("success", "expected_rejection", "local_no_request",
-                "unexpected_error")
+                "unexpected", "prepare_failed", "prepare_local_failed",
+                "prepare_sut_failed")
 # Three evidence tiers (kept explicit — see report and tests):
 #   A. AUTHORITATIVE  — series.json / window.json / k6 summary: every
 #      counted formal fact (begins/ends/drops/outcomes/latency aggregates
@@ -123,11 +132,7 @@ def hist_add(h: dict, v: float) -> None:
     h["sum"] = h.get("sum", 0.0) + v
     h["min"] = v if h.get("min") is None else min(h["min"], v)
     h["max"] = v if h.get("max") is None else max(h["max"], v)
-    for i, bound in enumerate(BUCKETS):
-        if v < bound:
-            h["b"][i] += 1
-            return
-    h["b"][-1] += 1
+    h["b"][bisect_right(BUCKETS, v)] += 1
 
 
 def hist_merge(a: dict | None, b: dict | None) -> dict:
@@ -324,6 +329,8 @@ class StreamingSeries:
         self._diag_bytes = 0
         self.diag_overflow = False
         self.diag_fh = None
+        self._last_time_text = None
+        self._last_time_value = None
         # Stream-authoritative measurement cohort: exact begin/end/drop
         # counts observed on the point stream, classified against the
         # emitted window contract. The theoretical arrival grid is a
@@ -397,7 +404,7 @@ class StreamingSeries:
         return b
 
     def _keep_diag(self, metric: str, ts: float, value: float,
-                   line: str) -> bool:
+                   line: str | bytes) -> bool:
         if self.diag_fh is None:
             return False
         if self.diag_overflow:
@@ -421,6 +428,10 @@ class StreamingSeries:
             self.diag_budget_exceeded += 1
             return False
         self._kept_per_ms[key] += 1
+        # Decode only retained forensic rows. The authoritative consumer
+        # already accepts bytes through orjson; rejected rows need no text copy.
+        if isinstance(line, bytes):
+            line = line.decode("utf-8").strip()
         self._diag_bytes += len(line)
         if self._diag_bytes > MAX_DIAG_BYTES:
             self.diag_overflow = True
@@ -428,10 +439,17 @@ class StreamingSeries:
         self.diag_fh.write(line if line.endswith("\n") else line + "\n")
         return True
 
-    def on_point(self, obj: dict, raw: str) -> None:
+    def on_point(self, obj: dict, raw: str | bytes) -> None:
         data = obj.get("data", obj)
         metric = data.get("metric") or obj.get("metric")
-        ts = parse_iso_ts(data.get("time") or "")
+        time_text = data.get("time") or ""
+        # k6 request samples share an emission timestamp. Cache only the
+        # immediately preceding value, retaining parsing and ordering semantics.
+        if time_text == self._last_time_text:
+            ts = self._last_time_value
+        else:
+            ts = parse_iso_ts(time_text)
+            self._last_time_text, self._last_time_value = time_text, ts
         value = data.get("value")
         tags = data.get("tags") or {}
         if metric is None or ts is None or value is None:
@@ -447,8 +465,10 @@ class StreamingSeries:
             self.lag_max_s = lag
         if lag > LAG_INVALID_S:
             self.lag_over_5s += 1
-        self.first_ts = ts if self.first_ts is None else min(self.first_ts, ts)
-        self.last_ts = ts if self.last_ts is None else max(self.last_ts, ts)
+        if self.first_ts is None or ts < self.first_ts:
+            self.first_ts = ts
+        if self.last_ts is None or ts > self.last_ts:
+            self.last_ts = ts
         vu = tags.get("vu")
         if vu is not None:
             self.vu_ids.add(vu)
@@ -605,7 +625,7 @@ class StreamingSeries:
         }
 
     def stats(self) -> dict:
-        return {
+        result = {
             "points": self.points,
             "parse_errors": self.parse_errors,
             "reader_error": self.reader_error,
@@ -621,21 +641,249 @@ class StreamingSeries:
             "diag_overflow_dropped": self.diag_overflow_dropped,
             "max_diag_bytes": MAX_DIAG_BYTES,
         }
+        if hasattr(self, "shard_points"):
+            result.update(stream_workers=len(self.shard_points),
+                          shard_points=self.shard_points,
+                          max_diag_bytes_per_shard=MAX_DIAG_BYTES // len(self.shard_points))
+        return result
+
+
+def _stream_metric(raw: bytes) -> bytes | None:
+    # Fast paths for k6's root metric field; workers still decode and verify
+    # every Point. Other valid layouts use the full decoder for routing too.
+    if raw.startswith(b'{"metric":"'):
+        end = raw.find(b'"', 11)
+        if end >= 0 and b'\\' not in raw[11:end]:
+            return raw[11:end]
+    marker = b',"metric":"'
+    position = raw.rfind(marker)
+    tail = raw[position + len(marker):].rstrip() if position >= 0 else b""
+    if tail.endswith(b'"}') and b'\\' not in tail[:-2]:
+        return tail[:-2]
+    try:
+        obj = orjson.loads(raw)
+        metric = obj.get("metric") or (obj.get("data") or {}).get("metric")
+        return metric.encode("utf-8") if isinstance(metric, str) else None
+    except (orjson.JSONDecodeError, AttributeError, TypeError):
+        return None
+
+
+@lru_cache(maxsize=1024)
+def _metric_shard(metric: bytes | str, workers: int) -> int:
+    # Decoded names stay cache keys; encode only on a cache miss.
+    if isinstance(metric, str):
+        metric = metric.encode("utf-8")
+    # Spread the standard per-request/per-iteration families evenly. A hash
+    # alone can put the two dominant forensic counters on the same worker.
+    common = (b"http_reqs", b"http_req_duration", b"http_req_blocked",
+              b"http_req_connecting", b"http_req_tls_handshaking", b"http_req_sending",
+              b"http_req_waiting", b"http_req_receiving", b"http_req_failed", b"checks",
+              b"data_sent", b"data_received", b"iteration_duration", b"iterations",
+              b"cap_iter_begin", b"cap_iter_end", b"cap_iter_ms", b"cap_measure_ms",
+              b"cap_measure_ops", b"cap_measure_errors", b"vus", b"vus_max",
+              b"dropped_iterations")
+    if metric in common:
+        return common.index(metric) % workers
+    return int.from_bytes(hashlib.sha256(metric).digest()[:4], "big") % workers
+
+
+def _owned_stream_rows(connection, index, workers):
+    # Native k6 puts the root metric first. C regex scans skip known rows
+    # owned by other shards without decoding them in each worker. Contracts,
+    # new metrics and other valid JSON layouts use the existing decoder.
+    names, pattern = set(), None
+    while chunk := connection.recv_bytes():
+        if pattern is None:
+            ordinary = sorted(name for name in names
+                              if not name.startswith(b"cap_window_"))
+            owned = [name for name in ordinary
+                     if _metric_shard(name, workers) == index]
+            prefix = rb'\{"metric":"(?:' + b"|".join(map(re.escape, ordinary)) + rb')",'
+            fast = (rb'(?P<owned>\{"metric":"(?:' + b"|".join(map(re.escape, owned))
+                    + rb')",[^\n]*)|') if owned else b""
+            slow = ((rb'(?P<slow>(?!' + prefix + rb')[^\n]*)') if ordinary
+                    else rb'(?P<slow>[^\n]*)')
+            pattern = re.compile(rb'\n(?:' + fast + slow + rb')(?=\n)')
+        changed = False
+        for match in pattern.finditer(b"\n" + chunk):
+            raw = match.group(match.lastgroup) + b"\n"
+            if match.lastgroup == "owned":
+                yield False, raw
+                continue
+            if raw.isspace():
+                continue
+            metric = _stream_metric(raw)
+            if metric and len(metric) <= 256 and len(names) < 1024 and metric not in names:
+                names.add(metric); changed = True
+            contract = metric is not None and metric.startswith(b"cap_window_")
+            if not contract and (_metric_shard(metric, workers) if metric else 0) != index:
+                continue
+            yield contract, raw
+        if changed:
+            pattern = None
+
+
+def _stream_shard(connection, index, workers, diag_path):
+    global MAX_DIAG_BYTES
+    MAX_DIAG_BYTES //= workers
+    series = StreamingSeries()
+    series.diag_fh = gzip.open(diag_path, "wt", encoding="utf-8", compresslevel=1)
+    unowned_points = unowned_late = unowned_errors = 0
+    try:
+        for broadcast, raw in _owned_stream_rows(connection, index, workers):
+            try:
+                obj = orjson.loads(raw)
+            except orjson.JSONDecodeError:
+                series.parse_errors += 1
+                continue
+            if obj.get("type") != "Point":
+                continue
+            data = obj.get("data", obj)
+            metric = data.get("metric") or obj.get("metric")
+            if not isinstance(metric, str):
+                series.on_point(obj, raw)
+                continue
+            contract = metric.startswith("cap_window_")
+            if contract != broadcast or (not contract and
+                    _metric_shard(metric, workers) != index):
+                raise ValueError("point metric does not match stream shard")
+            before_points, before_late = series.points, series.lag_over_5s
+            before_errors, before_max_lag = series.parse_errors, series.lag_max_s
+            forensic = series.diag_fh
+            if broadcast and index != 0:
+                series.diag_fh = None
+            series.on_point(obj, raw)
+            series.diag_fh = forensic
+            if broadcast and index != 0:
+                unowned_points += series.points - before_points
+                unowned_late += series.lag_over_5s - before_late
+                unowned_errors += series.parse_errors - before_errors
+                series.lag_max_s = before_max_lag
+    except Exception as error:
+        series.reader_error = f"{type(error).__name__}: {error}"
+    finally:
+        series.diag_fh.close()
+        series.diag_fh = None
+    series.points -= unowned_points
+    series.lag_over_5s -= unowned_late
+    series.parse_errors -= unowned_errors
+    connection.send(series)
+    connection.close()
+
+
+def _merge_stream_shard(total, part):
+    if part.reader_error:
+        raise ValueError(part.reader_error)
+    if part._window_bounds_s is not None:
+        if total._window_bounds_s not in (None, part._window_bounds_s):
+            raise ValueError("stream shards resolved different window bounds")
+        total._window_bounds_s = part._window_bounds_s
+    for key in ("points", "parse_errors", "lag_over_5s", "measure_begins",
+                "measure_ends", "drop_pre_window", "drop_in_window", "drop_post_window",
+                "diag_budget_exceeded", "diag_overflow_dropped", "_diag_bytes"):
+        setattr(total, key, getattr(total, key) + getattr(part, key))
+    total.lag_max_s = max(total.lag_max_s, part.lag_max_s)
+    for key in ("diag_overflow", "pending_drops_overflow", "_contract_divergent"):
+        setattr(total, key, getattr(total, key) or getattr(part, key))
+    for key in ("first_ts", "last_ts"):
+        values = [v for v in (getattr(total, key), getattr(part, key)) if v is not None]
+        setattr(total, key, (min(values) if key == "first_ts" else max(values)) if values else None)
+    total.vu_ids.update(part.vu_ids)
+    for key, values in part.contract_vals.items():
+        total.contract_vals[key].update(values)
+    for key, count in part.measure_outcomes.items():
+        total.measure_outcomes[key] += count
+    total._pending_drops.extend(part._pending_drops)
+    for second, record in part.bins.items():
+        target = total.bin(second)
+        for key, value in record.items():
+            if key in ("cap_measure_ms", "cap_iter_ms", "http_req_duration"):
+                target[key] = hist_merge(target[key], value)
+            elif isinstance(value, dict):
+                for item, count in value.items():
+                    target[key][item] += count
+            elif key in ("vus", "vus_max"):
+                target[key] = max(target[key], value)
+            else:
+                target[key] += value
+
+
+def _consume_sharded_stream(workers, diag_path):
+    context = multiprocessing.get_context("spawn")
+    series = StreamingSeries()
+    series.shard_points = []
+    with tempfile.TemporaryDirectory(prefix="k6-stream-") as temporary:
+        children, connections, diagnostics = [], [], []
+        try:
+            for index in range(workers):
+                parent, child = context.Pipe()
+                path = os.path.join(temporary, f"{index}.jsonl.gz")
+                process = context.Process(target=_stream_shard,
+                    args=(child, index, workers, path))
+                process.start()
+                child.close()
+                children.append(process); connections.append(parent)
+                diagnostics.append(path)
+            # All shards see complete blocks. Each worker selects its owned
+            # metric rows, so the dispatcher does no per-Point Python work.
+            pending = b""
+            while chunk := sys.stdin.buffer.read1(65536):
+                block = pending + chunk
+                edge = block.rfind(b"\n")
+                if edge < 0:
+                    pending = block
+                    continue
+                pending = block[edge + 1:]
+                # read1 already returns an available input block. Waiting
+                # for another 64 KiB here delays low-rate sidecars until a
+                # later iteration or EOF and creates artificial consumer lag.
+                complete = block[:edge + 1]
+                for connection in connections:
+                    connection.send_bytes(complete)
+            if pending:
+                for connection in connections:
+                    connection.send_bytes(pending + b"\n")
+            for connection in connections:
+                connection.send_bytes(b"")
+            for process, connection in zip(children, connections):
+                if not connection.poll(60):
+                    raise TimeoutError("stream shard did not drain within 60 seconds")
+                part = connection.recv()
+                series.shard_points.append(part.points)
+                _merge_stream_shard(series, part)
+                process.join(timeout=10)
+                if process.exitcode != 0:
+                    raise ValueError(f"stream shard exited {process.exitcode}")
+            series._maybe_resolve_window()
+            with open(diag_path, "wb") as output:
+                for path in diagnostics:
+                    with open(path, "rb") as source:
+                        shutil.copyfileobj(source, output)
+        finally:
+            for process in children:
+                if process.is_alive():
+                    process.terminate(); process.join(timeout=10)
+            for connection in connections:
+                connection.close()
+    series.diag_fh = gzip.open(diag_path, "at", encoding="utf-8", compresslevel=1)
+    return series
 
 
 def cmd_stream(args) -> int:
     series = StreamingSeries()
     diag_path = args.diag_out
-    series.diag_fh = gzip.open(diag_path, "wt", encoding="utf-8")
+    series.diag_fh = gzip.open(diag_path, "wt", encoding="utf-8", compresslevel=1)
     last_progress = time_now()
     try:
-        for line in sys.stdin:
-            line = line.strip()
-            if not line:
+        if getattr(args, "workers", 1) > 1:
+            series.diag_fh.close()
+            series = _consume_sharded_stream(args.workers, diag_path)
+        for line in (() if getattr(args, "workers", 1) > 1 else sys.stdin.buffer):
+            if line.isspace():
                 continue
             try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
+                obj = orjson.loads(line)
+            except orjson.JSONDecodeError:
                 series.parse_errors += 1
                 continue
             if obj.get("type") == "Point":
@@ -668,11 +916,6 @@ def cmd_stream(args) -> int:
     with open(args.stats_out, "w", encoding="utf-8") as fh:
         json.dump(series.stats(), fh, indent=2)
     return 0
-
-
-def time_now() -> float:
-    import time
-    return time.time()
 
 
 # ----------------------------- shared bin policy ---------------------------
@@ -720,7 +963,13 @@ def bin_record(b: dict | None) -> dict | None:
         "local_no_request": sum(v for k, v in ends.items()
                                 if k.endswith("|local_no_request")),
         "unexpected": sum(v for k, v in ends.items()
-                          if k.endswith("|unexpected_error")),
+                          if k.endswith("|unexpected")),
+        "prepare_failed": sum(v for k, v in ends.items()
+                              if k.endswith("|prepare_failed")),
+        "prepare_local_failed": sum(v for k, v in ends.items()
+                                    if k.endswith("|prepare_local_failed")),
+        "prepare_sut_failed": sum(v for k, v in ends.items()
+                                  if k.endswith("|prepare_sut_failed")),
         "drops": b.get("dropped", 0),
         "iterations": b.get("iterations", 0),
         "http_reqs": b.get("http_reqs", 0),
@@ -1160,7 +1409,7 @@ def pool_deltas(rows: list[dict]) -> tuple[list[dict], int]:
         pool = r.get("pool")
         ts = r.get("ts")
         if not isinstance(pool, dict) or "error" in pool or ts is None \
-                or pool.get("acquire_count") is None:
+                or pool.get("acquire_count") is None or pool.get("wait_nanos_total") is None:
             if prev is not None:
                 breaks += 1
             prev = None
@@ -1173,8 +1422,7 @@ def pool_deltas(rows: list[dict]) -> tuple[list[dict], int]:
                 deltas.append({
                     "t0": prev_ts, "t1": ts, "dt": dt,
                     "acquires": pool["acquire_count"] - prev["acquire_count"],
-                    "wait_ms": ((pool.get("wait_nanos_total") or 0)
-                                - (prev.get("wait_nanos_total") or 0)) / 1e6,
+                    "wait_ms": (pool["wait_nanos_total"] - prev["wait_nanos_total"]) / 1e6,
                 })
             else:
                 breaks += 1
@@ -1728,7 +1976,8 @@ def cmd_report(args) -> int:
         "wait_ms_per_s_dip_range": (
             [round(min(dip_pool.values()), 1),
              round(max(dip_pool.values()), 1)] if dip_pool else None),
-        "acquires": sum(d["acquires"] for d in pool_win),
+        "acquires": sum(d["acquires"] for d in pool_win) if pool_win else None,
+        "observation_status": "AVAILABLE" if pool_win else "UNAVAILABLE",
         "note": "wait_nanos_total is cumulative pool wait; per-second "
                 "figures are deltas, never the lifetime max gauge",
     }
@@ -1979,6 +2228,7 @@ def main() -> int:
     sp.add_argument("--series-out", required=True)
     sp.add_argument("--window-out", required=True)
     sp.add_argument("--stats-out", required=True)
+    sp.add_argument("--workers", type=int, choices=range(1, 9), default=1)
     sp = sub.add_parser("report")
     sp.add_argument("--series", required=True)
     sp.add_argument("--observer")

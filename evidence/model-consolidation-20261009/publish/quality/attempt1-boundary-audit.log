@@ -1,0 +1,66 @@
+   Compiling phc v0.6.1
+   Compiling crypto-common v0.2.2
+   Compiling crypto-bigint v0.7.5
+   Compiling jsonwebtoken v11.1.0
+   Compiling elliptic-curve v0.13.8
+   Compiling ed25519 v2.2.3
+   Compiling nazo-scim-events v0.2.16 (/src/crates/scim-events)
+   Compiling nazo-runtime-modules v0.2.16 (/src/crates/runtime-capabilities)
+   Compiling ed25519-dalek v2.2.0
+   Compiling password-hash v0.6.1
+   Compiling primeorder v0.13.6
+   Compiling ecdsa v0.16.9
+   Compiling p256 v0.13.2
+   Compiling digest v0.11.3
+   Compiling cipher v0.5.2
+   Compiling universal-hash v0.6.1
+   Compiling aead v0.6.1
+   Compiling polyval v0.7.3
+   Compiling hmac v0.13.0
+   Compiling signature v3.0.0
+   Compiling sha2 v0.11.0
+   Compiling blake2 v0.11.0
+   Compiling curve25519-dalek v5.0.0
+   Compiling sha1 v0.11.0
+   Compiling ghash v0.6.0
+   Compiling ctr v0.10.1
+   Compiling hkdf v0.13.0
+   Compiling aes v0.9.3
+   Compiling ed25519 v3.0.0
+   Compiling passkey-auth v0.1.3
+   Compiling argon2 v0.6.0
+   Compiling aes-gcm v0.11.1
+   Compiling ed25519-dalek v3.0.0
+   Compiling elliptic-curve v0.14.1
+   Compiling primefield v0.14.0
+   Compiling rfc6979 v0.6.0
+   Compiling wnaf v0.14.1
+   Compiling primeorder v0.14.0
+   Compiling ecdsa v0.17.0
+   Compiling p256 v0.14.0
+   Compiling nazo-crypto v0.2.16 (/src/crates/crypto)
+   Compiling nazo-digital-credentials v0.2.16 (/src/crates/digital-credentials)
+   Compiling nazo-identity v0.2.16 (/src/crates/identity)
+   Compiling nazo-operator-protocol v0.2.16 (/src/crates/operator-protocol)
+   Compiling nazo-openid4vci v0.2.16 (/src/crates/openid4vci)
+   Compiling nazo-openid4vp v0.2.16 (/src/crates/openid4vp)
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+error[E0425]: cannot find function `security_audit_event_hash` in the crate root
+   --> crates/persistence/src/../tests/unit/audit_wire.rs:105:27
+    |
+105 |         let hash = crate::security_audit_event_hash(
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^ not found in the crate root
+    |
+help: consider importing this function
+    |
+  1 + use crate::audit_chain::security_audit_event_hash;
+    |
+help: if you import `security_audit_event_hash`, refer to it directly
+    |
+105 -         let hash = crate::security_audit_event_hash(
+105 +         let hash = security_audit_event_hash(
+    |
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `nazo-persistence` (lib test) due to 1 previous error

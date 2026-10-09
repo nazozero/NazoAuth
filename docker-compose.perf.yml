@@ -2,7 +2,7 @@ name: ${COMPOSE_PROJECT_NAME:-nazoauth-perf}
 
 services:
   postgres:
-    image: docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    image: docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     command:
       - postgres
       - -c
@@ -43,7 +43,7 @@ services:
       perf_net:
 
   valkey:
-    image: docker.io/valkey/valkey:8-alpine@sha256:e0eb7c480958d32bdc4357a74bdd70653ae15f2f9b4c93c4a5a9fad1dc471c84
+    image: docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
     command: ["valkey-server", "--save", "", "--appendonly", "no", "--loglevel", "warning"]
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
@@ -54,7 +54,7 @@ services:
       perf_net:
 
   postgres-init:
-    image: docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    image: docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     environment:
       PGPASSWORD: postgres
     command:
@@ -103,8 +103,7 @@ services:
       context: .
       dockerfile: Containerfile
       target: perf-runtime
-    environment:
-      PERF_METRICS_ENABLED: "true"
+    environment: {}
     volumes:
       - perf_runtime:/var/lib/nazo_oauth
     command: ["nazoauth", "server"]

@@ -1,0 +1,1 @@
+{"command": ["docker", "exec", "-e", "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin", "-w", "/src", "nazoauth-perf-controller-20261009", "python", "scripts/check_perf_results_layout.py"], "exit": 0, "seconds": 0.12899411702528596}

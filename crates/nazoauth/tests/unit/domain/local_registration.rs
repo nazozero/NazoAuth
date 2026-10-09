@@ -34,7 +34,6 @@ use crate::settings::SmtpTlsMode;
 use crate::test_support::TestInfrastructure;
 use crate::test_support::registration_service;
 use crate::test_support::valkey::valkey_get;
-use crate::test_support::valkey::valkey_set_ex;
 use nazo_identity::ports::EmailVerificationStorePort;
 use nazo_oauth_server::crypto::blake3_hex;
 use nazo_oauth_server::crypto::random_urlsafe_token;
@@ -136,18 +135,24 @@ impl LiveFixture {
         let email = normalize_email_address(email).unwrap();
         let tenant_id = nazo_identity::TenantId::new(nazo_identity::DEFAULT_TENANT_ID)
             .expect("default tenant must be non-nil");
-        valkey_set_ex(
-            &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!(
-                "oauth:email_verify:{}:code:{}",
-                tenant_id.as_uuid(),
-                blake3_hex(&email)
-            )),
-            hash_password(code).unwrap(),
-            300,
-        )
-        .await
-        .unwrap();
+        let store = nazo_valkey::AuthenticationStore::new(&self.state.valkey_connection());
+        let owner = Uuid::now_v7().to_string();
+        assert!(
+            store
+                .reserve_email_send(tenant_id, &email, &owner, 300)
+                .await
+                .unwrap()
+        );
+        store
+            .store_code(
+                tenant_id,
+                &email,
+                &owner,
+                nazo_identity::ports::PasswordHashInput::new(hash_password(code).unwrap()).unwrap(),
+                300,
+            )
+            .await
+            .unwrap();
     }
 
     async fn key_exists(&self, key: &str) -> bool {

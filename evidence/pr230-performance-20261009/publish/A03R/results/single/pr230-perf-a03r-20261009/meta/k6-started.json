@@ -1,0 +1,9 @@
+{
+  "ts": 1791481135.4770806,
+  "scenario": "metadata_jwks",
+  "profile": "capacity",
+  "run_id": "pr230-perf-a03r-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791481135.473,
+  "state_ready_run_id": "pr230-perf-a03r-20261009"
+}

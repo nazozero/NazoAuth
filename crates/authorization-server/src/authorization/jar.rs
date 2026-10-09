@@ -20,24 +20,41 @@ pub(crate) use nazo_auth::{
     unverified_signed_request_object_client_id, unverified_signed_request_object_kid,
 };
 
-pub(crate) fn unverified_request_object_client_id(
+/// Request-local JWE plaintext; its nested signature and claims remain untrusted.
+pub(crate) struct DecryptedRequestObject(String);
+
+pub(crate) fn prepare_par_request_object_client_id(
     keys: &nazo_key_management::KeyManager,
-    request_object: &str,
-) -> Option<String> {
-    if request_object.split('.').count() == 5 {
-        let nested = keys.decrypt_request_object(request_object).ok()?;
-        return unverified_signed_request_object_client_id(&nested);
+    parameters: &mut HashMap<String, String>,
+) -> Option<DecryptedRequestObject> {
+    if parameters.contains_key("client_id") {
+        return None;
     }
-    unverified_signed_request_object_client_id(request_object)
+    let request_object = parameters.get("request")?;
+    let decrypted = if request_object.split('.').count() == 5 {
+        Some(DecryptedRequestObject(
+            keys.decrypt_request_object(request_object).ok()?,
+        ))
+    } else {
+        None
+    };
+    let signed = decrypted
+        .as_ref()
+        .map_or(request_object.as_str(), |decrypted| decrypted.0.as_str());
+    if let Some(client_id) = unverified_signed_request_object_client_id(signed) {
+        parameters.insert("client_id".to_owned(), client_id);
+    }
+    decrypted
 }
 
 pub(crate) async fn apply_request_object_with_context(
     context: &AuthorizationRequestContext<'_>,
     outer: &mut HashMap<String, String>,
     client: &mut ClientRow,
-) -> Result<(), OAuthEndpointError> {
+    prepared: Option<DecryptedRequestObject>,
+) -> Result<Option<nazo_auth::RequestObjectReplay>, OAuthEndpointError> {
     let Some(request_object) = outer.get("request") else {
-        return Ok(());
+        return Ok(None);
     };
     let decrypted;
     let request_object = if request_object.split('.').count() == 5 {
@@ -48,15 +65,21 @@ pub(crate) async fn apply_request_object_with_context(
                 nazo_auth::RequestObjectVerificationError::InvalidAlgorithm,
             ));
         }
-        decrypted = context
-            .request_object_keys
-            .decrypt_request_object(request_object)
-            .map_err(|error| {
-                tracing::warn!(%error, "encrypted request object rejected");
-                request_object_verification_error(
-                    nazo_auth::RequestObjectVerificationError::InvalidSignature,
-                )
-            })?;
+        // PAR may already have decrypted this unchanged request to select a client.
+        // The registered encryption policy above and all JWS/claim/replay checks
+        // below apply equally to this request-local plaintext.
+        decrypted = match prepared {
+            Some(decrypted) => decrypted.0,
+            None => context
+                .request_object_keys
+                .decrypt_request_object(request_object)
+                .map_err(|error| {
+                    tracing::warn!(%error, "encrypted request object rejected");
+                    request_object_verification_error(
+                        nazo_auth::RequestObjectVerificationError::InvalidSignature,
+                    )
+                })?,
+        };
         decrypted.as_str()
     } else {
         request_object.as_str()
@@ -78,39 +101,31 @@ pub(crate) async fn apply_request_object_with_context(
         expected_signing_algorithm: client.request_object_signing_alg.as_deref(),
     })
     .map_err(request_object_verification_error)?;
-    let normalized = context
-        .service
-        .admit_request_object_owned(
-            outer,
-            &verified.claims,
-            RequestObjectPolicy {
-                issuer: &context.config.issuer,
-                client_id: &client.client_id,
-                jti_policy: match context.config.request_object_jti_policy {
-                    ServerRequestObjectJtiPolicy::Optional => RequestObjectJtiPolicy::Optional,
-                    ServerRequestObjectJtiPolicy::RequiredForSignedJar => {
-                        RequestObjectJtiPolicy::RequiredForSignedJar
-                    }
-                },
-                require_integrity_protected_parameters:
-                    signed_request_object_requires_integrity_protected_parameters(
-                        client,
-                        context
-                            .config
-                            .requires_signed_authorization_request(&client.security_policy),
-                    ),
-                now: Utc::now().timestamp(),
+    let normalized = nazo_auth::normalize_request_object_owned(
+        outer,
+        &verified.claims,
+        RequestObjectPolicy {
+            issuer: &context.config.issuer,
+            client_id: &client.client_id,
+            jti_policy: match context.config.request_object_jti_policy {
+                ServerRequestObjectJtiPolicy::Optional => RequestObjectJtiPolicy::Optional,
+                ServerRequestObjectJtiPolicy::RequiredForSignedJar => {
+                    RequestObjectJtiPolicy::RequiredForSignedJar
+                }
             },
-        )
-        .await
-        .map_err(|error| {
-            if let AuthorizationRequestError::Dependency(dependency) = error {
-                tracing::warn!(?dependency, "failed to store request object jti");
-            }
-            request_object_policy_error(error)
-        })?;
+            require_integrity_protected_parameters:
+                signed_request_object_requires_integrity_protected_parameters(
+                    client,
+                    context
+                        .config
+                        .requires_signed_authorization_request(&client.security_policy),
+                ),
+            now: Utc::now().timestamp(),
+        },
+    )
+    .map_err(request_object_policy_error)?;
     *outer = normalized.parameters;
-    Ok(())
+    Ok(normalized.replay)
 }
 
 fn signed_request_object_requires_integrity_protected_parameters(

@@ -1,0 +1,356 @@
+{
+  "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+  "CODE": "PASS",
+  "SECURITY": "PASS",
+  "RECOVERY": "PASS",
+  "PERFORMANCE": "PASS",
+  "STORAGE": "PASS",
+  "scope": "This targeted round: final-source full workspace and affected real database regressions; four original capacity points; natural decision cohort reclamation. No claim of indefinite disk boundedness or long-term target-load plateau. Historical severe slowdown exclusive attribution remains unproven. Unchanged complete recovery fault loads use historical evidence. CI separate after publication.",
+  "checks": [
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "read_connection_ownership",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 30.35821189498529,
+      "name": "positive-read-ownership",
+      "test_result_counts": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 1
+      }
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 75.27888740133494,
+      "name": "read-clippy",
+      "test_result_counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 0
+      }
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-features",
+        "-p",
+        "nazo-postgres",
+        "--lib",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 22.941221757791936,
+      "name": "read-affected-tests",
+      "test_result_counts": {
+        "passed": 71,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 1
+      }
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-features",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "read_connection_ownership",
+        "--test",
+        "identity_repositories",
+        "--test",
+        "oauth_client_dcr",
+        "--test",
+        "auth_repositories",
+        "--test",
+        "query_counts",
+        "--test",
+        "audit_commit_boundary",
+        "--test",
+        "security_state_commit_boundary",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 58.65978121990338,
+      "name": "read-integration",
+      "test_result_counts": {
+        "passed": 146,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 7
+      }
+    },
+    {
+      "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 2.279361680150032,
+      "name": "final-fmt",
+      "test_result_counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 0
+      }
+    },
+    {
+      "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-features",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "migrations",
+        "pending_migrations_create_all_runtime_module_state_tables",
+        "--",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 26.54043409321457,
+      "name": "final-schema",
+      "test_result_counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 1
+      }
+    },
+    {
+      "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--all-features",
+        "--locked",
+        "--no-fail-fast",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 914.2097959821112,
+      "name": "final-workspace",
+      "test_result_counts": {
+        "passed": 3674,
+        "failed": 0,
+        "ignored": 4,
+        "result_groups": 182
+      }
+    },
+    {
+      "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-features",
+        "-p",
+        "nazoauth",
+        "--lib",
+        "http::authorization::par::tests::par_fapi2_rejects_shared_secret_client_auth_after_authentication",
+        "--",
+        "--exact",
+        "--ignored",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 66.43803522223607,
+      "name": "final-explicit-fapi",
+      "test_result_counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 1
+      }
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "scripts/verify_static_contracts.py",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 6.398802084848285,
+      "name": "final-static-0",
+      "test_result_counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 0
+      }
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "scripts/check_persistence_dependency_graph.py"
+      ],
+      "exit": 0,
+      "seconds": 2.826313280966133,
+      "name": "final-static-1",
+      "test_result_counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 0
+      }
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "scripts/check_crypto_boundary.py"
+      ],
+      "exit": 0,
+      "seconds": 0.9808157566003501,
+      "name": "final-static-2",
+      "test_result_counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 0
+      }
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts",
+        "-p",
+        "test_crypto_boundary.py"
+      ],
+      "exit": 0,
+      "seconds": 0.29813715768978,
+      "name": "final-static-3",
+      "test_result_counts": {
+        "passed": 23,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 1
+      }
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "scripts/check_perf_results_layout.py"
+      ],
+      "exit": 0,
+      "seconds": 0.12899411702528596,
+      "name": "final-static-4",
+      "test_result_counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "result_groups": 0
+      }
+    }
+  ],
+  "negative_behavior": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "read_connection_ownership",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 77.1255381158553
+  },
+  "natural_reclamation": {
+    "status": "PASS",
+    "cohort_size": 60001,
+    "last_retain_epoch": 1791516242.912406,
+    "final_cycle": "2026-10-09T03:24:46.611386Z  INFO nazoauth::jobs::security_state: security-state maintenance cycle completed stop_reason=\"drained\" batches=56 rows=13441 issuances=0 elapsed_ms=493 next_delay_ms=60000",
+    "zero_observation": {
+      "ts": 1791516290.264444,
+      "remaining": 0,
+      "eligible": 0,
+      "retained": 0,
+      "unexported": 0,
+      "last_retain": null,
+      "last_exported": null
+    },
+    "same_final_instance": true,
+    "natural_delete_total": 60001,
+    "boundary": "Frozen batch zero and completed natural cycle; no claim of all security state zero or indefinite disk bound."
+  },
+  "created_utc": "2026-10-09T04:13:10.854697+00:00"
+}

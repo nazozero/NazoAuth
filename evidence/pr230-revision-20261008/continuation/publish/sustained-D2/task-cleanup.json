@@ -1,0 +1,11 @@
+{
+  "label": "r230-sustained-d2-20261008",
+  "key": "sustained-D2",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.271,
+  "total_elapsed_s": 416.837,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

@@ -1,0 +1,85 @@
+{
+  "snapshot_utc": "2026-09-29T11:07:07Z",
+  "commit": "a4a818d9d4df8ee2f913dbbb498f0e944cc3c16e",
+  "checks": [
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/runs/109352152034",
+      "name": "CodeQL",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459826/job/109349872801",
+      "name": "real-http-security-matrix",
+      "status": "completed"
+    },
+    {
+      "conclusion": "skipped",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459845/job/109347175432",
+      "name": "Verify official primary sources",
+      "status": "completed"
+    },
+    {
+      "conclusion": "skipped",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459833/job/109347086449",
+      "name": "Rust advisory audit",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550460195/job/109347086433",
+      "name": "performance runner image",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459826/job/109347084772",
+      "name": "supply-chain-gate",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459826/job/109347084528",
+      "name": "source-policy-gate",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459845/job/109347084501",
+      "name": "Validate inventory and active pins",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459833/job/109347084450",
+      "name": "Dependency vulnerability review",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459690/job/109347084144",
+      "name": "Rust quality gate",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459727/job/109347084067",
+      "name": "Operator JWS parser fuzz gate",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459741/job/109347084045",
+      "name": "CodeQL Rust analysis",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "details_url": "https://github.com/nazozero/NazoAuth/actions/runs/36550459690/job/109347083867",
+      "name": "Python script syntax gate",
+      "status": "completed"
+    }
+  ],
+  "report_ci": "Recorded in PR publication comment after report push; not inferred from this source CI."
+}

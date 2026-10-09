@@ -2,14 +2,11 @@ use std::{future::Future, pin::Pin};
 
 use serde_json::Value;
 
-use crate::{ProofTypeMetadata, Proofs};
+use crate::{CredentialProofOrigin, ProofTypeMetadata, Proofs};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedProof {
-    pub proof_type: String,
     pub holder_binding: Value,
-    pub nonce: String,
-    pub key_attestation: Option<Value>,
 }
 
 pub trait ProofValidatorPort: Send + Sync {
@@ -17,6 +14,7 @@ pub trait ProofValidatorPort: Send + Sync {
         &'a self,
         proofs: &'a Proofs,
         client_id: &'a str,
+        origin: CredentialProofOrigin,
         expected_issuer: &'a str,
         expected_nonce: &'a str,
         metadata: &'a ProofTypeMetadata,

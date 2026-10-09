@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--locked", "-p", "nazo-postgres", "--test", "query_counts", "new_family_capacity_transition_has_bounded_round_trips_and_complete_evidence", "--", "--exact", "--nocapture"], "exit": 0, "seconds": 42.45758504699916}

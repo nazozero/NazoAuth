@@ -22,6 +22,7 @@ on:
       - "migrations/**"
       - "scripts/**/*.py"
       - "scripts/**/*.sh"
+      - "perf/**"
   pull_request:
     paths:
       - ".github/workflows/code-quality.yml"
@@ -42,6 +43,7 @@ on:
       - "migrations/**"
       - "scripts/**/*.py"
       - "scripts/**/*.sh"
+      - "perf/**"
   workflow_dispatch:
 
 permissions:
@@ -54,7 +56,7 @@ jobs:
     timeout-minutes: 60
     services:
       postgres:
-        image: docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+        image: docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_DB: oauth
           POSTGRES_USER: postgres
@@ -67,7 +69,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
       valkey:
-        image: docker.io/valkey/valkey:8-alpine@sha256:e0eb7c480958d32bdc4357a74bdd70653ae15f2f9b4c93c4a5a9fad1dc471c84
+        image: docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
         ports:
           - 6379:6379
         options: >-
@@ -108,20 +110,39 @@ jobs:
       FEDERATION_SAML_GATEWAY_SECRET: ci-saml-gateway-secret-000000000000
       RUST_TEST_THREADS: "1"
       CARGO_TERM_COLOR: never
-      CARGO_BUILD_JOBS: "1"
       RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
     steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.8"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1 # 1.98.0
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: workspace-quality
+
+      - name: Budget build concurrency from runner resources
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          cpus = len(os.sched_getaffinity(0))
+          memory = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))) * 1024
+          limit = Path('/sys/fs/cgroup/memory.max')
+          if limit.exists() and limit.read_text().strip() != 'max':
+              memory = min(memory, int(limit.read_text()))
+          jobs = max(1, min(cpus, memory // (3 * 1024**3)))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'CARGO_BUILD_JOBS={jobs}\n')
+          print(f'available CPUs={cpus}, memory budget={memory}, cargo jobs={jobs}; shared-state test threads=1')
+          PY
 
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev postgresql-client
@@ -131,11 +152,12 @@ jobs:
 
       - name: Prepare isolated avatar object storage
         run: |
+          docker build --file tests/fixtures/minio/Containerfile --tag nazoauth-test-minio:ci .
           docker run --detach --name avatar-store --publish 127.0.0.1:9000:9000 \
             --env MINIO_ROOT_USER="$NAZO_TEST_S3_ACCESS_KEY" \
             --env MINIO_ROOT_PASSWORD="$NAZO_TEST_S3_SECRET_KEY" \
-            docker.io/bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c \
-            server /bitnami/minio/data
+            nazoauth-test-minio:ci \
+            server /data
           ready=false
           for attempt in $(seq 1 30); do
             if curl --fail --silent "$NAZO_TEST_S3_ENDPOINT/minio/health/live"; then
@@ -179,11 +201,12 @@ jobs:
 
       - name: Materialize the isolated CI schema through the persistence owner
         run: >-
-          cargo test --locked -p nazo-postgres --test migrations
+          cargo test --all-features --locked -p nazo-postgres --test migrations
           pending_migrations_create_all_runtime_module_state_tables
 
       - name: Test workspace with PostgreSQL and Valkey
-        run: cargo test --workspace --all-features --locked
+        # Stream test progress so an interrupted job retains its actual wait boundary.
+        run: cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture
 
   python-quality:
     name: Python script syntax gate
@@ -196,7 +219,29 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14"
+          python-version: "3.14.8"
+
+      - name: Install streaming evidence decoder
+        run: |
+          python -m pip install --only-binary=:all: orjson==3.12.0
 
       - name: Compile Python scripts
-        run: python -m compileall -q scripts
+        run: python -m compileall -q scripts perf
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.10.0"
+
+      - name: Verify performance measurement and acceptance regressions
+        run: |
+          node --version
+          python -m unittest \
+            perf.tests.test_blackbox_contract \
+            perf.tests.test_capacity_window perf.tests.test_capacity_producer \
+            perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \
+            perf.tests.test_service_affinity perf.tests.test_cnb_controller \
+            perf.tests.test_pool_size_ab perf.tests.test_issuance_maintenance \
+            perf.tests.test_evidence_contract perf.tests.test_audit_reconciliation \
+            perf.tests.test_audit_pending_schema \
+            perf.tests.test_current_capacity perf.tests.test_short_baseline \
+            perf.tests.test_checkpoint_measurement.WindowContractTest

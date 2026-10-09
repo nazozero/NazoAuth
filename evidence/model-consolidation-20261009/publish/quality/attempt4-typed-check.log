@@ -1,0 +1,4 @@
+    Checking nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `dev` profile [unoptimized] target(s) in 1.42s

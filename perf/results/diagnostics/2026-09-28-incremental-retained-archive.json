@@ -1,0 +1,205 @@
+{
+  "file": "20260928-incremental-retained-evidence.tar.gz",
+  "bytes": 121025108,
+  "sha256": "45143b887df5a2008d2321dcc93078597523560d924e81886c7265af577e2b7c",
+  "files": 463,
+  "uncompressed_bytes": 522743064,
+  "points": [
+    {
+      "root": "incremental-b",
+      "mode": "multi",
+      "name": "multi-cap-introspect-r16000-w180-1790578252",
+      "recipe_id": "fa4ed936cb530682"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "multi",
+      "name": "multi-cap-introspect-r16000-w180-1790582065",
+      "recipe_id": "2c1289c069e45ee1"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "multi",
+      "name": "multi-cap-introspect-r17000-w180-1790582347",
+      "recipe_id": "2c1289c069e45ee1"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "multi",
+      "name": "multi-oidc-cold-login-refresh-r52-w180-1790569477",
+      "recipe_id": "18778d50f90be210"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "multi",
+      "name": "multi-oidc-cold-login-refresh-r56-w180-1790569750",
+      "recipe_id": "18778d50f90be210"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-authorization-code-r325-w180-1790583474",
+      "recipe_id": "e09891ffebfc60fa"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-authorization-code-r350-w180-1790583753",
+      "recipe_id": "e09891ffebfc60fa"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-authorization-code-r350-w180-1790586241",
+      "recipe_id": "7966ead3160de132"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-client-credentials-r1375-w180-1790578815",
+      "recipe_id": "7966ead3160de132"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-client-credentials-r1375-w180-1790581197",
+      "recipe_id": "301636622c1c38be"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-client-credentials-r1500-w180-1790579096",
+      "recipe_id": "7966ead3160de132"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-client-credentials-r1500-w180-1790581475",
+      "recipe_id": "301636622c1c38be"
+    },
+    {
+      "root": "current-b",
+      "mode": "single",
+      "name": "single-cap-mixed-r600-w660-1790538042",
+      "recipe_id": "821b373c4ee5aa62"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-mixed-r650-w180-1790579379",
+      "recipe_id": "821b373c4ee5aa62"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-mixed-r650-w180-1790580097",
+      "recipe_id": "ccdc90d7592a0364"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-refresh-token-r750-w180-1790585109",
+      "recipe_id": "e09891ffebfc60fa"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-refresh-token-r812-w180-1790585696",
+      "recipe_id": "e09891ffebfc60fa"
+    },
+    {
+      "root": "incremental-b",
+      "mode": "single",
+      "name": "single-cap-refresh-token-r812-w180-1790586805",
+      "recipe_id": "7966ead3160de132"
+    }
+  ],
+  "missing_original_auxiliary_files": [
+    {
+      "file": "incremental-b/multi/multi-cap-introspect-r16000-w180-1790578252/load/run.log",
+      "original_sha256": "f77a9cf30add86c1fd5f034830d80f0f57eeec5a8c3181f8afca9d0c5e99a091",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/multi/multi-cap-introspect-r16000-w180-1790582065/load/run.log",
+      "original_sha256": "e55d2e84ac7849b8deffc66d15b12b00b8ff6dd2362b23f71598c6783a803491",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/multi/multi-cap-introspect-r17000-w180-1790582347/load/run.log",
+      "original_sha256": "f144a3458cb92298e15de9bed634c9f18bcb1aa660f9d1e7fc6d9f3a499217c8",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/multi/multi-oidc-cold-login-refresh-r52-w180-1790569477/load/run.log",
+      "original_sha256": "fee22eece6e1ee4202c287d1a80718edc48037cb9b48a901da631f1550c8cc6e",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/multi/multi-oidc-cold-login-refresh-r56-w180-1790569750/load/run.log",
+      "original_sha256": "5bfad575f7fc88ba6ffb1733d11e2dd5508684ba1c734b48ff6dd06bc2092bd5",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-authorization-code-r325-w180-1790583474/load/run.log",
+      "original_sha256": "a05b84f6f9226690e94cecb7dd3f5658a62dd4dc495713c687e60d6a0c08b99a",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-authorization-code-r350-w180-1790583753/load/run.log",
+      "original_sha256": "5d7602577c8e7eaecb091aceeceecb9fd45f27bdfdb3761f4a43964cc6b795f6",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-authorization-code-r350-w180-1790586241/load/run.log",
+      "original_sha256": "278caa32228603cc6ad003ee2706248fddb400e678b90b4917f983c6c62680ae",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-client-credentials-r1375-w180-1790578815/load/run.log",
+      "original_sha256": "75556aa87a5c967af372eae72654f962e69d3b6f2a46fb55593669475c4bfdc1",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-client-credentials-r1375-w180-1790581197/load/run.log",
+      "original_sha256": "b6ece622b8ed21af2c8a841ab51ffc962542ca8c7f3c6682bbae97444e0bd15f",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-client-credentials-r1500-w180-1790579096/load/run.log",
+      "original_sha256": "d1074ee0cc016cb598f74480fd1bb32ab0b0c3667359570d5b972e394002a7de",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-client-credentials-r1500-w180-1790581475/load/run.log",
+      "original_sha256": "f11993f392356ff4eb54cc0e35fdebd6650af03276c6c8a7c7f688a6ddfd5cee",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-mixed-r650-w180-1790579379/load/run.log",
+      "original_sha256": "20b627f33fe2b187ac63eee1d068d296cf1ebdd25e4d1ae59a129e587d6abcda",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-mixed-r650-w180-1790580097/load/run.log",
+      "original_sha256": "24580435174ec7c57f69579b784d16836eb78d4ae404e91c3fe3f9e213d72b42",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-refresh-token-r750-w180-1790585109/load/run.log",
+      "original_sha256": "3d3714266159d81b34acfafd1b05ace53548acc7c6d2eafa79c0d57c99f3d054",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-refresh-token-r812-w180-1790585696/load/run.log",
+      "original_sha256": "0badc13db2116695719ab2abc5a6414a3e31b4c2206bd0fe4f7f9a9dd28500e2",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    },
+    {
+      "file": "incremental-b/single/single-cap-refresh-token-r812-w180-1790586805/load/run.log",
+      "original_sha256": "d3112b92d8f02e2723509c123c7821f5bd4b52c91f786d515e484009931cc4cd",
+      "scope": "original auxiliary raw file absent after container shutdown; native gate inputs retained"
+    }
+  ],
+  "scope": "Available selected original-container endpoints and explicit controls, complete native gate inputs and recovered single-core mixed maintenance/journal. Lost auxiliary raw files are listed explicitly. No private keys or vectors."
+}

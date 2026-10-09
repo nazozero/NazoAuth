@@ -1,0 +1,618 @@
+[
+  {
+    "point": "p06-A",
+    "raw_compressed_sha256": "0da17e175c19c2112b890d40394ebd72903910d0c9c675f5266adb569f97f308",
+    "raw_compressed_bytes": 6755967,
+    "n": 31788,
+    "formal_completed": 31788,
+    "complete_cohort_count_matches": true,
+    "quantiles": {
+      "p50": 1911.0,
+      "p95": 2565.0,
+      "p99": 2735.0
+    },
+    "reported_quantiles": {
+      "p50": 1911.0,
+      "p95": 2565.0,
+      "p99": 2735.0
+    },
+    "completion_time_bins": [
+      {
+        "from_s": 0,
+        "n": 3741,
+        "p50": 1961.0,
+        "p95": 2791.0,
+        "p99": 2844.0,
+        "max": 2923
+      },
+      {
+        "from_s": 10,
+        "n": 4417,
+        "p50": 2212.0,
+        "p95": 2665.2,
+        "p99": 2711.84,
+        "max": 2812
+      },
+      {
+        "from_s": 20,
+        "n": 5947,
+        "p50": 1825.0,
+        "p95": 2118.7,
+        "p99": 2244.0,
+        "max": 2309
+      },
+      {
+        "from_s": 30,
+        "n": 6758,
+        "p50": 1314.5,
+        "p95": 1742.1499999999996,
+        "p99": 1918.0,
+        "max": 1987
+      },
+      {
+        "from_s": 40,
+        "n": 4975,
+        "p50": 2014.0,
+        "p95": 2103.0,
+        "p99": 2133.0,
+        "max": 2188
+      },
+      {
+        "from_s": 50,
+        "n": 4971,
+        "p50": 1948.0,
+        "p95": 2186.0,
+        "p99": 2220.0,
+        "max": 2258
+      },
+      {
+        "from_s": 60,
+        "n": 979,
+        "p50": 1899.0,
+        "p95": 1983.0,
+        "p99": 2002.44,
+        "max": 2039
+      }
+    ],
+    "limits": "Exact full-operation values of measurement cohort; trend buckets use completion time relative to formal window and include its drain tail, not arrival cohorts. Original capacity verdict unchanged.",
+    "recalculation_verdict": "PASS"
+  },
+  {
+    "point": "p06-B",
+    "raw_compressed_sha256": "5b3667016fbd6c66393ddc7e03319ba1697539205eaa5f60fe4513f62e1ea1af",
+    "raw_compressed_bytes": 6197166,
+    "n": 28772,
+    "formal_completed": 28772,
+    "complete_cohort_count_matches": true,
+    "quantiles": {
+      "p50": 1978.0,
+      "p95": 2591.0,
+      "p99": 2740.0
+    },
+    "reported_quantiles": {
+      "p50": 1978.0,
+      "p95": 2591.0,
+      "p99": 2740.0
+    },
+    "completion_time_bins": [
+      {
+        "from_s": 0,
+        "n": 3540,
+        "p50": 2170.0,
+        "p95": 2339.0,
+        "p99": 2395.61,
+        "max": 2464
+      },
+      {
+        "from_s": 10,
+        "n": 3948,
+        "p50": 2466.0,
+        "p95": 2759.0,
+        "p99": 2825.0,
+        "max": 2876
+      },
+      {
+        "from_s": 20,
+        "n": 4466,
+        "p50": 2180.0,
+        "p95": 2622.0,
+        "p99": 2671.0,
+        "max": 2717
+      },
+      {
+        "from_s": 30,
+        "n": 5376,
+        "p50": 1855.0,
+        "p95": 2101.0,
+        "p99": 2171.0,
+        "max": 2223
+      },
+      {
+        "from_s": 40,
+        "n": 5275,
+        "p50": 1865.0,
+        "p95": 1957.0,
+        "p99": 1983.0,
+        "max": 2048
+      },
+      {
+        "from_s": 50,
+        "n": 5177,
+        "p50": 1904.0,
+        "p95": 2074.0,
+        "p99": 2135.0,
+        "max": 2178
+      },
+      {
+        "from_s": 60,
+        "n": 990,
+        "p50": 1931.0,
+        "p95": 2008.0,
+        "p99": 2025.0,
+        "max": 2054
+      }
+    ],
+    "limits": "Exact full-operation values of measurement cohort; trend buckets use completion time relative to formal window and include its drain tail, not arrival cohorts. Original capacity verdict unchanged.",
+    "recalculation_verdict": "PASS"
+  },
+  {
+    "point": "p10-A",
+    "raw_compressed_sha256": "7582162a03e6e8ae04e74e8ae73d7d1d99b0e9c24b5d8d17d0e4807d2bfae7fe",
+    "raw_compressed_bytes": 5872927,
+    "n": 24472,
+    "formal_completed": 24472,
+    "complete_cohort_count_matches": true,
+    "quantiles": {
+      "p50": 2376.0,
+      "p95": 3297.4500000000007,
+      "p99": 3583.0
+    },
+    "reported_quantiles": {
+      "p50": 2376.0,
+      "p95": 3297.4500000000007,
+      "p99": 3583.0
+    },
+    "completion_time_bins": [
+      {
+        "from_s": 0,
+        "n": 3147,
+        "p50": 2395.0,
+        "p95": 2513.0,
+        "p99": 2538.0,
+        "max": 2590
+      },
+      {
+        "from_s": 10,
+        "n": 4569,
+        "p50": 2103.0,
+        "p95": 2842.0,
+        "p99": 2891.0,
+        "max": 2948
+      },
+      {
+        "from_s": 20,
+        "n": 3915,
+        "p50": 2512.0,
+        "p95": 3199.0,
+        "p99": 3262.0,
+        "max": 3333
+      },
+      {
+        "from_s": 30,
+        "n": 4498,
+        "p50": 2299.0,
+        "p95": 2411.0,
+        "p99": 2444.0,
+        "max": 2514
+      },
+      {
+        "from_s": 40,
+        "n": 3875,
+        "p50": 2407.0,
+        "p95": 2651.2999999999997,
+        "p99": 2734.2599999999998,
+        "max": 2831
+      },
+      {
+        "from_s": 50,
+        "n": 3476,
+        "p50": 3088.0,
+        "p95": 3597.25,
+        "p99": 3660.25,
+        "max": 3729
+      },
+      {
+        "from_s": 60,
+        "n": 992,
+        "p50": 2283.5,
+        "p95": 2503.45,
+        "p99": 2553.0,
+        "max": 2594
+      }
+    ],
+    "limits": "Exact full-operation values of measurement cohort; trend buckets use completion time relative to formal window and include its drain tail, not arrival cohorts. Original capacity verdict unchanged.",
+    "recalculation_verdict": "PASS"
+  },
+  {
+    "point": "p10-B",
+    "raw_compressed_sha256": "cabee3509bf8f288a8f72d33a3b8e07174550a6c3abb07e20fc6fe8c79d67b28",
+    "raw_compressed_bytes": 5798864,
+    "n": 23545,
+    "formal_completed": 23545,
+    "complete_cohort_count_matches": true,
+    "quantiles": {
+      "p50": 2442.0,
+      "p95": 3258.7999999999993,
+      "p99": 3615.0
+    },
+    "reported_quantiles": {
+      "p50": 2442.0,
+      "p95": 3258.7999999999993,
+      "p99": 3615.0
+    },
+    "completion_time_bins": [
+      {
+        "from_s": 0,
+        "n": 3003,
+        "p50": 2420.0,
+        "p95": 2599.0,
+        "p99": 2658.98,
+        "max": 2746
+      },
+      {
+        "from_s": 10,
+        "n": 3855,
+        "p50": 2597.0,
+        "p95": 2912.0,
+        "p99": 2946.46,
+        "max": 3011
+      },
+      {
+        "from_s": 20,
+        "n": 3978,
+        "p50": 2533.0,
+        "p95": 2783.0,
+        "p99": 2836.0,
+        "max": 2900
+      },
+      {
+        "from_s": 30,
+        "n": 3249,
+        "p50": 3035.0,
+        "p95": 3639.0,
+        "p99": 3687.52,
+        "max": 3753
+      },
+      {
+        "from_s": 40,
+        "n": 4418,
+        "p50": 2347.0,
+        "p95": 2446.0,
+        "p99": 2472.83,
+        "max": 2519
+      },
+      {
+        "from_s": 50,
+        "n": 4051,
+        "p50": 2359.0,
+        "p95": 2550.0,
+        "p99": 2593.5,
+        "max": 2680
+      },
+      {
+        "from_s": 60,
+        "n": 991,
+        "p50": 2368.0,
+        "p95": 2518.5,
+        "p99": 2546.0,
+        "max": 2609
+      }
+    ],
+    "limits": "Exact full-operation values of measurement cohort; trend buckets use completion time relative to formal window and include its drain tail, not arrival cohorts. Original capacity verdict unchanged.",
+    "recalculation_verdict": "PASS"
+  },
+  {
+    "point": "p03-A",
+    "raw_compressed_sha256": "6ff823d816730c231331d6ec09bafa9f1c82f5189e18e45aeb7008d1993a8bf5",
+    "raw_compressed_bytes": 2415490,
+    "n": 847,
+    "formal_completed": 24000,
+    "complete_cohort_count_matches": false,
+    "reported_quantiles": {
+      "p50": 19.0,
+      "p95": 112.0,
+      "p99": 148.0
+    },
+    "completion_time_bins": [
+      {
+        "from_s": 0,
+        "n": 147,
+        "p50": 19.0,
+        "p95": 106.89999999999992,
+        "p99": 152.31999999999994,
+        "max": 160
+      },
+      {
+        "from_s": 10,
+        "n": 140,
+        "p50": 18.0,
+        "p95": 92.44999999999985,
+        "p99": 117.31999999999982,
+        "max": 148
+      },
+      {
+        "from_s": 20,
+        "n": 140,
+        "p50": 17.0,
+        "p95": 110.09999999999997,
+        "p99": 147.82999999999996,
+        "max": 151
+      },
+      {
+        "from_s": 30,
+        "n": 140,
+        "p50": 23.0,
+        "p95": 131.14999999999995,
+        "p99": 171.48999999999987,
+        "max": 183
+      },
+      {
+        "from_s": 40,
+        "n": 140,
+        "p50": 17.0,
+        "p95": 110.14999999999995,
+        "p99": 142.31999999999982,
+        "max": 168
+      },
+      {
+        "from_s": 50,
+        "n": 140,
+        "p50": 16.0,
+        "p95": 98.0,
+        "p99": 120.21999999999997,
+        "max": 124
+      }
+    ],
+    "limits": "Bounded forensic diagnostic archive does not retain all latency points; these subset quantiles must not replace full-stream formal cohort metrics. Original window/analyzer evidence has valid full-stream accounting; capacity verdict unchanged.",
+    "forensic_subset_quantiles": {
+      "p50": 18.0,
+      "p95": 110.0,
+      "p99": 151.53999999999996
+    },
+    "recalculation_verdict": "INVALID"
+  },
+  {
+    "point": "p03-B",
+    "raw_compressed_sha256": "91f4f9608a8239c988722608e0345b36cc3fe7be34768ce12f5eb6100dd6c76b",
+    "raw_compressed_bytes": 2407956,
+    "n": 846,
+    "formal_completed": 23932,
+    "complete_cohort_count_matches": false,
+    "reported_quantiles": {
+      "p50": 20.0,
+      "p95": 124.0,
+      "p99": 172.0
+    },
+    "completion_time_bins": [
+      {
+        "from_s": 0,
+        "n": 147,
+        "p50": 19.0,
+        "p95": 113.39999999999998,
+        "p99": 138.39999999999992,
+        "max": 185
+      },
+      {
+        "from_s": 10,
+        "n": 138,
+        "p50": 23.5,
+        "p95": 287.5000000000003,
+        "p99": 405.0999999999997,
+        "max": 433
+      },
+      {
+        "from_s": 20,
+        "n": 140,
+        "p50": 20.0,
+        "p95": 116.0,
+        "p99": 142.31999999999982,
+        "max": 187
+      },
+      {
+        "from_s": 30,
+        "n": 140,
+        "p50": 20.0,
+        "p95": 101.14999999999995,
+        "p99": 129.21999999999997,
+        "max": 139
+      },
+      {
+        "from_s": 40,
+        "n": 140,
+        "p50": 20.0,
+        "p95": 122.24999999999991,
+        "p99": 165.44999999999933,
+        "max": 186
+      },
+      {
+        "from_s": 50,
+        "n": 140,
+        "p50": 20.0,
+        "p95": 100.39999999999986,
+        "p99": 148.02999999999966,
+        "max": 194
+      },
+      {
+        "from_s": 60,
+        "n": 1,
+        "p50": 126.0,
+        "p95": 126.0,
+        "p99": 126.0,
+        "max": 126
+      }
+    ],
+    "limits": "Bounded forensic diagnostic archive does not retain all latency points; these subset quantiles must not replace full-stream formal cohort metrics. Original window/analyzer evidence has valid full-stream accounting; capacity verdict unchanged.",
+    "forensic_subset_quantiles": {
+      "p50": 20.0,
+      "p95": 121.75,
+      "p99": 190.84999999999968
+    },
+    "recalculation_verdict": "INVALID"
+  },
+  {
+    "point": "p04-A",
+    "raw_compressed_sha256": "dd1a2b40f151e167c62ab672eaa4852cc0c6fb0ea7c03fd872ae430b720e5dcd",
+    "raw_compressed_bytes": 12918278,
+    "n": 47646,
+    "formal_completed": 69748,
+    "complete_cohort_count_matches": false,
+    "reported_quantiles": {
+      "p50": 631.0,
+      "p95": 2213.0,
+      "p99": 2354.0
+    },
+    "completion_time_bins": [
+      {
+        "from_s": 0,
+        "n": 7151,
+        "p50": 773.0,
+        "p95": 2139.0,
+        "p99": 2266.5,
+        "max": 2354
+      },
+      {
+        "from_s": 10,
+        "n": 8081,
+        "p50": 808.0,
+        "p95": 2242.0,
+        "p99": 2388.2,
+        "max": 2485
+      },
+      {
+        "from_s": 20,
+        "n": 7985,
+        "p50": 805.0,
+        "p95": 2127.0,
+        "p99": 2195.16,
+        "max": 2287
+      },
+      {
+        "from_s": 30,
+        "n": 7978,
+        "p50": 813.5,
+        "p95": 2271.0,
+        "p99": 2354.459999999999,
+        "max": 2478
+      },
+      {
+        "from_s": 40,
+        "n": 7868,
+        "p50": 839.0,
+        "p95": 2297.0,
+        "p99": 2403.0,
+        "max": 2473
+      },
+      {
+        "from_s": 50,
+        "n": 7731,
+        "p50": 821.0,
+        "p95": 2241.0,
+        "p99": 2312.3999999999996,
+        "max": 2444
+      },
+      {
+        "from_s": 60,
+        "n": 852,
+        "p50": 1263.5,
+        "p95": 2618.0,
+        "p99": 2675.98,
+        "max": 2725
+      }
+    ],
+    "limits": "Bounded forensic diagnostic archive does not retain all latency points; these subset quantiles must not replace full-stream formal cohort metrics. Original window/analyzer evidence has valid full-stream accounting; capacity verdict unchanged.",
+    "forensic_subset_quantiles": {
+      "p50": 816.0,
+      "p95": 2245.0,
+      "p99": 2383.0
+    },
+    "recalculation_verdict": "INVALID"
+  },
+  {
+    "point": "p04-B",
+    "raw_compressed_sha256": "7223faf90c0ae3a2377d64330cd08017db86051f07da418bca5a2430255cc79d",
+    "raw_compressed_bytes": 12763810,
+    "n": 46821,
+    "formal_completed": 67740,
+    "complete_cohort_count_matches": false,
+    "reported_quantiles": {
+      "p50": 652.0,
+      "p95": 2287.0,
+      "p99": 2477.0
+    },
+    "completion_time_bins": [
+      {
+        "from_s": 0,
+        "n": 7056,
+        "p50": 784.5,
+        "p95": 2135.25,
+        "p99": 2263.45,
+        "max": 2397
+      },
+      {
+        "from_s": 10,
+        "n": 7872,
+        "p50": 836.0,
+        "p95": 2354.0,
+        "p99": 2430.29,
+        "max": 2491
+      },
+      {
+        "from_s": 20,
+        "n": 7703,
+        "p50": 856.0,
+        "p95": 2435.8999999999996,
+        "p99": 2531.0,
+        "max": 2606
+      },
+      {
+        "from_s": 30,
+        "n": 7576,
+        "p50": 859.0,
+        "p95": 2521.25,
+        "p99": 2782.25,
+        "max": 2870
+      },
+      {
+        "from_s": 40,
+        "n": 7930,
+        "p50": 824.0,
+        "p95": 2262.0,
+        "p99": 2359.71,
+        "max": 2430
+      },
+      {
+        "from_s": 50,
+        "n": 7816,
+        "p50": 804.0,
+        "p95": 2229.25,
+        "p99": 2311.0,
+        "max": 2436
+      },
+      {
+        "from_s": 60,
+        "n": 868,
+        "p50": 1010.5,
+        "p95": 2211.0,
+        "p99": 2235.0,
+        "max": 2292
+      }
+    ],
+    "limits": "Bounded forensic diagnostic archive does not retain all latency points; these subset quantiles must not replace full-stream formal cohort metrics. Original window/analyzer evidence has valid full-stream accounting; capacity verdict unchanged.",
+    "forensic_subset_quantiles": {
+      "p50": 829.0,
+      "p95": 2342.0,
+      "p99": 2522.0
+    },
+    "recalculation_verdict": "INVALID"
+  }
+]

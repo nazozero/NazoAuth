@@ -1,0 +1,6 @@
+{
+  "focused_run_started_at_sha": "fab2d7dd1e83656f10ae4429421018d53721d684",
+  "focused_working_tree_included": "tests/contracts/migrations.sha256 for the new migration",
+  "final_candidate_sha": "6b1e40f05d4d93eedc330a8d76eb441c826627b1",
+  "scope": "Only the checksum manifest was committed while focused tests ran; production and test sources were unchanged. Final release and full suite run on the complete candidate SHA."
+}

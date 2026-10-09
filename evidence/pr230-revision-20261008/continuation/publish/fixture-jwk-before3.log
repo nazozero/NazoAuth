@@ -1,0 +1,78 @@
+test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) ...
+  test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=1, field='d') ... FAIL
+  test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=43, field='y') ... FAIL
+  test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=43, field='y') ... FAIL
+  test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=43, field='d') ... FAIL
+  test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=379, field='x') ... FAIL
+  test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=379, field='x') ... FAIL
+  test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=379, field='d') ... FAIL
+
+======================================================================
+FAIL: test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=1, field='d')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/src/perf/tests/test_seed_jwk.py", line 24, in test_p256_fields_keep_leading_zero_octets
+    self.assertEqual(len(raw), 32)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: 1 != 32
+
+======================================================================
+FAIL: test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=43, field='y')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/src/perf/tests/test_seed_jwk.py", line 24, in test_p256_fields_keep_leading_zero_octets
+    self.assertEqual(len(raw), 32)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: 31 != 32
+
+======================================================================
+FAIL: test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=43, field='y')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/src/perf/tests/test_seed_jwk.py", line 24, in test_p256_fields_keep_leading_zero_octets
+    self.assertEqual(len(raw), 32)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: 31 != 32
+
+======================================================================
+FAIL: test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=43, field='d')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/src/perf/tests/test_seed_jwk.py", line 24, in test_p256_fields_keep_leading_zero_octets
+    self.assertEqual(len(raw), 32)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: 1 != 32
+
+======================================================================
+FAIL: test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=379, field='x')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/src/perf/tests/test_seed_jwk.py", line 24, in test_p256_fields_keep_leading_zero_octets
+    self.assertEqual(len(raw), 32)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: 31 != 32
+
+======================================================================
+FAIL: test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=379, field='x')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/src/perf/tests/test_seed_jwk.py", line 24, in test_p256_fields_keep_leading_zero_octets
+    self.assertEqual(len(raw), 32)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: 31 != 32
+
+======================================================================
+FAIL: test_p256_fields_keep_leading_zero_octets (perf.tests.test_seed_jwk.EcJwkEncodingTests.test_p256_fields_keep_leading_zero_octets) (scalar=379, field='d')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/src/perf/tests/test_seed_jwk.py", line 24, in test_p256_fields_keep_leading_zero_octets
+    self.assertEqual(len(raw), 32)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: 2 != 32
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=7)
+
+EXIT 1

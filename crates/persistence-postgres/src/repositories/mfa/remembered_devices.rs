@@ -16,45 +16,45 @@ impl MfaRepository {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let row = user_mfa_remembered_devices::table
+        let stored_hash = user_mfa_remembered_devices::table
             .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
             .filter(user_mfa_remembered_devices::user_id.eq(user_id.as_uuid()))
             .filter(user_mfa_remembered_devices::token_hash.eq(token_hash))
             .filter(user_mfa_remembered_devices::expires_at.gt(at))
-            .select((
-                user_mfa_remembered_devices::id,
-                user_mfa_remembered_devices::user_agent_hash,
-            ))
-            .first::<(uuid::Uuid, Option<String>)>(&mut connection)
+            .select(user_mfa_remembered_devices::user_agent_hash)
+            .first::<Option<String>>(&mut connection)
             .await
             .optional()
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-        let Some((id, stored_hash)) = row else {
-            return Ok(false);
-        };
-        if stored_hash.as_deref() != user_agent_hash {
-            return Ok(false);
-        }
-        diesel::update(user_mfa_remembered_devices::table.find(id))
-            .set(user_mfa_remembered_devices::last_used_at.eq(now))
-            .execute(&mut connection)
-            .await
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-        Ok(true)
+        Ok(stored_hash.is_some_and(|stored_hash| stored_hash.as_deref() == user_agent_hash))
     }
     pub async fn remember_device(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: uuid::Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), RepositoryError> {
+    ) -> Result<bool, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
+                let generation = crate::schema::user_totp_credentials::table
+                    .filter(crate::schema::user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
+                    .filter(crate::schema::user_totp_credentials::user_id.eq(user_id.as_uuid()))
+                    .filter(crate::schema::user_totp_credentials::id.eq(credential_id))
+                    .filter(crate::schema::user_totp_credentials::confirmed_at.is_not_null())
+                    .for_key_share()
+                    .select(crate::schema::user_totp_credentials::id)
+                    .first::<uuid::Uuid>(connection)
+                    .await
+                    .optional()?;
+                if generation.is_none() {
+                    return Ok(false);
+                }
                 diesel::delete(
                     user_mfa_remembered_devices::table
                         .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
@@ -73,7 +73,7 @@ impl MfaRepository {
                     ))
                     .execute(connection)
                     .await?;
-                Ok(())
+                Ok(true)
             })
             .await
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))

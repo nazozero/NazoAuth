@@ -1,0 +1,1 @@
+{"command": ["cargo", "build", "--release", "--locked", "-p", "nazoauth"], "exit": 0, "elapsed_s": 175.99969433387741}

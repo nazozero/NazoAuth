@@ -1,0 +1,55 @@
+{
+  "exporter": {
+    "login_ok": true,
+    "user": "nazoauth_perf_exporter",
+    "database": "oauth"
+  },
+  "initial_checkpoint": {
+    "receiver_state": {
+      "accepted": 1,
+      "checkpoint": {
+        "accepted_batches": 0,
+        "accepted_events": 0,
+        "batch_digest": "lfjKIXXaeOHYjCdkbzVWSOq0Mj1Yl2V4uaC2mrHx9wI",
+        "checkpoint_kind": "genesis",
+        "deployment_id": "01a11ca5-84da-756d-beef-cd612e4b21aa",
+        "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "last_sequence": 0,
+        "updated_at": "2026-10-08T17:53:11.122369854Z"
+      },
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 2,
+      "collected": true
+    },
+    "receiver_checkpoint": {
+      "deployment_id": "01a11ca5-84da-756d-beef-cd612e4b21aa",
+      "checkpoint_kind": "genesis",
+      "last_sequence": 0,
+      "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "batch_digest": "lfjKIXXaeOHYjCdkbzVWSOq0Mj1Yl2V4uaC2mrHx9wI",
+      "accepted_batches": 0,
+      "accepted_events": 0,
+      "updated_at": "2026-10-08T17:53:11.122369854Z",
+      "collected": true
+    },
+    "db": {
+      "collected": true,
+      "pending": 0,
+      "total": 0,
+      "exported_retained": 0,
+      "last_sequence": 0,
+      "last_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "anchor_deployment_id": "01a11ca5-84da-756d-beef-cd612e4b21aa",
+      "anchor_sequence": 0,
+      "anchor_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "durability": {
+    "fsync": "on",
+    "synchronous_commit": "on",
+    "full_page_writes": "on"
+  },
+  "expected_pool_max": 32
+}

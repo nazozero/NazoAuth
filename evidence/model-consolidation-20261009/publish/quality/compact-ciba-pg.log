@@ -1,0 +1,27 @@
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-key-management v0.2.16 (/src/crates/key-management)
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 27.72s
+     Running tests/oauth_client_dcr.rs (target/debug/deps/oauth_client_dcr-bac6d9cf38799cdb)
+
+running 16 tests
+test admin_client_required::admin_client_required_current_actor_denies_inactive_demoted_and_wrong_context ... ok
+test admin_client_required::admin_client_required_hidden_committed_ack_withholds_secret_and_updated_receipt ... ok
+test admin_client_required::admin_client_required_ledger_failure_rolls_back_insert_and_exact_cas ... ok
+test admin_client_required::admin_client_required_ports_have_no_bare_repository_fallback ... ok
+test concurrent_replace_registration_on_one_token_rotates_exactly_once ... ok
+test dcr_replace_cannot_resurrect_a_concurrently_deleted_client ... ok
+test dcr_required_event_failure_rolls_back_each_owned_effect ... ok
+test dynamic_profile_metadata_round_trips_through_postgres ... ok
+test dynamic_registration_store_maps_repository_failures_to_unavailable ... ok
+test dynamic_registration_store_preserves_atomic_credential_semantics ... ok
+test dynamic_registration_store_round_trips_registration_and_secret_material ... ok
+test oauth_client_reads_fail_closed_across_tenants ... ok
+test registration_token_rotation_rejects_a_stale_authenticated_token ... ok
+test replace_registration_rejects_stale_predicates_without_writing ... ok
+test replace_registration_returning_and_record_exclude_secret_columns ... ok
+test replace_registration_returns_the_committed_row ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.83s
+

@@ -671,10 +671,6 @@ mod jose {
             key_wrap::generate_rsa_pkcs8_der(1024),
             Err(CryptoError::InvalidInput)
         ));
-        assert!(matches!(
-            key_wrap::validate_rsa_pkcs8(b"not der"),
-            Err(CryptoError::InvalidKey)
-        ));
     }
 
     #[test]
@@ -695,18 +691,19 @@ mod jose {
 
         // Old AWS-LC encrypt -> new decrypt.
         let ciphertext = aws_rsa_oaep256_encrypt(&n, &e, message);
-        let decrypted = key_wrap::rsa_oaep256_decrypt(&private_der, &ciphertext).unwrap();
-        assert_eq!(decrypted, message);
+        let prepared = key_wrap::RsaOaep256PrivateKey::from_pkcs8(&private_der).unwrap();
+        assert_eq!(prepared.decrypt(&ciphertext).unwrap(), message);
+        assert_eq!(prepared.decrypt(&ciphertext).unwrap(), message);
 
         // Tampering fails authentication; malformed key material is InvalidKey.
         let mut tampered = ciphertext.clone();
         tampered[0] ^= 0x01;
         assert!(matches!(
-            key_wrap::rsa_oaep256_decrypt(&private_der, &tampered),
+            prepared.decrypt(&tampered),
             Err(CryptoError::AuthenticationFailed)
         ));
         assert!(matches!(
-            key_wrap::rsa_oaep256_decrypt(b"garbage", &ciphertext),
+            key_wrap::RsaOaep256PrivateKey::from_pkcs8(b"garbage"),
             Err(CryptoError::InvalidKey)
         ));
         assert!(matches!(
@@ -1305,4 +1302,35 @@ mod certificate {
             Err(CryptoError::InvalidKey)
         ));
     }
+}
+
+#[test]
+fn crl_signer_rejects_certificate_private_key_mismatch() {
+    use nazo_crypto::certificate as certs;
+    let key = certs::generate_p256_private_key_pem().unwrap();
+    let other = certs::generate_p256_private_key_pem().unwrap();
+    let mut params = certs::CertificateParams::new(Vec::<String>::new()).unwrap();
+    params.is_ca = certs::IsCa::Ca(certs::BasicConstraints::Unconstrained);
+    params.key_usages = vec![
+        certs::KeyUsagePurpose::KeyCertSign,
+        certs::KeyUsagePurpose::CrlSign,
+    ];
+    let certificate = certs::self_signed(params, &key).unwrap();
+    let now = rcgen::date_time_ymd(2026, 10, 3);
+    let crl = || certs::CertificateRevocationListParams {
+        this_update: now,
+        next_update: rcgen::date_time_ymd(2026, 10, 4),
+        crl_number: certs::SerialNumber::from(1_u64),
+        issuing_distribution_point: None,
+        revoked_certs: vec![],
+        key_identifier_method: certs::KeyIdMethod::PreSpecified(vec![7; 20]),
+    };
+    assert!(matches!(
+        certs::sign_crl(crl(), &certificate, &other),
+        Err(nazo_crypto::CryptoError::InvalidKey)
+    ));
+    let der = certs::sign_crl(crl(), &certificate, &key).unwrap();
+    let (_, parsed) = x509_parser::parse_x509_crl(&der).unwrap();
+    let (_, ca) = x509_parser::parse_x509_certificate(&certificate).unwrap();
+    parsed.verify_signature(ca.public_key()).unwrap();
 }

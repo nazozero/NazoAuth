@@ -57,6 +57,50 @@ checks issuer, audience, expiry, nonce, `kid`, and signature. The ID Token must
 contain an email claim and `email_verified=true`; absent or false verification
 claims are rejected before account lookup, linking, or provisioning.
 
+## Browser Binding and Callback State
+
+OIDC and social starts require a browser binding independently of upstream nonce
+and PKCE. HTTP reuses a canonical 32-byte random seed encoded as exactly 43
+URL-safe base64 characters without padding. A missing or invalid seed is replaced
+only on start. Each successful state write returns the redirect and renews the
+same seed cookie for 300 seconds:
+
+- Secure deployments use `__Host-nazo_federation_binding` with Secure,
+  HttpOnly, SameSite=Lax, Path=/ and no Domain.
+- The existing loopback HTTP development mode with `COOKIE_SECURE=false` uses
+  `nazo_federation_binding` with the same attributes except Secure.
+
+Identity accepts the borrowed seed and derives a 64-character lowercase BLAKE3
+digest from the fixed `NazoAuth/federation/browser-binding/v1\0` domain,
+tenant UUID bytes and seed. New state always carries this digest. The seed and
+digest never enter provider URLs, token requests or audit events.
+
+Callback validates the existing provider/query rules, then requires the configured
+cookie before touching the federation state store, upstream exchange, account,
+link or session. A missing or invalid cookie returns InvalidState (HTTP 400).
+The Valkey adapter performs exactly one namespaced EVAL: GET, protected JSON
+decode, browser-hash comparison, and DEL only on a match. A missing, legacy,
+corrupt-JSON or wrong-browser value returns StateExpired (HTTP 400); an existing
+nonmatching value and its expiry are untouched. A matching but typed-corrupt
+payload is consumed and rejected. State backend failures remain HTTP 503.
+After a match, provider binding, freshness, nonce, PKCE and required audit
+decisions retain their existing behavior.
+
+Callback only reads this cookie and never clears or rotates it. An established
+cookie supports parallel flows across providers. Two simultaneous first starts
+without a cookie can create different seeds; whichever Set-Cookie arrives last
+can make the other flow fail closed. Restart that flow after the browser has the
+cookie. There is no per-flow cookie map or unbound acceptance path. Normal
+session/CSRF cookies and SAML processing are unchanged.
+
+### Upgrade Cutover
+
+Quiesce old OIDC/social callback handlers and upgrade their routing before
+enabling new starts. Old unbound state is rejected by the new callback path
+throughout its remaining 300-second lifetime; users must restart those flows.
+There is no legacy grace acceptance and no safety guarantee for mixed old/new
+callback handlers. No database migration or queue is required.
+
 ## OAuth2 Social Login
 
 OAuth2 social providers use `adapter_type: "oauth2_social"` and a
@@ -103,7 +147,11 @@ Endpoint:
 The gateway assertion is HMAC-SHA256 signed over issuer, audience, subject,
 normalized email, `iat`, and `exp`. The application enforces issuer, audience,
 timestamp bounds, a five-minute maximum assertion lifetime, normalized email,
-and constant-time signature comparison.
+and constant-time signature comparison. This is the application's custom JSON
+gateway envelope, not a direct XML SAML assertion parser. The legacy `name`
+member is unsigned; it is stored only as `untrusted_display_name` link metadata
+and does not initialize the local display name or select identity/permissions.
+Identity selection uses the authenticated provider type, issuer and subject.
 
 ## Identity Linking
 
@@ -120,6 +168,10 @@ Resolution order:
 - otherwise a local user is provisioned with a random unusable password hash and
   `email_verified=true`
 
+Existing lookup, new provisioning and unique-conflict recovery all pass the same
+active-account gate on the account returned by storage before session creation.
+Upstream identity proof is not repeated at this gate.
+
 Successful federation login creates the normal HTTPOnly server-side session.
 The session `amr` contains the federation method and `federated`.
 
@@ -128,8 +180,12 @@ Current users can inspect and remove their own external identity links through:
 - `GET /auth/me/federation/links`
 - `DELETE /auth/me/federation/links/{link_id}`
 
-The link list omits raw provider claims. Unlink operations are scoped by the
-current session user and emit `external_identity_unlinked` audit events.
+The link list uses a tenant/user-scoped metadata projection without loading raw
+provider claims. Unlink keeps the complete deleted-link result for its existing
+audit contract. Unlink operations are scoped by the
+current session user, require the same configured cookie/header CSRF token check
+as other profile writes before account/link lookup, and emit
+`external_identity_unlinked` audit events.
 
 Local session state remains the NazoAuth fact source. External provider logout
 failures do not mark remote logout as complete; local `/auth/logout` and OIDC

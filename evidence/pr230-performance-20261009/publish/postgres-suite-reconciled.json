@@ -1,0 +1,174 @@
+{
+  "unittests src/lib.rs": {
+    "result": "test result: ok. 71 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.84s",
+    "log": "postgres-suite"
+  },
+  "tests/access_requests.rs": {
+    "result": "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.58s",
+    "log": "postgres-suite"
+  },
+  "tests/access_token_retention.rs": {
+    "result": "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.65s",
+    "log": "postgres-suite"
+  },
+  "tests/admin_provision.rs": {
+    "result": "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.55s",
+    "log": "postgres-suite"
+  },
+  "tests/audit_bounded_reads.rs": {
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.34s",
+    "log": "commit-boundaries-fixture-completion"
+  },
+  "tests/audit_chain_cutover.rs": {
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s",
+    "log": "audit-fixture-completion"
+  },
+  "tests/audit_commit_boundary.rs": {
+    "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.89s",
+    "log": "commit-boundaries-fixture-completion"
+  },
+  "tests/audit_ledger.rs": {
+    "result": "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 244.67s",
+    "log": "audit-fixture-completion"
+  },
+  "tests/audit_pending_upgrade.rs": {
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.84s",
+    "log": "audit-fixture-completion"
+  },
+  "tests/audit_preflight_roles.rs": {
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s",
+    "log": "audit-fixture-completion"
+  },
+  "tests/auth_repositories.rs": {
+    "result": "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.90s",
+    "log": "postgres-suite"
+  },
+  "tests/authorization_decisions.rs": {
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.97s",
+    "log": "postgres-suite"
+  },
+  "tests/control_plane_required.rs": {
+    "result": "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.27s",
+    "log": "postgres-suite"
+  },
+  "tests/controller_recovery.rs": {
+    "result": "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.74s",
+    "log": "postgres-suite"
+  },
+  "tests/controller_registry.rs": {
+    "result": "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.92s",
+    "log": "postgres-suite"
+  },
+  "tests/directory_control.rs": {
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.85s",
+    "log": "postgres-suite"
+  },
+  "tests/hotpath_statement_cache.rs": {
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s",
+    "log": "postgres-suite"
+  },
+  "tests/identity_repositories.rs": {
+    "result": "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.38s",
+    "log": "postgres-suite"
+  },
+  "tests/migrations.rs": {
+    "result": "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.94s",
+    "log": "postgres-suite"
+  },
+  "tests/mtls_trust.rs": {
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.93s",
+    "log": "postgres-suite"
+  },
+  "tests/oauth_client_dcr.rs": {
+    "result": "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.81s",
+    "log": "postgres-suite"
+  },
+  "tests/oidc_logout.rs": {
+    "result": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s",
+    "log": "postgres-suite"
+  },
+  "tests/openid4vc.rs": {
+    "result": "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.55s",
+    "log": "postgres-suite"
+  },
+  "tests/pool_async_contract.rs": {
+    "result": "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s",
+    "log": "postgres-suite"
+  },
+  "tests/pool_runtime_owner.rs": {
+    "result": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+    "log": "postgres-suite"
+  },
+  "tests/query_counts.rs": {
+    "result": "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.69s",
+    "log": "postgres-suite"
+  },
+  "tests/recovery_invalidation.rs": {
+    "result": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.40s",
+    "log": "postgres-suite"
+  },
+  "tests/refresh_authority.rs": {
+    "result": "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 36.07s",
+    "log": "postgres-suite"
+  },
+  "tests/refresh_family_capacity.rs": {
+    "result": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.03s",
+    "log": "postgres-suite"
+  },
+  "tests/runtime_modules.rs": {
+    "result": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.81s",
+    "log": "postgres-suite"
+  },
+  "tests/schema_cleanup.rs": {
+    "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s",
+    "log": "postgres-suite"
+  },
+  "tests/scim_pagination.rs": {
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+    "log": "postgres-suite"
+  },
+  "tests/scim_security_events.rs": {
+    "result": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s",
+    "log": "postgres-suite"
+  },
+  "tests/security_state_commit_boundary.rs": {
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.14s",
+    "log": "commit-boundaries-fixture-completion"
+  },
+  "tests/security_state_maintenance.rs": {
+    "result": "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.61s",
+    "log": "postgres-suite"
+  },
+  "tests/signing_keys.rs": {
+    "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.66s",
+    "log": "postgres-suite"
+  },
+  "tests/tenancy.rs": {
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.17s",
+    "log": "postgres-suite"
+  },
+  "tests/tenant_directory.rs": {
+    "result": "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.47s",
+    "log": "postgres-suite"
+  },
+  "tests/tenant_resource_control.rs": {
+    "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.86s",
+    "log": "postgres-suite"
+  },
+  "tests/tenant_resources.rs": {
+    "result": "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s",
+    "log": "postgres-suite"
+  },
+  "tests/token_issuance_atomicity.rs": {
+    "result": "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.29s",
+    "log": "postgres-suite"
+  },
+  "tests/token_issuance_fresh.rs": {
+    "result": "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.67s",
+    "log": "postgres-suite"
+  },
+  "Doc-tests nazo_postgres": {
+    "result": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s",
+    "log": "postgres-suite"
+  }
+}

@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--all-features", "--locked", "-p", "nazo-postgres", "--test", "migrations", "migration_versions_are_unique_across_merged_branches"], "exit": 0, "seconds": 1.2815739191137254}

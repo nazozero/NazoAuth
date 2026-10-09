@@ -1,0 +1,151 @@
+   Compiling nazo-digital-credentials v0.2.16 (/src/crates/digital-credentials)
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-openid4vci v0.2.16 (/src/crates/openid4vci)
+   Compiling nazo-openid4vp v0.2.16 (/src/crates/openid4vp)
+   Compiling nazo-openid4vc-http-actix v0.2.16 (/src/crates/openid4vc-http-actix)
+   Compiling nazo-key-management v0.2.16 (/src/crates/key-management)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+   Compiling nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+   Compiling nazo-http-actix v0.2.16 (/src/crates/http-actix)
+   Compiling nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+   Compiling nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+   Compiling nazoauth v0.2.16 (/src/crates/nazoauth)
+    Finished `test` profile [unoptimized] target(s) in 1m 03s
+     Running unittests src/lib.rs (target/debug/deps/nazoauth-21d781af2e3bd205)
+
+running 88 tests
+test adapters::audit::tests::refresh_family_security_revocation_is_registered_required_evidence ... ok
+test adapters::jwks_cache::tests::stale_observer_reuses_new_result_without_spending_refresh_budget ... ok
+test adapters::jwks_cache::tests::refresh_budget_survives_failure_and_resets_after_expiry ... ok
+test adapters::remote_client_documents::tests::jwks_initial_miss_allows_one_immediate_rotation_refresh ... ok
+test adapters::remote_client_documents::tests::jwks_failed_forced_refresh_consumes_the_uri_budget_without_stale_success ... ok
+test adapters::remote_client_documents::tests::jwks_cold_refresh_after_expiry_restores_the_forced_refresh_budget ... ok
+test adapters::remote_client_documents::tests::jwks_unknown_kids_share_one_forced_refresh_budget_and_merge_waiters ... ok
+test http::token::authorization_code_tests::issuance::authorization_code_subset_access_keeps_the_full_initial_refresh_resource_grant ... ok
+test http::token::authorization_code_tests::sender_constraints::bearer_confidential_client_does_not_bind_refresh_token_to_access_token_dpop ... ok
+test http::token::authorization_code_tests::sender_constraints::confidential_optional_dpop_code_pins_refresh_token_to_verified_dpop_key ... ok
+test http::token::authorization_code_tests::sender_constraints::confidential_required_dpop_client_does_not_pin_refresh_token_to_access_token_dpop_key ... ok
+test http::token::authorization_code_tests::sender_constraints::public_dpop_client_binds_refresh_token_to_dpop_key ... ok
+test domain::authorization_decision_tests::authorization_decision_fails_closed_when_jarm_encryption_keys_cannot_refresh ... ok
+test adapters::remote_client_documents::tests::jwks_refreshes_for_an_unknown_kid_and_rejects_bad_payloads ... ok
+test http::token::client_auth_tests::private_key_jwt_refreshes_registered_jwks_and_fails_closed_on_resolver_error ... ok
+test domain::userinfo::userinfo_refreshes_remote_jwks_for_encrypted_response ... ok
+test http::token::client_auth_tests::self_signed_mtls_refreshes_registered_jwks_and_fails_closed_on_resolver_error ... ok
+test http::token::client_auth_tests::private_key_jwt_unknown_kid_after_successful_refresh_is_invalid_client ... ok
+test http::token::dispatch::tests::token_management::token_management_refreshes_only_requested_encryption_keys ... ok
+test http::token::dispatch::tests::client_auth::token_endpoint_rejects_encrypted_id_token_when_client_jwks_cannot_refresh ... ok
+test http::token::issue::tests::audit_readiness::preserve_existing_refresh_fails_before_commit_when_dynamic_audit_gate_rejects ... ok
+test http::token::issue::tests::audit_readiness::preserve_existing_refresh_uses_transactional_readiness ... ok
+test http::token::issue::tests::audit_readiness::refresh_issuance_keeps_the_full_storage_preflight ... ok
+test http::token::issue::tests::refresh::attested_client_refresh_token_requires_client_instance_binding ... ok
+test http::token::issue::tests::audit_readiness::refresh_rotation_uses_transactional_readiness ... ok
+test http::token::issue::tests::refresh::native_sso_issue_fails_closed_when_the_runtime_module_is_disabled ... ok
+test http::token::issue::tests::refresh::native_sso_issue_persists_device_state_with_the_refresh_family ... ok
+test http::token::issue::tests::refresh::native_sso_issue_requires_openid_before_token_signing ... ok
+test http::token::issue::tests::refresh::native_sso_issue_requires_a_refresh_session_before_persisting_device_state ... ok
+test http::token::issue::tests::refresh::native_sso_device_secret_failure_does_not_return_partial_credentials ... ok
+test http::token::issue::tests::refresh::protocol_native_sso_dispatch_preserves_verified_instance_binding ... ok
+test http::token::issue::tests::refresh::native_sso_single_use_retry_is_rejected_with_live_refresh ... ok
+test http::token::issue::tests::refresh::refresh_rotation_conflict_fails_closed_without_returning_credentials ... ok
+test http::token::issue::tests::refresh::refresh_issue_new_persistence_failure_uses_non_rotation_error_mapping ... ok
+test http::token::issue::tests::refresh::refresh_token_persistence_failure_does_not_return_partial_refresh_token ... ok
+test http::token::issue::tests::refresh::protocol_native_sso_exchange_checks_target_default_audience ... ok
+test http::token::refresh_tests::baseline_client_policy_preserves_confidential_secret_authenticated_sender_constrained_refresh_tokens ... ok
+test http::token::refresh_tests::baseline_client_policy_preserves_confidential_sender_constrained_refresh_tokens ... ok
+test http::token::refresh_tests::baseline_client_policy_rotates_public_sender_constrained_refresh_tokens ... ok
+test http::token::refresh_tests::baseline_client_policy_rotates_unbound_refresh_tokens ... ok
+test http::token::refresh_tests::client_security_policy_preserves_refresh_tokens_for_sender_constrained_confidential_clients ... ok
+test http::token::issue::tests::refresh::refresh_token_rotation_failure_does_not_return_partial_credentials ... ok
+test http::token::issue::tests::subject_and_claims::openid_issue_with_active_user_emits_id_and_refresh_tokens ... ok
+test http::token::issue::tests::subject_and_claims::refresh_issue_rejects_missing_essential_id_token_claims ... ok
+test http::token::refresh_tests::concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_constrained_client ... ok
+test http::token::refresh_tests::concurrent_refresh_replay_yields_one_success_and_one_invalid_grant ... ok
+test http::token::refresh_tests::concurrent_mtls_bound_lost_response_retries_yield_one_success_then_compromise_family ... ok
+test http::token::refresh_tests::lost_response_successor_enforces_fixed_window_boundaries_in_real_postgres ... ok
+test http::token::refresh_tests::lost_response_successor_requires_same_tenant_in_real_postgres ... ok
+test http::token::refresh_tests::lost_response_rotation_rolls_back_successor_revoke_when_insert_fails ... ok
+test http::token::refresh_tests::oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot ... ok
+test http::token::refresh_tests::oidc_refresh_explicit_downscope_succeeds_without_subject_claims ... ok
+test http::token::refresh_tests::refresh_grant_accepts_existing_mtls_bound_token_with_matching_certificate ... ok
+test http::token::refresh_tests::oidc_refresh_domain_fallback_preserves_http_errors_and_validation_priority ... ok
+test http::token::refresh_tests::ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_error_priority ... ok
+test http::token::refresh_tests::refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_required ... ok
+test http::token::refresh_tests::refresh_grant_accepts_tokens_for_active_users_without_openid_scope ... ok
+test http::token::refresh_tests::refresh_grant_marks_family_reuse_and_revokes_active_family_tokens ... ok
+test http::token::refresh_tests::refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_family_without_new_compromise ... ok
+test http::token::refresh_tests::refresh_grant_rejects_dpop_bound_refresh_token_without_proof ... ok
+test http::token::refresh_tests::refresh_grant_rejects_missing_offline_access_scope_expansion_and_invalid_audience ... ok
+test http::token::refresh_tests::refresh_grant_rejects_mtls_bound_tokens_without_matching_verified_certificate ... ok
+test http::token::refresh_tests::refresh_grant_rejects_lost_response_retry_without_exactly_one_active_successor_without_compromising_family ... ok
+test http::token::refresh_tests::refresh_grant_rejects_public_dpop_required_clients_with_unbound_refresh_tokens ... ok
+test http::token::refresh_tests::refresh_grant_rejects_tokens_for_inactive_users_without_openid_scope ... ok
+test http::token::refresh_tests::refresh_grant_rejects_unbound_active_successor_inside_lost_response_window ... ok
+test http::token::refresh_tests::refresh_grant_rejects_unknown_expired_and_wrong_client_tokens ... ok
+test http::token::refresh_tests::refresh_grant_rejects_wrong_client_family_or_sender_constrained_successors_without_compromising_family ... ok
+test http::token::refresh_tests::refresh_grant_rejects_unbound_refresh_tokens_for_dpop_required_clients ... ok
+test http::token::refresh_tests::refresh_grant_reports_lookup_failure_without_issuing_tokens ... ok
+test http::token::refresh_tests::refresh_grant_requires_refresh_token_before_database_lookup_or_token_issue ... ok
+test http::token::refresh_tests::refresh_grant_reports_lookup_query_failure_without_issuing_tokens ... ok
+test http::token::refresh_tests::refresh_grant_requires_verified_certificate_when_client_policy_demands_mtls ... ok
+test http::token::refresh_tests::refresh_token_audience_rejects_missing_persisted_binding ... ok
+test http::token::refresh_tests::refresh_token_audience_request_defaults_to_refresh_token_audience ... ok
+test http::token::refresh_tests::refresh_token_audience_request_may_only_narrow_original_audience ... ok
+test http::token::refresh_tests::refresh_token_audience_request_rejects_expansion ... ok
+test http::token::refresh_tests::refresh_token_policy_uses_persisted_client_policy ... ok
+test http::token::refresh_tests::refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_window ... ok
+test http::token::refresh_tests::refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails ... ok
+test http::token::refresh_tests::refresh_snapshot_candidate_projection_error_preserves_holder_priority ... ok
+test http::token::refresh_tests::signed_credential_authorization_survives_real_refresh_and_separates_equal_grants ... ok
+test jobs::key_lifecycle::tests::managed_openid4vc_refresh_is_capped_at_thirty_seconds ... ok
+test jobs::key_lifecycle::tests::refresh_failure_backoff_is_bounded ... ok
+test jobs::key_lifecycle::tests::refresh_interval_is_bounded_by_prepublish_window ... ok
+test http::token::refresh_tests::sequential_unbound_replay_after_first_commit_fails_closed ... ok
+test jobs::key_lifecycle::tests::lifecycle_drop_finishes_in_flight_key_refresh_cooperatively ... ok
+test jobs::key_lifecycle::tests::lifecycle_stop_awaits_in_flight_refresh_without_cancelling_it ... ok
+
+test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 1375 filtered out; finished in 4.00s
+
+     Running tests/avatar_object_store_provider.rs (target/debug/deps/avatar_object_store_provider-806b5ee5ce32ceaf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/avatar_shared_storage.rs (target/debug/deps/avatar_shared_storage-d7bf7276401285b8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/operator_task_process.rs (target/debug/deps/operator_task_process-06e81a0bd7e3f3c2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/tenant_directory_control_process.rs (target/debug/deps/tenant_directory_control_process-a57511e2341d7732)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/tenant_directory_convergence.rs (target/debug/deps/tenant_directory_convergence-70b566a404f8313d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/token_hotpath_perf.rs (target/debug/deps/token_hotpath_perf-6ef8f4f21c18f90b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/token_issuance_simplification.rs (target/debug/deps/token_issuance_simplification-faad869ffd3c841d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+

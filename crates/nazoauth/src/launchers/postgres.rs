@@ -47,18 +47,49 @@ impl OperatorPersistence for PostgresOperatorPersistence {
         Arc::new(OAuthClientRepository::new(self.pool.clone()))
     }
 
+    fn tenant_resource_control_outcome<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        deployment_id: &'a str,
+        operation_id: uuid::Uuid,
+        request_hash: &'a str,
+        operation: nazo_persistence::tenant_resources::TenantResourceAction,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<
+            Option<nazo_persistence::tenant_resources::ControlTenantResourceOutcome>,
+            nazo_persistence::tenant_resources::TenantResourceExecutorError,
+        >,
+    > {
+        Box::pin(async move {
+            PostgresTenantResourceExecutor::control_outcome(
+                &TenantResourceRepository::new(self.pool.clone()),
+                tenant_id,
+                deployment_id,
+                operation_id,
+                request_hash,
+                operation,
+            )
+            .await
+        })
+    }
+
     fn tenant_resource_executor(
         &self,
         tenant: nazo_identity::TenantContext,
         data_encryption_key: Option<[u8; 32]>,
-        preparation: Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>,
+        preparation: Option<Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>>,
     ) -> Arc<dyn nazo_persistence::tenant_resources::TenantResourceExecutorPort> {
-        Arc::new(PostgresTenantResourceExecutor::new(
-            TenantResourceRepository::new(self.pool.clone()),
-            tenant,
-            data_encryption_key,
-            preparation,
-        ))
+        let repository = TenantResourceRepository::new(self.pool.clone());
+        Arc::new(match preparation {
+            Some(preparation) => PostgresTenantResourceExecutor::new(
+                repository,
+                tenant,
+                data_encryption_key,
+                preparation,
+            ),
+            None => PostgresTenantResourceExecutor::without_apply_preparation(repository, tenant),
+        })
     }
 
     fn tenant_directory_executor(
@@ -86,9 +117,16 @@ impl OperatorPersistence for PostgresOperatorPersistence {
         binding: nazo_identity::TenantDirectoryBinding,
     ) -> OperatorBackendFuture<'_, bool> {
         Box::pin(async move {
-            Ok(TenantDirectoryRepository::new(self.pool.clone())
+            TenantDirectoryRepository::new(self.pool.clone())
                 .initialize(binding)
-                .await?)
+                .await
+                .map_err(|error| {
+                    if matches!(error, nazo_identity::ports::RepositoryError::Unavailable) {
+                        anyhow::Error::from(nazo_persistence::MigrationUnavailable(error.into()))
+                    } else {
+                        error.into()
+                    }
+                })
         })
     }
 }
@@ -110,7 +148,7 @@ impl PersistenceLauncher for PostgresLauncher {
             let max_connections = config::database_max_connections(source)?;
             let pool = nazo_postgres::create_pool(database_url, max_connections)?;
             Ok(ServerPersistenceBindings::new(Arc::new(
-                PostgresProvider::new(pool),
+                PostgresProvider::new(pool, crate::settings::mfa_totp_key_ring(source)?),
             )))
         })
     }

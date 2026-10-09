@@ -1,0 +1,1 @@
+{"source_sha": "ef89417c9377ea765878b24d7b034a189638dee3", "command": ["cargo", "fmt", "--all", "--", "--check"], "exit": 0, "seconds": 2.279361680150032}

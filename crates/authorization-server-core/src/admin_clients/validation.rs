@@ -155,7 +155,7 @@ impl<'a> ClientMetadata<'a> {
             backchannel_authentication_request_signing_alg: client
                 .backchannel_authentication_request_signing_alg
                 .as_deref(),
-            backchannel_user_code_parameter: client.backchannel_user_code_parameter,
+            backchannel_user_code_parameter: false,
             backchannel_logout_uri: client.backchannel_logout_uri.as_deref(),
             frontchannel_logout_uri: client.frontchannel_logout_uri.as_deref(),
             jwks: client.jwks.as_ref(),

@@ -19,4 +19,7 @@ pub use ports::{
 pub use registration::prepare_client_registration;
 pub use requests::{CreateClientRequest, PatchClientRequest};
 pub use service::{AdminClientService, insert_prepared_client};
-pub use types::{CreatedClient, PreparedClientRegistration, SuppliedClientSecret};
+pub use types::{
+    CreatedClient, PendingClientSecret, PreparedClientRegistration, PreparedClientWrite,
+    SuppliedClientSecret,
+};

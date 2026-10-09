@@ -56,24 +56,25 @@ pub(super) fn social_authorization_url(
 }
 
 pub(super) async fn resolve_social_identity(
+    client: &reqwest::Client,
     provider: &SocialProviderSettings,
     code: &str,
     verifier: &str,
 ) -> anyhow::Result<SocialIdentity> {
     // 第三方 access token 只在 adapter 内使用，用完即丢；不会写入本地 session、
     // OAuth token 表或审计字段。
-    let token = exchange_social_code(provider, code, verifier).await?;
-    let openid_claims = fetch_social_openid(provider, &token).await?;
-    let userinfo = fetch_social_userinfo(provider, &token, openid_claims.as_ref()).await?;
+    let token = exchange_social_code(client, provider, code, verifier).await?;
+    let openid_claims = fetch_social_openid(client, provider, &token).await?;
+    let userinfo = fetch_social_userinfo(client, provider, &token, openid_claims.as_ref()).await?;
     normalize_social_identity(provider, &token, openid_claims, userinfo)
 }
 
 async fn exchange_social_code(
+    client: &reqwest::Client,
     provider: &SocialProviderSettings,
     code: &str,
     verifier: &str,
 ) -> anyhow::Result<SocialTokenResponse> {
-    let client = super::federation_http_client()?;
     let body = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("grant_type", "authorization_code")
         .append_pair("code", code)
@@ -95,13 +96,13 @@ async fn exchange_social_code(
 }
 
 async fn fetch_social_openid(
+    client: &reqwest::Client,
     provider: &SocialProviderSettings,
     token: &SocialTokenResponse,
 ) -> anyhow::Result<Option<Value>> {
     let Some(endpoint) = &provider.openid_endpoint else {
         return Ok(None);
     };
-    let client = super::federation_http_client()?;
     let response = client
         .get(url_with_query_params(
             endpoint,
@@ -114,11 +115,11 @@ async fn fetch_social_openid(
 }
 
 async fn fetch_social_userinfo(
+    client: &reqwest::Client,
     provider: &SocialProviderSettings,
     token: &SocialTokenResponse,
     openid_claims: Option<&Value>,
 ) -> anyhow::Result<Value> {
-    let client = super::federation_http_client()?;
     let request = match provider.kind {
         SocialProviderKind::Qq => {
             let openid = claim_string(openid_claims, "openid")

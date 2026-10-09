@@ -1,0 +1,8 @@
+{
+  "recorded_remote_check_start": "2026-10-09T00:11:33.560471+00:00",
+  "final_local_gate_end": "2026-10-09T02:17:26.342153+00:00",
+  "elapsed_seconds": 7552.781682,
+  "budget_seconds": 7200,
+  "within_budget": false,
+  "boundary": "Orchestrator clock, first recorded remote inspection through final source quality gate; excludes initial conversation, report publication and CI."
+}

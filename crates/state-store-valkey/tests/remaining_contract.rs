@@ -45,13 +45,13 @@ async fn authentication_short_state_preserves_exact_keys_and_one_time_semantics(
     let ceremony = format!("ceremony-{suffix}");
     assert!(
         store
-            .reserve_email_send(tenant_id, &email, 30)
+            .reserve_email_send(tenant_id, &email, "test-owner", 30)
             .await
             .unwrap()
     );
     assert!(
         !store
-            .reserve_email_send(tenant_id, &email, 30)
+            .reserve_email_send(tenant_id, &email, "test-owner", 30)
             .await
             .unwrap()
     );
@@ -60,10 +60,13 @@ async fn authentication_short_state_preserves_exact_keys_and_one_time_semantics(
         "oauth:email_verify:{}:send:{email_digest}",
         tenant_id.as_uuid()
     ));
-    assert_eq!(inspector.get::<String, _>(&send_key).await.unwrap(), "1");
+    assert_eq!(
+        inspector.get::<String, _>(&send_key).await.unwrap(),
+        "test-owner"
+    );
     assert!(!send_key.contains(&email));
     store
-        .store_email_code(tenant_id, &email, "123456", 30)
+        .store_email_code(tenant_id, &email, "test-owner", "123456", 30)
         .await
         .unwrap();
     assert_eq!(
@@ -100,6 +103,7 @@ async fn social_federation_state_is_consumed_once_and_keeps_provider_binding() {
     let store = AuthenticationStore::new(&connection);
     let state = format!("social-{}", uuid::Uuid::now_v7());
     let value = nazo_identity::federation::SocialFederationState {
+        browser_binding_hash: Some("owner-browser".to_owned()),
         provider_id: "github".to_owned(),
         pkce_verifier: "verifier".to_owned(),
         created_at: 1_700_000_000,
@@ -109,14 +113,14 @@ async fn social_federation_state_is_consumed_once_and_keeps_provider_binding() {
         .await
         .unwrap();
     assert_eq!(
-        FederationStatePort::take_social(&store, &state)
+        FederationStatePort::take_social(&store, &state, "owner-browser")
             .await
             .unwrap()
             .map(|stored| (stored.provider_id, stored.pkce_verifier, stored.created_at)),
         Some(("github".to_owned(), "verifier".to_owned(), 1_700_000_000))
     );
     assert!(
-        FederationStatePort::take_social(&store, &state)
+        FederationStatePort::take_social(&store, &state, "owner-browser")
             .await
             .unwrap()
             .is_none(),
@@ -187,10 +191,17 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
     let store = AuthenticationStore::new(&connection);
     let email = format!("cas-{}@example.com", uuid::Uuid::now_v7());
     let tenant_id = tenant(20);
+    assert!(
+        store
+            .reserve_email_send(tenant_id, &email, "test-owner", 30)
+            .await
+            .unwrap()
+    );
     EmailVerificationStorePort::store_code(
         &store,
         tenant_id,
         &email,
+        "test-owner",
         PasswordHashInput::new("first-code-hash").unwrap(),
         30,
     )
@@ -201,7 +212,7 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
         .unwrap()
         .unwrap();
     store
-        .store_email_code(tenant_id, &email, "newer-code-hash", 30)
+        .store_email_code(tenant_id, &email, "test-owner", "newer-code-hash", 30)
         .await
         .unwrap();
 
@@ -253,39 +264,39 @@ async fn email_verification_state_isolated_by_tenant() {
 
     assert!(
         store
-            .reserve_email_send(first_tenant, &email, 30)
+            .reserve_email_send(first_tenant, &email, "test-owner", 30)
             .await
             .unwrap()
     );
     assert!(
         store
-            .reserve_email_send(second_tenant, &email, 30)
+            .reserve_email_send(second_tenant, &email, "test-owner", 30)
             .await
             .unwrap(),
         "the same email must have an independent tenant cooldown"
     );
     assert!(
         !store
-            .reserve_email_send(first_tenant, &email, 30)
+            .reserve_email_send(first_tenant, &email, "test-owner", 30)
             .await
             .unwrap()
     );
     assert!(
         store
-            .reserve_email_peer_send(first_tenant, &peer, 30)
+            .reserve_email_peer_send(first_tenant, &peer, "test-owner", 30)
             .await
             .unwrap()
     );
     assert!(
         store
-            .reserve_email_peer_send(second_tenant, &peer, 30)
+            .reserve_email_peer_send(second_tenant, &peer, "test-owner", 30)
             .await
             .unwrap(),
         "the same peer must have an independent tenant cooldown"
     );
     assert!(
         !store
-            .reserve_email_peer_send(first_tenant, &peer, 30)
+            .reserve_email_peer_send(first_tenant, &peer, "test-owner", 30)
             .await
             .unwrap()
     );
@@ -294,6 +305,7 @@ async fn email_verification_state_isolated_by_tenant() {
         &store,
         first_tenant,
         &email,
+        "test-owner",
         PasswordHashInput::new("first-tenant-code-hash").unwrap(),
         30,
     )
@@ -311,7 +323,7 @@ async fn email_verification_state_isolated_by_tenant() {
             .await
             .unwrap()
             .unwrap();
-    EmailVerificationStorePort::delete_code(&store, second_tenant, &email)
+    EmailVerificationStorePort::delete_code(&store, second_tenant, &email, "test-owner")
         .await
         .unwrap();
     assert_eq!(
@@ -325,6 +337,7 @@ async fn email_verification_state_isolated_by_tenant() {
         &store,
         second_tenant,
         &email,
+        "test-owner",
         PasswordHashInput::new("second-tenant-code-hash").unwrap(),
         30,
     )
@@ -358,36 +371,36 @@ async fn email_verification_state_isolated_by_tenant() {
         Some(second),
         "consuming one tenant's code must not change another tenant's code"
     );
-    EmailVerificationStorePort::release_email_send(&store, first_tenant, &email)
+    EmailVerificationStorePort::release_email_send(&store, first_tenant, &email, "test-owner")
         .await
         .unwrap();
     assert!(
         store
-            .reserve_email_send(first_tenant, &email, 30)
+            .reserve_email_send(first_tenant, &email, "test-owner", 30)
             .await
             .unwrap(),
         "releasing one tenant's email cooldown must affect only that tenant"
     );
     assert!(
         !store
-            .reserve_email_send(second_tenant, &email, 30)
+            .reserve_email_send(second_tenant, &email, "test-owner", 30)
             .await
             .unwrap(),
         "another tenant's email cooldown must remain reserved"
     );
-    EmailVerificationStorePort::release_peer_send(&store, first_tenant, &peer)
+    EmailVerificationStorePort::release_peer_send(&store, first_tenant, &peer, "test-owner")
         .await
         .unwrap();
     assert!(
         store
-            .reserve_email_peer_send(first_tenant, &peer, 30)
+            .reserve_email_peer_send(first_tenant, &peer, "test-owner", 30)
             .await
             .unwrap(),
         "releasing one tenant's peer cooldown must affect only that tenant"
     );
     assert!(
         !store
-            .reserve_email_peer_send(second_tenant, &peer, 30)
+            .reserve_email_peer_send(second_tenant, &peer, "test-owner", 30)
             .await
             .unwrap(),
         "another tenant's peer cooldown must remain reserved"
@@ -600,4 +613,475 @@ async fn token_state_preserves_native_sso_key_contract() {
     let payload = json!({"tenant_id":tenant,"user_id":user,"sid":"sid"});
     store.store_native_sso(&secret, &payload, 30).await.unwrap();
     assert_eq!(store.load_native_sso(&secret).await.unwrap(), Some(payload));
+}
+
+#[derive(Clone, Copy)]
+struct EmptyRegistrationAccounts;
+impl nazo_identity::ports::RegistrationAccountRepositoryPort for EmptyRegistrationAccounts {
+    fn account_by_email<'a>(
+        &'a self,
+        _: TenantId,
+        _: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::PublicAccount>> {
+        Box::pin(async { Ok(None) })
+    }
+    fn create_user(
+        &self,
+        _: nazo_identity::ports::NewUser,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::PublicAccount> {
+        Box::pin(async { Err(nazo_identity::ports::RepositoryError::Unavailable) })
+    }
+}
+#[derive(Clone, Copy)]
+struct EqualCodeHashes;
+impl nazo_identity::ports::SecretHashPort for EqualCodeHashes {
+    fn hash_secret(
+        &self,
+        _: String,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, PasswordHashInput> {
+        Box::pin(async { Ok(PasswordHashInput::new("same-test-hash").unwrap()) })
+    }
+    fn verify_secret(
+        &self,
+        _: String,
+        _: nazo_identity::PasswordHash,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, bool> {
+        Box::pin(async { Ok(true) })
+    }
+}
+#[derive(Clone)]
+struct ControlledEmailDelivery {
+    started: std::sync::Arc<tokio::sync::Notify>,
+    release: std::sync::Arc<tokio::sync::Notify>,
+    block_and_fail: bool,
+}
+impl nazo_identity::ports::VerificationEmailDeliveryPort for ControlledEmailDelivery {
+    fn deliver<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            if self.block_and_fail {
+                self.started.notify_one();
+                self.release.notified().await;
+                Err(nazo_identity::ports::RepositoryError::Unavailable)
+            } else {
+                Ok(())
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn late_smtp_failure_preserves_newer_code_and_both_cooldowns() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let store = AuthenticationStore::new(&connection);
+    let email = format!("late-smtp-{}@example.test", uuid::Uuid::now_v7());
+    let peer = format!("late-smtp-peer-{}", uuid::Uuid::now_v7());
+    let started = std::sync::Arc::new(tokio::sync::Notify::new());
+    let release = std::sync::Arc::new(tokio::sync::Notify::new());
+    let tenant = nazo_identity::TenantContext {
+        tenant_id: TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+        ..Default::default()
+    };
+    let config = nazo_identity::RegistrationServiceConfig {
+        delivery_enabled: true,
+        send_peer_cooldown_seconds: 1,
+        send_cooldown_seconds: 1,
+        code_ttl_seconds: 30,
+    };
+    let older = nazo_identity::RegistrationService::new(
+        EmptyRegistrationAccounts,
+        store.clone(),
+        EqualCodeHashes,
+        ControlledEmailDelivery {
+            started: started.clone(),
+            release: release.clone(),
+            block_and_fail: true,
+        },
+        tenant,
+        config,
+    );
+    let newer = nazo_identity::RegistrationService::new(
+        EmptyRegistrationAccounts,
+        store.clone(),
+        EqualCodeHashes,
+        ControlledEmailDelivery {
+            started: started.clone(),
+            release: release.clone(),
+            block_and_fail: false,
+        },
+        tenant,
+        config,
+    );
+    let old_email = email.clone();
+    let old_peer = peer.clone();
+    let old_send =
+        tokio::spawn(async move { older.send_verification_code(&old_email, &old_peer).await });
+    tokio::time::timeout(Duration::from_secs(2), started.notified())
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert!(matches!(
+        newer.send_verification_code(&email, &peer).await.unwrap(),
+        nazo_identity::SendVerificationCodeOutcome::Sent { .. }
+    ));
+    let before = EmailVerificationStorePort::load_code(&store, tenant.tenant_id, &email)
+        .await
+        .unwrap()
+        .unwrap();
+    let code_key = nazo_valkey::test_support::state_storage_key(format!(
+        "oauth:email_verify:{}:code:{}",
+        tenant.tenant_id.as_uuid(),
+        blake3::hash(email.as_bytes()).to_hex()
+    ));
+    let deadline = inspector.expire_time::<i64, _>(&code_key).await.unwrap();
+    release.notify_one();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), old_send)
+            .await
+            .unwrap()
+            .unwrap(),
+        Err(nazo_identity::SendVerificationCodeError::Delivery(_))
+    ));
+    assert_eq!(
+        EmailVerificationStorePort::load_code(&store, tenant.tenant_id, &email)
+            .await
+            .unwrap(),
+        Some(before)
+    );
+    assert_eq!(
+        inspector.expire_time::<i64, _>(&code_key).await.unwrap(),
+        deadline
+    );
+    assert_eq!(
+        newer.send_verification_code(&email, &peer).await.unwrap(),
+        nazo_identity::SendVerificationCodeOutcome::Suppressed,
+        "old cleanup must not remove the newer peer reservation"
+    );
+    let different_peer = format!("different-{}", uuid::Uuid::now_v7());
+    assert_eq!(
+        newer
+            .send_verification_code(&email, &different_peer)
+            .await
+            .unwrap(),
+        nazo_identity::SendVerificationCodeOutcome::Suppressed,
+        "old cleanup must not remove the newer email reservation"
+    );
+}
+
+#[derive(Clone)]
+struct BlockedCodeHashes {
+    entered: std::sync::Arc<tokio::sync::Notify>,
+    release: std::sync::Arc<tokio::sync::Notify>,
+}
+impl nazo_identity::ports::SecretHashPort for BlockedCodeHashes {
+    fn hash_secret(
+        &self,
+        _: String,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, PasswordHashInput> {
+        Box::pin(async move {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(PasswordHashInput::new("same-test-hash").unwrap())
+        })
+    }
+    fn verify_secret(
+        &self,
+        _: String,
+        _: nazo_identity::PasswordHash,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, bool> {
+        Box::pin(async { Ok(true) })
+    }
+}
+#[derive(Clone)]
+struct CountingEmailDelivery(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+impl nazo_identity::ports::VerificationEmailDeliveryPort for CountingEmailDelivery {
+    fn deliver<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        })
+    }
+}
+
+#[tokio::test]
+async fn late_hash_cannot_store_after_owner_expiry_or_overwrite_a_new_sender() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    for with_newer_sender in [false, true] {
+        let store = AuthenticationStore::new(&connection);
+        let email = format!("late-hash-{}@example.test", uuid::Uuid::now_v7());
+        let peer = format!("late-hash-{}", uuid::Uuid::now_v7());
+        let context = nazo_identity::TenantContext {
+            tenant_id: TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+            ..Default::default()
+        };
+        let config = nazo_identity::RegistrationServiceConfig {
+            delivery_enabled: true,
+            send_peer_cooldown_seconds: 1,
+            send_cooldown_seconds: 1,
+            code_ttl_seconds: 30,
+        };
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let old_delivery = Arc::new(AtomicUsize::new(0));
+        let new_delivery = Arc::new(AtomicUsize::new(0));
+        let older = nazo_identity::RegistrationService::new(
+            EmptyRegistrationAccounts,
+            store.clone(),
+            BlockedCodeHashes {
+                entered: entered.clone(),
+                release: release.clone(),
+            },
+            CountingEmailDelivery(old_delivery.clone()),
+            context,
+            config,
+        );
+        let newer = nazo_identity::RegistrationService::new(
+            EmptyRegistrationAccounts,
+            store.clone(),
+            EqualCodeHashes,
+            CountingEmailDelivery(new_delivery.clone()),
+            context,
+            config,
+        );
+        let old_email = email.clone();
+        let old_peer = peer.clone();
+        let old_send =
+            tokio::spawn(async move { older.send_verification_code(&old_email, &old_peer).await });
+        tokio::time::timeout(Duration::from_secs(2), entered.notified())
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        let code_key = nazo_valkey::test_support::state_storage_key(format!(
+            "oauth:email_verify:{}:code:{}",
+            context.tenant_id.as_uuid(),
+            blake3::hash(email.as_bytes()).to_hex()
+        ));
+        let email_key = nazo_valkey::test_support::state_storage_key(format!(
+            "oauth:email_verify:{}:send:{}",
+            context.tenant_id.as_uuid(),
+            blake3::hash(email.as_bytes()).to_hex()
+        ));
+        let peer_key = nazo_valkey::test_support::state_storage_key(format!(
+            "oauth:email_verify:{}:peer_send:{}",
+            context.tenant_id.as_uuid(),
+            blake3::hash(peer.as_bytes()).to_hex()
+        ));
+        let before = if with_newer_sender {
+            assert!(matches!(
+                newer.send_verification_code(&email, &peer).await.unwrap(),
+                nazo_identity::SendVerificationCodeOutcome::Sent { .. }
+            ));
+            Some((
+                inspector.get::<String, _>(&code_key).await.unwrap(),
+                inspector.expire_time::<i64, _>(&code_key).await.unwrap(),
+                inspector.get::<String, _>(&email_key).await.unwrap(),
+                inspector.get::<String, _>(&peer_key).await.unwrap(),
+            ))
+        } else {
+            None
+        };
+        release.notify_one();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), old_send)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(nazo_identity::SendVerificationCodeError::CodeStore(
+                nazo_identity::ports::RepositoryError::Conflict
+            ))
+        );
+        assert_eq!(
+            old_delivery.load(Ordering::SeqCst),
+            0,
+            "expired owner must fail before SMTP"
+        );
+        if let Some((raw, deadline, email_owner, peer_owner)) = before {
+            assert_eq!(inspector.get::<String, _>(&code_key).await.unwrap(), raw);
+            assert_eq!(
+                inspector.expire_time::<i64, _>(&code_key).await.unwrap(),
+                deadline
+            );
+            assert_eq!(
+                inspector.get::<String, _>(&email_key).await.unwrap(),
+                email_owner
+            );
+            assert_eq!(
+                inspector.get::<String, _>(&peer_key).await.unwrap(),
+                peer_owner
+            );
+            assert_eq!(new_delivery.load(Ordering::SeqCst), 1);
+        } else {
+            assert!(
+                EmailVerificationStorePort::load_code(&store, context.tenant_id, &email)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn typed_passkey_codec_preserves_legacy_json_unknown_fields_expiry_and_corrupt_consumption() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let store = AuthenticationStore::new(&connection);
+    let id = format!("typed-legacy-{}", uuid::Uuid::now_v7());
+    let wire = json!({
+        "tenant_id": TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+        "user_id": nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        "label": "Legacy key", "ignored_future_field": "ignored",
+        "state": { "challenge": vec![7_u8;32], "user_id": vec![9_u8;32], "created_at": 1 },
+    });
+    store
+        .store_passkey_registration(&id, &wire, 30)
+        .await
+        .unwrap();
+    let value = PasskeyCeremonyPort::take_registration(&store, &id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(value.label, "Legacy key");
+    PasskeyCeremonyPort::store_registration(&store, &id, &value, 30)
+        .await
+        .unwrap();
+    let key =
+        nazo_valkey::test_support::state_storage_key(format!("oauth:passkey:registration:{id}"));
+    let raw: String = inspector.get(&key).await.unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+        serde_json::to_value(&value).unwrap()
+    );
+    let ttl: i64 = inspector.ttl(&key).await.unwrap();
+    assert!((28..=30).contains(&ttl));
+    assert!(
+        PasskeyCeremonyPort::take_registration(&store, &id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    store
+        .store_passkey_registration(&id, &json!({"invalid":"shape"}), 30)
+        .await
+        .unwrap();
+    assert!(matches!(
+        PasskeyCeremonyPort::take_registration(&store, &id).await,
+        Err(nazo_identity::ports::RepositoryError::Consistency(_))
+    ));
+    assert!(
+        PasskeyCeremonyPort::take_registration(&store, &id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    PasskeyCeremonyPort::store_registration(&store, &id, &value, 1)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert!(
+        PasskeyCeremonyPort::take_registration(&store, &id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn typed_passkey_authentication_keeps_legacy_default_fields() {
+    let Some((connection, _inspector)) = setup().await else {
+        return;
+    };
+    let store = AuthenticationStore::new(&connection);
+    let id = format!("typed-auth-legacy-{}", uuid::Uuid::now_v7());
+    let wire = json!({
+        "tenant_id": TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+        "user_id": nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        "ignored_future_field": "ignored",
+        "state": { "challenge": vec![7_u8;32], "allow_credentials": [] },
+    });
+    store
+        .store_passkey_authentication(&id, &wire, 30)
+        .await
+        .unwrap();
+    let value = PasskeyCeremonyPort::take_authentication(&store, &id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!value.dummy);
+    assert_eq!(value.state.created_at, 0);
+    assert!(value.state.user_handle.is_none());
+    PasskeyCeremonyPort::store_authentication(&store, &id, &value, 30)
+        .await
+        .unwrap();
+    assert!(
+        PasskeyCeremonyPort::take_authentication(&store, &id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        PasskeyCeremonyPort::take_authentication(&store, &id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn typed_passkey_duplicate_recognized_field_fails_closed_after_atomic_consumption() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let store = AuthenticationStore::new(&connection);
+    let id = format!("typed-duplicate-{}", uuid::Uuid::now_v7());
+    let wire = json!({
+        "tenant_id": TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+        "user_id": nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        "dummy": false,
+        "state": {"challenge": vec![7_u8;32], "allow_credentials": []},
+    });
+    let raw = wire
+        .to_string()
+        .replace("\"dummy\":false", "\"dummy\":false,\"dummy\":true");
+    let key =
+        nazo_valkey::test_support::state_storage_key(format!("oauth:passkey:authentication:{id}"));
+    inspector
+        .set::<(), _, _>(
+            &key,
+            raw,
+            Some(fred::prelude::Expiration::EX(30)),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        PasskeyCeremonyPort::take_authentication(&store, &id).await,
+        Err(nazo_identity::ports::RepositoryError::Consistency(_))
+    ));
+    assert!(
+        PasskeyCeremonyPort::take_authentication(&store, &id)
+            .await
+            .unwrap()
+            .is_none(),
+        "malformed ceremony must stay one-time after GETDEL"
+    );
 }

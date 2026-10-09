@@ -1,0 +1,450 @@
+{
+  "schema": "pr222-a3000-rerun-public-evidence-v1",
+  "run": {
+    "variant": "A",
+    "production_sha": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+    "shared_harness_sha": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+    "diagnostic_patch_sha": "dc72cf469a2c5465cbb8a8185e0cff7d9999ad96",
+    "run_id": "steady-a-3000-retry2-20260927-125155",
+    "target_logical_ops_s": 3000,
+    "scenario": "cap_mixed",
+    "mode": "cap",
+    "app_cpu_ids": [
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92
+    ],
+    "infra_cpu_ids": [
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124
+    ],
+    "preallocated_vus": 1500,
+    "max_vus": 1500,
+    "user_count": 200,
+    "vector_count": 38400,
+    "pool_size": 90,
+    "resource_profile_sha256": "e459bfe9e77c2bbd043cd1f9ed31627345b0450cbcd77e160298691e9667ef0b"
+  },
+  "runner_exit_code": 0,
+  "point_runner_ok": true,
+  "result": "INVALID_TOOLING",
+  "official_capacity_gate": "INVALID",
+  "official_acceptance_status": "REQUIRES_SIDECAR_REVIEW",
+  "reason": "point_runner completed but main and sidecar *.summary.json artifacts are absent; evaluator reports expected_one_summary, and required stream/timing evidence cannot be checked. No business PASS/FAIL is inferred.",
+  "failed_health_checks": [
+    "unexpected_zero",
+    "audit_reconciled",
+    "journal_contiguous",
+    "sidecars_complete",
+    "measurement_length",
+    "sidecar_timing"
+  ],
+  "metrics_status": "no_summary",
+  "effective_measurement_window": null,
+  "complete_iteration_p95_ms": null,
+  "complete_iteration_p99_ms": null,
+  "successful_logical_ops_s": null,
+  "runner_progress_diagnostic": {
+    "full_run_completed_iterations": 5760007,
+    "interrupted_iterations": 0,
+    "meaning": "whole-run iteration count from k6 progress log; not successful logical operations and not the formal measurement cohort"
+  },
+  "runner_stdout_diagnostics_only": {
+    "load": {
+      "scenario": "cap_mixed",
+      "status": "passed",
+      "runner_reported_rps": 4354.206,
+      "runner_reported_p95_ms": 12.029,
+      "runner_reported_errors": 0.0,
+      "runner_reported_db_calls": 177004183
+    },
+    "argon2": {
+      "scenario": "oidc_cold_login_refresh",
+      "status": "passed",
+      "runner_reported_rps": 47.999,
+      "runner_reported_p95_ms": 141.612,
+      "runner_reported_errors": 0.0,
+      "runner_reported_db_calls": 177597092
+    },
+    "meta": {
+      "scenario": "metadata_jwks",
+      "status": "passed",
+      "runner_reported_rps": 400.001,
+      "runner_reported_p95_ms": 0.38,
+      "runner_reported_errors": 0.0,
+      "runner_reported_db_calls": 177597290
+    },
+    "fapi": {
+      "scenario": "fapi2_logged_in_high_security",
+      "status": "passed",
+      "runner_reported_rps": 150.0,
+      "runner_reported_p95_ms": 13.623,
+      "runner_reported_errors": 0.0,
+      "runner_reported_db_calls": 177597396
+    },
+    "refresh": {
+      "scenario": "cap_refresh_token",
+      "status": "passed",
+      "runner_reported_rps": 600.528,
+      "runner_reported_p95_ms": 13.041,
+      "runner_reported_errors": 0.0,
+      "runner_reported_db_calls": 177597396
+    }
+  },
+  "sidecar_gate": {
+    "status": "INVALID",
+    "summaries_missing": true,
+    "timing_gate": {
+      "ok": false,
+      "detail": {
+        "argon2": {
+          "k6_started_ts": null,
+          "state_ready_ts": null,
+          "state_ready_run_id": null,
+          "deadline_s": null,
+          "ok": false
+        },
+        "meta": {
+          "k6_started_ts": null,
+          "state_ready_ts": null,
+          "state_ready_run_id": null,
+          "deadline_s": null,
+          "ok": false
+        },
+        "fapi": {
+          "k6_started_ts": null,
+          "state_ready_ts": null,
+          "state_ready_run_id": null,
+          "deadline_s": null,
+          "ok": false
+        },
+        "refresh": {
+          "k6_started_ts": null,
+          "state_ready_ts": null,
+          "state_ready_run_id": null,
+          "deadline_s": null,
+          "ok": false
+        }
+      }
+    },
+    "refresh_capacity_gate": {
+      "gate": "INVALID",
+      "reason": "required_refresh_summary_missing",
+      "summary_present": false
+    }
+  },
+  "issuance_maintenance": {
+    "status": "INVALID",
+    "pass": false,
+    "reason": "missing_authoritative_measurement_window",
+    "retention_seconds": 360,
+    "max_expired_age_seconds": 120
+  },
+  "audit": {
+    "queue": {
+      "collected": true,
+      "enqueued": 956270,
+      "persisted": 956270,
+      "dropped": 0,
+      "pending_in_process": 0,
+      "persist_batches": 642051,
+      "persist_batch_events": 956270,
+      "persist_max_batch": 64
+    },
+    "app_log_scan": {
+      "collected": true,
+      "queue_full": 0,
+      "dropped_required": 0,
+      "persistence_error": 0,
+      "lines": 1
+    },
+    "journal": {
+      "collected": false,
+      "error": "sequence bounds unavailable"
+    },
+    "structured_state": {
+      "point": "steady-a-3000-retry2-20260927-125155",
+      "checks": {
+        "collected": false
+      },
+      "verdict": "FAIL",
+      "reason": "missing structured audit state"
+    },
+    "conclusion": "queue counters reconcile and drain to zero, but journal sequence bounds and structured audit-state proof are missing; audit gate not verified"
+  },
+  "wal_global_snapshot_window": {
+    "start_utc": "2026-09-27T12:53:19.225342Z",
+    "end_utc": "2026-09-27T13:26:10.009078Z",
+    "seconds": 1970.784,
+    "includes": "setup, warmup, load and drain; not the exact 1800 s effective window",
+    "valid_counter_delta": true,
+    "generated_wal_bytes": 26753076396,
+    "wal_write_bytes": 55821074432,
+    "wal_write_ops": 2509155,
+    "mean_bytes_per_write": 22247.0,
+    "fsync_ops": 2504301,
+    "write_bytes_per_generated_byte": 2.0865,
+    "write_time_ms_raw": 0,
+    "fsync_time_ms_raw": 0,
+    "write_and_fsync_time_interpretation": "raw counters were 0; report N/A, not zero wait",
+    "pg_stat_io_top_by_write_bytes": [
+      {
+        "backend_type": "client backend",
+        "context": "normal",
+        "write_bytes": 47640870912.0,
+        "writes": 2507860.0,
+        "fsyncs": 2503007.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "client backend",
+        "context": "init",
+        "write_bytes": 8136949760.0,
+        "writes": 485.0,
+        "fsyncs": 485.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "autovacuum worker",
+        "context": "init",
+        "write_bytes": 16777216.0,
+        "writes": 1.0,
+        "fsyncs": 1.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "walwriter",
+        "context": "normal",
+        "write_bytes": 12247040.0,
+        "writes": 500.0,
+        "fsyncs": 500.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "autovacuum worker",
+        "context": "normal",
+        "write_bytes": 11812864.0,
+        "writes": 297.0,
+        "fsyncs": 296.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "background worker",
+        "context": "normal",
+        "write_bytes": 2179072.0,
+        "writes": 1.0,
+        "fsyncs": 1.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "checkpointer",
+        "context": "normal",
+        "write_bytes": 237568.0,
+        "writes": 11.0,
+        "fsyncs": 11.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "autovacuum launcher",
+        "context": "init",
+        "write_bytes": 0.0,
+        "writes": 0.0,
+        "fsyncs": 0.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "autovacuum launcher",
+        "context": "normal",
+        "write_bytes": 0.0,
+        "writes": 0.0,
+        "fsyncs": 0.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      },
+      {
+        "backend_type": "background worker",
+        "context": "init",
+        "write_bytes": 0.0,
+        "writes": 0.0,
+        "fsyncs": 0.0,
+        "write_time_ms": 0.0,
+        "fsync_time_ms": 0.0
+      }
+    ]
+  },
+  "pgss_wal_attribution": {
+    "start_utc": "2026-09-27T12:53:18.983981Z",
+    "end_utc": "2026-09-27T13:26:09.777956Z",
+    "seconds": 1970.794,
+    "stats_reset_same": true,
+    "pre_rows": 3,
+    "post_rows": 172,
+    "matched_full_identity": 3,
+    "same_stats_since_rows": 3,
+    "stats_since_mismatch_rows": 0,
+    "post_only_excluded": 169,
+    "invalid_counter_rows": 0,
+    "positive_wal_delta_rows": 0,
+    "matched_wal_bytes_delta": 0,
+    "top10": [],
+    "status": "INVALID_INCOMPLETE",
+    "reason": "only 3 baseline identities matched; all had zero WAL delta, while 169 post-only identities were excluded; no SQL Top10 can be established"
+  },
+  "resource_sampler_broad_load_interval": {
+    "start_utc": "2026-09-27T12:53:25.409274Z",
+    "end_utc": "2026-09-27T13:25:42.130468Z",
+    "seconds": 1936.7,
+    "proc_detail_samples": 326,
+    "soak_samples": 920,
+    "residency_samples": 8393,
+    "processes": {
+      "app": {
+        "average_cpu_cores": 7.258,
+        "peak_process_summed_rss_kib": 347236,
+        "samples": 326
+      },
+      "postgres": {
+        "average_cpu_cores": 9.41,
+        "peak_process_summed_rss_kib": 15466548,
+        "samples": 326
+      },
+      "sis-load-steady-a-3000-retry2-20260927-125155": {
+        "average_cpu_cores": 4.807,
+        "peak_process_summed_rss_kib": 13629292,
+        "samples": 325
+      },
+      "sis-rcv-steady-a-3000-retry2-20260927-125155": {
+        "average_cpu_cores": 0.078,
+        "peak_process_summed_rss_kib": 10288,
+        "samples": 326
+      },
+      "sis-side-argon2-steady-a-3000-retry2-20260927-125155": {
+        "average_cpu_cores": 0.072,
+        "peak_process_summed_rss_kib": 399776,
+        "samples": 325
+      },
+      "sis-side-fapi-steady-a-3000-retry2-20260927-125155": {
+        "average_cpu_cores": 0.415,
+        "peak_process_summed_rss_kib": 816364,
+        "samples": 325
+      },
+      "sis-side-meta-steady-a-3000-retry2-20260927-125155": {
+        "average_cpu_cores": 0.314,
+        "peak_process_summed_rss_kib": 670648,
+        "samples": 325
+      },
+      "sis-side-refresh-steady-a-3000-retry2-20260927-125155": {
+        "average_cpu_cores": 0.789,
+        "peak_process_summed_rss_kib": 2509052,
+        "samples": 325
+      },
+      "sis-worker-steady-a-3000-retry2-20260927-125155": {
+        "average_cpu_cores": 0.141,
+        "peak_process_summed_rss_kib": 21860,
+        "samples": 326
+      },
+      "valkey": {
+        "average_cpu_cores": 0.491,
+        "peak_process_summed_rss_kib": 107976,
+        "samples": 326
+      }
+    },
+    "pool_acquisitions_delta": 37584681,
+    "pool_wait_ns_delta": 983657912525,
+    "pool_wait_ms_per_acquisition": 0.0262,
+    "window_note": "Whole runner/load interval; not the exact effective 1800 s window, which is unavailable.",
+    "docker_stats": "N/A: daemon returned 0B/0B readings",
+    "pss": "N/A",
+    "wal_wait_correlation": "N/A: required effective-window latency percentiles and WAL wait timing are unavailable; sampler exposes wait types rather than WALWrite/WALSync durations",
+    "pool_acquisitions": {
+      "start": 726,
+      "end": 37585407,
+      "delta": 37584681,
+      "samples": 920
+    },
+    "pool_wait_ns": {
+      "start": 233630370,
+      "end": 983891542895,
+      "delta": 983657912525,
+      "samples": 920
+    }
+  },
+  "raw_evidence_sha256": {
+    "point.json": "63e41dbd6a81ddf869c765be0dfcc7de04cabf2245c7b533df6f96ee4cfda811",
+    "acceptance.json": "4b9abec880f6316f741c7b261902c8cb07531991b400a054b93519e4b9880995",
+    "pgss-pre.json": "e8b63a16c04790ded6ea42009feb4c14cca280afbe89bb0326af317955b121cd",
+    "pgss-post.json": "af9f312917e3b8ffc2aeb7dc4cbc272971e396ebbf3b5e425f973c699c720e60",
+    "wal-pre.json": "bf15de743c1352925ad060e4becb050630a075b4afd60cda186fb1a95bb87565",
+    "wal-post.json": "af2bcafcb13698c7977283df1b0d046386bb51dc0571dbff7e7ca9fbac4d37e6",
+    "soak-metrics.jsonl": "50fa5ff59fd1fac05c7807d16782e309d5f82ca55a319cf32afd99b377af6b76",
+    "proc-detail.jsonl": "f30ee0a93c8e8e630343c5e4e0a1a6ced6561db8576eb7a9b2aa2c923f985e40",
+    "residency.jsonl": "741c0a686a75b4a559579060b16ddcfaae847361f57178de608ddc800d48e5a8"
+  }
+}

@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use opentelemetry::{KeyValue, global, trace::TracerProvider as _};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{Protocol, WithExportConfig};
+use opentelemetry_otlp::{Protocol, RetryPolicy, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::{
     Resource, logs::SdkLoggerProvider, metrics::SdkMeterProvider, trace::SdkTracerProvider,
 };
@@ -156,6 +156,7 @@ fn otel_http_span_exporter(
 ) -> anyhow::Result<opentelemetry_otlp::SpanExporter> {
     let mut builder = opentelemetry_otlp::SpanExporter::builder()
         .with_http()
+        .with_retry_policy(RetryPolicy::disabled())
         .with_protocol(Protocol::HttpBinary)
         .with_endpoint(config.signal_endpoint("/v1/traces"));
     if let Some(timeout) = config.timeout {
@@ -171,6 +172,7 @@ fn otel_http_metric_exporter(
 ) -> anyhow::Result<opentelemetry_otlp::MetricExporter> {
     let mut builder = opentelemetry_otlp::MetricExporter::builder()
         .with_http()
+        .with_retry_policy(RetryPolicy::disabled())
         .with_protocol(Protocol::HttpBinary)
         .with_endpoint(config.signal_endpoint("/v1/metrics"));
     if let Some(timeout) = config.timeout {
@@ -184,6 +186,7 @@ fn otel_http_metric_exporter(
 fn otel_http_log_exporter(config: &OtelConfig) -> anyhow::Result<opentelemetry_otlp::LogExporter> {
     let mut builder = opentelemetry_otlp::LogExporter::builder()
         .with_http()
+        .with_retry_policy(RetryPolicy::disabled())
         .with_protocol(Protocol::HttpBinary)
         .with_endpoint(config.signal_endpoint("/v1/logs"));
     if let Some(timeout) = config.timeout {

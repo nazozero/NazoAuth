@@ -288,30 +288,17 @@ fn query_with_status(value: &str) -> HashMap<String, String> {
 
 #[test]
 fn delivery_tokens_are_deterministic_and_request_scoped() {
-    let state = test_state();
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let pepper = &settings.protocol.client_secret_pepper;
     let user_id = Uuid::now_v7();
     let request_id = Uuid::now_v7();
-    let first = access_delivery_token(
-        &state.settings.protocol.client_secret_pepper,
-        user_id,
-        request_id,
-    );
+    let first = access_delivery_token(pepper, user_id, request_id);
 
-    assert_eq!(
-        first,
-        access_delivery_token(
-            &state.settings.protocol.client_secret_pepper,
-            user_id,
-            request_id
-        )
-    );
+    assert_eq!(first, access_delivery_token(pepper, user_id, request_id));
     assert_ne!(
         first,
-        access_delivery_token(
-            &state.settings.protocol.client_secret_pepper,
-            user_id,
-            Uuid::now_v7()
-        )
+        access_delivery_token(pepper, user_id, Uuid::now_v7())
     );
 }
 
@@ -1122,8 +1109,8 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .await
         .expect("committed delivery payload should exist");
     let mut staged: Value = serde_json::from_str(&staged_raw).unwrap();
-    staged["delivery_state"] = json!("staged");
-    staged
+    staged["value"]["delivery_state"] = json!("staged");
+    staged["value"]
         .as_object_mut()
         .expect("delivery payload is an object")
         .remove("approved_client_id");
@@ -1152,7 +1139,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .await
         .expect("recovered delivery payload should exist");
     assert_eq!(
-        serde_json::from_str::<Value>(&recovered_raw).unwrap()["delivery_state"],
+        serde_json::from_str::<Value>(&recovered_raw).unwrap()["value"]["delivery_state"],
         "committed"
     );
     let delivery_request = fixture.admin_post_request(
@@ -1474,7 +1461,7 @@ async fn approve_access_request_surfaces_pending_request_lookup_failure_after_ad
 }
 
 #[actix_web::test]
-async fn approve_access_request_rolls_back_when_status_write_fails_after_client_prepare() {
+async fn approve_status_write_failure_keeps_undisclosed_stage_until_original_ttl() {
     let schema = format!("admin_access_write_{}", Uuid::now_v7().simple());
     let Some(fixture) = LiveAdminAccessRequestFixture::new_isolated(&schema).await else {
         return;
@@ -1512,7 +1499,7 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
     )
     .await;
     let state = fixture.access_request_state(request_id).await;
-    let orphan_keys: Vec<String> = fixture
+    let staged_keys: Vec<String> = fixture
         .state
         .valkey
         .custom(
@@ -1524,15 +1511,20 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         )
         .await
         .expect("staged delivery keys should be inspectable");
-    assert_eq!(orphan_keys.len(), 1);
-    let orphan: String = fixture
+    assert_eq!(staged_keys.len(), 1);
+    let staged_payload: String = fixture
         .state
         .valkey
-        .get(&orphan_keys[0])
+        .get(&staged_keys[0])
         .await
         .expect("staged delivery payload should remain after denied cleanup");
-    let orphan: Value = serde_json::from_str(&orphan).expect("staged payload should be JSON");
-    assert_eq!(orphan["delivery_state"], "staged");
+    let staged: Value =
+        serde_json::from_str(&staged_payload).expect("staged payload should be JSON");
+    assert_eq!(staged["value"]["delivery_state"], "staged");
+    let prepared_secret = staged["value"]["client_secret"]
+        .as_str()
+        .expect("the unpublished stage must contain its prepared secret");
+    assert!(!prepared_secret.is_empty());
     let applicant_sid = format!("applicant-write-{}", Uuid::now_v7().simple());
     fixture.store_session(&applicant, &applicant_sid).await;
     let delivery_request = fixture.admin_post_request(
@@ -1546,14 +1538,24 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         Json(crate::http::profile::delivery::AccessDeliveryRequest { request_id }),
     )
     .await;
-    assert_eq!(delivery.status(), StatusCode::NOT_FOUND);
-    let removed: Option<String> = fixture
+    let (delivery_status, delivery_body) = json_body(delivery).await;
+    assert_eq!(delivery_status, StatusCode::NOT_FOUND);
+    assert_eq!(delivery_body["error"], "invalid_request");
+    assert!(delivery_body.get("client_secret").is_none());
+    assert!(delivery_body.get("read_once_notice").is_none());
+    assert!(!delivery_body.to_string().contains(prepared_secret));
+    // Failed producer cleanup leaves preparation under its original TTL.
+    // A requester must not consume or alter that unpublished envelope.
+    let retained: Option<String> = fixture
         .state
         .valkey
-        .get(&orphan_keys[0])
+        .get(&staged_keys[0])
         .await
-        .expect("staged delivery cleanup read should succeed");
-    assert!(removed.is_none());
+        .expect("staged delivery retention read should succeed");
+    assert!(
+        retained.as_deref() == Some(staged_payload.as_str()),
+        "requester reads must preserve the exact stage and its original expiry"
+    );
     fixture.delete_acl_user(&acl_user).await;
     fixture.cleanup().await;
     let (status, body) = json_body(response).await;
@@ -1657,7 +1659,7 @@ async fn reject_access_request_surfaces_update_failure_without_changing_status()
 }
 
 #[actix_web::test]
-async fn reject_access_request_surfaces_projection_failure_after_state_transition() {
+async fn reject_access_request_projection_failure_rolls_back_pending_state_and_required_outcome() {
     let schema = format!("admin_access_projection_{}", Uuid::now_v7().simple());
     let Some(fixture) = LiveAdminAccessRequestFixture::new_isolated(&schema).await else {
         return;
@@ -1693,11 +1695,35 @@ async fn reject_access_request_surfaces_projection_failure_after_state_transitio
     )
     .await;
     let state = fixture.access_request_state(request_id).await;
+    let client_count = fixture.client_count().await;
+    let audit_count = {
+        let mut connection = get_conn(&fixture.state.diesel_db)
+            .await
+            .expect("audit check connection");
+        sql_query("SELECT COUNT(*)::bigint AS count FROM public.security_audit_events WHERE event_type='admin_access_request_rejected' AND payload->>'request_id'=$1")
+            .bind::<Text, _>(request_id.to_string())
+            .get_result::<CountRow>(&mut connection).await.expect("canonical rejection count").count
+    };
     fixture.cleanup().await;
     let (status, body) = json_body(response).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "server_error");
-    assert_eq!(state.status, AccessRequestStatus::Rejected.code());
-    assert_eq!(state.admin_note.as_deref(), Some("projection should fail"));
+    // The complete RETURNING projection is acknowledged before commit. Its
+    // failure rolls back the tentative status/note, without canonical success.
+    assert_eq!(state.status, AccessRequestStatus::Pending.code());
+    assert!(state.admin_note.is_none());
+    assert!(state.approved_client_id.is_none());
+    assert_eq!(
+        client_count, 0,
+        "projection failure creates no client effect"
+    );
+    assert_eq!(
+        audit_count, 0,
+        "projection failure commits no canonical rejection"
+    );
+    assert!(body.get("client_secret").is_none());
 }
+
+#[path = "access_requests/delivery_races.rs"]
+mod delivery_races;

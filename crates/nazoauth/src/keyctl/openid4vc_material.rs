@@ -81,17 +81,11 @@ pub(crate) async fn signed_mdoc_crl(
         return Ok(None);
     }
     // Revocation facts are read from the authority, not an instance-local cache.
-    let state = source.keyset.database_openid4vc_state().await?;
-    let Some(material) = state.material else {
+    let Some(material) = source.keyset.database_mdoc_crl_material(issuer_id).await? else {
         return Ok(None);
     };
-    let Some(issuer_material) = material.iaca_private_materials.get(issuer_id) else {
-        return Ok(None);
-    };
-    let snapshot = material
-        .public
-        .revocation_snapshot
-        .context("mdoc authority has no revocation state")?;
+    let issuer_material = &material.issuer_private_material;
+    let snapshot = material.revocation_snapshot;
     let certificates = CertificateDer::pem_slice_iter(issuer_material.as_bytes())
         .collect::<Result<Vec<_>, _>>()
         .context("failed to parse OpenID4VC certificate bundle")?;
@@ -114,11 +108,9 @@ pub(crate) async fn signed_mdoc_crl(
         .iter()
         .find(|entry| entry.issuer == source.issuer_contact_uri && entry.certificate == identity)
         .context("mdoc revocation snapshot has no status for the current DS certificate")?;
-    let issuer_public_key = nazo_crypto::certificate::public_key_from_pem(issuer_material)
-        .context("failed to parse IACA private key as PKCS#8 PEM")?;
-    if issuer_public_key != ca.public_key().subject_public_key.data.as_ref() {
-        bail!("IACA private key does not match current certificate bundle");
-    }
+    // sign_crl matches and signs with the same prepared private key. The CA's
+    // public key supplies the identifier after the exact issuer binding above.
+    let issuer_public_key = ca.public_key().subject_public_key.data.as_ref();
     let this_update = time::OffsetDateTime::now_utc();
     let next_update = this_update + time::Duration::hours(24);
     let revoked_certs = match entry.status {
@@ -146,7 +138,7 @@ pub(crate) async fn signed_mdoc_crl(
         issuing_distribution_point: None,
         revoked_certs,
         key_identifier_method: KeyIdMethod::PreSpecified(subject_key_identifier_from_public_key(
-            &issuer_public_key,
+            issuer_public_key,
         )),
     };
     let crl =
@@ -455,19 +447,24 @@ pub(super) async fn generate_local_with_database_manager(
     manager: &KeyManager,
     profile: Option<&Openid4vcCertificateProfile>,
     options: GenerateLocalKeyOptions,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, String, Option<String>)> {
     let Some(profile) = profile else {
-        return manager
-            .database_register_local(nazo_key_management::LocalKeyRegistration {
+        let (kid, revision) = manager
+            .database_register_local_with_revision(nazo_key_management::LocalKeyRegistration {
                 algorithm: options.alg,
                 purposes: options.purposes,
             })
-            .await;
+            .await?;
+        return Ok((kid, revision, None));
     };
     let state = manager.database_openid4vc_state().await?;
     if let Some(material) = state.material {
         validate_managed_profile(&material, profile)?;
-        return Ok(material.public.signing_kid);
+        return Ok((
+            material.public.signing_kid,
+            state.revision.to_string(),
+            Some(material.public.certificate_chain_pem),
+        ));
     }
     if manager
         .snapshot()
@@ -488,12 +485,20 @@ pub(super) async fn generate_local_with_database_manager(
     }
     let signing_key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
     let material = build_managed_material(&signing_key_pem, profile, None)?;
-    let kid = material.public.signing_kid.clone();
     match manager
         .database_commit_openid4vc(state.revision, material, Some(signing_key_pem))
         .await
     {
-        Ok(()) => Ok(kid),
+        Ok(committed) => {
+            let material = committed
+                .material
+                .context("committed OpenID4VC generation has no material")?;
+            Ok((
+                material.public.signing_kid,
+                committed.revision.to_string(),
+                Some(material.public.certificate_chain_pem),
+            ))
+        }
         Err(error) => {
             // Concurrent bootstrap may already have committed a complete generation.
             let winner = manager.database_openid4vc_state().await?;
@@ -502,7 +507,11 @@ pub(super) async fn generate_local_with_database_manager(
             {
                 validate_managed_profile(&material, profile)?;
                 manager.refresh().await?;
-                return Ok(material.public.signing_kid);
+                return Ok((
+                    material.public.signing_kid,
+                    winner.revision.to_string(),
+                    Some(material.public.certificate_chain_pem),
+                ));
             }
             Err(error)
         }

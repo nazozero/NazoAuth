@@ -68,7 +68,6 @@ use crate::http::authorization::{
     presentation::authorize_client_presentation,
     request::{authorize_get, authorize_post},
 };
-use crate::http::perf_metrics::perf_metrics;
 use crate::http::profile::{
     access_requests::{create_access_request, my_access_requests},
     avatar::{
@@ -94,7 +93,7 @@ use nazo_http_actix::{
     scim_service_provider_config,
 };
 
-use super::{cors, startup::tenant_runtime::TenantRuntimeRegistry};
+use super::cors;
 
 /// Process-selected tenant allowed to reach deployment-global HTTP controls.
 pub(crate) struct ControlTenantId(pub(crate) nazo_identity::TenantId);
@@ -162,39 +161,22 @@ where
 /// Component-test assembly for one already-selected tenant. Production uses
 /// [`configure_dynamic`] so CORS and request data share the Host registry.
 #[allow(dead_code)]
-pub(crate) fn configure(
-    cfg: &mut web::ServiceConfig,
-    settings: &Settings,
-    perf_metrics_enabled: bool,
-) {
+pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
     configure_with_cors(
         cfg,
         settings,
-        perf_metrics_enabled,
         cors::CorsPolicy::from_settings(settings),
         false,
     );
 }
 
-pub(super) fn configure_dynamic(
-    cfg: &mut web::ServiceConfig,
-    settings: &Settings,
-    perf_metrics_enabled: bool,
-    registry: TenantRuntimeRegistry,
-) {
-    configure_with_cors(
-        cfg,
-        settings,
-        perf_metrics_enabled,
-        cors::CorsPolicy::dynamic(registry),
-        true,
-    );
+pub(super) fn configure_dynamic(cfg: &mut web::ServiceConfig, settings: &Settings) {
+    configure_with_cors(cfg, settings, cors::CorsPolicy::dynamic(), true);
 }
 
 fn configure_with_cors(
     cfg: &mut web::ServiceConfig,
     settings: &Settings,
-    perf_metrics_enabled: bool,
     cors_policy: cors::CorsPolicy<'_>,
     dynamic_tenant_routes: bool,
 ) {
@@ -578,13 +560,6 @@ fn configure_with_cors(
                     "/result/{transaction_id}",
                     web::get().to(presentation_result),
                 ),
-        );
-    }
-    if perf_metrics_enabled {
-        cfg.service(
-            web::resource("/__perf/metrics")
-                .wrap(from_fn(control_tenant_only))
-                .route(web::get().to(perf_metrics)),
         );
     }
 }

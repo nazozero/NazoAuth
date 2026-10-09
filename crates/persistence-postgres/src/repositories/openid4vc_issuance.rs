@@ -6,16 +6,26 @@ mod offer;
 mod store;
 
 use crate::DbPool;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Openid4vciRepository {
     pool: DbPool,
     data_key: [u8; 32],
+    secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
 }
 
 impl Openid4vciRepository {
     #[must_use]
-    pub fn new(pool: DbPool, data_key: [u8; 32]) -> Self {
-        Self { pool, data_key }
+    pub fn new(
+        pool: DbPool,
+        data_key: [u8; 32],
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
+    ) -> Self {
+        Self {
+            pool,
+            data_key,
+            secret_verifier,
+        }
     }
 }

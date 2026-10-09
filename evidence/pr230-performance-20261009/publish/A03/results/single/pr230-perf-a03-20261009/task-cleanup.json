@@ -1,0 +1,11 @@
+{
+  "label": "pr230-perf-a03-20261009",
+  "key": "A03",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.477,
+  "total_elapsed_s": 98.03,
+  "request_sha256_unchanged": true,
+  "verdict": "INVALID",
+  "error": null,
+  "cleanup_error": null
+}

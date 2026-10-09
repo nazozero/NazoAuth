@@ -1,0 +1,21 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.13s
+     Running tests/audit_bounded_reads.rs (target/debug/deps/audit_bounded_reads-5f79e092550d1327)
+
+running 1 test
+test exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale ... finalize: shared_blocks=5143; actual_plan=[{"Execution Time":12.186,"Plan":{"Actual Loops":1,"Actual Rows":1.0,"Actual Startup Time":12.179,"Actual Total Time":12.179,"Async Capable":false,"Disabled":false,"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Node Type":"Result","Parallel Aware":false,"Plan Rows":1,"Plan Width":8,"Shared Dirtied Blocks":6,"Shared Hit Blocks":5143,"Shared Read Blocks":0,"Shared Written Blocks":6,"Startup Cost":0.0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Total Cost":0.26},"Planning":{"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Shared Dirtied Blocks":0,"Shared Hit Blocks":0,"Shared Read Blocks":0,"Shared Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0},"Planning Time":0.02,"Triggers":[]}]
+ack: shared_blocks=207325; actual_plan=[{"Execution Time":111.396,"Plan":{"Actual Loops":1,"Actual Rows":1.0,"Actual Startup Time":111.39,"Actual Total Time":111.39,"Async Capable":false,"Disabled":false,"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Node Type":"Result","Parallel Aware":false,"Plan Rows":1,"Plan Width":1,"Shared Dirtied Blocks":0,"Shared Hit Blocks":207325,"Shared Read Blocks":0,"Shared Written Blocks":0,"Startup Cost":0.0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Total Cost":0.26},"Planning":{"Local Dirtied Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Written Blocks":0,"Shared Dirtied Blocks":0,"Shared Hit Blocks":0,"Shared Read Blocks":0,"Shared Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0},"Planning Time":0.011,"Triggers":[]}]
+
+thread 'exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale' (85018) panicked at crates/persistence-postgres/tests/audit_bounded_reads.rs:140:9:
+ack read 207325 shared blocks for only 256 identities
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.92s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_bounded_reads`

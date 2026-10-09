@@ -6,10 +6,11 @@ use crate::contracts::authorization_decision::{
 };
 use chrono::Utc;
 use nazo_auth::{
-    AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationResponsePlan,
+    AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
+    AuthorizationDecisionCommitResult, AuthorizationDecisionKind, AuthorizationResponsePlan,
     AuthorizationResponsePolicyError, AuthorizationResponsePolicyInput, CapabilityAdmission,
     SignedJarmAuthorizationResponse, UserAuthorizationDecision, module_admissible,
-    plain_authorization_response_uri, plan_authorization_response,
+    plain_authorization_response_uri, plan_authorization_response, prepare_authorization_code,
     signed_jarm_authorization_response_uri,
 };
 use nazo_identity::{SessionResolution, SessionService};
@@ -82,7 +83,7 @@ impl ServerAuthorizationDecisionOperations {
         };
 
         self.security_audit
-            .ensure_storage()
+            .ensure_transactional_ready()
             .await
             .map_err(|error| {
                 tracing::error!(%error, "authorization decision audit preflight failed");
@@ -134,34 +135,38 @@ impl ServerAuthorizationDecisionOperations {
             }
         };
 
-        let establishes_oidc_login = preview.consent.scopes.iter().any(|scope| scope == "openid");
-        if establishes_oidc_login && preview.consent.oidc_sid.as_deref() != Some(session.oidc_sid())
+        let establishes_oidc_login = preview
+            .consent()
+            .scopes
+            .iter()
+            .any(|scope| scope == "openid");
+        if establishes_oidc_login
+            && preview.consent().oidc_sid.as_deref() != Some(session.oidc_sid())
         {
             tracing::warn!("authorization consent is not bound to the current OP browser session");
             return Err(AuthorizationDecisionError::ConsentInvalid);
         }
 
-        // 2. The durable Required evidence carries the validated preview facts
-        //    and commits before any destructive consume or business mutation.
-        //    It never carries tokens, codes, secrets, or credential material.
+        // Prepare the immutable committed-decision fact. No authority is
+        // consumed and no usable code is published before its durable commit.
         let mut intent_fields = audit_fields(&[
             ("request_id_hash", json!(blake3_hex(&command.request_id))),
             ("user_id", json!(session.user().id())),
-            ("client_id", json!(preview.consent.client_id.clone())),
+            ("client_id", json!(preview.consent().client_id.clone())),
             ("decision", json!(decision)),
-            ("scope", json!(preview.consent.scopes.join(" "))),
+            ("scope", json!(preview.consent().scopes.join(" "))),
             ("source_ip_hash", json!(blake3_hex(&command.source_ip))),
         ]);
-        if !preview.consent.resource_indicators.is_empty() {
+        if !preview.consent().resource_indicators.is_empty() {
             intent_fields.insert(
                 "resource_digest".to_owned(),
                 json!(blake3_hex(
-                    &preview.consent.resource_indicators.join("\u{1f}")
+                    &preview.consent().resource_indicators.join("\u{1f}")
                 )),
             );
         }
         if preview
-            .consent
+            .consent()
             .authorization_details
             .as_array()
             .is_some_and(|details| !details.is_empty())
@@ -169,100 +174,88 @@ impl ServerAuthorizationDecisionOperations {
             intent_fields.insert(
                 "authorization_details_digest".to_owned(),
                 json!(blake3_hex(
-                    &preview.consent.authorization_details.to_string()
+                    &preview.consent().authorization_details.to_string()
                 )),
             );
         }
-        if let Some(digest) = preview.consent.pushed_request_digest.as_deref() {
+        if let Some(digest) = preview.consent().pushed_request_digest.as_deref() {
             intent_fields.insert("pushed_request_digest".to_owned(), json!(digest));
         }
-        self.security_audit
-            .record_required("authorization_decision_intent", intent_fields)
-            .await
-            .map_err(|error| {
-                tracing::error!(%error, "authorization decision audit intent failed");
-                AuthorizationDecisionError::AuditUnavailable
-            })?;
-
-        // 3. Consume only the exact previewed state: a concurrently replaced
-        //    consent or pushed request fails the compare-and-delete instead of
-        //    being consumed.
-        match self
-            .service
-            .consume_user_decision(&command.request_id, &preview)
-            .await
-        {
-            Ok(()) => {}
-            Err(
-                AuthorizationDecisionAdmissionError::ConsentMissing
-                | AuthorizationDecisionAdmissionError::ConsentMalformed,
-            ) => return Err(AuthorizationDecisionError::ConsentInvalid),
-            Err(AuthorizationDecisionAdmissionError::ConsentReadFailed(error)) => {
-                tracing::warn!(%error, "failed to claim authorization consent state");
-                return Err(AuthorizationDecisionError::ConsentReadUnavailable);
-            }
-            Err(AuthorizationDecisionAdmissionError::UserMismatch) => {
-                return Err(AuthorizationDecisionError::UserMismatch);
-            }
-            Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(consent)) => {
-                return self
-                    .response_location(&consent, None, Some("invalid_request_uri"), None)
-                    .await;
-            }
-            Err(AuthorizationDecisionAdmissionError::PushedRequestMalformed(consent)) => {
-                tracing::warn!("PAR payload is malformed while claiming authorization consent");
-                return self
-                    .response_location(&consent, None, Some("server_error"), None)
-                    .await;
-            }
-            Err(AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
-                consent,
-                source,
-            }) => {
-                tracing::warn!(%source, "failed to claim consent-bound PAR state");
-                return self
-                    .response_location(&consent, None, Some("server_error"), None)
-                    .await;
-            }
-        }
-
-        // The intent above is the sole Required evidence for this decision; the
-        // outcome below is Telemetry because consent/PAR state and the audit
-        // ledger are separate stores that cannot commit atomically here.
-        let payload = preview.consent;
-        if command.decision == UserAuthorizationDecision::Deny {
-            record_decision_audit(
-                self.security_audit.as_ref(),
-                "authorization_denied",
-                &payload,
-                &command.source_ip,
-            );
-            return self
-                .response_location(&payload, None, Some("access_denied"), None)
-                .await;
-        }
-
+        let valid_until = preview.valid_until();
+        let retain_until = preview.retain_until();
+        let payload = preview.consent().clone();
         let now = Utc::now();
-        let code = random_urlsafe_token();
-        let code_id = Uuid::now_v7().to_string();
-        let code_hash = blake3_hex(&code);
-        if let Err(error) = self
-            .service
-            .approve_consent(AuthorizationApprovalInput {
+        let event_id = Uuid::now_v7();
+        let code =
+            (command.decision == UserAuthorizationDecision::Approve).then(random_urlsafe_token);
+        let prepared = code.as_ref().map(|code| {
+            prepare_authorization_code(AuthorizationApprovalInput {
                 consent: &payload,
-                code_hash: &code_hash,
-                code_id: &code_id,
+                code_hash: &blake3_hex(code),
+                code_id: &event_id.to_string(),
                 issued_at: now,
                 code_ttl_seconds: payload
                     .authorization_code_ttl_seconds
                     .unwrap_or(self.config.auth_code_ttl_seconds),
                 tenant_id: self.tenant_id.as_uuid(),
             })
+        });
+        let result = self
+            .service
+            .commit_decision(
+                AuthorizationDecisionCommit {
+                    tenant_id: self.tenant_id.as_uuid(),
+                    user_id: payload.user_id,
+                    client_id: payload.client_id.clone(),
+                    request_id: command.request_id.clone(),
+                    pushed_request_uri: payload.pushed_request_uri.clone(),
+                    valid_until,
+                    retain_until,
+                    decision: if command.decision == UserAuthorizationDecision::Approve {
+                        AuthorizationDecisionKind::Approve
+                    } else {
+                        AuthorizationDecisionKind::Deny
+                    },
+                    event_id,
+                    occurred_at: now,
+                    audit_fields: serde_json::Value::Object(intent_fields),
+                    scopes: payload.scopes.clone(),
+                    resource_indicators: payload.resource_indicators.clone(),
+                    authorization_details: payload.authorization_details.clone(),
+                },
+                prepared,
+            )
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "authorization decision commit or code publication failed");
+                AuthorizationDecisionError::ApprovalUnavailable
+            })?;
+        match result {
+            AuthorizationDecisionCommitResult::Committed => {}
+            AuthorizationDecisionCommitResult::Conflict
+            | AuthorizationDecisionCommitResult::Expired => {
+                return Err(AuthorizationDecisionError::ConsentInvalid);
+            }
+            AuthorizationDecisionCommitResult::ClientUnavailable
+            | AuthorizationDecisionCommitResult::GrantUnavailable => {
+                return Err(AuthorizationDecisionError::ApprovalUnavailable);
+            }
+        }
+        // The durable decision owns reuse prevention. Discard only the
+        // previewed preparation; failure leaves its original TTL intact and
+        // cannot change the committed decision.
+        if let Err(error) = self
+            .service
+            .discard_decision_material(&command.request_id, &preview)
             .await
         {
-            tracing::warn!(%error, "failed to persist user client grant");
-            return Err(AuthorizationDecisionError::ApprovalUnavailable);
+            tracing::warn!(%error, "failed to discard committed authorization decision preparation");
         }
+        let Some(code) = code else {
+            return self
+                .response_location(&payload, None, Some("access_denied"), None)
+                .await;
+        };
 
         if establishes_oidc_login
             && !self
@@ -278,12 +271,6 @@ impl ServerAuthorizationDecisionOperations {
             return Err(AuthorizationDecisionError::LoginRequired);
         }
 
-        record_decision_audit(
-            self.security_audit.as_ref(),
-            "authorization_approved",
-            &payload,
-            &command.source_ip,
-        );
         self.response_location(&payload, Some(&code), None, payload.oidc_sid.as_deref())
             .await
     }
@@ -453,22 +440,4 @@ fn map_response_policy_error(
             AuthorizationDecisionError::ResponseProtectionUnavailable
         }
     }
-}
-
-fn record_decision_audit(
-    audit: &dyn SecurityAudit,
-    event: &str,
-    payload: &nazo_auth::ConsentPayload,
-    source_ip: &str,
-) {
-    audit.record(
-        event,
-        audit_fields(&[
-            ("user_id", json!(payload.user_id)),
-            ("client_id", json!(payload.client_id)),
-            ("request_id_hash", json!(blake3_hex(&payload.request_id))),
-            ("scope", json!(payload.scopes.join(" "))),
-            ("source_ip_hash", json!(blake3_hex(source_ip))),
-        ]),
-    );
 }

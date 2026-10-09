@@ -1,0 +1,11 @@
+{
+  "label": "r230-repair-bread10-20261009",
+  "key": "BREAD10",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 23.602,
+  "total_elapsed_s": 186.348,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

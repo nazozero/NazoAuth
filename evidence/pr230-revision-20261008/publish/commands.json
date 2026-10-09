@@ -1,0 +1,3701 @@
+[
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exit": 1,
+    "seconds": 2.416141757974401,
+    "log": "/src/evidence/pr230-revision-20261008/initial-0.log",
+    "log_sha256": "f4bee222de3b89c63b6bb70a7bc168bcbb8a3d195efd76a1b8e524c2c5b311a5",
+    "test_results": []
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--lib",
+      "repositories::audit_ledger"
+    ],
+    "exit": 0,
+    "seconds": 20.87243479094468,
+    "log": "/src/evidence/pr230-revision-20261008/initial-1.log",
+    "log_sha256": "bb1db3ed7298c61c9e38ff59e9386b109b988d0984ba9b174c07e125b97d7717",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 65
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "adapters::audit"
+    ],
+    "exit": 0,
+    "seconds": 74.97371727018617,
+    "log": "/src/evidence/pr230-revision-20261008/initial-2.log",
+    "log_sha256": "45efe32145e90a4443b0581015f47e3beb0b02464522f048826104c288491b57",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 88,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 1363
+      }
+    ]
+  },
+  {
+    "command": [
+      "python",
+      "scripts/verify_static_contracts.py",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 6.522070676088333,
+    "log": "evidence/pr230-revision-20261008/fixture-gate-0.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "test_results": []
+  },
+  {
+    "command": [
+      "python",
+      "scripts/check_persistence_dependency_graph.py"
+    ],
+    "exit": 0,
+    "seconds": 1.939227179158479,
+    "log": "evidence/pr230-revision-20261008/fixture-gate-1.log",
+    "log_sha256": "bfc5b1d04fb5024b9eade675d150ec56da271e3176d13491faa0105160753336",
+    "test_results": []
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "migrations",
+      "pending_migrations_create_all_runtime_module_state_tables"
+    ],
+    "exit": 0,
+    "seconds": 27.565932946978137,
+    "log": "evidence/pr230-revision-20261008/fixture-gate-2.log",
+    "log_sha256": "360e7e28d19fd53717a7dcecc032c261aef1af3e0d82f8c849c90c7c09c172fc",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 26
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_commit_boundary",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 4.495616685133427,
+    "log": "audit-commit-boundary-1.log",
+    "log_sha256": "5bfa5f6674605ee6fefa348e2ec86d4461a6219eab3d7d763bacb16192654822",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_commit_boundary",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 16.115007682004943,
+    "log": "audit-commit-boundary-1.log",
+    "log_sha256": "5bfa5f6674605ee6fefa348e2ec86d4461a6219eab3d7d763bacb16192654822",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "adapters::audit",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 20.45650608697906,
+    "log": "workers-2.log",
+    "log_sha256": "1015c44f6a5f759a0e309ca9f92044e660e26facd68cbb5ad2c46d0daddb9217",
+    "test_results": []
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_commit_boundary",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 0.5987090670969337,
+    "log": "evidence/pr230-revision-20261008/focused-round3-0.log",
+    "log_sha256": "813ac0f25169049faa115d563f66cd34feec717a7d85a529d54cddcf7496529f",
+    "test_results": []
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "security_state_maintenance",
+      "contract_",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 3.324499804060906,
+    "log": "evidence/pr230-revision-20261008/focused-round3-1.log",
+    "log_sha256": "ad7bc73d34bc2f66871a6b78cffffd6df367a47678a7db4e3f724bbdf4ec1bb6",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 22
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "bundle_export_waits_for_real",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 20.21938150608912,
+    "log": "evidence/pr230-revision-20261008/focused-round3-2.log",
+    "log_sha256": "1015c44f6a5f759a0e309ca9f92044e660e26facd68cbb5ad2c46d0daddb9217",
+    "test_results": []
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_commit_boundary",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 18.09950023982674,
+    "log": "evidence/pr230-revision-20261008/focused-round4-0.log",
+    "log_sha256": "3939af927673a6d37e032d449fe7c52c5a780088f208569102361912421d8ba4",
+    "test_results": [
+      {
+        "outcome": "FAILED",
+        "passed": 3,
+        "failed": 1,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "security_state_maintenance",
+      "contract_",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 1.5087854349985719,
+    "log": "evidence/pr230-revision-20261008/focused-round4-1.log",
+    "log_sha256": "c1984ccc58210394c499c324d43ffe40cafe8eb1f614e6177979466fa568385a",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 22
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "bundle_export_waits_for_real",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 44.729110608110204,
+    "log": "evidence/pr230-revision-20261008/focused-round4-2.log",
+    "log_sha256": "0873ea9622e2f9a03edbbc5483829976370cf2813b449123e47f1f2fb7609c4d",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 1453
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_commit_boundary",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 43.83270817901939,
+    "log": "evidence/pr230-revision-20261008/focused-round5-0.log",
+    "log_sha256": "eaadbf8bd8894d08c62aa6837cd0403244eed40a3184bc89cc239fff08a0bb93",
+    "test_results": [
+      {
+        "outcome": "FAILED",
+        "passed": 3,
+        "failed": 1,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "security_state_maintenance",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 7.403485580114648,
+    "log": "evidence/pr230-revision-20261008/focused-round5-1.log",
+    "log_sha256": "432b587b24b3431c89c7b9459357ed67124e4a13bd12b590a42cb12022c9b22f",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 26,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "bundle_export_waits_for_real",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 70.11088052601553,
+    "log": "evidence/pr230-revision-20261008/focused-round5-2.log",
+    "log_sha256": "ff3c19fac867c9856c267c20b305a51c34a769d8a4c7ad4eec7579bb0ef40942",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 1453
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_commit_boundary",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 81.19690833194181,
+    "log": "evidence/pr230-revision-20261008/focused-round6-0.log",
+    "log_sha256": "fa528bca6538f5982fcbc41f5c92a0e4dbf737d92a919f30b062b3157f9ab7c8",
+    "test_results": [
+      {
+        "outcome": "FAILED",
+        "passed": 3,
+        "failed": 1,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "adapters::audit",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 72.67217564489692,
+    "log": "evidence/pr230-revision-20261008/focused-round6-1.log",
+    "log_sha256": "edfd78d7bc426cb143df25254296f1d7962ba7b64150d7c4b8fb188d5b559312",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 90,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 1364
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "security_state_maintenance",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 6.812820601044223,
+    "log": "evidence/pr230-revision-20261008/focused-round6-2.log",
+    "log_sha256": "81848db208f004181918a8dc26318e540034d4b6cb9ada2c516844e8c6d60faf",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 26,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--keep-going",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 101,
+    "seconds": 63.10070061287843,
+    "log": "evidence/pr230-revision-20261008/focused-round6-3.log",
+    "log_sha256": "2db8bb4a8b5d7edabd4487650cef1a868afea3ac15f9cc13cec4d822eed02f3c",
+    "test_results": []
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_commit_boundary",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 29.33152441889979,
+    "log": "audit-commit-boundary-7.log",
+    "log_sha256": "45d3ab5da6a5d1d3a0e9d1cce34f949ab3533af90cec3f09c51ac6dada0dbc64",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:03:55.908336+00:00",
+    "command": [
+      "python",
+      "scripts/verify_static_contracts.py",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 6.751472044037655,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-0.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "test_results": []
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:03:58.018495+00:00",
+    "command": [
+      "python",
+      "scripts/check_persistence_dependency_graph.py"
+    ],
+    "exit": 0,
+    "seconds": 2.110029143979773,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-1.log",
+    "log_sha256": "bfc5b1d04fb5024b9eade675d150ec56da271e3176d13491faa0105160753336",
+    "test_results": []
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:04:00.446177+00:00",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 2.42758106905967,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-2.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "test_results": []
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:04:19.429850+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--lib",
+      "repositories::audit_ledger"
+    ],
+    "exit": 0,
+    "seconds": 18.98355784197338,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-3.log",
+    "log_sha256": "59d6c380f159219f50e7fc53f9cfddb58ee296564bd56e2b80447c684185130b",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 65
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:04:21.688809+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "migrations",
+      "pending_migrations_create_all_runtime_module_state_tables"
+    ],
+    "exit": 0,
+    "seconds": 2.25886242906563,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-4.log",
+    "log_sha256": "4fedee6bd141c7e47efed2f043c47ef48c28b3ea54f5e772c5711a662f93d505",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 26
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:07:54.176817+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_ledger",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 212.48789336602204,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-5.log",
+    "log_sha256": "32cfd0b9882c6da5d9bc126229ddd493803c6d73cf387191ba3c39cd1b133f22",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:08:00.148825+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_preflight_roles",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 5.971846915083006,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-6.log",
+    "log_sha256": "8c19a2cc6a387e8fb4b3a779364e5dc99d9da2c1cb389e67eb0c10bb5a63a1fc",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:08:13.596239+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "security_state_maintenance",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 13.447307466994971,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-7.log",
+    "log_sha256": "e1a108ba860873d314c1d66fd6c4334af8f90cee6e1651341f020b2536adb503",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 26,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:08:22.961081+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "token_issuance_atomicity",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 9.364738889038563,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-8.log",
+    "log_sha256": "c692615893450eb8ff06b3f6f450416bc2b9216af1600ced2d25f1b80d5ff2bf",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:08:33.472240+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "authorization_decisions",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 10.51103284303099,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-9.log",
+    "log_sha256": "93a384d760444ae4e56fbe070bfa2a605031e62b1bdb79cd8796c4ad572d1c87",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:08:53.977294+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_commit_boundary",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 20.504943300038576,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-10.log",
+    "log_sha256": "76fd87ebb098731fea285f9f5179715b2e7bb9f38597678e6d06e933f1639751",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:08:54.759176+00:00",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--keep-going",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 0.7817772529087961,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-11.log",
+    "log_sha256": "4c8c88278ec59229ee73105136c105d1f2c3e84ac2233599cd915f8b8ff5dc58",
+    "test_results": []
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:12:34.453929+00:00",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--package",
+      "nazoauth",
+      "--bin",
+      "nazoauth"
+    ],
+    "exit": 0,
+    "seconds": 416.10142457298934,
+    "log": "evidence/pr230-revision-20261008/build-591405c6.log",
+    "binary_sha256": "158015a12f8ca55358f341c0edf8a28f6a15c237e55277e388d7260b7a15ae90",
+    "log_sha256": "892bfbc6ded129abd1ee3046b16469120c83b824fd3ff251a02e2818ab965b43",
+    "test_results": []
+  },
+  {
+    "sha": "591405c6c32e36a39f05d506e46d59162729681d",
+    "utc": "2026-10-08T02:24:24.471759+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--all-features",
+      "--locked",
+      "--no-fail-fast",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 929.712480947841,
+    "log": "evidence/pr230-revision-20261008/exact-591405c6-12.log",
+    "log_sha256": "50c673fecca1d6ecf904902d793418fa0d661d712c52923f50325362ce691ec2",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 176,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 35,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 119,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 22,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 24,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 46,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 54,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 87,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 370,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 1,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 47,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 71,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 40,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 61,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 27,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 37,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "FAILED",
+        "passed": 9,
+        "failed": 1,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 26,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 119,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 31,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1451,
+        "failed": 0,
+        "ignored": 3,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "67f836f2b616e811ce9a20bb857a01ea9517b42b",
+    "utc": "2026-10-08T02:27:13.197863+00:00",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--package",
+      "nazoauth",
+      "--bin",
+      "nazoauth"
+    ],
+    "exit": 0,
+    "seconds": 163.78254401800223,
+    "log": "evidence/pr230-revision-20261008/build-67f836f2.log",
+    "log_sha256": "c33d54ae28243abebb14d0de8c6ac415c839aa0e35dda0889fdd0a5b7547ec13",
+    "test_results": []
+  },
+  {
+    "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+    "utc": "2026-10-08T02:29:35.751914+00:00",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--package",
+      "nazoauth",
+      "--bin",
+      "nazoauth"
+    ],
+    "exit": 0,
+    "seconds": 142.4916842528619,
+    "log": "evidence/pr230-revision-20261008/build-aaa5070f.log",
+    "log_sha256": "825b6049122e9ba3d3f369f5694049514e68498016fb4f693a92dd5583ee56b9",
+    "test_results": []
+  },
+  {
+    "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+    "utc": "2026-10-08T02:29:38.133510+00:00",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 2.3359478439670056,
+    "log": "evidence/pr230-revision-20261008/final-aaa5070f-0.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "test_results": []
+  },
+  {
+    "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+    "utc": "2026-10-08T02:30:18.164083+00:00",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--keep-going",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 40.03034340380691,
+    "log": "evidence/pr230-revision-20261008/final-aaa5070f-1.log",
+    "log_sha256": "f19023281a0132f2fb1859945d150ccdc32ce545100206434aaf45448248eaa7",
+    "test_results": []
+  },
+  {
+    "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+    "utc": "2026-10-08T02:31:01.494980+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "refresh_family_capacity",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 43.330660965060815,
+    "log": "evidence/pr230-revision-20261008/final-aaa5070f-2.log",
+    "log_sha256": "f0f7d07b815a56414e9eb7cf66aac9345fe98306da57d590aa559f80644b2b6c",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "aaa5070f070dc9c21a897df5601a5cbfe2a9c294",
+    "utc": "2026-10-08T02:45:34.135015+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--all-features",
+      "--locked",
+      "--no-fail-fast",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "seconds": 872.6398059059866,
+    "log": "evidence/pr230-revision-20261008/final-aaa5070f-3.log",
+    "log_sha256": "0b92447dd3a97a14dda22c35d97a10e769126f819732aa14d635ca178d2160c5",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 176,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 35,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 119,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 22,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 24,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 46,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 54,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 87,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 370,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 1,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 47,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 71,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 40,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 61,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 27,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 37,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 26,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 119,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 31,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "FAILED",
+        "passed": 1450,
+        "failed": 1,
+        "ignored": 3,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      },
+      {
+        "outcome": "ok",
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    ]
+  },
+  {
+    "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "utc": "2026-10-08T02:45:40.093031+00:00",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 2.3378121061250567,
+    "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-0.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "test_results": []
+  },
+  {
+    "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "utc": "2026-10-08T02:46:01.587725+00:00",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--keep-going",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 21.494428706122562,
+    "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-1.log",
+    "log_sha256": "46536f3468ffe64b92f5785039ecdcdb06f6683a1132288e0b30baa032208294",
+    "test_results": []
+  },
+  {
+    "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "utc": "2026-10-08T02:47:12.245933+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "domain::authorization_decision_tests",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 70.65793296112679,
+    "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-2.log",
+    "log_sha256": "981e9b01ee4004f53123f822d39c823c673b09f8b8a57dfb91104aabef664d4b",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 1438
+      }
+    ]
+  },
+  {
+    "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "utc": "2026-10-08T02:47:16.043887+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "domain::authorization_decision_tests",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 3.7976230329368263,
+    "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-3.log",
+    "log_sha256": "a52e14ae1a72dea5d7c838d469ceb2bcd8b2ad927d25bb1659c5a71aec2f12ab",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 1438
+      }
+    ]
+  },
+  {
+    "sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397",
+    "utc": "2026-10-08T02:47:16.869752+00:00",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--package",
+      "nazoauth",
+      "--bin",
+      "nazoauth"
+    ],
+    "exit": 0,
+    "seconds": 0.8255754359997809,
+    "log": "evidence/pr230-revision-20261008/exact-final-ac51ace4-4.log",
+    "log_sha256": "89aa4769e54bb50d65a67dd340ec1c8feb3090a58fc5bd94727365ba94745770",
+    "test_results": []
+  },
+  {
+    "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "utc": "2026-10-08T03:50:12.956275+00:00",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 3.6228764560073614,
+    "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-0.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "test_results": []
+  },
+  {
+    "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "utc": "2026-10-08T03:50:46.719563+00:00",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "--keep-going",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 33.762894892832264,
+    "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-1.log",
+    "log_sha256": "9e69f34536a8951e685a05a6a26c53f5b7df32d30323d5c8990b7bebe67172d5",
+    "test_results": []
+  },
+  {
+    "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "utc": "2026-10-08T03:51:49.243659+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--all-features",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "http::admin::mtls_trust",
+      "--",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 62.523759180214256,
+    "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-2.log",
+    "log_sha256": "a0ecc04bec9679eaf5b8f8adbf581c9302880073855b639e75f52e0c59ee0ed4",
+    "test_results": [
+      {
+        "outcome": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 1448
+      }
+    ]
+  },
+  {
+    "sha": "7ef6f98d5988008b320468941767b96323aadc36",
+    "utc": "2026-10-08T03:54:31.750686+00:00",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--package",
+      "nazoauth",
+      "--bin",
+      "nazoauth"
+    ],
+    "exit": 0,
+    "seconds": 162.50670513277873,
+    "log": "/src/evidence/pr230-revision-20261008/bundle-final-7ef6f98d-3.log",
+    "log_sha256": "d354420ada51d801a6eb8b0f59e2a1c4aed4bb14ce36dd5bd3e411635825448e",
+    "test_results": []
+  }
+]

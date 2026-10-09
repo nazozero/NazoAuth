@@ -6,21 +6,21 @@ row per interval. Any dependency error is recorded as a *_err field — the
 ledger_check.py `sampler` mode treats every *_err as a validation failure,
 so a metrics 404 or a SQL error can never pass silently.
 
-Env: RUN_ID (required), DB_URL, VK_URL, APP_METRICS, OUT_PATH, INTERVAL_S.
+Env: RUN_ID (required), DB_URL, VK_URL, OUT_PATH, INTERVAL_S.
 """
 import hashlib
 import json
 import os
 import sys
 import time
-import urllib.request
 
 import psycopg
 import redis
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 
 DB = os.environ.get("DB_URL", "postgresql://postgres:postgres@postgres:5432/oauth")
 VK = os.environ.get("VK_URL", "redis://valkey:6379/0")
-APP = os.environ.get("APP_METRICS", "http://nazoauth:8000/__perf/metrics")
 OUT = os.environ.get("OUT_PATH", "/perf-state/soak-metrics.jsonl")
 INTERVAL = float(os.environ.get("INTERVAL_S", "10"))
 RUN_ID = os.environ.get("RUN_ID", "unset")
@@ -34,14 +34,63 @@ def self_sha256():
         return "unavailable"
 
 
+def audit_event_predicates(connection):
+    """Called once per sampler run, not once per reconnect/sample.
+
+    This script is mounted standalone as /tmp/sampler.py, so it cannot import
+    the host-only single_instance_scaling helper.
+    """
+    has_exported_at = connection.execute(
+        "SELECT EXISTS (SELECT 1 FROM pg_attribute"
+        " WHERE attrelid = 'public.security_audit_events'::regclass"
+        " AND attname = 'exported_at' AND attnum > 0 AND NOT attisdropped)"
+    ).fetchone()[0]
+    if not isinstance(has_exported_at, bool):
+        raise ValueError("invalid audit schema probe result")
+    if has_exported_at:
+        return "exported_at IS NULL", "exported_at IS NOT NULL"
+    return "TRUE", "FALSE"
+
+
+def audit_snapshot(connection, predicates, include_totals=False):
+    pending_where, exported_where = predicates
+    result = dict(zip(
+        ["pending", "chain_head", "anchor"],
+        connection.execute(
+            "SELECT (SELECT count(*) FROM security_audit_events WHERE "
+            + pending_where + "), last_sequence, anchor_sequence "
+            "FROM security_audit_chain_state").fetchone()))
+    if include_totals:
+        # ACKed rows are retained decision facts. Count the full retained
+        # relation only on the existing sparse diagnostics cadence.
+        total, exported_retained = connection.execute(
+            "SELECT count(*), count(*) FILTER (WHERE " + exported_where + ")"
+            " FROM security_audit_events").fetchone()
+        result.update(total=total, exported_retained=exported_retained)
+    return result
+
+
 def main():
     out = open(OUT, "a", buffering=1)
-    r = redis.Redis.from_url(VK, decode_responses=True)
+    r = redis.Redis.from_url(
+        VK,
+        decode_responses=True,
+        protocol=2,
+        socket_timeout=None,
+        socket_connect_timeout=None,
+        socket_keepalive=False,
+        max_connections=2**31,
+        retry=Retry(NoBackoff(), retries=0),
+    )
     out.write(json.dumps({
         "kind": "meta", "run_id": RUN_ID, "script_sha256": self_sha256(),
-        "db": DB.split("@")[-1], "app_metrics": APP,
+        "db": DB.split("@")[-1], "collection_contract": "blackbox-db-v1",
+        "application_pool_status": "UNAVAILABLE", "in_process_queue_status": "UNVERIFIED",
         "started_at": int(time.time()),
     }) + "\n")
+    next_issuance_count = 0.0
+    next_audit_count = 0.0
+    audit_predicates = None  # Survives the per-iteration connection lifecycle.
     while True:
         row = {"ts": int(time.time())}
         try:
@@ -125,6 +174,32 @@ def main():
                         "  FROM oauth_refresh_spent_tokens"
                         "  GROUP BY tenant_id,token_family_id) s)"
                     ).fetchone()))
+                # Indexed oldest-due probe on every tick. Exact backlog counts
+                # are deliberately sparse: counting a large backlog on every
+                # metrics tick would add the work this probe is diagnosing.
+                row["issuance_maintenance"] = dict(zip(
+                    ["sampled_at_s", "oldest_due_at_s"],
+                    c.execute(
+                        "SELECT extract(epoch FROM statement_timestamp())::float8,"
+                        " (SELECT extract(epoch FROM retain_until)::float8"
+                        "  FROM oauth_token_issuances"
+                        "  WHERE retain_until <= statement_timestamp()"
+                        "  ORDER BY retain_until LIMIT 1)"
+                    ).fetchone()))
+                if time.monotonic() >= next_issuance_count:
+                    count_started = time.monotonic()
+                    sampled_at, due = c.execute(
+                        "SELECT extract(epoch FROM statement_timestamp())::float8,"
+                        " count(*) FROM oauth_token_issuances"
+                        " WHERE retain_until <= statement_timestamp()"
+                    ).fetchone()
+                    row["issuance_maintenance"].update({
+                        "due_count": due,
+                        "due_count_sampled_at_s": sampled_at,
+                        "due_count_query_ms": round(
+                            (time.monotonic() - count_started) * 1000, 3),
+                    })
+                    next_issuance_count = time.monotonic() + 60
                 # ---- storage: db total + per-relation bytes ----------------
                 row["db_bytes"] = c.execute(
                     "SELECT pg_database_size(current_database())").fetchone()[0]
@@ -190,16 +265,26 @@ def main():
                         "   'oauth_refresh_families','oauth_refresh_spent_tokens',"
                         "   'oauth_refresh_contracts','oauth_token_issuances',"
                         "   'access_token_revocations','security_audit_events',"
-                        "   'security_audit_event_outbox',"
                         "   'security_audit_chain_entries')"
                     ).fetchall()}
-                row["audit"] = dict(zip(
-                    ["pending", "chain_head", "anchor"],
-                    c.execute(
-                        "SELECT (SELECT count(*) FROM "
-                        " security_audit_event_outbox),"
-                        " last_sequence, anchor_sequence "
-                        "FROM security_audit_chain_state").fetchone()))
+                if audit_predicates is None:
+                    audit_predicates = audit_event_predicates(c)
+                include_audit_totals = time.monotonic() >= next_audit_count
+                row["audit"] = audit_snapshot(c, audit_predicates, include_audit_totals)
+                if include_audit_totals:
+                    row["audit"]["counts_sampled_at_s"] = int(time.time())
+                    next_audit_count = time.monotonic() + 60
+                # Database view of the task runtime role only. These counts
+                # are not application pool checkout or in-process queue counts.
+                row["runtime_role_activity"] = [
+                    dict(zip(["state", "wait_event_type", "wait_event", "backends"], values))
+                    for values in c.execute(
+                        "SELECT state, wait_event_type, wait_event, count(*) "
+                        "FROM pg_stat_activity WHERE usename=%s "
+                        "AND datname=current_database() AND backend_type='client backend' "
+                        "GROUP BY state, wait_event_type, wait_event "
+                        "ORDER BY state, wait_event_type, wait_event",
+                        ("nazoauth_perf_runtime",)).fetchall()]
                 # PG wait-event distribution by type: distinguishes
                 # connection-hold vs in-server wait when pool wait is high.
                 row["pg_waits"] = {
@@ -226,25 +311,6 @@ def main():
             }
         except Exception as e:
             row["vk_err"] = str(e)[:120]
-        try:
-            req = urllib.request.Request(APP, headers={"Host": "127.0.0.1"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"metrics status {resp.status}")
-                pm = json.load(resp)
-            p = pm["db_pool"]
-            row["pool"] = {
-                "acq": p["acquire_count"],
-                "wait_ns": p["wait_nanos_total"],
-                "wait_max_ns": p["wait_nanos_max"],
-                "waiting": p.get("waiting_acquisitions"),
-                "size": p.get("connections"),
-                "idle": p.get("idle_connections"),
-            }
-            if "audit_queue" in pm:
-                row["audit_queue"] = pm["audit_queue"]
-        except Exception as e:
-            row["app_err"] = str(e)[:120]
         out.write(json.dumps(row) + "\n")
         time.sleep(INTERVAL)
 

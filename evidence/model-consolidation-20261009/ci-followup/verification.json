@@ -1,0 +1,87 @@
+{
+  "source_sha": "e195844aad31a4cb8796dd751d94424e5e4413cb",
+  "counts": {
+    "pg-unit": [
+      [
+        "78",
+        "0",
+        "0"
+      ]
+    ],
+    "identity-real": [
+      [
+        "61",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "exit": 0,
+      "seconds": 2.3437727629207075
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-features",
+        "-p",
+        "nazo-postgres",
+        "--lib",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 28.418789668940008
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-features",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "identity_repositories",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 33.506784117314965
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 17.72033053310588
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 2.3069828427396715
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "label": "pr230-perf-b04r-20261009",
+  "key": "B04R",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.456,
+  "total_elapsed_s": 297.614,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

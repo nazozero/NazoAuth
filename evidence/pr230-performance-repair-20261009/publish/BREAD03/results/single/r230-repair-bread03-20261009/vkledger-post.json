@@ -1,0 +1,73 @@
+{
+ "census_exact": {
+  "oauth:client_assertion": 900,
+  "oauth:dpop": 1500,
+  "oauth:jar": 7710,
+  "oauth:rate": 6,
+  "oauth:session": 216,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 10333,
+  "evicted_keys": 0,
+  "expired_keys": 17,
+  "keyspace_hits": 174993,
+  "keyspace_misses": 734,
+  "mem_fragmentation_ratio": 2.92,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 5122792,
+  "used_memory_rss": 14954496
+ },
+ "keys_seen": 10333,
+ "mem_bytes_sampled": {
+  "oauth:client_assertion": 128000,
+  "oauth:dpop": 117120,
+  "oauth:jar": 131200,
+  "oauth:rate": 1536,
+  "oauth:session": 102592,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:rate": 6,
+  "oauth:session": 216,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "r230-repair-bread03-20261009",
+  "sample_per_cat": 400,
+  "sampled_at": 1791516768,
+  "scan_ms": 34,
+  "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+ },
+ "sampled_per_cat": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:rate": 6,
+  "oauth:session": 216,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 10333,
+ "ttl_buckets_sampled": {
+  "oauth:client_assertion|1m+": 101,
+  "oauth:client_assertion|2m+": 162,
+  "oauth:client_assertion|3m+": 137,
+  "oauth:dpop|2m+": 74,
+  "oauth:dpop|3m+": 148,
+  "oauth:dpop|4m+": 154,
+  "oauth:dpop|5m+": 24,
+  "oauth:jar|1m+": 162,
+  "oauth:jar|2m+": 197,
+  "oauth:jar|3m+": 41,
+  "oauth:rate|0m+": 6,
+  "oauth:session|477m+": 111,
+  "oauth:session|478m+": 60,
+  "oauth:session|479m+": 45,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

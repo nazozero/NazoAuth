@@ -1,0 +1,212 @@
+{
+  "scope": "application container process 1 threads only; scheduling delay does not identify competing workload or exclusive root cause",
+  "elapsed_s": 25.96904230117798,
+  "total_run_s": 29.783435792,
+  "total_thread_runqueue_s": 115.24960927099998,
+  "threads": [
+    {
+      "tid": "1",
+      "run_s": 0.0,
+      "runqueue_s": 0.0,
+      "schedules": 0
+    },
+    {
+      "tid": "10",
+      "run_s": 0.006602457,
+      "runqueue_s": 0.055580215,
+      "schedules": 6
+    },
+    {
+      "tid": "11",
+      "run_s": 1.038854362,
+      "runqueue_s": 3.278953766,
+      "schedules": 27698
+    },
+    {
+      "tid": "12",
+      "run_s": 0.798209347,
+      "runqueue_s": 2.531652391,
+      "schedules": 21513
+    },
+    {
+      "tid": "13",
+      "run_s": 0.961238344,
+      "runqueue_s": 3.037560139,
+      "schedules": 26624
+    },
+    {
+      "tid": "14",
+      "run_s": 0.006701615,
+      "runqueue_s": 0.055417888,
+      "schedules": 5
+    },
+    {
+      "tid": "15",
+      "run_s": 0.842974695,
+      "runqueue_s": 2.639878558,
+      "schedules": 21652
+    },
+    {
+      "tid": "16",
+      "run_s": 0.008006165,
+      "runqueue_s": 0.041573354,
+      "schedules": 18
+    },
+    {
+      "tid": "17",
+      "run_s": 0.920168749,
+      "runqueue_s": 3.116772433,
+      "schedules": 22917
+    },
+    {
+      "tid": "18",
+      "run_s": 0.955444539,
+      "runqueue_s": 3.247322219,
+      "schedules": 25420
+    },
+    {
+      "tid": "19",
+      "run_s": 0.595898909,
+      "runqueue_s": 1.948490015,
+      "schedules": 16496
+    },
+    {
+      "tid": "20",
+      "run_s": 0.608931819,
+      "runqueue_s": 1.860407003,
+      "schedules": 14935
+    },
+    {
+      "tid": "21",
+      "run_s": 0.990884765,
+      "runqueue_s": 3.247702926,
+      "schedules": 25901
+    },
+    {
+      "tid": "22",
+      "run_s": 0.007793192,
+      "runqueue_s": 0.076601371,
+      "schedules": 26
+    },
+    {
+      "tid": "39",
+      "run_s": 1.357374792,
+      "runqueue_s": 5.3119966,
+      "schedules": 14727
+    },
+    {
+      "tid": "40",
+      "run_s": 1.354837663,
+      "runqueue_s": 5.524015299,
+      "schedules": 14749
+    },
+    {
+      "tid": "41",
+      "run_s": 1.354447544,
+      "runqueue_s": 5.493386468,
+      "schedules": 14440
+    },
+    {
+      "tid": "42",
+      "run_s": 1.356406647,
+      "runqueue_s": 5.529268985,
+      "schedules": 14553
+    },
+    {
+      "tid": "43",
+      "run_s": 1.336982775,
+      "runqueue_s": 5.922666692,
+      "schedules": 14338
+    },
+    {
+      "tid": "44",
+      "run_s": 1.365491258,
+      "runqueue_s": 5.367759079,
+      "schedules": 14728
+    },
+    {
+      "tid": "45",
+      "run_s": 1.362382013,
+      "runqueue_s": 5.478879466,
+      "schedules": 14639
+    },
+    {
+      "tid": "46",
+      "run_s": 1.350238815,
+      "runqueue_s": 5.493072132,
+      "schedules": 14471
+    },
+    {
+      "tid": "47",
+      "run_s": 1.358314411,
+      "runqueue_s": 5.635996169,
+      "schedules": 14616
+    },
+    {
+      "tid": "48",
+      "run_s": 1.343192491,
+      "runqueue_s": 5.880588768,
+      "schedules": 14322
+    },
+    {
+      "tid": "49",
+      "run_s": 1.358469051,
+      "runqueue_s": 5.320311394,
+      "schedules": 14446
+    },
+    {
+      "tid": "50",
+      "run_s": 1.349265483,
+      "runqueue_s": 5.412556778,
+      "schedules": 14717
+    },
+    {
+      "tid": "51",
+      "run_s": 1.355094032,
+      "runqueue_s": 5.781040987,
+      "schedules": 14548
+    },
+    {
+      "tid": "52",
+      "run_s": 1.355869783,
+      "runqueue_s": 5.636964965,
+      "schedules": 14387
+    },
+    {
+      "tid": "53",
+      "run_s": 1.351463236,
+      "runqueue_s": 5.419601581,
+      "schedules": 14965
+    },
+    {
+      "tid": "54",
+      "run_s": 1.353155769,
+      "runqueue_s": 5.526540454,
+      "schedules": 14568
+    },
+    {
+      "tid": "55",
+      "run_s": 0.044036311,
+      "runqueue_s": 0.285366792,
+      "schedules": 544
+    },
+    {
+      "tid": "7",
+      "run_s": 0.00695142,
+      "runqueue_s": 0.059824815,
+      "schedules": 10
+    },
+    {
+      "tid": "8",
+      "run_s": 0.320161115,
+      "runqueue_s": 0.99078946,
+      "schedules": 7388
+    },
+    {
+      "tid": "9",
+      "run_s": 0.007592225,
+      "runqueue_s": 0.041070109,
+      "schedules": 9
+    }
+  ]
+}

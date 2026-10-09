@@ -2,13 +2,16 @@ use crate::{
     DbPool,
     convert::identity,
     get_conn,
-    repositories::audit::insert_identity_security_event,
+    repositories::{
+        audit::insert_identity_security_event,
+        audit_ledger::append_fresh_security_audit_on_connection,
+    },
     rows::identity::{AuthenticationIdentityRow, PrincipalRow, PublicAccountRow, SubjectClaimsRow},
-    schema::{oauth_refresh_families, user_client_grants, users},
+    schema::{oauth_refresh_families, oauth_subject_bindings, user_client_grants, users},
 };
 use diesel::{
-    ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl, SelectableHelper,
-    sql_query, sql_types,
+    BoolExpressionMethods, ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl,
+    SelectableHelper, sql_query, sql_types,
 };
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
@@ -59,16 +62,20 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    users::table
+                        .find(user_id.as_uuid())
+                        .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                        .select(PublicAccountRow::as_select())
+                        .first(connection)
+                        .await
+                        .optional()
+                })
+            })
             .await
-            .map_err(|_| RepositoryError::Unavailable)?;
-        users::table
-            .find(user_id.as_uuid())
-            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-            .select(PublicAccountRow::as_select())
-            .first(&mut connection)
-            .await
-            .optional()
+            .map_err(|_| RepositoryError::Unavailable)?
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
             .map(PublicAccount::try_from)
             .transpose()
@@ -80,16 +87,20 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Option<Principal>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    users::table
+                        .find(user_id.as_uuid())
+                        .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                        .select(PrincipalRow::as_select())
+                        .first(connection)
+                        .await
+                        .optional()
+                })
+            })
             .await
-            .map_err(|_| RepositoryError::Unavailable)?;
-        users::table
-            .find(user_id.as_uuid())
-            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-            .select(PrincipalRow::as_select())
-            .first(&mut connection)
-            .await
-            .optional()
+            .map_err(|_| RepositoryError::Unavailable)?
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
             .map(identity::principal_row)
             .transpose()
@@ -100,22 +111,47 @@ impl UserRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> Result<Option<SubjectClaims>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        token_subject: &str,
+    ) -> Result<Option<(SubjectClaims, i64, bool)>, RepositoryError> {
+        let token_subject = token_subject.to_owned();
+        let snapshot = self
+            .pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    // Claims, their epoch and private-subject ownership must share one
+                    // snapshot. Do not filter by owner: a different owner is a collision,
+                    // not a missing binding. Public subjects need no binding lookup.
+                    let private_subject = token_subject != user_id.as_uuid().to_string();
+                    let bound_user = oauth_subject_bindings::table
+                        .filter(oauth_subject_bindings::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(
+                            oauth_subject_bindings::subject
+                                .eq(token_subject)
+                                .and::<_, sql_types::Bool>(private_subject),
+                        )
+                        .select(oauth_subject_bindings::user_id)
+                        .single_value();
+                    users::table
+                        .find(user_id.as_uuid())
+                        .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(users::is_active.eq(true))
+                        .select((
+                            SubjectClaimsRow::as_select(),
+                            users::access_token_epoch,
+                            bound_user,
+                        ))
+                        .first::<(SubjectClaimsRow, i64, Option<Uuid>)>(connection)
+                        .await
+                        .optional()
+                        .map_err(|error| RepositoryError::Unexpected(error.to_string()))
+                })
+            })
             .await
-            .map_err(|_| RepositoryError::Unavailable)?;
-        users::table
-            .find(user_id.as_uuid())
-            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-            .filter(users::is_active.eq(true))
-            .select(SubjectClaimsRow::as_select())
-            .first(&mut connection)
-            .await
-            .optional()
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-            .map(identity::active_subject_claims)
+            .map_err(|_| RepositoryError::Unavailable)??;
+
+        snapshot
+            .map(|(row, epoch, bound_user)| prepare_subject_claims(row, epoch, bound_user))
             .transpose()
-            .map_err(|error| RepositoryError::Consistency(error.0))
     }
 
     /// Narrow active-principal read: same tenant, same user, `is_active`, and
@@ -208,6 +244,54 @@ impl UserRepository {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
+        Self::create_on_connection(&mut connection, new_user).await
+    }
+
+    pub async fn create_with_required_audit(
+        &self,
+        new_user: NewUser,
+        actor_id: UserId,
+        source_ip_hash: String,
+    ) -> Result<PublicAccount, RepositoryError> {
+        let mut guard = crate::pool::DiscardOnDrop(Some(
+            get_conn(&self.pool)
+                .await
+                .map_err(|_| RepositoryError::Unavailable)?,
+        ));
+        let result = diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
+            guard.connection(), async move |connection| {
+                let tenant = new_user.tenant;
+                let principals = users::table
+                    .filter(users::id.eq(actor_id.as_uuid()))
+                    .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                    .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
+                    .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
+                    .select(PrincipalRow::as_select()).for_update()
+                    .load::<PrincipalRow>(connection).await?
+                    .into_iter().map(identity::principal_row)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
+                if !principals.iter().any(|actor| actor.active
+                    && actor.admin_level().is_some_and(|level| level > 0)) {
+                    return Err(AdminAuthorizedUpdateError::Consistency(
+                        "admin user creation actor is no longer authorized in the target context".to_owned()));
+                }
+                let written = Self::create_on_connection(connection, new_user).await
+                    .map_err(AdminAuthorizedUpdateError::Repository)?;
+                append_admin_user_audit(connection, "admin_user_created", &written, actor_id, &source_ip_hash).await?;
+                Ok(written)
+            },
+        ).await.map_err(AdminAuthorizedUpdateError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
+    }
+
+    async fn create_on_connection(
+        connection: &mut AsyncPgConnection,
+        new_user: NewUser,
+    ) -> Result<PublicAccount, RepositoryError> {
         let row = diesel::insert_into(users::table)
             .values((
                 users::tenant_id.eq(new_user.tenant.tenant_id.as_uuid()),
@@ -219,10 +303,18 @@ impl UserRepository {
                 users::email_verified.eq(new_user.email_verified),
             ))
             .returning(PublicAccountRow::as_returning())
-            .get_result(&mut connection)
+            .load::<PublicAccountRow>(connection)
             .await
             .map_err(map_error)?;
-        row.try_into()
+        let mut rows = row;
+        if rows.len() != 1 {
+            return Err(RepositoryError::Consistency(
+                "user insert did not return exactly one complete account".to_owned(),
+            ));
+        }
+        rows.pop()
+            .expect("one completely received account")
+            .try_into()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
     }
     pub async fn update_profile(
@@ -259,8 +351,9 @@ impl UserRepository {
             users::address_region.eq(profile.address.region),
             users::address_postal_code.eq(profile.address.postal_code),
             users::address_country.eq(profile.address.country),
-            users::phone_number.eq(profile.phone_number),
-            users::phone_number_verified.eq(profile.phone_number_verified),
+            users::phone_number.eq(profile.phone_number.as_deref()),
+            users::phone_number_verified.eq(users::phone_number_verified
+                .and(users::phone_number.is_not_distinct_from(profile.phone_number.as_deref()))),
             users::updated_at.eq(diesel::dsl::now),
         ))
         .returning(PublicAccountRow::as_returning())
@@ -339,89 +432,178 @@ impl UserRepository {
         target_id: UserId,
         update: AdminUserUpdate,
     ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        self.admin_update_owned(tenant_id, actor_id, target_id, update, None)
             .await
-            .map_err(|_| RepositoryError::Unavailable)?;
-        diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
-            &mut connection,
-            async move |connection| {
-                // A stable lock order prevents two concurrent hierarchy updates from
-                // deadlocking when their actor and target are reversed.
-                let accounts = users::table
-                    .filter(users::id.eq_any([actor_id.as_uuid(), target_id.as_uuid()]))
-                    .order(users::id.asc())
-                    .select(PublicAccountRow::as_select())
-                    .for_update()
-                    .load::<PublicAccountRow>(connection)
-                    .await?;
-                let mut accounts = accounts
-                    .into_iter()
-                    .map(PublicAccount::try_from)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
-                let actor = accounts
-                    .iter()
-                    .find(|account| account.id() == actor_id.as_uuid())
-                    .cloned();
-                let target = accounts
-                    .iter_mut()
-                    .find(|account| account.id() == target_id.as_uuid())
-                    .cloned();
-                let Some(actor) = actor.filter(|actor| actor.tenant().tenant_id == tenant_id)
-                else {
-                    insert_identity_security_event(
-                        connection,
-                        &admin_event(
-                            tenant_id,
-                            None,
-                            None,
-                            IdentitySecurityOutcome::Denied,
-                            IdentitySecurityReason::ActorNotAuthorized,
-                        ),
-                    )
-                    .await
-                    .map_err(AdminAuthorizedUpdateError::Repository)?;
-                    return Ok(AdminUserUpdateOutcome::Denied(
-                        AdminPolicyError::ActorNotAuthorized,
-                    ));
-                };
-                let Some(target) = target else {
-                    insert_identity_security_event(
-                        connection,
-                        &admin_event(
-                            tenant_id,
-                            Some(actor_id),
-                            None,
-                            IdentitySecurityOutcome::Denied,
-                            IdentitySecurityReason::TargetNotFound,
-                        ),
-                    )
-                    .await
-                    .map_err(AdminAuthorizedUpdateError::Repository)?;
-                    return Ok(AdminUserUpdateOutcome::TargetNotFound);
-                };
-                let decision = authorize_admin_update(&actor.principal, &target.principal, &update);
-                let resolved = match decision {
-                    Ok(resolved) => resolved,
-                    Err(reason) => {
-                        let same_tenant = target.tenant().tenant_id == tenant_id;
+    }
+
+    pub async fn admin_update_with_required_audit(
+        &self,
+        tenant: TenantContext,
+        actor_id: UserId,
+        target_id: UserId,
+        update: AdminUserUpdate,
+        source_ip_hash: String,
+    ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
+        self.admin_update_owned(
+            tenant.tenant_id,
+            actor_id,
+            target_id,
+            update,
+            Some((tenant, source_ip_hash)),
+        )
+        .await
+    }
+
+    async fn admin_update_owned(
+        &self,
+        tenant_id: TenantId,
+        actor_id: UserId,
+        target_id: UserId,
+        update: AdminUserUpdate,
+        required_audit: Option<(TenantContext, String)>,
+    ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
+        let mut guard = crate::pool::DiscardOnDrop(Some(
+            get_conn(&self.pool)
+                .await
+                .map_err(|_| RepositoryError::Unavailable)?,
+        ));
+        let result =
+            diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
+                guard.connection(),
+                async move |connection| {
+                    // A stable lock order prevents two concurrent hierarchy updates from
+                    // deadlocking when their actor and target are reversed.
+                    let accounts = users::table
+                        .filter(users::id.eq_any([actor_id.as_uuid(), target_id.as_uuid()]))
+                        .order(users::id.asc())
+                        .select(PublicAccountRow::as_select())
+                        .for_update()
+                        .load::<PublicAccountRow>(connection)
+                        .await?;
+                    let mut accounts = accounts
+                        .into_iter()
+                        .map(PublicAccount::try_from)
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
+                    let actor = accounts
+                        .iter()
+                        .find(|account| account.id() == actor_id.as_uuid())
+                        .cloned();
+                    let target = accounts
+                        .iter_mut()
+                        .find(|account| account.id() == target_id.as_uuid())
+                        .cloned();
+                    let Some(actor) = actor.filter(|actor| {
+                        actor.tenant().tenant_id == tenant_id
+                            && required_audit
+                                .as_ref()
+                                .is_none_or(|(tenant, _)| actor.tenant() == *tenant)
+                    }) else {
+                        insert_identity_security_event(
+                            connection,
+                            &admin_event(
+                                tenant_id,
+                                None,
+                                None,
+                                IdentitySecurityOutcome::Denied,
+                                IdentitySecurityReason::ActorNotAuthorized,
+                            ),
+                        )
+                        .await
+                        .map_err(AdminAuthorizedUpdateError::Repository)?;
+                        return Ok(AdminUserUpdateOutcome::Denied(
+                            AdminPolicyError::ActorNotAuthorized,
+                        ));
+                    };
+                    let Some(target) = target else {
                         insert_identity_security_event(
                             connection,
                             &admin_event(
                                 tenant_id,
                                 Some(actor_id),
-                                same_tenant.then_some(target_id),
+                                None,
                                 IdentitySecurityOutcome::Denied,
-                                admin_denial_reason(reason),
+                                IdentitySecurityReason::TargetNotFound,
                             ),
                         )
                         .await
                         .map_err(AdminAuthorizedUpdateError::Repository)?;
-                        return Ok(AdminUserUpdateOutcome::Denied(reason));
+                        return Ok(AdminUserUpdateOutcome::TargetNotFound);
+                    };
+                    let decision = if required_audit
+                        .as_ref()
+                        .is_some_and(|(tenant, _)| target.tenant() != *tenant)
+                    {
+                        Err(AdminPolicyError::CrossTenant)
+                    } else {
+                        authorize_admin_update(&actor.principal, &target.principal, &update)
+                    };
+                    let resolved = match decision {
+                        Ok(resolved) => resolved,
+                        Err(reason) => {
+                            let same_tenant = target.tenant().tenant_id == tenant_id;
+                            insert_identity_security_event(
+                                connection,
+                                &admin_event(
+                                    tenant_id,
+                                    Some(actor_id),
+                                    same_tenant.then_some(target_id),
+                                    IdentitySecurityOutcome::Denied,
+                                    admin_denial_reason(reason),
+                                ),
+                            )
+                            .await
+                            .map_err(AdminAuthorizedUpdateError::Repository)?;
+                            return Ok(AdminUserUpdateOutcome::Denied(reason));
+                        }
+                    };
+                    if update.role.is_none()
+                        && update.admin_level.is_none()
+                        && update.active.is_none()
+                    {
+                        insert_identity_security_event(
+                            connection,
+                            &admin_event(
+                                tenant_id,
+                                Some(actor_id),
+                                Some(target_id),
+                                IdentitySecurityOutcome::Success,
+                                IdentitySecurityReason::AdminUpdated,
+                            ),
+                        )
+                        .await
+                        .map_err(AdminAuthorizedUpdateError::Repository)?;
+                        if let Some((_, source_ip_hash)) = &required_audit {
+                            append_admin_user_audit(
+                                connection,
+                                "admin_user_updated",
+                                &target,
+                                actor_id,
+                                source_ip_hash,
+                            )
+                            .await?;
+                        }
+                        return Ok(AdminUserUpdateOutcome::Updated(Box::new(target)));
                     }
-                };
-                if update.role.is_none() && update.admin_level.is_none() && update.active.is_none()
-                {
+                    let updated = diesel::update(users::table.find(target_id.as_uuid()))
+                        .set((
+                            users::role.eq(resolved.role),
+                            users::admin_level.eq(resolved.admin_level),
+                            users::is_active.eq(resolved.active),
+                            users::updated_at.eq(diesel::dsl::now),
+                        ))
+                        .returning(PublicAccountRow::as_returning())
+                        .load::<PublicAccountRow>(connection)
+                        .await?;
+                    let mut updated = updated;
+                    if updated.len() != 1 {
+                        return Err(AdminAuthorizedUpdateError::Consistency(
+                            "admin update did not return exactly one complete account".to_owned(),
+                        ));
+                    }
+                    let updated = updated
+                        .pop()
+                        .expect("one completely received updated account");
                     insert_identity_security_event(
                         connection,
                         &admin_event(
@@ -434,39 +616,30 @@ impl UserRepository {
                     )
                     .await
                     .map_err(AdminAuthorizedUpdateError::Repository)?;
-                    return Ok(AdminUserUpdateOutcome::Updated(Box::new(target)));
-                }
-                let updated = diesel::update(users::table.find(target_id.as_uuid()))
-                    .set((
-                        users::role.eq(resolved.role),
-                        users::admin_level.eq(resolved.admin_level),
-                        users::is_active.eq(resolved.active),
-                        users::updated_at.eq(diesel::dsl::now),
-                    ))
-                    .returning(PublicAccountRow::as_returning())
-                    .get_result::<PublicAccountRow>(connection)
-                    .await?;
-                insert_identity_security_event(
-                    connection,
-                    &admin_event(
-                        tenant_id,
-                        Some(actor_id),
-                        Some(target_id),
-                        IdentitySecurityOutcome::Success,
-                        IdentitySecurityReason::AdminUpdated,
-                    ),
-                )
-                .await
-                .map_err(AdminAuthorizedUpdateError::Repository)?;
-                let updated = PublicAccount::try_from(updated)
-                    .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
-                Ok(AdminUserUpdateOutcome::Updated(Box::new(updated)))
-            },
-        )
-        .await
-        .map_err(AdminAuthorizedUpdateError::into_repository)
+                    let updated = PublicAccount::try_from(updated)
+                        .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
+                    if let Some((_, source_ip_hash)) = &required_audit {
+                        append_admin_user_audit(
+                            connection,
+                            "admin_user_updated",
+                            &updated,
+                            actor_id,
+                            source_ip_hash,
+                        )
+                        .await?;
+                    }
+                    Ok(AdminUserUpdateOutcome::Updated(Box::new(updated)))
+                },
+            )
+            .await
+            .map_err(AdminAuthorizedUpdateError::into_repository);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn set_tenant_admin_authorized(
         &self,
         control_tenant_id: TenantId,
@@ -474,6 +647,7 @@ impl UserRepository {
         target_tenant_id: TenantId,
         target_id: UserId,
         admin_level: i32,
+        source_ip_hash: String,
     ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
         if admin_level < 0 || control_tenant_id == target_tenant_id {
             return Ok(AdminUserUpdateOutcome::Denied(
@@ -508,76 +682,77 @@ impl UserRepository {
                             .admin_level()
                             .is_some_and(|level| level >= 2)
                 });
-                if !authorized {
-                    let persisted_actor = actor.map(|_| actor_id);
+                let (outcome, reason) = if !authorized {
+                    let persisted_actor = actor
+                        .filter(|account| account.tenant().tenant_id == control_tenant_id)
+                        .map(|_| actor_id);
                     insert_identity_security_event(
                         connection,
                         &admin_event(
                             control_tenant_id,
                             persisted_actor,
-                            Some(target_id),
+                            None,
                             IdentitySecurityOutcome::Denied,
                             IdentitySecurityReason::ActorNotAuthorized,
                         ),
                     )
                     .await
                     .map_err(AdminAuthorizedUpdateError::Repository)?;
-                    return Ok(AdminUserUpdateOutcome::Denied(
-                        AdminPolicyError::ActorNotAuthorized,
-                    ));
-                }
-                let Some(target) = accounts.iter().find(|account| {
+                    (AdminUserUpdateOutcome::Denied(AdminPolicyError::ActorNotAuthorized), "actor_not_authorized")
+                } else if let Some(target) = accounts.iter().find(|account| {
                     account.id() == target_id.as_uuid()
                         && account.tenant().tenant_id == target_tenant_id
-                }) else {
+                }) {
+                    let (role, level) = if admin_level == 0 { ("user", 0) } else { ("admin", admin_level) };
+                    let updated = diesel::update(
+                        users::table
+                            .filter(users::id.eq(target.id()))
+                            .filter(users::tenant_id.eq(target_tenant_id.as_uuid())),
+                    )
+                    .set((users::role.eq(role), users::admin_level.eq(level), users::updated_at.eq(diesel::dsl::now)))
+                    .returning(PublicAccountRow::as_returning())
+                    .get_result::<PublicAccountRow>(connection)
+                    .await?;
+                    // Identity events are tenant-local. Cross-tenant actor
+                    // attribution belongs to the atomic security ledger below.
                     insert_identity_security_event(
                         connection,
-                        &admin_event(
-                            target_tenant_id,
-                            Some(actor_id),
-                            None,
-                            IdentitySecurityOutcome::Denied,
-                            IdentitySecurityReason::TargetNotFound,
-                        ),
+                        &admin_event(target_tenant_id, None, Some(target_id), IdentitySecurityOutcome::Success, IdentitySecurityReason::AdminUpdated),
                     )
                     .await
                     .map_err(AdminAuthorizedUpdateError::Repository)?;
-                    return Ok(AdminUserUpdateOutcome::TargetNotFound);
-                };
-                let (role, level) = if admin_level == 0 {
-                    ("user", 0)
+                    (AdminUserUpdateOutcome::Updated(Box::new(
+                        PublicAccount::try_from(updated).map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?,
+                    )), "admin_updated")
                 } else {
-                    ("admin", admin_level)
+                    insert_identity_security_event(
+                        connection,
+                        &admin_event(target_tenant_id, None, None, IdentitySecurityOutcome::Denied, IdentitySecurityReason::TargetNotFound),
+                    )
+                    .await
+                    .map_err(AdminAuthorizedUpdateError::Repository)?;
+                    (AdminUserUpdateOutcome::TargetNotFound, "target_not_found")
                 };
-                let updated = diesel::update(
-                    users::table
-                        .filter(users::id.eq(target.id()))
-                        .filter(users::tenant_id.eq(target_tenant_id.as_uuid())),
-                )
-                .set((
-                    users::role.eq(role),
-                    users::admin_level.eq(level),
-                    users::updated_at.eq(diesel::dsl::now),
-                ))
-                .returning(PublicAccountRow::as_returning())
-                .get_result::<PublicAccountRow>(connection)
-                .await?;
-                insert_identity_security_event(
-                    connection,
-                    &admin_event(
-                        target_tenant_id,
-                        Some(actor_id),
-                        Some(target_id),
-                        IdentitySecurityOutcome::Success,
-                        IdentitySecurityReason::AdminUpdated,
-                    ),
-                )
-                .await
-                .map_err(AdminAuthorizedUpdateError::Repository)?;
-                Ok(AdminUserUpdateOutcome::Updated(Box::new(
-                    PublicAccount::try_from(updated)
-                        .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?,
-                )))
+                let outcome_name = if matches!(outcome, AdminUserUpdateOutcome::Updated(_)) { "success" } else { "denied" };
+                append_fresh_security_audit_on_connection(connection, &nazo_persistence::SecurityAuditEvent {
+                    event_id: Uuid::now_v7(),
+                    event_type: "system_tenant_admin_updated".to_owned(),
+                    event_category: "administration".to_owned(),
+                    payload: serde_json::json!({
+                        "tenant_id": target_tenant_id.as_uuid(),
+                        "control_tenant_id": control_tenant_id.as_uuid(),
+                        "actor_tenant_id": actor.map(|account| account.tenant().tenant_id.as_uuid()),
+                        "actor_user_id": actor_id.as_uuid(),
+                        "target_tenant_id": target_tenant_id.as_uuid(),
+                        "target_user_id": target_id.as_uuid(),
+                        "admin_level": admin_level,
+                        "outcome": outcome_name,
+                        "reason": reason,
+                        "source_ip_hash": source_ip_hash,
+                    }),
+                    occurred_at: chrono::Utc::now(),
+                }).await?;
+                Ok(outcome)
             },
         )
         .await
@@ -844,6 +1019,27 @@ impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
         })
     }
 
+    fn update_authorized_with_required_audit(
+        &self,
+        tenant: TenantContext,
+        actor_id: UserId,
+        target_id: UserId,
+        update: AdminUserUpdate,
+        source_ip_hash: String,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, AdminUserUpdateOutcome> {
+        Box::pin(async move {
+            self.admin_update_with_required_audit(
+                tenant,
+                actor_id,
+                target_id,
+                update,
+                source_ip_hash,
+            )
+            .await
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn set_tenant_admin_authorized(
         &self,
         control_tenant_id: nazo_identity::TenantId,
@@ -851,6 +1047,7 @@ impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
         target_tenant_id: nazo_identity::TenantId,
         target_id: nazo_identity::UserId,
         admin_level: i32,
+        source_ip_hash: String,
     ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::AdminUserUpdateOutcome> {
         Box::pin(async move {
             UserRepository::set_tenant_admin_authorized(
@@ -860,6 +1057,7 @@ impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
                 target_tenant_id,
                 target_id,
                 admin_level,
+                source_ip_hash,
             )
             .await
         })
@@ -916,6 +1114,18 @@ impl nazo_identity::ports::RegistrationAccountRepositoryPort for UserRepository 
         user: nazo_identity::ports::NewUser,
     ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::PublicAccount> {
         Box::pin(async move { UserRepository::create(self, user).await })
+    }
+
+    fn create_user_with_required_audit(
+        &self,
+        user: NewUser,
+        actor_id: UserId,
+        source_ip_hash: String,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, PublicAccount> {
+        Box::pin(async move {
+            self.create_with_required_audit(user, actor_id, source_ip_hash)
+                .await
+        })
     }
 }
 
@@ -1014,4 +1224,48 @@ impl nazo_identity::ports::PasskeyAccountRepositoryPort for UserRepository {
             async move { UserRepository::public_account_by_id(self, tenant_id, user_id).await },
         )
     }
+}
+
+async fn append_admin_user_audit(
+    connection: &mut AsyncPgConnection,
+    event_type: &str,
+    account: &PublicAccount,
+    actor_id: UserId,
+    source_ip_hash: &str,
+) -> Result<(), diesel::result::Error> {
+    let tenant = account.tenant();
+    let role = match &account.principal.role {
+        nazo_identity::UserRole::User => "user",
+        nazo_identity::UserRole::Admin { .. } => "admin",
+    };
+    append_fresh_security_audit_on_connection(connection, &nazo_persistence::SecurityAuditEvent {
+        event_id: Uuid::now_v7(), event_type: event_type.to_owned(),
+        event_category: "administration".to_owned(),
+        payload: serde_json::json!({
+            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+            "event_category": "administration", "tenant_id": tenant.tenant_id.as_uuid(),
+            "realm_id": tenant.realm_id.as_uuid(), "organization_id": tenant.organization_id.as_uuid(),
+            "admin_user_id": actor_id.as_uuid(), "user_id": account.id(),
+            "role": role, "admin_level": account.principal.admin_level().unwrap_or(0),
+            "is_active": account.principal.active, "outcome": "success", "source_ip_hash": source_ip_hash,
+        }), occurred_at: chrono::Utc::now(),
+    }).await
+}
+
+/// Shared conversion for active claims read alone or in a refresh statement.
+/// An unexpected binding owner is a collision, never an absent binding.
+pub(super) fn prepare_subject_claims(
+    row: SubjectClaimsRow,
+    epoch: i64,
+    bound_user: Option<Uuid>,
+) -> Result<(SubjectClaims, i64, bool), RepositoryError> {
+    let user_id = row.id;
+    let claims = identity::active_subject_claims(row)
+        .map_err(|error| RepositoryError::Consistency(error.0))?;
+    if bound_user.is_some_and(|owner| owner != user_id) {
+        return Err(RepositoryError::Consistency(
+            "subject ownership collision".to_owned(),
+        ));
+    }
+    Ok((claims, epoch, bound_user.is_some()))
 }

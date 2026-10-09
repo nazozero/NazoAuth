@@ -1,0 +1,16 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-pr230-perf-a04r-20261009",
+    "sis-proc-pr230-perf-a04r-20261009",
+    "sis-sampler-pr230-perf-a04r-20261009",
+    "sis-side-argon2-pr230-perf-a04r-20261009",
+    "sis-side-fapi-pr230-perf-a04r-20261009",
+    "sis-side-meta-pr230-perf-a04r-20261009",
+    "sis-side-refresh-pr230-perf-a04r-20261009"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

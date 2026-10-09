@@ -91,7 +91,6 @@ async fn make_jwt_rejects_conflicting_sender_constraints_before_signing() {
             audiences: &audiences,
             scopes: &scopes,
             authorization_details: &authorization_details,
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 120,
             dpop_jkt: Some("jkt"),

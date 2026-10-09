@@ -1,0 +1,16 @@
+{
+  "cohort_size": 60001,
+  "terminal": {
+    "ts": 1791516290.264444,
+    "remaining": 0,
+    "eligible": 0,
+    "retained": 0,
+    "unexported": 0,
+    "last_retain": null,
+    "last_exported": null
+  },
+  "same_instance": true,
+  "last_retain": 1791516242.912406,
+  "maintenance_log": "application-ledger-maintenance.log",
+  "status": "ZERO_REQUIRES_COMPLETED_CYCLE_CORRELATION"
+}

@@ -65,7 +65,6 @@ fn client() -> ClientRow {
             backchannel_token_delivery_mode: "poll".to_owned(),
             backchannel_client_notification_endpoint: None,
             backchannel_authentication_request_signing_alg: None,
-            backchannel_user_code_parameter: false,
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             subject_type: "public".to_owned(),
@@ -455,8 +454,7 @@ fn pki_certificate_requires_the_selected_trust_anchor_and_valid_chain() {
         .signed_by(&KeyPair::generate().unwrap(), &intermediate)
         .unwrap();
     let mut certificate = certificate_der_identity(leaf.der()).unwrap();
-    certificate
-        .certificate_chain_der
+    std::sync::Arc::make_mut(&mut certificate.certificate_chain_der)
         .push(intermediate.der().to_vec());
     assert!(certificate_chain_trusted(&certificate, &root.pem()));
     assert!(!certificate_chain_trusted(&certificate, &other_root.pem()));
@@ -465,7 +463,7 @@ fn pki_certificate_requires_the_selected_trust_anchor_and_valid_chain() {
         "revoked trust cannot be cached in certificate facts"
     );
     let mut missing_intermediate = certificate.clone();
-    missing_intermediate.certificate_chain_der.truncate(1);
+    std::sync::Arc::make_mut(&mut missing_intermediate.certificate_chain_der).truncate(1);
     assert!(!certificate_chain_trusted(
         &missing_intermediate,
         &root.pem()

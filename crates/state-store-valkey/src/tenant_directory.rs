@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use fred::prelude::{KeysInterface, LuaInterface};
 use nazo_identity::{
@@ -75,6 +78,7 @@ return 'stored'
 #[derive(Clone)]
 pub struct TenantDirectoryCache {
     client: ValkeyClient,
+    validated: Arc<Mutex<Option<ValidatedDirectorySnapshot>>>,
 }
 
 impl TenantDirectoryCache {
@@ -82,10 +86,11 @@ impl TenantDirectoryCache {
     pub fn new(client: &ValkeyClient) -> Self {
         Self {
             client: client.clone(),
+            validated: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub async fn load(&self) -> Result<Option<TenantDirectorySnapshot>, Error> {
+    pub async fn load(&self) -> Result<Option<Arc<TenantDirectorySnapshot>>, Error> {
         let snapshot: Option<String> = self
             .client
             .client
@@ -93,7 +98,13 @@ impl TenantDirectoryCache {
             .await
             .map_err(Error::from_fred)?;
         snapshot
-            .map(|snapshot| decode_snapshot(&snapshot))
+            .map(|encoded| {
+                let mut validated = self
+                    .validated
+                    .lock()
+                    .expect("tenant directory cache mutex is not poisoned");
+                decode_cached_snapshot(encoded, &mut validated)
+            })
             .transpose()
     }
 
@@ -122,6 +133,30 @@ impl TenantDirectoryCache {
             ))),
         }
     }
+}
+
+// Keep one validated wire value. Every load still reads Valkey, so deletion,
+// corruption and same-revision replacement are observed on the next poll.
+struct ValidatedDirectorySnapshot {
+    encoded: String,
+    snapshot: Arc<TenantDirectorySnapshot>,
+}
+
+fn decode_cached_snapshot(
+    encoded: String,
+    validated: &mut Option<ValidatedDirectorySnapshot>,
+) -> Result<Arc<TenantDirectorySnapshot>, Error> {
+    if let Some(previous) = validated
+        && previous.encoded == encoded
+    {
+        return Ok(previous.snapshot.clone());
+    }
+    let snapshot = Arc::new(decode_snapshot(&encoded)?);
+    *validated = Some(ValidatedDirectorySnapshot {
+        encoded,
+        snapshot: snapshot.clone(),
+    });
+    Ok(snapshot)
 }
 
 #[derive(Deserialize, Serialize)]

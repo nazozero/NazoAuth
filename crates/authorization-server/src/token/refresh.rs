@@ -8,7 +8,6 @@ use nazo_auth::ValidatedClientAssertion;
 
 use crate::domain::client_policy::audiences_allowed;
 use crate::domain::client_policy::is_subset;
-use crate::domain::client_policy::json_array_to_strings;
 use crate::domain::client_policy::parse_scope;
 
 use crate::contracts::request_facts::DpopErrorContext;
@@ -53,20 +52,25 @@ fn refresh_token_has_stable_sender_constraint(token: &TokenRow) -> bool {
 }
 
 fn refresh_token_scopes(
-    original_scopes: &[String],
+    original_scopes: Vec<String>,
     requested_scope: Option<&str>,
 ) -> Result<Vec<String>, ()> {
     let Some(requested) = requested_scope.map(parse_scope) else {
-        return Ok(original_scopes.to_vec());
+        return Ok(original_scopes);
     };
     if requested.is_empty() {
-        return Ok(original_scopes.to_vec());
+        return Ok(original_scopes);
     }
-    if is_subset(&requested, original_scopes) {
+    if is_subset(&requested, &original_scopes) {
         Ok(requested)
     } else {
         Err(())
     }
+}
+
+fn refresh_requests_oidc_subject(requested_scope: Option<&str>) -> bool {
+    let requested = requested_scope.map(parse_scope).unwrap_or_default();
+    requested.is_empty() || requested.iter().any(|scope| scope == "openid")
 }
 
 fn client_attestation_refresh_binding_matches(
@@ -96,7 +100,7 @@ pub fn refresh_token_audiences(
     token: &TokenRow,
     form: &TokenForm,
 ) -> Result<Vec<String>, RefreshAudienceError> {
-    let original_audiences = json_array_to_strings(&token.audience);
+    let original_audiences = token.audience.clone();
     if original_audiences.is_empty() {
         return Err(RefreshAudienceError::MissingOriginal);
     }
@@ -127,7 +131,13 @@ pub async fn token_refresh_with_service(
         ));
     };
     let token = match token_service
-        .refresh_token(client.tenant_id, refresh_token)
+        .refresh_token_snapshot_with_subject(
+            client.tenant_id,
+            refresh_token,
+            client.id,
+            request_started_at,
+            refresh_requests_oidc_subject(form.scope.as_deref()),
+        )
         .await
     {
         Ok(value) => value,
@@ -141,7 +151,7 @@ pub async fn token_refresh_with_service(
             ));
         }
     };
-    let Some(mut token) = token else {
+    let Some(snapshot) = token else {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
@@ -149,6 +159,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     };
+    let mut token = snapshot.presented;
     if token.client_id != client.id || token.expires_at <= Utc::now() {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
@@ -175,6 +186,10 @@ pub async fn token_refresh_with_service(
     // context through `token` would prevent assigning the successor in place.
     let authentication_context = token.authentication_context.clone();
     if !authentication_context.is_well_formed()
+        || token
+            .id_token_sid
+            .as_deref()
+            .is_some_and(|sid| sid.trim().is_empty())
         || authentication_context.issuer != issuance.config.issuer()
         || authentication_context.audience != client.client_id
     {
@@ -185,7 +200,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let original_scopes = json_array_to_strings(&token.scopes);
+    let original_scopes = token.scopes.clone();
     if client.client_type == "public"
         && client.require_dpop_bound_tokens
         && !client.require_mtls_bound_tokens
@@ -250,10 +265,7 @@ pub async fn token_refresh_with_service(
     if token.revoked_at.is_some() {
         let original_id = token.id;
         let original_blake3 = token.token_blake3;
-        match token_service
-            .inspect_lost_refresh_successor(&token, client.id, request_started_at)
-            .await
-        {
+        match snapshot.successor {
             Ok(Some(successor)) => token = successor,
             Ok(None) => {}
             Err(error) => {
@@ -288,7 +300,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let scopes = match refresh_token_scopes(&original_scopes, form.scope.as_deref()) {
+    let scopes = match refresh_token_scopes(original_scopes, form.scope.as_deref()) {
         Ok(scopes) => scopes,
         Err(()) => {
             return Err(OAuthEndpointError::token(
@@ -326,6 +338,16 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
+    // Only a normal source and the effective OIDC scope consume successful
+    // early preparation. Holder/sender/scope/audience errors retain their
+    // original priority; missing/corrupt preparation uses the later read.
+    // Lost-response recovery deliberately retains its established path.
+    let prepared_subject =
+        if lost_response_original.is_none() && scopes.iter().any(|scope| scope == "openid") {
+            snapshot.prepared_subject
+        } else {
+            None
+        };
     let refresh_token_policy = match lost_response_original {
         Some((original_id, original_blake3)) => RefreshTokenPolicy::RotateLostResponse {
             family_id: token.token_family_id,
@@ -336,40 +358,42 @@ pub async fn token_refresh_with_service(
         },
         None => refresh_token_policy(client, &token),
     };
-    let refresh_id_token_sid = Some(authentication_context.id_token_sid.clone());
+    let refresh_id_token_sid = Some(token.id_token_sid.clone());
+    let refresh_authority = token.authority();
     issue_token_response(
         issuance,
         token_service,
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
+            native_sso_source: None,
             user_id: token.user_id,
-            prepared_subject: None,
+            prepared_subject,
             subject: token.subject,
             scopes,
             authorization_details: token.authorization_details,
             audiences,
-            // Keep the original nonce in the persisted refresh contract, but
-            // issue.rs suppresses it from the refreshed ID Token as required
-            // by OIDC Core 12.2.
-            nonce: authentication_context.nonce.clone(),
+            // A refreshed ID Token omits the original nonce; the immutable
+            // source contract also strips this first-response-only value.
+            nonce: None,
             auth_time: Some(authentication_context.auth_time),
-            amr: authentication_context.amr.clone(),
-            oidc_sid: authentication_context.oidc_sid.clone(),
-            acr: authentication_context.acr.clone(),
-            userinfo_claims: authentication_context.userinfo_claims.clone(),
-            userinfo_claim_requests: authentication_context.userinfo_claim_requests.clone(),
-            id_token_claims: authentication_context.id_token_claims.clone(),
-            id_token_claim_requests: authentication_context.id_token_claim_requests.clone(),
+            amr: authentication_context.amr,
+            oidc_sid: authentication_context.oidc_sid,
+            acr: authentication_context.acr,
+            userinfo_claim_requests: authentication_context.userinfo_claim_requests,
+            id_token_claim_requests: authentication_context.id_token_claim_requests,
             refresh_id_token_sid,
             include_refresh: true,
             refresh_token_policy,
             dpop_jkt: dpop_jkt.clone(),
             refresh_token_dpop_jkt: token.dpop_jkt,
-            mtls_x5t_s256: mtls_x5t_s256.clone(),
-            refresh_token_mtls_x5t_s256: mtls_x5t_s256,
+            mtls_x5t_s256,
+            // Client policy can newly bind this access token; the source RT
+            // and any rotated successor retain their original sender binding.
+            refresh_token_mtls_x5t_s256: token.mtls_x5t_s256,
             refresh_token_client_attestation_jkt: token.client_attestation_jkt,
-            refresh_token_scopes: Some(original_scopes),
+            refresh_authority: Some(refresh_authority),
+            refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,

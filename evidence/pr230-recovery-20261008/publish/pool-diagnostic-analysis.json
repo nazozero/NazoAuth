@@ -1,0 +1,90 @@
+{
+  "scope": "diagnostic-only final B auth code 800/s; 992 VUs; original 15s warmup +60s formal; TRACE overhead, not an A/B acceptance replacement",
+  "formal_pool_acquisitions": 262908,
+  "acquire_ms": {
+    "p50": 210.71,
+    "p95": 296.336,
+    "p99": 327.825,
+    "max": 372.164,
+    "mean": 211.69193843093402
+  },
+  "available_zero_fraction": 1.0,
+  "waiting_before_max": 961,
+  "failed_acquisitions": 0,
+  "pg_samples": 51,
+  "pg_backend_sample_counts": [
+    {
+      "state": "idle",
+      "wait_event_type": "Client",
+      "wait_event": "ClientRead",
+      "backend_samples": 744
+    },
+    {
+      "state": "idle in transaction",
+      "wait_event_type": "Client",
+      "wait_event": "ClientRead",
+      "backend_samples": 600
+    },
+    {
+      "state": "active",
+      "wait_event_type": "LWLock",
+      "wait_event": "WALWrite",
+      "backend_samples": 114
+    },
+    {
+      "state": "active",
+      "wait_event_type": null,
+      "wait_event": null,
+      "backend_samples": 85
+    },
+    {
+      "state": "active",
+      "wait_event_type": "Client",
+      "wait_event": "ClientRead",
+      "backend_samples": 50
+    },
+    {
+      "state": "active",
+      "wait_event_type": "IO",
+      "wait_event": "WalSync",
+      "backend_samples": 37
+    },
+    {
+      "state": "idle in transaction",
+      "wait_event_type": null,
+      "wait_event": null,
+      "backend_samples": 33
+    },
+    {
+      "state": "idle",
+      "wait_event_type": null,
+      "wait_event": null,
+      "backend_samples": 17
+    },
+    {
+      "state": "active",
+      "wait_event_type": "LWLock",
+      "wait_event": "BufferContent",
+      "backend_samples": 4
+    },
+    {
+      "state": "active",
+      "wait_event_type": "IO",
+      "wait_event": "WalWrite",
+      "backend_samples": 2
+    },
+    {
+      "state": "active",
+      "wait_event_type": "IO",
+      "wait_event": "DataFileExtend",
+      "backend_samples": 1
+    }
+  ],
+  "oldest_sampled_transaction_s_max": 0.087465,
+  "maintenance_cycles": [
+    "2026-10-08T14:18:15.280637Z  INFO nazoauth::jobs::security_state: security-state maintenance cycle completed stop_reason=\"drained\" batches=1 rows=0 issuances=0 elapsed_ms=97 next_delay_ms=60000",
+    "2026-10-08T14:19:16.776471Z  INFO nazoauth::jobs::security_state: security-state maintenance cycle completed stop_reason=\"drained\" batches=8 rows=0 issuances=0 elapsed_ms=1494 next_delay_ms=60000",
+    "2026-10-08T14:20:21.441145Z  INFO nazoauth::jobs::security_state: security-state maintenance cycle completed stop_reason=\"drained\" batches=90 rows=23236 issuances=0 elapsed_ms=4663 next_delay_ms=60000"
+  ],
+  "limits": "PG waits sampled every second, so brief locks may be missed; runnable wait, SQL time, pool wait overlap and must not be added as mutually exclusive request phases. Pool measures successful acquire elapsed, not pure queue-only duration."
+}

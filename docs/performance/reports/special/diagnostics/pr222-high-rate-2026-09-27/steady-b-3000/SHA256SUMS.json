@@ -1,0 +1,47 @@
+[
+  {
+    "file": "cap-mixed.series.json",
+    "sha256": "c9f50764eb2724ada287755f39d76c7c7634e27e5d4c3f14a1e4277e2e54e418",
+    "bytes": 1319089
+  },
+  {
+    "file": "cap-mixed.window.json",
+    "sha256": "acfeefedaa41249ab0b9246b79b19e5c7595ac03f4dba431c7a0dab3d9f79709",
+    "bytes": 1501
+  },
+  {
+    "file": "formal-b-3000-steady-public-summary.json",
+    "sha256": "92459b8fa6fde4531d16f79a445acc51eeae2b2df4f60c0f7d25583890093f72",
+    "bytes": 4085
+  },
+  {
+    "file": "formal-b-3000-steady-wal-and-correlation.json",
+    "sha256": "d831de5df42696120ac0da73ad6997f918ed73434aba6c1f67030cdde4ae73a5",
+    "bytes": 67505
+  },
+  {
+    "file": "issuance-maintenance-evidence.json",
+    "sha256": "04d94e67ac38824516ffdd245ea99b60d3f96c089032b081ee23acd90a512643",
+    "bytes": 1140
+  },
+  {
+    "file": "README.md",
+    "sha256": "677a6d93324c8debd389dd306ad4ef9381626730621417b0879adeda611cb18c",
+    "bytes": 1105
+  },
+  {
+    "file": "refresh-capacity-gate.json",
+    "sha256": "60c2faecb3bdf23d643fc81a06d1b4deefe5639bb23a5b77a32df33923dfe5dd",
+    "bytes": 2331
+  },
+  {
+    "file": "wal-post.json",
+    "sha256": "b7f759bc5241796786b60c8b70ea287c7ae50c6f3b31ea63377e109770a258c4",
+    "bytes": 15595
+  },
+  {
+    "file": "wal-pre.json",
+    "sha256": "2b55c1332a074a092ca1dd2dfdf59745cd7794e24fe4ca0a9e6ad1a25dc75abd",
+    "bytes": 15544
+  }
+]

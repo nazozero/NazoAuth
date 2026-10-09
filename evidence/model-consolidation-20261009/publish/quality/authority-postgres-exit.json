@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--all-features", "--locked", "-p", "nazo-postgres", "--lib"], "exit": 0, "seconds": 25.784617035649717}

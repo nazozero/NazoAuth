@@ -1,0 +1,179 @@
+{
+  "audit": {
+    "collected": true,
+    "dropped": 0,
+    "enqueued": 360019,
+    "pending": 0,
+    "persisted": 360019,
+    "reconciled": true
+  },
+  "effective_window_seconds": 600,
+  "health_checks": {
+    "active_per_scope_le_10": true,
+    "audit_reconciled": true,
+    "db_outbox_drained": true,
+    "dropped_required_zero": true,
+    "enqueued_eq_persisted": true,
+    "expired_backlog_zero": true,
+    "four_sidecars": true,
+    "journal_contiguous": true,
+    "main_natural_completion": true,
+    "measurement_length": true,
+    "no_restarts": true,
+    "oom_none": true,
+    "pending_zero_post_drain": true,
+    "point_completed": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "queue_drained": true,
+    "queue_dropped_zero": true,
+    "queue_full_zero": true,
+    "sidecar_timing": true,
+    "sidecars_complete": true,
+    "spent_per_family_le_64": true,
+    "unexpected_zero": true
+  },
+  "health_checks_pass": true,
+  "main": {
+    "complete_iteration_p50_p95_p99_ms": {
+      "p50": 5.0,
+      "p95": 25.0,
+      "p99": 38.0
+    },
+    "evaluator_gate_p95_p99_ms": {
+      "p95": 25.0,
+      "p99": 38.0
+    },
+    "expected_rejections": 0,
+    "http_requests_per_s": 4356.885,
+    "k6_exit_code": 0,
+    "measure_completed": 1800002,
+    "measure_drop_count": 0,
+    "measure_drop_fraction": 0.0,
+    "measure_scheduled": 1800002,
+    "oom_killed": false,
+    "prepare_sut_failures": 0,
+    "success_fraction_of_target": 1.000001,
+    "successful_ops_s": 3000.003,
+    "unexpected_errors": 0,
+    "unfinished": 0
+  },
+  "main_gate": "PASS",
+  "name": "formal-a-3000",
+  "refresh_gate": {
+    "drop_count": 0,
+    "drop_fraction": 0.0,
+    "p95_ms": 14.0,
+    "p99_ms": 26.0,
+    "prepare_failures": {
+      "prepare_failed": 0,
+      "prepare_local_failed": 0,
+      "prepare_sut_failed": 0
+    },
+    "status": "PASS",
+    "successful_ops_s": 600.0,
+    "unexpected_errors": 0
+  },
+  "refresh_invariants": {
+    "max_active_per_scope": 10,
+    "spent_expired_backlog": 0,
+    "spent_max_per_family": 64
+  },
+  "sidecars": {
+    "argon2": {
+      "drop_count": 0,
+      "drop_fraction": 0.0,
+      "error_rate": 0.0,
+      "gate_status": "passed",
+      "http_latency_ms": {
+        "p50": 7.407,
+        "p95": 126.536,
+        "p99": 132.863
+      },
+      "http_requests": 36006,
+      "http_requests_per_s": 47.999,
+      "logical_iterations": 6001
+    },
+    "fapi": {
+      "drop_count": 0,
+      "drop_fraction": 0.0,
+      "error_rate": 0.0,
+      "gate_status": "passed",
+      "http_latency_ms": {
+        "p50": 5.735,
+        "p95": 14.633,
+        "p99": 30.051
+      },
+      "http_requests": 112505,
+      "http_requests_per_s": 150.0,
+      "logical_iterations": 22501
+    },
+    "meta": {
+      "drop_count": 0,
+      "drop_fraction": 0.0,
+      "error_rate": 0.0,
+      "gate_status": "passed",
+      "http_latency_ms": {
+        "p50": 0.204,
+        "p95": 0.337,
+        "p99": 0.734
+      },
+      "http_requests": 300002,
+      "http_requests_per_s": 400.002,
+      "logical_iterations": 150001
+    },
+    "refresh": {
+      "capacity_gate": {
+        "drop_count": 0,
+        "drop_fraction": 0.0,
+        "p95_ms": 14.0,
+        "p99_ms": 26.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "status": "PASS",
+        "successful_ops_s": 600.0,
+        "unexpected_errors": 0
+      },
+      "drop_count": 0,
+      "drop_fraction": 0.0,
+      "error_rate": 0.0,
+      "gate_status": "passed",
+      "http_latency_ms": {
+        "p50": 7.282,
+        "p95": 14.229,
+        "p99": 26.774
+      },
+      "http_requests": 451033,
+      "http_requests_per_s": 601.373,
+      "logical_iterations": 450001
+    }
+  },
+  "target_ops_s": 3000,
+  "variant": "A",
+  "wal_window_600s": {
+    "fsync_time_ms": null,
+    "fsync_time_raw_ms": 0.0,
+    "fsyncs": 606225.7630012035,
+    "generated_bytes": 8152874513.170099,
+    "mean_write_bytes": 31139.64069859375,
+    "timing_interpretation": "N/A when PostgreSQL reports a zero timing counter; zero is not interpreted as zero wait",
+    "wal_generated_sample_span": [
+      1790496160,
+      1790496950
+    ],
+    "wal_io_sample_span": [
+      1790496160,
+      1790496950
+    ],
+    "write_bytes": 18923849531.48828,
+    "write_operations": 607709.3090012074,
+    "write_time_ms": null,
+    "write_time_raw_ms": 0.0,
+    "write_to_generated_ratio": 2.3211260643002443
+  },
+  "window_end_ms": 1790496888454,
+  "window_start_ms": 1790496288454
+}

@@ -1,0 +1,13 @@
+{
+  "label": "r230-sustained-h1-20261008",
+  "key": "sustained-H1",
+  "containers_remaining": [
+    "f395a305de74"
+  ],
+  "cleanup_elapsed_s": 15.329,
+  "total_elapsed_s": 500.155,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": "TimeoutExpired: Command '['docker', 'compose', '-f', '/src/docker-compose.perf.yml', '-f', '/src/evidence/pr230-revision-20261008/perf/sustained-H1/environment.override.yml', '-p', 'r230-sustained-h1-20261008', 'down', '-v', '--remove-orphans']' timed out after 15.173894306877628 seconds"
+}

@@ -36,7 +36,6 @@ fn request_object_client(jwks: Value) -> OAuthClient {
             backchannel_token_delivery_mode: "poll".to_owned(),
             backchannel_client_notification_endpoint: None,
             backchannel_authentication_request_signing_alg: None,
-            backchannel_user_code_parameter: false,
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             tls_client_auth_subject_dn: None,
@@ -160,8 +159,8 @@ fn signed_request_object_is_normalized_only_after_all_claim_checks() {
     );
     assert!(!normalized.parameters.contains_key("state"));
     assert_eq!(
-        normalized.replay.expect("replay instruction").ttl_seconds,
-        120
+        normalized.replay.expect("replay instruction").expires_at,
+        now + 120
     );
 }
 
@@ -452,6 +451,7 @@ fn par_fapi_policy_requires_confidential_strong_auth_and_sender_constraint() {
     let audiences = vec!["https://api.example".to_owned()];
     let parameters = HashMap::from([
         ("response_type".to_owned(), "code".to_owned()),
+        ("scope".to_owned(), "openid".to_owned()),
         ("redirect_uri".to_owned(), redirect_uris[0].clone()),
         ("request".to_owned(), "signed.jwt".to_owned()),
         ("code_challenge".to_owned(), "A".repeat(43)),
@@ -470,10 +470,19 @@ fn par_fapi_policy_requires_confidential_strong_auth_and_sender_constraint() {
         require_request_object: true,
         fapi2_security: true,
     };
+    let scopes = vec!["openid".to_owned()];
     let expanded = ExpandedParAdmissionPolicy {
         client_type: "confidential",
         redirect_uris: &redirect_uris,
         allowed_audiences: &audiences,
+        allowed_scopes: &scopes,
+        capabilities: crate::AuthorizationCapabilityPolicy {
+            authorization_details: true,
+            jarm: true,
+            native_sso: true,
+            form_post: true,
+        },
+        signed_authorization_response_required: false,
         pkce_required: true,
         fapi2_requires_explicit_redirect_uri: true,
     };
@@ -504,7 +513,9 @@ fn par_fapi_policy_requires_confidential_strong_auth_and_sender_constraint() {
     without_pkce.remove("code_challenge_method");
     assert_eq!(
         validate_expanded_par_admission(&without_pkce, expanded),
-        Err(ParAdmissionError::PkceRequired)
+        Err(ParAdmissionError::Authorization(
+            crate::AuthorizationPolicyError::InvalidRequest
+        ))
     );
     assert!(
         validate_expanded_par_admission(
@@ -532,7 +543,9 @@ fn par_fapi_policy_requires_confidential_strong_auth_and_sender_constraint() {
     plain_pkce.insert("code_challenge_method".to_owned(), "plain".to_owned());
     assert_eq!(
         validate_expanded_par_admission(&plain_pkce, expanded),
-        Err(ParAdmissionError::InvalidPkce)
+        Err(ParAdmissionError::Authorization(
+            crate::AuthorizationPolicyError::InvalidRequest
+        ))
     );
     let mut nested = parameters;
     nested.insert("request_uri".to_owned(), "urn:forbidden".to_owned());
@@ -562,7 +575,7 @@ proptest! {
 }
 
 #[test]
-fn jar_replay_ttl_uses_validated_expiry() {
+fn jar_replay_deadline_uses_validated_expiry() {
     let t0 = 1_700_000_000;
     let mut claims = signed_claims(t0);
     claims.nbf = Some(t0 + 30);
@@ -572,9 +585,9 @@ fn jar_replay_ttl_uses_validated_expiry() {
     let normalized = normalize_request_object(&HashMap::new(), &claims, signed_policy(t0))
         .expect("remaining lifetime of 330 seconds is legal");
     assert_eq!(
-        normalized.replay.expect("replay instruction").ttl_seconds,
-        330,
-        "the replay TTL must follow the validated expiry, not a 300 second cap"
+        normalized.replay.expect("replay instruction").expires_at,
+        t0 + 330,
+        "the replay deadline must preserve the validated absolute expiry"
     );
 
     let expired_now_claims = claims;

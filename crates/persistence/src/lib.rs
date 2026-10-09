@@ -7,6 +7,7 @@
 //! generic CRUD interface. Database adapters implement these focused ports.
 
 pub mod audit_chain;
+pub mod audit_wire;
 pub mod control_plane;
 pub mod directory_control;
 pub mod maintenance;
@@ -69,7 +70,7 @@ pub struct SecurityAuditAnchorHealth {
     pub head_sequence: i64,
     pub head_hash: Vec<u8>,
     /// Exact pending/non-pending signal; the backlog size is only an estimate
-    /// so health checks never scan the whole outbox.
+    /// so health checks never scan the whole pending set.
     pub pending_exists: bool,
     pub pending_estimate: i64,
     /// Legacy residual: chained rows below the anchor that the retired
@@ -101,12 +102,15 @@ pub struct SecurityAuditBatchLease {
 }
 
 #[derive(Clone, Debug)]
-pub struct SecurityAuditOutboxDelivery {
+pub struct SecurityAuditPendingDelivery {
     pub event_id: uuid::Uuid,
     pub sequence: i64,
     pub event_type: String,
     pub event_category: String,
-    /// Exact `jsonb::text` bytes used by the chain hash and the wire envelope.
+    /// Exact persisted UTF-8 payload bytes used by the chain and wire envelope.
+    /// The ledger adapter chooses this representation once. Consumers must not
+    /// parse and reserialize it; retained PostgreSQL events keep their original
+    /// `jsonb::text` bytes, including whitespace and key order.
     pub payload_canonical: String,
     pub occurred_at: chrono::DateTime<chrono::Utc>,
     pub previous_hash: Vec<u8>,
@@ -127,7 +131,7 @@ pub struct SecurityAuditBatch {
     pub last_hash: Vec<u8>,
     pub digest: Vec<u8>,
     pub attempts: i32,
-    pub deliveries: Vec<SecurityAuditOutboxDelivery>,
+    pub deliveries: Vec<SecurityAuditPendingDelivery>,
 }
 
 impl SecurityAuditBatch {
@@ -277,6 +281,12 @@ pub trait RuntimeModuleStore: Send + Sync {
         &self,
     ) -> BoxFuture<'_, Result<Vec<nazo_runtime_modules::DesiredStateRecord>, RepositoryError>>;
 
+    /// A tenant-scoped snapshot joining desired state with the named instance.
+    fn read_reconcile_state<'a>(
+        &'a self,
+        instance_id: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<nazo_runtime_modules::ModuleReconcileState>, RepositoryError>>;
+
     fn compare_and_set_desired(
         &self,
         change: nazo_runtime_modules::DesiredStateChange,
@@ -329,6 +339,13 @@ pub trait RuntimeModuleStore: Send + Sync {
         >,
     >;
 
+    /// Append a state-preserving stale-work observation; this never mutates
+    /// desired or instance state and rejects transition events.
+    fn record_instance_observation(
+        &self,
+        observation: nazo_runtime_modules::InstanceStateObservation,
+    ) -> BoxFuture<'_, Result<(), RepositoryError>>;
+
     fn validate_revision(
         &self,
         module_id: nazo_runtime_modules::ModuleId,
@@ -353,28 +370,6 @@ pub trait DatabaseHealthPort: Send + Sync {
     fn check(&self) -> BoxFuture<'_, Result<(), DatabaseHealthError>>;
 }
 
-/// Counters for the business runtime pool only. `acquire_count` records pool
-/// acquisition *attempts* — every success and every failure counts exactly
-/// once. Migration and other one-off standalone connections are not
-/// instrumented by these counters.
-#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
-pub struct DatabasePoolMetrics {
-    pub acquire_count: u64,
-    pub wait_nanos_total: u64,
-    pub wait_nanos_max: u64,
-    /// Live pool state at snapshot time: total connections owned by the pool,
-    /// currently idle connections, and acquisitions waiting for a connection.
-    /// `None` when the backend cannot report live state.
-    pub connections: Option<u64>,
-    pub idle_connections: Option<u64>,
-    pub waiting_acquisitions: Option<u64>,
-}
-
-/// Backend-neutral pool telemetry exposed by the optional performance endpoint.
-pub trait DatabasePoolMetricsPort: Send + Sync {
-    fn snapshot(&self) -> DatabasePoolMetrics;
-}
-
 /// Startup admission check for the configured tenant, realm, and organization.
 /// The adapter must fail closed if any configured boundary is missing, inactive,
 /// or belongs to another tenant.
@@ -389,9 +384,20 @@ pub trait ActiveTenantBoundaryStore: Send + Sync {
 pub trait TenantDirectoryStore: Send + Sync {
     fn current_revision(&self) -> BoxFuture<'_, Result<u64, RepositoryError>>;
 
+    /// Return the revision and all active bindings from one coherent storage
+    /// snapshot. Its revision may be newer than a preceding current_revision
+    /// read, but rows from different revisions must never be combined.
     fn load_active(
         &self,
     ) -> BoxFuture<'_, Result<nazo_identity::TenantDirectorySnapshot, RepositoryError>>;
+
+    /// Read one authoritative active binding. Missing bindings and inactive or
+    /// cross-tenant tenant/realm/organization placements must not be returned.
+    /// This is a fresh storage read, independent of the process directory cache.
+    fn find_active_binding(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+    ) -> BoxFuture<'_, Result<Option<nazo_identity::TenantDirectoryBinding>, RepositoryError>>;
 }
 
 #[derive(Clone)]
@@ -487,7 +493,69 @@ pub trait CibaAccountStore: Send + Sync {
 /// Administrative access-request workflow. Approval is intentionally one
 /// capability because creating the OAuth client and resolving the request must
 /// remain atomic inside the selected adapter.
+#[derive(Clone, Debug)]
+pub struct AdminAccessRequestApproval {
+    pub client: nazo_auth::ApprovedClient,
+    pub request: nazo_identity::AccessRequest,
+}
+
+/// Decision commands return the actual committed display view after the full
+/// result stream and transaction acknowledgement; authority/recovery reads are
+/// separate capabilities and cannot be replaced by this response snapshot.
 pub trait AdminAccessRequestStore: Send + Sync {
+    /// Verify the current Approved request, active client and exact secret
+    /// generation before recovering an unpublished credential delivery.
+    fn approved_delivery_matches<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+        request_id: uuid::Uuid,
+        approved_client_id: uuid::Uuid,
+        client_id: &'a str,
+        secret_binding: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<bool, RepositoryError>>;
+
+    /// Recover only the exact committed approval whose accepting owner also
+    /// committed its canonical Required outcome. This narrow predicate exposes
+    /// no ledger records and never reconstructs a credential delivery.
+    fn approved_delivery_with_required_audit_matches<'a>(
+        &'a self,
+        _tenant_id: nazo_identity::TenantId,
+        _user_id: nazo_identity::UserId,
+        _request_id: uuid::Uuid,
+        _approved_client_id: uuid::Uuid,
+        _client_id: &'a str,
+        _secret_binding: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<bool, RepositoryError>> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
+
+    /// Client creation, Pending resolution and the complete Required outcome
+    /// share one accepting owner. Success follows the complete transaction ACK;
+    /// unavailable/unknown does not establish a known non-commit.
+    fn approve_with_required_audit<'a>(
+        &'a self,
+        _tenant: nazo_identity::TenantContext,
+        _request_id: uuid::Uuid,
+        _actor_user_id: nazo_identity::UserId,
+        _client: &'a nazo_auth::PreparedClientRegistration,
+        _source_ip_hash: String,
+    ) -> BoxFuture<'a, Result<AdminAccessRequestApproval, RepositoryError>> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
+
+    /// Resolve Pending and persist the complete Required rejection together.
+    /// A missing capability fails before the effect, with no unaudited fallback.
+    fn reject_with_required_audit(
+        &self,
+        _tenant: nazo_identity::TenantContext,
+        _request_id: uuid::Uuid,
+        _actor_user_id: nazo_identity::UserId,
+        _admin_note: String,
+    ) -> BoxFuture<'_, Result<nazo_identity::AccessRequest, RepositoryError>> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
+
     fn page<'a>(
         &'a self,
         tenant_id: nazo_identity::TenantId,
@@ -509,7 +577,7 @@ pub trait AdminAccessRequestStore: Send + Sync {
         request_id: uuid::Uuid,
         actor_user_id: nazo_identity::UserId,
         client: &'a nazo_auth::PreparedClientRegistration,
-    ) -> BoxFuture<'a, Result<nazo_auth::ApprovedClient, RepositoryError>>;
+    ) -> BoxFuture<'a, Result<AdminAccessRequestApproval, RepositoryError>>;
 
     fn reject(
         &self,
@@ -517,7 +585,7 @@ pub trait AdminAccessRequestStore: Send + Sync {
         request_id: uuid::Uuid,
         actor_user_id: nazo_identity::UserId,
         admin_note: String,
-    ) -> BoxFuture<'_, Result<(), RepositoryError>>;
+    ) -> BoxFuture<'_, Result<nazo_identity::AccessRequest, RepositoryError>>;
 }
 
 /// Durable delivery queue used by the back-channel logout worker. Claiming a

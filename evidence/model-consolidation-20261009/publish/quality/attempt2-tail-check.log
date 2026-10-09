@@ -1,0 +1,45 @@
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+    Checking nazo-key-management v0.2.16 (/src/crates/key-management)
+error[E0063]: missing field `issued_at` in initializer of `PushedAuthorizationRequest`
+   --> crates/authorization-server-core/src/../tests/unit/authorization_service.rs:419:5
+    |
+419 |     PushedAuthorizationRequest {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `issued_at`
+
+error[E0609]: no field `issued_at` on type `&nazo_auth::CodePayload`
+   --> crates/authorization-server/src/authorization/request/../../../tests/unit/authorization/request/prompt_none.rs:261:44
+    |
+261 |     assert_eq!((stored.expires_at - stored.issued_at).num_seconds(), 60);
+    |                                            ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `redemption_contract_version`, `code_id`, `user_id`, `client_id`, `redirect_uri` ... and 15 others
+
+error[E0599]: no method named `num_seconds` found for struct `chrono::DateTime<Tz>` in the current scope
+   --> crates/authorization-server/src/authorization/request/../../../tests/unit/authorization/request/prompt_none.rs:261:55
+    |
+261 |     assert_eq!((stored.expires_at - stored.issued_at).num_seconds(), 60);
+    |                                                       ^^^^^^^^^^^
+    |
+help: there is a method `second` with a similar name
+    |
+261 -     assert_eq!((stored.expires_at - stored.issued_at).num_seconds(), 60);
+261 +     assert_eq!((stored.expires_at - stored.issued_at).second(), 60);
+    |
+
+error[E0609]: no field `issued_at` on type `nazo_auth::ConsentPayload`
+   --> crates/authorization-server/src/authorization/request/../../../tests/unit/authorization/request/prompt_none.rs:302:28
+    |
+302 |         issued_at: payload.issued_at,
+    |                            ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `request_id`, `user_id`, `client_id`, `client_name`, `redirect_uri` ... and 22 others
+
+For more information about this error, try `rustc --explain E0063`.
+error: could not compile `nazo-auth` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+Some errors have detailed explanations: E0599, E0609.
+For more information about an error, try `rustc --explain E0599`.
+error: could not compile `nazo-oauth-server` (lib test) due to 3 previous errors

@@ -323,7 +323,7 @@ async fn managed_generation_is_idempotent() {
     let manager = database_manager(repository, Uuid::now_v7()).await;
     let profile = managed_profile("tenant.example");
 
-    let first_kid =
+    let (first_kid, first_revision, first_chain) =
         generate_local_with_database_manager(&manager, Some(&profile), managed_options())
             .await
             .expect("managed generation");
@@ -333,9 +333,14 @@ async fn managed_generation_is_idempotent() {
         .expect("managed state");
     let first_material = first_state.material.expect("managed material");
     assert_eq!(first_kid, first_material.public.signing_kid);
+    assert_eq!(first_revision, first_state.revision.to_string());
+    assert_eq!(
+        first_chain.as_deref(),
+        Some(first_material.public.certificate_chain_pem.as_str())
+    );
     assert_complete_managed_material(&first_material);
 
-    let second_kid =
+    let (second_kid, second_revision, second_chain) =
         generate_local_with_database_manager(&manager, Some(&profile), managed_options())
             .await
             .expect("idempotent managed generation");
@@ -345,6 +350,8 @@ async fn managed_generation_is_idempotent() {
         .expect("reloaded managed state");
     let second_material = second_state.material.expect("retained managed material");
     assert_eq!(second_kid, first_kid);
+    assert_eq!(second_revision, first_revision);
+    assert_eq!(second_chain, first_chain);
     assert_eq!(second_state.revision, first_state.revision);
     assert_same_material(&first_material, &second_material);
 }
@@ -379,8 +386,63 @@ async fn concurrent_managed_initialization_converges_on_one_complete_generation(
         .await
         .expect("concurrent managed state");
     let material = state.material.expect("complete concurrent material");
-    assert_eq!(material.public.signing_kid, first_kid);
+    assert_eq!(material.public.signing_kid, first_kid.0);
+    assert_eq!(state.revision.to_string(), first_kid.1);
+    assert_eq!(
+        Some(material.public.certificate_chain_pem.clone()),
+        first_kid.2
+    );
     assert_complete_managed_material(&material);
+}
+
+#[tokio::test]
+async fn operator_generation_result_stays_on_its_applied_generation_after_concurrent_rotation() {
+    let config = mdoc_database_config(&temporary_directory("generation-result-race"));
+    let binding = tenant_binding("https://tenant.example");
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let persistence = MemoryOperatorPersistence {
+        repository: repository.clone(),
+    };
+    let barrier = repository.pause_next_openid4vc_commit();
+    let purposes = ["credential".to_owned(), "presentation_request".to_owned()];
+    let (generated, observed) = tokio::join!(
+        super::super::operator_generate_local_database_for_tenant(
+            &config,
+            &binding,
+            &persistence,
+            "ES256",
+            &purposes,
+        ),
+        async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                barrier.applied.notified(),
+            )
+            .await
+            .expect("generation reached the applied CAS barrier");
+            let rotator =
+                database_manager(repository.clone(), binding.tenant.tenant_id.as_uuid()).await;
+            let first = rotator.database_openid4vc_state().await.unwrap();
+            rotate_managed_material(&rotator, &managed_profile("tenant.example"))
+                .await
+                .unwrap();
+            let second = rotator.database_openid4vc_state().await.unwrap();
+            barrier.release.notify_one();
+            (first, second)
+        },
+    );
+    let (kid, revision, chain) = generated.expect("generation result");
+    let (first, second) = observed;
+    let first_material = first.material.unwrap();
+    let second_material = second.material.unwrap();
+    assert!(second.revision > first.revision);
+    assert_ne!(
+        first_material.public.signing_kid,
+        second_material.public.signing_kid
+    );
+    assert_eq!(kid, first_material.public.signing_kid);
+    assert_eq!(revision, first.revision.to_string());
+    assert_eq!(chain, Some(first_material.public.certificate_chain_pem));
 }
 
 #[tokio::test]
@@ -984,4 +1046,199 @@ async fn certificate_import_without_mdoc_keeps_an_empty_revocation_snapshot() {
     tokio::fs::remove_dir_all(source)
         .await
         .expect("certificate import fixture cleanup");
+}
+
+async fn crl_fixture() -> (
+    Arc<MemorySigningKeyRepository>,
+    Uuid,
+    KeyManager,
+    String,
+    MdocCrlSource,
+) {
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let tenant_id = Uuid::now_v7();
+    let manager = database_manager(repository.clone(), tenant_id).await;
+    let profile = managed_profile("tenant.example");
+    generate_local_with_database_manager(&manager, Some(&profile), managed_options())
+        .await
+        .unwrap();
+    let material = manager
+        .database_openid4vc_state()
+        .await
+        .unwrap()
+        .material
+        .unwrap();
+    let issuer = material
+        .iaca_private_materials
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    let source = MdocCrlSource {
+        keyset: manager.clone(),
+        issuer_contact_uri: profile.mdoc_profile.unwrap().issuer_contact_uri,
+    };
+    (repository, tenant_id, manager, issuer, source)
+}
+
+async fn replace_only_sealed_private_payload(
+    repository: &MemorySigningKeyRepository,
+    tenant_id: Uuid,
+    mutate: impl FnOnce(&mut serde_json::Value),
+) {
+    let mut record = repository.load().await.unwrap().unwrap();
+    let expected = record.revision;
+    let ring = SigningKeyWrappingKeyRing::new("keyctl-test-root", [0x42; 32], None).unwrap();
+    let sealed = nazo_key_management::SealedKeyMaterial::from_persisted_bytes(
+        record.wrapping_key_id.clone(),
+        &record.encrypted_private_material,
+    )
+    .unwrap();
+    let mut payload: serde_json::Value = serde_json::from_slice(
+        &ring
+            .open_generation(tenant_id, record.revision, &record.public_metadata, &sealed)
+            .unwrap(),
+    )
+    .unwrap();
+    mutate(&mut payload);
+    record.revision += 1;
+    record.encrypted_private_material = ring
+        .seal_generation(
+            tenant_id,
+            record.revision,
+            &record.public_metadata,
+            &serde_json::to_vec(&payload).unwrap(),
+        )
+        .unwrap()
+        .into_persisted_bytes();
+    assert!(matches!(
+        repository.compare_and_swap(expected, record).await.unwrap(),
+        nazo_key_management::SigningKeysetCompareAndSwapResult::Applied(_)
+    ));
+}
+
+#[tokio::test]
+async fn mdoc_crl_ignores_unrelated_private_rsa_preparation() {
+    let (repository, tenant_id, manager, issuer, source) = crl_fixture().await;
+    let material = manager
+        .database_openid4vc_state()
+        .await
+        .unwrap()
+        .material
+        .unwrap();
+    let chain = iaca_certificates(&material, &issuer);
+    replace_only_sealed_private_payload(&repository, tenant_id, |payload| {
+        payload["request_object_private_pem"] = serde_json::json!("not-rsa-pem");
+        let mut rsa_keys = 0;
+        for key in payload["keys"].as_array_mut().unwrap() {
+            if matches!(key["alg"].as_str(), Some("RS256" | "PS256")) {
+                key["private_pkcs8_der"] = serde_json::json!("not-rsa-der");
+                rsa_keys += 1;
+            }
+        }
+        assert!(rsa_keys > 0);
+    })
+    .await;
+    assert!(
+        manager.database_openid4vc_state().await.is_err(),
+        "whole-generation diagnostics still reject unrelated invalid private keys"
+    );
+    let der = signed_mdoc_crl(&source, &issuer).await.unwrap().unwrap();
+    let (_, crl) = x509_parser::parse_x509_crl(&der).unwrap();
+    let (_, ca) = x509_parser::parse_x509_certificate(chain[1].as_ref()).unwrap();
+    crl.verify_signature(ca.public_key()).unwrap();
+    assert_eq!(crl.iter_revoked_certificates().count(), 0);
+    assert!(
+        signed_mdoc_crl(&source, &"0".repeat(64))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(signed_mdoc_crl(&source, "invalid").await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn mdoc_crl_rejects_selected_iaca_private_key_mismatch() {
+    let (repository, tenant_id, _, issuer, source) = crl_fixture().await;
+    let wrong_key = nazo_crypto::certificate::generate_p256_private_key_pem().unwrap();
+    replace_only_sealed_private_payload(&repository, tenant_id, |payload| {
+        let pem = payload["openid4vc"]["iaca_private_materials"][&issuer]
+            .as_str()
+            .unwrap();
+        let certificate_start = pem.find("-----BEGIN CERTIFICATE-----").unwrap();
+        payload["openid4vc"]["iaca_private_materials"][&issuer] =
+            serde_json::json!(format!("{}{}", wrong_key, &pem[certificate_start..]));
+    })
+    .await;
+    assert!(signed_mdoc_crl(&source, &issuer).await.is_err());
+}
+
+#[tokio::test]
+async fn mdoc_crl_pins_captured_revocation_and_next_read_observes_concurrent_revoke() {
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let binding = tenant_binding("https://tenant.example");
+    let config = mdoc_database_config(&temporary_directory("crl-concurrent-revoke"));
+    let manager = database_manager(repository.clone(), binding.tenant.tenant_id.as_uuid()).await;
+    let profile = managed_profile("tenant.example");
+    generate_local_with_database_manager(&manager, Some(&profile), managed_options())
+        .await
+        .unwrap();
+    let material = manager
+        .database_openid4vc_state()
+        .await
+        .unwrap()
+        .material
+        .unwrap();
+    let issuer = material
+        .iaca_private_materials
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    let chain = iaca_certificates(&material, &issuer);
+    let source = MdocCrlSource {
+        keyset: manager,
+        issuer_contact_uri: profile.mdoc_profile.unwrap().issuer_contact_uri,
+    };
+    let persistence = MemoryOperatorPersistence {
+        repository: repository.clone(),
+    };
+    let barrier = repository.pause_next_load();
+    let (captured, ()) = tokio::join!(signed_mdoc_crl(&source, &issuer), async {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            barrier.captured.notified(),
+        )
+        .await
+        .expect("captured generation");
+        operator_manage_mdoc(
+            &config,
+            &binding,
+            &persistence,
+            MdocManagementAction::Revoke {
+                issuer_id: issuer.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        barrier.release.notify_one();
+    });
+    let captured = captured.unwrap().unwrap();
+    let (_, old_crl) = x509_parser::parse_x509_crl(&captured).unwrap();
+    let fresh = signed_mdoc_crl(&source, &issuer).await.unwrap().unwrap();
+    let (_, new_crl) = x509_parser::parse_x509_crl(&fresh).unwrap();
+    let (_, ca) = x509_parser::parse_x509_certificate(chain[1].as_ref()).unwrap();
+    old_crl.verify_signature(ca.public_key()).unwrap();
+    new_crl.verify_signature(ca.public_key()).unwrap();
+    assert_eq!(old_crl.iter_revoked_certificates().count(), 0);
+    assert_eq!(new_crl.iter_revoked_certificates().count(), 1);
+    let (_, ds) = x509_parser::parse_x509_certificate(chain[0].as_ref()).unwrap();
+    assert_eq!(
+        new_crl
+            .iter_revoked_certificates()
+            .next()
+            .unwrap()
+            .raw_serial(),
+        ds.raw_serial()
+    );
 }

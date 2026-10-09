@@ -1,0 +1,28 @@
+    Checking nazo-identity v0.2.16 (/src/crates/identity)
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+    Checking nazo-oauth-server-object-store v0.2.16 (/src/crates/authorization-server-object-store)
+warning: function `json_scope_string` is never used
+    --> crates/authorization-server-core/src/token_service.rs:1168:4
+     |
+1168 | fn json_scope_string(value: &Value) -> String {
+     |    ^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nazo-auth` (lib) generated 1 warning
+    Checking nazo-key-management v0.2.16 (/src/crates/key-management)
+    Checking nazo-persistence v0.2.16 (/src/crates/persistence)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+error[E0308]: mismatched types
+   --> crates/authorization-server-core/tests/token_management.rs:485:13
+    |
+485 |             scopes,
+    |             ^^^^^^ expected `Vec<String>`, found `Value`
+    |
+    = note: expected struct `Vec<std::string::String>`
+                 found enum `Value`
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `nazo-auth` (test "token_management") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+warning: `nazo-auth` (lib test) generated 1 warning (1 duplicate)

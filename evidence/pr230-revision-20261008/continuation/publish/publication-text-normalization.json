@@ -1,0 +1,359 @@
+[
+  {
+    "file": "H-audit_bounded_reads.log",
+    "verbatim_gzip": "verbatim-whitespace/H-audit_bounded_reads.log.gz",
+    "original_sha256": "97969d8a04e57676ccf3a8e279b0248f4da5d749106fd49311258193e198b4dd",
+    "display_sha256": "eee40cf40afdd62561fb8110b3d6640b56b9365d4adf64baef9556fbc060d53d",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "H-audit_commit_boundary.log",
+    "verbatim_gzip": "verbatim-whitespace/H-audit_commit_boundary.log.gz",
+    "original_sha256": "d9d6a5229b4cec43101575408eb9ffa499f3e77df6134c4671c6046be67004e7",
+    "display_sha256": "785a68561075490c46b87cf8bd7de65ff7d45e8daa936ccc52195a9a55f7b207",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "H-audit_ledger.log",
+    "verbatim_gzip": "verbatim-whitespace/H-audit_ledger.log.gz",
+    "original_sha256": "288a7a9f57baefe7cbeea5f812b050dfe34dc85c85da606cbb5c39e8c09d4673",
+    "display_sha256": "cb0e94a60d77cb615dee4edcb4f135a71c4bc90f1acb91620b3848fd206a89ec",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "H-audit_preflight_roles.log",
+    "verbatim_gzip": "verbatim-whitespace/H-audit_preflight_roles.log.gz",
+    "original_sha256": "4565341409832886163218a98c4b0f294bffc7453784bee43dc026f286a53507",
+    "display_sha256": "7d51014c4a6ac773c2ea2db3b2787eb88be925a0d5dc62d4861671692b3ccb60",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "bounded-after.log",
+    "verbatim_gzip": "verbatim-whitespace/bounded-after.log.gz",
+    "original_sha256": "55e8a85f6fbb0811c1c39f09b1c3b3496a9c5feddaea79252d49ec003ca8f883",
+    "display_sha256": "e6957a07e99d1d0e05b57f6287fe48efa2247c72cb39773e0798be619f67e242",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "bounded-before.log",
+    "verbatim_gzip": "verbatim-whitespace/bounded-before.log.gz",
+    "original_sha256": "52d57669babbdec85fb2463e682e41ba212ac27000a0681cd2b1ad693bd4c1ed",
+    "display_sha256": "ea7ae7a6f2ad8458f36cc174cdb36113b95c668924f07807b674b81b6e9ad00f",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "bounded-before2.log",
+    "verbatim_gzip": "verbatim-whitespace/bounded-before2.log.gz",
+    "original_sha256": "636fc78fc326472dae21973063a515b640a74d574bce708861a9392856420af7",
+    "display_sha256": "0e9b83dcb9dbee91a9fb4dee355951ac03dda84f26f798cd6e768428bf3f4469",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-0.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-0.log.gz",
+    "original_sha256": "2ce46f59d1c6baaec70cdcfe3fdc6a5c9a6479d5aec44ce0698cb6c4b321c33f",
+    "display_sha256": "f57215263efc8d98313a815a46a53786f0466fd411d99d9f037d7c679639a5b4",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-1.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-1.log.gz",
+    "original_sha256": "da6ffcf2415f4874e046faefe49dfe0015bfb98feb8061571cfe7223af1eb52b",
+    "display_sha256": "5d0758b0028592c8b299c77bf300face3623291b76fa5ee409e3f94146b3bbcc",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-2.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-2.log.gz",
+    "original_sha256": "e7cfe8e420af991f7c4fc603ce7ae63eac29ec0e929d55c7004b783bacfff930",
+    "display_sha256": "2505d2b6427bd5b2544c36aaf6ca44a7228f14863cea3f7d5d063ce6266b351e",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-3.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-3.log.gz",
+    "original_sha256": "ee960f6d294f1efcfebed35f1626ed1544fff435aa01c29016d69f204f92e78d",
+    "display_sha256": "b3baa7d82b7627324ad53433c788ea8b3205ecba04ec6acc6f9eca52a2590e18",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-4.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-4.log.gz",
+    "original_sha256": "2ce46f59d1c6baaec70cdcfe3fdc6a5c9a6479d5aec44ce0698cb6c4b321c33f",
+    "display_sha256": "f57215263efc8d98313a815a46a53786f0466fd411d99d9f037d7c679639a5b4",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-5.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-5.log.gz",
+    "original_sha256": "be1b13eea134885ba252ad17aa53e47f58df52fbf22adefd6da145654d896ffb",
+    "display_sha256": "f743895702b56d0e3618b951112cdd04199d585d9c7d463c419982a6e72c457a",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-6.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-6.log.gz",
+    "original_sha256": "e48d4c36d435c1f9a2c3271ce02303242b1b5febc2e98b0b4bbb638dc0e8b007",
+    "display_sha256": "19b93a6919a4407b7bdb00f45d31ea2c92b68012b2f199a23c365cddc8bdd7c5",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-7.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-7.log.gz",
+    "original_sha256": "ab0449407c7cdba50e68a5dcdf8e3a1d61b9af320b93ec1312ae85321882f700",
+    "display_sha256": "d7daf438685c22f7b89322d811eab499b7c4f4c98d3bb0f3a9c2ebdedfeb66d8",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-8.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-8.log.gz",
+    "original_sha256": "1508686779f157dadb479a1dc17a2e1813c210f74bfd43ad486487cb868ff2aa",
+    "display_sha256": "e9d723cfcdd77f2a94eb72bf97d757b5364be58ea21b5e8cd9ca96c84a639fdb",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-repeat-9.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-repeat-9.log.gz",
+    "original_sha256": "2ce46f59d1c6baaec70cdcfe3fdc6a5c9a6479d5aec44ce0698cb6c4b321c33f",
+    "display_sha256": "f57215263efc8d98313a815a46a53786f0466fd411d99d9f037d7c679639a5b4",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "cancel-peer-target.log",
+    "verbatim_gzip": "verbatim-whitespace/cancel-peer-target.log.gz",
+    "original_sha256": "35382e6c03b2536118a34abd98525d929f9580a3ae149b019a2ec07c96a9ad8f",
+    "display_sha256": "5b14ba1ec8f47ebbe5a9f1eff8cfc9e615e4f7a1c75b2fb9ed387e0f2397d863",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "contention-before.log",
+    "verbatim_gzip": "verbatim-whitespace/contention-before.log.gz",
+    "original_sha256": "c16948778c41df8db5166b7a6766d143ee808deb6a98dee2a27c808bb4bc2c2d",
+    "display_sha256": "593a56ecf43a4fbbcc4c6890da93ec8b7dd4ec3cdbf91c74c40986f45b65c7d8",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "fixture-jwk-before3.log",
+    "verbatim_gzip": "verbatim-whitespace/fixture-jwk-before3.log.gz",
+    "original_sha256": "8242181e9f9b8acdbf7e2fddb39ea6dc719d4aacf9e7444be8035ac05f14da78",
+    "display_sha256": "4f17816f880762674d340038ce0f3334d4bcfb338c8728448bbd4600262f5aa4",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "full-final-ec4d98e1-retry1.log",
+    "verbatim_gzip": "verbatim-whitespace/full-final-ec4d98e1-retry1.log.gz",
+    "original_sha256": "9da7abe0d3812ff961fa309d2bfe8e6403dc2f0e8949a8d69a8c5a31f86a6252",
+    "display_sha256": "82dd9a2d96fa05d24a2a2caad479187ad99f0bde3b2d04087ff67ca61dee55d7",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "full-final-pre-migration-retry1.log",
+    "verbatim_gzip": "verbatim-whitespace/full-final-pre-migration-retry1.log.gz",
+    "original_sha256": "04746b0f3bf3254756afdcf6dbaf6eef3e02c0b7f81c8ffcd0f8f7655339bb38",
+    "display_sha256": "ff7f96edb89dde4df1197d51c9bafa8b6230d82bb7093f3f56470224700de47d",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "full-final-pre-migration.log",
+    "verbatim_gzip": "verbatim-whitespace/full-final-pre-migration.log.gz",
+    "original_sha256": "f073579892fa8911ef6ca55c5c654cb634952ac20104a033d9b349cca4193b4a",
+    "display_sha256": "25c1583a14cf1d8eb5807cfe489eb95b5694d5594219ca41082c0a803887dceb",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "full-pre-migration.log",
+    "verbatim_gzip": "verbatim-whitespace/full-pre-migration.log.gz",
+    "original_sha256": "d31bcc2a904e9440b740348b2bf8a77ba2ebf53bd01fd549a1998f001839d986",
+    "display_sha256": "84e5d062438cbe4da7209393ca1b0f751498c805ad47611164239a21b3a327bb",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "historical-pr-body-67f836f2.md",
+    "verbatim_gzip": "verbatim-whitespace/historical-pr-body-67f836f2.md.gz",
+    "original_sha256": "8670acec59ea062dfa0c66de58ef1ea0aa42f08769bcb27fc452cad0395a8eb4",
+    "display_sha256": "b54ebccb7e1e60c246b6db0d1584c553c3d1790d59499d97aa0697f3fe5284e0",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "repair-5c395794-audit-commit-retry.log",
+    "verbatim_gzip": "verbatim-whitespace/repair-5c395794-audit-commit-retry.log.gz",
+    "original_sha256": "5021a5e8f499b53227c57ce3298219ee06aae12e37e69615fed3f9ce23c83f0e",
+    "display_sha256": "c5f56a21e1b2efc1024580ffa8c1e8a2ee459a16ef2d25142c6ec9294cf67c12",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "repair-5c395794-audit-commit.log",
+    "verbatim_gzip": "verbatim-whitespace/repair-5c395794-audit-commit.log.gz",
+    "original_sha256": "3f840716f108940817ebfc4b2024f430b8c11eb9ad5422e3c634da9e447fa779",
+    "display_sha256": "a2ffb97f1f6ec2bd88e864c46d045e29bca836be877302664251f16599a8edc8",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "repair-5c395794-maintenance.log",
+    "verbatim_gzip": "verbatim-whitespace/repair-5c395794-maintenance.log.gz",
+    "original_sha256": "a68663073d253fe7390da9f9c8aa2e2afe5487309c5455dde19d0765f51c198f",
+    "display_sha256": "004cb73d7f545e6e549250695fe8adc08e08a63799f5a72dec8b1e0c66facb64",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "repair-fresh-maintenance.log",
+    "verbatim_gzip": "verbatim-whitespace/repair-fresh-maintenance.log.gz",
+    "original_sha256": "d023da191b972b9c93978bf74c4f0be9a7cacbe2ee878d791571e65430e673d3",
+    "display_sha256": "ea33024658b88d2cb1b02ef97f34dd86162dffedc7d8420cbc4b3a1bb3f39082",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "repair-maintenance.log",
+    "verbatim_gzip": "verbatim-whitespace/repair-maintenance.log.gz",
+    "original_sha256": "9ce209b6668708b96db08239e38133505bdf58887da05118b375c7b7bec0a29c",
+    "display_sha256": "a4ce004e0ef2d357fa1c841efa55ad590a00a6363d53d8f5482c31503f994df7",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "sustained-A2/pg-waits.jsonl",
+    "verbatim_gzip": "verbatim-whitespace/sustained-A2/pg-waits.jsonl.gz",
+    "original_sha256": "75dae4cbcd53a41c99ac0ecada1f1ada496bdf804d0fe012035023dc6c70a123",
+    "display_sha256": "66a4f5ad16b2537d0bef3e2a483474dc7457acf443ccd095f93c3b89177cada8",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "sustained-D2/pg-waits.jsonl",
+    "verbatim_gzip": "verbatim-whitespace/sustained-D2/pg-waits.jsonl.gz",
+    "original_sha256": "2daa7b8405b791be070d781cb9d8b11614a1b77f4c9393c3e21f59c42f72c4bd",
+    "display_sha256": "1189d2ad0b2451fc0ca7c7eb94b10c06db898fc6cfaaa8f8cf08fa39ac26918c",
+    "change": "trailing whitespace and final blank lines only"
+  },
+  {
+    "file": "pool-E1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/pool-E1/storage-series.csv.gz",
+    "original_sha256": "6952424e5fa228b636ff3ffa833872c317c55bf4683a160ea5a14559be2c9cd0",
+    "display_sha256": "0c8bab7a683c340e382c5f0c8a2025a37d9a2403d3ab8d867b55bde16e3fe7c4",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "sustained-A2/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/sustained-A2/storage-series.csv.gz",
+    "original_sha256": "4759bfe3c7878fa6822943cde2704769a3736ca8ba3e8a38a1d433ac8372c3fb",
+    "display_sha256": "1a31ec82bfc997bc731ee4e5000bb99cff12135aa94ef55694e1fb2afde3b590",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "sustained-D2/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/sustained-D2/storage-series.csv.gz",
+    "original_sha256": "6102d492774962b4b11932f64dc16ff72521a32bb4da46bfc1a90341d25add1f",
+    "display_sha256": "1eb37075ac5876cc616ce86e52a8c34caa26711a11e2b7bcfe603e2cf20181ee",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "sustained-F1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/sustained-F1/storage-series.csv.gz",
+    "original_sha256": "ce50418a970fd937bbdaa4f3d252bc647514b0e028940035339329903749aa12",
+    "display_sha256": "d5844b9a17230f9a5318fb67b8f08dde9310f6fd7bae8149669fac87f762a789",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p06-A2/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p06-A2/storage-series.csv.gz",
+    "original_sha256": "3ef5e5db6129327266e8fce1614eb20c4ea5b6283380ce8684231e404cf6a7e3",
+    "display_sha256": "937c51f2c3c5503f9dc7527facbb2aa9578365ea16d5aad3dc6188c2dc48d2a1",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p06-G1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p06-G1/storage-series.csv.gz",
+    "original_sha256": "b9266f6500ea9883d378067f5e96f5a54ecc0beaa7592cd583e5ce7da605d5ab",
+    "display_sha256": "41f6d2298ebd3a867cd5260772904f1e6375ad3afad034400a4ef31527b082e8",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p03-G1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p03-G1/storage-series.csv.gz",
+    "original_sha256": "ef3ad77d5a90e91b1efaa052ffc025603da3d65d469adbbf3b6d9b38bba0f1de",
+    "display_sha256": "4e628978e907a5d1e9849f4d2acee3b4dae2d5bb24b928ed27dcdb0a89ae5f89",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p10-A2/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p10-A2/storage-series.csv.gz",
+    "original_sha256": "0d0e194a8457ffe9de7175f4756dff24e33f7b0f5d794fe6aec395b28ab6b88a",
+    "display_sha256": "629dac44ced38b3f284ab4c10597e448e0077603282750ff88253a9a7593c672",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p10-G1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p10-G1/storage-series.csv.gz",
+    "original_sha256": "c91300a38e2cac1de631fb9a21c931ced8567e5dd5fa60ff887351f4fb8dab26",
+    "display_sha256": "bef45902f6fe1a8e78b58779c1b6a85cdee226757c2bb355e49a61bbe6a93d35",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "sustained-H1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/sustained-H1/storage-series.csv.gz",
+    "original_sha256": "3619f6460c2aad6b6191e83fea99c7e2d1aec515f459a5371070924b967bab13",
+    "display_sha256": "b13cc316868fae5670dac83824d9f1eb4dbe4589ff8ea90a665a4fe86b8844c2",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "sustained-H2/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/sustained-H2/storage-series.csv.gz",
+    "original_sha256": "e65b601719b049cecd9e488cd5e7bc5a131f5a7dff786ee19060c79aa23173b4",
+    "display_sha256": "14edebe47276b343b23aebbedd8c1c546f49b93cd43e8a0203439181dcf1082e",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p06-H1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p06-H1/storage-series.csv.gz",
+    "original_sha256": "87fc638acea717f69ed7702c75fc06dcfa551855025d3ca70cbee3f3b8f0e534",
+    "display_sha256": "36a7c8e6a1b839c2271671b04e7a36e58b678ac40dfc763487ec35c211415ca5",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p03-A2/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p03-A2/storage-series.csv.gz",
+    "original_sha256": "e37b3c8920467aec1a3a4bb86347d5e619e8a3e310b3371005a9231456ec782b",
+    "display_sha256": "2ded6b5807b47263a9b0cc3752722f023ca4e3538aa5571d4fd635756f2dd590",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p03-H1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p03-H1/storage-series.csv.gz",
+    "original_sha256": "c28d84650a3cf79813abfb36c2d06e61dc011ca4998123f67b6ba544a717cc43",
+    "display_sha256": "d22027017828bcdd0119bebede4bf999224e2fa2f2d38c6adc3a979c3fb2b108",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p10-H1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p10-H1/storage-series.csv.gz",
+    "original_sha256": "cedba18185080009c660c5c0c16081dbaf55ced9802b2cdde83afef862df6c68",
+    "display_sha256": "44605bd538d2369c1a4ebcceb5378a60ea0ba399186ec8bafc95002291a41428",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p03-H2/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p03-H2/storage-series.csv.gz",
+    "original_sha256": "2842de3b398c214db77b6051ef6f306f85d6bd1bc057aae9e84e60c1fcc4a842",
+    "display_sha256": "a1f927237bcc08b7ed27b76d83c0b91e734325343abed57afe26adc6b5ec43ed",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p04-A2/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p04-A2/storage-series.csv.gz",
+    "original_sha256": "596c4f40ba7d74236d2969f7f75cc1212ef99480ce27bfb58f0e2fa781cbe8e3",
+    "display_sha256": "c3f232fc098096e2473b24523f180e2e3077560ae30a19297c181500dd24acee",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "p04-H1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/p04-H1/storage-series.csv.gz",
+    "original_sha256": "11ae08c8b5432ee891824be358b2c17e14b5b4713d993d08f8723cb92080b50c",
+    "display_sha256": "dcbd2bb44317e1235d7ce211945864e6508a57d987f0452bb53687febc71a709",
+    "change": "CRLF to LF only, matching Git text normalization"
+  },
+  {
+    "file": "fault-H1/storage-series.csv",
+    "verbatim_gzip": "verbatim-whitespace/fault-H1/storage-series.csv.gz",
+    "original_sha256": "557d67bacb20827c6ec1f15758be4698f879681c7e1039059806d7887a7c5337",
+    "display_sha256": "b691f006eb4dec953edbd8f5fe64cf54f6f27f4ab7e794667a2695273e2b5db5",
+    "change": "CRLF to LF only, matching Git text normalization"
+  }
+]

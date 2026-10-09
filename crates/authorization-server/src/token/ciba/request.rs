@@ -28,6 +28,11 @@ pub(crate) fn validate_and_apply_ciba_request_object_claims_with_config(
     let Some(request_object) = form.request.as_deref() else {
         return Ok(None);
     };
+    if form.has_outer_authentication_parameters() {
+        return Err(ciba_invalid_request(
+            "CIBA signed requests must not include outer authentication parameters.",
+        ));
+    }
     let claims = signed_ciba_request_object_claims(request_object, client)?;
     let now = Utc::now().timestamp();
     if claims.iss.as_deref() != Some(client.client_id.as_str())
@@ -46,11 +51,7 @@ pub(crate) fn validate_and_apply_ciba_request_object_claims_with_config(
             .jti
             .clone()
             .expect("validated CIBA request object has jti"),
-        ttl_seconds: claims
-            .exp
-            .expect("validated CIBA request object has exp")
-            .saturating_sub(now)
-            .clamp(1, CIBA_REQUEST_OBJECT_MAX_TTL_SECONDS) as u64,
+        expires_at: claims.exp.expect("validated CIBA request object has exp"),
     };
     if let Some(binding_message) = claims.binding_message.as_deref()
         && !ciba_binding_message_is_supported(binding_message)
@@ -61,57 +62,19 @@ pub(crate) fn validate_and_apply_ciba_request_object_claims_with_config(
             "CIBA binding_message is unsupported.",
         ));
     }
-    merge_request_object_string(
-        &mut form.scope,
-        claims.scope,
-        "CIBA request object scope conflicts with outer parameter.",
-    )?;
-    merge_request_object_string(
-        &mut form.login_hint,
-        claims.login_hint,
-        "CIBA request object login_hint conflicts with outer parameter.",
-    )?;
-    merge_request_object_string(
-        &mut form.id_token_hint,
-        claims.id_token_hint,
-        "CIBA request object id_token_hint conflicts with outer parameter.",
-    )?;
-    merge_request_object_string(
-        &mut form.login_hint_token,
-        claims.login_hint_token,
-        "CIBA request object login_hint_token conflicts with outer parameter.",
-    )?;
-    merge_request_object_string(
-        &mut form.binding_message,
-        claims.binding_message,
-        "CIBA request object binding_message conflicts with outer parameter.",
-    )?;
-    merge_request_object_string(
-        &mut form.acr_values,
-        claims.acr_values,
-        "CIBA request object acr_values conflicts with outer parameter.",
-    )?;
-    merge_request_object_string(
-        &mut form.client_notification_token,
-        claims.client_notification_token,
-        "CIBA request object client_notification_token conflicts with outer parameter.",
-    )?;
-    validate_ciba_binding_message(form)?;
-    if let Some(requested_expiry) = claims.requested_expiry {
-        let Some(seconds) = ciba_requested_expiry_seconds(&requested_expiry) else {
-            return Err(ciba_invalid_request(
-                "CIBA request object requested_expiry is invalid.",
-            ));
-        };
-        if let Some(outer) = form.requested_expiry_seconds
-            && outer != seconds
-        {
-            return Err(ciba_invalid_request(
-                "CIBA request object requested_expiry conflicts with outer parameter.",
-            ));
-        }
-        form.requested_expiry_seconds = Some(seconds);
-    }
+    form.scope = request_object_string(claims.scope)?;
+    form.login_hint = request_object_string(claims.login_hint)?;
+    form.id_token_hint = request_object_string(claims.id_token_hint)?;
+    form.login_hint_token = request_object_string(claims.login_hint_token)?;
+    form.binding_message = request_object_string(claims.binding_message)?;
+    form.acr_values = request_object_string(claims.acr_values)?;
+    form.client_notification_token = request_object_string(claims.client_notification_token)?;
+    form.requested_expiry_seconds = match claims.requested_expiry {
+        Some(value) => Some(ciba_requested_expiry_seconds(&value).ok_or_else(|| {
+            ciba_invalid_request("CIBA request object requested_expiry is invalid.")
+        })?),
+        None => None,
+    };
     Ok(Some(replay))
 }
 
@@ -236,14 +199,9 @@ pub(crate) fn ciba_request_object_audience_valid(
     let Some(aud) = claims.aud.as_ref() else {
         return false;
     };
-    let endpoint = format!("{issuer}/bc-authorize");
     match aud {
-        Value::String(value) => value == issuer || value == &endpoint,
-        Value::Array(values) => values.iter().any(|value| {
-            value
-                .as_str()
-                .is_some_and(|value| value == issuer || value == endpoint)
-        }),
+        Value::String(value) => value == issuer,
+        Value::Array(values) => values.iter().any(|value| value.as_str() == Some(issuer)),
         _ => false,
     }
 }
@@ -345,26 +303,18 @@ pub(crate) fn validate_ciba_binding_message(
     Ok(())
 }
 
-pub(crate) fn merge_request_object_string(
-    target: &mut Option<String>,
-    value: Option<String>,
-    conflict_description: &str,
-) -> Result<(), OAuthEndpointError> {
-    let Some(value) = value.map(|value| value.trim().to_owned()) else {
-        return Ok(());
-    };
-    if value.is_empty() {
-        return Err(ciba_invalid_request(
-            "CIBA request object parameter is empty.",
-        ));
-    }
-    if let Some(existing) = target.as_deref()
-        && existing != value
-    {
-        return Err(ciba_invalid_request(conflict_description));
-    }
-    *target = Some(value);
-    Ok(())
+fn request_object_string(value: Option<String>) -> Result<Option<String>, OAuthEndpointError> {
+    value
+        .map(|value| {
+            let value = value.trim().to_owned();
+            if value.is_empty() {
+                return Err(ciba_invalid_request(
+                    "CIBA request object parameter is empty.",
+                ));
+            }
+            Ok(value)
+        })
+        .transpose()
 }
 
 pub(crate) fn ciba_requested_expiry_seconds(value: &Value) -> Option<u64> {

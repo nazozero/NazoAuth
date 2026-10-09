@@ -1,0 +1,23 @@
+{
+  "source_sha": "101939f7095a9ea5822ff68580d9fedcd259e970",
+  "unchanged_security_files": {
+    "crates/persistence-postgres/src/pool.rs": "cf91642dfa215d422781c6f6044c3dd68f8976682ab1232583bfcfb86f7cceaa",
+    "crates/persistence-postgres/src/repositories/token_issuance.rs": "4ffb0706ecaf8c5accabbdec7c9df90bede8b7f471aeed2978a9ee7188624e1e",
+    "crates/persistence-postgres/src/repositories/security_state.rs": "4463e8c1095d6548290ab10a2ca91dee2b89f12886271bcabb0ea0a51f430669",
+    "crates/nazoauth/src/jobs/security_state.rs": "5707026d9865e13f212766cc4ca0e942c416efb56974784cc4e2fd3fe17400ca"
+  },
+  "changed_files": [
+    "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+    "crates/persistence-postgres/src/repositories/authorization_flow.rs",
+    "crates/persistence-postgres/src/repositories/tokens.rs"
+  ],
+  "notes": [
+    "All four statements retain SQL function, argument order and SQL bind types. No query results or privileges are cached.",
+    "Audit append and decision calls still drain load() through statement completion; transaction owner still awaits COMMIT.",
+    "DiscardOnDrop and task cancellation ownership are unchanged.",
+    "Contract reference remains inside the same transaction and function-owned FOR KEY SHARE lock.",
+    "Miss-heavy family-presence and cardinality-sensitive capacity queries remain uncached.",
+    "No migration, TTL, pool size, Required policy, key binding, tenant predicate, revocation fence or maintenance schedule changed.",
+    "Remaining round-trip/socket/driver/I/O attribution is unresolved; repeated cache preparation is fixed but end-to-end capacity is not proven improved."
+  ]
+}

@@ -1,0 +1,16 @@
+    Checking nazo-http-actix v0.2.16 (/src/crates/http-actix)
+    Checking nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+    Checking nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+error[E0609]: no field `issued_at` on type `ConsentPayload`
+   --> crates/authorization-server/tests/support/authorization_decision_application.rs:120:40
+    |
+120 |                     issued_at: payload.issued_at,
+    |                                        ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `request_id`, `user_id`, `client_id`, `client_name`, `redirect_uri` ... and 22 others
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `nazo-oauth-server` (test "authorization_application") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

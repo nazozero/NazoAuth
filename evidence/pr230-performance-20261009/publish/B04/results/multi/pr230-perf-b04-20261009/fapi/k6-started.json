@@ -1,0 +1,9 @@
+{
+  "ts": 1791480705.1102974,
+  "scenario": "fapi2_logged_in_high_security",
+  "profile": "capacity",
+  "run_id": "pr230-perf-b04-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791480705.1,
+  "state_ready_run_id": "pr230-perf-b04-20261009"
+}

@@ -4,7 +4,6 @@ pub(crate) mod authorization;
 pub(crate) mod client_attestation;
 pub(crate) mod dpop;
 pub(crate) mod mtls;
-pub(crate) mod perf_metrics;
 pub(crate) mod profile;
 pub(crate) mod rate_limit;
 pub(crate) mod sessions;

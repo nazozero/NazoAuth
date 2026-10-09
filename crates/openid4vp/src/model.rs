@@ -132,7 +132,7 @@ pub struct TransactionData {
 pub struct AuthorizationRequest {
     pub client_id: String,
     pub response_type: String,
-    pub response_mode: String,
+    pub response_mode: ResponseMode,
     pub response_uri: String,
     pub nonce: String,
     pub state: String,
@@ -157,10 +157,12 @@ impl AuthorizationRequest {
             // let a wallet present a proof that is not bound to the requested
             // transaction, so fail closed until that verifier path exists.
             || self.transaction_data.is_some()
-            || !matches!(
-                self.response_mode.as_str(),
-                "direct_post" | "direct_post.jwt"
-            )
+            // The available credential verifiers require holder proofs. Reject
+            // this unsupported profile before creating a request rather than
+            // silently advertising a waiver that cannot be honored.
+            || self.dcql_query.credentials.iter().any(|query| {
+                query.require_cryptographic_holder_binding == Some(false)
+            })
         {
             return Err(PresentationError::InvalidRequest);
         }
@@ -188,26 +190,28 @@ pub struct DirectPostJwtResponse {
     pub response: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
 pub struct PresentationTransaction {
     pub id: Uuid,
     pub client_id_prefix: ClientIdPrefix,
     pub request_method: RequestMethod,
-    pub response_mode: ResponseMode,
+
     pub wallet_authorization_endpoint: String,
     pub request: AuthorizationRequest,
     pub request_object: Option<String>,
     pub request_uri: Option<String>,
-    #[serde(skip)]
     pub openid4vc_trust_policy_binding_id: Option<Uuid>,
-    #[serde(skip)]
     pub openid4vc_trust_policy_resource_id: Option<String>,
-    #[serde(skip)]
     pub openid4vc_trust_policy_digest: Option<String>,
-    #[serde(skip)]
     pub response_encryption_private_key: Option<Vec<u8>>,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for PresentationTransaction {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PresentationTransaction([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

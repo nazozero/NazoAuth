@@ -13,55 +13,16 @@
 //! Stage 4 falls out of the same lookup, because admission requires an
 //! `active` slot with `expires_at > now`.
 
-use anyhow::{Context as _, bail};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use nazo_crypto::ed25519::VerifyingKey;
-use nazo_operator_protocol::{
-    ControlOperation, MAX_COMPACT_JWS_BYTES, MAX_CONTROL_OPERATION_BYTES,
-    validate_control_operation,
-};
+use nazo_operator_protocol::PresentedControlOperation;
 use nazo_persistence::{AdmittedController, ControllerRegistryPort};
 
-/// Stage 1: bounded, strict parse of the presented operation.
-///
-/// The returned operation is *not* trusted: signature verification (stage 3)
-/// re-derives it through [`nazo_operator_protocol::
-/// verify_control_operation_signature`] and callers must use that value for
-/// every later decision.  This pass only exists so malformed requests are
-/// classified before a database round-trip and so the deployment/kid needed
-/// for the registry lookup are available.
-pub(super) fn present(compact: &str) -> anyhow::Result<ControlOperation> {
-    if compact.len() > MAX_COMPACT_JWS_BYTES {
-        bail!("control operation exceeds the maximum compact JWS size");
-    }
-    let mut segments = compact.split('.');
-    let (payload,) = match (
-        segments.next(),
-        segments.next(),
-        segments.next(),
-        segments.next(),
-    ) {
-        (Some(protected), Some(payload), Some(signature), None)
-            if !protected.is_empty() && !payload.is_empty() && !signature.is_empty() =>
-        {
-            (payload,)
-        }
-        _ => bail!("control operation must be a three-segment compact JWS"),
-    };
-    let payload_bytes = URL_SAFE_NO_PAD
-        .decode(payload)
-        .context("control operation payload is not canonical base64url")?;
-    if payload_bytes.len() > MAX_CONTROL_OPERATION_BYTES {
-        bail!("control operation payload exceeds the maximum size");
-    }
-    // deny_unknown_fields applies to the envelope and every typed operation
-    // payload; unknown operations are rejected here as protocol changes rather
-    // than passed through.
-    let operation: ControlOperation =
-        serde_json::from_slice(&payload_bytes).context("control operation payload is invalid")?;
-    validate_control_operation(&operation).context("control operation violates protocol policy")?;
-    Ok(operation)
+/// Stage 1: bounded presentation with immutable payload/canonical bytes.
+/// Signature authority is established only by consuming `verify` after admission.
+pub(super) fn present(compact: &str) -> anyhow::Result<PresentedControlOperation<'_>> {
+    PresentedControlOperation::parse(compact).context("control operation presentation is invalid")
 }
 
 /// A controller key the registry admits right now (stage 2 + 4 output).

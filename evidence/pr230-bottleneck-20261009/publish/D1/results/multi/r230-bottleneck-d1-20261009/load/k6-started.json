@@ -1,0 +1,9 @@
+{
+  "ts": 1791508087.7183318,
+  "scenario": "cap_authorization_code",
+  "profile": "capacity",
+  "run_id": "r230-bottleneck-d1-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791508087.713,
+  "state_ready_run_id": "r230-bottleneck-d1-20261009"
+}

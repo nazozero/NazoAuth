@@ -1,0 +1,11 @@
+{
+  "label": "r230-model-model04-20261009",
+  "key": "MODEL04",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.116,
+  "total_elapsed_s": 239.487,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

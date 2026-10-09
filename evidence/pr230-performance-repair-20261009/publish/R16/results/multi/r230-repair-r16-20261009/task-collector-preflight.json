@@ -1,0 +1,189 @@
+{
+  "health": {
+    "ok": true,
+    "checks": {
+      "soak": {
+        "container": "sis-sampler-r230-repair-r16-20261009",
+        "running": true,
+        "meta_ok": true,
+        "detail": "ok"
+      },
+      "proc": {
+        "container": "sis-proc-r230-repair-r16-20261009",
+        "running": true,
+        "meta_ok": true,
+        "detail": "ok"
+      }
+    },
+    "real_sample_ok": true
+  },
+  "last_sample": {
+    "ts": 1791513644,
+    "pg": {
+      "backends": 27,
+      "active": 1,
+      "idle_in_tx": 0
+    },
+    "xact": {
+      "oldest_xact_age_s": -1,
+      "xmin_lag_xids": -1,
+      "xacts_over_60s": 0,
+      "xacts_over_300s": 0
+    },
+    "pg_db": {
+      "xact_commit": 692,
+      "xact_rollback": 1,
+      "blks_read": 631,
+      "blks_hit": 217801,
+      "tup_ret": 212760,
+      "tup_ins": 8917,
+      "tup_upd": 1188,
+      "tup_del": 1947,
+      "deadlocks": 0,
+      "temp_bytes": 0
+    },
+    "refresh": {
+      "families_total": 0,
+      "families_live": 0,
+      "families_revoked": 0,
+      "families_compromised": 0,
+      "families_machine": 0,
+      "max_active_per_scope": 0,
+      "spent_live_est": 0,
+      "spent_ins_cum": 0,
+      "spent_del_cum": 0,
+      "spent_expired_backlog": 0,
+      "contracts_total": 0,
+      "contracts_referenced": 0,
+      "families_ins_cum": 0,
+      "families_del_cum": 0,
+      "spent_max_per_family": 0
+    },
+    "issuance_maintenance": {
+      "sampled_at_s": 1791513644.946868,
+      "oldest_due_at_s": null
+    },
+    "db_bytes": 12506815,
+    "wal_bytes": 17572737,
+    "wal_io": {
+      "writes": 994,
+      "write_bytes": 59023360,
+      "write_time_ms": 0.0,
+      "fsyncs": 197,
+      "fsync_time_ms": 0.0
+    },
+    "checkpoints": {
+      "timed": 0,
+      "requested": 1,
+      "done": 0,
+      "write_time_ms": 15.0,
+      "sync_time_ms": 13.0,
+      "buffers_written": 943
+    },
+    "rel_bytes": {
+      "oauth_token_issuances": {
+        "total": 49152,
+        "heap": 0,
+        "idx": 40960,
+        "toast": 8192,
+        "ins": 0,
+        "upd": 0,
+        "del": 0,
+        "dead": 0,
+        "autovac": 0
+      },
+      "oauth_refresh_families": {
+        "total": 65536,
+        "heap": 0,
+        "idx": 57344,
+        "toast": 8192,
+        "ins": 0,
+        "upd": 0,
+        "del": 0,
+        "dead": 0,
+        "autovac": 0
+      },
+      "security_audit_chain_entries": {
+        "total": 32768,
+        "heap": 0,
+        "idx": 24576,
+        "toast": 8192,
+        "ins": 0,
+        "upd": 0,
+        "del": 0,
+        "dead": 0,
+        "autovac": 0
+      },
+      "oauth_refresh_contracts": {
+        "total": 24576,
+        "heap": 0,
+        "idx": 16384,
+        "toast": 8192,
+        "ins": 0,
+        "upd": 0,
+        "del": 0,
+        "dead": 0,
+        "autovac": 0
+      },
+      "security_audit_events": {
+        "total": 49152,
+        "heap": 0,
+        "idx": 40960,
+        "toast": 8192,
+        "ins": 0,
+        "upd": 0,
+        "del": 0,
+        "dead": 0,
+        "autovac": 0
+      },
+      "oauth_refresh_spent_tokens": {
+        "total": 32768,
+        "heap": 0,
+        "idx": 24576,
+        "toast": 8192,
+        "ins": 0,
+        "upd": 0,
+        "del": 0,
+        "dead": 0,
+        "autovac": 0
+      },
+      "access_token_revocations": {
+        "total": 32768,
+        "heap": 0,
+        "idx": 32768,
+        "toast": 0,
+        "ins": 0,
+        "upd": 0,
+        "del": 0,
+        "dead": 0,
+        "autovac": 0
+      }
+    },
+    "audit": {
+      "pending": 0,
+      "chain_head": 0,
+      "anchor": 0
+    },
+    "runtime_role_activity": [
+      {
+        "state": "idle",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "backends": 17
+      }
+    ],
+    "pg_waits": {
+      "Activity": 8,
+      "Client": 18
+    },
+    "vk": {
+      "cmd": 270,
+      "hits": 46,
+      "miss": 92,
+      "exp": 0,
+      "mem": 1282552,
+      "clients": 2,
+      "keys": 1
+    }
+  }
+}

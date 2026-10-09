@@ -43,7 +43,7 @@ pub trait TransientStateHealthPort: Send + Sync {
     fn check(&self) -> TransientStateFuture<'_, ()>;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CibaPingDelivery {
     pub auth_req_id_hash: String,
     pub auth_req_id: String,
@@ -53,11 +53,25 @@ pub struct CibaPingDelivery {
     pub expires_at: i64,
 }
 
+impl std::fmt::Debug for CibaPingDelivery {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CibaPingDelivery([REDACTED])")
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CibaPingFinishOutcome {
     Delivered,
     RetryAt(i64),
     Failed,
+}
+
+/// One bounded queue scan; expired or missing entries count as scanned even
+/// when they produce no delivery. Hosts use this to detect a possible backlog.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CibaPingClaimBatch {
+    pub scanned: usize,
+    pub deliveries: Vec<CibaPingDelivery>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,7 +87,7 @@ pub trait CibaPingDeliveryPort: Send + Sync {
         now: i64,
         lock_until: i64,
         limit: usize,
-    ) -> TransientStateFuture<'a, Vec<CibaPingDelivery>>;
+    ) -> TransientStateFuture<'a, CibaPingClaimBatch>;
 
     fn finish<'a>(
         &'a self,
@@ -119,7 +133,7 @@ pub trait ServerTransientStateProvider: Send + Sync {
 /// This port is used only by the runtime refresher. Request handlers resolve a
 /// tenant from the process-local snapshot and never call this cache.
 pub trait TenantDirectoryCachePort: Send + Sync {
-    fn load(&self) -> TransientStateFuture<'_, Option<TenantDirectorySnapshot>>;
+    fn load(&self) -> TransientStateFuture<'_, Option<Arc<TenantDirectorySnapshot>>>;
 
     /// Publishes a snapshot loaded from the authoritative database.
     ///

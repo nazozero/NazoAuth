@@ -1,0 +1,42 @@
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+error[E0277]: can't compare `Vec<std::string::String>` with `Value`
+   --> crates/persistence-postgres/tests/refresh_authority.rs:299:9
+    |
+299 |         assert_eq!(source.audience, json!(audiences));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no implementation for `Vec<std::string::String> == Value`
+    |
+    = help: the trait `PartialEq<Value>` is not implemented for `Vec<std::string::String>`
+    = help: the following other types implement trait `PartialEq<Rhs>`:
+              `Vec<T, A1>` implements `PartialEq<Vec<U, A2>>`
+              `Vec<T, A>` implements `PartialEq<&[U; N]>`
+              `Vec<T, A>` implements `PartialEq<&[U]>`
+              `Vec<T, A>` implements `PartialEq<&mut [U]>`
+              `Vec<T, A>` implements `PartialEq<[U; N]>`
+              `Vec<T, A>` implements `PartialEq<[U]>`
+              `Vec<u8>` implements `PartialEq<ByteStr>`
+              `Vec<u8>` implements `PartialEq<ByteString>`
+            and 2 others
+
+error[E0277]: can't compare `Vec<std::string::String>` with `Value`
+    --> crates/persistence-postgres/tests/refresh_authority.rs:1025:5
+     |
+1025 |     assert_eq!(current.audience, json!([A]));
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no implementation for `Vec<std::string::String> == Value`
+     |
+     = help: the trait `PartialEq<Value>` is not implemented for `Vec<std::string::String>`
+     = help: the following other types implement trait `PartialEq<Rhs>`:
+               `Vec<T, A1>` implements `PartialEq<Vec<U, A2>>`
+               `Vec<T, A>` implements `PartialEq<&[U; N]>`
+               `Vec<T, A>` implements `PartialEq<&[U]>`
+               `Vec<T, A>` implements `PartialEq<&mut [U]>`
+               `Vec<T, A>` implements `PartialEq<[U; N]>`
+               `Vec<T, A>` implements `PartialEq<[U]>`
+               `Vec<u8>` implements `PartialEq<ByteStr>`
+               `Vec<u8>` implements `PartialEq<ByteString>`
+             and 2 others
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `nazo-postgres` (test "refresh_authority") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

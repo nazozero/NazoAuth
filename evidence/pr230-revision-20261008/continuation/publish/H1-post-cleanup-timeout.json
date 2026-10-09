@@ -1,0 +1,57 @@
+{
+  "state_after_collector_deadline": [
+    {
+      "container": "r230-sustained-h1-20261008-keyset-1",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 137,
+        "Error": "",
+        "StartedAt": "2026-10-08T07:22:33.434150926Z",
+        "FinishedAt": "2026-10-08T07:30:58.709836721Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-08T07:30:50.338540115Z",
+              "End": "2026-10-08T07:30:50.40204633Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T07:30:52.403356355Z",
+              "End": "2026-10-08T07:30:52.470505371Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T07:30:54.471897444Z",
+              "End": "2026-10-08T07:30:54.536335479Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T07:30:56.537451598Z",
+              "End": "2026-10-08T07:30:56.593168089Z",
+              "ExitCode": 0,
+              "Output": ""
+            },
+            {
+              "Start": "2026-10-08T07:30:58.593967244Z",
+              "End": "2026-10-08T07:30:58.679366711Z",
+              "ExitCode": 0,
+              "Output": ""
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "note": "Cleanup retry after complete FAIL performance result; no replacement of its verdict"
+}

@@ -1,0 +1,64 @@
+[
+  {
+    "point": "p03-B1",
+    "formal_windows": {
+      "cap_mixed": 1791429566.602,
+      "oidc_cold_login_refresh": 1791429525.068,
+      "metadata_jwks": 1791429529.337,
+      "fapi2_logged_in_high_security": 1791429534.293,
+      "cap_refresh_token": 1791429536.251
+    },
+    "all_final_pins_verified": true,
+    "last_pin_s": 1791429520.069946,
+    "first_formal_s": 1791429525.068,
+    "all_pins_before_first_formal": true,
+    "failed_initial_attempts": [
+      {
+        "ts": 1791429508.8554952,
+        "container": "sis-side-argon2-r230-p03-b1-20261008",
+        "attempt": 0
+      },
+      {
+        "ts": 1791429513.5371478,
+        "container": "sis-side-meta-r230-p03-b1-20261008",
+        "attempt": 0
+      }
+    ]
+  },
+  {
+    "point": "p04-B1",
+    "formal_windows": {
+      "cap_mixed": 1791429873.336,
+      "oidc_cold_login_refresh": 1791429826.204,
+      "metadata_jwks": 1791429826.6,
+      "fapi2_logged_in_high_security": 1791429830.596,
+      "cap_refresh_token": 1791429835.817
+    },
+    "all_final_pins_verified": true,
+    "last_pin_s": 1791429817.9794166,
+    "first_formal_s": 1791429826.204,
+    "all_pins_before_first_formal": true,
+    "failed_initial_attempts": [
+      {
+        "ts": 1791429813.6964142,
+        "container": "sis-side-fapi-r230-p04-b1-20261008",
+        "attempt": 0
+      }
+    ]
+  },
+  {
+    "point": "p04-A1",
+    "formal_windows": {
+      "cap_mixed": 1791430174.457,
+      "oidc_cold_login_refresh": 1791430126.544,
+      "metadata_jwks": 1791430126.438,
+      "fapi2_logged_in_high_security": 1791430127.858,
+      "cap_refresh_token": 1791430132.065
+    },
+    "all_final_pins_verified": true,
+    "last_pin_s": 1791430114.6355298,
+    "first_formal_s": 1791430126.438,
+    "all_pins_before_first_formal": true,
+    "failed_initial_attempts": []
+  }
+]

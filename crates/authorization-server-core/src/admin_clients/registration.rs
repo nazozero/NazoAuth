@@ -1,6 +1,9 @@
 use uuid::Uuid;
 
-use super::helpers::{sector_identifier_host_for_redirects, trim_optional_string, trim_string_vec};
+use super::helpers::{
+    sector_identifier_host_for_redirects, trim_optional_string, trim_string_vec,
+    validate_subject_type,
+};
 use super::policy::{
     AdminClientPolicy, ClientSecurityPolicyContext, validate_composable_security_policy,
 };
@@ -54,6 +57,8 @@ where
     S: SectorIdentifierResolverPort + ?Sized,
     C: AdminClientCryptoPort + ?Sized,
 {
+    // Guard before any validation or await, including rejected preparation.
+    let issued_secret = super::PendingClientSecret::from(issued_secret);
     request
         .security_policy
         .validate()
@@ -77,6 +82,7 @@ where
         crypto,
     )?;
     let subject_type = request.subject_type.unwrap_or_else(|| "public".to_owned());
+    validate_subject_type(&subject_type)?;
     let redirect_uris = request.redirect_uris;
     let (sector_identifier_uri, sector_identifier_host) = pairwise_subject(
         &subject_type,
@@ -113,7 +119,6 @@ where
             backchannel_authentication_request_signing_alg: trim_optional_string(
                 request.backchannel_authentication_request_signing_alg,
             ),
-            backchannel_user_code_parameter: request.backchannel_user_code_parameter,
             backchannel_logout_uri: trim_optional_string(request.backchannel_logout_uri),
             backchannel_logout_session_required: request.backchannel_logout_session_required,
             frontchannel_logout_uri: trim_optional_string(request.frontchannel_logout_uri),

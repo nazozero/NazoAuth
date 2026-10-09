@@ -1,0 +1,6 @@
+from pathlib import Path
+import json,hashlib,subprocess
+p=Path('/workspace');e=p/'evidence/pr230-performance-repair-20261009';key='BREAD';out=e/key;(out/'requests').mkdir(parents=True,exist_ok=True)
+a=json.loads((e/'image-read.json').read_text());r=json.loads((e/'R16/requests/R16.json').read_text());m=json.loads((e/'R16/requests/manifest.json').read_text());r.update(name='r230-repair-bread-20261009',request_key=key,arm='B',source_sha=a['source_sha'],source_tree=subprocess.check_output(['git','-C',str(p),'rev-parse',a['source_sha']+'^{tree}'],text=True).strip(),image=a['image'],expected_binary_sha256=a['binary_sha256'],diagnostic_only=False);r.pop('diagnostic_purpose',None);assert 'TOKIO_WORKER_THREADS' not in r['app_env_overrides'];f=out/'requests'/f'{key}.json';f.write_text(json.dumps(r,indent=2));m.update(project=r['name'],source_sha=a['source_sha'],app_image=a['image'],diagnostic_only=False,requests={key:{'path':str(f).replace('/workspace','/src',1),'sha256':hashlib.sha256(f.read_bytes()).hexdigest()}});(out/'requests/manifest.json').write_text(json.dumps(m,indent=2))
+print(key,r['rate'],r['pre_vus'],r['pool_connections'])
+subprocess.run(['docker','stop','nazoauth-perf-unit-pg-20261009'],check=True,capture_output=True)

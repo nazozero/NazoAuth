@@ -1,0 +1,62 @@
+[
+  {
+    "key": "MODEL02",
+    "baseline_request": "BREAD2",
+    "changed_fields": [
+      "source_tree",
+      "name",
+      "image",
+      "expected_binary_sha256",
+      "source_sha",
+      "request_key"
+    ],
+    "unchanged_workload_and_gates": true,
+    "decision_follow": true,
+    "decision_observe_budget_s": 540
+  },
+  {
+    "key": "MODEL10",
+    "baseline_request": "BREAD10",
+    "changed_fields": [
+      "source_tree",
+      "name",
+      "image",
+      "expected_binary_sha256",
+      "source_sha",
+      "request_key"
+    ],
+    "unchanged_workload_and_gates": true,
+    "decision_follow": false,
+    "decision_observe_budget_s": 450
+  },
+  {
+    "key": "MODEL03",
+    "baseline_request": "BREAD03",
+    "changed_fields": [
+      "source_tree",
+      "name",
+      "image",
+      "expected_binary_sha256",
+      "source_sha",
+      "request_key"
+    ],
+    "unchanged_workload_and_gates": true,
+    "decision_follow": false,
+    "decision_observe_budget_s": 450
+  },
+  {
+    "key": "MODEL04",
+    "baseline_request": "BREAD04",
+    "changed_fields": [
+      "source_tree",
+      "name",
+      "image",
+      "expected_binary_sha256",
+      "source_sha",
+      "request_key"
+    ],
+    "unchanged_workload_and_gates": true,
+    "decision_follow": false,
+    "decision_observe_budget_s": 450
+  }
+]

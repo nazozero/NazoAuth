@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::*;
 use crate::{
     AccountIdentity, Principal, TenantContext, UserId, UserProfile, UserRole,
-    ports::{BackupCodeCandidate, MfaHashFuture, RepositoryFuture, TotpCredential, TotpEnrollment},
+    ports::{BackupCodeCandidate, MfaHashFuture, RepositoryFuture, TotpEnrollment},
 };
 
 struct ConfirmRepository(Mutex<TotpVerificationOutcome>);
@@ -60,23 +60,6 @@ impl MfaRepositoryPort for ConfirmRepository {
         unreachable!()
     }
 
-    fn totp_credential<'a>(
-        &'a self,
-        _tenant_id: crate::TenantId,
-        _user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpCredential>> {
-        unreachable!()
-    }
-
-    fn compare_and_set_totp_step<'a>(
-        &'a self,
-        _tenant_id: crate::TenantId,
-        _user_id: UserId,
-        _step: i64,
-    ) -> RepositoryFuture<'a, bool> {
-        unreachable!()
-    }
-
     fn backup_code_candidates(
         &self,
         _tenant_id: crate::TenantId,
@@ -90,7 +73,7 @@ impl MfaRepositoryPort for ConfirmRepository {
         _tenant_id: crate::TenantId,
         _user_id: UserId,
         _candidate_id: Uuid,
-    ) -> RepositoryFuture<'_, bool> {
+    ) -> RepositoryFuture<'_, Option<Uuid>> {
         unreachable!()
     }
 
@@ -106,27 +89,42 @@ impl MfaRepositoryPort for ConfirmRepository {
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
+        _credential_id: Uuid,
         _hashes: Vec<EncodedSecretHash>,
-    ) -> RepositoryFuture<'a, ()> {
+    ) -> RepositoryFuture<'a, bool> {
         unreachable!()
     }
 
-    fn clear_mfa_state<'a>(
+    fn clear_mfa_state_if_current<'a>(
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-    ) -> RepositoryFuture<'a, ()> {
-        unreachable!()
+        credential_id: Uuid,
+    ) -> RepositoryFuture<'a, bool> {
+        let current = *self.0.lock().unwrap();
+        Box::pin(async move { Ok(current == TotpVerificationOutcome::Accepted(credential_id)) })
+    }
+
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        tenant_id: crate::TenantId,
+        user_id: UserId,
+        credential_id: Uuid,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        assert_eq!(source_ip_hash, "fixture-source-hash");
+        self.clear_mfa_state_if_current(tenant_id, user_id, credential_id)
     }
 
     fn remember_device(
         &self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
+        _credential_id: Uuid,
         _token_hash: String,
         _user_agent_hash: Option<String>,
         _expires_at: DateTime<Utc>,
-    ) -> RepositoryFuture<'_, ()> {
+    ) -> RepositoryFuture<'_, bool> {
         unreachable!()
     }
 }
@@ -197,4 +195,66 @@ fn account() -> PublicAccount {
         created_at: now,
         updated_at: now,
     }
+}
+
+#[tokio::test]
+async fn disable_reuses_verified_generation_without_consuming_another_factor() {
+    let current = Uuid::now_v7();
+    let service = MfaService::new(
+        Arc::new(ConfirmRepository(Mutex::new(
+            TotpVerificationOutcome::Accepted(current),
+        ))),
+        Arc::new(UnusedHasher),
+    );
+    for method in [
+        MfaVerificationMethod::Totp,
+        MfaVerificationMethod::BackupCode,
+    ] {
+        let stale = MfaVerificationProof {
+            method,
+            credential_id: Uuid::now_v7(),
+        };
+        assert_eq!(
+            service
+                .disable(&account(), &stale, "fixture-source-hash".to_owned())
+                .await
+                .unwrap_err()
+                .kind(),
+            MfaServiceErrorKind::InvalidCode,
+        );
+        service
+            .disable(
+                &account(),
+                &MfaVerificationProof {
+                    method,
+                    credential_id: current,
+                },
+                "fixture-source-hash".to_owned(),
+            )
+            .await
+            .expect("the current generation can be cleared with either consumed factor");
+    }
+}
+
+#[tokio::test]
+async fn required_confirmation_has_no_bare_repository_fallback_or_backup_code_disclosure() {
+    let service = MfaService::new(
+        Arc::new(ConfirmRepository(Mutex::new(
+            TotpVerificationOutcome::Accepted(Uuid::now_v7()),
+        ))),
+        Arc::new(UnusedHasher),
+    );
+    let prepared = PreparedTotpConfirmation {
+        code: "fixture".to_owned(),
+        backup_codes: vec!["must-remain-undisclosed".to_owned()],
+        hashes: Vec::new(),
+    };
+    let error = service
+        .confirm_totp_with_required_audit(&account(), prepared, 0, "fixture-source-hash".to_owned())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.repository_error(),
+        Some(&RepositoryError::Unavailable)
+    );
 }

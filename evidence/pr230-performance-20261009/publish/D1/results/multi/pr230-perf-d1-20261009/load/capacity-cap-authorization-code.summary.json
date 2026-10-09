@@ -1,0 +1,240 @@
+{
+  "profile": "capacity",
+  "scenario": "cap_authorization_code",
+  "elapsed_seconds": 80.804,
+  "status": "target_miss",
+  "k6_exit_code": 0,
+  "k6": {
+    "http_reqs": 215796,
+    "rps": 2841.006,
+    "error_rate": 0.0,
+    "iterations_completed": 53949,
+    "dropped_iterations": 6051,
+    "dropped_per_s": 79.663,
+    "drop_fraction": 0.10085,
+    "scheduled_estimate": 60000,
+    "latency_ms": {
+      "p50": 176.812,
+      "p95": 673.642,
+      "p99": 985.322
+    },
+    "full_run": {
+      "iterations_completed": 53949,
+      "dropped_iterations": 6051,
+      "drop_fraction": 0.10085,
+      "http_latency_ms": {
+        "p50": 176.812,
+        "p95": 673.642,
+        "p99": 985.322
+      }
+    },
+    "measure": {
+      "ops": 41949,
+      "ops_per_s": 699.15,
+      "ops_per_s_basis": "scenario_window",
+      "successful_ops_per_s": 699.15,
+      "errors": 0,
+      "outcomes": {
+        "success": 41949,
+        "expected_rejection": 0,
+        "local_no_request": 0,
+        "unexpected": 0,
+        "prepare_failed": 0,
+        "prepare_local_failed": 0,
+        "prepare_sut_failed": 0
+      },
+      "iterations": {
+        "measure_begins": 41949,
+        "legacy_rule_begins": 42048,
+        "late_vu_measured_only": 0,
+        "late_vu_fraction": 0.0,
+        "begins_total": 53949,
+        "ends_total": 53949
+      },
+      "subject_lifecycle": {
+        "initial_mint": 0,
+        "refresh_update": 0,
+        "expired_reauth": 0
+      },
+      "legacy_rule_ops": 42048,
+      "scheduled": 48000,
+      "started": 41949,
+      "completed": 41949,
+      "unfinished": 0,
+      "dropped": 6051,
+      "drop_fraction": 0.126062,
+      "schedule_delta": -6051,
+      "drop_lower_bound": 6051,
+      "drop_upper_bound": 6051,
+      "drop_fraction_upper": 0.126062,
+      "boundary_overshoot": 0,
+      "pre_measure_drops_estimate": 0,
+      "cohort_problems": [],
+      "cohort_valid": true,
+      "latency_ms": {
+        "p50": 1147.0,
+        "p95": 2046.0,
+        "p99": 2263.0
+      },
+      "iteration_ms": {
+        "p50": 1147.0,
+        "p95": 2046.0,
+        "p99": 2263.52
+      },
+      "measurement_contract": {
+        "window_seconds": 60,
+        "duration_ms": 75000,
+        "measure_offset_ms": 15000,
+        "bucket_count": 2,
+        "scenario_clock_ok": 1,
+        "contract": "cap-scenario-window-v1",
+        "scenario_start_ms": 1791476837004,
+        "window_end_ms": 1791476912004,
+        "warmup_ms": 15000,
+        "cap_measure_start_ms": 0,
+        "bucket_ms": 60000,
+        "divergent_vus": false,
+        "window_start_ms": 1791476852004
+      },
+      "contract_problems": [],
+      "window_valid": true
+    }
+  },
+  "measurement_evidence": {
+    "window_valid": true,
+    "window_problems": [],
+    "parse_errors": 0,
+    "reader_error": null,
+    "lag_over_5s": 0,
+    "diag_overflow": false
+  },
+  "steps": [
+    {
+      "step": "authorize",
+      "http_reqs": 53949,
+      "rps": 710.252,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 144.103,
+        "p95": 382.831,
+        "p99": 472.233
+      }
+    },
+    {
+      "step": "authorize_decision",
+      "http_reqs": 53949,
+      "rps": 710.252,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 151.083,
+        "p95": 397.452,
+        "p99": 478.088
+      }
+    },
+    {
+      "step": "par_oidc",
+      "http_reqs": 53949,
+      "rps": 710.252,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 153.867,
+        "p95": 388.102,
+        "p99": 492.548
+      }
+    },
+    {
+      "step": "token_authorization_code",
+      "http_reqs": 53949,
+      "rps": 710.252,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 412.505,
+        "p95": 955.107,
+        "p99": 1093.197
+      }
+    }
+  ],
+  "error_breakdown": [],
+  "postgres": {
+    "statement_calls": 2984129,
+    "total_statement_ms": 398345.928,
+    "mean_statement_ms": 0.133,
+    "rows": 3423245,
+    "database_bytes": 265655999,
+    "statements_per_http_request": 13.828
+  },
+  "collection_contract": "blackbox-db-v1",
+  "db_pool": null,
+  "application_pool_observation": {
+    "field": "application_pool",
+    "delta": null,
+    "status": "UNAVAILABLE",
+    "reason": "application performance collection removed"
+  },
+  "valkey": {
+    "keyspace_hits": 756351,
+    "keyspace_misses": 165,
+    "commands_processed": 1622021,
+    "expired_keys": 2,
+    "db0_keys": 53951
+  },
+  "containers": {
+    "by_container": {
+      "pr230-perf-d1-20261009-nazoauth-1": {
+        "service": "nazoauth",
+        "samples": 25,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "pr230-perf-d1-20261009-postgres-1": {
+        "service": "postgres",
+        "samples": 25,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "pr230-perf-d1-20261009-valkey-1": {
+        "service": "valkey",
+        "samples": 25,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    },
+    "by_service": {
+      "postgres": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "valkey": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "nazoauth": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    }
+  },
+  "load_model": {
+    "executor": "constant-arrival-rate",
+    "target_rate": 800,
+    "time_unit": "1s",
+    "duration": "75s",
+    "app_replicas": 1,
+    "observed_app_instances": 1
+  }
+}

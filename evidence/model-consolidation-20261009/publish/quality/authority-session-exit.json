@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--all-features", "--locked", "-p", "nazo-valkey", "--test", "session_contract"], "exit": 0, "seconds": 6.12526816688478}

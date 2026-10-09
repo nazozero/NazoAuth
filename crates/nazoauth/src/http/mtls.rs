@@ -45,7 +45,11 @@ pub(crate) fn capture_direct_tls_client_certificate(
         return;
     };
     if let Some(mut identity) = certificate_der_identity(certificate.as_ref()) {
-        identity.certificate_chain_der = chain.iter().map(|der| der.as_ref().to_vec()).collect();
+        identity.certificate_chain_der = chain
+            .iter()
+            .map(|der| der.as_ref().to_vec())
+            .collect::<Vec<_>>()
+            .into();
         identity.deployment_trusted_chain = deployment_verifier.is_some_and(|verifier| {
             verifier
                 .verify_client_cert(
@@ -98,7 +102,9 @@ pub(crate) fn request_mtls_thumbprint(
     req: &HttpRequest,
     trusted_proxy_cidrs: &[IpCidr],
 ) -> Option<String> {
-    request_mtls_client_certificate_from_configured_source(req, trusted_proxy_cidrs)?.thumbprint
+    with_request_mtls_client_certificate(req, trusted_proxy_cidrs, |certificate| {
+        certificate.and_then(|certificate| certificate.thumbprint.clone())
+    })
 }
 
 pub(crate) fn request_mtls_client_certificate(
@@ -112,36 +118,54 @@ fn request_mtls_client_certificate_from_configured_source(
     req: &HttpRequest,
     trusted_proxy_cidrs: &[IpCidr],
 ) -> Option<ClientCertificateFacts> {
+    with_request_mtls_client_certificate(req, trusted_proxy_cidrs, |certificate| {
+        certificate.cloned()
+    })
+}
+
+fn with_request_mtls_client_certificate<R>(
+    req: &HttpRequest,
+    trusted_proxy_cidrs: &[IpCidr],
+    project: impl FnOnce(Option<&ClientCertificateFacts>) -> R,
+) -> R {
     let mode = req
         .app_data::<Data<MtlsCertificateSource>>()
         .map(|source| source.mode)
         .unwrap_or(MtlsCertificateSourceMode::Disabled);
     match mode {
-        MtlsCertificateSourceMode::Disabled => None,
-        MtlsCertificateSourceMode::DirectTls => req.conn_data::<ClientCertificateFacts>().cloned(),
+        MtlsCertificateSourceMode::Disabled => project(None),
+        MtlsCertificateSourceMode::DirectTls => project(req.conn_data::<ClientCertificateFacts>()),
         MtlsCertificateSourceMode::Rfc9440
             if request_from_trusted_proxy_cidrs(req, trusted_proxy_cidrs) =>
         {
-            if let Some(cached) = req.extensions().get::<ForwardedClientCertificate>() {
-                return cached.0.clone();
+            if req
+                .extensions()
+                .get::<ForwardedClientCertificate>()
+                .is_none()
+            {
+                let certificate = request_mtls_client_certificate_from_rfc9440(req.headers()).map(
+                    |mut certificate| {
+                        certificate.deployment_trusted_chain = req
+                            .app_data::<Data<dyn rustls::server::danger::ClientCertVerifier>>()
+                            .is_some_and(|verifier| {
+                                certificate_chain_verified(&certificate, verifier.get_ref())
+                            });
+                        certificate
+                    },
+                );
+                // Own the immutable parsed transport facts once, including a failed parse.
+                // Every projection still checks the caller's proxy policy before this cache.
+                req.extensions_mut()
+                    .insert(ForwardedClientCertificate(certificate));
             }
-            let certificate = request_mtls_client_certificate_from_rfc9440(req.headers()).map(
-                |mut certificate| {
-                    certificate.deployment_trusted_chain = req
-                        .app_data::<Data<dyn rustls::server::danger::ClientCertVerifier>>()
-                        .is_some_and(|verifier| {
-                            certificate_chain_verified(&certificate, verifier.get_ref())
-                        });
-                    certificate
-                },
-            );
-            // These transport facts are immutable for this request. Tenant
-            // trust decisions remain with the caller's current tenant binding.
-            req.extensions_mut()
-                .insert(ForwardedClientCertificate(certificate.clone()));
-            certificate
+            let extensions = req.extensions();
+            project(
+                extensions
+                    .get::<ForwardedClientCertificate>()
+                    .and_then(|cached| cached.0.as_ref()),
+            )
         }
-        MtlsCertificateSourceMode::Rfc9440 => None,
+        MtlsCertificateSourceMode::Rfc9440 => project(None),
     }
 }
 
@@ -161,8 +185,7 @@ pub(crate) fn request_mtls_client_certificate_from_rfc9440(
             return None;
         }
         for value in chain.to_str().ok()?.split(',') {
-            certificate
-                .certificate_chain_der
+            std::sync::Arc::make_mut(&mut certificate.certificate_chain_der)
                 .push(decode_forwarded_certificate(value.trim())?);
         }
     }

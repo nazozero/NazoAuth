@@ -9,6 +9,7 @@ fn durations() -> CatalogDurations {
         authorization_code: Duration::from_secs(603),
         refresh_token: Duration::from_secs(604),
         session: Duration::from_secs(605),
+        presentation_transaction: Duration::from_secs(605),
         scim_security_events: Duration::from_secs(606),
     }
 }

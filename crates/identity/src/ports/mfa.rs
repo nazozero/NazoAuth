@@ -3,107 +3,27 @@ use uuid::Uuid;
 
 use crate::{TenantId, UserId};
 
-use super::common::{EncodedSecretHash, RepositoryFuture};
+use super::common::{EncodedSecretHash, RepositoryError, RepositoryFuture};
 
 pub type MfaHashFuture<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, MfaHashError>> + Send + 'a>>;
 
-/// Versioned key material used by the persistence adapter to protect TOTP
-/// seeds at rest. The identity crate deliberately does not implement a
-/// concrete cipher; it only carries the key-ring contract across the MFA
-/// repository port.
-#[derive(Clone)]
-pub struct MfaTotpKeyRing {
-    current: MfaTotpKey,
-    previous: Option<MfaTotpKey>,
-}
-
-#[derive(Clone)]
-pub struct MfaTotpKey {
-    id: String,
-    key: [u8; 32],
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MfaTotpKeyError {
-    EmptyId,
-    IdTooLong,
-    DuplicateId,
-}
-
-impl std::fmt::Display for MfaTotpKeyError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::EmptyId => "MFA TOTP encryption key id must not be empty",
-            Self::IdTooLong => "MFA TOTP encryption key id must be at most 128 bytes",
-            Self::DuplicateId => "MFA TOTP current and previous key ids must differ",
-        })
-    }
-}
-
-impl std::error::Error for MfaTotpKeyError {}
-
-impl MfaTotpKey {
-    pub fn new(id: impl Into<String>, key: [u8; 32]) -> Result<Self, MfaTotpKeyError> {
-        let id = id.into();
-        if id.trim().is_empty() {
-            return Err(MfaTotpKeyError::EmptyId);
-        }
-        if id.len() > 128 {
-            return Err(MfaTotpKeyError::IdTooLong);
-        }
-        Ok(Self { id, key })
-    }
-
-    #[must_use]
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-
-    #[must_use]
-    pub fn key(&self) -> &[u8; 32] {
-        &self.key
-    }
-}
-
-impl MfaTotpKeyRing {
-    pub fn new(current: MfaTotpKey, previous: Option<MfaTotpKey>) -> Result<Self, MfaTotpKeyError> {
-        if previous
-            .as_ref()
-            .is_some_and(|candidate| candidate.id() == current.id())
-        {
-            return Err(MfaTotpKeyError::DuplicateId);
-        }
-        Ok(Self { current, previous })
-    }
-
-    #[must_use]
-    pub fn current(&self) -> &MfaTotpKey {
-        &self.current
-    }
-
-    #[must_use]
-    pub fn previous(&self) -> Option<&MfaTotpKey> {
-        self.previous.as_ref()
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TotpCredential {
-    pub secret_base32: String,
-    pub last_used_step: Option<i64>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TotpEnrollment {
     pub secret_base32: String,
     pub confirmed: bool,
     pub last_used_step: Option<i64>,
 }
 
+impl std::fmt::Debug for TotpEnrollment {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TotpEnrollment([REDACTED])")
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TotpVerificationOutcome {
-    Accepted,
+    Accepted(Uuid),
     Invalid,
     Replay,
 }
@@ -154,6 +74,22 @@ pub trait MfaRepositoryPort: Send + Sync {
         hashes: Vec<EncodedSecretHash>,
     ) -> RepositoryFuture<'a, TotpVerificationOutcome>;
 
+    /// Confirm the pending generation, install its backup hashes and append
+    /// canonical `mfa_totp_enabled` in one accepting transaction. Recheck the
+    /// current active self principal before ACK; unknown never authorizes codes.
+    /// A repository without this capability fails before any mutation.
+    fn verify_and_confirm_totp_with_required_audit<'a>(
+        &'a self,
+        _tenant_id: TenantId,
+        _user_id: UserId,
+        _code: &'a str,
+        _timestamp: i64,
+        _hashes: Vec<EncodedSecretHash>,
+        _source_ip_hash: String,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
+
     fn record_invalid_totp_attempt(
         &self,
         tenant_id: TenantId,
@@ -168,19 +104,6 @@ pub trait MfaRepositoryPort: Send + Sync {
         timestamp: i64,
     ) -> RepositoryFuture<'a, TotpVerificationOutcome>;
 
-    fn totp_credential<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpCredential>>;
-
-    fn compare_and_set_totp_step<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        step: i64,
-    ) -> RepositoryFuture<'a, bool>;
-
     fn backup_code_candidates(
         &self,
         tenant_id: TenantId,
@@ -192,7 +115,7 @@ pub trait MfaRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
         candidate_id: Uuid,
-    ) -> RepositoryFuture<'_, bool>;
+    ) -> RepositoryFuture<'_, Option<Uuid>>;
 
     fn record_invalid_backup_code_attempt(
         &self,
@@ -204,21 +127,55 @@ pub trait MfaRepositoryPort: Send + Sync {
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: Uuid,
         hashes: Vec<EncodedSecretHash>,
-    ) -> RepositoryFuture<'a, ()>;
+    ) -> RepositoryFuture<'a, bool>;
 
-    fn clear_mfa_state<'a>(
+    /// Replace only the proved current generation's backup hashes and append
+    /// canonical `mfa_backup_codes_regenerated` in the same accepting commit.
+    /// Lock/recheck the active self principal; release codes only after ACK.
+    fn replace_backup_code_hashes_with_required_audit<'a>(
+        &'a self,
+        _tenant_id: TenantId,
+        _user_id: UserId,
+        _credential_id: Uuid,
+        _hashes: Vec<EncodedSecretHash>,
+        _source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
+
+    /// Clear all MFA state only if the confirmed generation is still current.
+    /// A retired proof returns false without modifying any MFA state. Checking
+    /// the generation and clearing its dependent state are one atomic effect.
+    fn clear_mfa_state_if_current<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, ()>;
+        credential_id: Uuid,
+    ) -> RepositoryFuture<'a, bool>;
+
+    /// Disable the exact confirmed generation and persist the complete Required
+    /// `mfa_disabled` outcome in the same accepting transaction. A successful
+    /// response follows its acknowledgement; unavailable/unknown never implies
+    /// a known non-commit. Adapters cannot fall back to the unaudited clear.
+    fn clear_mfa_state_if_current_with_required_audit<'a>(
+        &'a self,
+        _tenant_id: TenantId,
+        _user_id: UserId,
+        _credential_id: Uuid,
+        _source_ip_hash: String,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async { Err(RepositoryError::Unavailable) })
+    }
 
     fn remember_device(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
+        credential_id: Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
         expires_at: DateTime<Utc>,
-    ) -> RepositoryFuture<'_, ()>;
+    ) -> RepositoryFuture<'_, bool>;
 }

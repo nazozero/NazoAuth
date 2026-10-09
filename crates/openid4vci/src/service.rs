@@ -204,7 +204,7 @@ where
         now: DateTime<Utc>,
     ) -> crate::CredentialStoreFuture<
         'a,
-        Result<Option<crate::DeferredCredentialClaim>, crate::CredentialStoreError>,
+        Result<crate::DeferredClaimOutcome, crate::CredentialStoreError>,
     > {
         self.as_ref()
             .claim_ready_deferred(transaction_hash, token_id, claim_id, now)
@@ -388,10 +388,16 @@ where
         now: DateTime<Utc>,
     ) -> Result<PendingCredentialIssuance, CredentialIssuanceError> {
         request.validate_identifier()?;
+        let selection = crate::CredentialSelection {
+            configuration_id: issuance.configuration_id.clone(),
+            credential_identifier: request.credential_identifier.clone(),
+        };
         if now >= access.expires_at
-            || !access
-                .configuration_ids
-                .contains(&issuance.configuration_id)
+            || request
+                .credential_configuration_id
+                .as_ref()
+                .is_some_and(|id| id != &issuance.configuration_id)
+            || !access.authorizes_selection(&selection)
         {
             return Err(CredentialIssuanceError::Unauthorized);
         }
@@ -442,11 +448,19 @@ where
                 .validate(
                     proofs,
                     &access.client_id,
+                    access.proof_origin,
                     &self.issuer,
                     expected_nonce,
                     proof_metadata,
                 )
                 .await?;
+            // Attestation proofs can expand one encoded item into many holders.
+            // Enforce the advertised issuance bound before claiming the nonce.
+            if validated.len() > self.max_batch_size {
+                return Err(CredentialIssuanceError::Credential(
+                    CredentialError::InvalidProof,
+                ));
+            }
             if validated.is_empty() {
                 return Err(CredentialIssuanceError::Credential(
                     CredentialError::InvalidNonce,
@@ -483,14 +497,19 @@ where
             .prepare_after_nonce_claim(
                 access,
                 issuance,
+                selection,
                 holder_bindings,
                 nonce_claim,
-                identity,
                 now,
             )
             .await;
         match result {
-            Ok(pending) => Ok(pending),
+            Ok((response, commit)) => Ok(PendingCredentialIssuance {
+                response,
+                commit,
+                issuance_id: identity.issuance_id,
+                request_digest: identity.request_digest,
+            }),
             Err(error) => {
                 if let Some(claim) = claim_for_rollback {
                     let _ = self
@@ -645,11 +664,11 @@ where
         &self,
         access: &CredentialAccess,
         issuance: &CredentialIssuance,
+        selection: crate::CredentialSelection,
         holder_bindings: Vec<Value>,
         nonce_claim: Option<IssuanceClaim>,
-        identity: IssuanceIdentity,
         now: DateTime<Utc>,
-    ) -> Result<PendingCredentialIssuance, CredentialIssuanceError> {
+    ) -> Result<(CredentialResponse, IssuanceCommit), CredentialIssuanceError> {
         let dataset = self
             .datasets
             .dataset(access, &issuance.configuration_id)
@@ -675,7 +694,6 @@ where
                                     .ok_or(CredentialIssuanceError::InvalidConfiguration)?,
                                 subject_claims: dataset.clone(),
                                 holder_binding: serde_json::from_value(holder_binding).ok(),
-                                selectively_disclosable_claims: Vec::new(),
                             },
                             issued_at,
                             expires_at,
@@ -688,24 +706,23 @@ where
                 }
                 let notification_id = Uuid::now_v7().to_string();
                 let notification_handle = crate::NotificationHandle {
+                    selection: Some(selection),
                     notification_id: notification_id.clone(),
                     token_id: access.token_id,
-                    expires_at: access.expires_at.min(issuance.expires_at),
+                    expires_at: access.continuation_expires_at(issuance.expires_at),
                 };
-                Ok(PendingCredentialIssuance {
-                    response: CredentialResponse {
+                Ok((
+                    CredentialResponse {
                         credentials: Some(credentials),
                         transaction_id: None,
                         notification_id: Some(notification_id),
                         interval: None,
                     },
-                    commit: IssuanceCommit::Immediate {
+                    IssuanceCommit::Immediate {
                         notification_handle,
                         nonce_claim,
                     },
-                    issuance_id: identity.issuance_id,
-                    request_digest: identity.request_digest,
-                })
+                ))
             }
             IssuanceDisposition::Deferred { ready_at } => {
                 let transaction_id = Uuid::now_v7().to_string();
@@ -716,31 +733,29 @@ where
                     expires_at: issuance.expires_at,
                 };
                 let deferred = crate::DeferredCredential {
+                    selection: Some(selection),
                     id: Uuid::now_v7(),
                     transaction_hash: blake3::hash(transaction_id.as_bytes()).to_hex().to_string(),
                     access: access.clone(),
                     configuration_id: issuance.configuration_id.clone(),
                     format: issuance.configuration.format,
                     holder_bindings,
-                    payload_ciphertext: serde_json::to_vec(&protected)
-                        .map_err(|_| CredentialIssuanceError::InvalidConfiguration)?,
+                    payload: protected,
                     ready_at,
-                    expires_at: access.expires_at.min(issuance.expires_at),
+                    expires_at: access.continuation_expires_at(issuance.expires_at),
                 };
-                Ok(PendingCredentialIssuance {
-                    response: CredentialResponse {
+                Ok((
+                    CredentialResponse {
                         credentials: None,
                         transaction_id: Some(transaction_id),
                         notification_id: None,
                         interval: Some(5),
                     },
-                    commit: IssuanceCommit::Deferred {
+                    IssuanceCommit::Deferred {
                         credential: Box::new(deferred),
                         nonce_claim,
                     },
-                    issuance_id: identity.issuance_id,
-                    request_digest: identity.request_digest,
-                })
+                ))
             }
         }
     }

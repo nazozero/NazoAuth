@@ -1,0 +1,12 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-pr230-perf-a06-20261009",
+    "sis-proc-pr230-perf-a06-20261009",
+    "sis-sampler-pr230-perf-a06-20261009"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

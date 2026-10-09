@@ -1,0 +1,26 @@
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/read_connection_ownership.rs (target/debug/deps/read_connection_ownership-f5bd71db4a5e7cd0)
+
+running 2 tests
+test cancelling_a_blocked_read_retires_its_backend_before_reuse ... 
+thread 'cancelling_a_blocked_read_retires_its_backend_before_reuse' (38970) panicked at crates/persistence-postgres/tests/read_connection_ownership.rs:219:6:
+cancelled read backend must disappear: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test completed_reads_return_connections_before_request_resumes ... client lookup: real query completed and pool slot returned before caller resumed
+client identity: real query completed and pool slot returned before caller resumed
+client authentication snapshot: real query completed and pool slot returned before caller resumed
+client secret match: real query completed and pool slot returned before caller resumed
+public account: real query completed and pool slot returned before caller resumed
+principal: real query completed and pool slot returned before caller resumed
+subject claims: real query completed and pool slot returned before caller resumed
+ok
+
+failures:
+
+failures:
+    cancelling_a_blocked_read_retires_its_backend_before_reuse
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.33s
+
+error: test failed, to rerun pass `-p nazo-postgres --test read_connection_ownership`

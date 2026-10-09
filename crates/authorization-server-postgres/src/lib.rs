@@ -8,20 +8,21 @@ use nazo_postgres::{
     AuditRepository, AuthorizationFlowRepository, ControllerRegistryRepository, DbPool,
     FederationRepository, GrantRepository, MfaRepository, MtlsTrustAnchorRepository,
     OAuthClientRepository, Openid4vciDatasetRepository, Openid4vciRepository, Openid4vpRepository,
-    PasskeyRepository, PostgresHealthCheck, PostgresPoolMetrics, RecoveryRootRepository,
-    RuntimeModuleRepository, ScimEventRepository, ScimRepository,
-    SecurityStateMaintenanceRepository, TenantDirectoryRepository, TenantResourceRepository,
-    TokenIssuanceRepository, TokenRepository, UserRepository,
+    PasskeyRepository, PostgresHealthCheck, RecoveryRootRepository, RuntimeModuleRepository,
+    ScimEventRepository, ScimRepository, SecurityStateMaintenanceRepository,
+    TenantDirectoryRepository, TenantResourceRepository, TokenIssuanceRepository, TokenRepository,
+    UserRepository,
 };
 
 #[derive(Clone)]
 pub struct PostgresProvider {
     pool: DbPool,
+    totp_keys: Option<nazo_postgres::MfaTotpKeyRing>,
 }
 
 impl PostgresProvider {
-    pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+    pub fn new(pool: DbPool, totp_keys: Option<nazo_postgres::MfaTotpKeyRing>) -> Self {
+        Self { pool, totp_keys }
     }
 }
 
@@ -51,11 +52,6 @@ impl ServerPersistenceProvider for PostgresProvider {
     fn database_health(&self) -> Arc<dyn nazo_persistence::DatabaseHealthPort> {
         Arc::new(PostgresHealthCheck::new(self.pool.clone()))
     }
-
-    fn database_pool_metrics(&self) -> Arc<dyn nazo_persistence::DatabasePoolMetricsPort> {
-        Arc::new(PostgresPoolMetrics::new(self.pool.clone()))
-    }
-
     fn security_state_maintenance(
         &self,
     ) -> Arc<dyn nazo_persistence::SecurityStateMaintenancePort> {
@@ -170,18 +166,18 @@ impl ServerPersistenceProvider for PostgresProvider {
         Arc::new(UserRepository::new(self.pool.clone()))
     }
 
-    fn mfa_repository(
-        &self,
-        keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Arc<dyn nazo_identity::ports::MfaRepositoryPort> {
-        Arc::new(MfaRepository::with_totp_key_ring(self.pool.clone(), keys))
+    fn mfa_repository(&self) -> Arc<dyn nazo_identity::ports::MfaRepositoryPort> {
+        Arc::new(MfaRepository::with_totp_key_ring(
+            self.pool.clone(),
+            self.totp_keys.clone(),
+        ))
     }
 
-    fn remembered_mfa_devices(
-        &self,
-        keys: Option<nazo_identity::ports::MfaTotpKeyRing>,
-    ) -> Arc<dyn nazo_identity::ports::RememberedMfaDevicePort> {
-        Arc::new(MfaRepository::with_totp_key_ring(self.pool.clone(), keys))
+    fn remembered_mfa_devices(&self) -> Arc<dyn nazo_identity::ports::RememberedMfaDevicePort> {
+        Arc::new(MfaRepository::with_totp_key_ring(
+            self.pool.clone(),
+            self.totp_keys.clone(),
+        ))
     }
 
     fn federation_links(&self) -> Arc<dyn nazo_identity::ports::FederationLinkRepositoryPort> {
@@ -210,7 +206,7 @@ impl ServerPersistenceProvider for PostgresProvider {
         ))
     }
 
-    fn scim_credential_audit(&self) -> Arc<dyn nazo_identity::ports::ScimCredentialAuditPort> {
+    fn scim_credentials(&self) -> Arc<dyn nazo_identity::ports::ScimCredentialPort> {
         Arc::new(AuditRepository::new(self.pool.clone()))
     }
 
@@ -238,22 +234,32 @@ impl ServerPersistenceProvider for PostgresProvider {
         Arc::new(MtlsTrustAnchorRepository::new(self.pool.clone()))
     }
 
-    fn openid4vc_trust_policies(
-        &self,
-        _data_key: [u8; 32],
-    ) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore> {
+    fn openid4vc_trust_policies(&self) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore> {
         Arc::new(TenantResourceRepository::new(self.pool.clone()))
     }
 
-    fn openid4vci_store(&self, data_key: [u8; 32]) -> Arc<dyn nazo_persistence::Openid4vciStore> {
-        Arc::new(Openid4vciRepository::new(self.pool.clone(), data_key))
+    fn openid4vci_store(
+        &self,
+        data_key: [u8; 32],
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
+    ) -> Arc<dyn nazo_persistence::Openid4vciStore> {
+        Arc::new(Openid4vciRepository::new(
+            self.pool.clone(),
+            data_key,
+            secret_verifier,
+        ))
     }
 
     fn openid4vci_authorization_offers(
         &self,
         data_key: [u8; 32],
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
     ) -> Arc<dyn nazo_openid4vci::AuthorizationOfferPort> {
-        Arc::new(Openid4vciRepository::new(self.pool.clone(), data_key))
+        Arc::new(Openid4vciRepository::new(
+            self.pool.clone(),
+            data_key,
+            secret_verifier,
+        ))
     }
 
     fn openid4vci_datasets(

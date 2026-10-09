@@ -1,0 +1,101 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 24.75s
+     Running tests/auth_repositories.rs (target/debug/deps/auth_repositories-e5342c894e2e79a7)
+
+running 40 tests
+test access_token_revoked_exists_semantics_ignore_deadline_and_scope ... ok
+test admin_grant_required::grant_current_role_gate_preserves_separate_admitted_actor_home_tenant ... ok
+test admin_grant_required::grant_owner_rechecks_current_actor_after_real_demotion_lock_wait ... ok
+test admin_grant_required::grant_owner_rejects_missing_inactive_or_demoted_current_actor_without_effect_or_outcome ... ok
+test admin_grant_required::required_ledger_failure_rolls_back_exact_grant_and_refresh_family ... ok
+test audit_repository_reads_active_scim_credentials_and_drives_logout_outbox ... ok
+test authorization_code_replay_compensation_revokes_both_token_kinds ... ok
+test authorization_replay_waits_for_concurrent_refresh_rotation_before_compensation ... ok
+test backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid ... ok
+test client_deactivation_is_atomic_across_real_batches_and_repeated_owners ... ok
+test client_deactivation_waits_for_issuance_and_revokes_committed_credentials ... ok
+test concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compromise ... ok
+test family_active_exists_semantics_cover_cardinality_and_predicates ... ok
+test grant_revoke_skips_already_revoked_family_lock ... ok
+test grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_family ... ok
+test grants_upsert_cover_and_revoke_tokens_atomically ... ok
+test issuance_commits_complete_audit_payloads_and_pending_events_for_users_rotation_and_reuse ... ok
+test issuance_waits_for_principal_deactivation_and_rechecks_the_committed_state ... ok
+test lost_response_retry_rechecks_family_compromise_under_the_family_lock ... ok
+test lost_response_successor_requires_exactly_one_bound_unexpired_successor ... ok
+test new_family_collision_is_tenant_scoped_and_preserves_compromise_audit ... ok
+test oidc_subject_snapshot_reuses_statement_but_refreshes_epoch_and_binding ... ok
+test ordinary_rotation_context_compare_uses_serde_value_semantics ... ok
+test ordinary_rotation_context_mismatch_commits_compromise_and_reuse_audit ... ok
+test ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audit ... ok
+test principal_snapshot_reuses_authenticated_epoch_and_prepared_query ... ok
+test refresh_contract_ensure_rolls_back_with_caller_and_validates_args ... ok
+test refresh_contract_ensure_serializes_same_key_create_race ... ok
+test refresh_contract_reference_survives_last_reference_reclaim_race ... ok
+test refresh_family_requires_one_root_and_matching_direct_parent_context ... ok
+test refresh_rotation_reuse_compromises_the_whole_family ... ok
+test refresh_token_authentication_context_round_trips_and_rejects_invalid_values ... ok
+test refresh_token_client_attestation_binding_round_trips ... ok
+test required_revocation_event_failure_rolls_back_access_and_refresh_effects ... ok
+test rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflicting ... ok
+test server_auth_callers_do_not_query_diesel_or_auth_tables ... ok
+test single_use_grant_retry_is_rejected_without_reissuing_or_duplicating_audit ... ok
+test single_use_redemption_reads_back_committed_replay_evidence ... ok
+test stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery ... ok
+test token_management_revocation_is_client_scoped_idempotent_and_serializes_family ... ok
+
+test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.35s
+
+     Running tests/compact_claim_contract.rs (target/debug/deps/compact_claim_contract-f6ed7d999bd5ea36)
+
+running 1 test
+test compact_and_retained_contracts_have_distinct_checked_encodings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/refresh_authority.rs (target/debug/deps/refresh_authority-dc983da094e4adf7)
+
+running 19 tests
+test authentication_class_downgrade_rolls_back_when_required_audit_fails ... ok
+test authentication_class_downgrade_serializes_with_rotation_in_both_orders ... ok
+test bound_delayed_rotation_uses_transition_clock_without_false_reuse ... ok
+test bound_retry_rechecks_exact_transition_window_at_commit ... ok
+test confidential_and_public_sender_bound_families_keep_64_proofs ... ok
+test contract_reference_reuses_equal_payload_and_rejects_same_key_different_payload ... ok
+test family_contract_lookup_preserves_per_family_lock_scope ... ok
+test legacy_full_migration_sql_key_rotates_without_rekeying_its_original_contract ... ok
+test preserve_commit_serializes_before_real_revocation_and_capacity_retirement ... ok
+test preserve_rechecks_source_expiry_contract_and_sender_binding ... ok
+test public_proof_cleanup_respects_original_expiry_without_ending_live_family ... ok
+test public_retention_upgrade_invalidates_unprovable_history_without_reviving_on_down ... ok
+test public_unbound_replay_after_65_rotations_revokes_only_its_family ... ok
+test r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit ... ok
+test rotation_narrows_and_reorders_current_audience_without_replacing_original_contract ... ok
+test rotation_rechecks_expiry_after_acquiring_the_source_row_lock ... ok
+test rotation_rejects_audience_expansion_without_compromising_the_family ... ok
+test source_snapshot_cannot_commit_after_real_revocation_or_capacity_retirement ... ok
+test two_legal_preserves_overlap_while_revocation_waits_for_both ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.06s
+
+     Running tests/token_issuance_atomicity.rs (target/debug/deps/token_issuance_atomicity-93b8bf560d2d3301)
+
+running 15 tests
+test authorization_code_identity_fences_concurrent_holders_and_refresh_families ... ok
+test authorization_code_receipt_migration_preserves_legacy_and_rejects_old_writers ... ok
+test cancelled_issuance_on_pool_runtime_discards_the_blocked_connection ... ok
+test concurrent_single_use_commits_commit_exactly_once ... ok
+test expired_single_use_grant_rolls_back_everything ... ok
+test final_issuance_schema_is_created_directly_without_legacy_state ... ok
+test issuance_transaction_executes_on_the_connection_pool_runtime ... ok
+test native_source_and_device_secret_expiry_are_rechecked_after_destination_wait ... ok
+test native_source_busy_nowait_rolls_back_and_returns_retryable_dependency_failure ... ok
+test native_source_cross_client_capacity_and_maintenance_complete_without_deadlock ... ok
+test native_source_normal_member_rotation_does_not_invalidate_family_authority ... ok
+test native_source_revoked_after_preparation_rolls_back_destination ... ok
+test native_source_same_client_capacity_transfer_requires_own_live_retirement ... ok
+test native_source_share_lock_holds_through_required_audit_and_commit ... ok
+test rotation_conflict_keeps_family_compromise_and_only_reuse_audit ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.84s
+

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "docker",
+    "run",
+    "--rm",
+    "--network",
+    "none",
+    "--entrypoint",
+    "cat",
+    "sha256:182d72b35f420f4d33d03388def1a789f8ad70c418d39ade0a9a4c05f954c3ab",
+    "/usr/bin/k6"
+  ],
+  "exit": 0,
+  "seconds": 1.6820842151064426,
+  "utc": "2026-10-08T14:51:31.261326+00:00",
+  "binary_sha256": "1f043d96eb01ac23455988854aed88135e50ca32c2cdd2e11449cfabe6dd0dca",
+  "binary_bytes": 46731424,
+  "scope": "Copy exact already-used pinned performance runner k6; no extra checkout or host probe"
+}

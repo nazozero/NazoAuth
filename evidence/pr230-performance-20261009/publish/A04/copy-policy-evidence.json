@@ -1,0 +1,192 @@
+{
+  "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791480811.3761277,
+      "container": "sis-sampler-pr230-perf-a04-20261009"
+    },
+    {
+      "ts": 1791480811.4533453,
+      "container": "sis-proc-pr230-perf-a04-20261009"
+    },
+    {
+      "ts": 1791480823.0822313,
+      "container": "sis-sampler-pr230-perf-a04-20261009"
+    },
+    {
+      "ts": 1791480823.1657028,
+      "container": "sis-sampler-pr230-perf-a04-20261009"
+    },
+    {
+      "ts": 1791480834.1520064,
+      "container": "sis-proc-pr230-perf-a04-20261009"
+    },
+    {
+      "ts": 1791480834.2559934,
+      "container": "sis-proc-pr230-perf-a04-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791480811.2433162,
+      "ts_end": 1791480811.2823062,
+      "elapsed_ms": 38.9912,
+      "container": "sis-sampler-pr230-perf-a04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791480811.2823427,
+      "ts_end": 1791480811.332768,
+      "elapsed_ms": 50.4266,
+      "container": "sis-proc-pr230-perf-a04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791480811.4537165,
+      "ts_end": 1791480811.4940739,
+      "elapsed_ms": 40.3573,
+      "container": "sis-sampler-pr230-perf-a04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791480811.4940972,
+      "ts_end": 1791480811.5278058,
+      "elapsed_ms": 33.7089,
+      "container": "sis-proc-pr230-perf-a04-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791480833.5900311,
+      "ts_end": 1791480833.8321602,
+      "elapsed_ms": 242.1292,
+      "container": "sis-sampler-pr230-perf-a04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "e27d8456e206e47709332bf832053ff095a6a9de3972b95fd66ae4139ae577cd",
+        "owner": "pr230-perf-a04-20261009",
+        "running": false,
+        "checked_at": 1791480833.6970232,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480844.6766791,
+      "ts_end": 1791480844.8023126,
+      "elapsed_ms": 125.6336,
+      "container": "sis-proc-pr230-perf-a04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "8fea475d456b500d16e38cb52ca794e3cde1734768791d64b9b1df39fb45886c",
+        "owner": "pr230-perf-a04-20261009",
+        "running": false,
+        "checked_at": 1791480844.7596557,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480848.664978,
+      "ts_end": 1791480848.8047478,
+      "elapsed_ms": 139.7701,
+      "container": "sis-load-pr230-perf-a04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "aec851034b862f71f51cacb1c08d0e3f29389c5462fb2ac633557d0e777bc6cb",
+        "owner": "pr230-perf-a04-20261009",
+        "running": false,
+        "checked_at": 1791480848.7658367,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480852.6746256,
+      "ts_end": 1791480852.8690004,
+      "elapsed_ms": 194.3753,
+      "container": "sis-side-argon2-pr230-perf-a04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "80a8300aa5b9ff61ff6b7c65d55b4f73498486266b7eb87a1563f93c37460315",
+        "owner": "pr230-perf-a04-20261009",
+        "running": false,
+        "checked_at": 1791480852.7790737,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791480856.3367054,
+      "ts_end": 1791480856.3938704,
+      "elapsed_ms": 57.165,
+      "container": "sis-side-meta-pr230-perf-a04-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "97f7f56ec88e97f841846d99542f4c8b2af3c7766ba93d407af0d4f84e7ecafd",
+        "owner": "pr230-perf-a04-20261009",
+        "running": false,
+        "checked_at": 1791480856.3576393,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-pr230-perf-a04-20261009",
+    "sis-proc-pr230-perf-a04-20261009",
+    "sis-sampler-pr230-perf-a04-20261009",
+    "sis-side-argon2-pr230-perf-a04-20261009",
+    "sis-side-meta-pr230-perf-a04-20261009"
+  ],
+  "finalization": {
+    "errors": [
+      {
+        "container": "sis-load-pr230-perf-a04-20261009",
+        "reason": "workload still running at finalization"
+      },
+      {
+        "container": "sis-side-argon2-pr230-perf-a04-20261009",
+        "reason": "workload still running at finalization"
+      },
+      {
+        "container": "sis-side-meta-pr230-perf-a04-20261009",
+        "reason": "workload still running at finalization"
+      }
+    ],
+    "stopped": [
+      "sis-load-pr230-perf-a04-20261009",
+      "sis-side-argon2-pr230-perf-a04-20261009",
+      "sis-side-meta-pr230-perf-a04-20261009"
+    ],
+    "terminal_captured": [
+      "sis-load-pr230-perf-a04-20261009",
+      "sis-proc-pr230-perf-a04-20261009",
+      "sis-sampler-pr230-perf-a04-20261009",
+      "sis-side-argon2-pr230-perf-a04-20261009",
+      "sis-side-meta-pr230-perf-a04-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

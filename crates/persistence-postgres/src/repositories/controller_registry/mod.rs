@@ -35,6 +35,7 @@
 //! limit errors carry identifiers and timestamps but never key bytes.
 
 mod approvals;
+pub(crate) mod required;
 mod slots;
 
 pub use approvals::{
@@ -179,6 +180,58 @@ impl ControllerRegistryRepository {
         initial_root: Option<NewRecoveryRoot>,
         now: DateTime<Utc>,
     ) -> Result<StoredControllerSlot, CommitWithApprovalError> {
+        self.commit_slot_creation_owned(
+            contract::SlotCreationCommand {
+                approval_token: approval_token.to_owned(),
+                action: contract::ControllerIdentityAction::parse(expected_action.as_str())
+                    .expect("closed identity action"),
+                action_sha256: expected_action_sha256.to_owned(),
+                slot: contract::NewControllerSlot {
+                    deployment_id: slot.deployment_id,
+                    label: slot.label,
+                    kid: slot.kid,
+                    public_key: slot.public_key,
+                },
+                initial_root: initial_root.map(|root| contract::NewRecoveryRoot {
+                    deployment_id: root.deployment_id,
+                    kid: root.kid,
+                    public_key: root.public_key,
+                }),
+                now,
+            },
+            None,
+        )
+        .await
+    }
+
+    async fn commit_slot_creation_owned(
+        &self,
+        command: contract::SlotCreationCommand,
+        audit: Option<contract::AdminIdentityAudit>,
+    ) -> Result<StoredControllerSlot, CommitWithApprovalError> {
+        let contract::SlotCreationCommand {
+            approval_token,
+            action,
+            action_sha256,
+            slot,
+            initial_root,
+            now,
+        } = command;
+        let expected_action = contract_action(action);
+        let expected_action_sha256 = action_sha256.as_str();
+        let approval_token = approval_token.as_str();
+        let slot = NewControllerSlot {
+            deployment_id: slot.deployment_id,
+            label: slot.label,
+            kid: slot.kid,
+            public_key: slot.public_key,
+        };
+        let initial_root = initial_root.map(|root| NewRecoveryRoot {
+            deployment_id: root.deployment_id,
+            kid: root.kid,
+            public_key: root.public_key,
+        });
+
         validate_slot_input(
             &slot.deployment_id,
             &slot.label,
@@ -187,11 +240,20 @@ impl ControllerRegistryRepository {
         )?;
         let token_hash = approval_token_digest(approval_token);
         let expected_action_sha256 = expected_action_sha256.to_owned();
-        let mut connection = get_conn(&self.pool)
-            .await
-            .map_err(CommitWithApprovalError::transport)?;
-        connection
+        let mut guard = crate::pool::DiscardOnDrop(Some(
+            get_conn(&self.pool)
+                .await
+                .map_err(CommitWithApprovalError::transport)?,
+        ));
+        let result = guard
+            .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {
+                if let Some(audit) = &audit {
+                    lock_deployment_slots(connection, &slot.deployment_id).await?;
+                    required::authorize_actor(connection, audit)
+                        .await
+                        .map_err(CommitWithApprovalError::transport)?;
+                }
                 consume_approval_on_connection(
                     connection,
                     &token_hash,
@@ -227,9 +289,18 @@ impl ControllerRegistryRepository {
                         .await
                         .map_err(map_recovery_error)?;
                 }
+                if let Some(audit) = &audit {
+                    required::append_slot(connection, "controller_slot_created", audit, &stored)
+                        .await
+                        .map_err(CommitWithApprovalError::transport)?;
+                }
                 Ok(stored)
             })
-            .await
+            .await;
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
     /// Consume one approval and rotate an existing slot in the same
@@ -242,6 +313,48 @@ impl ControllerRegistryRepository {
         rotation: RotateControllerKey,
         now: DateTime<Utc>,
     ) -> Result<StoredControllerSlot, CommitWithApprovalError> {
+        self.commit_slot_rotation_owned(
+            contract::SlotRotationCommand {
+                approval_token: approval_token.to_owned(),
+                deployment_id: expected_deployment_id.to_owned(),
+                action_sha256: expected_action_sha256.to_owned(),
+                rotation: contract::RotateControllerKey {
+                    deployment_id: rotation.deployment_id,
+                    controller_id: rotation.controller_id,
+                    label: rotation.label,
+                    kid: rotation.kid,
+                    public_key: rotation.public_key,
+                },
+                now,
+            },
+            None,
+        )
+        .await
+    }
+
+    async fn commit_slot_rotation_owned(
+        &self,
+        command: contract::SlotRotationCommand,
+        audit: Option<contract::AdminIdentityAudit>,
+    ) -> Result<StoredControllerSlot, CommitWithApprovalError> {
+        let contract::SlotRotationCommand {
+            approval_token,
+            deployment_id,
+            action_sha256,
+            rotation,
+            now,
+        } = command;
+        let approval_token = approval_token.as_str();
+        let expected_deployment_id = deployment_id.as_str();
+        let expected_action_sha256 = action_sha256.as_str();
+        let rotation = RotateControllerKey {
+            deployment_id: rotation.deployment_id,
+            controller_id: rotation.controller_id,
+            label: rotation.label,
+            kid: rotation.kid,
+            public_key: rotation.public_key,
+        };
+
         validate_controller_id(&rotation.controller_id)?;
         validate_slot_input(
             &rotation.deployment_id,
@@ -256,11 +369,20 @@ impl ControllerRegistryRepository {
         }
         let token_hash = approval_token_digest(approval_token);
         let expected_action_sha256 = expected_action_sha256.to_owned();
-        let mut connection = get_conn(&self.pool)
-            .await
-            .map_err(CommitWithApprovalError::transport)?;
-        connection
+        let mut guard = crate::pool::DiscardOnDrop(Some(
+            get_conn(&self.pool)
+                .await
+                .map_err(CommitWithApprovalError::transport)?,
+        ));
+        let result = guard
+            .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {
+                if let Some(audit) = &audit {
+                    lock_deployment_slots(connection, &rotation.deployment_id).await?;
+                    required::authorize_actor(connection, audit)
+                        .await
+                        .map_err(CommitWithApprovalError::transport)?;
+                }
                 consume_approval_on_connection(
                     connection,
                     &token_hash,
@@ -270,11 +392,21 @@ impl ControllerRegistryRepository {
                     now,
                 )
                 .await?;
-                rotate_slot_on_connection(connection, &rotation, now)
+                let stored = rotate_slot_on_connection(connection, &rotation, now)
                     .await
-                    .map_err(CommitWithApprovalError::Mutation)
+                    .map_err(CommitWithApprovalError::Mutation)?;
+                if let Some(audit) = &audit {
+                    required::append_slot(connection, "controller_slot_rotated", audit, &stored)
+                        .await
+                        .map_err(CommitWithApprovalError::transport)?;
+                }
+                Ok(stored)
             })
-            .await
+            .await;
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
     /// Consume one approval and revoke an existing slot in the same
@@ -287,17 +419,56 @@ impl ControllerRegistryRepository {
         controller_id: &str,
         now: DateTime<Utc>,
     ) -> Result<StoredControllerSlot, CommitWithApprovalError> {
+        self.commit_slot_revocation_owned(
+            contract::SlotRevocationCommand {
+                approval_token: approval_token.to_owned(),
+                deployment_id: expected_deployment_id.to_owned(),
+                action_sha256: expected_action_sha256.to_owned(),
+                controller_id: controller_id.to_owned(),
+                now,
+            },
+            None,
+        )
+        .await
+    }
+
+    async fn commit_slot_revocation_owned(
+        &self,
+        command: contract::SlotRevocationCommand,
+        audit: Option<contract::AdminIdentityAudit>,
+    ) -> Result<StoredControllerSlot, CommitWithApprovalError> {
+        let contract::SlotRevocationCommand {
+            approval_token,
+            deployment_id,
+            action_sha256,
+            controller_id,
+            now,
+        } = command;
+        let approval_token = approval_token.as_str();
+        let expected_deployment_id = deployment_id.as_str();
+        let expected_action_sha256 = action_sha256.as_str();
+        let controller_id = controller_id.as_str();
+
         validate_deployment_id(expected_deployment_id)?;
         validate_controller_id(controller_id)?;
         let token_hash = approval_token_digest(approval_token);
         let expected_deployment_id = expected_deployment_id.to_owned();
         let controller_id = controller_id.to_owned();
         let expected_action_sha256 = expected_action_sha256.to_owned();
-        let mut connection = get_conn(&self.pool)
-            .await
-            .map_err(CommitWithApprovalError::transport)?;
-        connection
+        let mut guard = crate::pool::DiscardOnDrop(Some(
+            get_conn(&self.pool)
+                .await
+                .map_err(CommitWithApprovalError::transport)?,
+        ));
+        let result = guard
+            .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {
+                if let Some(audit) = &audit {
+                    lock_deployment_slots(connection, &expected_deployment_id).await?;
+                    required::authorize_actor(connection, audit)
+                        .await
+                        .map_err(CommitWithApprovalError::transport)?;
+                }
                 consume_approval_on_connection(
                     connection,
                     &token_hash,
@@ -307,11 +478,26 @@ impl ControllerRegistryRepository {
                     now,
                 )
                 .await?;
-                revoke_slot_on_connection(connection, &expected_deployment_id, &controller_id, now)
-                    .await
-                    .map_err(CommitWithApprovalError::Mutation)
+                let stored = revoke_slot_on_connection(
+                    connection,
+                    &expected_deployment_id,
+                    &controller_id,
+                    now,
+                )
+                .await
+                .map_err(CommitWithApprovalError::Mutation)?;
+                if let Some(audit) = &audit {
+                    required::append_slot(connection, "controller_slot_revoked", audit, &stored)
+                        .await
+                        .map_err(CommitWithApprovalError::transport)?;
+                }
+                Ok(stored)
             })
-            .await
+            .await;
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 }
 
@@ -330,6 +516,74 @@ fn contract_commit_error(error: CommitWithApprovalError) -> contract::CommitWith
 }
 
 impl contract::ControllerRegistryPort for ControllerRegistryRepository {
+    fn issue_identity_approval_with_required_audit(
+        &self,
+        command: contract::IdentityApprovalCommand,
+        audit: contract::AdminIdentityAudit,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<contract::IssuedIdentityApproval, contract::IdentityApprovalError>,
+    > {
+        Box::pin(async move {
+            self.issue_identity_approval_owned(
+                &command.deployment_id,
+                contract_action(command.action),
+                &command.action_sha256,
+                audit.actor_user_id,
+                command.now,
+                Some(audit),
+            )
+            .await
+            .map(contract_approval)
+            .map_err(contract_approval_error)
+        })
+    }
+    fn commit_slot_creation_with_required_audit(
+        &self,
+        command: contract::SlotCreationCommand,
+        audit: contract::AdminIdentityAudit,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<contract::StoredControllerSlot, contract::CommitWithApprovalError>,
+    > {
+        Box::pin(async move {
+            self.commit_slot_creation_owned(command, Some(audit))
+                .await
+                .map(contract_slot)
+                .map_err(contract_commit_error)
+        })
+    }
+    fn commit_slot_rotation_with_required_audit(
+        &self,
+        command: contract::SlotRotationCommand,
+        audit: contract::AdminIdentityAudit,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<contract::StoredControllerSlot, contract::CommitWithApprovalError>,
+    > {
+        Box::pin(async move {
+            self.commit_slot_rotation_owned(command, Some(audit))
+                .await
+                .map(contract_slot)
+                .map_err(contract_commit_error)
+        })
+    }
+    fn commit_slot_revocation_with_required_audit(
+        &self,
+        command: contract::SlotRevocationCommand,
+        audit: contract::AdminIdentityAudit,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<contract::StoredControllerSlot, contract::CommitWithApprovalError>,
+    > {
+        Box::pin(async move {
+            self.commit_slot_revocation_owned(command, Some(audit))
+                .await
+                .map(contract_slot)
+                .map_err(contract_commit_error)
+        })
+    }
+
     fn issue_identity_approval<'a>(
         &'a self,
         deployment_id: &'a str,

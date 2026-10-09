@@ -1,0 +1,78 @@
+[
+  {
+    "command": [
+      "docker",
+      "start",
+      "nazoauth-perf-unit-pg-20261009"
+    ],
+    "exit": 0
+  },
+  {
+    "command": [
+      "docker",
+      "exec",
+      "nazoauth-perf-unit-pg-20261009",
+      "psql",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "-c",
+      "DROP DATABASE IF EXISTS oauth WITH (FORCE)"
+    ],
+    "exit": 0
+  },
+  {
+    "command": [
+      "docker",
+      "exec",
+      "nazoauth-perf-unit-pg-20261009",
+      "psql",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "-c",
+      "CREATE DATABASE oauth"
+    ],
+    "exit": 0
+  },
+  {
+    "command": [
+      "docker",
+      "exec",
+      "nazoauth-perf-unit-pg-20261009",
+      "psql",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "-c",
+      "DROP DATABASE IF EXISTS nazo_audit_test WITH (FORCE)"
+    ],
+    "exit": 0
+  },
+  {
+    "command": [
+      "docker",
+      "exec",
+      "nazoauth-perf-unit-pg-20261009",
+      "psql",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "-c",
+      "CREATE DATABASE nazo_audit_test"
+    ],
+    "exit": 0
+  }
+]

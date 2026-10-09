@@ -1,0 +1,11 @@
+{
+  "label": "r230-sustained-f1-20261008",
+  "key": "sustained-F1",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.048,
+  "total_elapsed_s": 411.509,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

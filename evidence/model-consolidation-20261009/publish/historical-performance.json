@@ -1,0 +1,730 @@
+{
+  "qualification": "Existing historical evidence, not a concurrent A or a new run.",
+  "source_file_sha256": "29b6bdfa43c84b0f259d330cda71de4acf53894d2447c4d1824b52a7f97701de",
+  "rows": [
+    {
+      "key": "BREAD2",
+      "warmup_seconds": 15.0,
+      "steps": [
+        {
+          "step": "authorize",
+          "http_reqs": 60001,
+          "rps": 799.891,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.472,
+            "p95": 0.735,
+            "p99": 3.43
+          }
+        },
+        {
+          "step": "authorize_decision",
+          "http_reqs": 60001,
+          "rps": 799.891,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.102,
+            "p95": 6.552,
+            "p99": 18.999
+          }
+        },
+        {
+          "step": "par_oidc",
+          "http_reqs": 60001,
+          "rps": 799.891,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.575,
+            "p95": 0.932,
+            "p99": 10.608
+          }
+        },
+        {
+          "step": "token_authorization_code",
+          "http_reqs": 60001,
+          "rps": 799.891,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 5.266,
+            "p95": 9.166,
+            "p99": 22.86
+          }
+        }
+      ],
+      "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+      "binary_sha256": "1511cd33e1f3ea8586fce9e29109e8107048e9e9ef5b8b114155fbe60f873fd7",
+      "diagnostic_only": false,
+      "scenario": "cap_authorization_code",
+      "target_ops_s": 800,
+      "app_cpus": 16,
+      "pre_vus": 992,
+      "max_vus": 992,
+      "pool_connections": 32,
+      "app_env_overrides": {
+        "DATABASE_MAX_CONNECTIONS": "32",
+        "AUDIT_ANCHOR_MODE": "disabled",
+        "RUST_LOG": "warn,nazoauth::jobs::security_state=debug"
+      },
+      "formal_window_seconds": 60,
+      "window": {
+        "window_start_s": 1791516092.91,
+        "window_end_s": 1791516152.91,
+        "measure_started_exact": 48000,
+        "measure_completed_exact": 48000,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 48000,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 48000
+        },
+        "measure_outcome_sum": 48000,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 48000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 800.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "verdict": "PASS",
+      "successful_ops_s": 800.0,
+      "complete_operation_ms": {
+        "p50": 10.0,
+        "p95": 18.0,
+        "p99": 34.0
+      },
+      "outcomes": {
+        "success": 48000
+      },
+      "unfinished": 0,
+      "drop_fraction": 0.0,
+      "success_over_planned": 1.0,
+      "wal_bytes_per_success": 10379.457,
+      "cpu_cores": {
+        "app": 1.66,
+        "postgres": 3.65
+      },
+      "db_sample_first_bytes": 12506815,
+      "db_sample_last_bytes": 240252607,
+      "db_sample_seconds": 217.322772026062,
+      "valkey_last_bytes": 23750528,
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "audit": {
+        "verdict": "PASS",
+        "delta_events": 171075,
+        "receiver_events": 171075,
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        }
+      },
+      "subject_lifecycle": {
+        "initial_mint": 0,
+        "refresh_update": 0,
+        "expired_reauth": 0
+      },
+      "reported_run_seconds": 294.3
+    },
+    {
+      "key": "BREAD10",
+      "warmup_seconds": 15.0,
+      "steps": [
+        {
+          "step": "cap_bootstrap",
+          "http_reqs": 72000,
+          "rps": 959.887,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.581,
+            "p95": 1.122,
+            "p99": 32.217
+          }
+        },
+        {
+          "step": "revoke",
+          "http_reqs": 72000,
+          "rps": 959.887,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.319,
+            "p95": 5.853,
+            "p99": 53.08
+          }
+        }
+      ],
+      "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+      "binary_sha256": "1511cd33e1f3ea8586fce9e29109e8107048e9e9ef5b8b114155fbe60f873fd7",
+      "diagnostic_only": false,
+      "scenario": "cap_revoke",
+      "target_ops_s": 960,
+      "app_cpus": 16,
+      "pre_vus": 992,
+      "max_vus": 992,
+      "pool_connections": 32,
+      "app_env_overrides": {
+        "DATABASE_MAX_CONNECTIONS": 32,
+        "AUDIT_ANCHOR_MODE": "disabled",
+        "RUST_LOG": "warn"
+      },
+      "formal_window_seconds": 60,
+      "window": {
+        "window_start_s": 1791516425.628,
+        "window_end_s": 1791516485.628,
+        "measure_started_exact": 57600,
+        "measure_completed_exact": 57600,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 57600,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 57600
+        },
+        "measure_outcome_sum": 57600,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 57600,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 960.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "verdict": "PASS",
+      "successful_ops_s": 960.0,
+      "complete_operation_ms": {
+        "p50": 12.0,
+        "p95": 22.0,
+        "p99": 39.0
+      },
+      "outcomes": {
+        "success": 57600
+      },
+      "unfinished": 0,
+      "drop_fraction": 0.0,
+      "success_over_planned": 1.0,
+      "wal_bytes_per_success": 10473.478,
+      "cpu_cores": {
+        "app": 2.4,
+        "postgres": 4.19
+      },
+      "db_sample_first_bytes": 12498623,
+      "db_sample_last_bytes": 300906175,
+      "db_sample_seconds": 82.62982296943665,
+      "valkey_last_bytes": 27852664,
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "audit": {
+        "verdict": "PASS",
+        "delta_events": 216000,
+        "receiver_events": 216000,
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        }
+      },
+      "subject_lifecycle": {
+        "initial_mint": 992,
+        "refresh_update": 0,
+        "expired_reauth": 71008
+      },
+      "reported_run_seconds": 162.4
+    },
+    {
+      "key": "BREAD03",
+      "warmup_seconds": 60.0,
+      "steps": [
+        {
+          "step": "authorize",
+          "http_reqs": 7195,
+          "rps": 59.953,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.525,
+            "p95": 1.346,
+            "p99": 4.089
+          }
+        },
+        {
+          "step": "authorize_decision",
+          "http_reqs": 7195,
+          "rps": 59.953,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.037,
+            "p95": 5.259,
+            "p99": 11.031
+          }
+        },
+        {
+          "step": "cap_bootstrap",
+          "http_reqs": 46,
+          "rps": 0.383,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.909,
+            "p95": 21.1,
+            "p99": 30.577
+          }
+        },
+        {
+          "step": "par_oidc",
+          "http_reqs": 7149,
+          "rps": 59.57,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.602,
+            "p95": 1.431,
+            "p99": 12.476
+          }
+        },
+        {
+          "step": "token_authorization_code",
+          "http_reqs": 7195,
+          "rps": 59.953,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 4.71,
+            "p95": 8.157,
+            "p99": 15.61
+          }
+        },
+        {
+          "step": "token_client_credentials",
+          "http_reqs": 11944,
+          "rps": 99.525,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 1.904,
+            "p95": 6.18,
+            "p99": 18.882
+          }
+        },
+        {
+          "step": "token_exchange",
+          "http_reqs": 7257,
+          "rps": 60.47,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.695,
+            "p95": 6.762,
+            "p99": 19.442
+          }
+        },
+        {
+          "step": "token_refresh",
+          "http_reqs": 7109,
+          "rps": 59.237,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 3.882,
+            "p95": 8.12,
+            "p99": 17.608
+          }
+        },
+        {
+          "step": "userinfo",
+          "http_reqs": 14529,
+          "rps": 121.065,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.903,
+            "p95": 1.659,
+            "p99": 13.249
+          }
+        }
+      ],
+      "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+      "binary_sha256": "1511cd33e1f3ea8586fce9e29109e8107048e9e9ef5b8b114155fbe60f873fd7",
+      "diagnostic_only": false,
+      "scenario": "cap_mixed",
+      "target_ops_s": 400,
+      "app_cpus": 1,
+      "pre_vus": 64,
+      "max_vus": 64,
+      "pool_connections": 32,
+      "app_env_overrides": {
+        "DATABASE_MAX_CONNECTIONS": 32,
+        "AUDIT_ANCHOR_MODE": "disabled",
+        "RUST_LOG": "warn"
+      },
+      "formal_window_seconds": 60,
+      "window": {
+        "window_start_s": 1791516659.638,
+        "window_end_s": 1791516719.638,
+        "measure_started_exact": 23987,
+        "measure_completed_exact": 23987,
+        "measure_dropped_exact": 13,
+        "measure_scheduled_observed": 24000,
+        "measure_drop_fraction": 0.000542,
+        "measure_outcomes": {
+          "success": 23987
+        },
+        "measure_outcome_sum": 23987,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 24000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 400.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "verdict": "PASS",
+      "successful_ops_s": 399.783,
+      "complete_operation_ms": {
+        "p50": 2.0,
+        "p95": 12.0,
+        "p99": 24.0
+      },
+      "outcomes": {
+        "success": 23987
+      },
+      "unfinished": 0,
+      "drop_fraction": 0.000542,
+      "success_over_planned": 0.9994583333333333,
+      "wal_bytes_per_success": 3250.044,
+      "cpu_cores": {
+        "app": 0.46,
+        "postgres": 0.63
+      },
+      "db_sample_first_bytes": 12531391,
+      "db_sample_last_bytes": 62912191,
+      "db_sample_seconds": 163.3950879573822,
+      "valkey_last_bytes": 5105560,
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "collector_copy_complete": true
+      },
+      "audit": {
+        "verdict": "PASS",
+        "delta_events": 54866,
+        "receiver_events": 54866,
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        }
+      },
+      "subject_lifecycle": {
+        "initial_mint": 46,
+        "refresh_update": 7109,
+        "expired_reauth": 0
+      },
+      "reported_run_seconds": 243.3
+    },
+    {
+      "key": "BREAD04",
+      "warmup_seconds": 60.0,
+      "steps": [
+        {
+          "step": "authorize",
+          "http_reqs": 29622,
+          "rps": 246.835,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.571,
+            "p95": 1.789,
+            "p99": 13.427
+          }
+        },
+        {
+          "step": "authorize_decision",
+          "http_reqs": 29622,
+          "rps": 246.835,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.436,
+            "p95": 8.873,
+            "p99": 26.681
+          }
+        },
+        {
+          "step": "cap_bootstrap",
+          "http_reqs": 794,
+          "rps": 6.616,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 1.895,
+            "p95": 34.533,
+            "p99": 54.711
+          }
+        },
+        {
+          "step": "par_oidc",
+          "http_reqs": 28828,
+          "rps": 240.219,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.689,
+            "p95": 1.815,
+            "p99": 16.906
+          }
+        },
+        {
+          "step": "token_authorization_code",
+          "http_reqs": 29622,
+          "rps": 246.835,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 5.365,
+            "p95": 13.194,
+            "p99": 36.874
+          }
+        },
+        {
+          "step": "token_client_credentials",
+          "http_reqs": 48056,
+          "rps": 400.442,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.259,
+            "p95": 8.038,
+            "p99": 26.533
+          }
+        },
+        {
+          "step": "token_exchange",
+          "http_reqs": 28720,
+          "rps": 239.319,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 3.199,
+            "p95": 9.451,
+            "p99": 31.065
+          }
+        },
+        {
+          "step": "token_refresh",
+          "http_reqs": 28770,
+          "rps": 239.735,
+          "error_rate": 7e-05,
+          "latency_ms": {
+            "p50": 4.028,
+            "p95": 11.098,
+            "p99": 34.886
+          }
+        },
+        {
+          "step": "userinfo",
+          "http_reqs": 57627,
+          "rps": 480.196,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 1.09,
+            "p95": 2.017,
+            "p99": 12.435
+          }
+        }
+      ],
+      "source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+      "binary_sha256": "1511cd33e1f3ea8586fce9e29109e8107048e9e9ef5b8b114155fbe60f873fd7",
+      "diagnostic_only": false,
+      "scenario": "cap_mixed",
+      "target_ops_s": 1600,
+      "app_cpus": 16,
+      "pre_vus": 992,
+      "max_vus": 992,
+      "pool_connections": 32,
+      "app_env_overrides": {
+        "DATABASE_MAX_CONNECTIONS": 32,
+        "AUDIT_ANCHOR_MODE": "disabled",
+        "RUST_LOG": "warn"
+      },
+      "formal_window_seconds": 60,
+      "window": {
+        "window_start_s": 1791516934.54,
+        "window_end_s": 1791516994.54,
+        "measure_started_exact": 96000,
+        "measure_completed_exact": 96000,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 96000,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 96000
+        },
+        "measure_outcome_sum": 96000,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 96000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 1600.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "verdict": "PASS",
+      "successful_ops_s": 1600.0,
+      "complete_operation_ms": {
+        "p50": 3.0,
+        "p95": 13.0,
+        "p99": 23.0
+      },
+      "outcomes": {
+        "success": 96000
+      },
+      "unfinished": 0,
+      "drop_fraction": 0.0,
+      "success_over_planned": 1.0,
+      "wal_bytes_per_success": 4333.487,
+      "cpu_cores": {
+        "app": 3.31,
+        "postgres": 3.88
+      },
+      "db_sample_first_bytes": 12515007,
+      "db_sample_last_bytes": 209352383,
+      "db_sample_seconds": 166.3723850250244,
+      "valkey_last_bytes": 27322328,
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "active_per_scope_le_10": true,
+        "spent_per_family_le_64": true,
+        "expired_backlog_zero": true,
+        "sidecars_complete": true,
+        "collector_copy_complete": true
+      },
+      "audit": {
+        "verdict": "PASS",
+        "delta_events": 299306,
+        "receiver_events": 299306,
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        }
+      },
+      "subject_lifecycle": {
+        "initial_mint": 793,
+        "refresh_update": 28768,
+        "expired_reauth": 1
+      },
+      "reported_run_seconds": 247.8
+    }
+  ]
+}

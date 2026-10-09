@@ -1,0 +1,2842 @@
+{
+  "app_log_scan": {
+    "collected": true,
+    "dropped_required": 0,
+    "lines": 1,
+    "persistence_error": 0,
+    "queue_full": 0,
+    "rc": 0,
+    "since_ts": 1791479662.8576486
+  },
+  "application_performance_observation": {
+    "contract": "blackbox-db-v1",
+    "reason": "application performance collection removed",
+    "status": "UNAVAILABLE"
+  },
+  "audit": {
+    "deployment": "01a11c81-b6c4-776f-815c-52a1220151a3",
+    "receiver": "sis-rcv-pr230-perf-a06-20261009",
+    "worker": "sis-worker-pr230-perf-a06-20261009"
+  },
+  "audit_drain": {
+    "anchor_sequence": 97554,
+    "drained": true,
+    "exported_retained": 35494,
+    "last_sequence": 97554,
+    "pending": 0,
+    "total": 35494
+  },
+  "audit_journal_archive": {
+    "bytes": 103062495,
+    "collected": true,
+    "file": "/src/evidence/pr230-performance-20261009/A06/results/multi/pr230-perf-a06-20261009/audit-journal.jsonl",
+    "sha256": "301c3db478ac91489bd0a7108b559fd9f0827a0477dd286cc618fcf4eea78835",
+    "source_hash_match": true
+  },
+  "audit_queue_post_drain": {
+    "collected": false,
+    "contract": "blackbox-db-v1",
+    "dropped": null,
+    "enqueued": null,
+    "pending_in_process": null,
+    "persisted": null,
+    "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+    "status": "UNVERIFIED"
+  },
+  "audit_state_check": {
+    "accepted_events_delta": 97554,
+    "checkpoint_advanced": true,
+    "checks": {
+      "accepted_events_delta_eq": true,
+      "checkpoint_progress_valid": true,
+      "collected": true,
+      "db_head_eq_anchor_hash": true,
+      "db_head_eq_anchor_seq": true,
+      "deployment_match": true,
+      "fault_none": true,
+      "journal_clean": true,
+      "journal_collected": true,
+      "journal_range_eq_delta": true,
+      "pending_zero": true,
+      "rcv_hash_eq_anchor": true,
+      "rcv_seq_eq_anchor": true
+    },
+    "delta_events": 97554,
+    "empty_prefix_allowed": false,
+    "expected_issuances": null,
+    "journal": {
+      "batches": 1873,
+      "by_event_type": {
+        "authorization_decision_committed": 35494,
+        "refresh_family_capacity_retired": 26566,
+        "token_issued": 35494
+      },
+      "collected": true,
+      "duplicate_sequences": 0,
+      "events_in_range": 97554,
+      "expected_in_range": 97554,
+      "foreign_deployment_batches": 0,
+      "journal_bytes": 103062495,
+      "journal_sha256": "301c3db478ac91489bd0a7108b559fd9f0827a0477dd286cc618fcf4eea78835",
+      "malformed_lines": 0,
+      "range_contiguous": true,
+      "remote_path": "sis-rcv-pr230-perf-a06-20261009:/data/journal.jsonl",
+      "sequence_gaps": 0,
+      "token_issued_in_range": 35494
+    },
+    "point": "pr230-perf-a06-20261009",
+    "token_issued_delta": 35494,
+    "token_issued_scope": "reported_only_no_clean_denominator",
+    "verdict": "PASS"
+  },
+  "audit_state_post": {
+    "db": {
+      "anchor_deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+      "anchor_hash": "c2244fc7b640c6e7e210fd372bf5cf66a4c74ad2329b1e2611f740c0a3209cd5",
+      "anchor_sequence": 97554,
+      "collected": true,
+      "exported_retained": 35494,
+      "last_hash": "c2244fc7b640c6e7e210fd372bf5cf66a4c74ad2329b1e2611f740c0a3209cd5",
+      "last_sequence": 97554,
+      "pending": 0,
+      "total": 35494
+    },
+    "deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+    "receiver_checkpoint": {
+      "accepted_batches": 1873,
+      "accepted_events": 97554,
+      "batch_digest": "zS3tM4lSxNGpxXht_FHHSRRUkHfE9ESV9SUGzuRDc2o",
+      "checkpoint_kind": "batch",
+      "collected": true,
+      "deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+      "last_hash": "wiRPx7ZAxufiEP03K_XPZqTHStIymx4mEfdAwKMgnNU",
+      "last_sequence": 97554,
+      "updated_at": "2026-10-08T17:15:47.945588191Z"
+    },
+    "receiver_state": {
+      "accepted": 1874,
+      "checkpoint": {
+        "accepted_batches": 1873,
+        "accepted_events": 97554,
+        "batch_digest": "zS3tM4lSxNGpxXht_FHHSRRUkHfE9ESV9SUGzuRDc2o",
+        "checkpoint_kind": "batch",
+        "deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+        "last_hash": "wiRPx7ZAxufiEP03K_XPZqTHStIymx4mEfdAwKMgnNU",
+        "last_sequence": 97554,
+        "updated_at": "2026-10-08T17:15:47.945588191Z"
+      },
+      "collected": true,
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 1879
+    }
+  },
+  "audit_state_pre": {
+    "db": {
+      "anchor_deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+      "anchor_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "anchor_sequence": 0,
+      "collected": true,
+      "exported_retained": 0,
+      "last_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "last_sequence": 0,
+      "pending": 0,
+      "total": 0
+    },
+    "receiver_checkpoint": {
+      "accepted_batches": 0,
+      "accepted_events": 0,
+      "batch_digest": "XgUSgnaSuLpUI9Nv4TVgYWjCnykMfeNhEnKkuH_QDIo",
+      "checkpoint_kind": "genesis",
+      "collected": true,
+      "deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+      "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "last_sequence": 0,
+      "updated_at": "2026-10-08T17:14:04.601158989Z"
+    },
+    "receiver_state": {
+      "accepted": 1,
+      "checkpoint": {
+        "accepted_batches": 0,
+        "accepted_events": 0,
+        "batch_digest": "XgUSgnaSuLpUI9Nv4TVgYWjCnykMfeNhEnKkuH_QDIo",
+        "checkpoint_kind": "genesis",
+        "deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+        "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "last_sequence": 0,
+        "updated_at": "2026-10-08T17:14:04.601158989Z"
+      },
+      "collected": true,
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 4
+    }
+  },
+  "binary_provenance": {
+    "container_id": "04bb7f0b5af16d9f3c0847ccaf3d8673c64d55dbfce9e0bb6e7d00fc80bf11fb",
+    "expected_binary_sha256": "e12599284e21ff5f25bacae98d431394fc774c036eb92f42959cf418d15f612d",
+    "host_pid": 191640,
+    "image_binary_sha256": "e12599284e21ff5f25bacae98d431394fc774c036eb92f42959cf418d15f612d",
+    "image_id": "sha256:59d38ad2fa4999589026696375bb745836b0dce65e0855e03afd8db7249a427a",
+    "ok": true,
+    "pid1_eq_expected": true,
+    "pid1_eq_image": true,
+    "running_pid1_binary_sha256": "e12599284e21ff5f25bacae98d431394fc774c036eb92f42959cf418d15f612d"
+  },
+  "collection_contract": "blackbox-db-v1",
+  "container_health": {
+    "pr230-perf-a06-20261009-nazoauth-1": {
+      "oom_killed": false,
+      "restart_count": 0,
+      "status": "running"
+    },
+    "pr230-perf-a06-20261009-postgres-1": {
+      "oom_killed": false,
+      "restart_count": 0,
+      "status": "running"
+    },
+    "pr230-perf-a06-20261009-valkey-1": {
+      "oom_killed": false,
+      "restart_count": 0,
+      "status": "running"
+    }
+  },
+  "elapsed_s": 177.7,
+  "journal_stats": {
+    "batches": 1873,
+    "by_event_type": {
+      "authorization_decision_committed": 35494,
+      "refresh_family_capacity_retired": 26566,
+      "token_issued": 35494
+    },
+    "collected": true,
+    "deployment": "01a11c81-b6c4-776f-815c-52a1220151a3",
+    "duplicate_sequences": 0,
+    "events_in_range": 97554,
+    "expected_in_range": 97554,
+    "foreign_deployment_batches": 0,
+    "journal_bytes": 103062495,
+    "journal_sha256": "301c3db478ac91489bd0a7108b559fd9f0827a0477dd286cc618fcf4eea78835",
+    "malformed_lines": 0,
+    "per_second_counts": {
+      "1791479671": 499,
+      "1791479672": 907,
+      "1791479673": 952,
+      "1791479674": 1127,
+      "1791479675": 1093,
+      "1791479676": 1039,
+      "1791479677": 925,
+      "1791479678": 953,
+      "1791479679": 1148,
+      "1791479680": 1200,
+      "1791479681": 844,
+      "1791479682": 964,
+      "1791479683": 965,
+      "1791479684": 965,
+      "1791479685": 1222,
+      "1791479686": 1221,
+      "1791479687": 1122,
+      "1791479688": 1061,
+      "1791479689": 1004,
+      "1791479690": 1106,
+      "1791479691": 1275,
+      "1791479692": 1311,
+      "1791479693": 1134,
+      "1791479694": 990,
+      "1791479695": 1001,
+      "1791479696": 977,
+      "1791479697": 1108,
+      "1791479698": 1344,
+      "1791479699": 1138,
+      "1791479700": 966,
+      "1791479701": 1021,
+      "1791479702": 944,
+      "1791479703": 1200,
+      "1791479704": 1527,
+      "1791479705": 1445,
+      "1791479706": 1622,
+      "1791479707": 1262,
+      "1791479708": 1362,
+      "1791479709": 1713,
+      "1791479710": 1232,
+      "1791479711": 1522,
+      "1791479712": 1261,
+      "1791479713": 1362,
+      "1791479714": 1977,
+      "1791479715": 1521,
+      "1791479716": 1349,
+      "1791479717": 1457,
+      "1791479718": 1334,
+      "1791479719": 1087,
+      "1791479720": 1520,
+      "1791479721": 1490,
+      "1791479722": 1555,
+      "1791479723": 1379,
+      "1791479724": 1514,
+      "1791479725": 1265,
+      "1791479726": 1598,
+      "1791479727": 1164,
+      "1791479728": 1463,
+      "1791479729": 1386,
+      "1791479730": 1538,
+      "1791479731": 1453,
+      "1791479732": 1332,
+      "1791479733": 1779,
+      "1791479734": 1607,
+      "1791479735": 1340,
+      "1791479736": 1501,
+      "1791479737": 1262,
+      "1791479738": 1220,
+      "1791479739": 1497,
+      "1791479740": 1293,
+      "1791479741": 1119,
+      "1791479742": 1726,
+      "1791479743": 1530,
+      "1791479744": 1436,
+      "1791479745": 1464,
+      "1791479746": 1183,
+      "1791479747": 1181
+    },
+    "range": [
+      0,
+      97554
+    ],
+    "range_contiguous": true,
+    "remote_path": "sis-rcv-pr230-perf-a06-20261009:/data/journal.jsonl",
+    "sequence_gaps": 0,
+    "token_issued_in_range": 35494
+  },
+  "load": {
+    "ended_ts": 1791479755.1066613,
+    "generator_affinity_verified": true,
+    "k6_containers_verified": [
+      "sis-load-pr230-perf-a06-20261009"
+    ],
+    "load_seconds": 92.2,
+    "load_status": "completed",
+    "main_container": "sis-load-pr230-perf-a06-20261009",
+    "main_exit_code": "0",
+    "main_oom_killed": false,
+    "main_pin": {
+      "before_snapshot": {
+        "collector_exit": 0,
+        "complete": true,
+        "confirmed_gone": [],
+        "read_errors": [],
+        "round_trip_ms": 212.4459
+      },
+      "container": "sis-load-pr230-perf-a06-20261009",
+      "pid1_allowed": "Cpus_allowed_list: 161-191",
+      "pin_attempts": [
+        {
+          "pids": [
+            1
+          ],
+          "returncode": 0,
+          "stdout": "pinned_tasks=1",
+          "uid": "0"
+        }
+      ],
+      "pin_output": "pinned_tasks=1",
+      "pin_rc": 0,
+      "proc_masks": [
+        "/proc/1 python 161-191"
+      ],
+      "requested": "161-191",
+      "snapshot": {
+        "collector_exit": 0,
+        "complete": true,
+        "confirmed_gone": [],
+        "read_errors": [],
+        "round_trip_ms": 120.2977
+      },
+      "task_masks": [
+        {
+          "allowed": "161-191",
+          "name": "python",
+          "pid": 1,
+          "ppid": 0,
+          "starttime_ticks": 209290850,
+          "tid": 1,
+          "uid": "0"
+        }
+      ],
+      "uid": "0",
+      "verified": true
+    },
+    "service_affinity_verified": true,
+    "sidecars": [],
+    "started_ts": 1791479662.8576486
+  },
+  "metrics": {
+    "acquire_per_op_windowed": null,
+    "acquire_windowed": {
+      "delta": null,
+      "field": "pool.acq",
+      "reason": "application performance collection removed",
+      "status": "UNAVAILABLE"
+    },
+    "audit_db_drained": true,
+    "audit_log_scan": {
+      "collected": true,
+      "dropped_required": 0,
+      "lines": 1,
+      "persistence_error": 0,
+      "queue_full": 0,
+      "rc": 0,
+      "since_ts": 1791479662.8576486
+    },
+    "cohort_problems": [],
+    "cohort_valid": true,
+    "common_window_s": {
+      "end_ms": 1791479746013,
+      "method": "contract",
+      "seconds": 60.0,
+      "start_ms": 1791479686013
+    },
+    "contract_problems": [],
+    "cpu_per_success_ms": {
+      "cpu_ms": null,
+      "cpu_per_success_ms": null,
+      "estimate": null,
+      "reason": "non-CC scenario: audit events are not a 1:1 completion counter",
+      "status": "UNAVAILABLE",
+      "success_in_interval": null
+    },
+    "drop_fraction": 0.408443,
+    "dropped_iterations": 24507,
+    "full_run_drop_fraction": 0.408443,
+    "full_run_dropped_iterations": 24507,
+    "full_run_iterations_completed": 35494,
+    "http_reqs": 141976,
+    "http_rps": 1846.398,
+    "iter_p50_ms": 2122.0,
+    "iter_p95_ms": 2838.4,
+    "iter_p99_ms": 2980.0,
+    "iterations_completed": 35494,
+    "k6_exit_code": 0,
+    "late_vu_fraction": 0.0,
+    "measure_boundary_overshoot": 0,
+    "measure_buckets": null,
+    "measure_completed": 27333,
+    "measure_drop_fraction": 0.430563,
+    "measure_drop_fraction_upper": 0.430563,
+    "measure_drop_upper_bound": 20667,
+    "measure_dropped": 20667,
+    "measure_errors": 0,
+    "measure_ops": 27333,
+    "measure_schedule_delta": -20667,
+    "measure_scheduled": 48000,
+    "measure_started": 27333,
+    "measure_unfinished": 0,
+    "oom_killed": false,
+    "op_p50_ms": 2122.0,
+    "op_p95_ms": 2838.0,
+    "op_p99_ms": 2980.0,
+    "ops_per_s": 455.55,
+    "outcome_expected_rejection": 0,
+    "outcome_local_no_request": 0,
+    "outcome_prepare_failed": 0,
+    "outcome_prepare_local_failed": 0,
+    "outcome_prepare_sut_failed": 0,
+    "outcome_success": 27333,
+    "outcome_unexpected": 0,
+    "pg_statements_per_req": 13.801,
+    "pool_acquire_count": null,
+    "pool_wait_ms_avg": null,
+    "pool_wait_ms_total": null,
+    "pool_wait_ns_windowed": {
+      "delta": null,
+      "field": "pool.wait_ns",
+      "reason": "application performance collection removed",
+      "status": "UNAVAILABLE"
+    },
+    "refresh_invariants": {
+      "max_active_per_scope": 10,
+      "spent_expired_backlog": 0,
+      "spent_max_per_family": 0
+    },
+    "restart_count": 0,
+    "sidecar_evidence": {},
+    "sidecar_terminal_complete": true,
+    "status": "target_miss",
+    "subject_lifecycle": {
+      "expired_reauth": 0,
+      "initial_mint": 0,
+      "refresh_update": 0
+    },
+    "successful_ops_per_s": 455.55,
+    "wait_per_acq_ms": null,
+    "wal_bytes_per_s": 4977775.2,
+    "wal_fsyncs_per_op": 0.9964,
+    "wal_fsyncs_per_s": 453.9,
+    "wal_io_windowed": {
+      "fsync_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.fsync_time_ms",
+        "sample_span": [
+          1791479657,
+          1791479774
+        ],
+        "window_s": 60.0
+      },
+      "fsyncs": {
+        "delta": 27235.304334481556,
+        "field": "wal_io.fsyncs",
+        "sample_span": [
+          1791479657,
+          1791479774
+        ],
+        "window_s": 60.0
+      },
+      "write_bytes": {
+        "delta": 827384897.5585938,
+        "field": "wal_io.write_bytes",
+        "sample_span": [
+          1791479657,
+          1791479774
+        ],
+        "window_s": 60.0
+      },
+      "write_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.write_time_ms",
+        "sample_span": [
+          1791479657,
+          1791479774
+        ],
+        "window_s": 60.0
+      },
+      "writes": {
+        "delta": 27289.308667818703,
+        "field": "wal_io.writes",
+        "sample_span": [
+          1791479657,
+          1791479774
+        ],
+        "window_s": 60.0
+      }
+    },
+    "wal_per_success_bytes": 10926.957,
+    "wal_windowed": {
+      "delta": 298666513.0160873,
+      "field": "wal_bytes",
+      "sample_span": [
+        1791479657,
+        1791479774
+      ],
+      "window_s": 60.0
+    },
+    "wal_writes_per_op": 0.9984,
+    "wal_writes_per_s": 454.8,
+    "window_end_ms": 1791479746013,
+    "window_seconds": 60,
+    "window_start_ms": 1791479686013,
+    "window_valid": true
+  },
+  "mount_sources_ok": true,
+  "ok": true,
+  "pgss_delta": {
+    "calls_per_http_request": 13.9564,
+    "path_classes": {
+      "audit_anchor_health": 0,
+      "audit_append": 62060,
+      "audit_writer_preflight": 35494,
+      "client_lock": 0,
+      "combined": 0,
+      "commit_txn": 35722,
+      "exporter": 13225,
+      "issuance_insert": 35494,
+      "nested": 1063458,
+      "observer_other": 6875,
+      "rollback_txn": 0,
+      "runtime_toplevel": 897921
+    },
+    "statements": [
+      {
+        "calls_delta": 175495,
+        "q": "SELECT $2 FROM ONLY \"public\".\"tenants\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x",
+        "queryid": 3175560230803026983,
+        "rolname": "postgres",
+        "rows_delta": 175495,
+        "toplevel": false,
+        "total_exec_ms_delta": 2457.606
+      },
+      {
+        "calls_delta": 97554,
+        "q": "INSERT INTO public.security_audit_chain_entries (event_id, sequence, previous_hash, event_hash)\n        VALUES (v_entry.event_id, v_sequence, v_hash, v_entry.ev",
+        "queryid": -3844205109193192134,
+        "rolname": "postgres",
+        "rows_delta": 97554,
+        "toplevel": false,
+        "total_exec_ms_delta": 4639.033
+      },
+      {
+        "calls_delta": 97554,
+        "q": "SELECT $15 FROM (\n            SELECT event.exported_at FROM public.security_audit_events AS event\n            WHERE event.event_id = v_entry.event_id\n          ",
+        "queryid": 6169053281355060121,
+        "rolname": "postgres",
+        "rows_delta": 97554,
+        "toplevel": false,
+        "total_exec_ms_delta": 1118.119
+      },
+      {
+        "calls_delta": 97554,
+        "q": "SELECT pg_advisory_xact_lock($1)",
+        "queryid": 275221827254537758,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 97554,
+        "toplevel": true,
+        "total_exec_ms_delta": 425.606
+      },
+      {
+        "calls_delta": 72973,
+        "q": "SELECT $3 FROM ONLY \"public\".\"oauth_clients\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+        "queryid": 8290667273201477087,
+        "rolname": "postgres",
+        "rows_delta": 72973,
+        "toplevel": false,
+        "total_exec_ms_delta": 1636.231
+      },
+      {
+        "calls_delta": 70988,
+        "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "queryid": -6508781239048455094,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 70988,
+        "toplevel": true,
+        "total_exec_ms_delta": 4709.827
+      },
+      {
+        "calls_delta": 70988,
+        "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "queryid": -1127769266060406036,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 70988,
+        "toplevel": true,
+        "total_exec_ms_delta": 4077.893
+      },
+      {
+        "calls_delta": 70988,
+        "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_",
+        "queryid": 7908395307970532368,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 70988,
+        "toplevel": true,
+        "total_exec_ms_delta": 2086.127
+      },
+      {
+        "calls_delta": 62060,
+        "q": "UPDATE ONLY \"public\".\"client_access_requests\" SET \"required_approval_event_id\" = $2 WHERE $1 OPERATOR(pg_catalog.=) \"required_approval_event_id\"",
+        "queryid": -8146125755126708437,
+        "rolname": "postgres",
+        "rows_delta": 0,
+        "toplevel": false,
+        "total_exec_ms_delta": 414.578
+      },
+      {
+        "calls_delta": 62060,
+        "q": "SELECT $2 FROM ONLY \"public\".\"security_audit_chain_entries\" x WHERE $1 OPERATOR(pg_catalog.=) \"event_id\" FOR KEY SHARE OF x",
+        "queryid": 668357838032508247,
+        "rolname": "postgres",
+        "rows_delta": 0,
+        "toplevel": false,
+        "total_exec_ms_delta": 502.639
+      },
+      {
+        "calls_delta": 62060,
+        "q": "INSERT INTO public.security_audit_events (event_id, event_type, event_category, payload, occurred_at)\n    VALUES (p_event_id, p_event_type, p_event_category, p_",
+        "queryid": -7247551828350762117,
+        "rolname": "postgres",
+        "rows_delta": 62060,
+        "toplevel": false,
+        "total_exec_ms_delta": 11905.692
+      },
+      {
+        "calls_delta": 62060,
+        "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "queryid": 7937354421020446243,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 62060,
+        "toplevel": true,
+        "total_exec_ms_delta": 16889.296
+      },
+      {
+        "calls_delta": 37480,
+        "q": "SELECT $3 FROM ONLY \"public\".\"users\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+        "queryid": 1978390624132223685,
+        "rolname": "postgres",
+        "rows_delta": 37480,
+        "toplevel": false,
+        "total_exec_ms_delta": 1439.965
+      },
+      {
+        "calls_delta": 37478,
+        "q": "SELECT $3 FROM ONLY \"public\".\"oauth_refresh_contracts\" x WHERE \"tenant_id\" OPERATOR(pg_catalog.=) $1 AND \"contract_blake3\" OPERATOR(pg_catalog.=) $2 FOR KEY SHA",
+        "queryid": 7069696701630184062,
+        "rolname": "postgres",
+        "rows_delta": 36486,
+        "toplevel": false,
+        "total_exec_ms_delta": 598.131
+      },
+      {
+        "calls_delta": 35722,
+        "q": "COMMIT",
+        "queryid": 6097083398544187049,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 32.035
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+        "queryid": 4192117633820240577,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 37101.128
+      },
+      {
+        "calls_delta": 35494,
+        "q": "BEGIN",
+        "queryid": 4854991825702068830,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 23.775
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT EXISTS (SELECT $3 FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2) AS present",
+        "queryid": 3750853787864223033,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 717.123
+      },
+      {
+        "calls_delta": 35494,
+        "q": "v_payload := jsonb_strip_nulls(jsonb_build_object(\n        $13, $14, $15, $16,\n        $17, p_tenant_id, $18, p_user_id, $19, p_client_id,\n        $20, p_decisi",
+        "queryid": 99054671293552382,
+        "rolname": "postgres",
+        "rows_delta": 35494,
+        "toplevel": false,
+        "total_exec_ms_delta": 1785.241
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "queryid": -6838157736527928436,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 11294.829
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "queryid": 7100349895799853796,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 2354.572
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)",
+        "queryid": -6441974452854201730,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 4316.898
+      },
+      {
+        "calls_delta": 35494,
+        "q": "WITH ranked AS ( SELECT token_family_id, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, count(*) OVER () AS total FROM oauth_re",
+        "queryid": 988688075674336999,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 26566,
+        "toplevel": true,
+        "total_exec_ms_delta": 12386.631
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT contract.contract                 FROM public.oauth_refresh_contracts AS contract\n        WHERE contract.tenant_id = p_tenant_id\n          AND contract.c",
+        "queryid": 1118771984084316194,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 34502,
+        "toplevel": false,
+        "total_exec_ms_delta": 1045.632
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT actor.is_active               FROM public.users AS actor\n    WHERE actor.tenant_id = p_tenant_id AND actor.id = p_user_id\n    FOR SHARE OF actor",
+        "queryid": -684369787659643396,
+        "rolname": "postgres",
+        "rows_delta": 35494,
+        "toplevel": false,
+        "total_exec_ms_delta": 1464.326
+      },
+      {
+        "calls_delta": 35494,
+        "q": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "queryid": -4859543494755560605,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 11277.324
+      },
+      {
+        "calls_delta": 35494,
+        "q": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "queryid": -8360184522266040650,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 7566.937
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT \"oauth_clients\".\"is_active\", \"oauth_clients\".\"access_token_epoch\", \"oauth_clients\".\"client_type\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\"",
+        "queryid": -4575898701111064644,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 2089.199
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT $17 FROM public.user_client_grants AS grant_row\n        WHERE grant_row.tenant_id = p_tenant_id AND grant_row.user_id = p_user_id\n          AND grant_row",
+        "queryid": -1272851987981571009,
+        "rolname": "postgres",
+        "rows_delta": 35494,
+        "toplevel": false,
+        "total_exec_ms_delta": 923.97
+      },
+      {
+        "calls_delta": 35494,
+        "q": "INSERT INTO public.user_client_grants (\n                tenant_id, user_id, client_id, first_authorized_at, last_authorized_at,\n                last_scopes, las",
+        "queryid": 2159928400407793843,
+        "rolname": "postgres",
+        "rows_delta": 35494,
+        "toplevel": false,
+        "total_exec_ms_delta": 5111.755
+      },
+      {
+        "calls_delta": 35494,
+        "q": "INSERT INTO public.security_audit_events (\n            event_id, event_type, event_category, payload, occurred_at,\n            authorization_tenant_id, authoriz",
+        "queryid": 5928988372071775642,
+        "rolname": "postgres",
+        "rows_delta": 35494,
+        "toplevel": false,
+        "total_exec_ms_delta": 9454.158
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda",
+        "queryid": 8503699842868330688,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 2063.179
+      },
+      {
+        "calls_delta": 35494,
+        "q": "WITH RECURSIVE login_role(oid) AS (\n        SELECT oid FROM pg_roles WHERE rolname = session_user\n    ), membership(oid) AS (\n        SELECT oid FROM login_role",
+        "queryid": 9025800419207588152,
+        "rolname": "postgres",
+        "rows_delta": 35494,
+        "toplevel": false,
+        "total_exec_ms_delta": 4031.623
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT \"users\".\"is_active\", \"users\".\"access_token_epoch\" FROM \"users\" WHERE ((\"users\".\"tenant_id\" = $1) AND (\"users\".\"id\" = $2)) LIMIT $3 FOR SHARE",
+        "queryid": -4097881978415570287,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 35494,
+        "toplevel": true,
+        "total_exec_ms_delta": 1698.691
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SET LOCAL lock_timeout = $1",
+        "queryid": -1708461756726018533,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 253.222
+      },
+      {
+        "calls_delta": 35494,
+        "q": "SELECT client.id, client.is_active                                FROM public.oauth_clients AS client\n    WHERE client.tenant_id = p_tenant_id AND client.client",
+        "queryid": -334988250090054091,
+        "rolname": "postgres",
+        "rows_delta": 35494,
+        "toplevel": false,
+        "total_exec_ms_delta": 2137.079
+      },
+      {
+        "calls_delta": 26566,
+        "q": "UPDATE oauth_refresh_families AS family SET revoked_at=CURRENT_TIMESTAMP WHERE family.tenant_id=$1 AND family.token_family_id=$2 AND family.revoked_at IS NULL A",
+        "queryid": 2730762546491863625,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 26566,
+        "toplevel": true,
+        "total_exec_ms_delta": 18028.986
+      },
+      {
+        "calls_delta": 26566,
+        "q": "DELETE FROM ONLY \"public\".\"oauth_refresh_spent_tokens\" WHERE $1 OPERATOR(pg_catalog.=) \"tenant_id\" AND $2 OPERATOR(pg_catalog.=) \"token_family_id\"",
+        "queryid": 3453106762841261166,
+        "rolname": "postgres",
+        "rows_delta": 0,
+        "toplevel": false,
+        "total_exec_ms_delta": 102.825
+      },
+      {
+        "calls_delta": 7720,
+        "q": "SELECT set_config($1, $2, $3)",
+        "queryid": 791674583167769820,
+        "rolname": "postgres",
+        "rows_delta": 7720,
+        "toplevel": false,
+        "total_exec_ms_delta": 36.826
+      },
+      {
+        "calls_delta": 1998,
+        "q": "SELECT $3 FROM ONLY \"public\".\"realms\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+        "queryid": -3027920698235884960,
+        "rolname": "postgres",
+        "rows_delta": 1998,
+        "toplevel": false,
+        "total_exec_ms_delta": 3.656
+      },
+      {
+        "calls_delta": 1986,
+        "q": "SELECT id FROM users\n            WHERE tenant_id = $1::uuid AND lower(email) = $2",
+        "queryid": -7602699173612363938,
+        "rolname": "postgres",
+        "rows_delta": 1986,
+        "toplevel": true,
+        "total_exec_ms_delta": 681.656
+      },
+      {
+        "calls_delta": 1892,
+        "q": "BEGIN",
+        "queryid": 4854991825702068830,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 1.938
+      },
+      {
+        "calls_delta": 1892,
+        "q": "SELECT state.last_sequence, state.last_hash,\n           state.anchor_sequence, state.anchor_hash, state.anchor_deployment_id::TEXT,\n           state.batch_first",
+        "queryid": -7190079489427888143,
+        "rolname": "postgres",
+        "rows_delta": 1892,
+        "toplevel": false,
+        "total_exec_ms_delta": 61.592
+      },
+      {
+        "calls_delta": 1892,
+        "q": "SELECT COALESCE(\n        (SELECT state.anchor_sequence FROM public.security_audit_chain_state AS state\n         WHERE state.singleton), 0)",
+        "queryid": 427714051535286495,
+        "rolname": "postgres",
+        "rows_delta": 1892,
+        "toplevel": false,
+        "total_exec_ms_delta": 46.774
+      },
+      {
+        "calls_delta": 1892,
+        "q": "COMMIT",
+        "queryid": 6097083398544187049,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 4.575
+      },
+      {
+        "calls_delta": 1892,
+        "q": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+        "queryid": -9087905150910015971,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 97554,
+        "toplevel": true,
+        "total_exec_ms_delta": 1776.034
+      },
+      {
+        "calls_delta": 1892,
+        "q": "WITH chained AS MATERIALIZED (\n        SELECT chain.event_id, chain.sequence, chain.previous_hash, chain.event_hash\n        FROM public.security_audit_chain_ent",
+        "queryid": -3934706743140797564,
+        "rolname": "postgres",
+        "rows_delta": 0,
+        "toplevel": false,
+        "total_exec_ms_delta": 24.882
+      },
+      {
+        "calls_delta": 1892,
+        "q": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+        "queryid": -6627084719960489992,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 1892,
+        "toplevel": true,
+        "total_exec_ms_delta": 1907.689
+      },
+      {
+        "calls_delta": 1892,
+        "q": "SELECT last_sequence, last_hash, anchor_sequence, batch_first_sequence, batch_last_sequence, batch_event_count, batch_digest, batch_attempts, batch_available_at",
+        "queryid": 6577223710300968884,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 1892,
+        "toplevel": true,
+        "total_exec_ms_delta": 160.496
+      },
+      {
+        "calls_delta": 1892,
+        "q": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM public.security_audit_chain_entries AS chain\n        ORDER BY chain.sequence DESC LIMIT 1\n  ",
+        "queryid": 2219017882509756005,
+        "rolname": "postgres",
+        "rows_delta": 1892,
+        "toplevel": false,
+        "total_exec_ms_delta": 1461.691
+      },
+      {
+        "calls_delta": 1892,
+        "q": "SELECT event.event_id, NULL::BIGINT, event.event_type::TEXT,\n           event.event_category::TEXT, event.payload::TEXT, event.occurred_at,\n           NULL::BYT",
+        "queryid": 5456878742199183074,
+        "rolname": "postgres",
+        "rows_delta": 97554,
+        "toplevel": false,
+        "total_exec_ms_delta": 867.074
+      },
+      {
+        "calls_delta": 1873,
+        "q": "SELECT *                        FROM public.nazo_stage_security_audit_chain(\n        p_previous_sequence, p_previous_hash, p_event_ids, p_event_hashes\n    )",
+        "queryid": 7882001130255697900,
+        "rolname": "postgres",
+        "rows_delta": 1873,
+        "toplevel": false,
+        "total_exec_ms_delta": 7948.724
+      },
+      {
+        "calls_delta": 1873,
+        "q": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM public.security_audit_chain_entries AS chain\n        WHERE chain.sequence > COALESCE(v_anchor,",
+        "queryid": -6506573967122222713,
+        "rolname": "postgres",
+        "rows_delta": 1873,
+        "toplevel": false,
+        "total_exec_ms_delta": 581.652
+      },
+      {
+        "calls_delta": 1873,
+        "q": "SELECT * FROM unnest(p_event_ids, p_event_hashes) AS item(event_id, event_hash)",
+        "queryid": 6898365521273534339,
+        "rolname": "postgres",
+        "rows_delta": 97554,
+        "toplevel": false,
+        "total_exec_ms_delta": 64.816
+      },
+      {
+        "calls_delta": 1873,
+        "q": "UPDATE public.security_audit_chain_state AS state\n    SET last_sequence = v_head.last_sequence,\n        last_hash = v_head.last_hash,\n        batch_first_sequen",
+        "queryid": -6991554388355084425,
+        "rolname": "postgres",
+        "rows_delta": 1873,
+        "toplevel": false,
+        "total_exec_ms_delta": 305.053
+      },
+      {
+        "calls_delta": 1873,
+        "q": "DELETE FROM public.security_audit_events AS event\n    WHERE event.event_id = ANY(v_ids)\n      AND event.event_type <> $14",
+        "queryid": -1843919396335761714,
+        "rolname": "postgres",
+        "rows_delta": 62060,
+        "toplevel": false,
+        "total_exec_ms_delta": 2960.436
+      },
+      {
+        "calls_delta": 1873,
+        "q": "v_members <> p_event_count OR NOT EXISTS (\n        SELECT $11 FROM public.security_audit_chain_entries AS chain\n        WHERE chain.sequence = p_last_sequence A",
+        "queryid": 6628736147247293519,
+        "rolname": "postgres",
+        "rows_delta": 1873,
+        "toplevel": false,
+        "total_exec_ms_delta": 31.647
+      },
+      {
+        "calls_delta": 1873,
+        "q": "UPDATE public.security_audit_chain_state AS state\n    SET anchor_deployment_id = p_deployment_id,\n        anchor_sequence = p_last_sequence,\n        anchor_hash",
+        "queryid": 6091757757363477124,
+        "rolname": "postgres",
+        "rows_delta": 1873,
+        "toplevel": false,
+        "total_exec_ms_delta": 240.927
+      },
+      {
+        "calls_delta": 1873,
+        "q": "UPDATE public.security_audit_events AS event\n    SET exported_at = v_exported_at\n    WHERE event.event_id = ANY(v_ids)\n      AND event.event_type = $16\n      AN",
+        "queryid": -46819768667580601,
+        "rolname": "postgres",
+        "rows_delta": 35494,
+        "toplevel": false,
+        "total_exec_ms_delta": 4980.061
+      },
+      {
+        "calls_delta": 1873,
+        "q": "DELETE FROM public.security_audit_chain_entries AS chain\n    WHERE chain.sequence > COALESCE(v_anchor, $10) AND chain.sequence <= p_last_sequence",
+        "queryid": -7000512521530996070,
+        "rolname": "postgres",
+        "rows_delta": 97554,
+        "toplevel": false,
+        "total_exec_ms_delta": 461.285
+      }
+    ],
+    "total_calls_delta": 1981479,
+    "valid": true
+  },
+  "pgss_reset": "2026-10-08 17:14:12.173347+00",
+  "point": {
+    "app_cpus": [
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ],
+    "app_env_overrides": {
+      "AUDIT_ANCHOR_MODE": "disabled",
+      "DATABASE_MAX_CONNECTIONS": 32,
+      "RUST_LOG": "warn"
+    },
+    "arm": "A",
+    "audit_mode": "required",
+    "capture_audit_journal": true,
+    "collection_contract": "blackbox-db-v1",
+    "confirmation": false,
+    "deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+    "diagnostic_only": false,
+    "durability": {
+      "postgres_fsync": "on",
+      "postgres_full_page_writes": "on",
+      "postgres_synchronous_commit": "on",
+      "valkey_appendonly": "no",
+      "valkey_save": ""
+    },
+    "duration": "75s",
+    "effective_seconds": 60,
+    "executor": "constant-arrival-rate",
+    "expected_binary_sha256": "e12599284e21ff5f25bacae98d431394fc774c036eb92f42959cf418d15f612d",
+    "formal_preflight": true,
+    "fresh_state": true,
+    "gate": {
+      "measurement_drop_fraction_max": 0.001,
+      "p95_ms_max": 100,
+      "p99_ms_max": 250,
+      "successful_ops_fraction_min": 0.995,
+      "unexpected_max": 0
+    },
+    "grace_s": 120,
+    "harness_file_sha256": {
+      "docker-compose.perf.yml": "8a75dec17323822fd10c12f7a86547b19ca43dbb589d01a64aacbc6ce05522cb",
+      "perf/README.md": "96f2d1bcdbfdefb74b62d788857d1f54f6a524e84333093f36346955b549e3ee",
+      "perf/aggregate.py": "8296c1a1ed78207b075e87fff7a6c81513665cd885e8c6ec383b92b4552d9306",
+      "perf/aggregate_ab.py": "727115727edf08a7090330a811b423c79ac7bb392f89b8bc9aa35a493e00ecad",
+      "perf/aggregate_wait.py": "09177a7f7d3e919a2d5353e735d6b1505eeae0bda9d8c6191ba834fcac583c24",
+      "perf/app_cpu_capacity_smoke.sh": "ca1c44af334a4f6dd6edc9cf8f5d501fb94134ec4b96bafc4f00e4430a22e9fa",
+      "perf/audit-anchor-receiver/.gitignore": "b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d",
+      "perf/audit-anchor-receiver/Cargo.lock": "8ba6420d673e450a9465d5154b0ab056249f7c59c3893cedaf2f09f6beba44af",
+      "perf/audit-anchor-receiver/Cargo.toml": "38f28323df718e2cdc57cc3df2ae7afaa66d35928f69f934baea00fed54c6f97",
+      "perf/audit-anchor-receiver/Containerfile": "6c67fc665defc701d63d8a161e16c43cd566316f57ff15f086504cb6f61c2839",
+      "perf/audit-anchor-receiver/src/main.rs": "2bbee926d986dfacaf3cf93ba34f226c71179c1eb6d1a10b839235d3ad9101d1",
+      "perf/audit-anchor-receiver/src/store.rs": "5f4ab9c92fc00f45a8961041ec63984946ed545b7876e1eb9d516f3be9f90878",
+      "perf/audit-anchor-receiver/src/wire.rs": "5fe052fecfc1c89f6085cfc4c29bb258b413f0041a6c60a704107123325f06f6",
+      "perf/bootstrap.sh": "5660d4ab86a7db0e9f66bfd581c10075178ce7b7537233e6445e9ce9081e06f1",
+      "perf/cap_ladder.sh": "7fb394ba0a88ad3b8edd59d88e6dee6f4388c519f9c694724316f1c46bd77ffa",
+      "perf/cap_point.py": "ab0ac111c10d54755661a469d549e1c2c156898731c23ce8e17fd02186a20daf",
+      "perf/capacity.py": "fe61ad4ea99cdb92688ac611c0353b35aff2c81e11aecf82cb90e2b6715000d2",
+      "perf/capacity_preview.py": "8040c7314c126dc5a83adc0caca60b3496d3b2afa28d297c13646849379ad7c0",
+      "perf/cg_sampler.sh": "a727b1e8d76070f3d79267bc75106f4718a0fb0c560088b29d02afe73aefdd81",
+      "perf/dev_capacity_matrix.sh": "121ea0e7b84299ecba5ddc9a8a0ce28bc8419153e396462c0bbd5fb0c20e91d7",
+      "perf/docs/blackbox-evidence-contract.md": "3fac272130903e304dcb9f4e19e5d0e37376f0b1d6ad748a0230e7030fd4a805",
+      "perf/env.yaml": "51b86db0dfbcef044524b5a2bcbc69784bd8fd694801c841e2681fb04b5f93c0",
+      "perf/extended_capacity_matrix.sh": "ff78cd74722c098f7181afffca7db5cb0b07e1b553629815307bfbdd16ffd143",
+      "perf/failprobe.py": "54e3f3daa325372d4a6723af2e73932b8a6efab585a38ff47523f64b9241a247",
+      "perf/finalize_capacity_reports.py": "7329327e16aff262b9480e95db3d932d41a46d24165aac024df703f48f72b38b",
+      "perf/k6/checkpoint_clock_test.js": "ddcc4afeb07460efa880a633febdcec02b36906cbfcaa898c39285f8b4f87c6f",
+      "perf/k6/measurement_clock.js": "80e178b3424159cbf7a1640ee6621a250204d9a31ab09bfe50d126d247dfefdc",
+      "perf/k6/oauth.js": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+      "perf/k6/subject_state.js": "384ff18822c3cf9d948c33d92274fe25c87fc0369c60953d109cace0828c9725",
+      "perf/k6/subject_state_test.js": "9a922e9066365b4da8f9d253958e7ea013ddc1ef17816c0537d894ccb3b7292c",
+      "perf/keyset/Containerfile": "6fab87f7c4c4684897cee3fe1c23fe51780c48f24f6ef2435e4c30f997196136",
+      "perf/pgconn_sampler.sh": "3494077f752223062c5210a31e75efe30554e50f8d1808af97acb85404ac45e6",
+      "perf/results/README.md": "9e61810b0edecd3e0d5341dbf743e583a73906ef089b47c845507db6c4c5cf88",
+      "perf/results/data/capacity/current-capacity.json": "36961ea3274d2c55795c919b422fa1c41bb0747fcac32db08ad245fd6fbdadf2",
+      "perf/results/diagnostics/2026-09-28-ci-cost-60d.json": "2c1a9029aaf555dac33991622b27b7e74c53350510d82a84eb10c59d6ada4df5",
+      "perf/results/diagnostics/2026-09-28-ci-cost-d1e2.json": "0ae7452a8f0ddfe66005c01979a53c075e79af105d784a2f335ba10c7b50ae73",
+      "perf/results/diagnostics/2026-09-28-ci-cost-dd273.json": "ae449d59410167732f6bde017fd0e808976e50b2d3fb3500a381c861b059a748",
+      "perf/results/diagnostics/2026-09-28-ci-cost-ec638.json": "8e9e15209ae3f90e1ee5bc9e0c23ea3454eb5a30b742d7e5537da2d1af1ddec0",
+      "perf/results/diagnostics/2026-09-28-code-refresh-boundary-acceptance.json": "ce9effa00c0609a6661f3d0e2ee362603d649136fa7628b3479c0e64a9f45885",
+      "perf/results/diagnostics/2026-09-28-current-b-calibration.json": "3f582b3537be252c4c851a8148e8dabb554987763971f4495e5a7650115cd4e3",
+      "perf/results/diagnostics/2026-09-28-current-b-decoder-profile.json": "b096b6ebfbdef709b249f623db18de5f6e1d5fad13c3d205b2336a12ec9be2ae",
+      "perf/results/diagnostics/2026-09-28-current-b-reassessment.json": "49ffc63dc8ddb0c8c01f171c6f2de02730fd08e257a81d0a270ca7019d7afba4",
+      "perf/results/diagnostics/2026-09-28-current-b-selected.json": "962b721bb3f8722cd0b431ef5bb3b4cccab9ae708a75f793fd07874671806243",
+      "perf/results/diagnostics/2026-09-28-current-b-tester-diagnostics.json": "7fdcc5cc5cdee22e04858899cb709523d8eb71c3dc9a5ab8a9c2eed2040b6bc9",
+      "perf/results/diagnostics/2026-09-28-incremental-apparatus-controls.json": "94d24980ed71241f11a85c31e14bef2cd0b81397888051bef9253cc6d2cbff91",
+      "perf/results/diagnostics/2026-09-28-incremental-b-selected.json": "d540cbfaac91b723aab3f0fd958f9b6e143fe5222d434f500668ce17dfbf5bdd",
+      "perf/results/diagnostics/2026-09-28-incremental-code-cc-validation.json": "30055b378f3e34bd987787da7fb3bc62daff8b16799664e6bc092479693d9a25",
+      "perf/results/diagnostics/2026-09-28-incremental-evidence-archives.json": "91ae4fded5abb94e5a2a467bead90fdff856a1b0742720f713fccdc0aa7ed1dc",
+      "perf/results/diagnostics/2026-09-28-incremental-final-reassessment.json": "e1a8cf6927fe68426c73e3a7e22c0d394c3e14f4e6e72be4ce1f0aba3ee0c67a",
+      "perf/results/diagnostics/2026-09-28-incremental-mixed-cc-boundaries.json": "f81ceaee13befc271fb8bd61b5f54c8b59ae0b299236340c21fbda91d6416d4f",
+      "perf/results/diagnostics/2026-09-28-incremental-mixed-queue-burst.json": "37ebc1a7aaea7026c55780b150e54c516a5015b11096684bf007da00d0016d7d",
+      "perf/results/diagnostics/2026-09-28-incremental-reproduction-recipes.json": "aa9639563297d055999d053f119eb34ab8ef6fe462ccc274b270fe342d0b3e09",
+      "perf/results/diagnostics/2026-09-28-incremental-retained-archive.json": "43fe85f15a477091618f4eda99807b34841a8a31953a07ed91d43730525f886a",
+      "perf/results/diagnostics/2026-09-28-issuer-introspect-boundary-acceptance.json": "59fff535eb0e177253918bcf1c371773f7859223a6f61aa22a89387d7dd3cb4b",
+      "perf/results/diagnostics/2026-09-28-k6-output-profile.json": "4b27d1d3853aca445880a4a502cda92beb8e156c8ba95c4627a135033dfe1998",
+      "perf/results/diagnostics/2026-09-28-mixed-cold-boundary-acceptance.json": "ebb0dfca4aa05ad1363a38cea15a942b3e0a01b0df5c9e88609edb43aae3299b",
+      "perf/results/diagnostics/2026-09-28-mixed-duration-checkpoint.json": "b8e1855b5b6dc1433a367363d94d45e6eda735555b34a9516a5e1485f49aa511",
+      "perf/results/diagnostics/2026-09-28-mixed-incremental-acceptance.json": "3498da01e1387afb6a5b9a7e4f211e8f1e409656be52ef89db95811bc3d6aaa8",
+      "perf/results/diagnostics/2026-09-28-native-partition-probe.json": "4b24ab653ead31da6f127a891cfab4979ae0f08e798f42441bacf3123c665244",
+      "perf/results/diagnostics/2026-09-28-native-stdout-flush-proof.json": "357493bf9a605a54b7020bb5ca3b4b4b788edd09b99196ecdf7f9826b533bf83",
+      "perf/results/diagnostics/2026-09-28-retained-reassessment.json": "307abbde99eea50d55fd713b9c34029cabb82033d3b2817cf56f50ba291cd785",
+      "perf/results/diagnostics/2026-09-28-stream-consumer-calibration.json": "b8f94b8f8ab3af8d60b620a5e0f947270e7b8ae6a8f0704c1df99d945172a229",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_restart.jsonl": "f5db3641485d5d8687d9ce3b2d33a265446ded8968f7dd7170c01bb851eeb998",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_term.jsonl": "fa95fea899cba36bc3a4141eac719a9f1e49e4b553a6013dc94234865d9b5eaa",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_term2.jsonl": "a9db210102b3f19d386caf61e06a18048d426e114e14b23f7283fa32e1011b66",
+      "perf/results/diagnostics/failprobe-2026-09-16/ref_restart.jsonl": "91b91bc21575f4d528ac1ea7ec1eab89b1c1c417b2195f28b7a2aec232bb8766",
+      "perf/results/diagnostics/failprobe-2026-09-16/ref_term.jsonl": "ec646074bcd7065205c363278ab29f7f04b3be831bd0dbc9fe26f2ebf386db53",
+      "perf/results/diagnostics/pr222-2026-09-27/grant-sql-trace.json": "ed444df917dcb39afa196321af9911e594ef225a65cfe203e14c9a70c82200c0",
+      "perf/results/diagnostics/pr222-2026-09-27/grant-three-family-fixture.patch": "e9442b461dd736e66145b7fb3fecf8f018b7e5296d495f04e0cae8b149856f1a",
+      "perf/results/diagnostics/pr222-2026-09-27/sql-plans.json": "e9ccd3e59171ce03ec21f71eec1a7368301e8dfa9f2817669fde70c5d1108627",
+      "perf/results/diagnostics/pr222-2026-09-27/sql-probes.py": "762d2f3730879b41a2156f54c469a6845d93fefebc1853f489cbee6d05dd12f2",
+      "perf/results/diagnostics/pr222-2026-09-27/validation.json": "ede70292b54ba8c9b5c9506486c1e55926168d339425162482eb1a5944b65fbc",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/multi-mixed-abba.json": "3fbd7f91bd0b3cb331704e2e35d8053163826bf24db7681b084aab961587de06",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/resource-gate.json": "1e0e3d5f23e3c2c5e65ab6967de0616f147266e8f9bddd7c82dcd677fd0324c4",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/single-cc-abba.json": "5983a8dd3c3d7d4c62a12e23f908480428fdfef8282ab288905f533abedafa52",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/steady-common.json": "cc1bed41c4456ac16a4ff2965e89fea81994cebcda47954e67bda6d65be87148",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/aggregate.json": "b7c89e23a79aff0ef05249a8a49ab72fb941cf8825b6decbe06ee7b1cbaf64f3",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/meta.txt": "99f1ffa4f7cac25fb210465eb3a2fb137503284877e473a84443fc6474fff1d0",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/cc-c32.json": "fb9360a4aa8754da9896cbc9ca36c1bef49466e5e6f6e89d3f21f565a224fd5d",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/cc-c8.json": "1a45113dfb5edb0fa9e9caa715e40544d6955d7d220b43ea50c8ba631c18f815",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/refresh-c32.json": "e28c3d2ef837dfc60cbbc65ef8ff2eec79617bef59bbbd05933cf95e1a70beba",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/refresh-c8.json": "0be8579400e128a7e779c60741bd7f96a5c1c18579f2b2101c0cebe76b8853da",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/cc-c32.summary.json": "c9a7fecf5ad8f6a68bf2f98cf7752da76fa627545121d4f3658c841fa717f301",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/cc-c8.summary.json": "4618f4f5515d79dfef4bc6a5e90f49d08f9c10c0e5a74d72655d0d2a9cd7957c",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/refresh-c32.summary.json": "1126724cdb30fcba56e3e1bbb216eeae5924b64ead5037b42e375eaf89e91d3f",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/refresh-c8.summary.json": "62722995621c7cc2a279a69f8fbea070f242386afa74ce46cf85ab5e3e16944d",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/aggregate.json": "e064b333245f3e1a2cdb5d5e534c0ba51cbeeb43b738300f4dd3f9cbc943c50e",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/meta.txt": "884bb61b929829b08d487e788e2d65a243b740efcd17093692671252946a02f1",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/cc-c32.json": "3a98cf12eb00ef33554a04f19a8fd678c3524db779bd5c044aab91d79bc4d1e0",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/cc-c8.json": "214f1be1212bea7f26143f15372f4e69b66071d4d2f175982b26db0ee8b320c1",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/refresh-c32.json": "a06e3af17a8c116387fdd3ac55b3146d6996906b52cc984fc1a19f01a2473642",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/refresh-c8.json": "9ca80e61577ddd97429a6bb8736fdf1e1e3c6eec78ed85e48ed8944a900bf124",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/cc-c32.summary.json": "147e88d9fc1108dccefb6af346f8232e1089dab2ca7fc16c576a780d3f83e5f5",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/cc-c8.summary.json": "f550b678d7f005e632c1a574df4e450ce87cdee50a9bdfd89441f890a59a7199",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/refresh-c32.summary.json": "8655124470d78d7651ebd78df22c73a74a26d1da279d34a5880e973488ebc618",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/refresh-c8.summary.json": "59f4a64da1dee0d5b3859953db01e22e34c6b1dc746086396efde7b2343dbb8c",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/aggregate.json": "12bb4fb47f91269bd201f1e2263f18ed45cef6ba0fbf47d3f52d4cd6d1b7c5e9",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/meta.txt": "0dffd0b03502aed7aca24bae209970d9b7703d59a28f32f02b52d912d5a0262f",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c16.json": "eb408d74b5689a0d510f4b9bda558a967c03b5dd4ba2f723a2046d7404f71106",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c32.json": "b51ce0c54a9d2797c195919fbe8eb5fc80012ebed827b68b0b812d35cf5780ca",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c64.json": "2fc22dc7d3e6f31c5afc0ba99f236dbb1ac7d31eb5887d213836be5a00e15c6f",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c8.json": "8049a2da2a6d0ef34d7816141da5680f93062c61b9e89a9b5d74c890c72c70a1",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c16.json": "24aa709e493b5111fcad0f65fbd0f9433fef97762d2ab815d1c8ec24da4f0d65",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c32.json": "3dc40e123c0dd5d2fde1741a2837c7ea84190b73c2940ea600825fe363e4542b",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c64.json": "424759092f82ad3d79fdd887ad644fe8993c5f2238e606b93f7ebb7e11be3d6e",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c8.json": "8e7bed673c3f021e85c0da2e465c99e4b4be665bd418ba8cebf4f1cb165e66fd",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c16.summary.json": "5da652d91863f6c48ca0e3b1f53d00bed2694de21c819eae645f4243ea70fbd6",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c32.summary.json": "88ef908927b6535cc8d021453546d11e56bbc22a2c594a0f66be87c87153bd7c",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c64.summary.json": "26ec5274d0313f682a5f3e354c1b9f8efae880d6fb13f349847c0d5a0e3f90f8",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c8.summary.json": "c46bfdf1132da45010d4ba51fe92ed2c9f114478ccd47e3e952da6c2cde79ead",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c16.summary.json": "4b2e9d69dcffa81b6b6dd7f8c2ec686c58940cfddcc7be93166e7c1671a1aeb9",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c32.summary.json": "ea5a1b49adc9135779996c864cdc4e42322973361dd41012b00e64cbd46024c4",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c64.summary.json": "cacb565869f13bf014a2db1f911814491dabafc06683e85048499f6d9e736b86",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c8.summary.json": "01ed21367f6a088318917ac14a8fa13cfe7563ce0e1fd00d6ba7786d511db356",
+      "perf/results/environments/2026-09-28-current-b.md": "591ba9cd1de88bb9482b5879f1c68670c629d2aebe15ea27f825eb64f7378865",
+      "perf/run_capacity.sh": "817f2aa3c865a0a3a528281ac4f6cf86b7e7ace42c173b2c5a7771a735a1b16f",
+      "perf/runner.py": "42f01fa27903d952a122357b49ceb07e15a270d445776252eb673b9ac8144e1f",
+      "perf/runner/Containerfile": "aa6e89c2b966a126ee19fdb3d25308e61d78164d3f4b80ee08a36b193386b4ed",
+      "perf/runner/k6-json-throughput.patch": "90d42e40eb7ea30f23327c7d7736ed638d39eb5752ef716a9de83f3eac57d768",
+      "perf/seed.py": "392676fca9d8cfd747f1989fe35ab8aa9f8ea8db0673bd6eae3a81a88ec19006",
+      "perf/single_instance_full_flow_max.sh": "edd3b15a292e81b3928d23d2b2a08fd4398b52dc6042518eab7ef7cac0854ba3",
+      "perf/tests/test_audit_pending_schema.py": "f0ca117f3fa4f09340c9bedca0fcf142ecedb60da1144c91a3ac885d50db745c",
+      "perf/tests/test_audit_reconciliation.py": "d7a1657944fe3703e283fd03644a6220afabcf5efb047234b117c205051a25ae",
+      "perf/tests/test_blackbox_contract.py": "468946b728e17696b80bd490aa67fd80ee8d4859e0956cbc336cccd262e7fc58",
+      "perf/tests/test_capacity_producer.py": "74b82c0472fd554b98ff046f0d4e3f923f47823b99998b37ce35aa0072447b1b",
+      "perf/tests/test_capacity_window.py": "23d7c73baba23388f36f98dd6b1f5b8c64204919c6fd47002f7969f9dac892fe",
+      "perf/tests/test_checkpoint_measurement.py": "7b72fd48aa4cbc2cfe5f72388d99ddf06b2f8bff18c21c95c1f3e23fec9d7af4",
+      "perf/tests/test_cnb_controller.py": "83bf719e5a058834d9a58bf5bcf7ee71b984b50a191b4eac08a9c7d16716284d",
+      "perf/tests/test_current_capacity.py": "4e3710d3bdb60ecbfe84486c7b43aa351b6de44e2e1b01f39f314f852bcf4e8a",
+      "perf/tests/test_evidence_contract.py": "64dcd7b1e82862a2d32353d40b199077913d27882fec797436ceb4e1057416ee",
+      "perf/tests/test_issuance_maintenance.py": "93885e1ef5b26f0923164603701ceb75503df7e6a7eba3074f3ef45068548923",
+      "perf/tests/test_pool_size_ab.py": "4c7ed7d0801348e3ae83931dde04a31e74f514082851958851dd45c887503dac",
+      "perf/tests/test_residency_analyze.py": "df97612b162ed12c8fddf2c22c02d4026e81ffbad5a74d0d5836a5bacd5b8592",
+      "perf/tests/test_runtime_cpu_probe.py": "0ec0bc0582315196f82e336737f4c6038ec895e979f0c0514193c7b70be5461f",
+      "perf/tests/test_seed_jwk.py": "92aae73579f2f47405b2017cd26f1bc10d2730e98893c42a88d35fc01e3a689f",
+      "perf/tests/test_service_affinity.py": "8d83af3a7885bda9888cea81def1f2dd26657ce7c06293435ace32d75bc27ecb",
+      "perf/tests/test_short_baseline.py": "3f710d8634d9394f58f7eb7d1605cbb4c9a971ca1ffaf50e31ffb7c64ec391a3",
+      "perf/tests/test_single_instance_scaling.py": "23e20854b9d15730a9c62c2287bb3a9b2c0bd673bb9add7f53934a2302fbd696",
+      "perf/tests/test_stability_analyze.py": "1f176586a69ea3b9aaed426145f7bb5e07c1dc9a24ec7b2e4aa778446e845209",
+      "perf/tests/test_stream_cohort.py": "7ff8d8c2d90850f5465b66d6dacfdb2fcab65e7957603fb8a60564c0c83af611",
+      "perf/tools/aggregate_points.py": "3916e1a1557bd07d5ca8c9143d265f05470192891c297a635295cf0f2835d1dd",
+      "perf/tools/argon2_ladder.sh": "974f6f49a7ed5067a4e0b346bb83aadd1a97f2ae4c090926303776fff11e3d68",
+      "perf/tools/audit_anchor_fault_regression.sh": "636b6a00b9e117c49d91048d7330bbeac84e7824f6e6e5ea983d7d68289cf068",
+      "perf/tools/blackbox_contract.py": "b2fbe9b6422bce73e136f483095a9147a2ed61c10906d75fcfba18a814ed7fe3",
+      "perf/tools/build_matrix.py": "654f31d7f8af91ddcb19bb45f2b3697717f999a2c58d04af24df1dbfeba8506a",
+      "perf/tools/canonical_schema.sql": "28d62b903d708260a10f329207e9462c3537cc6541c22c2b3ef4b461db404a26",
+      "perf/tools/cap_point.py": "4106d93ce87d5e86fb5fd39489a55ff0d1441c26fe3142e27875c1d3af14e452",
+      "perf/tools/capacity_search.py": "799ad49b4927b1cba0d2a9d137c0df34a39b00368fc1751a414bea514341a76f",
+      "perf/tools/checkpoint_analyze.py": "636b866900f4506d247df3d66d2cc8ef07d24ff1fd0817f7cc984e5850035988",
+      "perf/tools/checkpoint_observer.py": "5118f45b50f7e1d7210e1529c30d5cfe09bfb0b055756a04e940d2e905791474",
+      "perf/tools/cnb_controller.py": "61254f34822c6a92c0582c30d2e0385ce0783f6692def60c779cf64542e726a5",
+      "perf/tools/current_capacity.py": "100c9a6e11fafd15448edf4bd8907b271aaa07797c468f99d144908d9e97013e",
+      "perf/tools/ladder_points.sh": "4e92d32b707ca27e6ec8bfdad5fd86533559f0381e74f701ee4c3f85c612d93d",
+      "perf/tools/ledger.sql": "e5d98b8f6bf8b5a9acf3990f1a34b17b7d9a82de186b7a237b2fa6780246a724",
+      "perf/tools/ledger_check.py": "58c1c8a6ca39d53d2fe8042452df475b5a365a0b00618113ec51e4c5344ca256",
+      "perf/tools/measure_schedule.py": "8fb287b13b32ed43ac08a4ce123963af50e90bd61c1f6dad78352da4f9f6140c",
+      "perf/tools/perf_state_ready.py": "bd3eb234b5aa9d7f48f2894cace87e991a5f43b61e1d6d8f1b67d1fc7264c3c7",
+      "perf/tools/point_resources.py": "81e1b941dd8ad2bea2b74521f452445d00938a4980e27e06f1604726eb01cb5e",
+      "perf/tools/point_runner.py": "f4cedce157d2a4b52254ab5feffad358d890200c95951e66a4258b0141e756d9",
+      "perf/tools/pool_size_ab.py": "1796210c61684a084b3ce70651243edad400ffaf679d51b02edee5478fb76a14",
+      "perf/tools/proc_detail_sampler.py": "9ef9fb303087b7bff05b16ba57267ab0bd668e3f0dbbc35337837ad0482fe1ad",
+      "perf/tools/proc_sampler.sh": "fe51232158a08255778463be92c99ac6186cbb3bb86958f110588bacf83b71b6",
+      "perf/tools/recount_argon2.py": "918c0bb37780bc1c767dd5be61915db26844984acc167189a99b6bed29d0d5f1",
+      "perf/tools/residency_analyze.py": "05625cf294685aa619a3e20a30c4c509e44cfce245032967b2a73e6002cc5085",
+      "perf/tools/residency_observer.py": "a0f4fd577ae12d42070145aeca6e19f3f7dbd82ffc008176e87021dc35ae8ca0",
+      "perf/tools/run_composites.sh": "5cda4afc87b59864a7a7489fcbc80600a8233940c7632a60e7d882237030c62e",
+      "perf/tools/runtime_cpu_probe.py": "6159cc2d3d0b775eadd9adf2e330371d5f01463ebc3beb08e81ba00a2afbbe25",
+      "perf/tools/short_baseline.py": "680d68fbc0e22d7d674acd34785889e5a9e7feb47b1eef2d16800373aaeaa5aa",
+      "perf/tools/single_instance_scaling.py": "181b9ced8fa33a75c10af4bf241ab55d295b376cf6fef9d3f1447005ee9bc160",
+      "perf/tools/smoke_endpoints.py": "a5fa2ddabc35e9d9672b4abfc4914e37e44ec60cd26664df7474693eead14a6b",
+      "perf/tools/soak_run.sh": "dc0ae9245994a905c7cdde032a094a1edc5647e0ae669d108f443249b1ebaba6",
+      "perf/tools/soak_sampler.py": "649f7f51c752fa1328c4bb59c29fa5eaf1867c0f091985b39a9becd4736e7a89",
+      "perf/tools/stability_analyze.py": "4047a75165cd6fc0cc17da1ff46c4b46090d2748633b760493f2b01545e428ea",
+      "perf/tools/vkledger.py": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f",
+      "perf/wait_ab.sh": "04500c9c85b2aee6e8ec6ee187231116e8cc45c26677fac911e0eefefc829b92",
+      "perf/wait_matrix.sh": "e342fa2bf6bd2181cd5824bc6b623147f0e5756048a3a68ca076666993e00169",
+      "perf/wait_sampler.py": "842860236eabea159862fe3a773fd79376520001109af3a2871415f054aa8858"
+    },
+    "harness_source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "helpers": {
+      "keyset": "sha256:ded558152de1b7ddb22cf45ee18207ea7648be5635f440f67cdc919b46fe5394",
+      "receiver": "sha256:39e32db7115dedff70fc06145a90a5329e144d22fe98d8a52ea468410395d8a5"
+    },
+    "image": "sha256:59d38ad2fa4999589026696375bb745836b0dce65e0855e03afd8db7249a427a",
+    "infra_cpus": [
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191
+    ],
+    "infra_image_ids": {
+      "postgres": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+      "valkey": "sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
+    },
+    "infra_image_refs": {
+      "postgres": "docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+      "valkey": "docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
+    },
+    "issuance_max_expired_age_seconds": 120,
+    "issuance_retention_seconds": 360,
+    "load_authorized": true,
+    "max_vus": 992,
+    "name": "pr230-perf-a06-20261009",
+    "phase": "multi",
+    "phase_budget_seconds": 528,
+    "pool_connections": 32,
+    "postgres_cpus": [
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159
+    ],
+    "pre_vus": 992,
+    "profile": "capacity",
+    "rate": 800,
+    "replicate": 1,
+    "request_key": "A06",
+    "runner_image": "sha256:8697deacffb61b5aaf92bbfd5ba2fd0d3a038b481450ab9a9a26e20a7bff3b17",
+    "scenario": "cap_authorization_code",
+    "schema_profile": "pr230-revision",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "source_tree": "8bf50e039e9cfc082bce38b7e1a4935a0a61ad1c",
+    "state_wait_s": 120,
+    "status": "AUTHORIZED_PR230_REVISION",
+    "stream_evidence": true,
+    "stream_workers": 3,
+    "user_count": 992,
+    "valkey_cpus": [
+      160
+    ],
+    "vector_count": 48000,
+    "warmup_ms": 15000
+  },
+  "provenance": {
+    "app_image_id": "sha256:59d38ad2fa4999589026696375bb745836b0dce65e0855e03afd8db7249a427a",
+    "app_image_ref": "sha256:59d38ad2fa4999589026696375bb745836b0dce65e0855e03afd8db7249a427a",
+    "app_image_revision": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "app_source_sha_file": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "applied_migrations_sha256": "9e48968456c46a69c0460d8e4ea5435a2494381ec452ee661dd36f45ae329c68",
+    "binary_path": "/usr/local/bin/nazoauth",
+    "binary_sha256": "e12599284e21ff5f25bacae98d431394fc774c036eb92f42959cf418d15f612d",
+    "k6_oauth_eq_workspace": true,
+    "pg_checkpoint_completion_target": "0.9",
+    "pg_checkpoint_timeout": "5min",
+    "pg_fsync": "on",
+    "pg_full_page_writes": "on",
+    "pg_max_connections": "100",
+    "pg_max_wal_size": "8GB",
+    "pg_shared_buffers": "128MB",
+    "pg_synchronous_commit": "on",
+    "pg_track_io_timing": "on",
+    "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "point": "pr230-perf-a06-20261009",
+    "runner_image_id": "sha256:8697deacffb61b5aaf92bbfd5ba2fd0d3a038b481450ab9a9a26e20a7bff3b17",
+    "runner_image_ref": "sha256:8697deacffb61b5aaf92bbfd5ba2fd0d3a038b481450ab9a9a26e20a7bff3b17",
+    "runner_image_revision": null,
+    "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "source_sha_eq_file": true,
+    "source_sha_eq_image_revision": true,
+    "source_sha_registered": true,
+    "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697"
+  },
+  "run_id": "pr230-perf-a06-20261009",
+  "sampler_health": {
+    "checks": {
+      "proc": {
+        "container": "sis-proc-pr230-perf-a06-20261009",
+        "detail": "ok",
+        "meta_ok": true,
+        "running": true
+      },
+      "soak": {
+        "container": "sis-sampler-pr230-perf-a06-20261009",
+        "detail": "ok",
+        "meta_ok": true,
+        "running": true
+      }
+    },
+    "ok": true,
+    "real_sample_ok": true
+  },
+  "samplers": {
+    "interval_s": 2,
+    "proc_detail": "sis-proc-pr230-perf-a06-20261009",
+    "sampler": "sis-sampler-pr230-perf-a06-20261009"
+  },
+  "stack": {
+    "app_binary_sha256": "e12599284e21ff5f25bacae98d431394fc774c036eb92f42959cf418d15f612d",
+    "deployment_id": "01a11c81-b6c4-776f-815c-52a1220151a3",
+    "healthy": {
+      "keyset": true,
+      "migrate": true,
+      "nazoauth": true,
+      "postgres": true,
+      "valkey": true
+    },
+    "image": "sha256:59d38ad2fa4999589026696375bb745836b0dce65e0855e03afd8db7249a427a",
+    "keyset": {
+      "collected": true,
+      "files": {
+        "/var/lib/nazo_oauth/keys/keyset.json": "8b510b7a7a0509f478ae7c36b6d369dc2dd70f2a28b252080af736a17b24855f",
+        "/var/lib/nazo_oauth/keys/ps256-runtime-6d05ace330f3466fbe167d4c006c9acc.pem": "fbe113d3838f8ab2d842a07cc2b384025a0298aef2e14183fc6e0e3d6b82dcec",
+        "/var/lib/nazo_oauth/keys/request-object-encryption.pem": "456c8ed0c20381ff8c80bca16af0d745daabf873e53824b76213aadfea98cce7",
+        "/var/lib/nazo_oauth/keys/rs256-runtime-f21dff8f0b844321a9470eea0cb319df.pem": "12a14951cd8eefe8cde4d6902e8ddfbf8503072d4caffb83859f2af9d1200b05"
+      },
+      "key_dir_volume": "/home/rootless/.local/share/docker/volumes/pr230-perf-a06-20261009-keys/_data"
+    },
+    "pin": {
+      "app": {
+        "before_snapshot": {
+          "collector_exit": 0,
+          "complete": true,
+          "confirmed_gone": [],
+          "read_errors": [],
+          "round_trip_ms": 129.1629
+        },
+        "container": "pr230-perf-a06-20261009-nazoauth-1",
+        "pid1_allowed": "Cpus_allowed_list: 24-39",
+        "pin_attempts": [
+          {
+            "pids": [
+              1
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=39",
+            "uid": "10001"
+          }
+        ],
+        "pin_output": "pinned_tasks=39",
+        "pin_rc": 0,
+        "proc_masks": [
+          "/proc/1 nazoauth 24-39"
+        ],
+        "requested": "24-39",
+        "snapshot": {
+          "collector_exit": 0,
+          "complete": true,
+          "confirmed_gone": [],
+          "read_errors": [],
+          "round_trip_ms": 168.764
+        },
+        "task_masks": [
+          {
+            "allowed": "24-39",
+            "name": "nazoauth",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286874,
+            "tid": 1,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 7,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 8,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 9,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 10,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 11,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 12,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 13,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 14,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 15,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 16,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 17,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 18,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 19,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 20,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 21,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286909,
+            "tid": 22,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209286915,
+            "tid": 25,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287007,
+            "tid": 29,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287007,
+            "tid": 30,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287007,
+            "tid": 31,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "tokio-rt-worker",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287009,
+            "tid": 32,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 33,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 34,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 35,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 36,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 37,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 38,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 39,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 40,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 41,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 42,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 43,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 44,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 45,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287174,
+            "tid": 46,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287175,
+            "tid": 47,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287175,
+            "tid": 48,
+            "uid": "10001"
+          },
+          {
+            "allowed": "24-39",
+            "name": "actix-server",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209287178,
+            "tid": 49,
+            "uid": "10001"
+          }
+        ],
+        "uid": "10001",
+        "verified": true
+      },
+      "app_cpus": "24-39",
+      "app_exec_mode": "pinset-exec",
+      "app_verified": true,
+      "keyset": {
+        "before_snapshot": {
+          "collector_exit": 0,
+          "complete": true,
+          "confirmed_gone": [],
+          "read_errors": [],
+          "round_trip_ms": 138.8444
+        },
+        "container": "pr230-perf-a06-20261009-keyset-1",
+        "pid1_allowed": "Cpus_allowed_list: 161-191",
+        "pin_attempts": [
+          {
+            "pids": [
+              1
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=1",
+            "uid": "0"
+          }
+        ],
+        "pin_output": "pinned_tasks=1",
+        "pin_rc": 0,
+        "proc_masks": [
+          "/proc/1 tail 161-191"
+        ],
+        "requested": "161-191",
+        "snapshot": {
+          "collector_exit": 0,
+          "complete": true,
+          "confirmed_gone": [],
+          "read_errors": [],
+          "round_trip_ms": 263.9349
+        },
+        "task_masks": [
+          {
+            "allowed": "161-191",
+            "name": "tail",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209285503,
+            "tid": 1,
+            "uid": "0"
+          }
+        ],
+        "uid": "0",
+        "verified": true
+      },
+      "pg_verified": true,
+      "postgres": {
+        "before_snapshot": {
+          "collector_exit": 0,
+          "complete": true,
+          "confirmed_gone": [],
+          "read_errors": [],
+          "round_trip_ms": 187.0114
+        },
+        "container": "pr230-perf-a06-20261009-postgres-1",
+        "pid1_allowed": "Cpus_allowed_list: 40-48,153-159",
+        "pin_attempts": [
+          {
+            "pids": [
+              1,
+              63,
+              64,
+              65,
+              66,
+              67,
+              69,
+              70,
+              71,
+              90,
+              91,
+              92,
+              93,
+              94,
+              95,
+              96,
+              97,
+              98,
+              99,
+              100,
+              101,
+              102,
+              103,
+              104,
+              105,
+              106,
+              107
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1",
+            "uid": "70"
+          }
+        ],
+        "pin_output": "pinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1",
+        "pin_rc": 0,
+        "proc_masks": [
+          "/proc/1 postgres 40-48,153-159",
+          "/proc/63 postgres 40-48,153-159",
+          "/proc/64 postgres 40-48,153-159",
+          "/proc/65 postgres 40-48,153-159",
+          "/proc/66 postgres 40-48,153-159",
+          "/proc/67 postgres 40-48,153-159",
+          "/proc/69 postgres 40-48,153-159",
+          "/proc/70 postgres 40-48,153-159",
+          "/proc/71 postgres 40-48,153-159",
+          "/proc/90 postgres 40-48,153-159",
+          "/proc/91 postgres 40-48,153-159",
+          "/proc/92 postgres 40-48,153-159",
+          "/proc/93 postgres 40-48,153-159",
+          "/proc/94 postgres 40-48,153-159",
+          "/proc/95 postgres 40-48,153-159",
+          "/proc/96 postgres 40-48,153-159",
+          "/proc/97 postgres 40-48,153-159",
+          "/proc/98 postgres 40-48,153-159",
+          "/proc/99 postgres 40-48,153-159",
+          "/proc/100 postgres 40-48,153-159",
+          "/proc/101 postgres 40-48,153-159",
+          "/proc/102 postgres 40-48,153-159",
+          "/proc/103 postgres 40-48,153-159",
+          "/proc/104 postgres 40-48,153-159",
+          "/proc/105 postgres 40-48,153-159",
+          "/proc/106 postgres 40-48,153-159",
+          "/proc/107 postgres 40-48,153-159"
+        ],
+        "requested": "40-48,153-159",
+        "snapshot": {
+          "collector_exit": 0,
+          "complete": true,
+          "confirmed_gone": [],
+          "read_errors": [],
+          "round_trip_ms": 135.4794
+        },
+        "task_masks": [
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209285502,
+            "tid": 1,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 63,
+            "ppid": 1,
+            "starttime_ticks": 209285688,
+            "tid": 63,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 64,
+            "ppid": 1,
+            "starttime_ticks": 209285688,
+            "tid": 64,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 65,
+            "ppid": 1,
+            "starttime_ticks": 209285688,
+            "tid": 65,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 66,
+            "ppid": 1,
+            "starttime_ticks": 209285688,
+            "tid": 66,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 67,
+            "ppid": 1,
+            "starttime_ticks": 209285688,
+            "tid": 67,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 69,
+            "ppid": 1,
+            "starttime_ticks": 209285690,
+            "tid": 69,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 70,
+            "ppid": 1,
+            "starttime_ticks": 209285690,
+            "tid": 70,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 71,
+            "ppid": 1,
+            "starttime_ticks": 209285690,
+            "tid": 71,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 90,
+            "ppid": 1,
+            "starttime_ticks": 209286925,
+            "tid": 90,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 91,
+            "ppid": 1,
+            "starttime_ticks": 209287007,
+            "tid": 91,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 92,
+            "ppid": 1,
+            "starttime_ticks": 209287007,
+            "tid": 92,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 93,
+            "ppid": 1,
+            "starttime_ticks": 209287007,
+            "tid": 93,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 94,
+            "ppid": 1,
+            "starttime_ticks": 209287008,
+            "tid": 94,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 95,
+            "ppid": 1,
+            "starttime_ticks": 209287008,
+            "tid": 95,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 96,
+            "ppid": 1,
+            "starttime_ticks": 209287008,
+            "tid": 96,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 97,
+            "ppid": 1,
+            "starttime_ticks": 209287008,
+            "tid": 97,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 98,
+            "ppid": 1,
+            "starttime_ticks": 209287008,
+            "tid": 98,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 99,
+            "ppid": 1,
+            "starttime_ticks": 209287008,
+            "tid": 99,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 100,
+            "ppid": 1,
+            "starttime_ticks": 209287009,
+            "tid": 100,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 101,
+            "ppid": 1,
+            "starttime_ticks": 209287009,
+            "tid": 101,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 102,
+            "ppid": 1,
+            "starttime_ticks": 209287009,
+            "tid": 102,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 103,
+            "ppid": 1,
+            "starttime_ticks": 209287009,
+            "tid": 103,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 104,
+            "ppid": 1,
+            "starttime_ticks": 209287009,
+            "tid": 104,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 105,
+            "ppid": 1,
+            "starttime_ticks": 209287009,
+            "tid": 105,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 106,
+            "ppid": 1,
+            "starttime_ticks": 209287010,
+            "tid": 106,
+            "uid": "70"
+          },
+          {
+            "allowed": "40-48,153-159",
+            "name": "postgres",
+            "pid": 107,
+            "ppid": 1,
+            "starttime_ticks": 209287010,
+            "tid": 107,
+            "uid": "70"
+          }
+        ],
+        "uid": "70",
+        "verified": true
+      },
+      "valkey": {
+        "before_snapshot": {
+          "collector_exit": 0,
+          "complete": true,
+          "confirmed_gone": [],
+          "read_errors": [],
+          "round_trip_ms": 100.0879
+        },
+        "container": "pr230-perf-a06-20261009-valkey-1",
+        "pid1_allowed": "Cpus_allowed_list: 160",
+        "pin_attempts": [
+          {
+            "pids": [
+              1
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=1",
+            "uid": "0"
+          },
+          {
+            "pids": [
+              7
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=7",
+            "uid": "999"
+          }
+        ],
+        "pin_output": "pinned_tasks=1\npinned_tasks=7",
+        "pin_rc": 0,
+        "proc_masks": [
+          "/proc/1 tini 160",
+          "/proc/7 valkey-server 160"
+        ],
+        "requested": "160",
+        "snapshot": {
+          "collector_exit": 0,
+          "complete": true,
+          "confirmed_gone": [],
+          "read_errors": [],
+          "round_trip_ms": 67.9681
+        },
+        "task_masks": [
+          {
+            "allowed": "160",
+            "name": "tini",
+            "pid": 1,
+            "ppid": 0,
+            "starttime_ticks": 209285504,
+            "tid": 1,
+            "uid": "0"
+          },
+          {
+            "allowed": "160",
+            "name": "valkey-server",
+            "pid": 7,
+            "ppid": 1,
+            "starttime_ticks": 209285545,
+            "tid": 7,
+            "uid": "999"
+          },
+          {
+            "allowed": "160",
+            "name": "bio_close_file",
+            "pid": 7,
+            "ppid": 1,
+            "starttime_ticks": 209285555,
+            "tid": 13,
+            "uid": "999"
+          },
+          {
+            "allowed": "160",
+            "name": "bio_aof",
+            "pid": 7,
+            "ppid": 1,
+            "starttime_ticks": 209285555,
+            "tid": 14,
+            "uid": "999"
+          },
+          {
+            "allowed": "160",
+            "name": "bio_lazy_free",
+            "pid": 7,
+            "ppid": 1,
+            "starttime_ticks": 209285555,
+            "tid": 15,
+            "uid": "999"
+          },
+          {
+            "allowed": "160",
+            "name": "bio_rdb_save",
+            "pid": 7,
+            "ppid": 1,
+            "starttime_ticks": 209285555,
+            "tid": 16,
+            "uid": "999"
+          },
+          {
+            "allowed": "160",
+            "name": "bio_tls_reload",
+            "pid": 7,
+            "ppid": 1,
+            "starttime_ticks": 209285555,
+            "tid": 17,
+            "uid": "999"
+          },
+          {
+            "allowed": "160",
+            "name": "jemalloc_bg_thd",
+            "pid": 7,
+            "ppid": 1,
+            "starttime_ticks": 209285555,
+            "tid": 18,
+            "uid": "999"
+          }
+        ],
+        "uid": "0",
+        "verified": true
+      },
+      "valkey_verified": true
+    },
+    "point": "pr230-perf-a06-20261009"
+  },
+  "summary_files": [
+    "capacity-cap-authorization-code.summary.json"
+  ],
+  "unverified_internal_gates": {
+    "enqueued_eq_persisted": {
+      "reason": "in-process best-effort queue collection removed",
+      "status": "UNVERIFIED",
+      "value": null
+    },
+    "pending_zero_post_drain": {
+      "reason": "in-process best-effort queue collection removed",
+      "status": "UNVERIFIED",
+      "value": null
+    },
+    "queue_dropped_zero": {
+      "reason": "in-process best-effort queue collection removed",
+      "status": "UNVERIFIED",
+      "value": null
+    }
+  },
+  "wal_delta": {
+    "db_xact_commit": 473148,
+    "db_xact_rollback": 0,
+    "fsync_time_ms_total": 0,
+    "fsyncs_client_backend": 35254,
+    "fsyncs_total": 35417,
+    "io_rows": [
+      {
+        "backend_type": "autovacuum launcher",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "autovacuum launcher",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "autovacuum worker",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "autovacuum worker",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 33,
+        "write_bytes": 3235840,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 33
+      },
+      {
+        "backend_type": "background worker",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "background worker",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "background writer",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "background writer",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "checkpointer",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "checkpointer",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "client backend",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 23,
+        "write_bytes": 385875968,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 23
+      },
+      {
+        "backend_type": "client backend",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 35231,
+        "write_bytes": 669892608,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 35299
+      },
+      {
+        "backend_type": "io worker",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "io worker",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "slotsync worker",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "slotsync worker",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "standalone backend",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "standalone backend",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "startup",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "startup",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "walreceiver",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "walreceiver",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "walsender",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "walsender",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "walsummarizer",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "walsummarizer",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "walwriter",
+        "context": "init",
+        "fsync_time_ms": 0,
+        "fsyncs": 0,
+        "write_bytes": 0,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 0
+      },
+      {
+        "backend_type": "walwriter",
+        "context": "normal",
+        "fsync_time_ms": 0,
+        "fsyncs": 130,
+        "write_bytes": 6471680,
+        "write_time_ms": 0,
+        "writeouts": null,
+        "writes": 130
+      }
+    ],
+    "valid": true,
+    "wal_buffers_full": 0,
+    "wal_bytes": 385954365,
+    "wal_fpi": 83,
+    "wal_records": 3077457,
+    "write_bytes_total": 1065476096,
+    "write_time_ms_total": 0,
+    "writes_total": 35485
+  },
+  "workspace_provenance": {
+    "file_sha256": {
+      "Containerfile": {
+        "sha256": "fae277173bbaff24d8e070d4b2b0d795a5e767615f0b5532e4949f554cab27d3",
+        "size": 3047
+      },
+      "docker-compose.perf.yml": {
+        "sha256": "8a75dec17323822fd10c12f7a86547b19ca43dbb589d01a64aacbc6ce05522cb",
+        "size": 6622
+      },
+      "perf/audit-anchor-receiver/Cargo.toml": {
+        "sha256": "38f28323df718e2cdc57cc3df2ae7afaa66d35928f69f934baea00fed54c6f97",
+        "size": 823
+      },
+      "perf/audit-anchor-receiver/Containerfile": {
+        "sha256": "6c67fc665defc701d63d8a161e16c43cd566316f57ff15f086504cb6f61c2839",
+        "size": 1137
+      },
+      "perf/audit-anchor-receiver/src/main.rs": {
+        "sha256": "2bbee926d986dfacaf3cf93ba34f226c71179c1eb6d1a10b839235d3ad9101d1",
+        "size": 19967
+      },
+      "perf/audit-anchor-receiver/src/store.rs": {
+        "sha256": "5f4ab9c92fc00f45a8961041ec63984946ed545b7876e1eb9d516f3be9f90878",
+        "size": 2974
+      },
+      "perf/audit-anchor-receiver/src/wire.rs": {
+        "sha256": "5fe052fecfc1c89f6085cfc4c29bb258b413f0041a6c60a704107123325f06f6",
+        "size": 9809
+      },
+      "perf/env.yaml": {
+        "sha256": "51b86db0dfbcef044524b5a2bcbc69784bd8fd694801c841e2681fb04b5f93c0",
+        "size": 1234
+      },
+      "perf/k6/measurement_clock.js": {
+        "sha256": "80e178b3424159cbf7a1640ee6621a250204d9a31ab09bfe50d126d247dfefdc",
+        "size": 10706
+      },
+      "perf/k6/oauth.js": {
+        "sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+        "size": 70147
+      },
+      "perf/k6/subject_state.js": {
+        "sha256": "384ff18822c3cf9d948c33d92274fe25c87fc0369c60953d109cace0828c9725",
+        "size": 2182
+      },
+      "perf/keyset/Containerfile": {
+        "sha256": "6fab87f7c4c4684897cee3fe1c23fe51780c48f24f6ef2435e4c30f997196136",
+        "size": 274
+      },
+      "perf/runner.py": {
+        "sha256": "42f01fa27903d952a122357b49ceb07e15a270d445776252eb673b9ac8144e1f",
+        "size": 48922
+      },
+      "perf/runner/Containerfile": {
+        "sha256": "aa6e89c2b966a126ee19fdb3d25308e61d78164d3f4b80ee08a36b193386b4ed",
+        "size": 1629
+      },
+      "perf/seed.py": {
+        "sha256": "392676fca9d8cfd747f1989fe35ab8aa9f8ea8db0673bd6eae3a81a88ec19006",
+        "size": 29766
+      },
+      "perf/tools/audit_anchor_fault_regression.sh": {
+        "sha256": "636b6a00b9e117c49d91048d7330bbeac84e7824f6e6e5ea983d7d68289cf068",
+        "size": 14701
+      },
+      "perf/tools/capacity_search.py": {
+        "sha256": "799ad49b4927b1cba0d2a9d137c0df34a39b00368fc1751a414bea514341a76f",
+        "size": 38598
+      },
+      "perf/tools/checkpoint_analyze.py": {
+        "sha256": "636b866900f4506d247df3d66d2cc8ef07d24ff1fd0817f7cc984e5850035988",
+        "size": 100824
+      },
+      "perf/tools/ledger.sql": {
+        "sha256": "e5d98b8f6bf8b5a9acf3990f1a34b17b7d9a82de186b7a237b2fa6780246a724",
+        "size": 25075
+      },
+      "perf/tools/ledger_check.py": {
+        "sha256": "58c1c8a6ca39d53d2fe8042452df475b5a365a0b00618113ec51e4c5344ca256",
+        "size": 17739
+      },
+      "perf/tools/point_runner.py": {
+        "sha256": "f4cedce157d2a4b52254ab5feffad358d890200c95951e66a4258b0141e756d9",
+        "size": 53264
+      },
+      "perf/tools/pool_size_ab.py": {
+        "sha256": "1796210c61684a084b3ce70651243edad400ffaf679d51b02edee5478fb76a14",
+        "size": 55759
+      },
+      "perf/tools/proc_detail_sampler.py": {
+        "sha256": "9ef9fb303087b7bff05b16ba57267ab0bd668e3f0dbbc35337837ad0482fe1ad",
+        "size": 6080
+      },
+      "perf/tools/residency_observer.py": {
+        "sha256": "a0f4fd577ae12d42070145aeca6e19f3f7dbd82ffc008176e87021dc35ae8ca0",
+        "size": 254
+      },
+      "perf/tools/single_instance_scaling.py": {
+        "sha256": "181b9ced8fa33a75c10af4bf241ab55d295b376cf6fef9d3f1447005ee9bc160",
+        "size": 123800
+      },
+      "perf/tools/soak_sampler.py": {
+        "sha256": "649f7f51c752fa1328c4bb59c29fa5eaf1867c0f091985b39a9becd4736e7a89",
+        "size": 16562
+      },
+      "perf/tools/stability_analyze.py": {
+        "sha256": "4047a75165cd6fc0cc17da1ff46c4b46090d2748633b760493f2b01545e428ea",
+        "size": 17125
+      },
+      "perf/tools/vkledger.py": {
+        "sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f",
+        "size": 4706
+      },
+      "scripts/ensure_runtime_keyset.py": {
+        "sha256": "a89a1f810a38ffaf3a34f3e872fb14638e0d5c15a7c6d0a54f0769da7d6963bf",
+        "size": 4687
+      }
+    },
+    "git_head": "101939f7095a9ea5822ff68580d9fedcd259e970",
+    "missing": [],
+    "ok": true,
+    "perf_tree_sha256": "a5ad20d10e6ea6851a516ed7aabacadc1418ae6186b80bde8e9d523cd40851fd",
+    "workspace_realpath": "/src"
+  }
+}

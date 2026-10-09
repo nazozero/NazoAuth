@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/src/scripts/check_persistence_dependency_graph.py", line 140, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/src/scripts/check_persistence_dependency_graph.py", line 123, in main
+    names = package_names(package)
+  File "/src/scripts/check_persistence_dependency_graph.py", line 88, in package_names
+    result = subprocess.run(
+        command, cwd=root or contracts.ROOT, check=False, capture_output=True, text=True
+    )
+  File "/usr/local/lib/python3.14/subprocess.py", line 555, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/subprocess.py", line 1990, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+FileNotFoundError: [Errno 2] No such file or directory: 'cargo'

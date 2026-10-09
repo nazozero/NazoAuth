@@ -1,0 +1,11 @@
+{
+  "label": "r230-repair-dreada2-20261009",
+  "key": "DREADA2",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 24.63,
+  "total_elapsed_s": 191.591,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

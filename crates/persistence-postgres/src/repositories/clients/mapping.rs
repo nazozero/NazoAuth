@@ -1,6 +1,4 @@
-use nazo_auth::{
-    ClientSecurityPolicy, OAuthClient, RegisteredLogoutClient, ValidatedClientRegistration,
-};
+use nazo_auth::{ClientSecurityPolicy, OAuthClient, ValidatedClientRegistration};
 use nazo_identity::ports::RepositoryError;
 use serde_json::Value;
 use uuid::Uuid;
@@ -61,36 +59,12 @@ pub(in crate::repositories) struct OAuthClientRecord {
     backchannel_token_delivery_mode: String,
     backchannel_client_notification_endpoint: Option<String>,
     backchannel_authentication_request_signing_alg: Option<String>,
-    backchannel_user_code_parameter: bool,
     frontchannel_logout_uri: Option<String>,
     frontchannel_logout_session_required: bool,
     subject_type: String,
     sector_identifier_uri: Option<String>,
     sector_identifier_host: Option<String>,
     security_policy: Value,
-}
-
-pub(super) fn registered_logout_client(client: OAuthClient) -> RegisteredLogoutClient {
-    let OAuthClient {
-        id,
-        tenant_id,
-        registration,
-        is_active,
-        ..
-    } = client;
-    RegisteredLogoutClient {
-        id,
-        tenant_id,
-        client_id: registration.client_id,
-        active: is_active,
-        redirect_uris: registration.redirect_uris,
-        post_logout_redirect_uris: registration.post_logout_redirect_uris,
-        backchannel_logout_uri: registration.backchannel_logout_uri,
-        frontchannel_logout_uri: registration.frontchannel_logout_uri,
-        frontchannel_logout_session_required: registration.frontchannel_logout_session_required,
-        subject_type: registration.subject_type,
-        sector_identifier_host: registration.sector_identifier_host,
-    }
 }
 
 impl OAuthClientRecord {
@@ -128,7 +102,7 @@ impl OAuthClientRecord {
                     .backchannel_client_notification_endpoint,
                 backchannel_authentication_request_signing_alg: self
                     .backchannel_authentication_request_signing_alg,
-                backchannel_user_code_parameter: self.backchannel_user_code_parameter,
+                // The optional CIBA user-code feature is unsupported.
                 frontchannel_logout_uri: self.frontchannel_logout_uri,
                 frontchannel_logout_session_required: self.frontchannel_logout_session_required,
                 tls_client_auth_subject_dn: self.tls_client_auth_subject_dn,

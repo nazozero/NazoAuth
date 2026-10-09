@@ -189,8 +189,8 @@ async fn framework_boundary_transport_rfc9440_same_resolver_observes_tenant_ca_r
     let certificate = mtls::request_mtls_client_certificate(&request, &trusted).unwrap();
     assert!(!certificate.deployment_trusted_chain);
     assert_eq!(
-        certificate.certificate_chain_der,
-        vec![material.leaf.der().to_vec()]
+        certificate.certificate_chain_der.as_ref(),
+        &vec![material.leaf.der().to_vec()]
     );
     let facts = ClientAuthRequestFacts::new("/token", Some(certificate.clone()));
     let name = format!("t00-ca-{}", uuid::Uuid::now_v7());

@@ -1,17 +1,18 @@
 //! Protocol-layer call spies that delegate every port method to the real
 //! PostgreSQL-backed implementation while counting selected reads. They exist
 //! so HTTP/application tests can prove how many times a port method runs per
-//! request — a separate evidence category from the SQL-level counters in
+//! request. Explicit fault variants also count commits and can replace only
+//! a successful candidate projection — a separate evidence category from
+//! the SQL-level counters in
 //! `persistence-postgres`'s `query_counter` support.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRepositoryPort, ClientAuthenticationSnapshot,
-    CommitTokenIssuance, CommitTokenIssuanceResult, GrantWrite, OAuthClient, RefreshToken,
-    SingleUseRedemption, StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort,
-    TokenRevocation,
+    CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken, SingleUseRedemption,
+    StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort, TokenRevocation,
 };
 use uuid::Uuid;
 
@@ -24,7 +25,15 @@ pub(crate) struct CountingTokenRepository {
     pub(crate) active_subject_claims_calls: Arc<AtomicUsize>,
     pub(crate) owner_lookup_calls: Arc<AtomicUsize>,
     pub(crate) userinfo_snapshot_calls: Arc<AtomicUsize>,
+    pub(crate) principal_snapshot_calls: Arc<AtomicUsize>,
+    refresh_snapshot_calls: Arc<AtomicUsize>,
+    refresh_candidate_errors: Arc<AtomicUsize>,
+    commit_calls: Arc<AtomicUsize>,
+    fail_refresh_candidate_projection: bool,
     fail_owner_lookups: bool,
+    expire_grant_at_commit: bool,
+    lose_next_commit_ack: Arc<AtomicBool>,
+    code_commit_keys: Arc<Mutex<Vec<String>>>,
 }
 
 impl CountingTokenRepository {
@@ -34,7 +43,15 @@ impl CountingTokenRepository {
             active_subject_claims_calls: Arc::new(AtomicUsize::new(0)),
             owner_lookup_calls: Arc::new(AtomicUsize::new(0)),
             userinfo_snapshot_calls: Arc::new(AtomicUsize::new(0)),
+            principal_snapshot_calls: Arc::new(AtomicUsize::new(0)),
+            refresh_snapshot_calls: Arc::new(AtomicUsize::new(0)),
+            refresh_candidate_errors: Arc::new(AtomicUsize::new(0)),
+            commit_calls: Arc::new(AtomicUsize::new(0)),
+            fail_refresh_candidate_projection: false,
             fail_owner_lookups: false,
+            expire_grant_at_commit: false,
+            lose_next_commit_ack: Arc::new(AtomicBool::new(false)),
+            code_commit_keys: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -48,12 +65,61 @@ impl CountingTokenRepository {
         }
     }
 
+    /// Let the real adapter commit its effect, then hide exactly one ACK.
+    pub(crate) fn with_lost_commit_ack(inner: Arc<dyn TokenRepositoryPort>) -> Self {
+        Self {
+            lose_next_commit_ack: Arc::new(AtomicBool::new(true)),
+            ..Self::new(inner)
+        }
+    }
+
+    /// Read the real presentation and eligible child first, then replace only
+    /// its projection result. Outer checkout/SQL failures are never fabricated
+    /// or converted into this candidate-only error.
+    pub(crate) fn with_failing_refresh_candidate_projection(
+        inner: Arc<dyn TokenRepositoryPort>,
+    ) -> Self {
+        Self {
+            fail_refresh_candidate_projection: true,
+            ..Self::new(inner)
+        }
+    }
+
+    /// Force the already reached commit boundary to report expiration.
+    /// Other reads still use the real repository; no issuance is committed.
+    pub(crate) fn with_expired_grant_commit(inner: Arc<dyn TokenRepositoryPort>) -> Self {
+        Self {
+            expire_grant_at_commit: true,
+            ..Self::new(inner)
+        }
+    }
+
+    pub(crate) fn refresh_snapshot_count(&self) -> usize {
+        self.refresh_snapshot_calls.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn refresh_candidate_error_count(&self) -> usize {
+        self.refresh_candidate_errors.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn commit_count(&self) -> usize {
+        self.commit_calls.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn code_commit_keys(&self) -> Vec<String> {
+        self.code_commit_keys.lock().unwrap().clone()
+    }
+
     pub(crate) fn active_subject_claims_count(&self) -> usize {
         self.active_subject_claims_calls.load(Ordering::SeqCst)
     }
 
     pub(crate) fn owner_lookup_count(&self) -> usize {
         self.owner_lookup_calls.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn principal_snapshot_count(&self) -> usize {
+        self.principal_snapshot_calls.load(Ordering::SeqCst)
     }
 
     pub(crate) fn userinfo_snapshot_count(&self) -> usize {
@@ -69,11 +135,57 @@ impl CountingTokenRepository {
 }
 
 impl TokenRepositoryPort for CountingTokenRepository {
+    fn token_principal_state<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_epoch: i64,
+        user_id: Option<Uuid>,
+        subject: &'a str,
+    ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+        self.principal_snapshot_calls.fetch_add(1, Ordering::SeqCst);
+        self.inner
+            .token_principal_state(tenant_id, client_epoch, user_id, subject)
+    }
+
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
-        self.inner.commit_token_issuance(input)
+        self.commit_calls.fetch_add(1, Ordering::SeqCst);
+        if let nazo_auth::TokenIssuanceMode::AuthorizationCode { code_identity, .. } = &input.mode {
+            self.code_commit_keys
+                .lock()
+                .unwrap()
+                .push(code_identity.clone());
+        }
+        if self.expire_grant_at_commit {
+            let expires_at = match &input.mode {
+                nazo_auth::TokenIssuanceMode::SingleUse {
+                    grant_expires_at, ..
+                }
+                | nazo_auth::TokenIssuanceMode::AuthorizationCode {
+                    grant_expires_at, ..
+                } => grant_expires_at,
+                nazo_auth::TokenIssuanceMode::Fresh => {
+                    panic!("expiration fault requires a grant commit")
+                }
+            };
+            assert!(
+                *expires_at > chrono::Utc::now(),
+                "fixture must reach commit with an initially live grant"
+            );
+            return Box::pin(async { Ok(CommitTokenIssuanceResult::GrantExpired) });
+        }
+        Box::pin(async move {
+            let result = self.inner.commit_token_issuance(input).await?;
+            if result == CommitTokenIssuanceResult::Committed
+                && self.lose_next_commit_ack.swap(false, Ordering::SeqCst)
+            {
+                Err(nazo_auth::TokenPortError::Unavailable)
+            } else {
+                Ok(result)
+            }
+        })
     }
 
     fn single_use_redemption<'a>(
@@ -103,6 +215,61 @@ impl TokenRepositoryPort for CountingTokenRepository {
         self.inner.refresh_token(tenant_id, raw_token)
     }
 
+    fn refresh_token_snapshot<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+        client_id: Uuid,
+        retry_started_at: chrono::DateTime<chrono::Utc>,
+    ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
+        self.refresh_token_snapshot_with_subject(
+            tenant_id,
+            raw_token,
+            client_id,
+            retry_started_at,
+            false,
+        )
+    }
+
+    fn refresh_token_snapshot_with_subject<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+        client_id: Uuid,
+        retry_started_at: chrono::DateTime<chrono::Utc>,
+        prepare_oidc_subject: bool,
+    ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
+        self.refresh_snapshot_calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            let mut result = self
+                .inner
+                .refresh_token_snapshot_with_subject(
+                    tenant_id,
+                    raw_token,
+                    client_id,
+                    retry_started_at,
+                    prepare_oidc_subject,
+                )
+                .await?;
+            if self.fail_refresh_candidate_projection {
+                let snapshot = result
+                    .as_mut()
+                    .expect("candidate-error fixture requires a real presentation");
+                assert!(
+                    snapshot.presented.revoked_at.is_some(),
+                    "candidate-error fixture requires a spent original"
+                );
+                assert!(
+                    matches!(&snapshot.successor, Ok(Some(_))),
+                    "candidate-error fixture requires a real eligible direct successor"
+                );
+                snapshot.successor = Err(nazo_auth::TokenPortError::CorruptData);
+                self.refresh_candidate_errors.fetch_add(1, Ordering::SeqCst);
+            }
+            Ok(result)
+        })
+    }
+
     fn inspect_lost_response_successor<'a>(
         &'a self,
         token: &'a RefreshToken,
@@ -117,10 +284,12 @@ impl TokenRepositoryPort for CountingTokenRepository {
         &'a self,
         tenant_id: Uuid,
         user_id: Uuid,
-    ) -> TokenFuture<'a, Option<nazo_identity::SubjectClaims>> {
+        token_subject: &'a str,
+    ) -> TokenFuture<'a, Option<nazo_auth::PreparedTokenSubject>> {
         self.active_subject_claims_calls
             .fetch_add(1, Ordering::SeqCst);
-        self.inner.active_subject_claims(tenant_id, user_id)
+        self.inner
+            .active_subject_claims(tenant_id, user_id, token_subject)
     }
 
     fn active_subject_id<'a>(
@@ -135,12 +304,14 @@ impl TokenRepositoryPort for CountingTokenRepository {
         &'a self,
         tenant_id: Uuid,
         jti: &'a str,
+        subject: &'a str,
     ) -> TokenFuture<'a, Option<Uuid>> {
         self.owner_lookup_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail_owner_lookups {
             return Box::pin(async { Err(nazo_auth::TokenPortError::Unavailable) });
         }
-        self.inner.active_subject_id_by_access_token(tenant_id, jti)
+        self.inner
+            .active_subject_id_by_access_token(tenant_id, jti, subject)
     }
 
     fn revoke_issued_tokens<'a>(
@@ -160,8 +331,12 @@ impl TokenRepositoryPort for CountingTokenRepository {
         )
     }
 
-    fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
-        self.inner.access_token_revoked(tenant_id, jti)
+    fn access_token_revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        claims: &'a nazo_auth::Claims,
+    ) -> TokenFuture<'a, bool> {
+        self.inner.access_token_revoked(tenant_id, claims)
     }
 
     fn refresh_family_active<'a>(
@@ -176,6 +351,16 @@ impl TokenRepositoryPort for CountingTokenRepository {
 
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
         self.inner.revoke_token(input)
+    }
+
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: nazo_auth::TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, usize> {
+        self.inner
+            .revoke_token_with_audit(input, client_public_id, source_ip_hash)
     }
 }
 
@@ -243,8 +428,11 @@ impl AuthorizationRepositoryPort for CountingAuthorizationRepository {
         self.inner.grant(user_id, client_id)
     }
 
-    fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        self.inner.upsert_grant(write)
+    fn commit_decision(
+        &self,
+        input: nazo_auth::AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
+        self.inner.commit_decision(input)
     }
 
     fn client_secret_digest_matches<'a>(

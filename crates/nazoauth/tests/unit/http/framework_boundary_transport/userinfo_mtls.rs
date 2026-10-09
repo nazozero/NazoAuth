@@ -175,11 +175,11 @@ mod real_userinfo_contract {
         sql_types::{Bool, Text, Uuid as SqlUuid},
     };
     use diesel_async::RunQueryDsl;
+    use nazo_auth::PreparedTokenSubject;
     use nazo_auth::*;
     use nazo_identity::DEFAULT_ORGANIZATION_ID;
     use nazo_identity::DEFAULT_REALM_ID;
     use nazo_identity::DEFAULT_TENANT_ID;
-    use nazo_identity::SubjectClaims;
     use nazo_oauth_server::domain::userinfo::{
         ServerUserinfoOperations, UserinfoConfig, UserinfoHandles,
     };
@@ -193,17 +193,34 @@ mod real_userinfo_contract {
         calls: Arc<Mutex<Vec<&'static str>>>,
     }
     impl TokenRepositoryPort for ObservedRepository {
-        fn access_token_revoked<'a>(&'a self, tenant: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
-            self.calls.lock().unwrap().push("revocation");
-            self.inner.access_token_revoked(tenant, jti)
+        fn token_principal_state<'a>(
+            &'a self,
+            tenant_id: Uuid,
+            client_epoch: i64,
+            user_id: Option<Uuid>,
+            subject: &'a str,
+        ) -> TokenFuture<'a, nazo_auth::TokenPrincipalState> {
+            self.inner
+                .token_principal_state(tenant_id, client_epoch, user_id, subject)
         }
-        fn active_subject_claims(
-            &self,
+
+        fn access_token_revoked<'a>(
+            &'a self,
+            tenant: Uuid,
+            claims: &'a nazo_auth::Claims,
+        ) -> TokenFuture<'a, bool> {
+            self.calls.lock().unwrap().push("revocation");
+            self.inner.access_token_revoked(tenant, claims)
+        }
+        fn active_subject_claims<'a>(
+            &'a self,
             tenant: Uuid,
             user: Uuid,
-        ) -> TokenFuture<'_, Option<SubjectClaims>> {
+            token_subject: &'a str,
+        ) -> TokenFuture<'a, Option<PreparedTokenSubject>> {
             self.calls.lock().unwrap().push("subject");
-            self.inner.active_subject_claims(tenant, user)
+            self.inner
+                .active_subject_claims(tenant, user, token_subject)
         }
         fn single_use_redemption<'a>(
             &'a self,
@@ -239,9 +256,15 @@ mod real_userinfo_contract {
             &'a self,
             tenant: Uuid,
             jti: &'a str,
+            subject: &'a str,
         ) -> TokenFuture<'a, Option<Uuid>> {
             self.calls.lock().unwrap().push("subject");
-            TokenRepositoryPort::active_subject_id_by_access_token(&self.inner, tenant, jti)
+            TokenRepositoryPort::active_subject_id_by_access_token(
+                &self.inner,
+                tenant,
+                jti,
+                subject,
+            )
         }
         fn commit_token_issuance<'a>(
             &'a self,
@@ -368,8 +391,25 @@ mod real_userinfo_contract {
         client: &str,
         bound: bool,
     ) -> String {
+        signed_token_with_bindings(
+            state,
+            user,
+            client,
+            None,
+            bound.then_some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8"),
+        )
+        .await
+    }
+
+    async fn signed_token_with_bindings(
+        state: &TestInfrastructure,
+        user: Uuid,
+        client: &str,
+        jkt: Option<&str>,
+        x5t: Option<&str>,
+    ) -> String {
         use crate::adapters::security::tokens::{AccessTokenJwtInput, make_jwt};
-        make_jwt(
+        let token = make_jwt(
             &state.keyset,
             &state.settings.endpoint.issuer,
             AccessTokenJwtInput {
@@ -381,17 +421,46 @@ mod real_userinfo_contract {
                 audiences: &["resource://default".to_owned()],
                 scopes: &["openid".to_owned()],
                 authorization_details: &json!([]),
-                userinfo_claims: &[],
                 userinfo_claim_requests: &[],
                 ttl: 300,
                 dpop_jkt: None,
-                mtls_x5t_s256: bound.then_some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8"),
+                mtls_x5t_s256: x5t,
                 actor: None,
             },
         )
         .await
         .expect("real access token must sign")
-        .token
+        .token;
+        let Some(jkt) = jkt else {
+            return token;
+        };
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+        let mut parts = token.split('.');
+        let header = parts.next().unwrap();
+        let mut payload: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts.next().unwrap()).unwrap())
+                .unwrap();
+        payload["cnf"]["jkt"] = json!(jkt);
+        let signing_input = format!(
+            "{header}.{}",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
+        );
+        let header_value: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(header).unwrap()).unwrap();
+        let signature = nazo_auth::Signer::sign(
+            &state.keyset,
+            nazo_auth::SignRequest {
+                purpose: nazo_auth::SigningPurpose::AccessToken,
+                algorithm: header_value["alg"].as_str().unwrap(),
+                signing_input: signing_input.as_bytes(),
+            },
+        )
+        .await
+        .unwrap();
+        format!(
+            "{signing_input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.as_bytes())
+        )
     }
 
     async fn assert_error(response: HttpResponse, description: &str) {
@@ -550,6 +619,85 @@ mod real_userinfo_contract {
             .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
             .bind::<SqlUuid, _>(user)
             .execute(&mut conn)
+            .await
+            .unwrap();
+    }
+
+    #[actix_web::test]
+    async fn dual_bound_userinfo_bearer_rejects_missing_dpop_even_with_matching_verified_certificate()
+     {
+        let state = state().await;
+        let client = format!("userinfo-dual-{}", Uuid::now_v7().simple());
+        let user = insert_subject_and_client(&state, &client).await;
+        let certificate = crate::test_support::rfc9440_certificate_fixture("userinfo-dual");
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        for dual in [true, false] {
+            calls.lock().unwrap().clear();
+            let token = signed_token_with_bindings(
+                &state,
+                user,
+                &client,
+                dual.then_some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ"),
+                Some(&certificate.thumbprint),
+            )
+            .await;
+            let request = actix_web::test::TestRequest::get()
+                .uri("/userinfo")
+                .app_data(Data::new(crate::http::mtls::MtlsCertificateSource::new(
+                    crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
+                )))
+                .peer_addr("127.0.0.1:12345".parse().unwrap())
+                .insert_header(("client-cert", certificate.header.as_str()))
+                .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+                .to_http_request();
+            assert_eq!(
+                crate::http::mtls::request_mtls_thumbprint(
+                    &request,
+                    &state.settings.endpoint.trusted_proxy_cidrs
+                )
+                .as_deref(),
+                Some(certificate.thumbprint.as_str())
+            );
+            let response =
+                nazo_http_actix::userinfo(endpoint(&state, calls.clone()), request, Bytes::new())
+                    .await;
+            if dual {
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+                let challenge = response
+                    .headers()
+                    .get(header::WWW_AUTHENTICATE)
+                    .unwrap()
+                    .to_str()
+                    .unwrap();
+                assert!(challenge.contains("invalid_dpop_proof"));
+                assert!(response.headers().get(header::SET_COOKIE).is_none());
+                let body = actix_web::body::to_bytes(response.into_body())
+                    .await
+                    .unwrap();
+                let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(body["error"], "invalid_dpop_proof");
+                assert!(body.get("sub").is_none());
+                assert_eq!(*calls.lock().unwrap(), ["revocation"]);
+            } else {
+                assert_eq!(response.status(), StatusCode::OK);
+                let body = actix_web::body::to_bytes(response.into_body())
+                    .await
+                    .unwrap();
+                assert_eq!(body.as_ref(), format!("{{\"sub\":\"{user}\"}}").as_bytes());
+                assert_eq!(*calls.lock().unwrap(), ["revocation", "subject", "client"]);
+            }
+        }
+        let mut connection = nazo_postgres::get_conn(&state.diesel_db).await.unwrap();
+        sql_query("DELETE FROM oauth_clients WHERE tenant_id=$1 AND client_id=$2")
+            .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+            .bind::<Text, _>(&client)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sql_query("DELETE FROM users WHERE tenant_id=$1 AND id=$2")
+            .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+            .bind::<SqlUuid, _>(user)
+            .execute(&mut connection)
             .await
             .unwrap();
     }

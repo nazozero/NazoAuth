@@ -2,9 +2,9 @@ use crate::adapters::security::tokens::decode_access_claims_with;
 use actix_web::HttpRequest;
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
+use nazo_auth::TokenRepositoryPort;
 use nazo_auth::ValidatedClientAssertion;
 use nazo_oauth_server::contracts::token_forms::TokenForm;
-use nazo_oauth_server::domain::client_policy::json_array_to_strings;
 use nazo_oauth_server::domain::oauth::RefreshTokenPolicy;
 use nazo_oauth_server::domain::rows::ClientRow;
 use nazo_oauth_server::domain::rows::TokenRow;
@@ -46,8 +46,29 @@ pub(crate) async fn token_refresh(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    let service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+    token_refresh_with_repository(
+        state,
+        req,
+        client,
+        form,
+        client_assertion,
+        Arc::new(crate::test_support::token_issuance_repository(
+            state.diesel_db.clone(),
+        )),
+    )
+    .await
+}
+
+async fn token_refresh_with_repository(
+    state: &TestInfrastructure,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+    repository: Arc<dyn nazo_auth::TokenRepositoryPort>,
+) -> HttpResponse {
+    let service = ServerTokenService::from_port(
+        repository,
         std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
             &state.valkey_connection(),
         )),
@@ -60,6 +81,8 @@ pub(crate) async fn token_refresh(
         token_refresh_with_service(
             &service,
             &TokenIssuanceContext {
+                grant_type: Some(nazo_auth::GrantType::RefreshToken),
+                client_epoch: 0,
                 config: &config,
                 modules: &modules,
                 authorization: &authorization,
@@ -102,6 +125,8 @@ struct RefreshFamilyTokenRow {
     revoked_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = Nullable<Timestamptz>)]
     reuse_detected_at: Option<DateTime<Utc>>,
+    #[diesel(sql_type = Nullable<Text>)]
+    mtls_x5t_s256: Option<String>,
 }
 
 fn test_state() -> TestInfrastructure {
@@ -257,18 +282,19 @@ async fn insert_refresh_token_row(
         "refresh fixture authentication context must be a complete v1 value"
     );
     assert!(
-        !json_array_to_strings(&token.audience).is_empty(),
+        !token.audience.clone().is_empty(),
         "refresh fixture must carry an explicit non-empty audience"
     );
     let persisted = nazo_auth::RefreshContract {
         subject: token.subject.clone(),
-        scopes: json_array_to_strings(&token.scopes),
-        audiences: json_array_to_strings(&token.audience),
+        scopes: token.scopes.clone(),
+        audiences: token.audience.clone(),
         authorization_details: token.authorization_details.clone(),
         authentication_context: authentication_context.clone(),
     }
-    .persisted();
-    let contract_blake3 = persisted.blake3_digest().to_vec();
+    .clone();
+    let contract_blake3 =
+        (*blake3::hash(&serde_json::to_vec(&persisted).unwrap()).as_bytes()).to_vec();
     let contract_json = serde_json::to_value(&persisted).expect("contract should serialize");
     let token_blake3 = blake3::hash(raw_refresh_token.as_bytes())
         .as_bytes()
@@ -276,15 +302,17 @@ async fn insert_refresh_token_row(
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
-    // Idempotent fixture setup: drop a same-named family (cascading its spent
-    // proofs), any same-digest spent proof, and this contract digest only when
-    // it is already orphaned.
+    // Idempotent fixture setup: drop a same-named or same-digest family
+    // (cascading its spent proofs), any same-digest spent proof, and this
+    // contract digest only when it is already orphaned.
     sql_query(
         "DELETE FROM oauth_refresh_families \
-         WHERE tenant_id = $1 AND token_family_id = $2",
+         WHERE tenant_id = $1 \
+           AND (token_family_id = $2 OR current_token_blake3 = $3)",
     )
     .bind::<SqlUuid, _>(token.tenant_id)
     .bind::<SqlUuid, _>(token.token_family_id)
+    .bind::<diesel::sql_types::Binary, _>(&token_blake3)
     .execute(&mut conn)
     .await
     .expect("refresh family cleanup should succeed");
@@ -329,10 +357,10 @@ async fn insert_refresh_token_row(
     .bind::<SqlUuid, _>(token.client_id)
     .bind::<Nullable<SqlUuid>, _>(token.user_id)
     .bind::<diesel::sql_types::Binary, _>(&token_blake3)
-    .bind::<Jsonb, _>(token.audience.clone())
+    .bind::<Jsonb, _>(json!(token.audience))
     .bind::<Timestamptz, _>(token.issued_at)
     .bind::<Timestamptz, _>(token.expires_at)
-    .bind::<Nullable<Text>, _>(token.authentication_context.id_token_sid.as_deref())
+    .bind::<Nullable<Text>, _>(token.id_token_sid.as_deref())
     .bind::<Nullable<Text>, _>(token.dpop_jkt.as_deref())
     .bind::<Nullable<Text>, _>(token.mtls_x5t_s256.as_deref())
     .bind::<Nullable<Text>, _>(token.client_attestation_jkt.as_deref())
@@ -495,7 +523,8 @@ async fn load_family_rows(
                encode(f.current_token_blake3, 'hex') AS refresh_token_blake3,
                p.member_id AS rotated_from_id,
                f.revoked_at,
-               f.reuse_detected_at
+               f.reuse_detected_at,
+               f.mtls_x5t_s256
         FROM oauth_refresh_families AS f
         LEFT JOIN oauth_refresh_spent_tokens AS p
           ON p.tenant_id = f.tenant_id
@@ -507,7 +536,8 @@ async fn load_family_rows(
                encode(s.refresh_token_blake3, 'hex'),
                NULL::uuid,
                s.spent_at,
-               f.reuse_detected_at
+               f.reuse_detected_at,
+               f.mtls_x5t_s256
         FROM oauth_refresh_spent_tokens AS s
         JOIN oauth_refresh_families AS f
           ON f.tenant_id = s.tenant_id
@@ -645,13 +675,11 @@ fn refresh_authentication_context(
         auth_time: issued_at.timestamp().saturating_sub(1).max(1),
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
-        id_token_sid: None,
+
         acr: None,
-        nonce: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
+
+        userinfo_claim_requests: (Vec::new()).into(),
+        id_token_claim_requests: (Vec::new()).into(),
     }
 }
 
@@ -662,6 +690,7 @@ fn token_row_with_refresh_context(
 ) -> TokenRow {
     let issued_at = Utc::now();
     TokenRow {
+        id_token_sid: None,
         id: Uuid::now_v7(),
         // The fixture does not know the raw token; the insert helper derives
         // the stored digest from `raw_refresh_token`, and tests that pass the
@@ -671,8 +700,10 @@ fn token_row_with_refresh_context(
         token_family_id: Uuid::now_v7(),
         client_id,
         user_id: Some(Uuid::now_v7()),
-        scopes: json!(["openid", "offline_access"]),
-        audience: json!(["resource://default"]),
+        contract_key: [0; 32],
+        contract_audiences: vec!["resource://default".to_owned()],
+        scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
+        audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
         authorization_details: json!([]),
         issued_at,
         expires_at: issued_at + Duration::days(30),
@@ -839,7 +870,7 @@ async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_const
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
@@ -857,6 +888,13 @@ async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_const
     for (status, body) in [first, second] {
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
         assert!(body["access_token"].is_string());
+        let claims = decode_access_claims_with(
+            &state.keyset,
+            &state.settings.endpoint.issuer,
+            body["access_token"].as_str().unwrap(),
+        )
+        .expect("PreserveExisting must return a verifiable access token");
+        assert_eq!(claims.authorization_id, Some(family_id));
         assert!(
             body.get("refresh_token").is_none(),
             "FAPI must not rotate the refresh token during routine refresh: {body}"
@@ -871,7 +909,11 @@ async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_const
 #[test]
 fn refresh_token_audience_request_defaults_to_refresh_token_audience() {
     let mut token = token_row();
-    token.audience = json!(["https://api.example/one", "https://api.example/two"]);
+    token.audience = serde_json::from_value(json!([
+        "https://api.example/one",
+        "https://api.example/two"
+    ]))
+    .unwrap();
     let form = refresh_form_without_token();
 
     assert_eq!(
@@ -886,7 +928,11 @@ fn refresh_token_audience_request_defaults_to_refresh_token_audience() {
 #[test]
 fn refresh_token_audience_request_may_only_narrow_original_audience() {
     let mut token = token_row();
-    token.audience = json!(["https://api.example/one", "https://api.example/two"]);
+    token.audience = serde_json::from_value(json!([
+        "https://api.example/one",
+        "https://api.example/two"
+    ]))
+    .unwrap();
     let mut form = refresh_form_without_token();
     form.audiences = vec!["https://api.example/two".to_owned()];
 
@@ -899,7 +945,7 @@ fn refresh_token_audience_request_may_only_narrow_original_audience() {
 #[test]
 fn refresh_token_audience_request_rejects_expansion() {
     let mut token = token_row();
-    token.audience = json!(["https://api.example/one"]);
+    token.audience = serde_json::from_value(json!(["https://api.example/one"])).unwrap();
     let mut form = refresh_form_without_token();
     form.audiences = vec!["https://api.example/two".to_owned()];
 
@@ -912,7 +958,7 @@ fn refresh_token_audience_request_rejects_expansion() {
 #[test]
 fn refresh_token_audience_rejects_missing_persisted_binding() {
     let mut token = token_row();
-    token.audience = json!([]);
+    token.audience = serde_json::from_value(json!([])).unwrap();
 
     assert_eq!(
         refresh_token_audiences(&token, &refresh_form_without_token()),
@@ -1052,7 +1098,7 @@ async fn refresh_grant_rejects_unknown_expired_and_wrong_client_tokens() {
 
     let mut expired = token_row_for_client(&state, &client);
     expired.client_id = client.id;
-    expired.scopes = json!(["accounts", "offline_access"]);
+    expired.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     expired.subject = client.client_id.clone();
     expired.user_id = None;
     expired.issued_at = Utc::now() - Duration::minutes(5);
@@ -1086,7 +1132,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     let mut reused = token_row_for_client(&state, &client);
     reused.client_id = client.id;
     reused.token_family_id = family_id;
-    reused.scopes = json!(["accounts", "offline_access"]);
+    reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     reused.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
@@ -1096,7 +1142,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
     active_sibling.token_family_id = family_id;
-    active_sibling.scopes = json!(["accounts", "offline_access"]);
+    active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     active_sibling.subject = client.client_id.clone();
     active_sibling.user_id = None;
     active_sibling.dpop_jkt = None;
@@ -1167,7 +1213,7 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     let mut reused = token_row_for_client(&state, &client);
     reused.client_id = client.id;
     reused.token_family_id = family_id;
-    reused.scopes = json!(["accounts", "offline_access"]);
+    reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     reused.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
@@ -1176,7 +1222,7 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
     active_sibling.token_family_id = family_id;
-    active_sibling.scopes = json!(["accounts", "offline_access"]);
+    active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     active_sibling.subject = client.client_id.clone();
     active_sibling.user_id = None;
     active_sibling.dpop_jkt = None;
@@ -1256,7 +1302,7 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
@@ -1267,7 +1313,7 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
     successor.token_family_id = family_id;
-    successor.scopes = json!(["accounts", "offline_access"]);
+    successor.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     successor.subject = client.client_id.clone();
     successor.user_id = None;
     successor.dpop_jkt = None;
@@ -1329,7 +1375,7 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
@@ -1384,6 +1430,158 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
 }
 
 #[actix_web::test]
+async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority() {
+    let state = live_trusted_proxy_refresh_state(AuthorizationServerProfile::Fapi2Security)
+        .expect("candidate-error ordering test requires an isolated migrated DATABASE_URL");
+    let certificate = crate::test_support::rfc9440_certificate_fixture("refresh-candidate-error");
+    let mismatch =
+        crate::test_support::rfc9440_certificate_fixture("refresh-candidate-wrong-holder");
+    assert_ne!(certificate.thumbprint, mismatch.thumbprint);
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    insert_refresh_client(&state, &client).await;
+    let family_id = Uuid::now_v7();
+    let suffix = Uuid::now_v7();
+
+    let mut original = token_row_for_client(&state, &client);
+    original.token_family_id = family_id;
+    original.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    original.subject = client.client_id.clone();
+    original.user_id = None;
+    original.dpop_jkt = None;
+    original.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
+    original.revoked_at = Some(Utc::now() - Duration::seconds(2));
+    let original_raw = format!("refresh-candidate-original-{suffix}");
+    let mut child = token_row_for_client(&state, &client);
+    child.token_family_id = family_id;
+    child.scopes = original.scopes.clone();
+    child.subject = original.subject.clone();
+    child.user_id = None;
+    child.dpop_jkt = None;
+    child.mtls_x5t_s256 = original.mtls_x5t_s256.clone();
+    child.authentication_context = original.authentication_context.clone();
+    let child_raw = format!("refresh-candidate-child-{suffix}");
+    insert_refresh_token_row(
+        &state,
+        &child_raw,
+        &child,
+        Some(spent_edge(&original, &original_raw)),
+        None,
+    )
+    .await;
+
+    // Read full persisted facts, not a second implementation of retry policy.
+    async fn durable_retry_state(
+        state: &TestInfrastructure,
+        tenant_id: Uuid,
+        family_id: Uuid,
+    ) -> Value {
+        #[derive(QueryableByName)]
+        struct DurableState {
+            #[diesel(sql_type = Jsonb)]
+            snapshot: Value,
+        }
+
+        let mut conn = get_conn(&state.diesel_db).await.unwrap();
+        sql_query(
+            r#"
+            SELECT jsonb_build_object(
+                'family', (
+                    SELECT to_jsonb(f) FROM oauth_refresh_families AS f
+                    WHERE f.tenant_id = $1 AND f.token_family_id = $2
+                ),
+                'spent', (
+                    SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s.member_id), '[]'::jsonb)
+                    FROM oauth_refresh_spent_tokens AS s
+                    WHERE s.tenant_id = $1 AND s.token_family_id = $2
+                ),
+                'issuances', (
+                    SELECT COALESCE(jsonb_agg(to_jsonb(i) ORDER BY i.issuance_id), '[]'::jsonb)
+                    FROM oauth_token_issuances AS i
+                    WHERE i.tenant_id = $1 AND i.refresh_token_family_id = $2
+                )
+            ) AS snapshot
+            "#,
+        )
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(family_id)
+        .get_result::<DurableState>(&mut conn)
+        .await
+        .expect("durable retry facts should load")
+        .snapshot
+    }
+
+    let before = durable_retry_state(&state, client.tenant_id, family_id).await;
+    assert_eq!(before["family"]["current_member_id"], json!(child.id));
+    assert!(before["family"]["revoked_at"].is_null());
+    assert!(before["family"]["reuse_detected_at"].is_null());
+    assert_eq!(before["spent"].as_array().unwrap().len(), 1);
+    assert_eq!(before["issuances"], json!([]));
+    let repository = Arc::new(
+        crate::test_support::CountingTokenRepository::with_failing_refresh_candidate_projection(
+            Arc::new(crate::test_support::token_issuance_repository(
+                state.diesel_db.clone(),
+            )),
+        ),
+    );
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(original_raw);
+    let missing_proof = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    for (index, (request, expected_status, expected_error, expected_description)) in [
+        (
+            missing_proof,
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh_token requires mTLS proof of possession.",
+        ),
+        (
+            mtls_refresh_request(&mismatch),
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh_token requires mTLS proof of possession.",
+        ),
+        (
+            mtls_refresh_request(&certificate),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Request failed.",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (status, body) = response_json(
+            token_refresh_with_repository(
+                &state,
+                &request,
+                &client,
+                &form,
+                None,
+                repository.clone(),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, expected_status, "unexpected response: {body}");
+        assert_eq!(body["error"], expected_error);
+        assert_eq!(body["error_description"], expected_description);
+        for token_field in ["access_token", "refresh_token", "id_token"] {
+            assert!(body.get(token_field).is_none(), "{token_field}: {body}");
+        }
+        assert_eq!(repository.refresh_snapshot_count(), index + 1);
+        assert_eq!(repository.refresh_candidate_error_count(), index + 1);
+        assert_eq!(repository.commit_count(), 0, "no issuance or reuse commit");
+        assert_eq!(
+            durable_retry_state(&state, client.tenant_id, family_id).await,
+            before,
+            "proof/candidate failures must preserve family, spent proofs and issuances"
+        );
+    }
+}
+
+#[actix_web::test]
 async fn sequential_unbound_replay_after_first_commit_fails_closed() {
     let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
         return;
@@ -1400,7 +1598,7 @@ async fn sequential_unbound_replay_after_first_commit_fails_closed() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
@@ -1552,7 +1750,7 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
         let mut revoked = token_row_for_client(&state, &client);
         revoked.client_id = client.id;
         revoked.token_family_id = family_id;
-        revoked.scopes = json!(["accounts", "offline_access"]);
+        revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
         revoked.subject = client.client_id.clone();
         revoked.user_id = None;
         revoked.dpop_jkt = Some(format!("lost-shape-{shape}-dpop-jkt"));
@@ -1652,7 +1850,7 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = Some("expected-jkt".to_owned());
@@ -1849,7 +2047,7 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
@@ -1948,7 +2146,7 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
         let mut revoked = token_row_for_client(&state, &client);
         revoked.client_id = client.id;
         revoked.token_family_id = family_id;
-        revoked.scopes = json!(["accounts", "offline_access"]);
+        revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
         revoked.subject = client.client_id.clone();
         revoked.user_id = None;
         revoked.dpop_jkt = Some(format!("lost-{label}-dpop-jkt"));
@@ -2009,7 +2207,7 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = json!(["accounts", "offline_access"]);
+    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
@@ -2069,7 +2267,7 @@ async fn concurrent_refresh_replay_yields_one_success_and_one_invalid_grant() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
@@ -2122,7 +2320,7 @@ async fn refresh_grant_rejects_tokens_for_inactive_users_without_openid_scope() 
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = Some(user_id);
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.subject = user_id.to_string();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2158,7 +2356,7 @@ async fn refresh_grant_accepts_tokens_for_active_users_without_openid_scope() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = Some(user_id);
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.subject = user_id.to_string();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2198,7 +2396,7 @@ async fn refresh_grant_rejects_unbound_refresh_tokens_for_dpop_required_clients(
     token.client_id = client.id;
     token.user_id = None;
     token.subject = client.client_id.clone();
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2236,7 +2434,7 @@ async fn refresh_grant_rejects_public_dpop_required_clients_with_unbound_refresh
     token.client_id = client.id;
     token.user_id = None;
     token.subject = client.client_id.clone();
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2272,7 +2470,7 @@ async fn refresh_grant_rejects_dpop_bound_refresh_token_without_proof() {
     token.client_id = client.id;
     token.user_id = None;
     token.subject = client.client_id.clone();
-    token.scopes = json!(["offline_access", "api"]);
+    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = Some("stored-dpop-jkt".to_owned());
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2307,7 +2505,7 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
     no_offline.client_id = client.id;
     no_offline.subject = client.client_id.clone();
     no_offline.user_id = None;
-    no_offline.scopes = json!(["accounts"]);
+    no_offline.scopes = serde_json::from_value(json!(["accounts"])).unwrap();
     no_offline.dpop_jkt = None;
     let no_offline_raw = "refresh-token-no-offline-access";
     insert_refresh_token_row(&state, no_offline_raw, &no_offline, None, None).await;
@@ -2323,7 +2521,7 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
     scope_token.client_id = client.id;
     scope_token.subject = client.client_id.clone();
     scope_token.user_id = None;
-    scope_token.scopes = json!(["accounts", "offline_access"]);
+    scope_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     scope_token.dpop_jkt = None;
     let scope_raw = "refresh-token-invalid-scope";
     insert_refresh_token_row(&state, scope_raw, &scope_token, None, None).await;
@@ -2341,7 +2539,7 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
     audience_token.client_id = client.id;
     audience_token.subject = client.client_id.clone();
     audience_token.user_id = None;
-    audience_token.scopes = json!(["accounts", "offline_access"]);
+    audience_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     audience_token.dpop_jkt = None;
     insert_refresh_token_row(&state, audience_raw, &audience_token, None, None).await;
     let mut audience_form = refresh_form_without_token();
@@ -2368,7 +2566,7 @@ async fn refresh_grant_rejects_mtls_bound_tokens_without_matching_verified_certi
     token.client_id = client.id;
     token.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = Some("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_owned());
 
@@ -2426,7 +2624,7 @@ async fn refresh_grant_requires_verified_certificate_when_client_policy_demands_
     token.client_id = client.id;
     token.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2461,7 +2659,7 @@ async fn refresh_grant_accepts_existing_mtls_bound_token_with_matching_certifica
     token.client_id = client.id;
     token.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = Some(thumbprint.to_owned());
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2520,7 +2718,7 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
     token.client_id = client.id;
     token.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = json!(["accounts", "offline_access"]);
+    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2561,9 +2759,509 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
         .cnf
         .expect("mTLS-bound refresh grants must issue sender-constrained access tokens");
     assert_eq!(cnf.x5t_s256.as_deref(), Some(thumbprint));
+    let family = load_family_rows(&state, token.token_family_id).await;
+    assert_eq!(family.len(), 1);
+    assert_eq!(family[0].id, token.id);
+    assert!(family[0].mtls_x5t_s256.is_none());
+    assert!(family[0].revoked_at.is_none());
     assert_eq!(body["token_type"], "Bearer");
     assert!(
         body.get("refresh_token").is_none(),
         "sender-constrained confidential clients preserve their existing refresh token"
     );
+}
+
+#[actix_web::test]
+async fn signed_credential_authorization_survives_real_refresh_and_separates_equal_grants() {
+    let Some(mut state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    std::sync::Arc::get_mut(&mut state.settings)
+        .unwrap()
+        .modules
+        .enable_openid4vci_issuer = true;
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    client.scopes = vec![
+        "org.iso.18013.5.1.mDL".to_owned(),
+        "offline_access".to_owned(),
+    ];
+    insert_refresh_client(&state, &client).await;
+    let user_id = Uuid::now_v7();
+    insert_refresh_user(&state, user_id, true).await;
+
+    #[derive(diesel::QueryableByName)]
+    struct FamilyRow {
+        #[diesel(sql_type = diesel::sql_types::Uuid)]
+        family_id: Uuid,
+    }
+    let mut roots = Vec::new();
+    let mut first_body = None;
+    let mut first_jti = None;
+    for _ in 0..2 {
+        let mut issue = super::issue::tests::token_issue_without_openid();
+        issue.user_id = Some(user_id);
+        issue.subject = user_id.to_string();
+        issue.scopes = vec![
+            "org.iso.18013.5.1.mDL".to_owned(),
+            "offline_access".to_owned(),
+        ];
+        issue.authorization_details = json!([{
+            "type": "openid_credential",
+            "credential_configuration_id": "org.iso.18013.5.1.mDL"
+        }]);
+        let (status, body) =
+            response_json(super::issue::tests::issue_token_response(&state, &client, issue).await)
+                .await;
+        assert_eq!(status, StatusCode::OK);
+        let claims = decode_access_claims_with(
+            &state.keyset,
+            &state.settings.endpoint.issuer,
+            body["access_token"].as_str().unwrap(),
+        )
+        .expect("the production mint must return a verifiable token");
+        let raw = body["refresh_token"].as_str().unwrap();
+        let mut connection = get_conn(&state.diesel_db).await.unwrap();
+        let family = sql_query(
+            "SELECT token_family_id AS family_id FROM oauth_refresh_families \
+             WHERE tenant_id = $1 AND client_id = $2 AND current_token_blake3 = $3",
+        )
+        .bind::<diesel::sql_types::Uuid, _>(client.tenant_id)
+        .bind::<diesel::sql_types::Uuid, _>(client.id)
+        .bind::<diesel::sql_types::Binary, _>(blake3::hash(raw.as_bytes()).as_bytes().to_vec())
+        .get_result::<FamilyRow>(&mut connection)
+        .await
+        .unwrap();
+        assert_eq!(claims.authorization_id, Some(family.family_id));
+        assert!(!family.family_id.is_nil());
+        roots.push(family.family_id);
+        if first_body.is_none() {
+            first_jti = Some(claims.jti);
+            first_body = Some(body);
+        }
+    }
+    assert_ne!(
+        roots[0], roots[1],
+        "equal grant contents must not identify one authorization"
+    );
+    let first = first_body.unwrap();
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(first["refresh_token"].as_str().unwrap().to_owned());
+    let request = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let (status, body) =
+        response_json(token_refresh(&state, &request, &client, &form, None).await).await;
+    assert_eq!(status, StatusCode::OK);
+    let refreshed = decode_access_claims_with(
+        &state.keyset,
+        &state.settings.endpoint.issuer,
+        body["access_token"].as_str().unwrap(),
+    )
+    .expect("the checked refresh source must produce a verifiable token");
+    assert_eq!(refreshed.authorization_id, Some(roots[0]));
+    assert_ne!(refreshed.jti, first_jti.unwrap());
+    assert!(body["refresh_token"].is_string());
+
+    let mut fresh = super::issue::tests::token_issue_without_openid();
+    fresh.user_id = Some(user_id);
+    fresh.subject = user_id.to_string();
+    fresh.scopes = vec!["org.iso.18013.5.1.mDL".to_owned()];
+    fresh.include_refresh = false;
+    fresh.refresh_token_policy = RefreshTokenPolicy::NoRefresh;
+    let (status, body) =
+        response_json(super::issue::tests::issue_token_response(&state, &client, fresh).await)
+            .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("refresh_token").is_none());
+    let independent = decode_access_claims_with(
+        &state.keyset,
+        &state.settings.endpoint.issuer,
+        body["access_token"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert!(independent.authorization_id.is_some());
+    assert_ne!(independent.authorization_id, refreshed.authorization_id);
+}
+
+#[actix_web::test]
+async fn ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_error_priority() {
+    let Some(mut state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    // Successful OIDC signing uses the protocol default RS256; the generic
+    // refresh fixture's EdDSA key is retained by the existing failure cases.
+    state.keyset =
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    for private in [false, true] {
+        let mut client = client_row();
+        client.client_id = format!("oidc-prepared-{}", Uuid::now_v7());
+        client.require_dpop_bound_tokens = false;
+        client.require_mtls_bound_tokens = false;
+        insert_refresh_client(&state, &client).await;
+        let user = Uuid::now_v7();
+        insert_refresh_user(&state, user, true).await;
+        let raw = format!("oidc-prepared-{}", Uuid::now_v7());
+        let mut token = token_row_for_client(&state, &client);
+        token.user_id = Some(user);
+        token.subject = if private {
+            format!("private-{}", Uuid::now_v7())
+        } else {
+            user.to_string()
+        };
+        token.dpop_jkt = None;
+        token.mtls_x5t_s256 = None;
+        token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+        if private {
+            let mut c = get_conn(&state.diesel_db).await.unwrap();
+            sql_query(
+                "INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)",
+            )
+            .bind::<SqlUuid, _>(client.tenant_id)
+            .bind::<diesel::sql_types::Text, _>(&token.subject)
+            .bind::<SqlUuid, _>(user)
+            .execute(&mut c)
+            .await
+            .unwrap();
+        }
+        insert_refresh_token_row(&state, &raw, &token, None, None).await;
+        let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(
+            crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+        )));
+        let mut form = refresh_form_without_token();
+        form.refresh_token = Some(raw);
+        form.scope = None;
+        let (status, body) = response_json(
+            token_refresh_with_repository(&state, &req, &client, &form, None, repository.clone())
+                .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body:?}");
+        assert!(body.get("id_token").is_some());
+        assert_eq!(repository.refresh_snapshot_count(), 1);
+        assert_eq!(repository.active_subject_claims_count(), 0);
+        assert_eq!(repository.principal_snapshot_count(), 0);
+        assert_eq!(repository.commit_count(), 1);
+        // Scope expansion is rejected before a successful preparation is consumed.
+        let next = body["refresh_token"].as_str().unwrap().to_owned();
+        form.refresh_token = Some(next);
+        form.scope = Some("openid unauthorized_scope".to_owned());
+        let (status, body) = response_json(
+            token_refresh_with_repository(&state, &req, &client, &form, None, repository.clone())
+                .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"], "invalid_scope");
+        assert_eq!(repository.active_subject_claims_count(), 0);
+        assert_eq!(repository.commit_count(), 1);
+    }
+}
+
+async fn oidc_refresh_fixture(state: &TestInfrastructure) -> (ClientRow, TokenRow, String) {
+    let mut client = client_row();
+    client.client_id = format!("oidc-refresh-review-{}", Uuid::now_v7());
+    client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = false;
+    insert_refresh_client(state, &client).await;
+    let user = Uuid::now_v7();
+    insert_refresh_user(state, user, true).await;
+    let mut token = token_row_for_client(state, &client);
+    token.user_id = Some(user);
+    token.subject = user.to_string();
+    token.dpop_jkt = None;
+    token.mtls_x5t_s256 = None;
+    token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+    let raw = format!("oidc-refresh-review-{}", Uuid::now_v7());
+    insert_refresh_token_row(state, &raw, &token, None, None).await;
+    (client, token, raw)
+}
+
+async fn oidc_refresh_projection_state(
+    public_state: &TestInfrastructure,
+    user: Option<Uuid>,
+) -> (TestInfrastructure, String) {
+    let schema = format!("oidc_refresh_projection_{}", Uuid::now_v7().simple());
+    let mut state = public_state.clone();
+    state.diesel_db = create_pool(database_url_with_search_path(&schema).unwrap(), 4).unwrap();
+    exec_sql(&state, &format!("CREATE SCHEMA {schema}")).await;
+    // Preserve real column types/defaults but allow invalid domain values in
+    // this lookup-only fixture. Public CHECK/FK constraints stay intact.
+    exec_sql(
+        &state,
+        &format!("CREATE TABLE {schema}.users (LIKE public.users INCLUDING DEFAULTS)"),
+    )
+    .await;
+    if let Some(user) = user {
+        exec_sql(
+            &state,
+            &format!("INSERT INTO users SELECT * FROM public.users WHERE id='{user}'"),
+        )
+        .await;
+    }
+    (state, schema)
+}
+
+#[actix_web::test]
+async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_priority() {
+    let Some(public_state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    for failure in [
+        "missing",
+        "inactive",
+        "role",
+        "nil realm",
+        "binding collision",
+    ] {
+        let (client, mut token, raw) = oidc_refresh_fixture(&public_state).await;
+        let user = token.user_id.unwrap();
+        let mut schema = None;
+        let shadow = if matches!(failure, "missing" | "nil realm" | "role") {
+            let (state, name) = oidc_refresh_projection_state(
+                &public_state,
+                if failure == "missing" {
+                    None
+                } else {
+                    Some(user)
+                },
+            )
+            .await;
+            schema = Some(name);
+            if failure == "nil realm" {
+                exec_sql(&state, &format!(
+                    "UPDATE users SET realm_id='00000000-0000-0000-0000-000000000000' WHERE id='{user}'"
+                )).await;
+            }
+            Some(state)
+        } else {
+            None
+        };
+        let state = shadow.as_ref().unwrap_or(&public_state);
+        match failure {
+            "inactive" => {
+                exec_sql(
+                    state,
+                    &format!("UPDATE users SET is_active=false WHERE id='{user}'"),
+                )
+                .await
+            }
+            "role" => {
+                exec_sql(
+                    state,
+                    &format!("UPDATE users SET role='corrupt-role' WHERE id='{user}'"),
+                )
+                .await
+            }
+            "binding collision" => {
+                let other = Uuid::now_v7();
+                insert_refresh_user(state, other, true).await;
+                token.subject = format!("oidc-collision-{}", Uuid::now_v7());
+                let mut c = get_conn(&state.diesel_db).await.unwrap();
+                sql_query(
+                    "INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)",
+                )
+                .bind::<SqlUuid, _>(client.tenant_id)
+                .bind::<Text, _>(&token.subject)
+                .bind::<SqlUuid, _>(other)
+                .execute(&mut c)
+                .await
+                .unwrap();
+                drop(c);
+                insert_refresh_token_row(state, &raw, &token, None, None).await;
+            }
+            _ => {}
+        }
+        let inner = crate::test_support::token_issuance_repository(state.diesel_db.clone());
+        let source = inner
+            .refresh_token_snapshot_with_subject(
+                client.tenant_id,
+                &raw,
+                client.id,
+                Utc::now(),
+                true,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(source.prepared_subject.is_none(), "{failure}");
+        let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(
+            inner,
+        )));
+        let mut form = refresh_form_without_token();
+        form.refresh_token = Some(raw.clone());
+        token.dpop_jkt = Some("oidc-domain-fallback-holder".to_owned());
+        insert_refresh_token_row(state, &raw, &token, None, None).await;
+        let (status, body) = response_json(
+            token_refresh_with_repository(state, &req, &client, &form, None, repository.clone())
+                .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{failure}");
+        assert_eq!(body["error"], "invalid_grant");
+        assert_eq!(
+            body["error_description"],
+            "refresh_token requires proof of possession."
+        );
+        assert_eq!(repository.active_subject_claims_count(), 0);
+        token.dpop_jkt = None;
+        insert_refresh_token_row(state, &raw, &token, None, None).await;
+        form.scope = Some("openid unauthorized_scope".to_owned());
+        let (status, body) = response_json(
+            token_refresh_with_repository(state, &req, &client, &form, None, repository.clone())
+                .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{failure}");
+        assert_eq!(body["error"], "invalid_scope");
+        assert_eq!(repository.active_subject_claims_count(), 0);
+        form.scope = None;
+        let (status, body) = response_json(
+            token_refresh_with_repository(state, &req, &client, &form, None, repository.clone())
+                .await,
+        )
+        .await;
+        let missing = matches!(failure, "missing" | "inactive");
+        assert_eq!(
+            status,
+            if missing {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            },
+            "{failure}"
+        );
+        assert_eq!(
+            body["error"],
+            if missing {
+                "invalid_grant"
+            } else {
+                "server_error"
+            }
+        );
+        assert_eq!(repository.refresh_snapshot_count(), 3);
+        assert_eq!(repository.active_subject_claims_count(), 1);
+        assert_eq!(repository.principal_snapshot_count(), 0);
+        assert_eq!(repository.commit_count(), 0);
+        assert!(body.get("access_token").is_none());
+        assert!(body.get("refresh_token").is_none());
+        if shadow.is_some() {
+            drop_schema(state, schema.as_ref().unwrap()).await;
+        }
+    }
+}
+
+#[actix_web::test]
+async fn oidc_refresh_explicit_downscope_succeeds_without_subject_claims() {
+    let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let (client, token, raw) = oidc_refresh_fixture(&state).await;
+    let (state, schema) = oidc_refresh_projection_state(&state, token.user_id).await;
+    // This unused profile cannot cause an OIDC profile failure after downscope.
+    exec_sql(
+        &state,
+        &format!(
+            "UPDATE users SET role='corrupt-role' WHERE id='{}'",
+            token.user_id.unwrap()
+        ),
+    )
+    .await;
+    let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+    )));
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw);
+    form.scope = Some("offline_access".to_owned());
+    let (status, body) = response_json(
+        token_refresh_with_repository(&state, &req, &client, &form, None, repository.clone()).await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["scope"], "offline_access");
+    assert!(body.get("id_token").is_none());
+    assert!(body.get("access_token").is_some());
+    assert!(body.get("refresh_token").is_some());
+    assert_eq!(repository.refresh_snapshot_count(), 1);
+    assert_eq!(repository.active_subject_claims_count(), 0);
+    assert_eq!(repository.principal_snapshot_count(), 1);
+    assert_eq!(repository.commit_count(), 1);
+    drop_schema(&state, &schema).await;
+}
+
+#[actix_web::test]
+async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
+    let Some(mut state) =
+        live_trusted_proxy_refresh_state(AuthorizationServerProfile::Oauth2Baseline)
+    else {
+        return;
+    };
+    // Successful OIDC signing uses the protocol default RS256; the generic
+    // refresh fixture's EdDSA key is retained by the existing failure cases.
+    state.keyset =
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
+    let (client, mut predecessor, predecessor_raw) = oidc_refresh_fixture(&state).await;
+    let certificate = crate::test_support::rfc9440_certificate_fixture("oidc-lost-response");
+    predecessor.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
+    predecessor.revoked_at = Some(Utc::now() - Duration::seconds(35));
+    let mut successor = predecessor.clone();
+    successor.id = Uuid::now_v7();
+    successor.revoked_at = None;
+    let successor_raw = format!("oidc-lost-response-successor-{}", Uuid::now_v7());
+    insert_refresh_token_row(
+        &state,
+        &successor_raw,
+        &successor,
+        Some(spent_edge(&predecessor, &predecessor_raw)),
+        None,
+    )
+    .await;
+    let inner = crate::test_support::token_issuance_repository(state.diesel_db.clone());
+    let source = inner
+        .refresh_token_snapshot_with_subject(
+            client.tenant_id,
+            &predecessor_raw,
+            client.id,
+            Utc::now(),
+            true,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(source.presented.revoked_at.is_some());
+    assert!(source.prepared_subject.is_none());
+    let repository = Arc::new(crate::test_support::CountingTokenRepository::new(Arc::new(
+        inner,
+    )));
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(predecessor_raw.clone());
+    let (status, body) = response_json(
+        token_refresh_with_repository(
+            &state,
+            &mtls_refresh_request(&certificate),
+            &client,
+            &form,
+            None,
+            repository.clone(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("id_token").is_some());
+    assert_ne!(body["refresh_token"], predecessor_raw);
+    assert_ne!(body["refresh_token"], successor_raw);
+    assert_eq!(repository.refresh_snapshot_count(), 1);
+    assert_eq!(repository.active_subject_claims_count(), 1);
+    assert_eq!(repository.principal_snapshot_count(), 0);
+    assert_eq!(repository.commit_count(), 1);
 }

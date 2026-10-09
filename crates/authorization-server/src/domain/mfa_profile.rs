@@ -66,34 +66,24 @@ impl ServerMfaProfileOperations {
         pending_mfa: bool,
     ) -> Result<PublicAccount, MfaProfileError> {
         let session_id = SessionId::new(context.session_id.as_str());
-        let resolution = if pending_mfa {
-            self.sessions.pending_mfa(&session_id, context.now).await
-        } else {
-            self.sessions.current(&session_id, context.now).await
-        }
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to resolve current MFA session");
-            MfaProfileError::new(MfaProfileErrorKind::SessionUnavailable)
-        })?;
+        let resolution = self
+            .sessions
+            .resolve_for_mfa(&session_id, context.now)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "failed to resolve current MFA session");
+                MfaProfileError::new(MfaProfileErrorKind::SessionUnavailable)
+            })?;
         match resolution {
-            SessionResolution::Present(session) => Ok(session.into_user()),
-            SessionResolution::Missing if pending_mfa => {
-                match self.sessions.current(&session_id, context.now).await {
-                    Ok(SessionResolution::Present(_)) => {
-                        Err(MfaProfileError::new(MfaProfileErrorKind::ChallengeMissing))
-                    }
-                    Ok(SessionResolution::Missing | SessionResolution::Invalidated) => {
-                        Err(MfaProfileError::new(MfaProfileErrorKind::SessionMissing))
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, "failed to distinguish missing MFA challenge");
-                        Err(MfaProfileError::new(
-                            MfaProfileErrorKind::SessionUnavailable,
-                        ))
-                    }
-                }
+            SessionResolution::Present(session) if session.pending_mfa() == pending_mfa => {
+                Ok(session.into_user())
             }
-            SessionResolution::Missing | SessionResolution::Invalidated => {
+            SessionResolution::Present(_) if pending_mfa => {
+                Err(MfaProfileError::new(MfaProfileErrorKind::ChallengeMissing))
+            }
+            SessionResolution::Present(_)
+            | SessionResolution::Missing
+            | SessionResolution::Invalidated => {
                 Err(MfaProfileError::new(MfaProfileErrorKind::SessionMissing))
             }
         }
@@ -157,7 +147,7 @@ impl ServerMfaProfileOperations {
         context: &MfaRequestContext,
         account: &PublicAccount,
         code: &str,
-    ) -> Result<MfaVerificationMethod, MfaProfileError> {
+    ) -> Result<nazo_identity::MfaVerificationProof, MfaProfileError> {
         match self.verify_factor(account, code, context.now).await {
             Ok(method) => {
                 self.clear_mfa_attempts(context, account).await;
@@ -184,7 +174,7 @@ impl ServerMfaProfileOperations {
                 method.amr(),
                 self.session_ttl_seconds,
                 require_pending_mfa,
-                context.now,
+                Utc::now(),
             )
             .await
             .map_err(|error| {
@@ -200,7 +190,7 @@ impl ServerMfaProfileOperations {
         account: &PublicAccount,
         code: &str,
         now: i64,
-    ) -> Result<MfaVerificationMethod, MfaProfileError> {
+    ) -> Result<nazo_identity::MfaVerificationProof, MfaProfileError> {
         self.mfa
             .verify_factor(account, code, now)
             .await
@@ -219,16 +209,12 @@ impl ServerMfaProfileOperations {
         ])
     }
 
-    async fn record_required(
-        &self,
-        event: &'static str,
-        fields: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<(), MfaProfileError> {
+    async fn ensure_required_ready(&self) -> Result<(), MfaProfileError> {
         self.audit
-            .record_required(event, fields)
+            .ensure_transactional_ready()
             .await
             .map_err(|error| {
-                tracing::warn!(%error, event, "required MFA audit append failed");
+                tracing::warn!(%error, "required MFA audit readiness failed");
                 MfaProfileError::new(MfaProfileErrorKind::AuditUnavailable)
             })
     }
@@ -254,6 +240,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
         Box::pin(async move {
             let account = self.current_account(&command.context, false).await?;
             self.enforce_rate_limit(&command.context).await?;
+            self.ensure_required_ready().await?;
             self.reserve_mfa_attempt(&command.context, &account).await?;
             let prepared = match self
                 .mfa
@@ -274,20 +261,16 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 .await?;
             let result = self
                 .mfa
-                .confirm_totp(&account, prepared, command.context.now)
+                .confirm_totp_with_required_audit(
+                    &account,
+                    prepared,
+                    command.context.now,
+                    blake3_hex(&command.context.source_ip),
+                )
                 .await;
             match result {
                 Ok(TotpConfirmationOutcome::Accepted { backup_codes }) => {
                     self.clear_mfa_attempts(&command.context, &account).await;
-                    self.record_required(
-                        "mfa_totp_enabled",
-                        self.mfa_fields(&account, &command.context),
-                    )
-                    .await
-                    .map_err(|mut error| {
-                        error.rotation = Some(rotation.clone());
-                        error
-                    })?;
                     tracing::info!(user_id = %account.id(), "MFA TOTP enabled");
                     Ok(MfaTotpConfirmation {
                         rotation,
@@ -337,23 +320,22 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 let now = DateTime::<Utc>::from_timestamp(command.context.now, 0)
                     .unwrap_or_else(Utc::now);
                 let ttl = i64::try_from(self.remembered_mfa_ttl_seconds).unwrap_or(i64::MAX);
-                Some(
-                    self.mfa
-                        .remember_device(
-                            &account,
-                            command.context.user_agent_hash.clone(),
-                            now + Duration::seconds(ttl),
-                        )
-                        .await
-                        .map_err(|error| {
-                            tracing::warn!(?error, "failed to remember MFA device");
-                            MfaProfileError::new(MfaProfileErrorKind::RememberDeviceFailed)
-                        })?,
-                )
+                self.mfa
+                    .remember_device(
+                        &account,
+                        &method,
+                        command.context.user_agent_hash.clone(),
+                        now + Duration::seconds(ttl),
+                    )
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(?error, "failed to remember MFA device");
+                        MfaProfileError::new(MfaProfileErrorKind::RememberDeviceFailed)
+                    })?
             } else {
                 None
             };
-            let rotation = self.rotate(&command.context, method, true).await?;
+            let rotation = self.rotate(&command.context, method.method(), true).await?;
             self.audit.record(
                 "mfa_challenge_success",
                 self.mfa_fields(&account, &command.context),
@@ -388,7 +370,9 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                     return Err(error);
                 }
             };
-            let rotation = self.rotate(&command.context, method, false).await?;
+            let rotation = self
+                .rotate(&command.context, method.method(), false)
+                .await?;
             self.audit.record(
                 "mfa_step_up_success",
                 self.mfa_fields(&account, &command.context),
@@ -411,22 +395,24 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             if !account.account.mfa_enabled {
                 return Err(MfaProfileError::new(MfaProfileErrorKind::MfaDisabled));
             }
+            self.ensure_required_ready().await?;
             self.reserve_mfa_attempt(&command.context, &account).await?;
             let method = self
                 .verify_reserved_factor(&command.context, &account, &command.code)
                 .await?;
-            let rotation = self.rotate(&command.context, method, false).await?;
-            match self.mfa.regenerate_backup_codes(&account).await {
+            let rotation = self
+                .rotate(&command.context, method.method(), false)
+                .await?;
+            match self
+                .mfa
+                .regenerate_backup_codes_with_required_audit(
+                    &account,
+                    &method,
+                    blake3_hex(&command.context.source_ip),
+                )
+                .await
+            {
                 Ok(backup_codes) => {
-                    self.record_required(
-                        "mfa_backup_codes_regenerated",
-                        self.mfa_fields(&account, &command.context),
-                    )
-                    .await
-                    .map_err(|mut error| {
-                        error.rotation = Some(rotation.clone());
-                        error
-                    })?;
                     tracing::info!(user_id = %account.id(), "MFA backup codes regenerated");
                     Ok(MfaBackupCodesRegenerated {
                         rotation,
@@ -436,7 +422,8 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 Err(error) => {
                     tracing::warn!(?error, "failed to regenerate MFA backup codes");
                     let mut mapped = MfaProfileError::new(MfaProfileErrorKind::BackupCodesFailed);
-                    mapped.rotation = Some(rotation);
+                    self.discard_unpublished_rotation(&rotation).await;
+                    mapped.clear_session_cookies = true;
                     Err(mapped)
                 }
             }
@@ -450,15 +437,22 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             if !account.account.mfa_enabled {
                 return Ok(false);
             }
+            self.ensure_required_ready().await?;
             self.reserve_mfa_attempt(&command.context, &account).await?;
-            self.verify_reserved_factor(&command.context, &account, &command.code)
+            let proof = self
+                .verify_reserved_factor(&command.context, &account, &command.code)
                 .await?;
-            self.mfa.disable(&account).await.map_err(|error| {
-                tracing::warn!(?error, "failed to disable MFA");
-                MfaProfileError::new(MfaProfileErrorKind::DisableFailed)
-            })?;
-            self.record_required("mfa_disabled", self.mfa_fields(&account, &command.context))
-                .await?;
+            self.mfa
+                .disable(&account, &proof, blake3_hex(&command.context.source_ip))
+                .await
+                .map_err(|error| {
+                    tracing::warn!(?error, "failed to disable MFA");
+                    if error.kind() == MfaServiceErrorKind::InvalidCode {
+                        map_core_error(error)
+                    } else {
+                        MfaProfileError::new(MfaProfileErrorKind::DisableFailed)
+                    }
+                })?;
             tracing::info!(user_id = %account.id(), "MFA disabled");
             Ok(true)
         })

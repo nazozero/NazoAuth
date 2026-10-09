@@ -1,0 +1,17 @@
+nazoauth-recovery-a:20261008 exit 1 :992f6f09cc7450f5c4e3bc0507dcb954c0495cf2e75c0bb93f67b917cf1a4b1a:
+------
+Dockerfile:1
+--------------------
+   1 | >>> FROM sha256:992f6f09cc7450f5c4e3bc0507dcb954c0495cf2e75c0bb93f67b917cf1a4b1a
+   2 |     LABEL org.opencontainers.image.revision="e13fcfd1292283f135906a31de987b533f002de8"
+   3 |     COPY source-sha /etc/nazoauth-source-sha
+--------------------
+ERROR: failed to build: failed to solve: sha256:992f6f09cc7450f5c4e3bc0507dcb954c0495cf2e75c0bb93f67b917cf1a4b1a: failed to resolve source metadata for docker.io/library/sha256:992f6f09cc7450f5c4e3bc0507dcb954c0495cf2e75c0bb93f67b917cf1a4b1a: unexpected status from HEAD request to https://mirror.ccs.tencentyun.com/v2/library/sha256/manifests/992f6f09cc7450f5c4e3bc0507dcb954c0495cf2e75c0bb93f67b917cf1a4b1a?ns=docker.io: 403 Forbidden
+
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "recovery-images.py", line 14, in <module>
+  File "recovery-images.py", line 13, in build
+  File "/usr/lib/python3.11/subprocess.py", line 502, in check_returncode
+    raise CalledProcessError(self.returncode, self.args, self.stdout,
+subprocess.CalledProcessError: Command '['docker', 'build', '-t', 'nazoauth-recovery-a:20261008', '-']' returned non-zero exit status 1.

@@ -1,0 +1,82 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.64s
+     Running tests/audit_ledger.rs (target/debug/deps/audit_ledger-81d1c08a9ba95da9)
+
+running 19 tests
+test audit_claim_is_bounded_without_planner_statistics ... pending=0 analyzed=false: explain chained prefix
+pending=0 analyzed=false: explain direct pending read
+pending=0 analyzed=false: execute claim function
+pending=0 analyzed=false claimed=0 elapsed=2.730522ms
+pending=0 analyzed=true: explain chained prefix
+pending=0 analyzed=true: explain direct pending read
+pending=0 analyzed=true: execute claim function
+pending=0 analyzed=true claimed=0 elapsed=1.038287ms
+seeded 10000 pending rows in 110.238618ms
+pending=10000 analyzed=false: explain chained prefix
+pending=10000 analyzed=false: explain direct pending read
+pending=10000 analyzed=false: execute claim function
+pending=10000 analyzed=false claimed=256 elapsed=969.209µs
+pending=10000 analyzed=true: explain chained prefix
+pending=10000 analyzed=true: explain direct pending read
+pending=10000 analyzed=true: execute claim function
+pending=10000 analyzed=true claimed=256 elapsed=873.181µs
+seeded 1000000 pending rows in 9.009589741s
+pending=1000000 analyzed=false: explain chained prefix
+pending=1000000 analyzed=false: explain direct pending read
+pending=1000000 analyzed=false: execute claim function
+pending=1000000 analyzed=false claimed=256 elapsed=8.698465ms
+pending=1000000 analyzed=true: explain chained prefix
+pending=1000000 analyzed=true: explain direct pending read
+pending=1000000 analyzed=true: execute claim function
+pending=1000000 analyzed=true claimed=256 elapsed=851.582µs
+seeded 15000000 pending rows in 217.275451639s
+pending=15000000 analyzed=false: explain chained prefix
+pending=15000000 analyzed=false: explain direct pending read
+pending=15000000 analyzed=false: execute claim function
+pending=15000000 analyzed=false claimed=256 elapsed=4.029904ms
+pending=15000000 analyzed=true: explain chained prefix
+pending=15000000 analyzed=true: explain direct pending read
+pending=15000000 analyzed=true: execute claim function
+pending=15000000 analyzed=true claimed=256 elapsed=872.832µs
+ok
+test audit_claim_survives_dead_prefix_and_autovacuum_recovers ... claim over dead prefix plan:
+Limit  (cost=0.12..24.37 rows=256 width=192) (actual time=0.106..0.283 rows=256.00 loops=1)
+  Buffers: shared hit=23
+  ->  Index Scan using idx_security_audit_events_pending_order on security_audit_events event  (cost=0.12..204.72 rows=2160 width=192) (actual time=0.106..0.261 rows=256.00 loops=1)
+        Index Searches: 1
+        Buffers: shared hit=23
+Planning:
+  Buffers: shared hit=72
+Planning Time: 0.308 ms
+Execution Time: 0.310 ms
+ok
+test audit_ledger_append_batch_commits_atomically ... ok
+test audit_ledger_append_is_chained_and_pending ... ok
+test audit_ledger_migration_is_append_only_and_has_durable_outbox ... ok
+test audit_ledger_rejects_invalid_events_and_enforces_batch_fencing ... ok
+test batch_delivery_migration_fences_one_batch_and_retires_per_event_state ... ok
+test bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans ...
+thread 'bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans' (88182) panicked at crates/persistence-postgres/tests/audit_ledger.rs:948:9:
+claim index work must stay within the candidate bound:
+Index Scan using pending_order on security_audit_events (cost=0.0..1.0 rows=256 width=192) (actual time=0.0..0.1 rows=10000.00 loops=1)
+Execution Time: 1.0 ms
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans' (88182) panicked at crates/persistence-postgres/tests/audit_ledger.rs:948:9:
+claim index work must stay within the candidate bound:
+Index Scan using pending_order on security_audit_events (cost=0.0..1.0 rows=256 width=192) (actual time=0.0..0.1 rows=1.00 loops=257)
+Execution Time: 1.0 ms
+ok
+test bounded_claim_migration_materializes_identities_before_joining ... ok
+test delivery_scoped_retention_migration_reclaims_at_ack_and_drops_archive ... ok
+test each_successful_observation_refreshes_time_without_acknowledging_backlog ... ok
+test fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation ... ok
+test fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes ... ok
+test new_claim_budget_counts_escaped_json_wire_bytes_and_keeps_legal_singletons ... ok
+test new_claim_budget_exact_multi_event_fit_and_one_byte_overflow_have_no_chain_gap ... ok
+test pending_event_set_migration_moves_pending_identity_to_events ... ok
+test pending_set_cutover_guard_rejects_divergence_and_accepts_mirror ... ok
+test refresh_contract_ensure_migration_provides_single_call_reference ... ok
+test shared_anchor_migration_persists_checkpoint_without_a_local_file ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 308.91s

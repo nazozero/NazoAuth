@@ -1,0 +1,9 @@
+{
+  "ts": 1791482017.5302303,
+  "scenario": "oidc_cold_login_refresh",
+  "profile": "capacity",
+  "run_id": "pr230-perf-a04r-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791482017.515,
+  "state_ready_run_id": "pr230-perf-a04r-20261009"
+}

@@ -1,0 +1,1 @@
+{"command": ["git", "-C", "/workspace", "-c", "credential.helper=", "push", "https://github.com/nazozero/NazoAuth.git", "HEAD:refs/heads/refactor/authorization-decision-facts-20261001"], "exit": 0, "sha": "3da0734de491a380b315fc2fb2827f4043c04823", "previous_remote": "7d7ed5fddc5c91201bcac94553a6e72836d471d7"}

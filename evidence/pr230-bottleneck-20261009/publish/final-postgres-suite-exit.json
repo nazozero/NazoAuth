@@ -1,0 +1,17 @@
+{
+  "source_sha": "3da0734de491a380b315fc2fb2827f4043c04823",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--all-features",
+    "-p",
+    "nazo-postgres",
+    "--no-fail-fast",
+    "--",
+    "--nocapture"
+  ],
+  "exit": 0,
+  "elapsed_s": 825.7081280876882,
+  "started": "2026-10-09T02:03:47.913475+00:00"
+}

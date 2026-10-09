@@ -368,7 +368,6 @@ fn client_for_jwks_refresh() -> crate::domain::rows::ClientRow {
             backchannel_token_delivery_mode: "poll".to_owned(),
             backchannel_client_notification_endpoint: None,
             backchannel_authentication_request_signing_alg: None,
-            backchannel_user_code_parameter: false,
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: false,
             subject_type: "public".to_owned(),

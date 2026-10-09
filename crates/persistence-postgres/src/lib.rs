@@ -9,19 +9,22 @@
 //! ```
 //!
 //! ```compile_fail
-//! use nazo_postgres::rows::identity::UserRow;
+//! use nazo_postgres::rows::identity::PublicAccountRow;
 //! ```
 
 mod convert;
+mod mfa_keys;
+pub use mfa_keys::{MfaTotpKey, MfaTotpKeyError, MfaTotpKeyRing};
 mod pool;
 mod repositories;
 pub(crate) mod rows;
 pub(crate) mod schema;
 mod tenant_resource_executor;
+mod unavailable;
 
 pub use pool::{
-    DbConnection, DbPool, DbPoolMetrics, configure_runtime_role, create_pool, db_pool_metrics,
-    get_conn, health_check, run_pending_migrations,
+    DbConnection, DbPool, configure_runtime_role, create_pool, get_conn, health_check,
+    run_pending_migrations,
 };
 pub use repositories::{
     AccessRequestRepository, ActiveTenantBoundaryRepository, AdminProvisionError,
@@ -42,7 +45,7 @@ pub use repositories::{
     RECOVERY_CHALLENGE_TTL_SECONDS, RecoveredSlotCommit, RecoveryInvalidation, RecoveryRootError,
     RecoveryRootRepository, RecoveryRootSummary, RecoveryRotationError, RecoverySubmission,
     RotateControllerKey, RuntimeModuleEventPage, RuntimeModuleRepository, ScimEventRepository,
-    ScimRepository, SecurityAuditAnchorHealth, SecurityAuditEvent, SecurityAuditOutboxDelivery,
+    ScimRepository, SecurityAuditAnchorHealth, SecurityAuditEvent, SecurityAuditPendingDelivery,
     SecurityStateMaintenanceRepository, SigningKeysetRepository, StoredControllerSlot,
     StoredOpenid4vcTrustPolicy, StoredRecoveryRoot, TenantBoundaryDefinition,
     TenantDirectoryControlRepository, TenantDirectoryRepository, TenantProvisioningRequest,
@@ -80,33 +83,6 @@ impl nazo_persistence::DatabaseHealthPort for PostgresHealthCheck {
                 .await
                 .map_err(|_| nazo_persistence::DatabaseHealthError)
         })
-    }
-}
-
-#[derive(Clone)]
-pub struct PostgresPoolMetrics {
-    pool: DbPool,
-}
-
-impl PostgresPoolMetrics {
-    #[must_use]
-    pub fn new(pool: DbPool) -> Self {
-        Self { pool }
-    }
-}
-
-impl nazo_persistence::DatabasePoolMetricsPort for PostgresPoolMetrics {
-    fn snapshot(&self) -> nazo_persistence::DatabasePoolMetrics {
-        let metrics = db_pool_metrics();
-        let status = self.pool.status();
-        nazo_persistence::DatabasePoolMetrics {
-            acquire_count: metrics.acquire_count,
-            wait_nanos_total: metrics.wait_nanos_total,
-            wait_nanos_max: metrics.wait_nanos_max,
-            connections: Some(status.size as u64),
-            idle_connections: Some(status.available as u64),
-            waiting_acquisitions: Some(status.waiting as u64),
-        }
     }
 }
 

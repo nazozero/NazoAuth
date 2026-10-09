@@ -1,0 +1,12 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-r230-sustained-f1-20261008",
+    "sis-proc-r230-sustained-f1-20261008",
+    "sis-sampler-r230-sustained-f1-20261008"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

@@ -17,6 +17,8 @@ use uuid::Uuid;
 struct Clients {
     expected_tenant: Mutex<Option<Uuid>>,
     clients: Mutex<Vec<RegisteredLogoutClient>>,
+    single_reads: Mutex<Vec<String>>,
+    batch_reads: Mutex<Vec<Vec<String>>>,
 }
 
 impl LogoutClientRepositoryPort for Clients {
@@ -26,6 +28,7 @@ impl LogoutClientRepositoryPort for Clients {
         client_id: &'a str,
     ) -> LogoutFuture<'a, Option<RegisteredLogoutClient>> {
         Box::pin(async move {
+            self.single_reads.lock().unwrap().push(client_id.to_owned());
             assert_eq!(*self.expected_tenant.lock().unwrap(), Some(tenant_id));
             Ok(self
                 .clients
@@ -34,6 +37,32 @@ impl LogoutClientRepositoryPort for Clients {
                 .iter()
                 .find(|client| client.tenant_id == tenant_id && client.client_id == client_id)
                 .cloned())
+        })
+    }
+
+    fn by_client_ids<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_ids: &'a [&'a str],
+    ) -> LogoutFuture<'a, Vec<RegisteredLogoutClient>> {
+        Box::pin(async move {
+            assert_eq!(*self.expected_tenant.lock().unwrap(), Some(tenant_id));
+            self.batch_reads
+                .lock()
+                .unwrap()
+                .push(client_ids.iter().map(|value| (*value).to_owned()).collect());
+            // Deliberately reverse storage order; fan-out must retain session order.
+            Ok(self
+                .clients
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .filter(|client| {
+                    client.tenant_id == tenant_id && client_ids.contains(&client.client_id.as_str())
+                })
+                .cloned()
+                .collect())
         })
     }
 }
@@ -131,6 +160,50 @@ fn hinted_frontchannel_preserves_only_hinted_client_compatibility() {
     assert_eq!(
         result.frontchannel_logout_urls,
         vec!["https://client-a.example/frontchannel?iss=https%3A%2F%2Fissuer.example&sid=sid-1"]
+    );
+}
+
+#[test]
+fn logout_batches_session_clients_and_reuses_the_validated_hint() {
+    let tenant_id = Uuid::now_v7();
+    let clients = Arc::new(Clients::default());
+    *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
+    clients.clients.lock().unwrap().extend([
+        client(tenant_id, "client-a", true),
+        client(tenant_id, "client-b", true),
+        client(tenant_id, "inactive-client", false),
+        client(Uuid::now_v7(), "foreign-client", true),
+    ]);
+    let outbox = Arc::new(Outbox::default());
+    let mut request = input(tenant_id, Some("client-a"));
+    request.session.as_mut().unwrap().logged_in_client_ids = vec![
+        "client-b".into(),
+        "client-a".into(),
+        "client-b".into(),
+        "missing-client".into(),
+        "inactive-client".into(),
+        "foreign-client".into(),
+    ];
+    futures_executor::block_on(service(clients.clone(), outbox.clone()).execute(request)).unwrap();
+    assert_eq!(*clients.single_reads.lock().unwrap(), vec!["client-a"]);
+    assert_eq!(
+        *clients.batch_reads.lock().unwrap(),
+        vec![vec![
+            "client-b",
+            "missing-client",
+            "inactive-client",
+            "foreign-client",
+        ]]
+    );
+    assert_eq!(
+        outbox
+            .deliveries
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|delivery| delivery.client_public_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["client-b", "client-a"]
     );
 }
 

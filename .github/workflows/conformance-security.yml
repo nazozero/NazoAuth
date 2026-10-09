@@ -67,6 +67,10 @@ jobs:
   source-policy-gate:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.8"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check real HTTP source policy
         run: |
@@ -78,11 +82,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1 # 1.98.0
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
       - name: Install pinned Rust supply-chain tools
-        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: |
             cargo-deny@0.20.2
@@ -94,9 +98,9 @@ jobs:
           cargo cyclonedx --manifest-path crates/nazoauth/Cargo.toml --format json --override-filename nazoauth.cdx
           mkdir -p target
           mv crates/nazoauth/nazoauth.cdx.json target/nazoauth.cdx.json
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build service image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Containerfile
@@ -112,7 +116,7 @@ jobs:
           docker save nazo-oauth-supply-chain:${{ github.sha }} -o target/ci-service-image/nazo-oauth-service.tar
           docker run --rm \
             -v "$PWD/target/ci-service-image/nazo-oauth-service.tar:/image.tar:ro" \
-            docker.io/aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 image \
+            docker.io/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa image \
               --format table \
               --exit-code 1 \
               --severity CRITICAL,HIGH \
@@ -149,9 +153,9 @@ jobs:
         run: |
           docker load --input target/ci-service-image/nazo-oauth-service.tar
           docker tag nazo-oauth-supply-chain:${{ github.sha }} nazo-oauth-e2e:latest
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build E2E runner image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           tags: nazo-oauth-e2e-runner:latest
@@ -229,11 +233,11 @@ jobs:
       - name: Start PostgreSQL and Valkey
         run: |
           docker network create nazo-oauth-e2e-net
-          docker run -d --name nazo-oauth-e2e-postgres --network nazo-oauth-e2e-net -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=oauth docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
-          docker run -d --name nazo-oauth-e2e-valkey --network nazo-oauth-e2e-net docker.io/valkey/valkey:8-alpine@sha256:e0eb7c480958d32bdc4357a74bdd70653ae15f2f9b4c93c4a5a9fad1dc471c84
+          docker run -d --name nazo-oauth-e2e-postgres --network nazo-oauth-e2e-net -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=oauth docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+          docker run -d --name nazo-oauth-e2e-valkey --network nazo-oauth-e2e-net docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
           ready=false
           for _ in $(seq 1 60); do
-            if docker run --rm --network nazo-oauth-e2e-net -e PGPASSWORD=postgres docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2 \
+            if docker run --rm --network nazo-oauth-e2e-net -e PGPASSWORD=postgres docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 \
               sh -lc 'pg_isready -h nazo-oauth-e2e-postgres -U postgres -d oauth && psql -h nazo-oauth-e2e-postgres -U postgres -d oauth -c "select 1" >/dev/null'
             then
               ready=true

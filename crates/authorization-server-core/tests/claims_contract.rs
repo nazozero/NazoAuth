@@ -37,7 +37,6 @@ fn token_claim_constructors_are_locked_to_complete_reviewed_shapes() {
         {"type": "payment_initiation", "actions": ["write"]}
     ]);
     let actor = json!({"sub": "delegating-client"});
-    let userinfo_claims = vec!["email".to_owned()];
     let userinfo_claim_requests = vec![OidcClaimRequest {
         name: "email".to_owned(),
         essential: true,
@@ -47,6 +46,9 @@ fn token_claim_constructors_are_locked_to_complete_reviewed_shapes() {
     let access_claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: &subject,
             user_id: Some(user_id),
@@ -55,11 +57,10 @@ fn token_claim_constructors_are_locked_to_complete_reviewed_shapes() {
             audiences: &audiences,
             scopes: &scopes,
             authorization_details: &authorization_details,
-            userinfo_claims: &userinfo_claims,
             userinfo_claim_requests: &userinfo_claim_requests,
             ttl: 300,
-            dpop_jkt: Some("thumbprint-jkt"),
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Dpop("thumbprint-jkt"),
+
             actor: Some(&actor),
         },
         1_000,
@@ -132,7 +133,6 @@ fn token_claim_constructors_are_locked_to_complete_reviewed_shapes() {
                 "exp": 1_300,
                 "cnf": {"jkt": "thumbprint-jkt"},
                 "act": {"sub": "delegating-client"},
-                "userinfo_claims": ["email"],
                 "userinfo_claim_requests": [{
                     "name": "email",
                     "essential": true,
@@ -362,6 +362,9 @@ fn access_token_claims_follow_jwt_profile_for_user_subjects() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "pairwise-subject",
             user_id: Some(user_id),
@@ -370,11 +373,13 @@ fn access_token_claims_follow_jwt_profile_for_user_subjects() {
             audiences: &["https://issuer.example/userinfo".to_owned()],
             scopes: &scopes,
             authorization_details: &json!([]),
-            userinfo_claims: &["email".to_owned()],
-            userinfo_claim_requests: &[],
+            userinfo_claim_requests: &(["email".to_owned()])
+                .into_iter()
+                .map(nazo_auth::OidcClaimRequest::named)
+                .collect::<Vec<_>>(),
             ttl: 300,
-            dpop_jkt: Some("thumbprint-jkt"),
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Dpop("thumbprint-jkt"),
+
             actor: None,
         },
         1_000,
@@ -394,7 +399,7 @@ fn access_token_claims_follow_jwt_profile_for_user_subjects() {
     assert_eq!(claims.scope, "openid profile");
     assert_eq!(claims.token_use, "access");
     assert_eq!(claims.jti, "jti-1");
-    assert_eq!(claims.userinfo_claims, vec!["email"]);
+    assert_eq!(claims.userinfo_claim_requests.names(), vec!["email"]);
     let cnf = claims.cnf.expect("DPoP-bound token should carry cnf");
     assert_eq!(cnf.jkt.as_deref(), Some("thumbprint-jkt"));
     assert!(cnf.x5t_s256.is_none());
@@ -406,6 +411,9 @@ fn access_token_claims_keep_client_credentials_subject_separate() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "service-client",
             user_id: None,
@@ -417,11 +425,12 @@ fn access_token_claims_keep_client_credentials_subject_separate() {
             ],
             scopes: &scopes,
             authorization_details: &json!([{"type":"payment_initiation","actions":["write"]}]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 120,
-            dpop_jkt: None,
-            mtls_x5t_s256: Some("certificate-thumbprint"),
+            sender_constraint: nazo_auth::AppliedSenderConstraint::MutualTls(
+                "certificate-thumbprint",
+            ),
+
             actor: None,
         },
         2_000,
@@ -451,6 +460,9 @@ fn access_token_without_sender_constraints_does_not_emit_cnf() {
     let claims = access_token_claims(
         "https://issuer.example",
         AccessTokenClaimsInput {
+            authorization_id: None,
+            client_epoch: None,
+            user_epoch: None,
             tenant_id: DEFAULT_TENANT_ID,
             subject: "subject-1",
             user_id: None,
@@ -459,11 +471,10 @@ fn access_token_without_sender_constraints_does_not_emit_cnf() {
             audiences: &["resource://default".to_owned()],
             scopes: &["read".to_owned()],
             authorization_details: &json!([]),
-            userinfo_claims: &[],
             userinfo_claim_requests: &[],
             ttl: 120,
-            dpop_jkt: None,
-            mtls_x5t_s256: None,
+            sender_constraint: nazo_auth::AppliedSenderConstraint::Bearer,
+
             actor: None,
         },
         2_000,

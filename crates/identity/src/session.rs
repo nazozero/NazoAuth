@@ -14,7 +14,21 @@ pub fn valid_authentication_metadata(
     auth_time > 0
         && auth_time <= now.saturating_add(30)
         && !amr.is_empty()
+        && amr.iter().all(|method| !method.trim().is_empty())
         && oidc_sid.is_some_and(|sid| !sid.trim().is_empty())
+}
+
+/// High-impact administration requires an interactive MFA completed within five minutes.
+/// Future authentication times may be valid session metadata but are not completed step-ups.
+pub const ADMIN_MFA_MAX_AGE_SECONDS: i64 = 5 * 60;
+
+#[must_use]
+pub fn recent_interactive_mfa(auth_time: i64, amr: &[String], now: i64) -> bool {
+    (0..=ADMIN_MFA_MAX_AGE_SECONDS).contains(&now.saturating_sub(auth_time))
+        && amr.iter().any(|method| method == "mfa")
+        && amr
+            .iter()
+            .any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
 }
 
 pub fn add_amr(amr: &mut Vec<String>, value: &str) {
@@ -26,6 +40,7 @@ pub fn add_amr(amr: &mut Vec<String>, value: &str) {
 pub struct SessionRecord {
     user_id: UserId,
     auth_time: i64,
+    auth_time_micros: Option<i64>,
     amr: Vec<String>,
     pending_mfa: bool,
     oidc_sid: Option<String>,
@@ -33,8 +48,14 @@ pub struct SessionRecord {
 }
 
 /// Opaque identifier for a browser login session.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct SessionId(Box<str>);
+
+impl std::fmt::Debug for SessionId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SessionId([REDACTED])")
+    }
+}
 
 impl SessionId {
     #[must_use]
@@ -64,8 +85,14 @@ impl From<String> for SessionId {
 ///
 /// Storage adapters may preserve their exact serialized representation here;
 /// domain callers cannot interpret or mutate it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SessionVersion(Box<[u8]>);
+
+impl std::fmt::Debug for SessionVersion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SessionVersion([REDACTED])")
+    }
+}
 
 impl SessionVersion {
     #[doc(hidden)]
@@ -122,13 +149,21 @@ pub enum SessionUpdateOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CurrentSession {
     user: PublicAccount,
+    pending_mfa: bool,
     auth_time: i64,
+    auth_time_micros: Option<i64>,
     amr: Vec<String>,
     oidc_sid: String,
     logged_in_client_ids: Vec<String>,
 }
 
 impl CurrentSession {
+    /// MFA flows may resolve either state from one validated storage snapshot.
+    #[must_use]
+    pub const fn pending_mfa(&self) -> bool {
+        self.pending_mfa
+    }
+
     #[must_use]
     pub fn user(&self) -> &PublicAccount {
         &self.user
@@ -142,6 +177,11 @@ impl CurrentSession {
     #[must_use]
     pub const fn auth_time(&self) -> i64 {
         self.auth_time
+    }
+
+    #[must_use]
+    pub const fn auth_time_micros(&self) -> Option<i64> {
+        self.auth_time_micros
     }
 
     #[must_use]
@@ -167,10 +207,16 @@ pub enum SessionResolution {
     Invalidated,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SessionRotation {
     session_id: SessionId,
     csrf_token: Box<str>,
+}
+
+impl std::fmt::Debug for SessionRotation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SessionRotation([REDACTED])")
+    }
 }
 
 impl SessionRotation {
@@ -259,7 +305,7 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, false).await
+        self.resolve(session_id, now, Some(false)).await
     }
 
     pub async fn pending_mfa(
@@ -267,7 +313,17 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, true).await
+        self.resolve(session_id, now, Some(true)).await
+    }
+
+    /// Resolve active or pending MFA state with one session read and one active
+    /// account check. State classification comes from that same validated snapshot.
+    pub async fn resolve_for_mfa(
+        &self,
+        session_id: &SessionId,
+        now: i64,
+    ) -> Result<SessionResolution, RepositoryError> {
+        self.resolve(session_id, now, None).await
     }
 
     pub async fn step_up(
@@ -276,7 +332,7 @@ impl SessionService {
         method: &str,
         ttl_seconds: u64,
         require_pending_mfa: bool,
-        now: i64,
+        now: chrono::DateTime<chrono::Utc>,
     ) -> Result<Option<SessionRotation>, RepositoryError> {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(None);
@@ -286,13 +342,13 @@ impl SessionService {
             replacement.auth_time(),
             replacement.amr(),
             replacement.oidc_sid(),
-            now,
+            now.timestamp(),
         ) || (require_pending_mfa && !replacement.pending_mfa())
         {
             return Ok(None);
         }
         replacement.set_pending_mfa(false);
-        replacement.set_auth_time(now);
+        replacement.record_authentication_at(now);
         replacement.add_amr(method);
         replacement.add_amr("mfa");
 
@@ -323,7 +379,7 @@ impl SessionService {
         &self,
         session_id: &SessionId,
         now: i64,
-        pending_mfa: bool,
+        expected_pending_mfa: Option<bool>,
     ) -> Result<SessionResolution, RepositoryError> {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(SessionResolution::Missing);
@@ -334,7 +390,7 @@ impl SessionService {
             let _ = self.sessions.delete(session_id).await;
             return Ok(SessionResolution::Invalidated);
         }
-        if record.pending_mfa() != pending_mfa {
+        if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
             return Ok(SessionResolution::Missing);
         }
         let Some(user) = self
@@ -348,7 +404,9 @@ impl SessionService {
         };
         Ok(SessionResolution::Present(Box::new(CurrentSession {
             user,
+            pending_mfa: record.pending_mfa(),
             auth_time: record.auth_time(),
+            auth_time_micros: record.auth_time_micros(),
             amr: record.amr().to_vec(),
             oidc_sid: record
                 .oidc_sid()
@@ -390,6 +448,7 @@ impl SessionRecord {
         Self {
             user_id,
             auth_time,
+            auth_time_micros: None,
             amr,
             pending_mfa,
             oidc_sid,
@@ -405,6 +464,11 @@ impl SessionRecord {
     #[must_use]
     pub const fn auth_time(&self) -> i64 {
         self.auth_time
+    }
+
+    #[must_use]
+    pub const fn auth_time_micros(&self) -> Option<i64> {
+        self.auth_time_micros
     }
 
     #[must_use]
@@ -433,8 +497,24 @@ impl SessionRecord {
         }
     }
 
+    /// Record an authentication event without losing ordering within an OIDC second.
+    pub fn record_authentication_at(&mut self, now: chrono::DateTime<chrono::Utc>) {
+        self.auth_time = now.timestamp();
+        self.auth_time_micros = Some(now.timestamp_micros());
+    }
+
+    /// Restore optional precision from persistence; legacy seconds are not fresh-login proof.
+    pub fn restore_auth_time_micros(&mut self, value: Option<i64>) -> bool {
+        if value.is_some_and(|micros| micros <= 0 || micros / 1_000_000 != self.auth_time) {
+            return false;
+        }
+        self.auth_time_micros = value;
+        true
+    }
+
     pub fn set_auth_time(&mut self, auth_time: i64) {
         self.auth_time = auth_time;
+        self.auth_time_micros = None;
     }
 
     pub fn set_pending_mfa(&mut self, pending_mfa: bool) {

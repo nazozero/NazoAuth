@@ -1,0 +1,16 @@
+[
+  {
+    "attempt": "invalid-fault-module-disabled",
+    "status": "INVALID",
+    "load_exit": 1,
+    "error": "AssertionError: fault load failed",
+    "source_sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397"
+  },
+  {
+    "attempt": "invalid-fault-root-token",
+    "status": "INVALID",
+    "load_exit": 1,
+    "error": "AssertionError: fault load failed",
+    "source_sha": "ac51ace4acc7449b50a4e76a3a43f714ee5ea397"
+  }
+]

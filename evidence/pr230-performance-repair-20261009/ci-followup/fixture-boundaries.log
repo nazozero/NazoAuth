@@ -1,0 +1,76 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 0.87s
+     Running tests/audit_commit_boundary.rs (target/debug/deps/audit_commit_boundary-ac6634436bdbcf27)
+
+running 4 tests
+test committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint ... proxy dropped committed ACK ReadyForQuery(I): caller Err, original backend 5129 disposed, checkpoint recovered, stale generation rejected, next batch ACK succeeded
+ok
+test every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect ... Genesis: late commit error propagated: unexpected repository error: revision late commit failure; backend=5134
+Genesis/raise: backend gone, replacement=5135, durable_changed=false
+Genesis: cancel at deferred commit, no early success, backend=5140
+Genesis/cancel: backend gone, replacement=5141, durable_changed=true
+Genesis: disconnect at deferred commit, no early success, backend=5145
+Genesis/disconnect: backend gone, replacement=5146, durable_changed=false
+Observe: late commit error propagated: unexpected repository error: revision late commit failure; backend=5151
+Observe/raise: backend gone, replacement=5152, durable_changed=false
+Observe: cancel at deferred commit, no early success, backend=5156
+Observe/cancel: backend gone, replacement=5157, durable_changed=true
+Observe: disconnect at deferred commit, no early success, backend=5161
+Observe/disconnect: backend gone, replacement=5162, durable_changed=false
+Singleton: late commit error propagated: unexpected repository error: revision late commit failure; backend=5167
+Singleton/raise: backend gone, replacement=5168, durable_changed=false
+Singleton: cancel at deferred commit, no early success, backend=5172
+Singleton/cancel: backend gone, replacement=5173, durable_changed=true
+Singleton: disconnect at deferred commit, no early success, backend=5178
+Singleton/disconnect: backend gone, replacement=5179, durable_changed=false
+Batch: late commit error propagated: unexpected repository error: revision late commit failure; backend=5183
+Batch/raise: backend gone, replacement=5184, durable_changed=false
+Batch: cancel at deferred commit, no early success, backend=5189
+Batch/cancel: backend gone, replacement=5190, durable_changed=true
+Batch: disconnect at deferred commit, no early success, backend=5194
+Batch/disconnect: backend gone, replacement=5195, durable_changed=false
+Ack: late commit error propagated: unexpected repository error: revision late commit failure; backend=5200
+Ack/raise: backend gone, replacement=5201, durable_changed=false
+Ack: cancel at deferred commit, no early success, backend=5205
+Ack/cancel: backend gone, replacement=5206, durable_changed=true
+Ack: disconnect at deferred commit, no early success, backend=5211
+Ack/disconnect: backend gone, replacement=5212, durable_changed=false
+Fail: late commit error propagated: unexpected repository error: revision late commit failure; backend=5216
+Fail/raise: backend gone, replacement=5217, durable_changed=false
+Fail: cancel at deferred commit, no early success, backend=5221
+Fail/cancel: backend gone, replacement=5222, durable_changed=true
+Fail: disconnect at deferred commit, no early success, backend=5227
+Fail/disconnect: backend gone, replacement=5228, durable_changed=false
+ok
+test first_data_row_is_not_a_commit_acknowledgement ... first DataRow=true, next result=23514 revision late commit failure; no durable event
+ok
+test fresh_audit_conflict_rolls_back_the_callers_business_transaction ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.23s
+
+     Running tests/read_connection_ownership.rs (target/debug/deps/read_connection_ownership-f5bd71db4a5e7cd0)
+
+running 2 tests
+test cancelling_a_blocked_read_retires_its_backend_before_reuse ... cancelled read backend 5239 independently disappeared; replacement 5242 executes SQL
+ok
+test completed_reads_return_connections_before_request_resumes ... client lookup: real query completed and pool slot returned before caller resumed
+client identity: real query completed and pool slot returned before caller resumed
+client authentication snapshot: real query completed and pool slot returned before caller resumed
+client secret match: real query completed and pool slot returned before caller resumed
+public account: real query completed and pool slot returned before caller resumed
+principal: real query completed and pool slot returned before caller resumed
+subject claims: real query completed and pool slot returned before caller resumed
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running tests/security_state_commit_boundary.rs (target/debug/deps/security_state_commit_boundary-8ee755885b9914e5)
+
+running 1 test
+test cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded ... raise: no premature cleanup success, backend retired, recovery committed
+cancel: no premature cleanup success, backend retired, recovery committed
+disconnect: no premature cleanup success, backend retired, recovery committed
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.39s
+

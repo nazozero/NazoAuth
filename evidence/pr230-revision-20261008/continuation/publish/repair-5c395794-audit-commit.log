@@ -1,0 +1,34 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.04s
+     Running tests/audit_commit_boundary.rs (target/debug/deps/audit_commit_boundary-ac6634436bdbcf27)
+
+running 4 tests
+test committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint ...
+thread 'committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint' (56438) panicked at crates/persistence-postgres/tests/audit_commit_boundary.rs:53:9:
+never run fault injection against an application database
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect ...
+thread 'every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect' (56441) panicked at crates/persistence-postgres/tests/audit_commit_boundary.rs:53:9:
+never run fault injection against an application database
+FAILED
+test first_data_row_is_not_a_commit_acknowledgement ...
+thread 'first_data_row_is_not_a_commit_acknowledgement' (56444) panicked at crates/persistence-postgres/tests/audit_commit_boundary.rs:53:9:
+never run fault injection against an application database
+FAILED
+test fresh_audit_conflict_rolls_back_the_callers_business_transaction ...
+thread 'fresh_audit_conflict_rolls_back_the_callers_business_transaction' (56447) panicked at crates/persistence-postgres/tests/audit_commit_boundary.rs:53:9:
+never run fault injection against an application database
+FAILED
+
+failures:
+
+failures:
+    committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint
+    every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect
+    first_data_row_is_not_a_commit_acknowledgement
+    fresh_audit_conflict_rolls_back_the_callers_business_transaction
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_commit_boundary`

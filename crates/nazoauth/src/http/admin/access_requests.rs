@@ -1,8 +1,6 @@
 //! 管理端客户端接入申请接口。
 use super::clients::ServerAdminClientService;
-use crate::http::admin::{
-    persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_or_forbidden_with_handles,
     require_admin_with_recent_mfa_or_forbidden_with_handles,
@@ -18,10 +16,11 @@ use nazo_auth::{AdminClientError, CreateClientRequest};
 use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
-use nazo_identity::ports::DeliveryStorePort;
+use nazo_identity::ports::{
+    DeliveryPublish, DeliveryStage, DeliveryStageResult, DeliveryStorePort,
+};
 use nazo_oauth_server::crypto::access_delivery_token;
-use nazo_oauth_server::crypto::blake3_hex;
-use nazo_oauth_server::ports::audit::audit_fields;
+use nazo_oauth_server::crypto::{blake3_hex, client_secret_matches_digest};
 use nazo_persistence::AdminAccessRequestStore;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -179,7 +178,17 @@ pub(crate) async fn admin_approve_access_request(
     {
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Pending => row,
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Approved => {
-            match resume_staged_client_delivery(delivery_store.get_ref(), &config, &row).await {
+            if let Err(response) = require_transactional_audit_or_unavailable().await {
+                return response;
+            }
+            match resume_staged_client_delivery(
+                repository.get_ref(),
+                delivery_store.get_ref(),
+                &config,
+                &row,
+            )
+            .await
+            {
                 Ok(true) => return json_response(access_request_json(row)),
                 Ok(false) => return access_request_already_approved_response(),
                 Err(error) => {
@@ -209,11 +218,21 @@ pub(crate) async fn admin_approve_access_request(
         Ok(prepared) => prepared,
         Err(error) => return client_preparation_error_response(error),
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let token = access_delivery_token(&config.client_secret_pepper, request_user_id, request_id);
-    let expires_at = Utc::now() + Duration::seconds(config.delivery_ttl_seconds as i64);
+    let Some(expires_at) = i64::try_from(config.delivery_ttl_seconds)
+        .ok()
+        .and_then(Duration::try_seconds)
+        .and_then(|ttl| Utc::now().checked_add_signed(ttl))
+    else {
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "客户端凭据交付期限无效.",
+        );
+    };
     let delivery_payload = json!({
         "delivery_state": "staged",
         "request_id": request_id,
@@ -230,40 +249,60 @@ pub(crate) async fn admin_approve_access_request(
         "created_at": Utc::now(),
         "expires_at": expires_at
     });
-    if let Err(error) = delivery_store
-        .store(
+    let staged = match delivery_store
+        .stage(
             request_user,
             &token,
-            &delivery_payload,
-            config.delivery_ttl_seconds,
+            DeliveryStage {
+                attempt_id: Uuid::now_v7(),
+                expires_at,
+                secret_binding: prepared.client_secret_hash.clone(),
+                value: delivery_payload,
+            },
         )
         .await
     {
-        tracing::warn!(%error, "failed to persist client delivery payload");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "客户端凭据交付创建失败.",
-        );
-    }
+        Ok(DeliveryStageResult::Created(staged)) => staged,
+        Ok(DeliveryStageResult::Existing) => return access_request_already_approved_response(),
+        Ok(DeliveryStageResult::Expired) => {
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端凭据交付期限已过.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to stage client delivery payload");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端凭据交付创建失败.",
+            );
+        }
+    };
 
     let approval = repository
-        .approve(
+        .approve_with_required_audit(
             admin.principal.tenant,
             request_id,
             admin.user_id(),
             &prepared,
+            blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
         )
         .await;
-    let client = match approval {
-        Ok(client) => client,
+    let approved = match approval {
+        Ok(approved) => approved,
         Err(error) => {
-            if let Err(cleanup_error) = delivery_store.delete(request_user, &token).await {
-                tracing::warn!(%cleanup_error, "failed to remove client delivery payload");
-            }
             if let Some(response) = access_request_approval_error_response(&error) {
+                if let Err(cleanup_error) =
+                    delivery_store.retire(request_user, &token, &staged).await
+                {
+                    tracing::warn!(%cleanup_error, "failed to retire own unpublished client delivery");
+                }
                 return response;
             }
+            // A repository error may follow a committed approval. Keep the
+            // exact original attempt and expiry for verified recovery.
             tracing::warn!(%error, "failed to approve access request");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -272,63 +311,40 @@ pub(crate) async fn admin_approve_access_request(
             );
         }
     };
-    let mut committed_delivery_payload = delivery_payload;
-    committed_delivery_payload["delivery_state"] = json!("committed");
-    committed_delivery_payload["approved_client_id"] = json!(client.id);
-    if let Err(error) = delivery_store
-        .store(
-            request_user,
-            &token,
-            &committed_delivery_payload,
-            config.delivery_ttl_seconds,
-        )
+    let client = &approved.client;
+    match delivery_store
+        .publish(request_user, &token, &staged, client.id)
         .await
     {
-        tracing::warn!(%error, "failed to activate client delivery payload");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "客户端凭据交付激活失败.",
-        );
-    }
-    if let Err(response) = persist_required_audit_or_unavailable(
-        "client_created",
-        audit_fields(&[
-            ("client_id", json!(client.client_id)),
-            ("request_id", json!(request_id)),
-            ("admin_user_id", json!(admin.id())),
-            (
-                "source_ip_hash",
-                json!(blake3_hex(&client_ip_with_config(&req, &client_ip_config))),
-            ),
-        ]),
-    )
-    .await
-    {
-        return response;
-    }
-    match repository
-        .by_id(admin.principal.tenant.tenant_id, request_id)
-        .await
-    {
-        Ok(Some(row)) => json_response(access_request_json(row)),
-        Ok(None) => json_response(json!({"id": request_id})),
-        Err(error) => {
-            tracing::warn!(%error, "failed to load approved access request");
-            oauth_error(
+        Ok(DeliveryPublish::Published) => {}
+        Ok(DeliveryPublish::MissingOrChanged) => {
+            return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
-                "接入申请查询失败.",
-            )
+                "客户端凭据交付阶段已失效.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to publish client delivery payload");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端凭据交付激活失败.",
+            );
         }
     }
+    json_response(access_request_json(approved.request))
 }
 
 async fn resume_staged_client_delivery(
+    repository: &dyn AdminAccessRequestStore,
     store: &dyn DeliveryStorePort,
     config: &AdminAccessRequestConfig,
     request: &nazo_identity::AccessRequest,
 ) -> anyhow::Result<bool> {
+    if request.status != nazo_identity::AccessRequestStatus::Approved {
+        return Ok(false);
+    }
     let Some(approved_client_id) = request.approved_client_id else {
         return Ok(false);
     };
@@ -338,19 +354,46 @@ async fn resume_staged_client_delivery(
     let Some(stored) = store.load(user, &token).await? else {
         return Ok(false);
     };
-    let mut payload = stored.value;
-    if payload["delivery_state"] != "staged"
+    let payload = &stored.value;
+    if stored.expires_at <= Utc::now()
+        || payload["delivery_state"] != "staged"
         || payload["request_id"] != json!(request.id)
         || payload["user_id"] != json!(user_id)
+        || payload["expires_at"] != json!(stored.expires_at)
     {
         return Ok(false);
     }
-    payload["delivery_state"] = json!("committed");
-    payload["approved_client_id"] = json!(approved_client_id);
-    store
-        .store(user, &token, &payload, config.delivery_ttl_seconds)
-        .await?;
-    Ok(true)
+    let secret_matches = match (
+        payload["client_secret"].as_str(),
+        stored.secret_binding.as_deref(),
+    ) {
+        (Some(secret), Some(binding)) => {
+            client_secret_matches_digest(secret, &config.client_secret_pepper, binding)
+        }
+        (None, None) => payload["client_secret"].is_null(),
+        _ => false,
+    };
+    let Some(client_id) = payload["client_id"].as_str() else {
+        return Ok(false);
+    };
+    if !secret_matches
+        || !repository
+            .approved_delivery_with_required_audit_matches(
+                request.tenant_id,
+                user,
+                request.id,
+                approved_client_id,
+                client_id,
+                stored.secret_binding.as_deref(),
+            )
+            .await?
+    {
+        return Ok(false);
+    }
+    Ok(store
+        .publish(user, &token, &stored, approved_client_id)
+        .await?
+        == DeliveryPublish::Published)
 }
 
 #[derive(Deserialize)]
@@ -381,20 +424,20 @@ pub(crate) async fn admin_reject_access_request(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    if let Err(response) = require_durable_audit_or_unavailable().await {
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let updated = match repository
-        .reject(
-            admin.principal.tenant.tenant_id,
+        .reject_with_required_audit(
+            admin.principal.tenant,
             request_id,
             admin.user_id(),
             payload.admin_note,
         )
         .await
     {
-        Ok(()) => true,
-        Err(nazo_identity::ports::RepositoryError::Conflict) => false,
+        Ok(view) => Some(view),
+        Err(nazo_identity::ports::RepositoryError::Conflict) => None,
         Err(error) => {
             tracing::warn!(%error, "failed to reject access request");
             return oauth_error(
@@ -404,35 +447,10 @@ pub(crate) async fn admin_reject_access_request(
             );
         }
     };
-    if !updated {
+    let Some(updated) = updated else {
         return access_request_already_rejected_response();
-    }
-    if let Err(response) = persist_required_audit_or_unavailable(
-        "admin_access_request_rejected",
-        audit_fields(&[
-            ("request_id", json!(request_id)),
-            ("admin_user_id", json!(admin.id())),
-        ]),
-    )
-    .await
-    {
-        return response;
-    }
-    match repository
-        .by_id(admin.principal.tenant.tenant_id, request_id)
-        .await
-    {
-        Ok(Some(row)) => json_response(access_request_json(row)),
-        Ok(None) => json_response(json!({"id": request_id})),
-        Err(error) => {
-            tracing::warn!(%error, "failed to load rejected access request");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "接入申请查询失败.",
-            )
-        }
-    }
+    };
+    json_response(access_request_json(updated))
 }
 
 fn access_request_json(row: nazo_identity::AccessRequest) -> Value {

@@ -11,11 +11,54 @@ use url::Url;
 use uuid::Uuid;
 
 #[derive(Default)]
-pub(super) struct MemorySigningKeyRepository(Mutex<Option<PersistedSigningKeyset>>);
+pub(super) struct MemorySigningKeyRepository {
+    record: Mutex<Option<PersistedSigningKeyset>>,
+    next_load: Mutex<Option<Arc<KeysetReadBarrier>>>,
+    next_openid4vc_commit: Mutex<Option<Arc<Openid4vcCommitBarrier>>>,
+}
+
+#[derive(Default)]
+pub(super) struct Openid4vcCommitBarrier {
+    pub(super) applied: tokio::sync::Notify,
+    pub(super) release: tokio::sync::Notify,
+}
+
+#[derive(Default)]
+pub(super) struct KeysetReadBarrier {
+    pub(super) captured: tokio::sync::Notify,
+    pub(super) release: tokio::sync::Notify,
+}
+
+impl MemorySigningKeyRepository {
+    pub(super) fn pause_next_load(&self) -> Arc<KeysetReadBarrier> {
+        let barrier = Arc::new(KeysetReadBarrier::default());
+        *self.next_load.lock().expect("load barrier mutex") = Some(barrier.clone());
+        barrier
+    }
+
+    pub(super) fn pause_next_openid4vc_commit(&self) -> Arc<Openid4vcCommitBarrier> {
+        let barrier = Arc::new(Openid4vcCommitBarrier::default());
+        *self.next_openid4vc_commit.lock().expect("barrier mutex") = Some(barrier.clone());
+        barrier
+    }
+}
 
 impl SigningKeyRepository for MemorySigningKeyRepository {
     fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
-        Box::pin(async move { Ok(self.0.lock().expect("repository mutex").clone()) })
+        Box::pin(async move {
+            let record = self.record.lock().expect("repository mutex").clone();
+            let barrier = self.next_load.lock().expect("load barrier mutex").take();
+            if let Some(barrier) = barrier {
+                barrier.captured.notify_one();
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    barrier.release.notified(),
+                )
+                .await
+                .expect("load release");
+            }
+            Ok(record)
+        })
     }
 
     fn create_if_absent(
@@ -23,7 +66,7 @@ impl SigningKeyRepository for MemorySigningKeyRepository {
         candidate: PersistedSigningKeyset,
     ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
         Box::pin(async move {
-            let mut record = self.0.lock().expect("repository mutex");
+            let mut record = self.record.lock().expect("repository mutex");
             Ok(match record.clone() {
                 Some(existing) => SigningKeysetCreateResult::Existing(existing),
                 None => {
@@ -40,16 +83,34 @@ impl SigningKeyRepository for MemorySigningKeyRepository {
         candidate: PersistedSigningKeyset,
     ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
         Box::pin(async move {
-            let mut record = self.0.lock().expect("repository mutex");
-            let current = record
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("repository has no keyset"))?;
-            Ok(if current.revision == expected_revision {
-                *record = Some(candidate.clone());
-                SigningKeysetCompareAndSwapResult::Applied(candidate)
-            } else {
-                SigningKeysetCompareAndSwapResult::Conflict(current)
-            })
+            let result = {
+                let mut record = self.record.lock().expect("repository mutex");
+                let current = record
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("repository has no keyset"))?;
+                if current.revision == expected_revision {
+                    *record = Some(candidate.clone());
+                    SigningKeysetCompareAndSwapResult::Applied(candidate)
+                } else {
+                    SigningKeysetCompareAndSwapResult::Conflict(current)
+                }
+            };
+            let barrier = match &result {
+                SigningKeysetCompareAndSwapResult::Applied(record)
+                    if record.public_metadata.get("openid4vc").is_some() =>
+                {
+                    self.next_openid4vc_commit
+                        .lock()
+                        .expect("barrier mutex")
+                        .take()
+                }
+                _ => None,
+            };
+            if let Some(barrier) = barrier {
+                barrier.applied.notify_one();
+                barrier.release.notified().await;
+            }
+            Ok(result)
         })
     }
 }
@@ -78,11 +139,30 @@ impl crate::operator_task::OperatorPersistence for MemoryOperatorPersistence {
         unimplemented!("keyctl tests do not use admin clients")
     }
 
+    fn tenant_resource_control_outcome<'a>(
+        &'a self,
+        _tenant_id: nazo_identity::TenantId,
+        _deployment_id: &'a str,
+        _operation_id: uuid::Uuid,
+        _request_hash: &'a str,
+        _operation: nazo_persistence::tenant_resources::TenantResourceAction,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<
+            Option<nazo_persistence::tenant_resources::ControlTenantResourceOutcome>,
+            nazo_persistence::tenant_resources::TenantResourceExecutorError,
+        >,
+    > {
+        unimplemented!("keyctl tests do not read tenant resource outcomes")
+    }
+
     fn tenant_resource_executor(
         &self,
         _tenant: nazo_identity::TenantContext,
         _data_encryption_key: Option<[u8; 32]>,
-        _preparation: Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>,
+        _preparation: Option<
+            Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>,
+        >,
     ) -> Arc<dyn nazo_persistence::tenant_resources::TenantResourceExecutorPort> {
         unimplemented!("keyctl tests do not use tenant resources")
     }

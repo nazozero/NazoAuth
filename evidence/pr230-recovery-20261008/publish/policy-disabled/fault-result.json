@@ -1,0 +1,871 @@
+{
+  "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+  "fixture": "disabled, freshness/max_lag 10s, 200 Telemetry reads/s + 1 Required bundle/s",
+  "phases": {
+    "faults": {
+      "10": "http_500",
+      "35": "none"
+    },
+    "unblock_at": [],
+    "stop_at": 55,
+    "observe_until": 80
+  },
+  "audit": {
+    "receiver": "sis-rcv-r230-recovery-policy-disabled-20261008",
+    "worker": "sis-worker-r230-recovery-policy-disabled-20261008",
+    "deployment": "01a11bac-32ad-74f4-80ec-2f9cbc12f164"
+  },
+  "stack": {
+    "point": "r230-recovery-policy-disabled-20261008",
+    "image": "sha256:f4e63f9b2dd717664eedc355586fc714caf8f0843cea42b22c05e0fddb1fe619",
+    "healthy": {
+      "postgres": true,
+      "valkey": true,
+      "keyset": true,
+      "migrate": true,
+      "nazoauth": true
+    },
+    "keyset": {
+      "files": {
+        "/var/lib/nazo_oauth/keys/keyset.json": "8aeccb89dd146dee2137b7308759c7915b11472924d9402f775581971bf0d389",
+        "/var/lib/nazo_oauth/keys/ps256-runtime-667267c518d6445481d850a3f792e12d.pem": "29538f11b7a2dae2189820020da3f0a220d37c5beb8a6fa993c1b5d6363d023f",
+        "/var/lib/nazo_oauth/keys/request-object-encryption.pem": "11212a90e713ea7e9f0093dedb47a3b9a8c0db945b227c079ac3fcfa2c3af1a7",
+        "/var/lib/nazo_oauth/keys/rs256-runtime-9ae823682ede4fd79c4a236bf4c2bb9d.pem": "4cf37ddc4be7e2a0fc041d10b487127f9648632d5aa07cabcf46ec3cf85953ae"
+      },
+      "collected": true,
+      "key_dir_volume": "/home/rootless/.local/share/docker/volumes/r230-recovery-policy-disabled-20261008-keys/_data"
+    },
+    "app_binary_sha256": "9abbde21968e5406fc089d9fd3e8e7fd44e8e4b43abfc01b1e399980c1a285c4",
+    "pin": {
+      "app_exec_mode": "pinset-exec",
+      "app_cpus": "50-65",
+      "postgres": {
+        "container": "r230-recovery-policy-disabled-20261008-postgres-1",
+        "uid": "70",
+        "requested": "66-81",
+        "pin_rc": 0,
+        "pin_output": "pinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1",
+        "pin_attempts": [
+          {
+            "uid": "70",
+            "pids": [
+              1,
+              64,
+              65,
+              66,
+              67,
+              68,
+              70,
+              71,
+              72,
+              192,
+              259,
+              260,
+              261
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1\npinned_tasks=1"
+          }
+        ],
+        "pid1_allowed": "Cpus_allowed_list: 66-81",
+        "proc_masks": [
+          "/proc/1 postgres 66-81",
+          "/proc/64 postgres 66-81",
+          "/proc/65 postgres 66-81",
+          "/proc/66 postgres 66-81",
+          "/proc/67 postgres 66-81",
+          "/proc/68 postgres 66-81",
+          "/proc/70 postgres 66-81",
+          "/proc/71 postgres 66-81",
+          "/proc/72 postgres 66-81",
+          "/proc/192 postgres 66-81",
+          "/proc/259 postgres 66-81",
+          "/proc/260 postgres 66-81",
+          "/proc/261 postgres 66-81"
+        ],
+        "task_masks": [
+          {
+            "pid": 1,
+            "tid": 1,
+            "ppid": 0,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886746
+          },
+          {
+            "pid": 64,
+            "tid": 64,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886914
+          },
+          {
+            "pid": 65,
+            "tid": 65,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886914
+          },
+          {
+            "pid": 66,
+            "tid": 66,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886914
+          },
+          {
+            "pid": 67,
+            "tid": 67,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886914
+          },
+          {
+            "pid": 68,
+            "tid": 68,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886914
+          },
+          {
+            "pid": 70,
+            "tid": 70,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886916
+          },
+          {
+            "pid": 71,
+            "tid": 71,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886916
+          },
+          {
+            "pid": 72,
+            "tid": 72,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207886916
+          },
+          {
+            "pid": 192,
+            "tid": 192,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207889416
+          },
+          {
+            "pid": 259,
+            "tid": 259,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207890423
+          },
+          {
+            "pid": 260,
+            "tid": 260,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 261,
+            "tid": 261,
+            "ppid": 1,
+            "uid": "70",
+            "allowed": "66-81",
+            "name": "postgres",
+            "starttime_ticks": 207890434
+          }
+        ],
+        "snapshot": {
+          "complete": true,
+          "read_errors": [],
+          "confirmed_gone": [],
+          "collector_exit": 0,
+          "round_trip_ms": 122.8967
+        },
+        "before_snapshot": {
+          "complete": true,
+          "read_errors": [],
+          "confirmed_gone": [],
+          "collector_exit": 0,
+          "round_trip_ms": 148.7449
+        },
+        "verified": true
+      },
+      "valkey": {
+        "container": "r230-recovery-policy-disabled-20261008-valkey-1",
+        "uid": "0",
+        "requested": "82",
+        "pin_rc": 0,
+        "pin_output": "pinned_tasks=1\npinned_tasks=7",
+        "pin_attempts": [
+          {
+            "uid": "0",
+            "pids": [
+              1
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=1"
+          },
+          {
+            "uid": "999",
+            "pids": [
+              7
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=7"
+          }
+        ],
+        "pid1_allowed": "Cpus_allowed_list: 82",
+        "proc_masks": [
+          "/proc/1 tini 82",
+          "/proc/7 valkey-server 82"
+        ],
+        "task_masks": [
+          {
+            "pid": 1,
+            "tid": 1,
+            "ppid": 0,
+            "uid": "0",
+            "allowed": "82",
+            "name": "tini",
+            "starttime_ticks": 207886748
+          },
+          {
+            "pid": 7,
+            "tid": 7,
+            "ppid": 1,
+            "uid": "999",
+            "allowed": "82",
+            "name": "valkey-server",
+            "starttime_ticks": 207886792
+          },
+          {
+            "pid": 7,
+            "tid": 13,
+            "ppid": 1,
+            "uid": "999",
+            "allowed": "82",
+            "name": "bio_close_file",
+            "starttime_ticks": 207886806
+          },
+          {
+            "pid": 7,
+            "tid": 14,
+            "ppid": 1,
+            "uid": "999",
+            "allowed": "82",
+            "name": "bio_aof",
+            "starttime_ticks": 207886807
+          },
+          {
+            "pid": 7,
+            "tid": 15,
+            "ppid": 1,
+            "uid": "999",
+            "allowed": "82",
+            "name": "bio_lazy_free",
+            "starttime_ticks": 207886807
+          },
+          {
+            "pid": 7,
+            "tid": 16,
+            "ppid": 1,
+            "uid": "999",
+            "allowed": "82",
+            "name": "bio_rdb_save",
+            "starttime_ticks": 207886807
+          },
+          {
+            "pid": 7,
+            "tid": 17,
+            "ppid": 1,
+            "uid": "999",
+            "allowed": "82",
+            "name": "bio_tls_reload",
+            "starttime_ticks": 207886807
+          },
+          {
+            "pid": 7,
+            "tid": 18,
+            "ppid": 1,
+            "uid": "999",
+            "allowed": "82",
+            "name": "jemalloc_bg_thd",
+            "starttime_ticks": 207886807
+          }
+        ],
+        "snapshot": {
+          "complete": true,
+          "read_errors": [],
+          "confirmed_gone": [],
+          "collector_exit": 0,
+          "round_trip_ms": 105.0296
+        },
+        "before_snapshot": {
+          "complete": true,
+          "read_errors": [],
+          "confirmed_gone": [],
+          "collector_exit": 0,
+          "round_trip_ms": 84.0614
+        },
+        "verified": true
+      },
+      "keyset": {
+        "container": "r230-recovery-policy-disabled-20261008-keyset-1",
+        "uid": "0",
+        "requested": "83-113",
+        "pin_rc": 0,
+        "pin_output": "pinned_tasks=1",
+        "pin_attempts": [
+          {
+            "uid": "0",
+            "pids": [
+              1
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=1"
+          }
+        ],
+        "pid1_allowed": "Cpus_allowed_list: 83-113",
+        "proc_masks": [
+          "/proc/1 tail 83-113"
+        ],
+        "task_masks": [
+          {
+            "pid": 1,
+            "tid": 1,
+            "ppid": 0,
+            "uid": "0",
+            "allowed": "83-113",
+            "name": "tail",
+            "starttime_ticks": 207886749
+          }
+        ],
+        "snapshot": {
+          "complete": true,
+          "read_errors": [],
+          "confirmed_gone": [],
+          "collector_exit": 0,
+          "round_trip_ms": 98.7397
+        },
+        "before_snapshot": {
+          "complete": true,
+          "read_errors": [],
+          "confirmed_gone": [],
+          "collector_exit": 0,
+          "round_trip_ms": 96.5113
+        },
+        "verified": true
+      },
+      "pg_verified": true,
+      "app": {
+        "container": "r230-recovery-policy-disabled-20261008-nazoauth-1",
+        "uid": "10001",
+        "requested": "50-65",
+        "pin_rc": 0,
+        "pin_output": "pinned_tasks=36",
+        "pin_attempts": [
+          {
+            "uid": "10001",
+            "pids": [
+              1
+            ],
+            "returncode": 0,
+            "stdout": "pinned_tasks=36"
+          }
+        ],
+        "pid1_allowed": "Cpus_allowed_list: 50-65",
+        "proc_masks": [
+          "/proc/1 nazoauth 50-65"
+        ],
+        "task_masks": [
+          {
+            "pid": 1,
+            "tid": 1,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "nazoauth",
+            "starttime_ticks": 207890363
+          },
+          {
+            "pid": 1,
+            "tid": 7,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 8,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 9,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 10,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 11,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 12,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 13,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 14,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 15,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 16,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 17,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 18,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 19,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 20,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 21,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 22,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890396
+          },
+          {
+            "pid": 1,
+            "tid": 24,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890399
+          },
+          {
+            "pid": 1,
+            "tid": 33,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "tokio-rt-worker",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 34,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 35,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 36,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 37,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 38,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 39,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 40,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 41,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 42,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 43,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 44,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 45,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 46,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 47,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 48,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 49,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890434
+          },
+          {
+            "pid": 1,
+            "tid": 50,
+            "ppid": 0,
+            "uid": "10001",
+            "allowed": "50-65",
+            "name": "actix-server",
+            "starttime_ticks": 207890447
+          }
+        ],
+        "snapshot": {
+          "complete": true,
+          "read_errors": [],
+          "confirmed_gone": [],
+          "collector_exit": 0,
+          "round_trip_ms": 121.7643
+        },
+        "before_snapshot": {
+          "complete": true,
+          "read_errors": [],
+          "confirmed_gone": [],
+          "collector_exit": 0,
+          "round_trip_ms": 97.5257
+        },
+        "verified": true
+      },
+      "app_verified": true,
+      "valkey_verified": true
+    },
+    "deployment_id": "01a11bac-32ad-74f4-80ec-2f9cbc12f164"
+  },
+  "provenance": {
+    "point": "r230-recovery-policy-disabled-20261008",
+    "source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "app_image_ref": "sha256:f4e63f9b2dd717664eedc355586fc714caf8f0843cea42b22c05e0fddb1fe619",
+    "app_image_id": "sha256:f4e63f9b2dd717664eedc355586fc714caf8f0843cea42b22c05e0fddb1fe619",
+    "binary_path": "/usr/local/bin/nazoauth",
+    "binary_sha256": "9abbde21968e5406fc089d9fd3e8e7fd44e8e4b43abfc01b1e399980c1a285c4",
+    "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "pg_max_wal_size": "8GB",
+    "pg_checkpoint_timeout": "5min",
+    "pg_checkpoint_completion_target": "0.9",
+    "pg_fsync": "on",
+    "pg_synchronous_commit": "on",
+    "pg_full_page_writes": "on",
+    "pg_shared_buffers": "128MB",
+    "pg_max_connections": "100",
+    "pg_track_io_timing": "on",
+    "applied_migrations_sha256": "9e48968456c46a69c0460d8e4ea5435a2494381ec452ee661dd36f45ae329c68",
+    "app_image_revision": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "app_source_sha_file": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "source_sha_registered": true,
+    "source_sha_eq_image_revision": true,
+    "source_sha_eq_file": true,
+    "runner_image_ref": "sha256:182d72b35f420f4d33d03388def1a789f8ad70c418d39ade0a9a4c05f954c3ab",
+    "runner_image_id": "sha256:182d72b35f420f4d33d03388def1a789f8ad70c418d39ade0a9a4c05f954c3ab",
+    "runner_image_revision": "unknown",
+    "runner_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+    "workspace_k6_oauth_sha256": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+    "k6_oauth_eq_workspace": true
+  },
+  "app_audit_configuration": {
+    "AUDIT_ANCHOR_FRESHNESS_SECONDS": "10",
+    "AUDIT_ANCHOR_MAX_LAG_SECONDS": "10",
+    "AUDIT_ANCHOR_MODE": "disabled",
+    "DATABASE_MAX_CONNECTIONS": "32",
+    "RUST_LOG": "warn,audit.persistence=debug"
+  },
+  "sampler_health": {
+    "ok": true,
+    "checks": {
+      "soak": {
+        "container": "sis-sampler-r230-recovery-policy-disabled-20261008",
+        "running": true,
+        "meta_ok": true,
+        "detail": "ok"
+      },
+      "proc": {
+        "container": "sis-proc-r230-recovery-policy-disabled-20261008",
+        "running": true,
+        "meta_ok": true,
+        "detail": "ok"
+      }
+    },
+    "real_sample_ok": true
+  },
+  "schedule": {
+    "faults": {
+      "10": "http_500",
+      "35": "none"
+    },
+    "unblock_at": [],
+    "stop_at": 55,
+    "observe_until": 80
+  },
+  "load_exit": 0,
+  "drain": {
+    "pending": 0,
+    "last_sequence": 11058,
+    "anchor_sequence": 11058,
+    "drained": true,
+    "total": 0,
+    "exported_retained": 0
+  },
+  "audit_final": {
+    "receiver_state": {
+      "accepted": 131,
+      "checkpoint": {
+        "accepted_batches": 130,
+        "accepted_events": 11058,
+        "batch_digest": "LmN8V9rryPJllUPUjQCavd6Tox-qNUQiElcmW1yJn48",
+        "checkpoint_kind": "batch",
+        "deployment_id": "01a11bac-32ad-74f4-80ec-2f9cbc12f164",
+        "last_hash": "nCoBZUbvd2WFFSDlulEMt-E-2DQRj4rOgwzP6kqMCgE",
+        "last_sequence": 11058,
+        "updated_at": "2026-10-08T13:22:05.675087988Z"
+      },
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 142,
+      "collected": true
+    },
+    "receiver_checkpoint": {
+      "deployment_id": "01a11bac-32ad-74f4-80ec-2f9cbc12f164",
+      "checkpoint_kind": "batch",
+      "last_sequence": 11058,
+      "last_hash": "nCoBZUbvd2WFFSDlulEMt-E-2DQRj4rOgwzP6kqMCgE",
+      "batch_digest": "LmN8V9rryPJllUPUjQCavd6Tox-qNUQiElcmW1yJn48",
+      "accepted_batches": 130,
+      "accepted_events": 11058,
+      "updated_at": "2026-10-08T13:22:05.675087988Z",
+      "collected": true
+    },
+    "db": {
+      "collected": true,
+      "pending": 0,
+      "total": 0,
+      "exported_retained": 0,
+      "last_sequence": 11058,
+      "last_hash": "9c2a016546ef7765851520e5ba510cb7e13ed834118f8ace830ccfea4a8c0a01",
+      "anchor_deployment_id": "01a11bac-32ad-74f4-80ec-2f9cbc12f164",
+      "anchor_sequence": 11058,
+      "anchor_hash": "9c2a016546ef7765851520e5ba510cb7e13ed834118f8ace830ccfea4a8c0a01"
+    }
+  },
+  "receiver_journal_sha256": "68989a57c6477824959d2981ce1658b08ef378601e03bb8afc4de07e62333de2"
+}

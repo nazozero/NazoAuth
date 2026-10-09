@@ -1,0 +1,7 @@
+{
+  "source_sha": "ec4d98e13ff652b2039fb3a3da393b27bbcbda82",
+  "measured_application_sha": "6b1e40f05d4d93eedc330a8d76eb441c826627b1",
+  "production_diff": "",
+  "runner_image": "sha256:121f00a268f45ef9335a7ee13b84ca4187de4e96ca10b00e1de7b8fdf8de2bb1",
+  "old_p03_H1": "Excluded from successful mixed comparison: 270 formal FAPI invalid_dpop_proof errors. Original fixture keys removed by normal volume cleanup; specific coordinate failure remains inferred, not directly proven."
+}

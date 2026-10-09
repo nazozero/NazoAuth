@@ -1,0 +1,22 @@
+{
+  "performance_discussion": "按原门槛，四个优先点均为 FAIL。授权码成功吞吐约下降 18.1%，撤销约下降 12.6%，mixed16 约下降 20.0%；mixed1 吞吐保持 400/s，但 P95/P99 从 100/144ms 到 134/206ms。这些实测退步全部保留，不能宣称已经统计证明无回退。与此同时，ACK 单批耗时显著下降，observe 次数从接近每批一次降为心跳所需，低流量 Required 的 P95/P99 由约 40.65/46.87ms 降至 27.05/37.12ms。新版本还实际执行了此前积压的清理工作，PG 每操作成本包括这部分必要工作。应用进程的 runnable 调度等待证明确实受到 CPU 服务不足影响，但不能唯一证明全部差异来自其他租户。第二次链路复核未发现剩余代码缺陷，因此按照用户明确认可的共享资源例外，可将容量失败与代码合并判断分开；该例外不修改测量状态，也不证明生产容量达标。",
+  "storage_discussion": "存储验收仅覆盖本轮实际接纳速率和短测窗口：健康持续写入时，pending 保持低龄，eligible family/decision 有周期下降，停压后 pending/family 收敛；其证据强于仅停压后排空。原目标负载存在大量 drop，因此不能声称服务覆盖全部目标产生速率。合法保留的 replay/SingleUse/审计证据不提前删除；物理高水位、死元组等待 vacuum、已分配页不立即缩小均单独展示。Optional/Disabled 在 exporter 长期不可用时依然允许磁盘待办增长，这是其原策略边界；本轮 Required 的故障限制不可泛化到这两种模式。",
+  "fault_discussion": "最终故障的全部校验通过。Telemetry HTTP 200=48001，Required HTTP 200=79，worker 持久化=16847，queue_full 拒绝=31233，推算已接受而未持久化剩余=0。最后数据库与 receiver 序列同为 16848，hash 和 deployment 也一致。HTTP500 健康门禁后、永久拒绝稳定期的 Required 成功数和 worker 新写入均为 0。排空后空闲窗口 observed_at 继续更新，证明心跳仍工作。恢复期间的 503 和过量 Telemetry 拒绝仍保留；不将其称为无损恢复。",
+  "CODE": {
+    "status": "PASS",
+    "reason": "最终 I 完整 workspace suite exit 0：日志结果块合计 3658 passed、0 failed、4 ignored；fmt、静态边界、依赖隔离、Clippy、release 与 Python 工具门禁通过。46 个评审讨论已解决。"
+  },
+  "SECURITY": {
+    "status": "PASS",
+    "reason": "Required 提交屏障、真实 PG 晚期错误/取消/断连及回收、真实 HTTP 失败关闭、签名回执/绑定/心跳、孤儿引用回收竞争通过；最终故障后数据库与 receiver checkpoint 完整匹配。"
+  },
+  "PERFORMANCE": {
+    "status": "FAIL",
+    "reason": "原绝对容量门槛未达到；相对吞吐退步如实保留，CPU 调度等待与必要清理工作限制因果归因。共享资源例外不等于性能测试通过。"
+  },
+  "STORAGE": {
+    "status": "PASS",
+    "reason": "限于实际接纳速率和短测窗口：健康持续负载有周期追赶，Required 故障门禁后后台追加停止，队列饱和可观测，恢复/停压后 pending 与已接受事件会计归零。原目标负载被丢弃的部分、Optional/Disabled 故障积压和长期稳态不在该 PASS 范围。"
+  },
+  "merge_assessment": "代码、安全与本轮有界存储修订达到所验收范围；按用户已经明确允许的共享 CNB 资源例外及第二次链路审查结果，建议将这个单一 PR 交由仓库所有者最终合并。该建议不是无条件的性能容量认证：PERFORMANCE 保持原门槛 FAIL，相对吞吐下降仍未被证明完全来自环境，不宣称“所有场景提升”或“已证明无回退”。如果合并政策要求全部原 SLO 变绿，则本报告不满足那项政策；本次可合并判断只使用用户本任务明确给出的例外。"
+}

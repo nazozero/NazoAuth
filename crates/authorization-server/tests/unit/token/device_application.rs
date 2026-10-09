@@ -6,9 +6,9 @@ use crate::sessions::CurrentSession;
 use crate::token::device::DeviceDecisionHandles;
 use nazo_auth::{
     AuthorizationPortError, DeviceAtomicResult, DeviceCreateResult, DeviceGrantFuture,
-    DeviceGrantRepositoryPort, DeviceGrantWrite, DeviceStateFuture, DeviceStateStorePort,
-    DeviceStateVersion, RequestRateLimitBucket, RequestRateLimitFuture, RequestRateLimitPort,
-    StoredDeviceAuthorization,
+    DeviceGrantRepositoryPort, DeviceGrantWrite, DeviceStateFuture, DeviceStateReplacement,
+    DeviceStateStorePort, DeviceStateVersion, RequestRateLimitBucket, RequestRateLimitFuture,
+    RequestRateLimitPort, StoredDeviceAuthorization,
 };
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision, SnapshotStore};
 use std::sync::{Arc, Mutex};
@@ -22,10 +22,15 @@ enum Failure {
     Grant,
     AuditPreflight,
     AuditIntent,
+    ClaimUnknown,
+    RecordedUnknown,
 }
 
 struct Ports {
     state: Mutex<Option<DeviceAuthorizationState>>,
+    mapping: Mutex<Option<String>>,
+    after_claim: Mutex<Option<DeviceAuthorizationState>>,
+    after_recorded: Mutex<Option<DeviceAuthorizationState>>,
     failure: Mutex<Failure>,
     calls: Mutex<Vec<&'static str>>,
     client: ClientRow,
@@ -44,18 +49,27 @@ impl Ports {
                 return Err(nazo_auth::DeviceStatePortError::Unavailable);
             }
             Ok(self.state.lock().unwrap().clone().map(|state| {
-                StoredDeviceAuthorization::new(state, DeviceStateVersion::new("1".into()))
+                let version = DeviceStateVersion::new(serde_json::to_string(&state).unwrap());
+                StoredDeviceAuthorization::new(state, version)
             }))
         })
     }
-    fn replace<'a>(
-        &'a self,
-        replacement: &'a DeviceAuthorizationState,
-    ) -> DeviceStateFuture<'a, DeviceAtomicResult> {
-        Box::pin(async move {
-            *self.state.lock().unwrap() = Some(replacement.clone());
-            Ok(DeviceAtomicResult::Applied)
-        })
+    fn replace_state(
+        &self,
+        expected: &DeviceStateVersion,
+        replacement: &DeviceAuthorizationState,
+    ) -> bool {
+        let mut state = self.state.lock().unwrap();
+        if state
+            .as_ref()
+            .map(|value| serde_json::to_string(value).unwrap())
+            .as_deref()
+            != Some(expected.comparison_token())
+        {
+            return false;
+        }
+        *state = Some(replacement.clone());
+        true
     }
 }
 impl DeviceStateStorePort for Ports {
@@ -90,34 +104,84 @@ impl DeviceStateStorePort for Ports {
         self.load()
     }
     fn resolve_user_code<'a>(&'a self, _: &'a str) -> DeviceStateFuture<'a, Option<String>> {
+        self.record("resolve");
         Box::pin(async {
             if self.fail(Failure::State) {
                 return Err(nazo_auth::DeviceStatePortError::Unavailable);
             }
-            Ok(self.state.lock().unwrap().as_ref().map(|_| "hash".into()))
+            Ok(if self.state.lock().unwrap().is_some() {
+                self.mapping.lock().unwrap().clone()
+            } else {
+                None
+            })
         })
     }
     fn replace_by_device_code<'a>(
         &'a self,
         _: &'a str,
-        _: &'a Self::Version,
+        version: &'a Self::Version,
         state: &'a DeviceAuthorizationState,
     ) -> DeviceStateFuture<'a, DeviceAtomicResult> {
-        self.replace(state)
+        Box::pin(async move {
+            Ok(if self.replace_state(version, state) {
+                DeviceAtomicResult::Applied
+            } else {
+                DeviceAtomicResult::Conflict
+            })
+        })
     }
     fn replace_by_device_hash<'a>(
         &'a self,
         _: &'a str,
-        _: &'a Self::Version,
+        version: &'a Self::Version,
+        state: &'a DeviceAuthorizationState,
+    ) -> DeviceStateFuture<'a, DeviceStateReplacement<Self::Version>> {
+        self.record("recorded");
+        Box::pin(async move {
+            if !self.replace_state(version, state) {
+                return Ok(DeviceStateReplacement::Conflict);
+            }
+            if self.fail(Failure::RecordedUnknown) {
+                return Err(nazo_auth::DeviceStatePortError::Unavailable);
+            }
+            let written = StoredDeviceAuthorization::new(
+                state.clone(),
+                DeviceStateVersion::new(serde_json::to_string(state).unwrap()),
+            );
+            if let Some(competing) = self.after_recorded.lock().unwrap().take() {
+                *self.state.lock().unwrap() = Some(competing);
+            }
+            Ok(DeviceStateReplacement::Applied(Box::new(written)))
+        })
+    }
+    fn claim_decision<'a>(
+        &'a self,
+        device_hash: &'a str,
+        _: &'a str,
+        version: &'a Self::Version,
         state: &'a DeviceAuthorizationState,
     ) -> DeviceStateFuture<'a, DeviceAtomicResult> {
-        self.replace(state)
+        self.record("claim");
+        Box::pin(async move {
+            if self.mapping.lock().unwrap().as_deref() != Some(device_hash)
+                || !self.replace_state(version, state)
+            {
+                return Ok(DeviceAtomicResult::Conflict);
+            }
+            if self.fail(Failure::ClaimUnknown) {
+                return Err(nazo_auth::DeviceStatePortError::Unavailable);
+            }
+            if let Some(competing) = self.after_claim.lock().unwrap().take() {
+                *self.state.lock().unwrap() = Some(competing);
+            }
+            Ok(DeviceAtomicResult::Applied)
+        })
     }
     fn complete_decision<'a>(
         &'a self,
+        device_hash: &'a str,
         _: &'a str,
-        _: &'a str,
-        _: &'a Self::Version,
+        version: &'a Self::Version,
         state: &'a DeviceAuthorizationState,
     ) -> DeviceStateFuture<'a, DeviceAtomicResult> {
         self.record("complete");
@@ -125,16 +189,14 @@ impl DeviceStateStorePort for Ports {
             if self.fail(Failure::Complete) {
                 return Err(nazo_auth::DeviceStatePortError::Unavailable);
             }
-            *self.state.lock().unwrap() = Some(state.clone());
+            if self.mapping.lock().unwrap().as_deref() != Some(device_hash)
+                || !self.replace_state(version, state)
+            {
+                return Ok(DeviceAtomicResult::Conflict);
+            }
+            *self.mapping.lock().unwrap() = None;
             Ok(DeviceAtomicResult::Applied)
         })
-    }
-    fn consume_by_device_code<'a>(
-        &'a self,
-        _: &'a str,
-        _: &'a Self::Version,
-    ) -> DeviceStateFuture<'a, DeviceAtomicResult> {
-        panic!("decision must not consume a token")
     }
     fn delete_user_code_if_matches<'a>(
         &'a self,
@@ -145,12 +207,6 @@ impl DeviceStateStorePort for Ports {
     }
 }
 impl DeviceGrantRepositoryPort for Ports {
-    fn client_by_id<'a>(&'a self, id: &'a str) -> DeviceGrantFuture<'a, Option<ClientRow>> {
-        Box::pin(async move {
-            assert_eq!(id, self.client.client_id);
-            Ok(Some(self.client.clone()))
-        })
-    }
     fn upsert_grant<'a>(&'a self, write: DeviceGrantWrite<'a>) -> DeviceGrantFuture<'a, ()> {
         self.record("grant");
         Box::pin(async move {
@@ -179,7 +235,10 @@ impl RequestRateLimitPort for Ports {
 }
 impl SecurityAudit for Ports {
     fn ensure_storage(&self) -> AuditFuture<'_> {
-        self.record("audit_preflight");
+        panic!("required intent owns the writer check; the static probe must be skipped")
+    }
+    fn ensure_transactional_ready(&self) -> AuditFuture<'_> {
+        self.record("audit_dynamic_readiness");
         Box::pin(async {
             if self.fail(Failure::AuditPreflight) {
                 anyhow::bail!("audit unavailable");
@@ -221,6 +280,9 @@ fn handles(
         .unwrap_or_else(device_client);
     let ports = Arc::new(Ports {
         state: Mutex::new(None),
+        mapping: Mutex::new(Some("hash".into())),
+        after_claim: Mutex::new(None),
+        after_recorded: Mutex::new(None),
         failure: Mutex::new(Failure::None),
         calls: Mutex::new(Vec::new()),
         client: stored_client,
@@ -263,6 +325,7 @@ fn session() -> CurrentSession {
     CurrentSession {
         user: crate::test_support::authorization::account(),
         auth_time: Utc::now().timestamp(),
+        auth_time_micros: None,
         amr: vec!["pwd".into()],
         oidc_sid: "device-session".into(),
         logged_in_client_ids: vec![],
@@ -546,5 +609,294 @@ fn decision_rejects_invalid_requests_and_maps_dependency_failures() {
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
         );
+    });
+}
+
+#[test]
+fn prepared_device_decisions_preserve_audit_order_and_remove_only_redundant_reads() {
+    futures_executor::block_on(async {
+        for (decision, expected) in [
+            (
+                "approve",
+                vec![
+                    "resolve",
+                    "load",
+                    "audit_dynamic_readiness",
+                    "audit_intent",
+                    "claim",
+                    "load",
+                    "grant",
+                    "recorded",
+                    "complete",
+                    "outcome",
+                ],
+            ),
+            (
+                "deny",
+                vec![
+                    "resolve",
+                    "load",
+                    "audit_dynamic_readiness",
+                    "audit_intent",
+                    "complete",
+                    "outcome",
+                ],
+            ),
+        ] {
+            let (app, ports) = handles(Ok(Some(device_client())));
+            pending(&ports);
+            app.decide("ABCD", decision, session(), "127.0.0.1")
+                .await
+                .unwrap();
+            assert_eq!(*ports.calls.lock().unwrap(), expected);
+        }
+    });
+}
+
+fn device_approval() -> nazo_auth::DeviceAuthorizationApproval {
+    let session = session();
+    nazo_auth::DeviceAuthorizationApproval {
+        user_id: session.user.id(),
+        subject: session.user.id().to_string(),
+        auth_time: session.auth_time,
+        amr: session.amr,
+        oidc_sid: Some(session.oidc_sid),
+    }
+}
+
+#[test]
+fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant() {
+    futures_executor::block_on(async {
+        for changed_mapping in [None, Some("replacement-hash".to_owned())] {
+            let (_, ports) = handles(Ok(Some(device_client())));
+            pending(&ports);
+            let service = ServerDeviceGrantService::new(ports.clone());
+            let prepared = service
+                .prepare_decision("ABCD", Utc::now)
+                .await
+                .unwrap()
+                .unwrap();
+            *ports.mapping.lock().unwrap() = changed_mapping;
+            assert!(matches!(
+                service
+                    .approve(
+                        prepared,
+                        device_approval(),
+                        &ports.client,
+                        ports.as_ref(),
+                        Utc::now
+                    )
+                    .await,
+                Err(nazo_auth::DeviceDecisionFailure::Contended)
+            ));
+            assert!(!ports.calls.lock().unwrap().contains(&"grant"));
+            assert!(matches!(
+                *ports.state.lock().unwrap(),
+                Some(DeviceAuthorizationState::Pending { .. })
+            ));
+        }
+        let (_, ports) = handles(Ok(Some(device_client())));
+        pending(&ports);
+        let service = ServerDeviceGrantService::new(ports.clone());
+        let prepared = service
+            .prepare_decision("ABCD", Utc::now)
+            .await
+            .unwrap()
+            .unwrap();
+        let expired = prepared.payload().expires_at;
+        assert!(matches!(
+            service
+                .approve(
+                    prepared,
+                    device_approval(),
+                    &ports.client,
+                    ports.as_ref(),
+                    || expired
+                )
+                .await,
+            Err(nazo_auth::DeviceDecisionFailure::Expired)
+        ));
+        assert!(!ports.calls.lock().unwrap().contains(&"claim"));
+        assert!(!ports.calls.lock().unwrap().contains(&"grant"));
+    });
+}
+
+#[test]
+fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
+    futures_executor::block_on(async {
+        for retarget in [false, true] {
+            let (_, ports) = handles(Ok(Some(device_client())));
+            pending(&ports);
+            let service = ServerDeviceGrantService::new(ports.clone());
+            let prepared = service
+                .prepare_decision("ABCD", Utc::now)
+                .await
+                .unwrap()
+                .unwrap();
+            if let Some(DeviceAuthorizationState::Pending {
+                payload,
+                last_poll_at,
+                ..
+            }) = ports.state.lock().unwrap().as_mut()
+            {
+                *last_poll_at = Some(Utc::now());
+                if retarget {
+                    payload.scopes.push("changed-after-audit".into());
+                }
+            }
+            let result = service
+                .approve(
+                    prepared,
+                    device_approval(),
+                    &ports.client,
+                    ports.as_ref(),
+                    Utc::now,
+                )
+                .await;
+            if retarget {
+                assert!(matches!(
+                    result,
+                    Err(nazo_auth::DeviceDecisionFailure::Storage(
+                        nazo_auth::DeviceStatePortError::CorruptData
+                    ))
+                ));
+                assert!(!ports.calls.lock().unwrap().contains(&"grant"));
+            } else {
+                result.unwrap();
+                let calls = ports.calls.lock().unwrap();
+                assert_eq!(calls.iter().filter(|call| **call == "claim").count(), 2);
+                assert_eq!(calls.iter().filter(|call| **call == "load").count(), 3);
+                assert_eq!(calls.iter().filter(|call| **call == "grant").count(), 1);
+            }
+        }
+    });
+}
+
+#[test]
+fn device_claim_success_still_reloads_before_any_durable_grant_write() {
+    futures_executor::block_on(async {
+        let (_, ports) = handles(Ok(Some(device_client())));
+        pending(&ports);
+        let service = ServerDeviceGrantService::new(ports.clone());
+        let prepared = service
+            .prepare_decision("ABCD", Utc::now)
+            .await
+            .unwrap()
+            .unwrap();
+        // Simulate another owner finishing while this owner was paused after its claim.
+        *ports.after_claim.lock().unwrap() = Some(DeviceAuthorizationState::Approved {
+            payload: prepared.payload().clone(),
+            approval: device_approval(),
+            approved_at: Utc::now(),
+        });
+        assert!(matches!(
+            service
+                .approve(
+                    prepared,
+                    device_approval(),
+                    &ports.client,
+                    ports.as_ref(),
+                    Utc::now
+                )
+                .await,
+            Err(nazo_auth::DeviceDecisionFailure::AlreadyHandled)
+        ));
+        assert_eq!(
+            *ports.calls.lock().unwrap(),
+            ["resolve", "load", "claim", "load"]
+        );
+    });
+}
+
+#[test]
+fn device_recorded_snapshot_is_version_fenced_and_unknown_writes_do_not_advance() {
+    futures_executor::block_on(async {
+        for failure in [Failure::ClaimUnknown, Failure::RecordedUnknown] {
+            let (app, ports) = handles(Ok(Some(device_client())));
+            pending(&ports);
+            *ports.failure.lock().unwrap() = failure;
+            assert_error(
+                app.decide("ABCD", "approve", session(), "127.0.0.1")
+                    .await
+                    .unwrap_err(),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+            );
+            let calls = ports.calls.lock().unwrap();
+            assert!(!calls.contains(&"complete"));
+            assert!(!calls.contains(&"outcome"));
+            assert_eq!(
+                calls.iter().filter(|call| **call == "grant").count(),
+                usize::from(failure == Failure::RecordedUnknown)
+            );
+        }
+        let (_, ports) = handles(Ok(Some(device_client())));
+        pending(&ports);
+        let service = ServerDeviceGrantService::new(ports.clone());
+        let prepared = service
+            .prepare_decision("ABCD", Utc::now)
+            .await
+            .unwrap()
+            .unwrap();
+        *ports.after_recorded.lock().unwrap() = Some(DeviceAuthorizationState::Approved {
+            payload: prepared.payload().clone(),
+            approval: device_approval(),
+            approved_at: Utc::now(),
+        });
+        assert!(matches!(
+            service
+                .approve(
+                    prepared,
+                    device_approval(),
+                    &ports.client,
+                    ports.as_ref(),
+                    Utc::now
+                )
+                .await,
+            Err(nazo_auth::DeviceDecisionFailure::AlreadyHandled)
+        ));
+        assert_eq!(
+            *ports.calls.lock().unwrap(),
+            [
+                "resolve", "load", "claim", "load", "grant", "recorded", "complete", "load"
+            ]
+        );
+    });
+}
+
+#[test]
+fn device_recorded_snapshot_rechecks_expiry_before_final_cas() {
+    futures_executor::block_on(async {
+        let (_, ports) = handles(Ok(Some(device_client())));
+        pending(&ports);
+        let service = ServerDeviceGrantService::new(ports.clone());
+        let prepared = service
+            .prepare_decision("ABCD", Utc::now)
+            .await
+            .unwrap()
+            .unwrap();
+        let now = prepared.payload().issued_at;
+        let expires = prepared.payload().expires_at;
+        let mut clock_calls = 0;
+        let result = service
+            .approve(
+                prepared,
+                device_approval(),
+                &ports.client,
+                ports.as_ref(),
+                || {
+                    clock_calls += 1;
+                    if clock_calls >= 3 { expires } else { now }
+                },
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(nazo_auth::DeviceDecisionFailure::Expired)
+        ));
+        let calls = ports.calls.lock().unwrap();
+        assert_eq!(calls.iter().filter(|call| **call == "load").count(), 2);
+        assert!(calls.contains(&"recorded"));
+        assert!(!calls.contains(&"complete"));
     });
 }

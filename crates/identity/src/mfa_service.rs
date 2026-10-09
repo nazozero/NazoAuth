@@ -15,24 +15,60 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// A successfully consumed factor bound to the confirmed credential generation.
+/// Only verification creates this proof; later writes recheck its row identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MfaVerificationProof {
+    method: MfaVerificationMethod,
+    credential_id: uuid::Uuid,
+}
+impl MfaVerificationProof {
+    #[must_use]
+    pub const fn method(self) -> MfaVerificationMethod {
+        self.method
+    }
+    #[must_use]
+    pub const fn amr(self) -> &'static str {
+        self.method.amr()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct TotpEnrollmentStart {
     pub secret_base32: String,
     pub otpauth_uri: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for TotpEnrollmentStart {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TotpEnrollmentStart([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct PreparedTotpConfirmation {
     code: String,
     backup_codes: Vec<String>,
     hashes: Vec<EncodedSecretHash>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for PreparedTotpConfirmation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PreparedTotpConfirmation([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub enum TotpConfirmationOutcome {
     Accepted { backup_codes: Vec<String> },
     Invalid,
     Replay,
+}
+
+impl std::fmt::Debug for TotpConfirmationOutcome {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TotpConfirmationOutcome([REDACTED])")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,19 +204,55 @@ impl MfaService {
         prepared: PreparedTotpConfirmation,
         now: i64,
     ) -> Result<TotpConfirmationOutcome, MfaServiceError> {
-        let outcome = self
-            .repository
-            .verify_and_confirm_totp(
-                account.tenant().tenant_id,
-                account.user_id(),
-                &prepared.code,
-                now,
-                prepared.hashes,
-            )
+        self.confirm_totp_owned(account, prepared, now, None).await
+    }
+
+    pub async fn confirm_totp_with_required_audit(
+        &self,
+        account: &PublicAccount,
+        prepared: PreparedTotpConfirmation,
+        now: i64,
+        source_ip_hash: String,
+    ) -> Result<TotpConfirmationOutcome, MfaServiceError> {
+        self.confirm_totp_owned(account, prepared, now, Some(source_ip_hash))
             .await
-            .map_err(MfaServiceError::repository)?;
+    }
+
+    async fn confirm_totp_owned(
+        &self,
+        account: &PublicAccount,
+        prepared: PreparedTotpConfirmation,
+        now: i64,
+        source_ip_hash: Option<String>,
+    ) -> Result<TotpConfirmationOutcome, MfaServiceError> {
+        let outcome = match source_ip_hash {
+            Some(source_ip_hash) => {
+                self.repository
+                    .verify_and_confirm_totp_with_required_audit(
+                        account.tenant().tenant_id,
+                        account.user_id(),
+                        &prepared.code,
+                        now,
+                        prepared.hashes,
+                        source_ip_hash,
+                    )
+                    .await
+            }
+            None => {
+                self.repository
+                    .verify_and_confirm_totp(
+                        account.tenant().tenant_id,
+                        account.user_id(),
+                        &prepared.code,
+                        now,
+                        prepared.hashes,
+                    )
+                    .await
+            }
+        }
+        .map_err(MfaServiceError::repository)?;
         Ok(match outcome {
-            TotpVerificationOutcome::Accepted => TotpConfirmationOutcome::Accepted {
+            TotpVerificationOutcome::Accepted(_) => TotpConfirmationOutcome::Accepted {
                 backup_codes: prepared.backup_codes,
             },
             TotpVerificationOutcome::Invalid => TotpConfirmationOutcome::Invalid,
@@ -193,7 +265,7 @@ impl MfaService {
         account: &PublicAccount,
         code: &str,
         now: i64,
-    ) -> Result<Option<MfaVerificationMethod>, MfaServiceError> {
+    ) -> Result<Option<MfaVerificationProof>, MfaServiceError> {
         if let Some(normalized) = normalize_backup_code(code) {
             return self.verify_backup_code(account, normalized).await;
         }
@@ -202,12 +274,39 @@ impl MfaService {
             .verify_and_consume_totp(account.tenant().tenant_id, account.user_id(), code, now)
             .await
             .map_err(MfaServiceError::repository)?;
-        Ok((outcome == TotpVerificationOutcome::Accepted).then_some(MfaVerificationMethod::Totp))
+        Ok(match outcome {
+            TotpVerificationOutcome::Accepted(credential_id) => Some(MfaVerificationProof {
+                method: MfaVerificationMethod::Totp,
+                credential_id,
+            }),
+            TotpVerificationOutcome::Invalid | TotpVerificationOutcome::Replay => None,
+        })
     }
 
     pub async fn regenerate_backup_codes(
         &self,
         account: &PublicAccount,
+        proof: &MfaVerificationProof,
+    ) -> Result<Vec<String>, MfaServiceError> {
+        self.regenerate_backup_codes_owned(account, proof, None)
+            .await
+    }
+
+    pub async fn regenerate_backup_codes_with_required_audit(
+        &self,
+        account: &PublicAccount,
+        proof: &MfaVerificationProof,
+        source_ip_hash: String,
+    ) -> Result<Vec<String>, MfaServiceError> {
+        self.regenerate_backup_codes_owned(account, proof, Some(source_ip_hash))
+            .await
+    }
+
+    async fn regenerate_backup_codes_owned(
+        &self,
+        account: &PublicAccount,
+        proof: &MfaVerificationProof,
+        source_ip_hash: Option<String>,
     ) -> Result<Vec<String>, MfaServiceError> {
         let (codes, normalized) = generate_backup_codes();
         let hashes = self
@@ -215,45 +314,86 @@ impl MfaService {
             .hash_secrets(normalized)
             .await
             .map_err(mfa_hash_error)?;
-        self.repository
-            .replace_backup_code_hashes(account.tenant().tenant_id, account.user_id(), hashes)
-            .await
-            .map_err(MfaServiceError::repository)?;
+        let replaced = match source_ip_hash {
+            Some(source_ip_hash) => {
+                self.repository
+                    .replace_backup_code_hashes_with_required_audit(
+                        account.tenant().tenant_id,
+                        account.user_id(),
+                        proof.credential_id,
+                        hashes,
+                        source_ip_hash,
+                    )
+                    .await
+            }
+            None => {
+                self.repository
+                    .replace_backup_code_hashes(
+                        account.tenant().tenant_id,
+                        account.user_id(),
+                        proof.credential_id,
+                        hashes,
+                    )
+                    .await
+            }
+        }
+        .map_err(MfaServiceError::repository)?;
+        if !replaced {
+            return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
+        }
         Ok(codes)
     }
 
-    pub async fn disable(&self, account: &PublicAccount) -> Result<(), MfaServiceError> {
-        self.repository
-            .clear_mfa_state(account.tenant().tenant_id, account.user_id())
+    pub async fn disable(
+        &self,
+        account: &PublicAccount,
+        proof: &MfaVerificationProof,
+        source_ip_hash: String,
+    ) -> Result<(), MfaServiceError> {
+        let cleared = self
+            .repository
+            .clear_mfa_state_if_current_with_required_audit(
+                account.tenant().tenant_id,
+                account.user_id(),
+                proof.credential_id,
+                source_ip_hash,
+            )
             .await
-            .map_err(MfaServiceError::repository)
+            .map_err(MfaServiceError::repository)?;
+        if !cleared {
+            return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
+        }
+        Ok(())
     }
 
     pub async fn remember_device(
         &self,
         account: &PublicAccount,
+        proof: &MfaVerificationProof,
         user_agent_hash: Option<String>,
         expires_at: DateTime<Utc>,
-    ) -> Result<String, MfaServiceError> {
+    ) -> Result<Option<String>, MfaServiceError> {
         let token = random_urlsafe_token();
-        self.repository
+        let remembered = self
+            .repository
             .remember_device(
                 account.tenant().tenant_id,
                 account.user_id(),
+                proof.credential_id,
                 blake3::hash(token.as_bytes()).to_hex().to_string(),
                 user_agent_hash,
                 expires_at,
             )
             .await
             .map_err(MfaServiceError::repository)?;
-        Ok(token)
+        Ok(remembered.then_some(token))
     }
 
     async fn verify_backup_code(
         &self,
         account: &PublicAccount,
         normalized: String,
-    ) -> Result<Option<MfaVerificationMethod>, MfaServiceError> {
+    ) -> Result<Option<MfaVerificationProof>, MfaServiceError> {
         let candidates = self
             .repository
             .backup_code_candidates(account.tenant().tenant_id, account.user_id())
@@ -289,7 +429,10 @@ impl MfaService {
             )
             .await
             .map_err(MfaServiceError::repository)?;
-        Ok(consumed.then_some(MfaVerificationMethod::BackupCode))
+        Ok(consumed.map(|credential_id| MfaVerificationProof {
+            method: MfaVerificationMethod::BackupCode,
+            credential_id,
+        }))
     }
 }
 

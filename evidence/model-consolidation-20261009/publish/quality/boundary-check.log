@@ -1,0 +1,40 @@
+    Checking nazo-openid4vp v0.2.16 (/src/crates/openid4vp)
+    Checking nazo-persistence v0.2.16 (/src/crates/persistence)
+    Checking nazo-openid4vc-http-actix v0.2.16 (/src/crates/openid4vc-http-actix)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Checking nazo-http-actix v0.2.16 (/src/crates/http-actix)
+    Checking nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+    Checking nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+warning: unused import: `ResponseMode`
+  --> crates/persistence-postgres/tests/openid4vc.rs:23:45
+   |
+23 |     PresentationTransaction, RequestMethod, ResponseMode,
+   |                                             ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ResponseMode`
+  --> crates/persistence-postgres/tests/security_state_maintenance.rs:23:68
+   |
+23 |     PresentationStorePort, PresentationTransaction, RequestMethod, ResponseMode,
+   |                                                                    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nazo-postgres` (test "openid4vc") generated 1 warning (run `cargo fix --test "openid4vc" -p nazo-postgres` to apply 1 suggestion)
+warning: `nazo-postgres` (test "security_state_maintenance") generated 1 warning (run `cargo fix --test "security_state_maintenance" -p nazo-postgres` to apply 1 suggestion)
+warning: field `config` is never read
+ --> crates/nazoauth/src/bootstrap/startup/configuration.rs:9:16
+  |
+8 | pub(super) struct StartupConfiguration {
+  |                   -------------------- field in this struct
+9 |     pub(super) config: ConfigSource,
+  |                ^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nazoauth` (lib) generated 1 warning
+warning: `nazoauth` (lib test) generated 1 warning (1 duplicate)
+    Finished `dev` profile [unoptimized] target(s) in 35.01s

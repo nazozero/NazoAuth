@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--all-features", "--locked", "-p", "nazo-identity", "--test", "authentication_method_authority", "real_session_metadata_rejects_empty_evidence_and_invalid_time_or_sid", "--", "--exact"], "exit": 101, "seconds": 6.556001957971603}

@@ -1,0 +1,342 @@
+diff --git a/crates/persistence-postgres/src/pool.rs b/crates/persistence-postgres/src/pool.rs
+index b7feaed9..423cbed7 100644
+--- a/crates/persistence-postgres/src/pool.rs
++++ b/crates/persistence-postgres/src/pool.rs
+@@ -36,7 +36,9 @@ impl std::ops::Deref for DbPool {
+         &self.connections
+     }
+ }
+-pub type DbConnection = Object<AsyncPgConnection>;
++mod diagnostic;
++pub(crate) use diagnostic::profile;
++pub type DbConnection = diagnostic::ObservedConnection;
+ 
+ /// Discard the physical connection unless its transaction outcome is confirmed.
+ /// Dropping a transaction future alone does not end a diesel-async transaction.
+@@ -145,21 +147,21 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
+     AsyncPgConnection::try_from_client_and_connection(client, connection).await
+ }
+ 
+-pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
+-    let observation = tracing::enabled!(target: "persistence.pool", tracing::Level::TRACE)
+-        .then(|| (std::time::Instant::now(), pool.status()));
+-    let connection = pool.get().await;
+-    if let Some((started, status)) = observation {
+-        tracing::trace!(
+-            target: "persistence.pool",
+-            acquire_us = started.elapsed().as_micros() as u64,
+-            available_before = status.available,
+-            waiting_before = status.waiting,
+-            success = connection.is_ok(),
+-            "PostgreSQL connection acquisition completed"
+-        );
++#[track_caller]
++pub fn get_conn(
++    pool: &DbPool,
++) -> impl std::future::Future<Output = anyhow::Result<DbConnection>> + Send + '_ {
++    let location = std::panic::Location::caller();
++    let phase = format!("{}:{}", location.file(), location.line());
++    async move {
++        let started = std::time::Instant::now();
++        let connection = pool.get().await?;
++        Ok(diagnostic::ObservedConnection::new(
++            connection,
++            started.elapsed().as_micros() as u64,
++            phase,
++        ))
+     }
+-    Ok(connection?)
+ }
+ 
+ /// Performs a real database round trip used by readiness probes.
+diff --git a/crates/persistence-postgres/src/repositories/audit_ledger.rs b/crates/persistence-postgres/src/repositories/audit_ledger.rs
+index 03123669..c39fec61 100644
+--- a/crates/persistence-postgres/src/repositories/audit_ledger.rs
++++ b/crates/persistence-postgres/src/repositories/audit_ledger.rs
+@@ -73,13 +73,9 @@ impl AuditLedgerRepository {
+         require_exporter: bool,
+     ) -> Result<(), RepositoryError> {
+         let mut connection = self.connection().await?;
+-        let privileges = sql_query(
+-            "SELECT policy_satisfied \
+-             FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+-        )
+-        .bind::<diesel::sql_types::Bool, _>(require_least_privilege)
+-        .bind::<diesel::sql_types::Bool, _>(require_append)
+-        .bind::<diesel::sql_types::Bool, _>(require_exporter)
++        let privileges = AuditPrivilegeQuery {
++            policy: &[require_least_privilege, require_append, require_exporter],
++        }
+         .get_result::<AuditPrivilegePreflightRow>(&mut connection)
+         .await
+         .map_err(map_error)?;
+@@ -366,12 +362,7 @@ async fn append_on_connection(
+     // A function's first DataRow is not an implicit-transaction commit ACK.
+     // Drain through statement completion so late database errors propagate.
+     // Inside a business transaction, its owner still awaits the final COMMIT.
+-    sql_query("SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed")
+-        .bind::<diesel::sql_types::Uuid, _>(event.event_id)
+-        .bind::<diesel::sql_types::Text, _>(&event.event_type)
+-        .bind::<diesel::sql_types::Text, _>(&event.event_category)
+-        .bind::<diesel::sql_types::Jsonb, _>(&event.payload)
+-        .bind::<diesel::sql_types::Timestamptz, _>(event.occurred_at)
++    AuditAppendQuery { event }
+         .load::<AuditMutationRow>(connection)
+         .await
+         .and_then(single_audit_mutation)
+@@ -888,3 +879,65 @@ fn map_error(error: diesel::result::Error) -> RepositoryError {
+ #[cfg(test)]
+ #[path = "../../tests/unit/repositories/audit_ledger.rs"]
+ mod tests;
++
++// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
++struct AuditPrivilegeQuery<'a> {
++    policy: &'a [bool; 3],
++}
++impl diesel::query_builder::QueryId for AuditPrivilegeQuery<'_> {
++    type QueryId = AuditPrivilegeQuery<'static>;
++    const HAS_STATIC_QUERY_ID: bool = true;
++}
++impl diesel::query_builder::Query for AuditPrivilegeQuery<'_> {
++    type SqlType = diesel::sql_types::Untyped;
++}
++impl<Conn> diesel::RunQueryDsl<Conn> for AuditPrivilegeQuery<'_> {}
++impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditPrivilegeQuery<'_> {
++    fn walk_ast<'b>(
++        &'b self,
++        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
++    ) -> diesel::QueryResult<()> {
++        out.push_sql(
++            "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight(",
++        );
++        out.push_bind_param::<diesel::sql_types::Bool, _>(&self.policy[0])?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Bool, _>(&self.policy[1])?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Bool, _>(&self.policy[2])?;
++        out.push_sql(")");
++        Ok(())
++    }
++}
++
++// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
++struct AuditAppendQuery<'a> {
++    event: &'a SecurityAuditEvent,
++}
++impl diesel::query_builder::QueryId for AuditAppendQuery<'_> {
++    type QueryId = AuditAppendQuery<'static>;
++    const HAS_STATIC_QUERY_ID: bool = true;
++}
++impl diesel::query_builder::Query for AuditAppendQuery<'_> {
++    type SqlType = diesel::sql_types::Untyped;
++}
++impl<Conn> diesel::RunQueryDsl<Conn> for AuditAppendQuery<'_> {}
++impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditAppendQuery<'_> {
++    fn walk_ast<'b>(
++        &'b self,
++        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
++    ) -> diesel::QueryResult<()> {
++        out.push_sql("SELECT public.nazo_persist_security_audit_event(");
++        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.event.event_id)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Text, _>(&self.event.event_type)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Text, _>(&self.event.event_category)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.event.payload)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.event.occurred_at)?;
++        out.push_sql(") AS changed");
++        Ok(())
++    }
++}
+diff --git a/crates/persistence-postgres/src/repositories/authorization_flow.rs b/crates/persistence-postgres/src/repositories/authorization_flow.rs
+index ea4d66ca..fb699da9 100644
+--- a/crates/persistence-postgres/src/repositories/authorization_flow.rs
++++ b/crates/persistence-postgres/src/repositories/authorization_flow.rs
+@@ -54,7 +54,7 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
+             // cancellation is an unknown outcome, not a confirmed rollback.
+             let mut operation = tokio::task::JoinSet::new();
+             operation.spawn_on(
+-                async move {
++                crate::pool::profile("authorization_task", async move {
+                     let mut guard = DiscardOnDrop(Some(
+                         get_conn(&pool)
+                             .await
+@@ -138,7 +138,7 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
+                         guard.return_to_pool();
+                     }
+                     result.map_err(|_| AuthorizationPortError::Unexpected)
+-                },
++                }),
+                 &self.pool.runtime,
+             );
+             operation
+@@ -336,24 +336,11 @@ async fn execute_decision(
+     connection: &mut diesel_async::AsyncPgConnection,
+     input: &AuthorizationDecisionCommit,
+ ) -> diesel::QueryResult<AuthorizationDecisionCommitResult> {
+-    let rows = sql_query(
+-        "SELECT public.nazo_commit_authorization_decision(\
+-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome",
+-    )
+-    .bind::<sql_types::Uuid, _>(input.tenant_id)
+-    .bind::<sql_types::Uuid, _>(input.user_id)
+-    .bind::<sql_types::Text, _>(&input.client_id)
+-    .bind::<sql_types::Text, _>(&input.request_id)
+-    .bind::<sql_types::Nullable<sql_types::Text>, _>(input.pushed_request_uri.as_deref())
+-    .bind::<sql_types::Timestamptz, _>(input.valid_until)
+-    .bind::<sql_types::Timestamptz, _>(input.retain_until)
+-    .bind::<sql_types::Text, _>(input.decision.as_str())
+-    .bind::<sql_types::Uuid, _>(input.event_id)
+-    .bind::<sql_types::Timestamptz, _>(input.occurred_at)
+-    .bind::<sql_types::Jsonb, _>(&input.audit_fields)
+-    .bind::<sql_types::Jsonb, _>(serde_json::json!(input.scopes))
+-    .bind::<sql_types::Jsonb, _>(serde_json::json!(input.resource_indicators))
+-    .bind::<sql_types::Jsonb, _>(&input.authorization_details)
++    let rows = AuthorizationDecisionQuery {
++        input,
++        scopes: serde_json::json!(input.scopes),
++        resources: serde_json::json!(input.resource_indicators),
++    }
+     .load::<DecisionOutcomeRow>(connection)
+     .await?;
+     let mut rows = rows.into_iter();
+@@ -409,3 +396,57 @@ fn map_device_repository_error(error: RepositoryError) -> DeviceGrantPortError {
+ #[cfg(test)]
+ #[path = "../../tests/unit/repositories/authorization_flow.rs"]
+ mod tests;
++
++// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
++struct AuthorizationDecisionQuery<'a> {
++    input: &'a AuthorizationDecisionCommit,
++    scopes: serde_json::Value,
++    resources: serde_json::Value,
++}
++impl diesel::query_builder::QueryId for AuthorizationDecisionQuery<'_> {
++    type QueryId = AuthorizationDecisionQuery<'static>;
++    const HAS_STATIC_QUERY_ID: bool = true;
++}
++impl diesel::query_builder::Query for AuthorizationDecisionQuery<'_> {
++    type SqlType = diesel::sql_types::Untyped;
++}
++impl<Conn> diesel::RunQueryDsl<Conn> for AuthorizationDecisionQuery<'_> {}
++impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuthorizationDecisionQuery<'_> {
++    fn walk_ast<'b>(
++        &'b self,
++        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
++    ) -> diesel::QueryResult<()> {
++        out.push_sql("SELECT public.nazo_commit_authorization_decision(");
++        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.input.tenant_id)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.input.user_id)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Text, _>(&self.input.client_id)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Text, _>(&self.input.request_id)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(
++            &self.input.pushed_request_uri,
++        )?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.valid_until)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.retain_until)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Text, _>(self.input.decision.as_str())?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.input.event_id)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.occurred_at)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.input.audit_fields)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.scopes)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.resources)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.input.authorization_details)?;
++        out.push_sql(") AS outcome");
++        Ok(())
++    }
++}
+diff --git a/crates/persistence-postgres/src/repositories/token_issuance.rs b/crates/persistence-postgres/src/repositories/token_issuance.rs
+index ba2706f2..43afc898 100644
+--- a/crates/persistence-postgres/src/repositories/token_issuance.rs
++++ b/crates/persistence-postgres/src/repositories/token_issuance.rs
+@@ -610,7 +610,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
+             let pool = self.pool.clone();
+             let mut operation = tokio::task::JoinSet::new();
+             operation.spawn_on(
+-                async move {
++                crate::pool::profile("issuance_task", async move {
+                     let mut guard = DiscardOnDrop(Some(
+                         get_conn(&pool)
+                             .await
+@@ -760,7 +760,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
+                         }
+                         Err(CommitTransactionError::Diesel(error)) => Err(map_diesel_error(error)),
+                     }
+-                },
++                }),
+                 &self.pool.runtime,
+             );
+             operation
+diff --git a/crates/persistence-postgres/src/repositories/tokens.rs b/crates/persistence-postgres/src/repositories/tokens.rs
+index 2e581b9e..8e2028d4 100644
+--- a/crates/persistence-postgres/src/repositories/tokens.rs
++++ b/crates/persistence-postgres/src/repositories/tokens.rs
+@@ -1285,12 +1285,13 @@ async fn persist_refresh_token_inner(
+     // FOR KEY SHARE inside this transaction (the family foreign key can
+     // never dangle against a concurrent reclaim); a missing key takes the
+     // validated INSERT and a genuine create/reclaim race retries locally.
+-    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+-        .bind::<sql_types::Uuid, _>(token.tenant_id)
+-        .bind::<sql_types::Binary, _>(contract_blake3)
+-        .bind::<sql_types::Jsonb, _>(contract_value)
+-        .execute(connection)
+-        .await?;
++    EnsureRefreshContractQuery {
++        tenant_id: token.tenant_id,
++        digest: contract_blake3,
++        contract: contract_value,
++    }
++    .execute(connection)
++    .await?;
+     diesel::insert_into(oauth_refresh_families::table)
+         .values((
+             oauth_refresh_families::tenant_id.eq(token.tenant_id),
+@@ -1683,3 +1684,33 @@ fn map_error(error: diesel::result::Error) -> RepositoryError {
+ #[cfg(test)]
+ #[path = "../../tests/unit/repositories/tokens.rs"]
+ mod tests;
++
++// Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
++struct EnsureRefreshContractQuery<'a> {
++    tenant_id: Uuid,
++    digest: &'a [u8],
++    contract: &'a serde_json::Value,
++}
++impl diesel::query_builder::QueryId for EnsureRefreshContractQuery<'_> {
++    type QueryId = EnsureRefreshContractQuery<'static>;
++    const HAS_STATIC_QUERY_ID: bool = true;
++}
++impl diesel::query_builder::Query for EnsureRefreshContractQuery<'_> {
++    type SqlType = diesel::sql_types::Untyped;
++}
++impl<Conn> diesel::RunQueryDsl<Conn> for EnsureRefreshContractQuery<'_> {}
++impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for EnsureRefreshContractQuery<'_> {
++    fn walk_ast<'b>(
++        &'b self,
++        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
++    ) -> diesel::QueryResult<()> {
++        out.push_sql("SELECT public.nazo_oauth_refresh_contract_ensure(");
++        out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.tenant_id)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Binary, _>(self.digest)?;
++        out.push_sql(", ");
++        out.push_bind_param::<diesel::sql_types::Jsonb, _>(self.contract)?;
++        out.push_sql(")");
++        Ok(())
++    }
++}

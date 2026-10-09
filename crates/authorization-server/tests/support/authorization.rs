@@ -15,10 +15,11 @@ use super::app::{
 };
 use chrono::Utc;
 use nazo_auth::{
-    AuthorizationCodeState, AuthorizationFuture, AuthorizationPortError,
-    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationStateStorePort,
-    ConsentPayload, DpopNoncePolicy, GrantWrite, OAuthClient, PushedAuthorizationRequest,
-    StoredAuthorizationGrant, ValidatedClientRegistration,
+    AuthorizationCodeState, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
+    AuthorizationDecisionKind, AuthorizationFuture, AuthorizationPortError,
+    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationStateSnapshot,
+    AuthorizationStateStorePort, ConsentPayload, DpopNoncePolicy, OAuthClient,
+    PushedAuthorizationRequest, StoredAuthorizationGrant, ValidatedClientRegistration,
 };
 use nazo_identity::{
     AccountIdentity, Principal, PublicAccount, SessionId, TenantContext, TenantId, UserId,
@@ -33,7 +34,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 use uuid::Uuid;
@@ -44,16 +45,36 @@ pub struct RecordedAuthorizationCode {
     pub ttl_seconds: u64,
 }
 
+/// A bounded, atomic repository double. Tests configure the adapter's admission
+/// result; they do not duplicate client, principal or grant-coverage policy.
+#[derive(Default)]
+pub struct DecisionState {
+    pub outcome: Option<Result<AuthorizationDecisionCommitResult, AuthorizationPortError>>,
+    pub facts: Vec<AuthorizationDecisionCommit>,
+    pub explicit_grant_writes: usize,
+}
+
 pub struct Ports {
+    pub decisions: Mutex<DecisionState>,
+    pub jar_replays: Mutex<Option<BTreeSet<(String, String)>>>,
     pub assertion_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
+    pub ciba_request_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
+    pub ciba_replay_delay_ms: AtomicU64,
     pub client_secret: Mutex<Option<(String, String)>>,
     pub par_rate: Mutex<Option<Result<u64, AuthorizationPortError>>>,
     pub par_write: Mutex<Option<Result<(), AuthorizationPortError>>>,
     pub stored_par: Mutex<Vec<(String, PushedAuthorizationRequest, u64)>>,
     pub record_code_writes: AtomicBool,
     pub stored_codes: Mutex<Vec<RecordedAuthorizationCode>>,
+    pub consent: Mutex<Option<ConsentPayload>>,
+    pub consent_cleanup_unavailable: AtomicBool,
+    pub par_cleanup_unavailable: AtomicBool,
+    pub record_consent_writes: AtomicBool,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
-    session: Result<Option<SessionSnapshot>, RepositoryError>,
+    pub session: Mutex<Result<Option<SessionSnapshot>, RepositoryError>>,
+    pub session_update_unavailable: AtomicBool,
+    pub session_cas_conflict: Mutex<Option<SessionSnapshot>>,
+    pub audit_transactional_unavailable: AtomicBool,
     calls: Mutex<Vec<&'static str>>,
     pub reauth_nonces: Mutex<HashMap<String, i64>>,
     pub reauth_unavailable: AtomicBool,
@@ -86,8 +107,38 @@ impl AuthorizationRepositoryPort for Ports {
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>> {
         panic!("unexpected AuthorizationRepositoryPort::grant call")
     }
-    fn upsert_grant<'a>(&'a self, _write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
-        panic!("unexpected AuthorizationRepositoryPort::upsert_grant call")
+    fn commit_decision(
+        &self,
+        input: AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'_, AuthorizationDecisionCommitResult> {
+        self.record("commit_decision");
+        Box::pin(async move {
+            let mut state = self.decisions.lock().unwrap();
+            let outcome = state
+                .outcome
+                .expect("decision admission must be configured");
+            if outcome != Ok(AuthorizationDecisionCommitResult::Committed) {
+                return outcome;
+            }
+            if state.facts.iter().any(|fact| {
+                fact.tenant_id == input.tenant_id
+                    && (fact.request_id == input.request_id
+                        || input
+                            .pushed_request_uri
+                            .as_ref()
+                            .is_some_and(|uri| fact.pushed_request_uri.as_ref() == Some(uri)))
+            }) {
+                return Ok(AuthorizationDecisionCommitResult::Conflict);
+            }
+            if input.valid_until <= Utc::now() {
+                return Ok(AuthorizationDecisionCommitResult::Expired);
+            }
+            assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
+            state.explicit_grant_writes +=
+                usize::from(input.decision == AuthorizationDecisionKind::Approve);
+            state.facts.push(input);
+            Ok(AuthorizationDecisionCommitResult::Committed)
+        })
     }
     fn client_authentication_snapshot<'a>(
         &'a self,
@@ -104,6 +155,7 @@ impl AuthorizationRepositoryPort for Ports {
         Box::pin(async move {
             client.map(|client| {
                 client.map(|client| nazo_auth::ClientAuthenticationSnapshot {
+                    client_epoch: 0,
                     client,
                     secret_salt: salt,
                 })
@@ -132,14 +184,25 @@ impl AuthorizationStateStorePort for Ports {
     fn load_consent<'a>(
         &'a self,
         _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.record("consent");
-        Box::pin(async { Ok(None) })
+        Box::pin(async {
+            Ok(self
+                .consent
+                .lock()
+                .unwrap()
+                .clone()
+                .map(|payload| AuthorizationStateSnapshot {
+                    version: serde_json::to_value(&payload).unwrap().to_string(),
+                    payload,
+                }))
+        })
     }
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         self.record("load_par");
         Box::pin(async move {
             Ok(self
@@ -148,21 +211,32 @@ impl AuthorizationStateStorePort for Ports {
                 .unwrap()
                 .iter()
                 .find(|(uri, _, _)| uri == request_uri)
-                .map(|(_, request, _)| request.clone()))
+                .map(|(_, request, _)| AuthorizationStateSnapshot {
+                    version: serde_json::to_value(request).unwrap().to_string(),
+                    payload: request.clone(),
+                }))
         })
-    }
-    fn take_par<'a>(
-        &'a self,
-        _request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        panic!("unexpected AuthorizationStateStorePort::take_par call")
     }
     fn compare_and_delete_par<'a>(
         &'a self,
-        _request_uri: &'a str,
-        _expected: &'a PushedAuthorizationRequest,
+        request_uri: &'a str,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::compare_and_delete_par call")
+        self.record("consume_par");
+        Box::pin(async move {
+            if self.par_cleanup_unavailable.load(Ordering::SeqCst) {
+                return Err(AuthorizationPortError::Unavailable);
+            }
+            let mut stored = self.stored_par.lock().unwrap();
+            let Some(index) = stored.iter().position(|(uri, request, _)| {
+                let version = serde_json::to_value(request).unwrap().to_string();
+                uri == request_uri && version.as_str() == expected
+            }) else {
+                return Ok(false);
+            };
+            stored.remove(index);
+            Ok(true)
+        })
     }
     fn store_par<'a>(
         &'a self,
@@ -176,11 +250,11 @@ impl AuthorizationStateStorePort for Ports {
                 .lock()
                 .unwrap()
                 .expect("unexpected PAR write")?;
-            self.stored_par.lock().unwrap().push((
-                request_uri.into(),
-                payload.clone(),
-                ttl_seconds,
-            ));
+            let mut stored = self.stored_par.lock().unwrap();
+            if stored.iter().any(|(uri, _, _)| uri == request_uri) {
+                return Err(AuthorizationPortError::Conflict);
+            }
+            stored.push((request_uri.into(), payload.clone(), ttl_seconds));
             Ok(())
         })
     }
@@ -193,17 +267,38 @@ impl AuthorizationStateStorePort for Ports {
     fn compare_and_delete_consent<'a>(
         &'a self,
         _request_id: &'a str,
-        _expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::compare_and_delete_consent call")
+        self.record("consume_consent");
+        Box::pin(async move {
+            if self.consent_cleanup_unavailable.load(Ordering::SeqCst) {
+                return Err(AuthorizationPortError::Unavailable);
+            }
+            let mut consent = self.consent.lock().unwrap();
+            assert_eq!(
+                serde_json::to_value(consent.as_ref().unwrap())
+                    .unwrap()
+                    .to_string(),
+                expected,
+            );
+            Ok(consent.take().is_some())
+        })
     }
     fn store_consent<'a>(
         &'a self,
         _request_id: &'a str,
-        _payload: &'a ConsentPayload,
+        payload: &'a ConsentPayload,
         _ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()> {
-        panic!("unexpected AuthorizationStateStorePort::store_consent call")
+        assert!(
+            self.record_consent_writes.load(Ordering::SeqCst),
+            "unexpected AuthorizationStateStorePort::store_consent call"
+        );
+        self.record("store_consent");
+        Box::pin(async move {
+            *self.consent.lock().unwrap() = Some(payload.clone());
+            Ok(())
+        })
     }
     fn store_authorization_code<'a>(
         &'a self,
@@ -261,12 +356,38 @@ impl AuthorizationStateStorePort for Ports {
     }
     fn consume_jar<'a>(
         &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        _expires_at: i64,
+    ) -> AuthorizationFuture<'a, bool> {
+        self.record("consume_jar");
+        Box::pin(async move {
+            Ok(self
+                .jar_replays
+                .lock()
+                .unwrap()
+                .as_mut()
+                .expect("JAR replay storage must be configured")
+                .insert((client_id.into(), jti.into())))
+        })
+    }
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
         _client_id: &'a str,
         _jti: &'a str,
-        _ttl_seconds: u64,
+        _window: nazo_auth::ClientAttestationProofWindow,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::consume_jar call")
+        self.record("assertion_replay");
+        Box::pin(async {
+            *self
+                .assertion_replay
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("replay must be configured")
+        })
     }
+
     fn consume_private_key_jwt<'a>(
         &'a self,
         _client_id: &'a str,
@@ -295,9 +416,20 @@ impl AuthorizationStateStorePort for Ports {
         &'a self,
         _client_id: &'a str,
         _jti: &'a str,
-        _ttl_seconds: u64,
+        _expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::consume_ciba_request_object call")
+        self.record("ciba_request_object_replay");
+        Box::pin(async {
+            std::thread::sleep(std::time::Duration::from_millis(
+                self.ciba_replay_delay_ms.load(Ordering::Relaxed),
+            ));
+            *self
+                .ciba_request_replay
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("CIBA replay must be configured")
+        })
     }
     fn consume_dpop<'a>(
         &'a self,
@@ -338,13 +470,18 @@ impl SessionStorePort for Ports {
         _session_id: &'a SessionId,
     ) -> RepositoryFuture<'a, Option<SessionSnapshot>> {
         self.record("session");
-        Box::pin(async { self.session.clone() })
+        Box::pin(async { self.session.lock().unwrap().clone() })
     }
     fn delete<'a>(
         &'a self,
         _session_id: &'a nazo_identity::session::SessionId,
     ) -> RepositoryFuture<'a, bool> {
-        panic!("unexpected SessionStorePort::delete call")
+        self.record("delete_session");
+        Box::pin(async {
+            let mut loaded = self.session.lock().unwrap();
+            let session = loaded.as_mut().map_err(|error| error.clone())?;
+            Ok(session.take().is_some())
+        })
     }
     fn rotate<'a>(
         &'a self,
@@ -359,10 +496,33 @@ impl SessionStorePort for Ports {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a nazo_identity::session::SessionId,
-        _expected: &'a nazo_identity::session::SessionSnapshot,
-        _replacement: &'a nazo_identity::session::SessionRecord,
+        expected: &'a nazo_identity::session::SessionSnapshot,
+        replacement: &'a nazo_identity::session::SessionRecord,
     ) -> RepositoryFuture<'a, nazo_identity::session::SessionUpdateOutcome> {
-        panic!("unexpected SessionStorePort::compare_and_set call")
+        self.record("session_compare_and_set");
+        Box::pin(async move {
+            use nazo_identity::session::SessionUpdateOutcome;
+            if self.session_update_unavailable.load(Ordering::SeqCst) {
+                return Err(RepositoryError::Unavailable);
+            }
+            let mut loaded = self.session.lock().unwrap();
+            let stored = loaded.as_mut().map_err(|error| error.clone())?;
+            if let Some(concurrent) = self.session_cas_conflict.lock().unwrap().take() {
+                *stored = Some(concurrent);
+                return Ok(SessionUpdateOutcome::Conflict);
+            }
+            let Some(current) = stored.as_ref() else {
+                return Ok(SessionUpdateOutcome::Missing);
+            };
+            if current.version() != expected.version() {
+                return Ok(SessionUpdateOutcome::Conflict);
+            }
+            *stored = Some(SessionSnapshot::new(
+                replacement.clone(),
+                SessionVersion::from_storage(Uuid::now_v7().as_bytes().to_vec().into_boxed_slice()),
+            ));
+            Ok(SessionUpdateOutcome::Applied)
+        })
     }
 }
 impl SessionAccountPort for Ports {
@@ -378,6 +538,15 @@ impl SessionAccountPort for Ports {
 impl SecurityAudit for Ports {
     fn ensure_storage(&self) -> AuditFuture<'_> {
         Box::pin(async { Ok(()) })
+    }
+    fn ensure_transactional_ready(&self) -> AuditFuture<'_> {
+        self.record("audit_transactional_ready");
+        Box::pin(async {
+            if self.audit_transactional_unavailable.load(Ordering::SeqCst) {
+                anyhow::bail!("required audit anchor is unavailable");
+            }
+            Ok(())
+        })
     }
     fn record(&self, _event: &str, _fields: Map<String, Value>) {}
     fn record_required<'a>(
@@ -423,7 +592,6 @@ pub fn registration(client_id: &str) -> ValidatedClientRegistration {
         backchannel_token_delivery_mode: "poll".to_owned(),
         backchannel_client_notification_endpoint: None,
         backchannel_authentication_request_signing_alg: None,
-        backchannel_user_code_parameter: false,
         frontchannel_logout_uri: None,
         frontchannel_logout_session_required: false,
         tls_client_auth_subject_dn: None,
@@ -490,14 +658,17 @@ pub fn account() -> PublicAccount {
     }
 }
 pub fn session() -> SessionSnapshot {
+    let now = Utc::now();
+    let mut record = SessionRecord::new(
+        account().user_id(),
+        now.timestamp(),
+        vec!["pwd".into()],
+        false,
+        Some("oidc-session".into()),
+    );
+    record.record_authentication_at(now);
     SessionSnapshot::new(
-        SessionRecord::new(
-            account().user_id(),
-            Utc::now().timestamp(),
-            vec!["pwd".into()],
-            false,
-            Some("oidc-session".into()),
-        ),
+        record,
         SessionVersion::from_storage(b"v1".to_vec().into_boxed_slice()),
     )
 }
@@ -519,15 +690,26 @@ impl Fixture {
         session: Result<Option<SessionSnapshot>, RepositoryError>,
     ) -> Self {
         let ports = Arc::new(Ports {
+            decisions: Mutex::new(DecisionState::default()),
+            jar_replays: Mutex::new(None),
             assertion_replay: Mutex::new(None),
+            ciba_request_replay: Mutex::new(None),
+            ciba_replay_delay_ms: AtomicU64::new(0),
             client_secret: Mutex::new(None),
             par_rate: Mutex::new(None),
             par_write: Mutex::new(None),
             stored_par: Mutex::new(Vec::new()),
             record_code_writes: AtomicBool::new(false),
             stored_codes: Mutex::new(Vec::new()),
+            consent: Mutex::new(None),
+            consent_cleanup_unavailable: AtomicBool::new(false),
+            par_cleanup_unavailable: AtomicBool::new(false),
+            record_consent_writes: AtomicBool::new(false),
             client,
-            session,
+            session: Mutex::new(session),
+            session_update_unavailable: AtomicBool::new(false),
+            session_cas_conflict: Mutex::new(None),
+            audit_transactional_unavailable: AtomicBool::new(false),
             calls: Mutex::new(Vec::new()),
             reauth_nonces: Mutex::new(HashMap::new()),
             reauth_unavailable: AtomicBool::new(false),

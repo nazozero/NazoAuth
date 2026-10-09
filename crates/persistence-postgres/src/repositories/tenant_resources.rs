@@ -181,6 +181,28 @@ struct Openid4vcTrustPolicyRow {
     revoked_at: Option<DateTime<Utc>>,
 }
 
+#[derive(QueryableByName)]
+struct Openid4vcTrustPolicyReadRow {
+    #[diesel(sql_type = sql_types::Bool)]
+    client_active: bool,
+    #[diesel(sql_type = sql_types::Bool)]
+    has_binding: bool,
+    #[diesel(embed)]
+    policy: Option<Openid4vcTrustPolicyRow>,
+}
+
+fn validate_openid4vc_trust_client_id(public_client_id: &str) -> Result<(), RepositoryError> {
+    if public_client_id.is_empty()
+        || public_client_id.len() > 255
+        || public_client_id != public_client_id.trim()
+    {
+        return Err(RepositoryError::Consistency(
+            "OpenID4VC trust policy client ID is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 impl TryFrom<StateRow> for TenantResourceState {
     type Error = RepositoryError;
 
@@ -622,14 +644,7 @@ impl TenantResourceRepository {
         tenant_id: Uuid,
         public_client_id: &str,
     ) -> Result<Openid4vcTrustPolicyForClient, RepositoryError> {
-        if public_client_id.is_empty()
-            || public_client_id.len() > 255
-            || public_client_id != public_client_id.trim()
-        {
-            return Err(RepositoryError::Consistency(
-                "OpenID4VC trust policy client ID is invalid".to_owned(),
-            ));
-        }
+        validate_openid4vc_trust_client_id(public_client_id)?;
         let client = sql_query(
             "SELECT id, is_active
              FROM oauth_clients
@@ -675,13 +690,54 @@ impl TenantResourceRepository {
         tenant_id: Uuid,
         public_client_id: &str,
     ) -> Result<Openid4vcTrustPolicyForClient, RepositoryError> {
+        validate_openid4vc_trust_client_id(public_client_id)?;
         let mut connection = self.connection().await?;
-        Self::openid4vc_trust_policy_for_client_on_connection(
-            &mut connection,
-            tenant_id,
-            public_client_id,
+        // Request-time trust resolution is a single committed snapshot. Row
+        // locks belong to the management transaction's on_connection variant;
+        // a read lock here would end before proof verification even begins.
+        let rows = sql_query(
+            "SELECT client.is_active AS client_active, \
+                    EXISTS (SELECT 1 FROM openid4vc_trust_policy_clients AS any_binding \
+                            WHERE any_binding.tenant_id = client.tenant_id \
+                              AND any_binding.oauth_client_id = client.id) AS has_binding, \
+                    policy.* \
+             FROM oauth_clients AS client \
+             LEFT JOIN LATERAL ( \
+                 SELECT policy.id, policy.tenant_id, policy.resource_id, policy.resource_digest, \
+                        policy.public_material, policy.wallet_origins, policy.source, \
+                        policy.active, policy.created_at, policy.updated_at, policy.revoked_at \
+                 FROM openid4vc_trust_policy_clients AS binding \
+                 JOIN openid4vc_trust_policies AS policy \
+                   ON policy.tenant_id = binding.tenant_id AND policy.id = binding.policy_id \
+                 WHERE binding.tenant_id = client.tenant_id AND binding.oauth_client_id = client.id \
+                   AND binding.active AND policy.active \
+                 ORDER BY policy.id LIMIT 2 \
+             ) AS policy ON client.is_active \
+             WHERE client.tenant_id = $1 AND client.client_id = $2",
         )
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Varchar, _>(public_client_id)
+        .load::<Openid4vcTrustPolicyReadRow>(&mut connection)
         .await
+        .map_err(map_error)?;
+        if rows.len() > 1 {
+            return Err(RepositoryError::Consistency(
+                "OAuth client has multiple active OpenID4VC trust policies".to_owned(),
+            ));
+        }
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(Openid4vcTrustPolicyForClient::Unbound);
+        };
+        if !row.has_binding {
+            return Ok(Openid4vcTrustPolicyForClient::Unbound);
+        }
+        if !row.client_active {
+            return Ok(Openid4vcTrustPolicyForClient::BoundInactive);
+        }
+        match row.policy {
+            Some(policy) => Ok(Openid4vcTrustPolicyForClient::Active(policy.try_into()?)),
+            None => Ok(Openid4vcTrustPolicyForClient::BoundInactive),
+        }
     }
 
     /// Install one validated public trust policy. The protocol/provider layer

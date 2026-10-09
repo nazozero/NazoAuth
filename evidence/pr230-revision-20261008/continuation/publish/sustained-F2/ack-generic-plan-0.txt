@@ -1,0 +1,69 @@
+BEGIN
+SET
+PREPARE
+[
+  {
+    "Plan": {
+      "Node Type": "Aggregate",
+      "Strategy": "Plain",
+      "Partial Mode": "Simple",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 19.53,
+      "Total Cost": 19.54,
+      "Plan Rows": 1,
+      "Plan Width": 40,
+      "Disabled": false,
+      "Plans": [
+        {
+          "Node Type": "Nested Loop",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Join Type": "Inner",
+          "Startup Cost": 0.28,
+          "Total Cost": 19.52,
+          "Plan Rows": 1,
+          "Plan Width": 16,
+          "Disabled": false,
+          "Inner Unique": true,
+          "Plans": [
+            {
+              "Node Type": "Index Only Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "idx_security_audit_events_pending_order",
+              "Relation Name": "security_audit_events",
+              "Alias": "event",
+              "Startup Cost": 0.12,
+              "Total Cost": 8.14,
+              "Plan Rows": 1,
+              "Plan Width": 16,
+              "Disabled": false
+            },
+            {
+              "Node Type": "Index Scan",
+              "Parent Relationship": "Inner",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "security_audit_chain_entries_pkey",
+              "Relation Name": "security_audit_chain_entries",
+              "Alias": "chain",
+              "Startup Cost": 0.15,
+              "Total Cost": 8.17,
+              "Plan Rows": 1,
+              "Plan Width": 16,
+              "Disabled": false,
+              "Index Cond": "(event_id = event.event_id)",
+              "Filter": "((sequence > $1) AND (sequence <= $2))"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+ROLLBACK

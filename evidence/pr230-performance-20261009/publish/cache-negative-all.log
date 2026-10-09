@@ -1,0 +1,43 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 37.60s
+     Running tests/authorization_decisions.rs (target/debug/deps/authorization_decisions-16a46009bc43ffdc)
+
+running 1 test
+test decision_prepared_shape_preserves_distinct_facts_and_replay_fences ... 
+thread 'decision_prepared_shape_preserves_distinct_facts_and_replay_fences' (17720) panicked at crates/persistence-postgres/tests/authorization_decisions.rs:1507:5:
+assertion `left == right` failed: one cached shape, four executions with distinct decision binds
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    decision_prepared_shape_preserves_distinct_facts_and_replay_fences
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.17s
+
+error: test failed, to rerun pass `-p nazo-postgres --test authorization_decisions`
+     Running tests/query_counts.rs (target/debug/deps/query_counts-34af96b8353a7654)
+
+running 1 test
+test refresh_contract_prepared_shape_preserves_distinct_contracts ... 
+thread 'refresh_contract_prepared_shape_preserves_distinct_contracts' (17725) panicked at crates/persistence-postgres/tests/query_counts.rs:2622:5:
+assertion `left == right` failed: one cached shape must execute both contract binds
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    refresh_contract_prepared_shape_preserves_distinct_contracts
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.30s
+
+error: test failed, to rerun pass `-p nazo-postgres --test query_counts`
+error: 2 targets failed:
+    `-p nazo-postgres --test authorization_decisions`
+    `-p nazo-postgres --test query_counts`

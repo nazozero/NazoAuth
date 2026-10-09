@@ -1,6 +1,7 @@
 //! Pushed authorization request orchestration.
 use super::{
-    AuthorizationApplication, AuthorizationRequestContext, jar::apply_request_object_with_context,
+    AuthorizationApplication, AuthorizationRequestContext,
+    jar::{DecryptedRequestObject, apply_request_object_with_context},
 };
 use crate::{
     contracts::{
@@ -23,8 +24,8 @@ use chrono::{Duration, Utc};
 use http::StatusCode;
 use nazo_auth::{
     DpopError, ExpandedParAdmissionPolicy, ParAdmissionError, PresentedClientCredentials,
-    RawParAdmissionPolicy, is_valid_dpop_jkt, unverified_client_assertion_client_id,
-    validate_expanded_par_admission, validate_raw_par_admission,
+    RawParAdmissionPolicy, unverified_client_assertion_client_id, validate_expanded_par_admission,
+    validate_raw_par_admission,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -38,11 +39,13 @@ pub struct PreparedParParameters<'a> {
     context: AuthorizationRequestContext<'a>,
     params: HashMap<String, String>,
     client_id: String,
+    decrypted_request_object: Option<DecryptedRequestObject>,
 }
 pub struct PreparedParClient<'a> {
     context: AuthorizationRequestContext<'a>,
     params: HashMap<String, String>,
     client_id: String,
+    decrypted_request_object: Option<DecryptedRequestObject>,
     client: ClientRow,
     secret_salt: Option<String>,
     credentials: PresentedClientCredentials,
@@ -129,15 +132,13 @@ impl<'a> ParPreparation<'a> {
             ));
         }
 
-        if !params.contains_key("client_id")
-            && let Some(request_object) = params.get("request")
-            && let Some(client_id) = super::jar::unverified_request_object_client_id(
-                context.request_object_keys,
-                request_object,
-            )
-        {
-            params.insert("client_id".to_owned(), client_id);
-        }
+        // RFC 9126 section 3 permits authorization parameters inside the JAR.
+        // Preserve its plaintext only within this preparation; params.request
+        // is unchanged until apply_request_object_with_context verifies it.
+        let decrypted_request_object = super::jar::prepare_par_request_object_client_id(
+            context.request_object_keys,
+            &mut params,
+        );
         if !params.contains_key("client_id")
         && let Some((attestation, _)) = attestation_headers
         && let Some(client_id) =
@@ -165,6 +166,7 @@ impl<'a> ParPreparation<'a> {
             context: self.context,
             params,
             client_id,
+            decrypted_request_object,
         })
     }
 }
@@ -185,6 +187,7 @@ impl<'a> PreparedParParameters<'a> {
             context,
             params,
             client_id,
+            decrypted_request_object,
         } = self;
         let has_basic = transport.basic_challenge();
         let assertion_client_id = transport
@@ -243,6 +246,7 @@ impl<'a> PreparedParParameters<'a> {
             context,
             params,
             client_id,
+            decrypted_request_object,
             client,
             secret_salt,
             credentials,
@@ -259,6 +263,7 @@ impl PreparedParClient<'_> {
             context,
             mut params,
             client_id,
+            decrypted_request_object,
             mut client,
             secret_salt,
             credentials,
@@ -306,13 +311,12 @@ impl PreparedParClient<'_> {
                     ));
                 }
             };
-            let replay_key = format!("client-attestation:{}", validated.client_id);
             match context
                 .service
-                .consume_private_key_jwt(
-                    &replay_key,
+                .consume_client_attestation_proof(
+                    &validated.client_id,
                     &validated.replay_id,
-                    validated.replay_ttl_seconds,
+                    validated.replay_window,
                 )
                 .await
             {
@@ -372,7 +376,13 @@ impl PreparedParClient<'_> {
         ) {
             return Err(par_admission_error(error));
         }
-        apply_request_object_with_context(context, &mut params, &mut client).await?;
+        let request_object_replay = apply_request_object_with_context(
+            context,
+            &mut params,
+            &mut client,
+            decrypted_request_object,
+        )
+        .await?;
         if !super::accepts_module(
             context,
             nazo_runtime_modules::ModuleId::AuthorizationDetails,
@@ -390,28 +400,35 @@ impl PreparedParClient<'_> {
             ExpandedParAdmissionPolicy {
                 client_type: &client.client_type,
                 redirect_uris: &client.redirect_uris,
+                allowed_scopes: &client.scopes,
+                capabilities: nazo_auth::AuthorizationCapabilityPolicy {
+                    authorization_details: super::accepts_module(
+                        context,
+                        nazo_runtime_modules::ModuleId::AuthorizationDetails,
+                    ),
+                    jarm: super::accepts_module(context, nazo_runtime_modules::ModuleId::Jarm),
+                    native_sso: super::accepts_module(
+                        context,
+                        nazo_runtime_modules::ModuleId::NativeSso,
+                    ),
+                    form_post: !fapi2_security,
+                },
+                signed_authorization_response_required: context
+                    .config
+                    .requires_signed_authorization_response(&client_policy),
                 allowed_audiences: &client.allowed_audiences,
                 pkce_required: !client_policy.allow_confidential_oidc_without_pkce
                     || fapi2_security
                     || client.require_dpop_bound_tokens
                     || client.require_mtls_bound_tokens
-                    || params.contains_key("dpop_jkt"),
+                    || params.contains_key("dpop_jkt")
+                    || facts.dpop.proof_present,
                 fapi2_requires_explicit_redirect_uri: fapi2_security,
             },
         ) {
             return Err(par_admission_error(error));
         }
-        let request_dpop_jkt = match params.get("dpop_jkt") {
-            Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
-            Some(_) => {
-                return Err(OAuthEndpointError::json(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "dpop_jkt 无效.",
-                ));
-            }
-            None => None,
-        };
+        let request_dpop_jkt = params.get("dpop_jkt").cloned();
         let header_dpop_jkt = match crate::security::dpop::validate_dpop_proof(
             context.service,
             context.security_audit,
@@ -458,6 +475,13 @@ impl PreparedParClient<'_> {
             None
         };
 
+        if let Some(replay) = request_object_replay.as_ref() {
+            context
+                .service
+                .consume_request_object_replay(replay)
+                .await
+                .map_err(super::jar::request_object_policy_error)?;
+        }
         let now = Utc::now();
         let request_token = random_urlsafe_token();
         let request_uri = format!("{PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX}{request_token}");
@@ -493,9 +517,9 @@ fn par_admission_error(error: ParAdmissionError) -> OAuthEndpointError {
             StatusCode::BAD_REQUEST,
             "PAR request object 不能包含 request_uri.",
         ),
-        ParAdmissionError::UnsupportedResponseType => (
+        ParAdmissionError::Authorization(_) => (
             StatusCode::BAD_REQUEST,
-            "PAR response_type is not supported.",
+            "PAR authorization parameters are invalid or unsupported.",
         ),
         ParAdmissionError::RequestObjectRequired => {
             (StatusCode::BAD_REQUEST, "PAR 请求缺少 request object.")
@@ -512,11 +536,6 @@ fn par_admission_error(error: ParAdmissionError) -> OAuthEndpointError {
             StatusCode::BAD_REQUEST,
             "FAPI2 profiles require sender-constrained access tokens.",
         ),
-        ParAdmissionError::PkceRequired => (StatusCode::BAD_REQUEST, "PAR requests require PKCE."),
-        ParAdmissionError::InvalidPkce => (
-            StatusCode::BAD_REQUEST,
-            "PAR code_challenge must use a valid S256 value.",
-        ),
         ParAdmissionError::ExplicitRedirectUriRequired => (
             StatusCode::BAD_REQUEST,
             "FAPI2 PAR 请求必须显式包含 redirect_uri.",
@@ -527,14 +546,6 @@ fn par_admission_error(error: ParAdmissionError) -> OAuthEndpointError {
         ParAdmissionError::RedirectUriNotRegistered => {
             (StatusCode::BAD_REQUEST, "PAR 请求 redirect_uri 未注册.")
         }
-        ParAdmissionError::InvalidResource => (
-            StatusCode::BAD_REQUEST,
-            "resource must be an absolute URI without a fragment.",
-        ),
-        ParAdmissionError::ResourceNotAllowed => (
-            StatusCode::BAD_REQUEST,
-            "请求的 resource 不在客户端允许范围内.",
-        ),
     };
     OAuthEndpointError::json(status, error.oauth_error(), description)
 }

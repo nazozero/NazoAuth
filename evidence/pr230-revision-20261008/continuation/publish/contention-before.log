@@ -1,0 +1,19 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 34.44s
+     Running tests/security_state_maintenance.rs (target/debug/deps/security_state_maintenance-000b481977d09ebc)
+
+running 1 test
+test bounded_batch_finishes_before_a_queued_connection_borrower ...
+thread 'bounded_batch_finishes_before_a_queued_connection_borrower' (55057) panicked at crates/persistence-postgres/tests/security_state_maintenance.rs:3022:10:
+an admitted bounded batch must not requeue between cleanup categories: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    bounded_batch_finishes_before_a_queued_connection_borrower
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 26 filtered out; finished in 3.07s
+
+error: test failed, to rerun pass `-p nazo-postgres --test security_state_maintenance`

@@ -56,5 +56,4 @@ pub struct CredentialPayload {
     pub credential_type: String,
     pub subject_claims: Value,
     pub holder_binding: Option<HolderBinding>,
-    pub selectively_disclosable_claims: Vec<String>,
 }

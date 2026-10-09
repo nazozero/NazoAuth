@@ -1,8 +1,6 @@
 //! 管理端客户端更新端点。
 use super::{AdminClientConfig, ServerAdminClientService};
-use crate::http::admin::{
-    persist_required_audit_or_unavailable, require_durable_audit_or_unavailable,
-};
+use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_with_recent_mfa_or_forbidden_with_handles,
 };
@@ -15,8 +13,6 @@ use nazo_http_actix::client_ip_with_config;
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
 use nazo_oauth_server::crypto::blake3_hex;
-use nazo_oauth_server::ports::audit::audit_fields;
-use serde_json::json;
 
 pub(crate) async fn admin_patch_client(
     admin_sessions: Data<AdminSessionHandles>,
@@ -36,32 +32,21 @@ pub(crate) async fn admin_patch_client(
     ) {
         return csrf_error();
     }
-    if let Err(response) =
-        require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req).await
+    let admin = match require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req)
+        .await
     {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
+    if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
-    if let Err(response) = require_durable_audit_or_unavailable().await {
-        return response;
-    }
-    match service.update(&client_id, payload).await {
-        Ok(client) => {
-            if let Err(response) = persist_required_audit_or_unavailable(
-                "client_updated",
-                audit_fields(&[
-                    ("client_id", json!(client.client_id)),
-                    (
-                        "source_ip_hash",
-                        json!(blake3_hex(&client_ip_with_config(&req, config.client_ip()))),
-                    ),
-                ]),
-            )
-            .await
-            {
-                return response;
-            }
-            json_response(client_json(client))
-        }
+    let source_ip_hash = blake3_hex(&client_ip_with_config(&req, config.client_ip()));
+    match service
+        .update_with_required_audit(&client_id, payload, admin.id(), &source_ip_hash)
+        .await
+    {
+        Ok(client) => json_response(client_json(&client)),
         Err(AdminClientError::NotFound) => {
             oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.")
         }
@@ -69,6 +54,11 @@ pub(crate) async fn admin_patch_client(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             &format!("客户端更新失败: {message}"),
+        ),
+        Err(AdminClientError::Write(nazo_auth::AdminClientPortError::Conflict)) => oauth_error(
+            StatusCode::CONFLICT,
+            "invalid_request",
+            "Client metadata changed while preparing this update. Reload and retry.",
         ),
         Err(AdminClientError::Lookup(error)) => {
             tracing::warn!(%error, "failed to query oauth client for admin update");

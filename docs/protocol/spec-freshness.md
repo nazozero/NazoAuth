@@ -1,9 +1,19 @@
 # Protocol Source Freshness
 
-Mutable-source review: 2026-09-09. The inventory contains 104 sources, including
+Mutable-source review: 2026-09-09. The inventory contains 105 sources, including
 six immutable RFC references added for the integration guides on 2026-09-10;
 four expired individual drafts remain on the watchlist and intentionally fail
 the online freshness gate. This date does not claim an implementation audit.
+
+Client Instance watchlist review: 2026-10-04. [Datatracker records the old
+Client Instance Assertion draft as replaced](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-client-instance-assertion/)
+by [Client Instance Identification draft 00](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-client-instance-id/),
+published 2026-09-28 and expiring 2027-04-01. The successor remains an
+individual draft on the watchlist. It carries instance identity in Client
+Attestation claims instead of a separate Client Instance Assertion request
+parameter. Its continuity and receiver-scope privacy requirements need an
+implementation delta audit before adoption. Updating this reference adds no
+protocol support and preserves the four expired-draft gate failures.
 
 NazoAuth tracks official protocol sources in
 `requirements/spec-freshness.json`. Search indexes and previously cloned test
@@ -32,7 +42,7 @@ suites are not version authorities.
 | Agent Authorization Profile | `draft-aap-oauth-profile-01`; expired 2026-08-11, watch only |
 | Delegated Authorization | `draft-li-oauth-delegated-authorization-03` |
 | Mission-Bound Authorization | `draft-mcguinness-oauth-mission-00` |
-| Client Instance Assertion | `draft-mcguinness-oauth-client-instance-assertion-01` |
+| Client Instance Identification | `draft-mcguinness-oauth-client-instance-id-00`; watch only |
 | Actor Profile / Proofs / Receipts | `draft-mcguinness-oauth-actor-profile-00`, `draft-mcguinness-oauth-actor-proofs-00`, `draft-mcguinness-oauth-actor-receipts-00` |
 | Actor Chain | `draft-mw-oauth-actor-chain-01` |
 | Authorization Evidence | `draft-liu-oauth-authorization-evidence-01` |
@@ -88,10 +98,13 @@ python scripts/check_spec_freshness.py --offline
 Online validation against IETF Datatracker, RFC Editor, and upstream specification publishers:
 
 ```powershell
-python scripts/check_spec_freshness.py
+python scripts/check_spec_freshness.py --report-json target/spec-freshness-online.json
 ```
 
 Pull requests touching protocol sources run the offline gate. A weekly and
-manual workflow runs the online gate. When it reports drift, update the
-inventory only after reviewing the normative delta and its implementation,
+manual workflow runs the online gate and uploads a JSON result for every
+checked source, including when checks fail. The report identifies official
+status or marker drift; it does not establish implementation compliance.
+The gate continues to fail on expired or replaced drafts. When it reports
+drift, update the inventory only after reviewing the normative delta and its implementation,
 metadata, documentation, and conformance consequences.

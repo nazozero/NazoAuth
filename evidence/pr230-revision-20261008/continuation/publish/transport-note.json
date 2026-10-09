@@ -1,0 +1,8 @@
+{
+  "observation": "Both long-lived SSH orchestration clients remained open after their remote Python process exited. Local transports were closed only after separately reading Cargo result receipts and inspecting the runner process namespace to confirm no corresponding build/test process remained.",
+  "first_cargo_exit": 101,
+  "corrected_cargo_exit": 0,
+  "corrected_log": "full-final-ec4d98e1-retry1.log",
+  "local_ssh_close_exit": 4294967295,
+  "limitation": "Local SSH wrapper completion is not used as the Rust command exit code; remote subprocess return codes and complete logs are retained."
+}

@@ -45,22 +45,126 @@ pub struct StoredAuthorizationGrant {
     pub authorization_details: Value,
 }
 
-pub struct GrantWrite<'a> {
-    pub tenant_id: Uuid,
-    pub user_id: Uuid,
-    pub client_id: Uuid,
-    pub scopes: &'a [String],
-    pub resource_indicators: &'a [String],
-    pub authorization_details: &'a Value,
+/// A committed decision, not an acknowledgement that its response was delivered.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthorizationDecisionKind {
+    Approve,
+    Deny,
+    PromptNone,
 }
 
-/// The exact consent/pushed-request state a decision preview observed. The
-/// durable decision-intent record describes this snapshot, and
-/// `consume_user_decision` only consumes it if it is still stored unchanged.
+impl AuthorizationDecisionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Approve => "approve",
+            Self::Deny => "deny",
+            Self::PromptNone => "prompt_none",
+        }
+    }
+}
+
+/// One owned durable action: consume request/PAR identities, apply the grant
+/// change when appropriate, and retain the immutable decision fact together.
+/// Implementations must not emulate atomicity across independent adapters.
+#[derive(Clone, Debug)]
+pub struct AuthorizationDecisionCommit {
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub client_id: String,
+    pub request_id: String,
+    pub pushed_request_uri: Option<String>,
+    pub valid_until: DateTime<Utc>,
+    pub retain_until: DateTime<Utc>,
+    pub decision: AuthorizationDecisionKind,
+    pub event_id: Uuid,
+    pub occurred_at: DateTime<Utc>,
+    pub audit_fields: Value,
+    pub scopes: Vec<String>,
+    pub resource_indicators: Vec<String>,
+    pub authorization_details: Value,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthorizationDecisionCommitResult {
+    Committed,
+    Conflict,
+    Expired,
+    ClientUnavailable,
+    GrantUnavailable,
+}
+
+/// Prepared in memory; this is not a usable authorization code until the
+/// decision commit succeeds and the state adapter accepts its Pending state.
+pub struct PreparedAuthorizationCode {
+    pub tenant_id: Uuid,
+    pub hash: String,
+    pub payload: crate::CodePayload,
+    pub ttl_seconds: u64,
+}
+
+/// A parsed authorization state and the opaque storage version read with it.
+/// The adapter must compare this version without reserializing the payload.
+#[derive(Clone, Debug)]
+pub struct AuthorizationStateSnapshot<T> {
+    pub payload: T,
+    pub version: String,
+}
+
+/// Best-effort disposal of the exact preparation versions already observed.
+/// A PAR mismatch leaves that PAR intact after the consent has been removed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use]
+pub enum DecisionMaterialDiscardOutcome {
+    Discarded,
+    ConsentMissingOrChanged,
+    ParMissingOrChanged,
+}
+
+/// Failure of preparation cleanup, never a rollback of the durable decision.
+/// `ConsentOrUnknown` also covers a lost response from a combined operation:
+/// neither the completed phase nor whether anything was removed is then known.
+#[derive(Debug, Eq, PartialEq)]
+pub enum DecisionMaterialDiscardError<E = AuthorizationPortError> {
+    ConsentOrUnknown(E),
+    PushedRequest(E),
+}
+
+pub type DecisionMaterialDiscardFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<DecisionMaterialDiscardOutcome, DecisionMaterialDiscardError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Immutable preparation and original expiry observed during validation.
+/// The durable decision commit owns consumption; versions only protect later
+/// best-effort disposal of the preparation objects.
 #[derive(Clone, Debug)]
 pub struct ConsentAdmissionPreview {
-    pub consent: ConsentPayload,
-    pub pushed_request: Option<PushedAuthorizationRequest>,
+    consent: ConsentPayload,
+    consent_version: String,
+    pushed_request_version: Option<String>,
+    valid_until: DateTime<Utc>,
+    retain_until: DateTime<Utc>,
+}
+
+impl ConsentAdmissionPreview {
+    pub fn consent(&self) -> &ConsentPayload {
+        &self.consent
+    }
+
+    pub fn valid_until(&self) -> DateTime<Utc> {
+        self.valid_until
+    }
+
+    pub fn retain_until(&self) -> DateTime<Utc> {
+        self.retain_until
+    }
+
+    pub fn into_consent(self) -> ConsentPayload {
+        self.consent
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -95,59 +199,6 @@ impl std::fmt::Display for AuthorizationDecisionAdmissionError {
 
 impl std::error::Error for AuthorizationDecisionAdmissionError {}
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AuthorizationApprovalCommitError {
-    CodeWrite(AuthorizationPortError),
-    GrantWrite {
-        source: AuthorizationPortError,
-        cleanup: Option<AuthorizationPortError>,
-    },
-}
-
-impl std::fmt::Display for AuthorizationApprovalCommitError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::CodeWrite(error) => write!(formatter, "authorization code write failed: {error}"),
-            Self::GrantWrite {
-                source,
-                cleanup: None,
-            } => write!(formatter, "authorization grant write failed: {source}"),
-            Self::GrantWrite {
-                source,
-                cleanup: Some(cleanup),
-            } => write!(
-                formatter,
-                "authorization grant write failed ({source}) and code cleanup failed ({cleanup})"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for AuthorizationApprovalCommitError {}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AuthorizationApprovalError {
-    ClientReadFailed(AuthorizationPortError),
-    ClientUnavailable,
-    Commit(AuthorizationApprovalCommitError),
-}
-
-impl std::fmt::Display for AuthorizationApprovalError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ClientReadFailed(error) => {
-                write!(formatter, "authorization client lookup failed: {error}")
-            }
-            Self::ClientUnavailable => {
-                formatter.write_str("authorization client is missing, inactive, or cross-tenant")
-            }
-            Self::Commit(error) => error.fmt(formatter),
-        }
-    }
-}
-
-impl std::error::Error for AuthorizationApprovalError {}
-
 pub struct AuthorizationApprovalInput<'a> {
     pub consent: &'a ConsentPayload,
     pub code_hash: &'a str,
@@ -155,6 +206,42 @@ pub struct AuthorizationApprovalInput<'a> {
     pub issued_at: DateTime<Utc>,
     pub code_ttl_seconds: u64,
     pub tenant_id: Uuid,
+}
+
+pub fn prepare_authorization_code(
+    input: AuthorizationApprovalInput<'_>,
+) -> PreparedAuthorizationCode {
+    let consent = input.consent;
+    let code_payload = crate::CodePayload {
+        redemption_contract_version: crate::AUTHORIZATION_CODE_REDEMPTION_VERSION,
+        code_id: input.code_id.to_owned(),
+        user_id: consent.user_id,
+        client_id: consent.client_id.clone(),
+        redirect_uri: consent.redirect_uri.clone(),
+        redirect_uri_was_supplied: consent.redirect_uri_was_supplied,
+        scopes: consent.scopes.clone(),
+        resource_indicators: consent.resource_indicators.clone(),
+        authorization_details: consent.authorization_details.clone(),
+        nonce: consent.nonce.clone(),
+        auth_time: consent.auth_time,
+        amr: consent.amr.clone(),
+        oidc_sid: consent.oidc_sid.clone(),
+        acr: consent.acr.clone(),
+        userinfo_claim_requests: consent.userinfo_claim_requests.clone(),
+        id_token_claim_requests: consent.id_token_claim_requests.clone(),
+        pkce: consent.pkce.clone(),
+        dpop_jkt: consent.dpop_jkt.clone(),
+        mtls_x5t_s256: consent.mtls_x5t_s256.clone(),
+
+        expires_at: input.issued_at
+            + Duration::seconds(input.code_ttl_seconds.try_into().unwrap_or(i64::MAX)),
+    };
+    PreparedAuthorizationCode {
+        tenant_id: input.tenant_id,
+        hash: input.code_hash.to_owned(),
+        payload: code_payload,
+        ttl_seconds: input.code_ttl_seconds,
+    }
 }
 
 pub fn pushed_authorization_request_digest(
@@ -209,11 +296,27 @@ pub enum AuthorizationRateDimension {
 /// when the client has no usable secret verifier or is inactive.
 #[derive(Clone, Debug)]
 pub struct ClientAuthenticationSnapshot {
+    /// Version observed with the authenticated client; issuance rechecks it under lock.
+    pub client_epoch: i64,
     pub client: OAuthClient,
     pub secret_salt: Option<String>,
 }
 
 pub trait AuthorizationRepositoryPort: Send + Sync {
+    /// Only Committed permits code publication. Unavailable may mean an
+    /// unknown commit outcome; callers must not release or replace its fence.
+    /// PromptNone must check tenant-scoped current active client/user and
+    /// canonical scope/resource/authorization-detail coverage at this accepting
+    /// commit. Tenant admission belongs to the existing runtime admission path;
+    /// this owner does not establish a separately locked tenant-active fact.
+    /// Missing or insufficient current coverage returns GrantUnavailable without
+    /// consuming request/PAR authority, writing a fact, or publishing a code.
+    /// Early grant snapshots never substitute for this final authority.
+    fn commit_decision<'a>(
+        &'a self,
+        input: AuthorizationDecisionCommit,
+    ) -> AuthorizationFuture<'a, AuthorizationDecisionCommitResult>;
+
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,
@@ -228,7 +331,6 @@ pub trait AuthorizationRepositoryPort: Send + Sync {
         user_id: Uuid,
         client_id: Uuid,
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>>;
-    fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()>;
     fn client_secret_digest_matches<'a>(
         &'a self,
         client_id: Uuid,
@@ -240,15 +342,12 @@ pub trait AuthorizationStateStorePort: Send + Sync {
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>>;
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>>;
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>;
+    /// Consume only the exact storage version returned by `load_par`.
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool>;
     fn store_par<'a>(
         &'a self,
@@ -259,16 +358,46 @@ pub trait AuthorizationStateStorePort: Send + Sync {
     fn load_consent<'a>(
         &'a self,
         request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>>;
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>>;
     fn take_consent<'a>(
         &'a self,
         request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<ConsentPayload>>;
+    /// Consume only the exact storage version returned by `load_consent`.
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool>;
+    /// Discard consent first, then its optional PAR, using opaque raw versions.
+    /// A confirmed consent mismatch/error leaves PAR untouched; a later PAR
+    /// failure does not restore consent. A lost response can leave either
+    /// cleanup outcome unknown. This is not consumption authority.
+    fn discard_decision_material<'a>(
+        &'a self,
+        request_id: &'a str,
+        expected_consent: &'a str,
+        pushed_request: Option<(&'a str, &'a str)>,
+    ) -> DecisionMaterialDiscardFuture<'a> {
+        Box::pin(async move {
+            if !self
+                .compare_and_delete_consent(request_id, expected_consent)
+                .await
+                .map_err(DecisionMaterialDiscardError::ConsentOrUnknown)?
+            {
+                return Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged);
+            }
+            if let Some((request_uri, expected)) = pushed_request
+                && !self
+                    .compare_and_delete_par(request_uri, expected)
+                    .await
+                    .map_err(DecisionMaterialDiscardError::PushedRequest)?
+            {
+                return Ok(DecisionMaterialDiscardOutcome::ParMissingOrChanged);
+            }
+            Ok(DecisionMaterialDiscardOutcome::Discarded)
+        })
+    }
     fn store_consent<'a>(
         &'a self,
         request_id: &'a str,
@@ -283,17 +412,29 @@ pub trait AuthorizationStateStorePort: Send + Sync {
     ) -> AuthorizationFuture<'a, ()>;
     fn delete_authorization_code<'a>(&'a self, code_hash: &'a str) -> AuthorizationFuture<'a, ()>;
     fn take_reauth_nonce<'a>(&'a self, nonce: &'a str) -> AuthorizationFuture<'a, Option<i64>>;
+    /// Store a one-use challenge timestamp in Unix microseconds.
     fn store_reauth_nonce<'a>(
         &'a self,
         nonce: &'a str,
         started_at: i64,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()>;
+    /// Atomically reject expired/replayed objects using the store clock and original Unix expiry.
     fn consume_jar<'a>(
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
+    ) -> AuthorizationFuture<'a, bool>;
+    /// Validate the verified PoP's absolute window using the replay owner's
+    /// clock and consume its client-scoped JTI in the same atomic operation.
+    /// Both token and PAR use this namespace. False means expired, too early,
+    /// or already consumed; an error never grants authentication.
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        window: crate::ClientAttestationProofWindow,
     ) -> AuthorizationFuture<'a, bool>;
     fn consume_private_key_jwt<'a>(
         &'a self,
@@ -307,11 +448,12 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool>;
+    /// Atomically reject expired/replayed objects using the store clock and original Unix expiry.
     fn consume_ciba_request_object<'a>(
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool>;
     fn consume_dpop<'a>(
         &'a self,
@@ -340,21 +482,15 @@ where
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         self.as_ref().load_par(request_uri)
-    }
-
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        self.as_ref().take_par(request_uri)
     }
 
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.as_ref().compare_and_delete_par(request_uri, expected)
     }
@@ -371,7 +507,7 @@ where
     fn load_consent<'a>(
         &'a self,
         request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.as_ref().load_consent(request_id)
     }
 
@@ -385,10 +521,20 @@ where
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.as_ref()
             .compare_and_delete_consent(request_id, expected)
+    }
+
+    fn discard_decision_material<'a>(
+        &'a self,
+        request_id: &'a str,
+        expected_consent: &'a str,
+        pushed_request: Option<(&'a str, &'a str)>,
+    ) -> DecisionMaterialDiscardFuture<'a> {
+        self.as_ref()
+            .discard_decision_material(request_id, expected_consent, pushed_request)
     }
 
     fn store_consent<'a>(
@@ -419,6 +565,7 @@ where
         self.as_ref().take_reauth_nonce(nonce)
     }
 
+    /// Store a one-use challenge timestamp in Unix microseconds.
     fn store_reauth_nonce<'a>(
         &'a self,
         nonce: &'a str,
@@ -433,9 +580,19 @@ where
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
-        self.as_ref().consume_jar(client_id, jti, ttl_seconds)
+        self.as_ref().consume_jar(client_id, jti, expires_at)
+    }
+
+    fn consume_client_attestation_proof<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        window: crate::ClientAttestationProofWindow,
+    ) -> AuthorizationFuture<'a, bool> {
+        self.as_ref()
+            .consume_client_attestation_proof(client_id, jti, window)
     }
 
     fn consume_private_key_jwt<'a>(
@@ -462,10 +619,10 @@ where
         &'a self,
         client_id: &'a str,
         jti: &'a str,
-        ttl_seconds: u64,
+        expires_at: i64,
     ) -> AuthorizationFuture<'a, bool> {
         self.as_ref()
-            .consume_ciba_request_object(client_id, jti, ttl_seconds)
+            .consume_ciba_request_object(client_id, jti, expires_at)
     }
 
     fn consume_dpop<'a>(
@@ -592,40 +749,78 @@ where
             }))
     }
 
-    pub async fn approve(
+    /// Commit the effective decision and its fact before publishing a code.
+    /// A later code-store failure is approved-but-undelivered: never compensate
+    /// the durable grant or free the consumption fence.
+    pub async fn commit_decision(
         &self,
-        code_hash: &str,
-        code_state: &AuthorizationCodeState,
-        code_ttl_seconds: u64,
-        grant: GrantWrite<'_>,
-    ) -> Result<(), AuthorizationApprovalCommitError> {
-        self.state
-            .store_authorization_code(code_hash, code_state, code_ttl_seconds)
-            .await
-            .map_err(AuthorizationApprovalCommitError::CodeWrite)?;
-        if let Err(source) = self.repository.upsert_grant(grant).await {
-            let cleanup = self.state.delete_authorization_code(code_hash).await.err();
-            return Err(AuthorizationApprovalCommitError::GrantWrite { source, cleanup });
+        mut input: AuthorizationDecisionCommit,
+        code: Option<PreparedAuthorizationCode>,
+    ) -> Result<AuthorizationDecisionCommitResult, AuthorizationPortError> {
+        if (input.decision == AuthorizationDecisionKind::Deny) != code.is_none() {
+            return Err(AuthorizationPortError::CorruptData);
         }
-        Ok(())
+        if let Some(code) = code.as_ref() {
+            if input.tenant_id != code.tenant_id
+                || input.user_id != code.payload.user_id
+                || input.client_id != code.payload.client_id
+                || input.scopes != code.payload.scopes
+                || input.resource_indicators != code.payload.resource_indicators
+                || input.authorization_details != code.payload.authorization_details
+            {
+                return Err(AuthorizationPortError::CorruptData);
+            }
+            let encoded = serde_json::to_vec(&code.payload)
+                .map_err(|_| AuthorizationPortError::CorruptData)?;
+            let fields = input
+                .audit_fields
+                .as_object_mut()
+                .ok_or(AuthorizationPortError::CorruptData)?;
+            fields.insert(
+                "code_id".to_owned(),
+                Value::String(code.payload.code_id.clone()),
+            );
+            fields.insert("code_hash".to_owned(), Value::String(code.hash.clone()));
+            fields.insert(
+                "code_payload_digest".to_owned(),
+                Value::String(blake3::hash(&encoded).to_hex().to_string()),
+            );
+            input.retain_until = input.retain_until.max(code.payload.expires_at);
+        }
+        let result = self.repository.commit_decision(input).await?;
+        if result == AuthorizationDecisionCommitResult::Committed
+            && let Some(code) = code
+        {
+            self.state
+                .store_authorization_code(
+                    &code.hash,
+                    &AuthorizationCodeState::Pending {
+                        payload: code.payload,
+                    },
+                    code.ttl_seconds,
+                )
+                .await?;
+        }
+        Ok(result)
     }
 
     /// Loads and validates a consent transaction for the authenticated user
     /// without deleting any state. The returned snapshot is the exact state a
-    /// later `consume_user_decision` must still observe: the compare-and-delete
+    /// later `discard_decision_material` must still observe: the compare-and-delete
     /// claims only that snapshot, so a replaced consent or pushed request fails
     /// instead of consuming replacement data.
     ///
-    /// Splitting the read from the consume gives the caller a window to write
-    /// the durable decision-intent evidence *before* the destructive consume,
-    /// which is what makes the audit record a real atomic boundary instead of
-    /// a post-mutation append.
+    /// Preview is non-destructive. The decision repository, not this state
+    /// adapter, owns the final tenant-scoped once-only consumption fence.
     pub async fn preview_user_decision(
         &self,
         request_id: &str,
         user_id: Uuid,
     ) -> Result<ConsentAdmissionPreview, AuthorizationDecisionAdmissionError> {
-        let consent = match self.state.load_consent(request_id).await {
+        let AuthorizationStateSnapshot {
+            payload: consent,
+            version: consent_version,
+        } = match self.state.load_consent(request_id).await {
             Ok(Some(consent)) => consent,
             Ok(None) => return Err(AuthorizationDecisionAdmissionError::ConsentMissing),
             Err(AuthorizationPortError::CorruptData) => {
@@ -641,9 +836,14 @@ where
             return Err(AuthorizationDecisionAdmissionError::UserMismatch);
         }
 
-        let mut pushed_request = None;
+        let mut pushed_request_version = None;
+        let mut valid_until = consent.expires_at;
+        let mut retain_until = consent.expires_at;
         if let Some(request_uri) = consent.pushed_request_uri.as_deref() {
-            let pushed = match self.state.load_par(request_uri).await {
+            let AuthorizationStateSnapshot {
+                payload: pushed,
+                version,
+            } = match self.state.load_par(request_uri).await {
                 Ok(Some(pushed)) => pushed,
                 Ok(None) => {
                     return Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(
@@ -678,147 +878,73 @@ where
                     ));
                 }
             }
-            pushed_request = Some(pushed);
+            valid_until = valid_until.min(pushed.expires_at);
+            retain_until = retain_until.max(pushed.expires_at);
+            pushed_request_version = Some(version);
         }
         Ok(ConsentAdmissionPreview {
             consent,
-            pushed_request,
+            consent_version,
+            pushed_request_version,
+            valid_until,
+            retain_until,
         })
     }
 
-    /// Consumes exactly the state a `preview_user_decision` returned. Each
-    /// compare-and-delete fails when the stored row no longer matches the
+    /// Discards preparation after a committed decision. This is not authority.
+    /// Each compare-and-delete fails when the stored row no longer matches the
     /// previewed snapshot, so a concurrently replaced consent or pushed request
     /// is never consumed.
-    pub async fn consume_user_decision(
+    pub async fn discard_decision_material(
         &self,
         request_id: &str,
         preview: &ConsentAdmissionPreview,
     ) -> Result<(), AuthorizationDecisionAdmissionError> {
-        let consent = preview.consent.clone();
-        match self
-            .state
-            .compare_and_delete_consent(request_id, &consent)
-            .await
-        {
-            Ok(true) => {}
-            Ok(false) => return Err(AuthorizationDecisionAdmissionError::ConsentMissing),
-            Err(error) => {
-                return Err(AuthorizationDecisionAdmissionError::ConsentReadFailed(
-                    error,
-                ));
-            }
-        }
-
-        if let Some(pushed) = preview.pushed_request.as_ref() {
+        let consent = &preview.consent;
+        let pushed_request = preview.pushed_request_version.as_deref().map(|version| {
             let request_uri = consent
                 .pushed_request_uri
                 .as_deref()
                 .expect("a previewed pushed request implies its consent uri");
-            match self.state.compare_and_delete_par(request_uri, pushed).await {
-                Ok(true) => {}
-                Ok(false) => {
-                    return Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(
-                        Box::new(consent),
-                    ));
-                }
-                Err(source) => {
-                    return Err(
-                        AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
-                            consent: Box::new(consent),
-                            source,
-                        },
-                    );
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Commits an approved consent using the existing cross-store ordering:
-    /// publish the undisclosed authorization code, write the durable grant, and
-    /// delete the code if the grant write fails.
-    ///
-    /// The code itself is generated by the composition provider and is never
-    /// passed here, so a failed commit cannot disclose an orphaned code. A
-    /// cleanup failure is returned explicitly instead of being silently lost.
-    pub async fn approve_consent(
-        &self,
-        input: AuthorizationApprovalInput<'_>,
-    ) -> Result<(), AuthorizationApprovalError> {
-        let client = self
-            .repository
-            .client_by_id(&input.consent.client_id)
+            (request_uri, version)
+        });
+        match self
+            .state
+            .discard_decision_material(request_id, &preview.consent_version, pushed_request)
             .await
-            .map_err(AuthorizationApprovalError::ClientReadFailed)?
-            .filter(|client| client.is_active && client.tenant_id == input.tenant_id)
-            .ok_or(AuthorizationApprovalError::ClientUnavailable)?;
-        let consent = input.consent;
-        let code_payload = crate::CodePayload {
-            code_id: input.code_id.to_owned(),
-            user_id: consent.user_id,
-            client_id: consent.client_id.clone(),
-            redirect_uri: consent.redirect_uri.clone(),
-            redirect_uri_was_supplied: consent.redirect_uri_was_supplied,
-            scopes: consent.scopes.clone(),
-            resource_indicators: consent.resource_indicators.clone(),
-            authorization_details: consent.authorization_details.clone(),
-            nonce: consent.nonce.clone(),
-            auth_time: consent.auth_time,
-            amr: consent.amr.clone(),
-            oidc_sid: consent.oidc_sid.clone(),
-            acr: consent.acr.clone(),
-            userinfo_claims: consent.userinfo_claims.clone(),
-            userinfo_claim_requests: consent.userinfo_claim_requests.clone(),
-            id_token_claims: consent.id_token_claims.clone(),
-            id_token_claim_requests: consent.id_token_claim_requests.clone(),
-            code_challenge: consent.code_challenge.clone(),
-            code_challenge_method: consent.code_challenge_method.clone(),
-            dpop_jkt: consent.dpop_jkt.clone(),
-            mtls_x5t_s256: consent.mtls_x5t_s256.clone(),
-            issued_at: input.issued_at,
-            expires_at: input.issued_at
-                + Duration::seconds(input.code_ttl_seconds.try_into().unwrap_or(i64::MAX)),
-        };
-        self.approve(
-            input.code_hash,
-            &AuthorizationCodeState::Pending {
-                payload: code_payload,
-            },
-            input.code_ttl_seconds,
-            GrantWrite {
-                tenant_id: client.tenant_id,
-                user_id: consent.user_id,
-                client_id: client.id,
-                scopes: &consent.scopes,
-                resource_indicators: &consent.resource_indicators,
-                authorization_details: &consent.authorization_details,
-            },
-        )
-        .await
-        .map_err(AuthorizationApprovalError::Commit)
-    }
-
-    pub async fn store_authorization_code(
-        &self,
-        hash: &str,
-        state: &AuthorizationCodeState,
-        ttl: u64,
-    ) -> Result<(), AuthorizationPortError> {
-        self.state.store_authorization_code(hash, state, ttl).await
+        {
+            Ok(DecisionMaterialDiscardOutcome::Discarded) => Ok(()),
+            Ok(DecisionMaterialDiscardOutcome::ConsentMissingOrChanged) => {
+                Err(AuthorizationDecisionAdmissionError::ConsentMissing)
+            }
+            Ok(DecisionMaterialDiscardOutcome::ParMissingOrChanged) => {
+                Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(
+                    Box::new(consent.clone()),
+                ))
+            }
+            // Keep the existing protocol mapping for an unconfirmed cleanup.
+            // A combined call may have removed either object before its reply
+            // was lost; this error does not establish a rollback or its phase.
+            Err(DecisionMaterialDiscardError::ConsentOrUnknown(error)) => Err(
+                AuthorizationDecisionAdmissionError::ConsentReadFailed(error),
+            ),
+            Err(DecisionMaterialDiscardError::PushedRequest(source)) => Err(
+                AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
+                    consent: Box::new(consent.clone()),
+                    source,
+                },
+            ),
+        }
     }
 
     pub async fn load_par(
         &self,
         uri: &str,
-    ) -> Result<Option<PushedAuthorizationRequest>, AuthorizationPortError> {
+    ) -> Result<
+        Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>,
+        AuthorizationPortError,
+    > {
         self.state.load_par(uri).await
-    }
-    pub async fn take_par(
-        &self,
-        uri: &str,
-    ) -> Result<Option<PushedAuthorizationRequest>, AuthorizationPortError> {
-        self.state.take_par(uri).await
     }
     pub async fn store_par(
         &self,
@@ -832,7 +958,11 @@ where
         &self,
         id: &str,
     ) -> Result<Option<ConsentPayload>, AuthorizationPortError> {
-        self.state.load_consent(id).await
+        Ok(self
+            .state
+            .load_consent(id)
+            .await?
+            .map(|snapshot| snapshot.payload))
     }
     pub async fn take_consent(
         &self,
@@ -866,9 +996,9 @@ where
         &self,
         client_id: &str,
         jti: &str,
-        ttl: u64,
+        expires_at: i64,
     ) -> Result<bool, AuthorizationPortError> {
-        self.state.consume_jar(client_id, jti, ttl).await
+        self.state.consume_jar(client_id, jti, expires_at).await
     }
 
     /// Validates a verified request object and commits its replay marker only
@@ -894,30 +1024,52 @@ where
     ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
         let plan = prepare_request_object(outer, claims, policy)?;
         if let Some(replay) = plan.replay() {
-            super::authorization_request::classify_request_object_replay(
-                self.state
-                    .consume_jar(&replay.client_id, &replay.jti, replay.ttl_seconds)
-                    .await,
-            )?;
+            self.consume_request_object_replay(replay).await?;
         }
         Ok(apply_request_object_plan(outer, plan))
     }
 
-    /// Atomically consumes a PAR transaction and preserves malformed-state and
-    /// dependency-failure categories for the transport presenter.
-    pub async fn consume_pushed_authorization_request(
+    /// Commits the verified request object's replay claim at the application
+    /// admission boundary, after any login round trip and pure validation.
+    pub async fn consume_request_object_replay(
+        &self,
+        replay: &crate::RequestObjectReplay,
+    ) -> Result<(), AuthorizationRequestError> {
+        super::authorization_request::classify_request_object_replay(
+            self.state
+                .consume_jar(&replay.client_id, &replay.jti, replay.expires_at)
+                .await,
+        )
+    }
+
+    /// Discards only the already-committed PAR preparation version.
+    /// The durable decision repository owns authorization and consumption.
+    pub async fn discard_pushed_authorization_request(
         &self,
         request_uri: &str,
-    ) -> Result<PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError> {
-        match self.state.take_par(request_uri).await {
-            Ok(Some(request)) => Ok(request),
-            Ok(None) => Err(PushedAuthorizationRequestConsumeError::Missing),
-            Err(AuthorizationPortError::CorruptData) => {
-                Err(PushedAuthorizationRequestConsumeError::Malformed)
-            }
+        expected_version: &str,
+    ) -> Result<(), PushedAuthorizationRequestConsumeError> {
+        match self
+            .state
+            .compare_and_delete_par(request_uri, expected_version)
+            .await
+        {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(PushedAuthorizationRequestConsumeError::Missing),
             Err(error) => Err(PushedAuthorizationRequestConsumeError::Dependency(error)),
         }
     }
+    pub async fn consume_client_attestation_proof(
+        &self,
+        client_id: &str,
+        jti: &str,
+        window: crate::ClientAttestationProofWindow,
+    ) -> Result<bool, AuthorizationPortError> {
+        self.state
+            .consume_client_attestation_proof(client_id, jti, window)
+            .await
+    }
+
     pub async fn consume_private_key_jwt(
         &self,
         client_id: &str,
@@ -942,10 +1094,10 @@ where
         &self,
         client_id: &str,
         jti: &str,
-        ttl: u64,
+        expires_at: i64,
     ) -> Result<bool, AuthorizationPortError> {
         self.state
-            .consume_ciba_request_object(client_id, jti, ttl)
+            .consume_ciba_request_object(client_id, jti, expires_at)
             .await
     }
 

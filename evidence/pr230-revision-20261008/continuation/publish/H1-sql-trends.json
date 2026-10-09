@@ -1,0 +1,339 @@
+[
+  {
+    "from_s": 0,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 475,
+        "mean_ms": 0.198,
+        "blocks_per_call": 160.7
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 476,
+        "mean_ms": 3.298,
+        "blocks_per_call": 857.1
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 25537,
+        "mean_ms": 0.274,
+        "blocks_per_call": 256.4
+      },
+      {
+        "query": "PREPARE audit_ack_member_plan(bigint,bigint) AS SELECT COUNT(*), COALE",
+        "calls": 1,
+        "mean_ms": 0.0,
+        "blocks_per_call": 0.0
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 475,
+        "mean_ms": 4.043,
+        "blocks_per_call": 1048.5
+      }
+    ]
+  },
+  {
+    "from_s": 30,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 748,
+        "mean_ms": 0.228,
+        "blocks_per_call": 176.4
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 747,
+        "mean_ms": 3.332,
+        "blocks_per_call": 863.7
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 38101,
+        "mean_ms": 0.194,
+        "blocks_per_call": 146.3
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 748,
+        "mean_ms": 4.255,
+        "blocks_per_call": 1021.4
+      }
+    ]
+  },
+  {
+    "from_s": 61,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 788,
+        "mean_ms": 0.195,
+        "blocks_per_call": 189.2
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 788,
+        "mean_ms": 3.043,
+        "blocks_per_call": 848.3
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 37336,
+        "mean_ms": 0.135,
+        "blocks_per_call": 88.7
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 788,
+        "mean_ms": 4.065,
+        "blocks_per_call": 984.0
+      }
+    ]
+  },
+  {
+    "from_s": 91,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 766,
+        "mean_ms": 0.216,
+        "blocks_per_call": 196.5
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 767,
+        "mean_ms": 3.169,
+        "blocks_per_call": 884.1
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 37942,
+        "mean_ms": 0.128,
+        "blocks_per_call": 79.6
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 766,
+        "mean_ms": 4.182,
+        "blocks_per_call": 1033.9
+      }
+    ]
+  },
+  {
+    "from_s": 121,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 663,
+        "mean_ms": 0.251,
+        "blocks_per_call": 229.5
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 662,
+        "mean_ms": 3.612,
+        "blocks_per_call": 1032.8
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 38217,
+        "mean_ms": 0.152,
+        "blocks_per_call": 121.3
+      },
+      {
+        "query": "PREPARE audit_ack_member_plan(bigint,bigint) AS SELECT COUNT(*), COALE",
+        "calls": 1,
+        "mean_ms": 0.0,
+        "blocks_per_call": 0.0
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 663,
+        "mean_ms": 4.605,
+        "blocks_per_call": 1192.0
+      }
+    ]
+  },
+  {
+    "from_s": 151,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 683,
+        "mean_ms": 0.253,
+        "blocks_per_call": 231.4
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 683,
+        "mean_ms": 3.614,
+        "blocks_per_call": 1050.0
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 39707,
+        "mean_ms": 0.138,
+        "blocks_per_call": 101.3
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 683,
+        "mean_ms": 4.76,
+        "blocks_per_call": 1218.7
+      }
+    ]
+  },
+  {
+    "from_s": 181,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 641,
+        "mean_ms": 0.26,
+        "blocks_per_call": 208.5
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 642,
+        "mean_ms": 3.591,
+        "blocks_per_call": 939.9
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 33715,
+        "mean_ms": 0.172,
+        "blocks_per_call": 155.0
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 641,
+        "mean_ms": 4.738,
+        "blocks_per_call": 1141.7
+      }
+    ]
+  },
+  {
+    "from_s": 211,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 556,
+        "mean_ms": 0.275,
+        "blocks_per_call": 226.8
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 555,
+        "mean_ms": 4.15,
+        "blocks_per_call": 1056.7
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 31471,
+        "mean_ms": 0.143,
+        "blocks_per_call": 92.8
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 556,
+        "mean_ms": 5.395,
+        "blocks_per_call": 1196.9
+      }
+    ]
+  },
+  {
+    "from_s": 242,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 580,
+        "mean_ms": 0.28,
+        "blocks_per_call": 234.2
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 581,
+        "mean_ms": 4.209,
+        "blocks_per_call": 1108.0
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 34080,
+        "mean_ms": 0.155,
+        "blocks_per_call": 109.8
+      },
+      {
+        "query": "PREPARE audit_ack_member_plan(bigint,bigint) AS SELECT COUNT(*), COALE",
+        "calls": 1,
+        "mean_ms": 0.0,
+        "blocks_per_call": 0.0
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 580,
+        "mean_ms": 5.289,
+        "blocks_per_call": 1212.9
+      }
+    ]
+  },
+  {
+    "from_s": 272,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 580,
+        "mean_ms": 0.234,
+        "blocks_per_call": 212.6
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 580,
+        "mean_ms": 3.79,
+        "blocks_per_call": 966.7
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 30924,
+        "mean_ms": 0.149,
+        "blocks_per_call": 84.4
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 580,
+        "mean_ms": 5.05,
+        "blocks_per_call": 1114.7
+      }
+    ]
+  },
+  {
+    "from_s": 302,
+    "queries": [
+      {
+        "query": "WITH members AS MATERIALIZED (\n        SELECT chain.event_id FROM publ",
+        "calls": 474,
+        "mean_ms": 0.312,
+        "blocks_per_call": 273.6
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 474,
+        "mean_ms": 5.293,
+        "blocks_per_call": 1231.9
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 32491,
+        "mean_ms": 0.166,
+        "blocks_per_call": 116.7
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 474,
+        "mean_ms": 6.404,
+        "blocks_per_call": 1413.1
+      }
+    ]
+  }
+]

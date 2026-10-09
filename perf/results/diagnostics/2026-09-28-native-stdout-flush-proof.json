@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "scope": "Native sparse-batch transport repair with completed live measurement validation. No metric omitted or gate changed.",
+  "upstream_k6_sha": "00a9a1b7f552d6bb4337278b10ae25aac0f4e666",
+  "upstream_archive_sha256": "d7299559ddb4b7fed2062f253ca4f24212a7946bc59e91b5e5add4522625e260",
+  "patch_sha256": "90d42e40eb7ea30f23327c7d7736ed638d39eb5752ef716a9de83f3eac57d768",
+  "binary_sha256": "dff9988f2f4e2dea89c140467632b652574fc31a03323aab4e687f5d1ad98384",
+  "compiler": "go1.26.5",
+  "target": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64; -trimpath -ldflags=-s -w",
+  "regression": "TestPeriodicFlushDrainsBufferedStdout; two complete sub-4-KiB metric/Point batches visible before next batch or Stop",
+  "counterfactual": {
+    "exit_code": 1,
+    "log_sha256": "92e4322f27df95eac31efd80f26b465f549206dd74e775acbe3814fa4c1e812f",
+    "failure": "buffer remains empty after first periodic sparse batch"
+  },
+  "fixed_native_tests": {
+    "exit_code": 0,
+    "packages": [
+      "internal/output/json",
+      "metrics"
+    ],
+    "log_sha256": "fb247408e09118be0256ac9a05241eaad3c141dbde37fa0de00b0872d02064e4"
+  },
+  "observed_invalid_point": "multi-cap-client-credentials-r6000-w180-1790599934",
+  "workers": 8,
+  "vus": 2048,
+  "preload_vu_first_utc": "2026-09-28T12:53:10.515151622Z",
+  "first_window_sample_utc": "2026-09-28T12:53:19.082517611Z",
+  "global_lag_max_s": 8.805,
+  "global_lag_over_5s": 8,
+  "forensic_gzip_sha256": "7f4a9dd99d95e7b332e755520d6ecdf0f0de91407ff7aa169fdea311b90a149b",
+  "live_validation_status": "PASS: both affected live points satisfy unchanged measurement validity; business capacity verdicts remain independent.",
+  "clean_source_patch_application": "pinned upstream files; GNU patch -p1 --fuzz=0; exact bytes equal to tested sources",
+  "live_validation": [
+    {
+      "point": "multi-cap-client-credentials-r6000-w180-1790601825",
+      "recipe_id": "154563116729bb25",
+      "measurement_valid": true,
+      "capacity_verdict": "FAIL",
+      "observer_lag_max_s": 0.538,
+      "successful_ops_s": 5989.672,
+      "full_operation_p95_p99_ms": [
+        39.0,
+        203.0
+      ],
+      "measurement_drops": 1863,
+      "audit": "PASS"
+    },
+    {
+      "point": "multi-cap-client-credentials-r5400-w180-1790602115",
+      "recipe_id": "154563116729bb25",
+      "measurement_valid": true,
+      "capacity_verdict": "PASS",
+      "observer_lag_max_s": 0.369,
+      "successful_ops_s": 5399.939,
+      "full_operation_p95_p99_ms": [
+        27.0,
+        139.0
+      ],
+      "measurement_drops": 9,
+      "audit": "PASS"
+    }
+  ]
+}

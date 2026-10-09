@@ -1,0 +1,15 @@
+{
+  "sha": "ec4d98e13ff652b2039fb3a3da393b27bbcbda82",
+  "utc": "2026-10-08T09:30:20.893486+00:00",
+  "command": [
+    "cargo",
+    "test",
+    "--workspace",
+    "--all-features",
+    "--locked",
+    "--no-fail-fast"
+  ],
+  "exit": 0,
+  "seconds": 1357.6631575971842,
+  "log": "/src/evidence/pr230-revision-20261008/continuation/full-final-ec4d98e1-retry1.log"
+}

@@ -1,142 +1,62 @@
-# NazoAuth Current Capacity Baseline
+# NazoAuth Current-B Capacity Baseline
 
-Canonical capacity record for the current release. Every number below was
-measured against `TEST_SOURCE_SHA` on a clean checkout; the full provenance
-chain (git → image → binary → migration set → canonical schema) lives in
-[reports/2026-09-22-current-capacity/manifest.md](reports/2026-09-22-current-capacity/manifest.md).
+Incremental checkpoint: **COMPLETE**. Each row is one frozen recipe on its stated deployment. Both modes use one application instance. Old and new deployments are not combined into a bound. A missing service upper means at least the passing load, never a maximum.
 
-- `TEST_SOURCE_SHA`: `fd52b556370fa8d72ecfef35947bae8241e722e6`
-- Run date: 2026-09-22/23 UTC
-- Host: AMD EPYC 9K65, 64C/128G container host, kernel 5.4.241
-- Topology: 1× nazoauth, 1× PostgreSQL 18 (`postgres:18-alpine`,
-  `max_wal_size=8GB`, `fsync=on`, `synchronous_commit=on`,
-  `checkpoint_timeout=5min`, `checkpoint_completion_target=0.9`,
-  `shared_buffers=128MB`), 1× Valkey 8 (`valkey:8-alpine`, `maxmemory=0`,
-  `noeviction`)
-- Method: adaptive 10-minute constant-arrival-rate points
-  (`perf/tools/capacity_search.py`). `PASS` = drops ≤0.1%, measured rate
-  ≥99.5% of target, zero unexpected errors, p95 ≤100ms, p99 ≤250ms.
-  For `cap_*` runs every gate input is the **measurement cohort**
-  (iteration entry ∈ `[measure_start_ms, measure_end_ms)`): drops are
-  `scheduled_arrivals − cap_iter_begin_measure`, errors are
-  `cap_measure_unexpected`, latency is `cap_iter_ms`; whole-run k6
-  counters are diagnostics only and k6 whole-run thresholds do not
-  override a clean cohort verdict.
-- Structured results: `perf/results/data/capacity/current-capacity.json`.
+Logical-operation quantiles cover the complete business operation. HTTP rate is reported separately. Short windows do not establish production long-term capacity. Windows below 180 seconds are exploratory candidates and require final verification; they are not labelled 180-second confirmations.
 
-## Current capacity matrix (10-minute points)
+[Structured authority](../../perf/results/data/capacity/current-capacity.json) · [Report](reports/2026-09-28-incremental-b/report.md) · [Native evidence](../../perf/results/diagnostics/2026-09-28-incremental-b-selected.json)
 
-| Scenario | Highest validated 10m | First fail above | measured ops/s | HTTP rps | p95 ms | p99 ms | drops |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `cap_mixed` (full sidecars) | 2000 | 2500 | 1998.3 | 2862 | 10.3 | 16.2 | 0.011% |
-| `cap_client_credentials` | 3200 | 3400 | 3198.4 | 3198 | 7.3 | 15.2 | 0.05% |
-| `cap_authorization_code` | 1125 | 1250 | 1125 | 4499 | 12.2 | 17.4 | 0.012% |
-| `cap_refresh_token` | 1440 | 1600 | 1441.7 | 1442 | 9.7 | 14.0 | 0% |
-| `fapi2_logged_in_high_security` | 731 | 913 | 731 | 3655 | 11.0 | 17.3 | 0.007% |
-| `cap_introspect` | 7812 | 8788 | 7815.1 | 7815 | 1.0 | 1.3 | 0.028% |
-| `cap_revoke` | 787 | 875 | 787 | 3935 | 8.5 | 12.4 | 0% |
-| `mtls_client_credentials` | 3515 | 3906 | 3515.0 | 3515 | 7.4 | 14.4 | 0% |
-| `par_signed_request_object` | >=6102 | not found within ladder | 6102 | 6102 | 1.2 | 8.5 | 0% |
+## Single logical CPU
 
-`cap_mixed` carries sidecars on every point: refresh 600/s, argon2 8/s,
-metadata 200/s, FAPI 30/s, audit exporter + durable receiver. Its 2500
-point attained 2486.7 ops/s (99.47% of target) — a borderline miss against
-the 99.5% gate.
+| Scenario | Deployment | App CPUs | PASS L | Service FAIL U | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window L/U s | Conclusion |
+|---|---|---:|---:|---:|---:|---:|---|---|---|---|
+| `cap_mixed` | original-container | 1 | 600 | 650 | 600 | 869.944 | 4/45/103 | 0/0/0/0 | 660/180 | [600, 650) observed |
+| `cap_client_credentials` | original-container | 1 | 1375 | 1500 | 1375.006 | 1375.011 | 5/24/46 | 0/0/0/0 | 180/180 | [1375, 1500) observed |
+| `cap_authorization_code` | original-container | 1 | 325 | 350 | 325 | 1299.989 | 19/50/158 | 0/0/0/0 | 180/180 | [325, 350) observed |
+| `cap_refresh_token` | original-container | 1 | 750 | 812 | 749.994 | 750 | 7/34/74 | 0/0/0/0 | 180/180 | [750, 812) observed |
+| `fapi2_logged_in_high_security` | new-container | 1 | 180 | 200 | 180 | 899.989 | 28/43/58 | 0/0/0/0 | 180/180 | [180, 200) observed |
+| `cap_introspect` | new-container | 1 | 5000 | 5625 | 5000 | 5000.006 | 1/2/11 | 0/0/0/0 | 180/180 | [5000, 5625) observed |
+| `cap_revoke` | new-container | 1 | 378 | 425 | 378 | 1890.006 | 22/48/118 | 0/0/0/0 | 180/180 | [378, 425) observed |
+| `mtls_client_credentials` | new-container | 1 | 1500 | 1687 | 1500 | 1499.994 | 4/14/69 | 0/0/0/0 | 180/180 | [1500, 1687) observed |
+| `par_signed_request_object` | new-container | 1 | 4200 | 4725 | 4197.894 | 4197.883 | 3/9/24 | 0/379/0/0 | 180/180 | [4200, 4725) observed |
+| `oidc_cold_login_refresh` | new-container | 1 | 7 | 8 | 7 | 42 | 131/143/517.68 | 0/0/0/0 | 180/180 | [7, 8) observed |
 
-`par_signed_request_object` reached the 6-point ladder cap still passing;
-no failing point was established, so the entry records `>=6102/s`, not a
-maximum.
+## Multiple logical CPUs (count per row)
 
-## Argon2 (`oidc_cold_login_refresh`, separate class)
+| Scenario | Deployment | App CPUs | PASS L | Service FAIL U | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window L/U s | Conclusion |
+|---|---|---:|---:|---:|---:|---:|---|---|---|---|
+| `cap_mixed` | new-container | 16 | 2600 | 2900 | 2600.003 | 3769.056 | 4/18/25 | 0/0/0/0 | 660/660 | [2600, 2900) observed |
+| `cap_client_credentials` | new-container | 16 | 6000 | 6500 | 6000.022 | 6000.067 | 4/11/29 | 0/0/0/0 | 180/180 | [6000, 6500) observed |
+| `cap_authorization_code` | new-container | 16 | 900 | 1000 | 900 | 3599.553 | 63/92/109 | 0/0/0/0 | 180/180 | [900, 1000) observed |
+| `cap_refresh_token` | new-container | 16 | 2624 | 2916 | 2624.006 | 2623.994 | 7/13/26 | 0/0/0/0 | 180/180 | [2624, 2916) observed |
+| `fapi2_logged_in_high_security` | new-container | 8 | 1186 | 1334 | 1186 | 5930.017 | 36/63/81 | 0/0/0/0 | 180/180 | [1186, 1334) observed |
+| `cap_introspect` | original-container | 16 | 16000 | 17000 | 15997.911 | 15997.838 | 1/3/15 | 0/376/0/0 | 180/180 | [16000, 17000) observed |
+| `cap_revoke` | new-container | 16 | 2000 | 2250 | 2000 | 10000.246 | 27/57/124 | 0/0/0/0 | 180/180 | [2000, 2250) observed |
+| `mtls_client_credentials` | new-container | 16 | 6223 | 7000 | 6223.017 | 6223.034 | 5/13/27 | 0/0/0/0 | 180/180 | [6223, 7000) observed |
+| `par_signed_request_object` | new-container | 4 | 11853 | 13334 | 11848.939 | 11848.961 | 4/57/93 | 0/729/0/0 | 180/180 | [11853, 13334) observed |
+| `oidc_cold_login_refresh` | original-container | 16 | 52 | 56 | 52 | 312 | 159/179/187 | 0/0/0/0 | 180/180 | [52, 56) observed |
 
-Argon2 concurrency stays at 8 (not raised for a better number).
+## Upper endpoints
 
-| VU | attempted login/s | successful login/s | login 503 | login p50/p95/p99 ms |
-|---:|---:|---:|---:|---|
-| 8 | 55.1 | 55.1 | 0 | 121.0 / 127.6 / 138.0 |
-| 16 | 93.3 | 56.6 | 22,016 (`temporarily_unavailable`) | 156.1 / 255.8 / 269.8 |
-
-At 16 VU the concurrency-8 Argon2 slot limit is the active backpressure:
-39.3% of login attempts return `503 temporarily_unavailable`; all other
-steps clean. This is the designed protective rejection, reported as
-measured.
-
-## Mixed sustained (30 minutes, fresh DB, all sidecars)
-
-| Target | Measured | Attainment | Drops | p95 / p99 ms | Gate |
-|---:|---:|---:|---:|---|---|
-| 2000 ops/s | 1967.4 ops/s | 98.4% | 0.158% | 11.9 / 37.9 | **FAIL** |
-| 1900 ops/s | 1889.1 ops/s | 99.43% | 0.091% | 11.2 / 19.2 | **FAIL** |
-
-`STRICT_30M_CAPACITY_NOT_ESTABLISHED` — both fresh-DB runs missed only the
-≥99.5% arrival-fidelity gate via periodic checkpoint-flush dips; the
-measured deliveries are reported as observations, not validated capacity.
-The 1900–2000 interval was not searched, so no exact maximum is claimed.
-Full evidence:
-[reports/2026-09-22-current-capacity/report.md](reports/2026-09-22-current-capacity/report.md).
-
-### 2026-09-23 errata — measurement denominators and measurement-window fix
-
-Review of the two runs above found measurement defects (numbers kept as
-recorded; this is an audit note, not a re-run):
-
-- **Inconsistent denominators.** The 2000 headline `1967.4 ops/s` used the
-  k6 `Counter.rate` over the full elapsed 1800 s including warmup
-  (`3,541,338/1800`), while the 1900 headline `1889.1 ops/s` used the
-  evaluator window (`3,372,095/1785`). The two FAILs are therefore not
-  measured on the same basis.
-- **VU-local clock.** `capPhase`/bucket membership keyed on each VU's
-  init timestamp, so dynamically created VUs re-lived a local warmup and
-  were under-counted in the measured cohort — a unified scenario-wide
-  window did not exist.
-- **2000 ops/s also violated the drop gate** (0.158% > 0.1%) in addition
-  to the rate gate.
-- **Checkpoint phase unattributed.** "checkpoint-flush dips" was a
-  plausible label, not a demonstrated mechanism; the write/sync/WAL/host
-  split had not been measured.
-
-The measurement window has since been unified (`cap-scenario-window-v1`)
-and a bounded 20-minute checkpoint diagnostic was executed:
-[checkpoint-jitter-remediation](reports/checkpoint-jitter-remediation/report.md).
-On the corrected basis that diagnostic measured 1998.5 measured attempts/s
-at target 2000 (99.93%, drops 0.080%, unexpected errors 0; whole-window
-success rate 1,962.8/s) within a 20-minute window — this does not
-constitute the 30-minute capacity certification, which remains
-`NOT_RETESTED`. Historical results above are preserved as recorded.
-
-### 2026-09-23 errata, revision 2 — analyzer corrections
-
-Offline re-analysis (`reanalysis-v2/`, no new load) corrected:
-
-- The all-load common window is only conservatively recoverable
-  (`[07:12:18, 07:29:48]`, 1050 s); the earlier 07:11:50 bound was a
-  container timestamp, not a measurement bound.
-- Dip-time fsync correlation is client-backend **WAL commit fsync**
-  cumulative wait — but ~900 ms/s is the run-wide baseline, not a dip
-  anomaly; checkpointer fsync totals only 374 ms. The dip discriminator
-  is the pool-wait spike, not fsync level.
-- WAL/op is 4.846 KiB/op on the stated basis; the historical
-  3.62 KB/op comparison is withdrawn (basis not recoverable).
-- Op p95/p99 are bucketed intervals; the run is not a controlled A/B
-  versus historical runs (fapi's actual workload changed with its
-  vector-pool fix).
-- Non-reappearance of the historical long throughput hole in this
-  20-minute diagnostic is an observation, not evidence of a fix;
-  runtime cause `UNRESOLVED`, remediation `NOT_PERFORMED`.
-
-### 2026-09-23 errata, revision 3 — window/schema semantics
-
-Final offline re-analysis (`reanalysis-v3/`, no new load; supersedes v1
-and v2 derivations, raw run unchanged):
-
-- Checkpoint-local windows are `start ± [-30,+90]` and
-  `complete ± [-30,+90]` — two disjoint locals, not one continuous span;
-  the middle write phase stays inside steady state.
-- Steady state (common window minus checkpoint local union): 520 s,
-  1,999.98 completed/s, 1,961.33 successful/s, 0 drops.
-- Quantiles follow the artifact's stream-v1 histogram schema:
-  steady op p95 ∈ [20,50) ms, p99 ∈ [50,100) ms.
-- WAL/op: 4.844 KiB/op on the shared effective interval
-  `[07:10:08, 07:29:52)`.
-- capRun detection uses real `cap_*` markers; empty contract shells no
-  longer misclassify non-capRun summaries.
+| Scenario / mode | Success ops/s | HTTP req/s | Full P50/P95/P99 ms | Error/drop/reject/unfinished | Window s | Failure evidence |
+|---|---:|---:|---|---|---:|---|
+| `cap_mixed` / single | 644.15 | 938.397 | 10/130/233 | 0/1053/0/0 | 180 | main complete-operation P95 130ms exceeds 100ms; FAPI complete-operation P95/P99 181.2/273.82ms exceeds 100/250ms; refresh complete-operation P95 131ms exceeds 100ms; main dropped fraction 0.9% exceeds 0.1% |
+| `cap_client_credentials` / single | 1491.167 | 1491.268 | 11/339/395 | 0/1590/0/0 | 180 | complete-operation P95/P99 339/395ms exceeds 100/250ms; measurement dropped fraction 0.5889% exceeds 0.1% |
+| `cap_authorization_code` / single | 342.806 | 1370.978 | 584/809/881 | 0/1295/0/0 | 180 | complete-operation P95/P99 809/881 ms exceeds 100/250 ms; 1295 measurement drops (2.0556%) exceeds 0.1% |
+| `cap_refresh_token` / single | 808.95 | 808.447 | 54/311/341 | 0/549/0/0 | 180 | complete-operation P95/P99 311/341 ms exceeds 100/250 ms; 549 measurement drops (0.3756%) exceeds 0.1% |
+| `fapi2_logged_in_high_security` / single | 200 | 999.972 | 70/114/130 | 0/0/0/0 | 180 | Complete-operation P95 114 ms exceeds the unchanged 100 ms gate. |
+| `cap_introspect` / single | 5610.472 | 5610.486 | 1/173/191 | 0/2617/0/0 | 180 | Complete-operation P95 173ms exceeds 100ms; 2617 dropped arrivals (0.25847%) exceed the delivery gate. |
+| `cap_revoke` / single | 412.511 | 2060.855 | 601/650/674 | 0/2248/0/0 | 180 | Complete-operation P95/P99 650/674ms exceeds 100/250ms; 2248 dropped arrivals (2.9386%) exceed the delivery gate. |
+| `mtls_client_credentials` / single | 1610.528 | 1610.793 | 620/659/803 | 0/13764/0/0 | 180 | Complete-operation P95/P99 659/803ms exceeds 100/250ms; 13764 dropped arrivals (4.5327%) exceed the delivery gate. |
+| `par_signed_request_object` / single | 4681.561 | 4681.218 | 40/103/119 | 0/7819/0/0 | 180 | Complete-operation P95 103ms exceeds 100ms; 7819 dropped arrivals (0.91934%) exceed the delivery gate. |
+| `oidc_cold_login_refresh` / single | 7.456 | 45.62 | 1123/1227/1247 | 98/0/0/0 | 180 | 98 unexpected logical outcomes at8/s; complete-operation P95/P99 1227/1247ms. The unchanged distinct cold-login gate fails. |
+| `cap_mixed` / multi | 2900.006 | 4208.812 | 7/44/78 | 0/0/0/0 | 660 | FAPI sidecar full-operation P95 108 ms exceeds 100 ms; its 22050 offered operations all finish successfully with no drops. |
+| `cap_client_credentials` / multi | 6497.539 | 6497.615 | 5/39/331.44 | 0/444/0/0 | 180 | Full-operation P99 331.44 ms exceeds 250 ms; delivery/drop/error/unfinished gates pass. |
+| `cap_authorization_code` / multi | 1000 | 4002.492 | 57/156/311 | 0/0/0/0 | 180 | Complete-operation P95/P99 156/311 ms exceed 100/250 ms |
+| `cap_refresh_token` / multi | 1728.389 | 1728.274 | 1196/1356/1517 | 0/213769/0/0 | 180 | Full-operation P95/P99 1356/1517 ms exceeds 100/250 ms; 40.7273% offered arrivals drop after VUs become occupied by slow responses. |
+| `fapi2_logged_in_high_security` / multi | 1312.878 | 6564.028 | 45/832/848 | 0/3802/0/0 | 180 | Full-operation P95/P99 832/848 ms exceeds unchanged 100/250 ms gates; 3802 dropped operations (1.5834%); runtime audit queue-full gate also fails. |
+| `cap_introspect` / multi | 16707.406 | 16989.581 | 1/4/24 | 50802/1892/0/0 | 180 | 50802 unexpected logical outcomes; retained HTTP429 temporarily_unavailable responses demonstrate the unchanged source-IP management admission limit |
+| `cap_revoke` / multi | 2214.517 | 11077.95 | 210/487/504 | 0/6387/0/0 | 180 | Full-operation P95/P99 487/504ms exceeds unchanged100/250ms gates;6387drops(1.577%);runtime queue-full gate fails. |
+| `mtls_client_credentials` / multi | 6851.75 | 6851 | 5/33/369 | 0/26688/0/0 | 180 | Full-operation P99369ms exceeds unchanged250ms gate;26688droppedoperations(2.118%); successful6851.75/s is not gated capacity. |
+| `par_signed_request_object` / multi | 13118.883 | 13112.961 | 73/115/127 | 0/38728/0/0 | 180 | Full-operation P95115ms exceeds unchanged100ms gate;38728droppedoperations(1.6136%);13118.883/s completion is not gated capacity. |
+| `oidc_cold_login_refresh` / multi | 55.933 | 335.849 | 172/239/263 | 12/0/0/0 | 180 | 12 unexpected complete-operation outcomes; retained failed HTTP points are POST /auth/login 503 |

@@ -1,0 +1,11 @@
+{
+  "label": "r230-p03-a1-20261008",
+  "key": "p03-A1",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 26.343,
+  "total_elapsed_s": 265.418,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

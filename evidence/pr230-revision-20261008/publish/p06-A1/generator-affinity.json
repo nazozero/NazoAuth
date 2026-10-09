@@ -1,0 +1,6980 @@
+[
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 92.1284
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428126.8308558,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 99.8983
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138012,
+        "tid": 443,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138013,
+        "tid": 444,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138013,
+        "tid": 445,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138013,
+        "tid": 446,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138013,
+        "tid": 447,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138013,
+        "tid": 448,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138014,
+        "tid": 449,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138014,
+        "tid": 450,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138014,
+        "tid": 451,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138014,
+        "tid": 452,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138014,
+        "tid": 453,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138014,
+        "tid": 454,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138016,
+        "tid": 455,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138016,
+        "tid": 456,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138016,
+        "tid": 457,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138016,
+        "tid": 458,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 443,
+        "ppid": 1,
+        "starttime_ticks": 204138016,
+        "tid": 459,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428132.3584719,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 147.9142
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 609,
+        "ppid": 1,
+        "starttime_ticks": 204138663,
+        "tid": 609,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 609,
+        "ppid": 1,
+        "starttime_ticks": 204138666,
+        "tid": 616,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428138.067961,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 114.2151
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139060,
+        "tid": 867,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139061,
+        "tid": 868,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139061,
+        "tid": 869,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139061,
+        "tid": 870,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139061,
+        "tid": 871,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139062,
+        "tid": 872,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139064,
+        "tid": 873,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139064,
+        "tid": 874,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139064,
+        "tid": 875,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139064,
+        "tid": 876,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139064,
+        "tid": 877,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139064,
+        "tid": 878,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139064,
+        "tid": 879,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 867,
+        "ppid": 1,
+        "starttime_ticks": 204139065,
+        "tid": 880,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428143.665969,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 71.7997
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139729,
+        "tid": 1160,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139730,
+        "tid": 1161,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139730,
+        "tid": 1162,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139730,
+        "tid": 1163,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139731,
+        "tid": 1164,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139731,
+        "tid": 1165,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139732,
+        "tid": 1166,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139732,
+        "tid": 1167,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139732,
+        "tid": 1168,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139732,
+        "tid": 1169,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139732,
+        "tid": 1170,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139732,
+        "tid": 1171,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1160,
+        "ppid": 1,
+        "starttime_ticks": 204139732,
+        "tid": 1172,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428149.0610833,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 106.8362
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428154.6119213,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 73.0209
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140783,
+        "tid": 1617,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1618,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1619,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1620,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1621,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1622,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1623,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1624,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1625,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1626,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1627,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1628,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140784,
+        "tid": 1629,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1617,
+        "ppid": 1,
+        "starttime_ticks": 204140785,
+        "tid": 1630,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428160.3010473,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 62.0271
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141447,
+        "tid": 1806,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141447,
+        "tid": 1807,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141447,
+        "tid": 1808,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141447,
+        "tid": 1809,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141447,
+        "tid": 1810,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141448,
+        "tid": 1811,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141449,
+        "tid": 1818,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141449,
+        "tid": 1819,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141449,
+        "tid": 1820,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141449,
+        "tid": 1821,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141449,
+        "tid": 1822,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141449,
+        "tid": 1823,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 1806,
+        "ppid": 1,
+        "starttime_ticks": 204141449,
+        "tid": 1824,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428165.8042283,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 67.5791
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141843,
+        "tid": 2078,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2079,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2080,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2081,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2082,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2083,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2084,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2085,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2086,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2087,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2088,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141844,
+        "tid": 2089,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141845,
+        "tid": 2090,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2078,
+        "ppid": 1,
+        "starttime_ticks": 204141846,
+        "tid": 2091,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428171.2403624,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 60.0869
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2352,
+        "ppid": 1,
+        "starttime_ticks": 204142521,
+        "tid": 2352,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2352,
+        "ppid": 1,
+        "starttime_ticks": 204142523,
+        "tid": 2363,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428176.557207,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 76.8598
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428182.108612,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 103.1984
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143551,
+        "tid": 2813,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143552,
+        "tid": 2814,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143552,
+        "tid": 2815,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143552,
+        "tid": 2816,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143552,
+        "tid": 2817,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143552,
+        "tid": 2818,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143558,
+        "tid": 2819,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143558,
+        "tid": 2820,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143558,
+        "tid": 2821,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143558,
+        "tid": 2822,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143558,
+        "tid": 2823,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143558,
+        "tid": 2824,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143559,
+        "tid": 2825,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143559,
+        "tid": 2826,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 2813,
+        "ppid": 1,
+        "starttime_ticks": 204143559,
+        "tid": 2827,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428187.5512345,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 65.944
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428193.0540862,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 144.5752
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144600,
+        "tid": 3244,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144601,
+        "tid": 3245,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144601,
+        "tid": 3246,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144601,
+        "tid": 3247,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144601,
+        "tid": 3248,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144602,
+        "tid": 3249,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3250,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3251,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3252,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3253,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3254,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3255,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3256,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3257,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3244,
+        "ppid": 1,
+        "starttime_ticks": 204144608,
+        "tid": 3258,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428198.6641576,
+    "verified": true
+  },
+  {
+    "container": "sis-load-r230-p06-a1-20261008",
+    "snapshot": {
+      "collector_exit": 0,
+      "complete": true,
+      "confirmed_gone": [],
+      "read_errors": [],
+      "round_trip_ms": 156.6675
+    },
+    "task_masks": [
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137242,
+        "tid": 1,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "Thread-1",
+        "pid": 1,
+        "ppid": 0,
+        "starttime_ticks": 204137614,
+        "tid": 135,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 134,
+        "ppid": 1,
+        "starttime_ticks": 204137613,
+        "tid": 134,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137614,
+        "tid": 136,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 150,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 151,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 152,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137616,
+        "tid": 153,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 185,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 186,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 187,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 188,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 189,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137630,
+        "tid": 190,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137631,
+        "tid": 192,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 198,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137632,
+        "tid": 199,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137635,
+        "tid": 207,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137708,
+        "tid": 284,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 285,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137709,
+        "tid": 286,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 287,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 288,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 289,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 290,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 291,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 292,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137711,
+        "tid": 293,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 294,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 295,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 296,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 297,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 298,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 299,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 300,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 301,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 302,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 303,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137712,
+        "tid": 304,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137722,
+        "tid": 305,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "k6",
+        "pid": 136,
+        "ppid": 1,
+        "starttime_ticks": 204137978,
+        "tid": 355,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 210,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 210,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 216,
+        "ppid": 134,
+        "starttime_ticks": 204137636,
+        "tid": 216,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 218,
+        "ppid": 134,
+        "starttime_ticks": 204137637,
+        "tid": 218,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "python",
+        "pid": 224,
+        "ppid": 134,
+        "starttime_ticks": 204137641,
+        "tid": 224,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3472,
+        "ppid": 1,
+        "starttime_ticks": 204145292,
+        "tid": 3472,
+        "uid": "0"
+      },
+      {
+        "allowed": "93-123",
+        "name": "docker",
+        "pid": 3472,
+        "ppid": 1,
+        "starttime_ticks": 204145293,
+        "tid": 3480,
+        "uid": "0"
+      }
+    ],
+    "ts": 1791428204.2740915,
+    "verified": true
+  }
+]

@@ -9,10 +9,6 @@ use crate::{TenantContext, UserId};
 pub enum IdentityModelError {
     EmptyId,
     EmptyPasswordHash,
-    InvalidAuthenticationTime,
-    FutureAuthenticationTime,
-    EmptyAuthenticationMethods,
-    EmptyOidcSid,
 }
 
 impl fmt::Display for IdentityModelError {
@@ -20,10 +16,6 @@ impl fmt::Display for IdentityModelError {
         formatter.write_str(match self {
             Self::EmptyId => "identity ID must not be nil",
             Self::EmptyPasswordHash => "password hash must not be blank",
-            Self::InvalidAuthenticationTime => "authentication time must be positive",
-            Self::FutureAuthenticationTime => "authentication time exceeds allowed clock skew",
-            Self::EmptyAuthenticationMethods => "authentication methods must not be empty",
-            Self::EmptyOidcSid => "OIDC session ID must not be blank",
         })
     }
 }
@@ -51,153 +43,6 @@ impl Principal {
             UserRole::User => None,
             UserRole::Admin { level } => Some(level),
         }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AuthMethod {
-    Password,
-    Passkey,
-    Totp,
-    BackupCode,
-    RememberedMfa,
-    Federated(String),
-}
-
-impl AuthMethod {
-    fn append_amr(&self, values: &mut Vec<String>) {
-        match self {
-            Self::Password => push_unique(values, "password"),
-            Self::Passkey => push_unique(values, "passkey"),
-            Self::Totp => push_unique(values, "otp"),
-            Self::BackupCode => push_unique(values, "recovery_code"),
-            Self::RememberedMfa => {
-                push_unique(values, "remembered_mfa");
-                push_unique(values, "mfa");
-            }
-            Self::Federated(provider) => {
-                push_unique(values, provider);
-                push_unique(values, "federated");
-            }
-        }
-    }
-}
-
-/// Validated authentication state. It is intentionally not deserializable;
-/// persisted AMR data must enter through [`AuthenticationContext::from_amr`].
-///
-/// ```compile_fail
-/// let _: nazo_identity::AuthenticationContext =
-///     serde_json::from_str(r#"{"auth_time":0,"methods":[],"oidc_sid":"","amr":["tampered"]}"#)
-///         .unwrap();
-/// ```
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct AuthenticationContext {
-    pub auth_time: i64,
-    pub methods: Vec<AuthMethod>,
-    pub oidc_sid: String,
-    amr: Vec<String>,
-}
-
-impl AuthenticationContext {
-    pub fn new(
-        auth_time: i64,
-        methods: impl IntoIterator<Item = AuthMethod>,
-    ) -> Result<Self, IdentityModelError> {
-        let methods = deduplicate_methods(methods);
-        if auth_time <= 0 {
-            return Err(IdentityModelError::InvalidAuthenticationTime);
-        }
-        if methods.is_empty() {
-            return Err(IdentityModelError::EmptyAuthenticationMethods);
-        }
-        let mut amr = Vec::new();
-        for method in &methods {
-            method.append_amr(&mut amr);
-        }
-        Ok(Self {
-            auth_time,
-            methods,
-            oidc_sid: uuid::Uuid::now_v7().to_string(),
-            amr,
-        })
-    }
-
-    pub fn from_amr<'a>(
-        auth_time: i64,
-        amr: impl IntoIterator<Item = &'a str>,
-        oidc_sid: &str,
-        now: i64,
-    ) -> Result<Self, IdentityModelError> {
-        if auth_time <= 0 {
-            return Err(IdentityModelError::InvalidAuthenticationTime);
-        }
-        if auth_time > now.saturating_add(30) {
-            return Err(IdentityModelError::FutureAuthenticationTime);
-        }
-        let mut normalized_amr = Vec::new();
-        for value in amr {
-            push_unique(&mut normalized_amr, value);
-        }
-        if normalized_amr.is_empty() {
-            return Err(IdentityModelError::EmptyAuthenticationMethods);
-        }
-        let oidc_sid = oidc_sid.trim();
-        if oidc_sid.is_empty() {
-            return Err(IdentityModelError::EmptyOidcSid);
-        }
-        let methods = normalized_amr
-            .iter()
-            .map(|value| method_from_amr(value))
-            .collect();
-        Ok(Self {
-            auth_time,
-            methods,
-            oidc_sid: oidc_sid.to_owned(),
-            amr: normalized_amr,
-        })
-    }
-
-    #[must_use]
-    pub fn has_mfa(&self) -> bool {
-        self.amr.iter().any(|value| {
-            matches!(
-                value.as_str(),
-                "mfa" | "otp" | "recovery_code" | "remembered_mfa"
-            )
-        })
-    }
-
-    #[must_use]
-    pub fn amr(&self) -> &[String] {
-        &self.amr
-    }
-}
-
-fn deduplicate_methods(methods: impl IntoIterator<Item = AuthMethod>) -> Vec<AuthMethod> {
-    let mut result = Vec::new();
-    for method in methods {
-        if !result.contains(&method) {
-            result.push(method);
-        }
-    }
-    result
-}
-
-fn push_unique(values: &mut Vec<String>, value: &str) {
-    if !value.trim().is_empty() && !values.iter().any(|existing| existing == value) {
-        values.push(value.to_owned());
-    }
-}
-
-fn method_from_amr(value: &str) -> AuthMethod {
-    match value {
-        "password" | "pwd" => AuthMethod::Password,
-        "passkey" => AuthMethod::Passkey,
-        "otp" => AuthMethod::Totp,
-        "recovery_code" => AuthMethod::BackupCode,
-        "remembered_mfa" => AuthMethod::RememberedMfa,
-        other => AuthMethod::Federated(other.to_owned()),
     }
 }
 

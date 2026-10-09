@@ -165,3 +165,60 @@ fn authorization_header_wins_only_when_form_transport_is_absent() {
         ResourceAccessToken::InvalidRequest
     );
 }
+
+#[test]
+fn bearer_transport_rejects_blank_first_duplicates_and_mixed_query_without_changing_query_only() {
+    for header in [None, Some("Bearer header-token")] {
+        let mut builder = TestRequest::post()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"));
+        if let Some(value) = header {
+            builder = builder.insert_header((header::AUTHORIZATION, value));
+        }
+        let request = builder.to_http_request();
+        for body in [
+            b"access_token=&access%5Ftoken=second".as_slice(),
+            b"access_token=first&access_token=",
+            b"access_token=&access_token=",
+        ] {
+            assert_eq!(
+                resource_access_token(&request, body, false),
+                ResourceAccessToken::InvalidRequest
+            );
+            assert_eq!(
+                resource_access_token(&request, body, true),
+                ResourceAccessToken::InvalidRequest
+            );
+        }
+    }
+    let request = TestRequest::get()
+        .uri("/userinfo?access%5Ftoken=query-value")
+        .to_http_request();
+    assert_eq!(
+        resource_access_token(&request, b"", false),
+        ResourceAccessToken::Missing
+    );
+    let request = TestRequest::get()
+        .uri("/userinfo?access%5Ftoken=query-value")
+        .insert_header((header::AUTHORIZATION, "Bearer header-token"))
+        .to_http_request();
+    assert_eq!(
+        resource_access_token(&request, b"", false),
+        ResourceAccessToken::InvalidRequest
+    );
+    let request = TestRequest::post()
+        .uri("/userinfo?access_token=query-value")
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    assert_eq!(
+        resource_access_token(&request, b"access_token=body-token", false),
+        ResourceAccessToken::InvalidRequest
+    );
+    let request = TestRequest::get()
+        .append_header((header::AUTHORIZATION, "Bearer first"))
+        .append_header((header::AUTHORIZATION, "Bearer second"))
+        .to_http_request();
+    assert_eq!(
+        resource_access_token(&request, b"", false),
+        ResourceAccessToken::InvalidRequest
+    );
+}

@@ -81,7 +81,7 @@ async fn temp_connection() -> Option<AsyncPgConnection> {
         .batch_execute(
             "CREATE TEMP TABLE oauth_token_issuances (
                 tenant_id uuid, client_id uuid, user_id uuid,
-                access_token_jti text, access_token_expires_at timestamptz);
+                access_token_jti text, access_token_expires_at timestamptz, principal_epoch_bound boolean NOT NULL DEFAULT FALSE);
              CREATE TEMP TABLE oauth_clients (id uuid, tenant_id uuid, client_id text);
              CREATE TEMP TABLE openid4vci_access_grants (
                 tenant_id uuid, client_id text, subject_id uuid, token_id uuid,

@@ -1,0 +1,437 @@
+[
+  {
+    "from_s": 0,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 272,
+        "mean_ms": 0.427,
+        "blocks_per_call": 332.5
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 273,
+        "mean_ms": 9.853,
+        "blocks_per_call": 1810.2
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 272,
+        "mean_ms": 11.356,
+        "blocks_per_call": 2147.6
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 30600,
+        "mean_ms": 0.335,
+        "blocks_per_call": 353.6
+      }
+    ]
+  },
+  {
+    "from_s": 30,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 363,
+        "mean_ms": 0.499,
+        "blocks_per_call": 561.8
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 362,
+        "mean_ms": 13.564,
+        "blocks_per_call": 2392.3
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 363,
+        "mean_ms": 14.125,
+        "blocks_per_call": 2805.8
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 47573,
+        "mean_ms": 0.329,
+        "blocks_per_call": 326.3
+      }
+    ]
+  },
+  {
+    "from_s": 61,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 435,
+        "mean_ms": 0.609,
+        "blocks_per_call": 493.7
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 435,
+        "mean_ms": 7.491,
+        "blocks_per_call": 1629.1
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 435,
+        "mean_ms": 8.887,
+        "blocks_per_call": 1929.5
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 37396,
+        "mean_ms": 0.507,
+        "blocks_per_call": 641.5
+      }
+    ]
+  },
+  {
+    "from_s": 91,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 398,
+        "mean_ms": 0.511,
+        "blocks_per_call": 534.3
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 398,
+        "mean_ms": 10.521,
+        "blocks_per_call": 2089.2
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 398,
+        "mean_ms": 12.233,
+        "blocks_per_call": 2464.1
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 44400,
+        "mean_ms": 0.291,
+        "blocks_per_call": 331.4
+      }
+    ]
+  },
+  {
+    "from_s": 121,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 328,
+        "mean_ms": 0.708,
+        "blocks_per_call": 739.8
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 328,
+        "mean_ms": 15.7,
+        "blocks_per_call": 2840.8
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 328,
+        "mean_ms": 16.408,
+        "blocks_per_call": 3377.4
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 48781,
+        "mean_ms": 0.604,
+        "blocks_per_call": 729.8
+      }
+    ]
+  },
+  {
+    "from_s": 151,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 395,
+        "mean_ms": 0.564,
+        "blocks_per_call": 565.7
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 395,
+        "mean_ms": 11.497,
+        "blocks_per_call": 2151.9
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 394,
+        "mean_ms": 12.257,
+        "blocks_per_call": 2573.5
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 45325,
+        "mean_ms": 0.321,
+        "blocks_per_call": 379.8
+      }
+    ]
+  },
+  {
+    "from_s": 181,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 422,
+        "mean_ms": 0.506,
+        "blocks_per_call": 435.4
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 423,
+        "mean_ms": 7.297,
+        "blocks_per_call": 1688.5
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 423,
+        "mean_ms": 9.219,
+        "blocks_per_call": 2000.8
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 37530,
+        "mean_ms": 0.476,
+        "blocks_per_call": 607.6
+      }
+    ]
+  },
+  {
+    "from_s": 212,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 306,
+        "mean_ms": 0.652,
+        "blocks_per_call": 701.0
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 305,
+        "mean_ms": 17.083,
+        "blocks_per_call": 3017.2
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 305,
+        "mean_ms": 18.682,
+        "blocks_per_call": 3591.2
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 48464,
+        "mean_ms": 0.363,
+        "blocks_per_call": 420.5
+      }
+    ]
+  },
+  {
+    "from_s": 242,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 443,
+        "mean_ms": 0.309,
+        "blocks_per_call": 349.1
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 444,
+        "mean_ms": 8.285,
+        "blocks_per_call": 1653.0
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 444,
+        "mean_ms": 10.781,
+        "blocks_per_call": 2296.4
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 38597,
+        "mean_ms": 0.553,
+        "blocks_per_call": 650.1
+      }
+    ]
+  },
+  {
+    "from_s": 272,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 172,
+        "mean_ms": 26.402,
+        "blocks_per_call": 39715.1
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 171,
+        "mean_ms": 73.107,
+        "blocks_per_call": 27696.8
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 172,
+        "mean_ms": 47.596,
+        "blocks_per_call": 43601.3
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 47918,
+        "mean_ms": 0.319,
+        "blocks_per_call": 368.0
+      }
+    ]
+  },
+  {
+    "from_s": 302,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 69,
+        "mean_ms": 68.154,
+        "blocks_per_call": 105118.0
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 69,
+        "mean_ms": 282.855,
+        "blocks_per_call": 123155.6
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 69,
+        "mean_ms": 97.98,
+        "blocks_per_call": 110424.3
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 41875,
+        "mean_ms": 0.547,
+        "blocks_per_call": 606.1
+      }
+    ]
+  },
+  {
+    "from_s": 332,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 228,
+        "mean_ms": 3.372,
+        "blocks_per_call": 4722.7
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 228,
+        "mean_ms": 38.28,
+        "blocks_per_call": 10220.0
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 228,
+        "mean_ms": 29.525,
+        "blocks_per_call": 9493.3
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 41061,
+        "mean_ms": 1.682,
+        "blocks_per_call": 472.4
+      }
+    ]
+  },
+  {
+    "from_s": 363,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 274,
+        "mean_ms": 0.701,
+        "blocks_per_call": 770.9
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 275,
+        "mean_ms": 16.755,
+        "blocks_per_call": 3661.5
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 274,
+        "mean_ms": 20.353,
+        "blocks_per_call": 4681.4
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 30946,
+        "mean_ms": 5.378,
+        "blocks_per_call": 921.2
+      }
+    ]
+  },
+  {
+    "from_s": 393,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 199,
+        "mean_ms": 23.74,
+        "blocks_per_call": 39255.0
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 198,
+        "mean_ms": 50.183,
+        "blocks_per_call": 23916.6
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 199,
+        "mean_ms": 41.523,
+        "blocks_per_call": 42784.8
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 41185,
+        "mean_ms": 0.807,
+        "blocks_per_call": 356.6
+      }
+    ]
+  },
+  {
+    "from_s": 423,
+    "queries": [
+      {
+        "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])     ",
+        "calls": 76,
+        "mean_ms": 72.485,
+        "blocks_per_call": 110423.3
+      },
+      {
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $",
+        "calls": 77,
+        "mean_ms": 236.345,
+        "blocks_per_call": 113386.4
+      },
+      {
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7",
+        "calls": 76,
+        "mean_ms": 97.153,
+        "blocks_per_call": 115719.5
+      },
+      {
+        "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM pu",
+        "calls": 44780,
+        "mean_ms": 0.518,
+        "blocks_per_call": 653.3
+      }
+    ]
+  }
+]

@@ -13,29 +13,53 @@ pub struct MfaRequestContext {
     pub now: i64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MfaCodeCommand {
     pub context: MfaRequestContext,
     pub code: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for MfaCodeCommand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MfaCodeCommand([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct MfaChallengeCommand {
     pub context: MfaRequestContext,
     pub code: String,
     pub remember_device: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for MfaChallengeCommand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MfaChallengeCommand([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct MfaSessionRotation {
     pub session_id: String,
     pub csrf_token: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl std::fmt::Debug for MfaSessionRotation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MfaSessionRotation([REDACTED])")
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct MfaTotpEnrollment {
     pub secret_base32: String,
     pub otpauth_uri: String,
+}
+
+impl std::fmt::Debug for MfaTotpEnrollment {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MfaTotpEnrollment([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,11 +68,17 @@ pub struct MfaTotpConfirmation {
     pub backup_codes: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MfaChallengeSuccess {
     pub rotation: MfaSessionRotation,
     pub method: String,
     pub remembered_device_token: Option<String>,
+}
+
+impl std::fmt::Debug for MfaChallengeSuccess {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MfaChallengeSuccess([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

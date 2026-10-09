@@ -18,7 +18,8 @@ use nazo_crypto::ed25519::VerifyingKey;
 use nazo_identity::ports::{RepositoryError, RepositoryFuture};
 use nazo_persistence::{
     SecurityAuditAnchorHealth, SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim,
-    SecurityAuditBatchLease, SecurityAuditOutboxDelivery, audit_chain::security_audit_batch_digest,
+    SecurityAuditBatchLease, SecurityAuditPendingDelivery,
+    audit_chain::security_audit_batch_digest,
 };
 use nazo_postgres::AuditLedgerRepository;
 use serde_json::{Value, json};
@@ -68,8 +69,8 @@ fn health_snapshot() -> SecurityAuditAnchorHealth {
     }
 }
 
-fn delivery(sequence: i64) -> SecurityAuditOutboxDelivery {
-    SecurityAuditOutboxDelivery {
+fn delivery(sequence: i64) -> SecurityAuditPendingDelivery {
+    SecurityAuditPendingDelivery {
         event_id: Uuid::from_u128(sequence as u128),
         sequence,
         event_type: "admin_user_updated".to_owned(),
@@ -81,7 +82,7 @@ fn delivery(sequence: i64) -> SecurityAuditOutboxDelivery {
     }
 }
 
-fn batch(deliveries: Vec<SecurityAuditOutboxDelivery>) -> SecurityAuditBatch {
+fn batch(deliveries: Vec<SecurityAuditPendingDelivery>) -> SecurityAuditBatch {
     let first = deliveries.first().expect("batch has events");
     let last = deliveries.last().expect("batch has events");
     let event_hashes: Vec<[u8; 32]> = deliveries
@@ -187,6 +188,9 @@ struct ScriptedRepository {
     failures: Mutex<Vec<(i64, String, bool)>>,
     acked: Mutex<Vec<SecurityAuditBatchAck>>,
     fail_call_fails: bool,
+    observe_calls: std::sync::atomic::AtomicUsize,
+    claim_calls: std::sync::atomic::AtomicUsize,
+    ack_calls: std::sync::atomic::AtomicUsize,
 }
 
 impl ScriptedRepository {
@@ -266,6 +270,8 @@ impl AuditAnchorRepository for ScriptedRepository {
 
     fn observe_anchor<'a>(&'a self, _deployment_id: &'a str) -> RepositoryFuture<'a, ()> {
         Box::pin(async move {
+            self.observe_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.observations
                 .lock()
                 .expect("scripted repository mutex is not poisoned")
@@ -296,6 +302,8 @@ impl AuditAnchorRepository for ScriptedRepository {
         _lock_timeout_seconds: i32,
     ) -> RepositoryFuture<'a, SecurityAuditBatchClaim> {
         Box::pin(async move {
+            self.claim_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.claims
                 .lock()
                 .expect("scripted repository mutex is not poisoned")
@@ -310,6 +318,8 @@ impl AuditAnchorRepository for ScriptedRepository {
 
     fn ack_batch<'a>(&'a self, ack: SecurityAuditBatchAck) -> RepositoryFuture<'a, ()> {
         Box::pin(async move {
+            self.ack_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let result = self
                 .acknowledgements
                 .lock()
@@ -1737,4 +1747,426 @@ async fn repository_adapter_forwards_invalid_pool_calls_without_panicking() {
         .await
         .is_err()
     );
+}
+
+async fn oversized_receipt_endpoint(
+    mode: &str,
+    limit: usize,
+) -> (Url, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mode = mode.to_owned();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_anchor_request(&mut stream).await;
+        if mode == "chunked" {
+            let _ = stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+                )
+                .await;
+            for length in [limit, 1] {
+                if stream
+                    .write_all(format!("{length:x}\r\n").as_bytes())
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+                if stream.write_all(&vec![b'x'; length]).await.is_err() {
+                    break;
+                }
+                if stream.write_all(b"\r\n").await.is_err() {
+                    break;
+                }
+            }
+            let _ = stream.write_all(b"0\r\n\r\n").await;
+        } else {
+            let declared = if mode == "lying" { limit } else { limit + 1 };
+            let _ = stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await;
+            let _ = stream.write_all(&vec![b'x'; limit + 1]).await;
+        }
+    });
+    (
+        Url::parse(&format!("http://{address}/checkpoint")).unwrap(),
+        server,
+    )
+}
+
+#[tokio::test]
+async fn oversized_receipts_are_bounded_and_never_acknowledged_for_batch_or_genesis() {
+    for mode in ["known", "chunked", "lying"] {
+        let (endpoint, server) = oversized_receipt_endpoint(mode, 128 * 1024).await;
+        let mut config = iteration_config(endpoint);
+        config.max_envelope_bytes = 128 * 1024;
+        let batch = batch(vec![delivery(7)]);
+        let repository = ScriptedRepository::with_health(
+            Ok(health_snapshot()),
+            Ok(SecurityAuditBatchClaim::Claimed(batch.clone())),
+        );
+        assert_eq!(
+            run_iteration(&repository, &test_client(), &config, &mut None, &mut None).await,
+            IterationOutcome::Retry(Duration::from_secs(1))
+        );
+        assert!(repository.acked().is_empty());
+        assert_eq!(
+            repository.failures(),
+            vec![(batch.generation, "invalid_receipt".to_owned(), false)]
+        );
+        server.await.unwrap();
+        let (endpoint, server) = oversized_receipt_endpoint(mode, 128 * 1024).await;
+        config.endpoint = endpoint;
+        assert!(matches!(
+            send_genesis_checkpoint(&test_client(), &config, &[9; 32]).await,
+            Err(AnchorPushError::InvalidReceipt)
+        ));
+        server.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn historical_large_batch_retry_preserves_bytes_digest_range_and_membership() {
+    let mut deliveries = (1..=17).map(delivery).collect::<Vec<_>>();
+    for delivery in &mut deliveries {
+        delivery.payload_canonical = serde_json::json!({"text":"\\".repeat(32_740)}).to_string();
+    }
+    let committed = batch(deliveries);
+    let expected = batch_body("deployment-1", &committed).unwrap();
+    assert!(expected.len() > 2 * 1024 * 1024);
+    for _ in 0..2 {
+        let (endpoint, server) =
+            local_anchor_endpoint_with_body(200, accepted_batch_receipt(&committed)).await;
+        let mut config = iteration_config(endpoint);
+        config.max_envelope_bytes = 128 * 1024;
+        assert_eq!(
+            send_batch(&test_client(), &config, &committed)
+                .await
+                .unwrap(),
+            PushOutcome::Accepted { duplicate: false }
+        );
+        let request = server.await.unwrap();
+        let header_end = request
+            .windows(4)
+            .position(|bytes| bytes == b"\r\n\r\n")
+            .unwrap();
+        assert_eq!(&request[header_end + 4..], expected.as_slice());
+        let headers = String::from_utf8_lossy(&request[..header_end]);
+        let identity = format!(
+            "batch:deployment-1:{}:{}:{}",
+            committed.first_sequence,
+            committed.last_sequence,
+            encode_hash(&committed.digest)
+        );
+        assert_eq!(
+            header_value(&headers, "idempotency-key"),
+            Some(identity.as_str())
+        );
+        assert_eq!(committed.event_count(), 17);
+    }
+}
+
+async fn chunked_signed_receipt_endpoint(body: Vec<u8>) -> (Url, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_anchor_request(&mut stream).await;
+        if stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.is_err() {return;}
+        for chunk in body.chunks(4096) {
+            if stream
+                .write_all(format!("{:x}\r\n", chunk.len()).as_bytes())
+                .await
+                .is_err()
+            {
+                return;
+            }
+            if stream.write_all(chunk).await.is_err() {
+                return;
+            }
+            if stream.write_all(b"\r\n").await.is_err() {
+                return;
+            }
+        }
+        let _ = stream.write_all(b"0\r\n\r\n").await;
+    });
+    (
+        Url::parse(&format!("http://{address}/checkpoint")).unwrap(),
+        task,
+    )
+}
+#[tokio::test]
+async fn signed_receipt_valid_json_whitespace_at_cap_succeeds_and_cap_plus_one_never_acks() {
+    let limit = 128 * 1024;
+    for extra in [0, 1] {
+        let committed = batch(vec![delivery(7)]);
+        let mut receipt = accepted_batch_receipt(&committed);
+        receipt.resize(limit + extra, b' ');
+        let (endpoint, server) = chunked_signed_receipt_endpoint(receipt).await;
+        let mut config = iteration_config(endpoint);
+        config.max_envelope_bytes = limit as i64;
+        let repository = ScriptedRepository::with_health(
+            Ok(health_snapshot()),
+            Ok(SecurityAuditBatchClaim::Claimed(committed.clone())),
+        )
+        .with_acknowledgement(Ok(()));
+        let result =
+            run_iteration(&repository, &test_client(), &config, &mut None, &mut None).await;
+        if extra == 0 {
+            assert_eq!(result, IterationOutcome::Continue);
+            assert_eq!(repository.acked().len(), 1);
+        } else {
+            assert_eq!(result, IterationOutcome::Retry(Duration::from_secs(1)));
+            assert!(repository.acked().is_empty());
+            assert_eq!(
+                repository.failures(),
+                vec![(committed.generation, "invalid_receipt".to_owned(), false)]
+            );
+        }
+        server.await.unwrap();
+        let mut receipt = accepted_genesis_receipt(&[9; 32]);
+        receipt.resize(limit + extra, b' ');
+        let (endpoint, server) = chunked_signed_receipt_endpoint(receipt).await;
+        config.endpoint = endpoint;
+        let result = send_genesis_checkpoint(&test_client(), &config, &[9; 32]).await;
+        if extra == 0 {
+            assert_eq!(result.unwrap(), PushOutcome::Accepted { duplicate: false });
+        } else {
+            assert!(matches!(result, Err(AnchorPushError::InvalidReceipt)));
+        }
+        server.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn required_ten_second_freshness_stays_ready_across_five_second_idle_pg_polls() {
+    use diesel_async::SimpleAsyncConnection;
+
+    let database_url = std::env::var("NAZO_AUDIT_TEST_DATABASE_URL").ok();
+    if database_url.is_none() && std::env::var_os("CI").is_some() {
+        panic!("CI idle observation test requires NAZO_AUDIT_TEST_DATABASE_URL");
+    }
+    let Some(database_url) = database_url else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = nazo_postgres::create_pool(database_url, 2).unwrap();
+    let repository = AuditLedgerRepository::new(pool.clone());
+    let initial = repository.anchor_health().await.unwrap();
+    assert!(
+        !initial.pending_exists && initial.batch.is_none(),
+        "idle fixture must have no undelivered events"
+    );
+    let mut config = iteration_config(Url::parse("http://127.0.0.1:1/").unwrap());
+    config.preflight.freshness = Duration::from_secs(10);
+    config.preflight.deployment_id = "test-deployment".to_owned();
+    config.poll_interval = Duration::from_secs(5);
+    let client = test_client();
+    let mut last_anchored = None;
+    let mut last_blocked = None;
+    if initial.last_exported_sequence.is_none() {
+        assert_eq!(initial.head_sequence, 0);
+        // Establish the real empty-ledger checkpoint through a signed receiver
+        // receipt once. Subsequent idle polls must require no receiver request.
+        let expectation = genesis_expectation(&config.preflight.deployment_id, &initial.head_hash);
+        let receipt = signed_receipt(
+            "accepted",
+            "genesis",
+            &config.preflight.deployment_id,
+            0,
+            0,
+            0,
+            expectation.last_hash,
+            expectation.batch_digest,
+            None,
+            false,
+            &test_signing_key(),
+        );
+        let (endpoint, server) = local_anchor_endpoint_with_body(200, receipt).await;
+        config.endpoint = endpoint;
+        assert_eq!(
+            run_iteration(
+                &repository,
+                &client,
+                &config,
+                &mut last_anchored,
+                &mut last_blocked
+            )
+            .await,
+            IterationOutcome::Poll(Duration::from_secs(5))
+        );
+        server.await.unwrap();
+        config.endpoint = Url::parse("http://127.0.0.1:1/").unwrap();
+    } else {
+        config.preflight.deployment_id = initial.deployment_id.unwrap();
+    }
+    config.preflight.validate().unwrap();
+    let acknowledged = repository.anchor_health().await.unwrap();
+    let preflight = AuditAnchorPreflight::new(config.preflight.clone()).unwrap();
+    let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+    for _elapsed in [5, 10, 15] {
+        // Advancing the stored age by one poll reproduces t5/t10/t15 without
+        // wall-clock sleeps. The former throttle accumulated all three ages.
+        connection
+            .batch_execute(
+                "UPDATE public.security_audit_chain_state \
+            SET anchor_observed_at = anchor_observed_at - INTERVAL '5 seconds' \
+            WHERE singleton IS TRUE",
+            )
+            .await
+            .unwrap();
+        let before = repository.anchor_health().await.unwrap();
+        assert_eq!(
+            run_iteration(
+                &repository,
+                &client,
+                &config,
+                &mut last_anchored,
+                &mut last_blocked
+            )
+            .await,
+            IterationOutcome::Poll(Duration::from_secs(5))
+        );
+        let observed = repository.anchor_health().await.unwrap();
+        assert!(observed.observed_at > before.observed_at);
+        preflight
+            .ensure_fresh(&observed)
+            .expect("healthy idle worker remains ready");
+        assert!(!observed.pending_exists && observed.batch.is_none());
+        assert_eq!(observed.head_sequence, acknowledged.head_sequence);
+        assert_eq!(
+            observed.last_exported_sequence,
+            acknowledged.last_exported_sequence
+        );
+        assert_eq!(observed.last_exported_hash, acknowledged.last_exported_hash);
+        assert_eq!(
+            observed.last_exported_at, acknowledged.last_exported_at,
+            "idle polls add no receiver acknowledgement"
+        );
+    }
+    let current = repository.anchor_health().await.unwrap();
+    assert!(
+        repository
+            .observe_anchor("wrong-idle-deployment")
+            .await
+            .is_err()
+    );
+    assert_eq!(repository.anchor_health().await.unwrap(), current);
+    let mut wrong = config.preflight;
+    wrong.deployment_id = "wrong-idle-deployment".to_owned();
+    assert!(
+        AuditAnchorPreflight::new(wrong)
+            .unwrap()
+            .ensure_fresh(&current)
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn consecutive_real_receipts_ack_without_redundant_observations_and_restart_revalidates() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let repository = ScriptedRepository::default();
+    let mut last = None;
+    let mut blocked = None;
+    let client = test_client();
+    for sequence in 8..13 {
+        let batch = batch(vec![delivery(sequence)]);
+        let (endpoint, server) =
+            local_anchor_endpoint_with_body(200, accepted_batch_receipt(&batch)).await;
+        let config = valid_worker_config(endpoint);
+        repository
+            .health
+            .lock()
+            .unwrap()
+            .push_back(Ok(health_snapshot()));
+        repository
+            .claims
+            .lock()
+            .unwrap()
+            .push_back(Ok(SecurityAuditBatchClaim::Claimed(batch)));
+        assert_eq!(
+            run_iteration(&repository, &client, &config, &mut last, &mut blocked).await,
+            IterationOutcome::Continue
+        );
+        server.await.unwrap();
+        assert_eq!(last.as_ref().unwrap().sequence, sequence);
+    }
+    assert_eq!(repository.ack_calls.load(Relaxed), 5);
+    assert_eq!(repository.observe_calls.load(Relaxed), 1);
+    // A new worker must validate the binding despite a recent committed ACK.
+    last = None;
+    repository
+        .health
+        .lock()
+        .unwrap()
+        .push_back(Ok(health_snapshot()));
+    repository
+        .claims
+        .lock()
+        .unwrap()
+        .push_back(Ok(SecurityAuditBatchClaim::Empty));
+    let config = valid_worker_config(Url::parse("http://127.0.0.1:1/").unwrap());
+    assert_eq!(
+        run_iteration(&repository, &client, &config, &mut last, &mut blocked).await,
+        IterationOutcome::Poll(config.poll_interval)
+    );
+    assert_eq!(repository.observe_calls.load(Relaxed), 2);
+    assert_eq!(repository.claim_calls.load(Relaxed), 6);
+    assert_eq!(repository.ack_calls.load(Relaxed), 5);
+    println!("5 signed HTTP receipts: ACK calls=5, observe calls=1; restart: observe +1, ACK +0");
+}
+
+#[tokio::test]
+async fn iteration_observes_missing_stale_future_and_foreign_bindings_before_every_claim_kind() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let client = test_client();
+    let config = valid_worker_config(Url::parse("http://127.0.0.1:1/").unwrap());
+    for kind in ["empty", "busy", "blocked"] {
+        for age in ["missing", "stale", "future", "foreign"] {
+            let mut health = health_snapshot();
+            match age {
+                "missing" => health.observed_at = None,
+                "stale" => health.observed_at = Some(Utc::now() - ChronoDuration::seconds(5)),
+                "future" => health.observed_at = Some(Utc::now() + ChronoDuration::seconds(5)),
+                "foreign" => health.deployment_id = Some("other".into()),
+                _ => unreachable!(),
+            }
+            let claim = match kind {
+                "empty" => SecurityAuditBatchClaim::Empty,
+                "busy" => SecurityAuditBatchClaim::Busy,
+                _ => SecurityAuditBatchClaim::Blocked {
+                    reason: "permanent".into(),
+                },
+            };
+            let repository = ScriptedRepository::with_health(Ok(health), Ok(claim));
+            let mut last = AnchorCheckpoint::from_snapshot(&health_snapshot());
+            let mut blocked = None;
+            if age == "foreign" {
+                repository
+                    .observations
+                    .lock()
+                    .unwrap()
+                    .push_back(Err(repository_error("deployment mismatch")));
+            }
+            let outcome =
+                run_iteration(&repository, &client, &config, &mut last, &mut blocked).await;
+            assert_eq!(repository.observe_calls.load(Relaxed), 1);
+            assert_eq!(repository.ack_calls.load(Relaxed), 0);
+            if age == "foreign" {
+                assert!(matches!(outcome, IterationOutcome::Retry(_)));
+                assert_eq!(repository.claim_calls.load(Relaxed), 0);
+            } else {
+                assert_eq!(outcome, IterationOutcome::Poll(config.poll_interval));
+                assert_eq!(repository.claim_calls.load(Relaxed), 1);
+            }
+        }
+    }
 }

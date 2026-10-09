@@ -1,0 +1,11 @@
+{
+  "label": "r230-bottleneck-b04-20261009",
+  "key": "B04",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 23.008,
+  "total_elapsed_s": 297.334,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

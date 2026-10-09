@@ -26,14 +26,14 @@ pub use model::TestSigningBehavior;
 pub use model::{
     ExternalKeyRegistration, HttpSigningLease, KeyHealth, KeyHealthStatus, KeyManager, KeyRecord,
     KeyRecordStatus, KeySettings, KeySnapshot, KeyState, LocalKeyRegistration, ManagedKey,
-    Openid4vcMaterial, Openid4vcPublicMaterial, Openid4vcSigningLease, Openid4vcState,
-    VerificationKey,
+    MdocCrlMaterial, Openid4vcMaterial, Openid4vcPublicMaterial, Openid4vcSigningLease,
+    Openid4vcState, VerificationKey,
 };
 pub use mtls_trust::{MtlsTrustAnchorError, ValidatedMtlsTrustAnchor, validate_mtls_trust_anchor};
 pub use repository::{
     PersistedSigningKeyset, SealedKeyMaterial, SigningKeyRepository, SigningKeyRepositoryFuture,
-    SigningKeyWrappingKeyError, SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult,
-    SigningKeysetCreateResult,
+    SigningKeyRepositoryUnavailable, SigningKeyWrappingKeyError, SigningKeyWrappingKeyRing,
+    SigningKeysetCompareAndSwapResult, SigningKeysetCreateResult,
 };
 pub use serialization::{signing_algorithm_from_name, signing_algorithm_name};
 
