@@ -1,0 +1,19 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.20s
+     Running tests/refresh_family_capacity.rs (target/debug/deps/refresh_family_capacity-a9e35c41cc5c1f73)
+
+running 10 tests
+test cap_grows_to_ten_then_retires_the_deterministic_oldest ... ok
+test cap_is_per_tenant_user_client_scope ... ok
+test capacity_retired_family_tokens_remain_revoked_tombstones ... ok
+test concurrent_authorizations_never_exceed_the_cap ... ok
+test fresh_retired_contract_is_reclaimed_without_touching_live_references ... fresh orphan reclaimed after 2 batches over 354 initial contracts
+ok
+test machine_issuance_without_user_skips_the_cap ... ok
+test public_family_retains_more_than_sixty_four_unexpired_rotation_proofs ... ok
+test required_capacity_audit_failure_rolls_back_retirement_and_issuance ... ok
+test rotation_never_consumes_a_family_slot ... ok
+test spent_proofs_stay_bounded_under_sustained_rotation ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.34s
+

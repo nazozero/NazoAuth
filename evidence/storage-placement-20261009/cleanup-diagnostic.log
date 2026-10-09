@@ -1,0 +1,130 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.89s
+     Running tests/migrations.rs (target/debug/deps/migrations-f3a0c469a783916c)
+
+running 28 tests
+test access_token_revocation_retention_backfill_extends_only_live_windows ... ok
+test access_token_revocation_retention_sql_pins_the_verifier_skew_window ... ok
+test embedded_migration_head_tracks_latest_directory ... ok
+test empty_schema_migration_run_leaves_revocation_retention_applied_and_writable ... ok
+test identity_security_event_migration_is_additive_redacted_and_round_trips ... ok
+test issuance_cleanup_uses_expiry_as_an_index_bound ... ok
+test migration_versions_are_unique_across_merged_branches ... ok
+test oidc_logout_idempotency_migration_is_additive_partial_and_reversible ... ok
+test openid4vp_expiry_cleanup_query_is_indexable ... ok
+test pending_migrations_create_all_runtime_module_state_tables ... ok
+test pending_migrations_create_tenant_scoped_signing_keyset_storage ... ok
+test persisted_security_state_cut_executes_fail_closed_and_establishes_current_invariants ... ok
+test persisted_security_state_cut_removes_every_legacy_authority ... ok
+test pushed_requests_policy_downgrade_fails_closed_on_required_clients ... ok
+test recovery_allocation_proof_migration_hard_cuts_unsigned_pending_state ... ok
+test recovery_coverage_migration_preserves_old_receipts_and_writer_default ... ok
+test recovery_receipt_migration_binds_exact_retry_to_immutable_result ... ok
+test recovery_root_key_history_backfills_current_keys_and_refuses_downgrade ... ok
+test recovery_root_migration_pins_kdf_ttl_uniqueness_and_fail_closed_downgrade ... ok
+test refresh_state_minimal_migration_converges_family_cap_and_contracts ... ok
+test revoked_refresh_family_cleanup_index_is_partial_and_reversible ... ok
+test runtime_module_state_migration_enforces_catalogs_and_round_trips ... ok
+test security_state_cleanup_function_bounds_every_category ... ok
+test security_state_cleanup_has_versioned_definitions_and_no_runtime_call ... ok
+test social_provider_type_migration_preserves_existing_rows_and_has_safe_down_policy ... ok
+test tenant_resource_provenance_cut_keeps_one_deterministic_binding_and_rejects_ambiguity ... ok
+test token_principal_epochs_survive_reactivation_and_bindings_are_tenant_owned ... ok
+test totp_invalid_audit_migration_extends_and_restores_the_closed_catalog ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.06s
+
+     Running tests/openid4vc.rs (target/debug/deps/openid4vc-5476e2a6142da50f)
+
+running 37 tests
+test access_upsert_conflict_with_a_different_identity_is_a_noop ... ok
+test access_upsert_preserves_the_revocation_marker ... ok
+test access_upsert_updates_each_mutable_projection_column ... ok
+test anonymous_pre_authorized_persist_never_reads_client_rows ... ok
+test anonymous_pre_authorized_persist_writes_the_upsert_row_shape ... ok
+test concurrent_deferred_claims_lease_to_one_owner ... ok
+test concurrent_identical_access_upserts_are_noops ... ok
+test corrupt_deferred_payload_rolls_back_the_claim_lease ... ok
+test credential_dataset_mutations_require_an_active_admin_and_are_audited_atomically ... ok
+test credential_persistence_rejects_binding_conflicts_and_accepts_exact_retries ... ok
+test credential_proof_origin_migration_preserves_legacy_and_guards_anonymous_rollback ... ok
+test deferred_access_join_is_guaranteed_by_the_schema ... ok
+test deferred_claim_rejects_unclaimable_rows_without_leasing ... ok
+test deferred_claim_returns_joined_domain_state_and_writes_the_lease ... ok
+test deferred_claim_supports_grants_without_dpop_binding ... ok
+test deferred_locked_projection_rechecks_waited_facts_and_discards_cancelled_owner ... ok
+test deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transaction ... ok
+test deferred_reverse_grant_pairs_wait_on_the_sorted_first_lock_and_both_commit ... ok
+test identical_access_upsert_leaves_the_row_version_untouched ... ok
+test issuance_store_covers_atomic_recovery_and_terminal_error_boundaries ... ok
+test managed_dataset_required::cancelled_dataset_required_owner_releases_peer_row_lock_without_pool_checkout ... ok
+test managed_dataset_required::dataset_fault_contract_rejects_suppressed_effect_source_and_required_events ... ok
+test managed_dataset_required::dataset_owner_rechecks_actor_and_subject_after_real_row_lock_wait ... ok
+test managed_dataset_required::dataset_put_returns_actual_stored_validity_before_ack ... ok
+test managed_dataset_required::dataset_real_noop_does_not_append_accepting_evidence ... ok
+test managed_dataset_required::required_dataset_append_fault_rolls_back_exact_ciphertext_source_events_and_ledger ... ok
+test notification_identical_concurrent_retries_preserve_first_event_and_occurrence ... ok
+test openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and_encrypted_at_rest ... ok
+test pre_authorized_persist_distinguishes_mismatched_and_inactive_clients ... ok
+test pre_authorized_persist_holds_the_client_lock_until_deactivation_wins ... ok
+test pre_authorized_persist_rejects_a_client_deactivated_after_authentication ... ok
+test pre_authorized_verification_rechecks_snapshot_expiry_and_busy_result ... ok
+test pre_authorized_verification_releases_the_pool_and_has_one_consumer ... consumed_offer_logical_row_bytes before=360 after=184
+ok
+test presentation_completion_rechecks_owner_clock_after_pool_and_record_waits ... ok
+test recoverable_issuance_leases_commit_responses_and_deferred_credentials_once ... ok
+test refreshed_access_continues_only_its_original_credential_intent_after_source_expiry ... ok
+test revoked_access_grants_stay_revoked_through_every_persist_path ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 79.65s
+
+     Running tests/security_state_commit_boundary.rs (target/debug/deps/security_state_commit_boundary-2cc4e3ae3e9bd35d)
+
+running 1 test
+test cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded ... raise: no premature cleanup success, backend retired, recovery committed
+cancel: no premature cleanup success, backend retired, recovery committed
+disconnect: no premature cleanup success, backend retired, recovery committed
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.22s
+
+     Running tests/security_state_maintenance.rs (target/debug/deps/security_state_maintenance-4aa53c5266a7a328)
+
+running 28 tests
+test acked_audit_rows_leave_the_ledger_and_unacked_rows_stay ... ok
+test active_successor_blocks_ancestor_reclaim ... ok
+test audit_ack_deletes_delivery_rows_atomically ... ok
+test bounded_batch_finishes_before_a_queued_connection_borrower ... ok
+test cancelled_batch_leaves_no_open_transaction_on_pooled_connection ... ok
+test concurrent_batches_do_not_deadlock_or_double_count ... ok
+test concurrent_credential_sweepers_skip_an_uncommitted_child_parent ... ok
+test contract_cleaner_first_fences_writer_and_cancelled_sweeper_discards_connection ... contract cleaner first/commit: writer waited on parent lock then safely referenced or recreated exact contract
+contract cleaner first/rollback: writer waited on parent lock then safely referenced or recreated exact contract
+contract cleaner first/cancel: writer waited on parent lock then safely referenced or recreated exact contract
+ok
+test contract_scan_advances_past_referenced_pages_and_revisits_after_wrap ... ok
+test contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconnect ... contract writer first/commit: locked parent skipped, committed reference retained, unreferenced parent converged after cursor wrap
+contract writer first/rollback: locked parent skipped, committed reference retained, unreferenced parent converged after cursor wrap
+contract writer first/disconnect: locked parent skipped, committed reference retained, unreferenced parent converged after cursor wrap
+ok
+test credential_state_cleanup_is_bounded_and_preserves_live_ownership ... ok
+test expired_issuances_are_reclaimed_in_bounded_batches ... ok
+test expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive ... ok
+test family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate_budget ... ok
+test fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_atomic ... ok
+test grant_scan_advances_past_referenced_pages_and_revisits_after_wrap ... ok
+test large_family_reclaim_stays_bounded_per_batch ... ok
+test live_public_family_keeps_more_than_sixty_four_unexpired_proofs ... ok
+test natural_expiry_refresh_leaf_reclaimed_without_revocation ... ok
+test openid4vp_find_never_deletes_and_create_only_clears_the_same_key ... ok
+test oversized_family_drains_across_bounded_batches_and_reports_saturation ... ok
+test preserve_shared_family_lock_skips_terminal_cleanup ... ok
+test protocol_cleanup_leaves_history_until_history_scope_and_preserves_retention ... ok
+test reclaim_scopes_family_authority_to_tenant ... ok
+test revocations_and_scim_and_logout_categories_keep_their_retention ... ok
+test terminal_refresh_proofs_drain_with_one_global_budget_before_parent_delete ... ok
+test three_generation_family_reclaims_whole_chain_in_one_batch ... ok
+test writer_family_lock_skips_locked_family_and_recheck_blocks_late_successor ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.47s
+

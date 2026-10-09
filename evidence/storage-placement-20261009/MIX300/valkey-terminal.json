@@ -1,0 +1,73 @@
+{
+  "census_exact": {
+    "oauth:client_assertion": 14616,
+    "oauth:dpop": 36152,
+    "oauth:jar": 36707,
+    "oauth:session": 4111,
+    "tenant-directory:snapshot": 1
+  },
+  "done": true,
+  "info": {
+    "aof_enabled": 0,
+    "dbsize": 91587,
+    "evicted_keys": 0,
+    "expired_keys": 107886,
+    "keyspace_hits": 2567686,
+    "keyspace_misses": 7363,
+    "mem_fragmentation_ratio": 1.91,
+    "rdb_bgsave_in_progress": 0,
+    "used_memory": 35064160,
+    "used_memory_rss": 69709824
+  },
+  "keys_seen": 91587,
+  "mem_bytes_sampled": {
+    "oauth:client_assertion": 25600,
+    "oauth:dpop": 23552,
+    "oauth:jar": 26240,
+    "oauth:session": 37600,
+    "tenant-directory:snapshot": 544
+  },
+  "mem_sample_n": {
+    "oauth:client_assertion": 80,
+    "oauth:dpop": 80,
+    "oauth:jar": 80,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "meta": {
+    "run_id": "nazo-model-storage-mix300-20261009",
+    "sample_per_cat": 80,
+    "sampled_at": 1791555087,
+    "scan_ms": 370,
+    "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+  },
+  "sampled_per_cat": {
+    "oauth:client_assertion": 80,
+    "oauth:dpop": 80,
+    "oauth:jar": 80,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "total_keys": 91587,
+  "ttl_buckets_sampled": {
+    "oauth:client_assertion|0m+": 34,
+    "oauth:client_assertion|1m+": 27,
+    "oauth:client_assertion|2m+": 19,
+    "oauth:dpop|0m+": 19,
+    "oauth:dpop|1m+": 25,
+    "oauth:dpop|2m+": 20,
+    "oauth:dpop|3m+": 12,
+    "oauth:dpop|4m+": 4,
+    "oauth:jar|0m+": 45,
+    "oauth:jar|1m+": 34,
+    "oauth:jar|2m+": 1,
+    "oauth:session|472m+": 34,
+    "oauth:session|473m+": 10,
+    "oauth:session|474m+": 7,
+    "oauth:session|475m+": 7,
+    "oauth:session|476m+": 7,
+    "oauth:session|477m+": 13,
+    "oauth:session|478m+": 2,
+    "tenant-directory:snapshot|no_ttl": 1
+  }
+}

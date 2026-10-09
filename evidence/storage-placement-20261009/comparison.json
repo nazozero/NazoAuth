@@ -1,0 +1,1713 @@
+[
+  {
+    "key": "REV360",
+    "A": {
+      "base_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+      "source_patch_sha256": null,
+      "ops_s": 960.0,
+      "latency_ms": {
+        "p50": 13.0,
+        "p95": 25.0,
+        "p99": 45.0
+      },
+      "measure": {
+        "window_start_s": 1791536380.115,
+        "window_end_s": 1791536740.115,
+        "measure_started_exact": 345600,
+        "measure_completed_exact": 345600,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 345600,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 345600
+        },
+        "measure_outcome_sum": 345600,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 345600,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 960.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "verdict": "PASS",
+      "sidecar_gates": null,
+      "wal_bytes_per_success": 11519.772,
+      "cpu_cores": {
+        "app": 2.48,
+        "postgres": 4.44
+      },
+      "db_peak_bytes": 791180991,
+      "db_initial_bytes": 42686143,
+      "db_last_active_bytes": 791180991,
+      "decision_stable_avg_rows": 115488.05,
+      "decision_stable_avg_payload_bytes_per_row": 966.7767002019351,
+      "decision_stable_avg_row_bytes": 1239.9977019338476,
+      "decision_due_peak": 56199,
+      "decision_due_age_peak_s": 58.540068,
+      "pending_peak": 177,
+      "pending_age_peak_s": 0.05591,
+      "valkey_peak_used_bytes": 86152328,
+      "audit_verdict": "PASS",
+      "audit_events": 1080003,
+      "elapsed_s": 550.6,
+      "storage_errors": [],
+      "latency_30s": [
+        {
+          "offset_s": 0,
+          "completed": 28678,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 81.0
+        },
+        {
+          "offset_s": 30,
+          "completed": 28801,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 124.0
+        },
+        {
+          "offset_s": 60,
+          "completed": 28787,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 124.0
+        },
+        {
+          "offset_s": 90,
+          "completed": 28811,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 119.0
+        },
+        {
+          "offset_s": 120,
+          "completed": 28798,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 158.0
+        },
+        {
+          "offset_s": 150,
+          "completed": 28799,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 68.0
+        },
+        {
+          "offset_s": 180,
+          "completed": 28802,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 107.0
+        },
+        {
+          "offset_s": 210,
+          "completed": 28800,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 110.0
+        },
+        {
+          "offset_s": 240,
+          "completed": 28803,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 114.0
+        },
+        {
+          "offset_s": 270,
+          "completed": 28800,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 87.0
+        },
+        {
+          "offset_s": 300,
+          "completed": 28801,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 72.0
+        },
+        {
+          "offset_s": 330,
+          "completed": 28796,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 79.0
+        },
+        {
+          "offset_s": 360,
+          "completed": 124,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 25.0
+        }
+      ]
+    },
+    "B": {
+      "base_sha": "4b4fdc33b6a570aa270b17f5785e1f3188f3fc84",
+      "source_patch_sha256": "8057cd5e01e3f6a45ee7fdb239a77090ac73bcb98722d0d6ddf776bb7a59c744",
+      "ops_s": 960.0,
+      "latency_ms": {
+        "p50": 38.0,
+        "p95": 127.0,
+        "p99": 485.0
+      },
+      "measure": {
+        "window_start_s": 1791554047.347,
+        "window_end_s": 1791554407.347,
+        "measure_started_exact": 345600,
+        "measure_completed_exact": 345600,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 345600,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 345600
+        },
+        "measure_outcome_sum": 345600,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 345600,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 960.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "verdict": "FAIL",
+      "sidecar_gates": null,
+      "wal_bytes_per_success": 11033.55,
+      "cpu_cores": {
+        "app": 4.79,
+        "postgres": 7.02
+      },
+      "db_peak_bytes": 634009279,
+      "db_initial_bytes": 24909503,
+      "db_last_active_bytes": 634009279,
+      "decision_stable_avg_rows": 116149.8,
+      "decision_stable_avg_payload_bytes_per_row": 5.499868504903981,
+      "decision_stable_avg_row_bytes": 280.4947875975011,
+      "decision_due_peak": 56403,
+      "decision_due_age_peak_s": 58.746546,
+      "pending_peak": 5401,
+      "pending_age_peak_s": 1.863533,
+      "valkey_peak_used_bytes": 86343040,
+      "audit_verdict": "PASS",
+      "audit_events": 1080003,
+      "elapsed_s": 552.3,
+      "storage_errors": [],
+      "latency_30s": [
+        {
+          "offset_s": 0,
+          "completed": 28437,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "max_ms": 294.0
+        },
+        {
+          "offset_s": 30,
+          "completed": 28801,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 151.0
+        },
+        {
+          "offset_s": 60,
+          "completed": 28803,
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "max_ms": 393.0
+        },
+        {
+          "offset_s": 90,
+          "completed": 28794,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 215.0
+        },
+        {
+          "offset_s": 120,
+          "completed": 28811,
+          "p95_interval_ms": [
+            500,
+            1000
+          ],
+          "p99_interval_ms": [
+            500,
+            1000
+          ],
+          "max_ms": 892.0
+        },
+        {
+          "offset_s": 150,
+          "completed": 28798,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 164.0
+        },
+        {
+          "offset_s": 180,
+          "completed": 28801,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 161.0
+        },
+        {
+          "offset_s": 210,
+          "completed": 28769,
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            500,
+            1000
+          ],
+          "max_ms": 763.0
+        },
+        {
+          "offset_s": 240,
+          "completed": 28802,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 123.0
+        },
+        {
+          "offset_s": 270,
+          "completed": 28825,
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 224.0
+        },
+        {
+          "offset_s": 300,
+          "completed": 28779,
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 206.0
+        },
+        {
+          "offset_s": 330,
+          "completed": 28801,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 171.0
+        },
+        {
+          "offset_s": 360,
+          "completed": 379,
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 135.0
+        }
+      ],
+      "natural_final": {
+        "ts": 1791554548.996073,
+        "locks": [
+          {
+            "n": 32,
+            "wait_event": "ClientRead",
+            "xact_age_s": null,
+            "wait_event_type": "Client"
+          },
+          {
+            "n": 1,
+            "wait_event": null,
+            "xact_age_s": -0.051746,
+            "wait_event_type": null
+          }
+        ],
+        "anchor": 1080003,
+        "tables": [
+          {
+            "relname": "security_audit_events",
+            "n_tup_del": 1072835,
+            "n_tup_ins": 1080003,
+            "n_dead_tup": 2529,
+            "index_bytes": 107446272,
+            "table_bytes": 71491584,
+            "autovacuum_count": 8
+          },
+          {
+            "relname": "oauth_token_issuances",
+            "n_tup_del": 100510,
+            "n_tup_ins": 360001,
+            "n_dead_tup": 8704,
+            "index_bytes": 98467840,
+            "table_bytes": 140705792,
+            "autovacuum_count": 7
+          },
+          {
+            "relname": "security_audit_chain_entries",
+            "n_tup_del": 1080003,
+            "n_tup_ins": 1080003,
+            "n_dead_tup": 0,
+            "index_bytes": 31236096,
+            "table_bytes": 24576,
+            "autovacuum_count": 7
+          },
+          {
+            "relname": "oauth_refresh_contracts",
+            "n_tup_del": 5912,
+            "n_tup_ins": 6904,
+            "n_dead_tup": 0,
+            "index_bytes": 671744,
+            "table_bytes": 720896,
+            "autovacuum_count": 6
+          },
+          {
+            "relname": "oauth_refresh_families",
+            "n_tup_del": 360001,
+            "n_tup_ins": 360993,
+            "n_dead_tup": 0,
+            "index_bytes": 52953088,
+            "table_bytes": 286720,
+            "autovacuum_count": 7
+          },
+          {
+            "relname": "oauth_refresh_spent_tokens",
+            "n_tup_del": 0,
+            "n_tup_ins": 0,
+            "n_dead_tup": 0,
+            "index_bytes": 24576,
+            "table_bytes": 8192,
+            "autovacuum_count": 0
+          }
+        ],
+        "blocked": null,
+        "pending": 0,
+        "db_bytes": 524818111,
+        "family_live": 992,
+        "observed_at": 1791554548.129567,
+        "decision_bytes": {
+          "count": 0,
+          "row_bytes": 0,
+          "payload_bytes": 0
+        },
+        "spent_eligible": 0,
+        "spent_retained": 0,
+        "contract_orphan": 0,
+        "family_eligible": 0,
+        "issuance_counts": {
+          "total": 252323,
+          "eligible": 42700,
+          "retained": 209623,
+          "oldest_due_s": 44.971501,
+          "oldest_created_retention_remaining_s": -44.971501
+        },
+        "pending_by_type": {},
+        "oldest_pending_s": 0,
+        "decision_eligible": 0,
+        "decision_retained": 0,
+        "decision_retention": {
+          "unexported": 0,
+          "exported_full": 0,
+          "exported_compact": 0,
+          "last_remaining_s": null,
+          "last_business_retain_until": null
+        },
+        "family_oldest_due_s": 0,
+        "decision_oldest_due_s": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        }
+      }
+    },
+    "change_pct": {
+      "wal_bytes_per_success": -4.220760619220599,
+      "db_peak_bytes": -19.865456044557572,
+      "decision_stable_avg_rows": 0.5730030076704917,
+      "decision_stable_avg_row_bytes": -77.3794106908381,
+      "decision_stable_avg_payload_bytes_per_row": -99.43111284087057,
+      "decision_due_peak": 0.36299578284311185,
+      "valkey_peak_used_bytes": 0.22136604364306756
+    }
+  },
+  {
+    "key": "MIX300",
+    "A": {
+      "base_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+      "source_patch_sha256": null,
+      "ops_s": 1599.973,
+      "latency_ms": {
+        "p50": 3.0,
+        "p95": 12.0,
+        "p99": 20.0
+      },
+      "measure": {
+        "window_start_s": 1791537049.716,
+        "window_end_s": 1791537349.716,
+        "measure_started_exact": 480000,
+        "measure_completed_exact": 480000,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 480000,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 479992,
+          "expected_rejection": 8
+        },
+        "measure_outcome_sum": 480000,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 480000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 1600.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "verdict": "PASS",
+      "sidecar_gates": {
+        "argon2": {
+          "verdict": "PASS",
+          "metrics": {
+            "rps": 47.999,
+            "p50": 3.361,
+            "p95": 124.331,
+            "p99": 128.314,
+            "dropped": 0,
+            "drop_fraction": 0.0,
+            "error_rate": 0.0,
+            "status": "passed",
+            "measured_ops_s": 8.0,
+            "successful_ops_s": 8.0,
+            "window_seconds": 375.0,
+            "rate_basis": "scenario_window_stream",
+            "measurement_contract": "cap-scenario-window-v1",
+            "classified_errors": 0,
+            "expected_invalid_grant": 0,
+            "unexpected_errors": 0,
+            "capacity_gate_contract": "successful-ops-v1",
+            "measure": {
+              "window_start_s": 1791537005.662,
+              "window_end_s": 1791537380.662,
+              "measure_started_exact": 3000,
+              "measure_completed_exact": 3000,
+              "measure_dropped_exact": 0,
+              "measure_scheduled_observed": 3000,
+              "measure_drop_fraction": 0.0,
+              "measure_outcomes": {
+                "success": 3000
+              },
+              "measure_outcome_sum": 3000,
+              "drops_pre_window": 0,
+              "drops_post_window": 0,
+              "drops_pending_unclassified": 0,
+              "pending_drops_overflow": false,
+              "valid": true,
+              "problems": [],
+              "rational_planned_arrivals": 3000,
+              "schedule_delta_vs_rational": 0,
+              "observed_schedule_rate": 8.0,
+              "cohort_source": "k6_stream_exact",
+              "late_vu_fraction": 0.0
+            },
+            "subject_lifecycle": {
+              "initial_mint": 0,
+              "refresh_update": 0,
+              "expired_reauth": 0
+            },
+            "gate_population": "measurement_cohort",
+            "gate_p95": 152.0,
+            "gate_p99": 170.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "forensic_diag": {
+              "status": "COMPLETE",
+              "truncated": false,
+              "budget_exceeded_points": 62009,
+              "overflow_dropped_points": 0,
+              "logical_bytes_cap": 536870912,
+              "file": "/src/evidence/storage-backlog-investigation-20261009/MIX300/results/multi/nazo-backlog-mix300-20261009/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz"
+            },
+            "latency_gate": "existing_cold_login_k6_guardrails",
+            "rate_for_gate": 8.0,
+            "threshold_status_diagnostic": "passed",
+            "complete_operation_latency_ms": {
+              "p50": 139.0,
+              "p95": 152.0,
+              "p99": 170.0
+            }
+          }
+        },
+        "meta": {
+          "verdict": "PASS",
+          "metrics": {
+            "rps": 400.0,
+            "p50": 0.155,
+            "p95": 0.276,
+            "p99": 0.652,
+            "dropped": 0,
+            "drop_fraction": 0.0,
+            "error_rate": 0.0,
+            "status": "passed",
+            "measured_ops_s": 200.0,
+            "successful_ops_s": 200.0,
+            "window_seconds": 375.0,
+            "rate_basis": "scenario_window_stream",
+            "measurement_contract": "cap-scenario-window-v1",
+            "classified_errors": 0,
+            "expected_invalid_grant": 0,
+            "unexpected_errors": 0,
+            "capacity_gate_contract": "successful-ops-v1",
+            "measure": {
+              "window_start_s": 1791537007.337,
+              "window_end_s": 1791537382.337,
+              "measure_started_exact": 75000,
+              "measure_completed_exact": 75000,
+              "measure_dropped_exact": 0,
+              "measure_scheduled_observed": 75000,
+              "measure_drop_fraction": 0.0,
+              "measure_outcomes": {
+                "success": 75000
+              },
+              "measure_outcome_sum": 75000,
+              "drops_pre_window": 0,
+              "drops_post_window": 0,
+              "drops_pending_unclassified": 0,
+              "pending_drops_overflow": false,
+              "valid": true,
+              "problems": [],
+              "rational_planned_arrivals": 75000,
+              "schedule_delta_vs_rational": 0,
+              "observed_schedule_rate": 200.0,
+              "cohort_source": "k6_stream_exact",
+              "late_vu_fraction": 0.0
+            },
+            "subject_lifecycle": {
+              "initial_mint": 0,
+              "refresh_update": 0,
+              "expired_reauth": 0
+            },
+            "gate_population": "measurement_cohort",
+            "gate_p95": 1.0,
+            "gate_p99": 1.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "forensic_diag": {
+              "status": "COMPLETE",
+              "truncated": false,
+              "budget_exceeded_points": 1611426,
+              "overflow_dropped_points": 0,
+              "logical_bytes_cap": 536870912,
+              "file": "/src/evidence/storage-backlog-investigation-20261009/MIX300/results/multi/nazo-backlog-mix300-20261009/meta/capacity-metadata-jwks.diag.jsonl.gz"
+            },
+            "latency_gate": "complete_operation_100_250ms",
+            "rate_for_gate": 200.0,
+            "threshold_status_diagnostic": "passed",
+            "complete_operation_latency_ms": {
+              "p50": 1.0,
+              "p95": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "fapi": {
+          "verdict": "PASS",
+          "metrics": {
+            "rps": 150.0,
+            "p50": 2.391,
+            "p95": 7.105,
+            "p99": 11.932,
+            "dropped": 0,
+            "drop_fraction": 0.0,
+            "error_rate": 0.0,
+            "status": "passed",
+            "measured_ops_s": 30.0,
+            "successful_ops_s": 30.0,
+            "window_seconds": 375.0,
+            "rate_basis": "scenario_window_stream",
+            "measurement_contract": "cap-scenario-window-v1",
+            "classified_errors": 0,
+            "expected_invalid_grant": 0,
+            "unexpected_errors": 0,
+            "capacity_gate_contract": "successful-ops-v1",
+            "measure": {
+              "window_start_s": 1791537009.274,
+              "window_end_s": 1791537384.274,
+              "measure_started_exact": 11250,
+              "measure_completed_exact": 11250,
+              "measure_dropped_exact": 0,
+              "measure_scheduled_observed": 11250,
+              "measure_drop_fraction": 0.0,
+              "measure_outcomes": {
+                "success": 11250
+              },
+              "measure_outcome_sum": 11250,
+              "drops_pre_window": 0,
+              "drops_post_window": 0,
+              "drops_pending_unclassified": 0,
+              "pending_drops_overflow": false,
+              "valid": true,
+              "problems": [],
+              "rational_planned_arrivals": 11250,
+              "schedule_delta_vs_rational": 0,
+              "observed_schedule_rate": 30.0,
+              "cohort_source": "k6_stream_exact",
+              "late_vu_fraction": 0.0
+            },
+            "subject_lifecycle": {
+              "initial_mint": 0,
+              "refresh_update": 0,
+              "expired_reauth": 0
+            },
+            "gate_population": "measurement_cohort",
+            "gate_p95": 30.0,
+            "gate_p99": 45.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "forensic_diag": {
+              "status": "COMPLETE",
+              "truncated": false,
+              "budget_exceeded_points": 329820,
+              "overflow_dropped_points": 0,
+              "logical_bytes_cap": 536870912,
+              "file": "/src/evidence/storage-backlog-investigation-20261009/MIX300/results/multi/nazo-backlog-mix300-20261009/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz"
+            },
+            "latency_gate": "complete_operation_100_250ms",
+            "rate_for_gate": 30.0,
+            "threshold_status_diagnostic": "passed",
+            "complete_operation_latency_ms": {
+              "p50": 20.0,
+              "p95": 30.0,
+              "p99": 45.0
+            }
+          }
+        },
+        "refresh": {
+          "verdict": "PASS",
+          "metrics": {
+            "rps": 600.653,
+            "p50": 4.032,
+            "p95": 8.467,
+            "p99": 18.744,
+            "dropped": 0,
+            "drop_fraction": 0.0,
+            "error_rate": 0.0,
+            "status": "passed",
+            "measured_ops_s": 600.0,
+            "successful_ops_s": 600.0,
+            "window_seconds": 375.0,
+            "rate_basis": "scenario_window_stream",
+            "measurement_contract": "cap-scenario-window-v1",
+            "classified_errors": 0,
+            "expected_invalid_grant": 0,
+            "unexpected_errors": 0,
+            "capacity_gate_contract": "successful-ops-v1",
+            "measure": {
+              "window_start_s": 1791537011.223,
+              "window_end_s": 1791537386.223,
+              "measure_started_exact": 225000,
+              "measure_completed_exact": 225000,
+              "measure_dropped_exact": 0,
+              "measure_scheduled_observed": 225000,
+              "measure_drop_fraction": 0.0,
+              "measure_outcomes": {
+                "success": 225000
+              },
+              "measure_outcome_sum": 225000,
+              "drops_pre_window": 0,
+              "drops_post_window": 0,
+              "drops_pending_unclassified": 0,
+              "pending_drops_overflow": false,
+              "valid": true,
+              "problems": [],
+              "rational_planned_arrivals": 225000,
+              "schedule_delta_vs_rational": 0,
+              "observed_schedule_rate": 600.0,
+              "cohort_source": "k6_stream_exact",
+              "late_vu_fraction": 0.0
+            },
+            "subject_lifecycle": {
+              "initial_mint": 64,
+              "refresh_update": 234001,
+              "expired_reauth": 0
+            },
+            "gate_population": "measurement_cohort",
+            "gate_p95": 9.0,
+            "gate_p99": 19.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "forensic_diag": {
+              "status": "COMPLETE",
+              "truncated": false,
+              "budget_exceeded_points": 4233074,
+              "overflow_dropped_points": 0,
+              "logical_bytes_cap": 536870912,
+              "file": "/src/evidence/storage-backlog-investigation-20261009/MIX300/results/multi/nazo-backlog-mix300-20261009/refresh/capacity-cap-refresh-token.diag.jsonl.gz"
+            },
+            "latency_gate": "complete_operation_100_250ms",
+            "rate_for_gate": 600.0,
+            "threshold_status_diagnostic": "passed",
+            "complete_operation_latency_ms": {
+              "p50": 4.0,
+              "p95": 9.0,
+              "p99": 19.0
+            }
+          }
+        }
+      },
+      "wal_bytes_per_success": 4585.434,
+      "cpu_cores": {
+        "app": 3.31,
+        "postgres": 3.79
+      },
+      "db_peak_bytes": 329373375,
+      "db_initial_bytes": 31930047,
+      "db_last_active_bytes": 329373375,
+      "decision_stable_avg_rows": 33576.72222222222,
+      "decision_stable_avg_payload_bytes_per_row": 968.6209617081905,
+      "decision_stable_avg_row_bytes": 1241.7345758846413,
+      "decision_due_peak": 16613,
+      "decision_due_age_peak_s": 59.94105,
+      "pending_peak": 118,
+      "pending_age_peak_s": 0.050266,
+      "valkey_peak_used_bytes": 50655360,
+      "audit_verdict": "PASS",
+      "audit_events": 864724,
+      "elapsed_s": 546.2,
+      "storage_errors": [],
+      "latency_30s": [
+        {
+          "offset_s": 0,
+          "completed": 46843,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 82.0
+        },
+        {
+          "offset_s": 30,
+          "completed": 48004,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 108.0
+        },
+        {
+          "offset_s": 60,
+          "completed": 48005,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "max_ms": 72.0
+        },
+        {
+          "offset_s": 90,
+          "completed": 47998,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 121.0
+        },
+        {
+          "offset_s": 120,
+          "completed": 47998,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 78.0
+        },
+        {
+          "offset_s": 150,
+          "completed": 48002,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "max_ms": 78.0
+        },
+        {
+          "offset_s": 180,
+          "completed": 48000,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "max_ms": 62.0
+        },
+        {
+          "offset_s": 210,
+          "completed": 47997,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 110.0
+        },
+        {
+          "offset_s": 240,
+          "completed": 48001,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "max_ms": 65.0
+        },
+        {
+          "offset_s": 270,
+          "completed": 48002,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 76.0
+        },
+        {
+          "offset_s": 300,
+          "completed": 1150,
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "max_ms": 24.0
+        }
+      ]
+    },
+    "B": {
+      "base_sha": "4b4fdc33b6a570aa270b17f5785e1f3188f3fc84",
+      "source_patch_sha256": "8057cd5e01e3f6a45ee7fdb239a77090ac73bcb98722d0d6ddf776bb7a59c744",
+      "ops_s": 1599.99,
+      "latency_ms": {
+        "p50": 8.0,
+        "p95": 51.0,
+        "p99": 146.0
+      },
+      "measure": {
+        "window_start_s": 1791554675.366,
+        "window_end_s": 1791554975.366,
+        "measure_started_exact": 480001,
+        "measure_completed_exact": 480001,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 480001,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 479997,
+          "expected_rejection": 4
+        },
+        "measure_outcome_sum": 480001,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 480000,
+        "schedule_delta_vs_rational": 1,
+        "observed_schedule_rate": 1600.003,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "verdict": "FAIL",
+      "sidecar_gates": {
+        "argon2": {
+          "verdict": "PASS",
+          "metrics": {
+            "rps": 47.936,
+            "p50": 9.548,
+            "p95": 255.903,
+            "p99": 297.983,
+            "dropped": 3,
+            "drop_fraction": 0.0009612303748798462,
+            "error_rate": 0.0,
+            "status": "target_miss",
+            "measured_ops_s": 7.992,
+            "successful_ops_s": 7.992,
+            "window_seconds": 375.0,
+            "rate_basis": "scenario_window_stream",
+            "measurement_contract": "cap-scenario-window-v1",
+            "classified_errors": 0,
+            "expected_invalid_grant": 0,
+            "unexpected_errors": 0,
+            "capacity_gate_contract": "successful-ops-v1",
+            "measure": {
+              "window_start_s": 1791554631.696,
+              "window_end_s": 1791555006.696,
+              "measure_started_exact": 2997,
+              "measure_completed_exact": 2997,
+              "measure_dropped_exact": 3,
+              "measure_scheduled_observed": 3000,
+              "measure_drop_fraction": 0.001,
+              "measure_outcomes": {
+                "success": 2997
+              },
+              "measure_outcome_sum": 2997,
+              "drops_pre_window": 0,
+              "drops_post_window": 0,
+              "drops_pending_unclassified": 0,
+              "pending_drops_overflow": false,
+              "valid": true,
+              "problems": [],
+              "rational_planned_arrivals": 3000,
+              "schedule_delta_vs_rational": 0,
+              "observed_schedule_rate": 8.0,
+              "cohort_source": "k6_stream_exact",
+              "late_vu_fraction": 0.0
+            },
+            "subject_lifecycle": {
+              "initial_mint": 0,
+              "refresh_update": 0,
+              "expired_reauth": 0
+            },
+            "gate_population": "measurement_cohort",
+            "gate_p95": 410.0,
+            "gate_p99": 682.1999999999998,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "forensic_diag": {
+              "status": "COMPLETE",
+              "truncated": false,
+              "budget_exceeded_points": 62799,
+              "overflow_dropped_points": 0,
+              "logical_bytes_cap": 536870912,
+              "file": "/src/evidence/storage-placement-20261009/MIX300/results/multi/nazo-model-storage-mix300-20261009/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz"
+            },
+            "latency_gate": "existing_cold_login_k6_guardrails",
+            "rate_for_gate": 7.992,
+            "threshold_status_diagnostic": "target_miss",
+            "complete_operation_latency_ms": {
+              "p50": 276.0,
+              "p95": 410.0,
+              "p99": 682.1999999999998
+            }
+          }
+        },
+        "meta": {
+          "verdict": "PASS",
+          "metrics": {
+            "rps": 399.999,
+            "p50": 0.277,
+            "p95": 1.104,
+            "p99": 2.651,
+            "dropped": 0,
+            "drop_fraction": 0.0,
+            "error_rate": 0.0,
+            "status": "passed",
+            "measured_ops_s": 200.0,
+            "successful_ops_s": 200.0,
+            "window_seconds": 375.0,
+            "rate_basis": "scenario_window_stream",
+            "measurement_contract": "cap-scenario-window-v1",
+            "classified_errors": 0,
+            "expected_invalid_grant": 0,
+            "unexpected_errors": 0,
+            "capacity_gate_contract": "successful-ops-v1",
+            "measure": {
+              "window_start_s": 1791554633.469,
+              "window_end_s": 1791555008.469,
+              "measure_started_exact": 75000,
+              "measure_completed_exact": 75000,
+              "measure_dropped_exact": 0,
+              "measure_scheduled_observed": 75000,
+              "measure_drop_fraction": 0.0,
+              "measure_outcomes": {
+                "success": 75000
+              },
+              "measure_outcome_sum": 75000,
+              "drops_pre_window": 0,
+              "drops_post_window": 0,
+              "drops_pending_unclassified": 0,
+              "pending_drops_overflow": false,
+              "valid": true,
+              "problems": [],
+              "rational_planned_arrivals": 75000,
+              "schedule_delta_vs_rational": 0,
+              "observed_schedule_rate": 200.0,
+              "cohort_source": "k6_stream_exact",
+              "late_vu_fraction": 0.0
+            },
+            "subject_lifecycle": {
+              "initial_mint": 0,
+              "refresh_update": 0,
+              "expired_reauth": 0
+            },
+            "gate_population": "measurement_cohort",
+            "gate_p95": 2.0,
+            "gate_p99": 5.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "forensic_diag": {
+              "status": "COMPLETE",
+              "truncated": false,
+              "budget_exceeded_points": 1611462,
+              "overflow_dropped_points": 0,
+              "logical_bytes_cap": 536870912,
+              "file": "/src/evidence/storage-placement-20261009/MIX300/results/multi/nazo-model-storage-mix300-20261009/meta/capacity-metadata-jwks.diag.jsonl.gz"
+            },
+            "latency_gate": "complete_operation_100_250ms",
+            "rate_for_gate": 200.0,
+            "threshold_status_diagnostic": "passed",
+            "complete_operation_latency_ms": {
+              "p50": 1.0,
+              "p95": 2.0,
+              "p99": 5.0
+            }
+          }
+        },
+        "fapi": {
+          "verdict": "FAIL",
+          "metrics": {
+            "rps": 150.001,
+            "p50": 7.154,
+            "p95": 34.056,
+            "p99": 86.538,
+            "dropped": 0,
+            "drop_fraction": 0.0,
+            "error_rate": 0.0,
+            "status": "passed",
+            "measured_ops_s": 30.0,
+            "successful_ops_s": 30.0,
+            "window_seconds": 375.0,
+            "rate_basis": "scenario_window_stream",
+            "measurement_contract": "cap-scenario-window-v1",
+            "classified_errors": 0,
+            "expected_invalid_grant": 0,
+            "unexpected_errors": 0,
+            "capacity_gate_contract": "successful-ops-v1",
+            "measure": {
+              "window_start_s": 1791554634.895,
+              "window_end_s": 1791555009.895,
+              "measure_started_exact": 11250,
+              "measure_completed_exact": 11250,
+              "measure_dropped_exact": 0,
+              "measure_scheduled_observed": 11250,
+              "measure_drop_fraction": 0.0,
+              "measure_outcomes": {
+                "success": 11250
+              },
+              "measure_outcome_sum": 11250,
+              "drops_pre_window": 0,
+              "drops_post_window": 0,
+              "drops_pending_unclassified": 0,
+              "pending_drops_overflow": false,
+              "valid": true,
+              "problems": [],
+              "rational_planned_arrivals": 11250,
+              "schedule_delta_vs_rational": 0,
+              "observed_schedule_rate": 30.0,
+              "cohort_source": "k6_stream_exact",
+              "late_vu_fraction": 0.0
+            },
+            "subject_lifecycle": {
+              "initial_mint": 0,
+              "refresh_update": 0,
+              "expired_reauth": 0
+            },
+            "gate_population": "measurement_cohort",
+            "gate_p95": 157.0,
+            "gate_p99": 432.02000000000044,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "forensic_diag": {
+              "status": "COMPLETE",
+              "truncated": false,
+              "budget_exceeded_points": 329744,
+              "overflow_dropped_points": 0,
+              "logical_bytes_cap": 536870912,
+              "file": "/src/evidence/storage-placement-20261009/MIX300/results/multi/nazo-model-storage-mix300-20261009/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz"
+            },
+            "latency_gate": "complete_operation_100_250ms",
+            "rate_for_gate": 30.0,
+            "threshold_status_diagnostic": "passed",
+            "complete_operation_latency_ms": {
+              "p50": 48.0,
+              "p95": 157.0,
+              "p99": 432.02000000000044
+            }
+          }
+        },
+        "refresh": {
+          "verdict": "FAIL",
+          "metrics": {
+            "rps": 597.588,
+            "p50": 11.666,
+            "p95": 39.755,
+            "p99": 93.139,
+            "dropped": 1192,
+            "drop_fraction": 0.005093995324806304,
+            "error_rate": 0.0,
+            "status": "target_miss",
+            "measured_ops_s": 596.821,
+            "successful_ops_s": 596.821,
+            "window_seconds": 375.0,
+            "rate_basis": "scenario_window_stream",
+            "measurement_contract": "cap-scenario-window-v1",
+            "classified_errors": 0,
+            "expected_invalid_grant": 0,
+            "unexpected_errors": 0,
+            "capacity_gate_contract": "successful-ops-v1",
+            "measure": {
+              "window_start_s": 1791554636.927,
+              "window_end_s": 1791555011.927,
+              "measure_started_exact": 223808,
+              "measure_completed_exact": 223808,
+              "measure_dropped_exact": 1192,
+              "measure_scheduled_observed": 225000,
+              "measure_drop_fraction": 0.005298,
+              "measure_outcomes": {
+                "success": 223808
+              },
+              "measure_outcome_sum": 223808,
+              "drops_pre_window": 0,
+              "drops_post_window": 0,
+              "drops_pending_unclassified": 0,
+              "pending_drops_overflow": false,
+              "valid": true,
+              "problems": [],
+              "rational_planned_arrivals": 225000,
+              "schedule_delta_vs_rational": 0,
+              "observed_schedule_rate": 600.0,
+              "cohort_source": "k6_stream_exact",
+              "late_vu_fraction": 0.0
+            },
+            "subject_lifecycle": {
+              "initial_mint": 64,
+              "refresh_update": 232809,
+              "expired_reauth": 0
+            },
+            "gate_population": "measurement_cohort",
+            "gate_p95": 40.0,
+            "gate_p99": 96.0,
+            "prepare_failures": {
+              "prepare_failed": 0,
+              "prepare_local_failed": 0,
+              "prepare_sut_failed": 0
+            },
+            "forensic_diag": {
+              "status": "COMPLETE",
+              "truncated": false,
+              "budget_exceeded_points": 4210917,
+              "overflow_dropped_points": 0,
+              "logical_bytes_cap": 536870912,
+              "file": "/src/evidence/storage-placement-20261009/MIX300/results/multi/nazo-model-storage-mix300-20261009/refresh/capacity-cap-refresh-token.diag.jsonl.gz"
+            },
+            "load_generator_evidence": "absent",
+            "latency_gate": "complete_operation_100_250ms",
+            "rate_for_gate": 596.821,
+            "threshold_status_diagnostic": "target_miss",
+            "complete_operation_latency_ms": {
+              "p50": 12.0,
+              "p95": 40.0,
+              "p99": 96.0
+            }
+          }
+        }
+      },
+      "wal_bytes_per_success": 4513.406,
+      "cpu_cores": {
+        "app": 6.08,
+        "postgres": 6.61
+      },
+      "db_peak_bytes": 307033791,
+      "db_initial_bytes": 26908351,
+      "db_last_active_bytes": 307033791,
+      "decision_stable_avg_rows": 33859.944444444445,
+      "decision_stable_avg_payload_bytes_per_row": 5.364751065005368,
+      "decision_stable_avg_row_bytes": 280.3609895107941,
+      "decision_due_peak": 16368,
+      "decision_due_age_peak_s": 58.570561,
+      "pending_peak": 435,
+      "pending_age_peak_s": 0.129255,
+      "valkey_peak_used_bytes": 50736736,
+      "audit_verdict": "PASS",
+      "audit_events": 864221,
+      "elapsed_s": 548.9,
+      "storage_errors": [],
+      "latency_30s": [
+        {
+          "offset_s": 0,
+          "completed": 47408,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 166.0
+        },
+        {
+          "offset_s": 30,
+          "completed": 47991,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 424.0
+        },
+        {
+          "offset_s": 60,
+          "completed": 48001,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 168.0
+        },
+        {
+          "offset_s": 90,
+          "completed": 48003,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 570.0
+        },
+        {
+          "offset_s": 120,
+          "completed": 47992,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 144.0
+        },
+        {
+          "offset_s": 150,
+          "completed": 47999,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 203.0
+        },
+        {
+          "offset_s": 180,
+          "completed": 48003,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 138.0
+        },
+        {
+          "offset_s": 210,
+          "completed": 48000,
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "max_ms": 719.0
+        },
+        {
+          "offset_s": 240,
+          "completed": 47996,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "max_ms": 171.0
+        },
+        {
+          "offset_s": 270,
+          "completed": 47998,
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "max_ms": 362.0
+        },
+        {
+          "offset_s": 300,
+          "completed": 610,
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "max_ms": 43.0
+        }
+      ],
+      "natural_final": {
+        "ts": 1791555136.68087,
+        "locks": [
+          {
+            "n": 33,
+            "wait_event": "ClientRead",
+            "xact_age_s": null,
+            "wait_event_type": "Client"
+          }
+        ],
+        "anchor": 864221,
+        "tables": [
+          {
+            "relname": "security_audit_events",
+            "n_tup_del": 864149,
+            "n_tup_ins": 864221,
+            "n_dead_tup": 9575,
+            "index_bytes": 44998656,
+            "table_bytes": 65036288,
+            "autovacuum_count": 8
+          },
+          {
+            "relname": "oauth_token_issuances",
+            "n_tup_del": 34605,
+            "n_tup_ins": 101698,
+            "n_dead_tup": 34605,
+            "index_bytes": 27820032,
+            "table_bytes": 40337408,
+            "autovacuum_count": 6
+          },
+          {
+            "relname": "security_audit_chain_entries",
+            "n_tup_del": 864221,
+            "n_tup_ins": 864221,
+            "n_dead_tup": 0,
+            "index_bytes": 30187520,
+            "table_bytes": 24576,
+            "autovacuum_count": 7
+          },
+          {
+            "relname": "oauth_refresh_contracts",
+            "n_tup_del": 4038,
+            "n_tup_ins": 5134,
+            "n_dead_tup": 250,
+            "index_bytes": 647168,
+            "table_bytes": 1515520,
+            "autovacuum_count": 6
+          },
+          {
+            "relname": "oauth_refresh_families",
+            "n_tup_del": 92450,
+            "n_tup_ins": 102690,
+            "n_dead_tup": 1738,
+            "index_bytes": 29777920,
+            "table_bytes": 8708096,
+            "autovacuum_count": 7
+          },
+          {
+            "relname": "oauth_refresh_spent_tokens",
+            "n_tup_del": 309113,
+            "n_tup_ins": 322882,
+            "n_dead_tup": 660,
+            "index_bytes": 15638528,
+            "table_bytes": 10018816,
+            "autovacuum_count": 7
+          }
+        ],
+        "blocked": null,
+        "pending": 0,
+        "db_bytes": 291485375,
+        "family_live": 10240,
+        "observed_at": 1791555134.601832,
+        "decision_bytes": {
+          "count": 72,
+          "row_bytes": 20160,
+          "payload_bytes": 360
+        },
+        "spent_eligible": 0,
+        "spent_retained": 13769,
+        "contract_orphan": 0,
+        "family_eligible": 0,
+        "issuance_counts": {
+          "total": 67093,
+          "eligible": 10861,
+          "retained": 56232,
+          "oldest_due_s": 38.465544,
+          "oldest_created_retention_remaining_s": -38.465544
+        },
+        "pending_by_type": {},
+        "oldest_pending_s": 0,
+        "decision_eligible": 72,
+        "decision_retained": 0,
+        "decision_retention": {
+          "unexported": 0,
+          "exported_full": 0,
+          "exported_compact": 72,
+          "last_remaining_s": -37.033817,
+          "last_business_retain_until": "2026-10-09T14:11:39.900263+00:00"
+        },
+        "family_oldest_due_s": 0,
+        "decision_oldest_due_s": 38.931409,
+        "target_decisions": {
+          "count": 72,
+          "eligible": 72,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": "2026-10-09T14:11:39.900263+00:00",
+          "last_remaining_s": -37.154082
+        }
+      }
+    },
+    "change_pct": {
+      "wal_bytes_per_success": -1.5708000594927385,
+      "db_peak_bytes": -6.782449856488859,
+      "decision_stable_avg_rows": 0.8435076549395237,
+      "decision_stable_avg_row_bytes": -77.42182629399215,
+      "decision_stable_avg_payload_bytes_per_row": -99.44614547102671,
+      "decision_due_peak": -1.4747486907843221,
+      "valkey_peak_used_bytes": 0.16064637582282604
+    }
+  }
+]

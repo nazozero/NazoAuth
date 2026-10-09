@@ -1,0 +1,60 @@
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-key-management v0.2.16 (/src/crates/key-management)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+   Compiling nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+   Compiling nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+   Compiling nazo-http-actix v0.2.16 (/src/crates/http-actix)
+   Compiling nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+   Compiling nazoauth v0.2.16 (/src/crates/nazoauth)
+    Finished `test` profile [unoptimized] target(s) in 1m 24s
+     Running unittests src/lib.rs (target/debug/deps/nazoauth-21d781af2e3bd205)
+
+running 1 test
+test http::authorization::par::tests::par_fapi2_rejects_shared_secret_client_auth_after_authentication ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1464 filtered out; finished in 0.20s
+
+     Running tests/avatar_object_store_provider.rs (target/debug/deps/avatar_object_store_provider-806b5ee5ce32ceaf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/avatar_shared_storage.rs (target/debug/deps/avatar_shared_storage-d7bf7276401285b8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/operator_task_process.rs (target/debug/deps/operator_task_process-06e81a0bd7e3f3c2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/tenant_directory_control_process.rs (target/debug/deps/tenant_directory_control_process-a57511e2341d7732)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/tenant_directory_convergence.rs (target/debug/deps/tenant_directory_convergence-70b566a404f8313d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/token_hotpath_perf.rs (target/debug/deps/token_hotpath_perf-6ef8f4f21c18f90b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/token_issuance_simplification.rs (target/debug/deps/token_issuance_simplification-faad869ffd3c841d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+

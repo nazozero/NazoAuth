@@ -1,0 +1,2597 @@
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-key-management v0.2.16 (/src/crates/key-management)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+   Compiling nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+   Compiling nazo-http-actix v0.2.16 (/src/crates/http-actix)
+   Compiling nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+   Compiling nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+   Compiling nazoauth v0.2.16 (/src/crates/nazoauth)
+    Finished `test` profile [unoptimized] target(s) in 2m 54s
+     Running unittests src/lib.rs (target/debug/deps/nazo_auth-05e05a8957989458)
+
+running 178 tests
+test admin_clients::service::tests::client_patch_keeps_subject_type_validation_in_the_core ... ok
+test admin_clients::service::tests::page_forwards_the_policy_tenant_to_persistence ... ok
+test admin_clients::service::tests::registration_rejects_unknown_subject_types_before_persistence ... ok
+test admin_clients::validation::metadata_tests::ciba_and_logout_callback_uri_lengths_share_one_bound ... ok
+test admin_clients::validation::metadata_tests::client_metadata_accepts_implemented_jwt_bearer_grant ... ok
+test admin_clients::validation::metadata_tests::client_metadata_accepts_refresh_tokens_for_ciba_and_device_grants ... ok
+test admin_clients::validation::metadata_tests::client_metadata_rejects_backchannel_logout_uri_with_fragment_or_insecure_host ... ok
+test admin_clients::validation::metadata_tests::client_metadata_rejects_frontchannel_logout_uri_with_fragment_or_insecure_host ... ok
+test admin_clients::validation::metadata_tests::client_metadata_rejects_non_loopback_http_redirect_uri ... ok
+test admin_clients::validation::metadata_tests::client_metadata_rejects_public_client_secret_and_confidential_none ... ok
+test admin_clients::validation::metadata_tests::client_metadata_rejects_removed_or_unsafe_grants ... ok
+test admin_clients::validation::metadata_tests::client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations ... ok
+test admin_clients::validation::metadata_tests::client_metadata_requires_public_jwks_for_private_key_jwt ... ok
+test admin_clients::validation::metadata_tests::client_metadata_requires_refresh_grant_for_offline_access ... ok
+test admin_clients::validation::metadata_tests::client_metadata_validates_introspection_jwe_metadata ... ok
+test admin_clients::validation::metadata_tests::client_metadata_validates_optional_jwks_for_all_auth_methods ... ok
+test admin_clients::validation::metadata_tests::client_metadata_validates_userinfo_and_authorization_response_crypto_metadata ... ok
+test admin_clients::validation::metadata_tests::request_object_crypto_metadata_is_a_closed_supported_pair ... ok
+test admin_clients::validation::mtls_tests::client_metadata_rejects_duplicate_san_email_bindings ... ok
+test admin_clients::validation::mtls_tests::client_metadata_rejects_mtls_auth_for_public_clients ... ok
+test admin_clients::validation::mtls_tests::client_metadata_requires_exactly_one_rfc8705_pki_subject_selector ... ok
+test admin_clients::validation::mtls_tests::client_metadata_requires_mtls_binding_material ... ok
+test admin_clients::validation::mtls_tests::client_metadata_requires_self_signed_mtls_x5c_jwks ... ok
+test admin_clients::validation::mtls_tests::client_metadata_validates_mtls_binding_material_shape ... ok
+test admin_clients::validation::tests::policy_debug_output_redacts_server_secrets ... ok
+test admin_clients::validation::tests::sector_identifier_document_requires_every_redirect ... ok
+test admin_clients::validation::tests::sector_identifier_uri_must_have_a_host ... ok
+test authorization_policy::tests::authorization_policy_normalizes_oidc_claims_rar_and_jarm ... ok
+test authorization_policy::tests::interaction_and_response_failures_are_typed_and_fail_closed ... ok
+test authorization_policy::tests::max_age_decision_matches_elapsed_session_age ... ok
+test authorization_policy::tests::module_and_profile_failures_preserve_protocol_error_categories ... ok
+test authorization_policy::tests::protocol_max_age_zero_accepts_only_completed_fresh_authentication ... ok
+test authorization_policy::tests::protocol_max_age_zero_requires_fresh_authentication_without_completion_nonce ... ok
+test authorization_policy::tests::response_plan_keeps_plain_and_jarm_outputs_distinct ... ok
+test authorization_policy::tests::same_second_fresh_authentication_requires_strictly_later_server_event ... ok
+test authorization_policy::tests::session_policy_handles_prompt_none_and_reauthentication_without_transport_state ... ok
+test authorization_request::tests::compact_shape_algorithm_key_and_signature_errors_remain_distinct ... ok
+test authorization_request::tests::jar_expired_object_never_consumes_replay_state ... ok
+test authorization_request::tests::jar_replay_deadline_uses_validated_expiry ... ok
+test authorization_request::tests::oidc_signed_request_object_parameters_supersede_outer_duplicates ... ok
+test authorization_request::tests::owned_normalizer_reuses_outer_map_without_consuming_it_on_policy_failure ... ok
+test authorization_request::tests::par_fapi_policy_requires_confidential_strong_auth_and_sender_constraint ... ok
+test authorization_request::tests::registered_request_object_signing_algorithm_is_enforced ... ok
+test authorization_request::tests::replay_and_dependency_failures_are_fail_closed_and_keep_error_categories ... ok
+test authorization_request::tests::signed_request_object_crypto_defers_time_policy_to_injected_clock ... ok
+test authorization_request::tests::signed_request_object_crypto_uses_strict_shared_client_jwk_policy ... ok
+test authorization_request::tests::signed_request_object_is_normalized_only_after_all_claim_checks ... ok
+test authorization_request::tests::signed_request_object_rejects_conflicts_and_reserved_request_uri ... ok
+test authorization_request::tests::signed_request_object_time_window_is_bounded ... ok
+test authorization_request::tests::unsigned_request_objects_are_rejected_for_every_client_profile ... ok
+test authorization_service::tests::admitted_consent_consumes_its_par_handle_once ... ok
+test authorization_service::tests::approved_but_undelivered_keeps_fact_grant_and_consumption_fence ... ok
+test authorization_service::tests::arc_trait_object_is_an_authorization_state_store ... ok
+test authorization_service::tests::cancellation_before_decision_ack_never_publishes_a_code ... ok
+test authorization_service::tests::ciba_request_object_replay_is_delegated_to_the_state_store ... ok
+test authorization_service::tests::cleanup_dependency_errors_preserve_the_original_stage_mapping ... ok
+test authorization_service::tests::code_expiry_extends_retention_without_extending_admission_expiry ... ok
+test authorization_service::tests::competing_decision_kinds_share_one_par_commit ... ok
+test authorization_service::tests::concurrent_preparation_disposal_removes_only_the_observed_snapshot ... ok
+test authorization_service::tests::consent_cleanup_mismatch_does_not_attempt_par_cleanup ... ok
+test authorization_service::tests::consent_replacement_between_load_and_claim_is_preserved ... ok
+test authorization_service::tests::corrupt_par_snapshot_between_load_and_disposal_is_preserved ... ok
+test authorization_service::tests::decision_kind_requires_matching_code_presence ... ok
+test authorization_service::tests::deny_and_prompt_none_share_par_fence_without_incrementing_explicit_grants ... ok
+test authorization_service::tests::failed_or_unknown_decision_never_publishes_a_code ... ok
+test authorization_service::tests::foreign_user_cannot_consume_an_observed_consent ... ok
+test authorization_service::tests::independent_request_fence_is_tenant_scoped_and_expired_input_cannot_commit ... ok
+test authorization_service::tests::mismatched_prepared_authorization_is_rejected_before_repository_commit ... ok
+test authorization_service::tests::missing_par_preview_retains_consent_for_protocol_redirect ... ok
+test authorization_service::tests::owned_request_object_admission_keeps_outer_parameters_on_replay_dependency_failure ... ok
+test authorization_service::tests::preview_preserves_longest_material_retention_and_shortest_admission_expiry ... ok
+test authorization_service::tests::pushed_request_digest_is_independent_of_hash_map_iteration_order ... ok
+test authorization_service::tests::stored_grant_must_cover_every_scope_and_resource ... ok
+test authorization_service::tests::successful_commit_binds_exact_prepared_code_before_publication ... ok
+test client_assertion::jwk_policy_tests::shared_jwk_policy_rejects_private_material_and_ambiguous_key_ids ... ok
+test client_assertion::jwk_policy_tests::shared_rsa_policy_rejects_weak_moduli_and_invalid_exponents ... ok
+test client_attestation::tests::client_attestation_window_preserves_inclusive_age_and_future_tolerance ... ok
+test client_authentication::tests::all_builtin_methods_are_fixed_and_unknown_methods_fail_closed ... ok
+test client_authentication::tests::credential_client_id_must_match_the_resolved_tenant_scoped_client ... ok
+test client_authentication::tests::fixed_methods_require_exact_material ... ok
+test client_authentication::tests::method_mismatch_and_credential_smuggling_fail_before_adapter_execution ... ok
+test client_authentication::tests::presented_credentials_debug_output_redacts_secret_material ... ok
+test client_authentication::tests::public_none_is_explicit_and_rejects_hidden_credentials ... ok
+test client_authentication::tests::transport_mtls_presentation_preserves_the_registered_self_signed_policy ... ok
+test client_registration::tests::baseline_policy_is_explicitly_default_deny ... ok
+test client_registration::tests::independent_message_signing_requirements_can_coexist ... ok
+test client_registration::tests::pushed_requests_are_independent_of_fapi_client_authentication ... ok
+test client_registration::tests::unknown_policy_version_fails_closed ... ok
+test device::tests::arc_trait_objects_preserve_the_store_version_type ... ok
+test device::tests::stale_approval_claims_are_reclaimable_but_bounded ... ok
+test device::tests::state_version_exposes_the_opaque_comparison_token ... ok
+test dpop::tests::accepts_an_explicit_alternate_mtls_endpoint_target ... ok
+test dpop::tests::arc_trait_object_is_a_dpop_state_store ... ok
+test dpop::tests::binding_and_missing_proof_are_enforced ... ok
+test dpop::tests::concurrent_replay_consumption_has_exactly_one_winner ... ok
+test dpop::tests::constant_time_comparison_preserves_equality_semantics ... ok
+test dpop::tests::dpop_explicit_null_or_empty_crit_is_rejected ... ok
+test dpop::tests::dpop_future_iat_replay_marker_outlives_acceptance ... ok
+test dpop::tests::dpop_http_method_is_case_sensitive ... ok
+test dpop::tests::dpop_nonce_ttl_does_not_follow_replay_ttl ... ok
+test dpop::tests::dpop_noncritical_extension_remains_accepted ... ok
+test dpop::tests::dpop_replay_scope_preserves_exact_method ... ok
+test dpop::tests::dpop_unknown_critical_header_is_rejected ... ok
+test dpop::tests::enforces_htu_htm_iat_jti_and_ath ... ok
+test dpop::tests::htu_ignores_query_and_fragment_but_not_origin ... ok
+test dpop::tests::htu_normalizes_claim_and_configured_target_equivalently ... ok
+test dpop::tests::nonce_has_256_bits_of_urlsafe_entropy ... ok
+test dpop::tests::protected_resource_replay_scope_rejects_same_jti_across_dpop_keys ... ok
+test dpop::tests::rejects_oversized_raw_jti_even_when_trimmed_payload_is_short ... ok
+test dpop::tests::rejects_private_or_mislabelled_jwk_material ... ok
+test dpop::tests::rejects_wrong_type_algorithm_curve_segments_and_signature ... ok
+test dpop::tests::required_nonce_is_reusable_while_jti_replay_remains_one_time ... ok
+test dpop::tests::state_failures_are_fail_closed_with_compatible_error_categories ... ok
+test dpop::tests::verifies_public_jwk_and_protocol_claims ... ok
+test dynamic_client_registration::tests::configuration_update_rejects_invalid_shapes_and_public_secrets ... ok
+test dynamic_client_registration::tests::configuration_update_rejects_server_fields_and_requires_matching_credentials ... ok
+test dynamic_client_registration::tests::default_registration_contract_matches_oidc_code_client_behavior ... ok
+test dynamic_client_registration::tests::every_rp_metadata_choice_fails_closed_when_no_server_value_is_supported ... ok
+test dynamic_client_registration::tests::external_request_uri_registration_is_validated_and_preserved ... ok
+test dynamic_client_registration::tests::private_key_jwt_registration_enables_standard_oidc_token_endpoint_audience ... ok
+test dynamic_client_registration::tests::public_and_confidential_code_clients_share_one_registration_path ... ok
+test dynamic_client_registration::tests::rp_metadata_choice_lists_reject_empty_values ... ok
+test dynamic_client_registration::tests::rp_metadata_choices_select_supported_single_values_and_reject_inconsistency ... ok
+test dynamic_client_registration::tests::software_statement_and_response_type_errors_keep_rfc_codes ... ok
+test dynamic_client_registration::tests::third_party_initiated_login_uri_requires_https_and_is_preserved ... ok
+test extension_grants::tests::actor_claim_requires_same_client_and_rejects_sender_constraint ... ok
+test extension_grants::tests::admitted_raw_assertions_and_exchange_tokens_borrow_the_original_buffers ... ok
+test extension_grants::tests::dual_subject_binding_and_sender_binding_conversion_fail_closed ... ok
+test extension_grants::tests::empty_but_present_grant_tokens_reach_crypto_validation ... ok
+test extension_grants::tests::exchange_subject_identity_table_separates_user_and_client ... ok
+test extension_grants::tests::jwt_bearer_claims_require_exact_party_audience_time_and_replay_values ... ok
+test extension_grants::tests::token_exchange_multi_target_fails_closed_on_any_denied_target ... ok
+test extension_grants::tests::token_exchange_type_scope_and_target_policy_is_explicit ... ok
+test extension_grants::tests::verified_subject_limits_scope_and_preserves_sender_binding ... ok
+test metadata::document::tests::baseline_document_shape_is_locked ... ok
+test metadata::document::tests::ciba_metadata_is_complete_and_profile_scoped ... ok
+test metadata::document::tests::composable_metadata_advertises_the_union_of_supported_client_policies ... ok
+test metadata::document::tests::draining_modules_are_not_advertised_as_accepting_new_transactions ... ok
+test metadata::document::tests::external_request_uri_is_advertised_only_with_both_required_modules_on_baseline ... ok
+test metadata::document::tests::fapi_external_request_uri_is_not_advertised_and_other_configuration_is_preserved ... ok
+test metadata::document::tests::fapi_profiles_publish_only_the_selected_security_contract ... ok
+test metadata::document::tests::grant_modules_change_only_the_typed_grant_catalog ... ok
+test metadata::document::tests::id_token_metadata_includes_non_primary_eligible_signing_keys ... ok
+test metadata::document::tests::jarm_capability_controls_jwt_response_mode ... ok
+test metadata::document::tests::native_sso_does_not_emit_nonstandard_discovery_field ... ok
+test metadata::document::tests::non_standard_http_signatures_and_scim_do_not_mutate_standard_metadata ... ok
+test metadata::document::tests::protected_resource_metadata_uses_the_same_rar_snapshot ... ok
+test metadata::document::tests::runtime_module_advertisements_are_table_driven ... ok
+test metadata::document::tests::token_management_auth_metadata_projects_its_actual_endpoint_policies ... ok
+test oauth_parameters::tests::duplicate_detection_is_limited_to_named_parameters ... ok
+test oauth_parameters::tests::json_string_collections_ignore_non_string_members ... ok
+test oauth_parameters::tests::scope_and_subset_policy_preserve_oauth_semantics ... ok
+test oauth_parameters::tests::token_audience_policy_accepts_string_or_array_only ... ok
+test oidc_logout::tests::oidc_pairwise_subject_requires_secret_and_supported_subject_type ... ok
+test oidc_logout::tests::oidc_pairwise_subject_uses_explicit_sector_and_redirect_host_fallback ... ok
+test oidc_logout::tests::oidc_subject_for_public_client_is_the_user_identifier ... ok
+test oidc_logout::tests::pairwise_subject_is_stable_within_sector_and_distinct_across_sectors ... ok
+test oidc_logout::tests::redirect_state_is_appended_without_replacing_registered_query ... ok
+test oidc_logout::tests::resolve_client_rejects_conflicting_hint_audience ... ok
+test rate_limit::tests::arc_trait_object_forwards_to_rate_limit_port ... ok
+test resource_indicator::tests::private_parameter_representation_uses_the_same_validation ... ok
+test resource_indicator::tests::resource_indicators_require_absolute_unique_fragmentless_uris ... ok
+test session_management::tests::issuer_uses_browser_origin_serialization ... ok
+test session_management::tests::state_is_bound_to_client_origin_browser_state_and_salt ... ok
+test token::tests::authentication_context_accepts_current_and_retained_legacy_versions ... ok
+test token::tests::public_unbound_refresh_proofs_are_retained_until_token_expiry ... ok
+test token::tests::refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate ... ok
+test token_endpoint::tests::client_grant_profile_and_sender_constraint_are_admitted_together ... ok
+test token_endpoint::tests::conflicting_client_authentication_material_is_rejected_before_crypto ... ok
+test token_endpoint::tests::core_grants_dispatch_to_distinct_typed_requests ... ok
+test token_endpoint::tests::every_extension_grant_is_exhaustively_classified_without_parsing_its_state_machine ... ok
+test token_endpoint::tests::required_grant_material_fails_closed ... ok
+test token_endpoint::tests::sender_constraint_matrix_rejects_missing_mismatched_and_dual_bindings ... ok
+test token_service::tests::access_token_cannot_bind_two_sender_constraints ... ok
+test token_service::tests::arc_trait_object_is_a_token_state_store ... ok
+test token_service::tests::introspection_reports_dpop_only_for_dpop_bound_tokens ... ok
+test token_service::tests::token_inspection_builds_exact_rfc7662_documents ... ok
+test token_service::tests::token_inspection_preserves_owned_audience_and_confirmation_shapes ... ok
+
+test result: ok. 178 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/admin_client_types.rs (target/debug/deps/admin_client_types-6ba5864cac80431f)
+
+running 7 tests
+test admin_client_ports_and_errors_have_stable_operator_messages ... ok
+test admin_create_and_patch_keep_ciba_user_code_disabled_without_stored_state ... ok
+test client_patch_applies_optional_registration_metadata_as_one_update ... ok
+test client_patch_preserves_pairwise_host_and_rejects_unsafe_transitions ... ok
+test prepared_and_created_client_debug_redacts_all_secret_material ... ok
+test prepared_write_moves_registration_and_holds_undisclosed_secret ... ok
+test supplied_client_secret_is_bounded_and_redacted ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/authorization_details.rs (target/debug/deps/authorization_details-5fb4cf891b7e151a)
+
+running 5 tests
+test authorization_details_enforce_rar_size_and_cardinality_limits ... ok
+test authorization_details_normalization_preserves_only_empty_internal_states ... ok
+test authorization_details_require_array_of_supported_typed_objects ... ok
+test canonicalization_preserves_the_exact_valid_json_shape ... ok
+test high_risk_authorization_details_detect_payments_and_write_actions ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/authorization_pkce_policy.rs (target/debug/deps/authorization_pkce_policy-6125c76784aca871)
+
+running 5 tests
+test confidential_non_oidc_code_flow_requires_pkce ... ok
+test explicit_confidential_oidc_compatibility_policy_may_omit_pkce_and_nonce ... ok
+test hardened_profile_requires_pkce_even_for_confidential_oidc_client ... ok
+test nonce_does_not_control_explicit_confidential_oidc_compatibility_policy ... ok
+test public_client_cannot_replace_pkce_with_oidc_nonce ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ciba_decision_preparation.rs (target/debug/deps/ciba_decision_preparation-4e94909125242fbf)
+
+running 6 tests
+test decision_uses_the_earlier_request_or_caller_deadline ... ok
+test prepared_ciba_conflict_reloads_poll_timing_but_rejects_changed_authorization ... ok
+test prepared_ciba_decision_rechecks_time_and_user_after_preparation ... ok
+test prepared_ciba_decision_reuses_validated_snapshot_and_bound_handle ... ok
+test prepared_ciba_unknown_write_outcome_stops_without_retrying_or_claiming_commit ... ok
+test store_clock_rejects_late_approval_and_denial_before_retention_expires ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ciba_ping_creation.rs (target/debug/deps/ciba_ping_creation-4c1a3501ffbfb2eb)
+
+running 4 tests
+test authentication_context_is_bound_on_approval_and_invalid_context_is_rejected ... ok
+test decision_deadline_preserves_the_neutral_atomic_contract ... ok
+test ping_creation_allows_the_adapter_to_atomically_bind_auth_req_id ... ok
+test protocol_ciba_deadline_defaults_refuse_unenforced_authority_without_mutation ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ciba_ping_delivery_policy.rs (target/debug/deps/ciba_ping_delivery_policy-08fd4175cc3f1029)
+
+running 4 tests
+test ciba_ping_endpoint_length_is_bounded_consistently ... ok
+test ciba_ping_endpoint_requires_an_https_origin_without_ambiguous_authority ... ok
+test ciba_ping_retries_are_bounded_and_never_cross_authorization_expiry ... ok
+test redirects_and_client_errors_are_terminal_but_server_errors_are_retryable ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ciba_registration_contract.rs (target/debug/deps/ciba_registration_contract-4863f192d314d0a6)
+
+running 4 tests
+test ciba_user_code_and_weak_request_signing_are_not_supported ... ok
+test omitted_and_false_ciba_user_code_metadata_have_the_same_public_value ... ok
+test ping_requires_an_https_notification_endpoint_and_ciba_grant ... ok
+test poll_and_ping_are_the_only_registered_delivery_modes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ciba_state_version.rs (target/debug/deps/ciba_state_version-7967eea815ecb5ce)
+
+running 2 tests
+test arc_trait_objects_preserve_the_store_version_type ... ok
+test state_version_exposes_only_adapter_comparison_inputs ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/claim_selection.rs (target/debug/deps/claim_selection-6c0dbb7a909d1b15)
+
+running 3 tests
+test current_and_legacy_fields_reject_malformed_inputs ... ok
+test legacy_names_are_read_without_weakening_full_requests_or_crossing_targets ... ok
+test old_access_token_claim_selection_is_not_lost_on_decode ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/claims_contract.rs (target/debug/deps/claims_contract-0d642b708de9f49f)
+
+running 11 tests
+test access_token_claims_follow_jwt_profile_for_user_subjects ... ok
+test access_token_claims_keep_client_credentials_subject_separate ... ok
+test access_token_without_sender_constraints_does_not_emit_cnf ... ok
+test authorization_response_jwt_omits_absent_state_and_inapplicable_result ... ok
+test authorization_response_jwt_preserves_explicit_empty_state ... ok
+test authorization_response_jwt_ttl_is_never_zero_or_negative ... ok
+test backchannel_logout_token_claims_follow_oidc_shape_without_nonce ... ok
+test backchannel_logout_token_ttl_is_never_zero_or_negative ... ok
+test id_token_claims_include_independent_sid_and_protect_reserved_claims ... ok
+test id_token_extra_claims_cannot_override_registered_claims ... ok
+test token_claim_constructors_are_locked_to_complete_reviewed_shapes ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/claims_edge_cases.rs (target/debug/deps/claims_edge_cases-5b3ec923858e6c84)
+
+running 35 tests
+test access_token_claims_carries_userinfo_claim_requests ... ok
+test access_token_claims_client_credentials_omits_user_id ... ok
+test access_token_claims_cnf_is_none_when_sender_constraints_are_absent ... ok
+test access_token_claims_cnf_with_mtls_x5t_only ... ok
+test access_token_claims_empty_audience_is_empty_json_array ... ok
+test access_token_claims_empty_authorization_details_is_empty_array ... ok
+test access_token_claims_empty_scope_is_empty_string ... ok
+test access_token_claims_include_user_id_only_for_public_user_subject ... ok
+test access_token_claims_includes_all_required_jwt_fields ... ok
+test access_token_claims_multiple_audiences_produces_json_array ... ok
+test access_token_claims_reject_ambiguous_sender_binding_before_construction ... ok
+test access_token_claims_scope_is_sorted_alphabetically ... ok
+test access_token_claims_single_audience_is_json_string_not_array ... ok
+test access_token_claims_zero_ttl_produces_exp_equal_to_iat ... ok
+test authorization_response_jwt_exp_floor_is_iat_plus_one ... ok
+test authorization_response_jwt_includes_standard_timestamp_and_identifier_claims ... ok
+test authorization_response_jwt_with_all_optionals_absent ... ok
+test authorization_response_jwt_with_code_and_state ... ok
+test authorization_response_jwt_with_code_error_and_state ... ok
+test authorization_response_jwt_with_code_only ... ok
+test authorization_response_jwt_with_error_and_state ... ok
+test authorization_response_jwt_with_error_only ... ok
+test authorization_response_jwt_with_state_only ... ok
+test backchannel_logout_token_claims_exp_is_at_least_iat_plus_one ... ok
+test backchannel_logout_token_claims_full_with_sub_and_sid ... ok
+test backchannel_logout_token_claims_includes_openid_events_claim ... ok
+test backchannel_logout_token_claims_omits_both_sub_and_sid_when_not_provided ... ok
+test backchannel_logout_token_claims_omits_sid_when_not_provided ... ok
+test backchannel_logout_token_claims_omits_sub_when_not_provided ... ok
+test backchannel_logout_token_claims_standard_fields_are_always_present ... ok
+test id_token_claims_extra_claims_null_value_does_not_crash ... ok
+test id_token_claims_extra_claims_top_level_non_object_is_ignored ... ok
+test id_token_claims_filters_all_reserved_keys_from_extra_claims ... ok
+test id_token_claims_includes_all_fields_when_provided ... ok
+test id_token_claims_omits_optional_fields_when_not_provided ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/client_assertion_core.rs (target/debug/deps/client_assertion_core-d25b5881bf1c2c31)
+
+running 8 tests
+test configured_mtls_endpoint_alias_is_only_accepted_for_opted_in_endpoint_audiences ... ok
+test endpoint_audiences_and_arrays_follow_exact_client_policy ... ok
+test key_selection_rejects_private_mismatched_and_ambiguous_material ... ok
+test registered_client_assertion_algorithm_is_enforced_before_key_selection ... ok
+test rsa_key_strength_uses_unsigned_bit_length_and_safe_public_exponents ... ok
+test time_jti_and_party_failures_are_distinct_and_fail_closed ... ok
+test unverified_identity_is_only_a_lookup_hint_with_matching_nonempty_parties ... ok
+test valid_assertion_returns_only_replay_and_algorithm_material ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/dependency_boundary.rs (target/debug/deps/dependency_boundary-4d5332fcabd0fae5)
+
+running 1 test
+test auth_has_no_framework_or_storage_dependencies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/device.rs (target/debug/deps/device-0e3466729148b46a)
+
+running 3 tests
+test device_authorization_policy_defaults_resource_and_binds_expiry ... ok
+test device_authorization_policy_fails_closed_at_each_admission_boundary ... ok
+test device_poll_state_machine_preserves_terminal_and_slow_down_contracts ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dynamic_registration_presentation.rs (target/debug/deps/dynamic_registration_presentation-f945f64cf1612b59)
+
+running 2 tests
+test dynamic_registration_preserves_https_presentation_metadata ... ok
+test dynamic_registration_rejects_unsafe_presentation_metadata ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/logout_registration_defaults.rs (target/debug/deps/logout_registration_defaults-f41512d29057ed75)
+
+running 2 tests
+test explicit_logout_session_requirements_are_preserved ... ok
+test omitted_logout_session_requirements_follow_openid_connect_false_defaults ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/logout_service.rs (target/debug/deps/logout_service-939d7113c02398e2)
+
+running 9 tests
+test client_id_only_does_not_fan_out_to_an_ungranted_client ... ok
+test current_session_membership_allows_client_id_only_fanout ... ok
+test dependency_error_is_closed_and_non_http ... ok
+test expired_hint_is_accepted_only_when_bound_to_the_current_session ... ok
+test hinted_frontchannel_preserves_only_hinted_client_compatibility ... ok
+test logout_batches_session_clients_and_reuses_the_validated_hint ... ok
+test no_hint_frontchannel_fans_out_once_and_retry_deduplicates_backchannel ... ok
+test unbound_logout_requires_both_user_confirmation_and_csrf_authorization ... ok
+test valid_hint_makes_an_ungranted_client_a_bound_fanout_target ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/metadata.rs (target/debug/deps/metadata-35271eef199aaf5a)
+
+running 2 tests
+test disabled_but_draining_ciba_is_hidden_while_existing_polling_remains_admissible ... ok
+test metadata_exposes_only_capabilities_accepting_new_work ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/pkce_model.rs (target/debug/deps/pkce_model-1bf65567b2628b48)
+
+running 3 tests
+test legacy_missing_plain_or_conflicting_method_cannot_downgrade_pkce ... ok
+test legacy_preparation_timestamps_do_not_create_a_second_lifetime_authority ... ok
+test pkce_has_one_authority_and_reads_valid_legacy_pairs ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol_policy.rs (target/debug/deps/protocol_policy-32fcd9a5ddc1ab5f)
+
+running 6 tests
+test baseline_profile_accepts_public_bearer_clients ... ok
+test fapi2_profile_preserves_exact_rejection_codes_and_descriptions ... ok
+test grant_type_wire_values_are_protocol_stable ... ok
+test protocol_error_code_wire_values_are_exhaustive ... ok
+test protocol_errors_serialize_exact_oauth_fields ... ok
+test sender_thumbprints_accept_only_canonical_sha256_evidence ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/signing.rs (target/debug/deps/signing-18ae9743712ef103)
+
+running 1 test
+test signer_receives_only_purpose_scoped_signing_material ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/token_management.rs (target/debug/deps/token_management-6cdbdf3e874852fa)
+
+running 6 tests
+test access_revocation_storage_failure_is_propagated ... ok
+test expired_introspection_avoids_storage_but_live_token_fails_closed_on_storage_error ... ok
+test ownership_introspection_audience_shapes_keep_membership_and_tenant_boundaries ... ok
+test ownership_refresh_introspection_preserves_scope_output ... ok
+test unknown_or_foreign_access_uses_raw_refresh_lookup_without_a_jti ... ok
+test verified_owned_access_revokes_directly_and_retains_audit_count_and_expiry ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/uri_policy.rs (target/debug/deps/uri_policy-1e265b70df3385d8)
+
+running 10 tests
+test https_redirect_uris_without_forbidden_parts_are_allowed ... ok
+test issuer_requires_https_except_loopback_http ... ok
+test issuer_urls_reject_query_fragment_credentials_and_trailing_slash ... ok
+test loopback_redirect_matching_ignores_only_port ... ok
+test loopback_redirect_matching_varies_only_by_port ... ok
+test non_loopback_http_redirect_uris_are_rejected ... ok
+test pkce_values_follow_rfc7636_length_and_charset ... ok
+test redirect_uri_policy_allows_only_oauth_bcp_exceptions ... ok
+test redirect_uri_rejects_credentials_fragments_and_wildcards ... ok
+test registered_redirect_resolution_is_framework_independent ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_crypto-dea5774eb69ecb84)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/contract.rs (target/debug/deps/contract-c835f40b5de5ec6d)
+
+running 19 tests
+test aead::aead_ciphertexts_match_existing_layouts ... ok
+test certificate::certificate_signatures_and_profiles_interoperate ... ok
+test crl_signer_rejects_certificate_private_key_mismatch ... ok
+test crypto_errors_are_backend_free ... ok
+test ecdh::p256_shared_secret_matches_existing_curve ... ok
+test ed25519::ed25519_matches_existing_dalek ... ok
+test jose::jws_error_categories_preserve_dpop_semantics ... ok
+test jose::jws_matches_existing_implementation ... ok
+test jose::jwt_decoding_preserves_claim_policy ... ok
+test jose::prepared_key_debug_does_not_leak_private_material ... ok
+test jose::prepared_rsa_key_signs_concurrently_across_eight_threads ... ok
+test jose::ps256_prepared_signatures_verify_and_randomize ... ok
+test jose::rs256_prepared_signatures_are_byte_identical_to_provider ... ok
+test jose::rsa_oaep_and_key_wrap_interoperate ... ok
+test jose::rsa_prepared_key_rejects_invalid_der_at_construction ... ok
+test jose::rsa_sign_path_does_not_reparse_der ... ok
+test jose::rsa_signatures_do_not_cross_accept_between_rs256_and_ps256 ... ok
+test jose::stored_key_bytes_and_public_projection_are_compatible ... ok
+test password::argon2_accepts_stored_phc ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.04s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_digital_credentials-e1b359793591e314)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/domain_contract.rs (target/debug/deps/domain_contract-f1562f36604d30e1)
+
+running 7 tests
+test credential_formats_use_final_spec_identifiers ... ok
+test dcql_claim_paths_and_sets_are_closed_over_declared_claims ... ok
+test dcql_ignores_extensions_at_every_object_level_without_weakening_known_fields ... ok
+test dcql_multiple_defaults_to_false_and_accepts_only_booleans ... ok
+test dcql_rejects_empty_sets_and_malformed_known_metadata_while_ignoring_extensions ... ok
+test dcql_requires_at_least_one_credential_query ... ok
+test unsigned_jwt_is_rejected ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/issuer_trust_policy.rs (target/debug/deps/issuer_trust_policy-d8ba0fe4411b3117)
+
+running 8 tests
+test allowlist_can_fail_closed_and_invalid_certificates_are_untrusted ... ok
+test allowlist_keeps_same_host_multi_tenant_explicit ... ok
+test default_policy_is_the_san_bound_policy ... ok
+test exact_uri_san_can_bind_a_non_dns_issuer_identity ... ok
+test issuer_validation_rejects_malformed_or_credential_bearing_urls ... ok
+test non_dns_san_types_do_not_bind_an_issuer ... ok
+test san_binding_rejects_same_ca_style_cross_issuer_host ... ok
+test wildcard_san_does_not_bind_an_issuer ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/jwe_contract.rs (target/debug/deps/jwe_contract-a4d3bc841a383c32)
+
+running 6 tests
+test deflate_round_trip_is_authenticated_and_bounded ... ok
+test ecdh_es_a128gcm_round_trip_matches_oid4vp_default ... ok
+test ecdh_es_a256gcm_round_trip_is_authenticated ... ok
+test ecdh_es_ephemeral_jwk_rejects_an_explicit_wrong_algorithm ... ok
+test ecdh_es_output_matches_compact_jwe_serialization_contract ... ok
+test ecdh_es_recipient_jwk_requires_an_exact_algorithm_binding ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/revocation_snapshot.rs (target/debug/deps/revocation_snapshot-42ad514e222a877c)
+
+running 17 tests
+test check_chain_maps_not_yet_valid_and_structurally_invalid_snapshots ... ok
+test freshness_rejects_a_snapshot_that_is_not_yet_valid ... ok
+test global_certificate_status_requires_consistent_entries ... ok
+test json_snapshot_rejects_duplicate_issuer_certificate_entries ... ok
+test optional_policy_allows_unknown_status_but_not_stale_snapshot ... ok
+test policy_modes_expose_snapshot_state_and_disabled_policy_fails_open ... ok
+test prepared_snapshot_preserves_freshness_boundaries_and_clock_rollback ... ok
+test prepared_snapshot_rejects_invalid_public_input ... ok
+test reload_publishes_revocation_and_rejects_a_failed_reload_without_overwriting_old_state ... ok
+test required_policy_accepts_an_explicit_good_status ... ok
+test required_policy_accepts_unknown_certificate_only_for_explicit_scoped_trust ... ok
+test required_policy_rejects_a_revoked_certificate ... ok
+test required_policy_rejects_an_unknown_issuer_or_certificate ... ok
+test required_policy_rejects_mdoc_certificate_revocation_by_global_identity ... ok
+test snapshot_validation_rejects_invalid_entries_and_accepts_valid_json ... ok
+test snapshot_validation_rejects_unsupported_versions_and_invalid_intervals ... ok
+test stale_snapshot_fails_closed_even_when_status_is_good ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_http_actix-a4b10c66f329561b)
+
+running 119 tests
+test authorization_request_object_tests::policy_and_replay_errors_preserve_status_code_and_body ... ok
+test authorization_request_object_tests::verification_errors_preserve_existing_oauth_contract ... ok
+test cookies::tests::cookie_headers_and_lookup_preserve_values ... ok
+test cookies::tests::cookie_max_age_saturates_at_i64_max ... ok
+test cookies::tests::cookies_preserve_exact_security_attributes ... ok
+test cors::tests::dynamic_origin_predicate_keeps_the_token_endpoint_policy ... ok
+test csrf::tests::csrf_error_preserves_status_body_and_cache_headers ... ok
+test csrf::tests::csrf_validation_is_required_only_for_existing_sessions ... ok
+test csrf::tests::token_comparison_matches_only_equal_bytes ... ok
+test dpop::tests::header_parser_distinguishes_absent_blank_and_present_proofs ... ok
+test dpop::tests::header_parser_rejects_duplicate_or_non_utf8_proofs ... ok
+test dpop::tests::nonce_challenge_preserves_context_specific_status_and_headers ... ok
+test dpop::tests::target_uris_ignore_untrusted_request_authority ... ok
+test dpop::tests::token_endpoint_errors_preserve_status_headers_content_type_and_body ... ok
+test dynamic_client_registration::tests::bearer_credentials_are_closed_to_exact_non_empty_scheme_and_expected_token ... ok
+test dynamic_client_registration::tests::client_configuration_read_preserves_authenticated_registration_token ... ok
+test dynamic_client_registration::tests::client_configuration_update_preserves_server_managed_security_policy ... ok
+test dynamic_client_registration::tests::client_configuration_update_validates_current_server_managed_policy ... ok
+test dynamic_client_registration::tests::configured_initial_access_token_applies_baseline_confidential_oidc_policy ... ok
+test dynamic_client_registration::tests::configured_initial_access_token_keeps_oauth_only_client_pkce_policy ... ok
+test dynamic_client_registration::tests::configured_initial_access_update_preserves_security_policy ... ok
+test dynamic_client_registration::tests::configured_public_client_keeps_strict_pkce_policy ... ok
+test dynamic_client_registration::tests::configured_token_preserves_oidc_policy ... ok
+test dynamic_client_registration::tests::disabled_module_rejects_every_method_before_body_or_credentials ... ok
+test dynamic_client_registration::tests::non_configured_initial_access_token_is_rejected_without_dependency_lookup ... ok
+test dynamic_client_registration::tests::rate_limit_error_keeps_oauth_code_and_retry_after ... ok
+test dynamic_client_registration::tests::registration_access_token_lookup_fails_closed_across_tenants ... ok
+test dynamic_client_registration::tests::registration_and_management_methods_keep_wire_contracts ... ok
+test dynamic_client_registration::tests::registration_authentication_error_keeps_bearer_and_no_store_contract ... ok
+test dynamic_client_registration::tests::trusted_proxy_chain_selects_nearest_untrusted_hop ... ok
+test dynamic_client_registration::tests::unknown_initial_access_token_remains_invalid ... ok
+test dynamic_client_registration::tests::untrusted_peer_cannot_spoof_forwarded_source_ip ... ok
+test extract::tests::access_token_transport_rejects_duplicates_and_signed_form_transport ... ok
+test extract::tests::authorization_header_wins_only_when_form_transport_is_absent ... ok
+test extract::tests::bearer_and_dpop_authorization_schemes_are_case_insensitive ... ok
+test extract::tests::bearer_transport_rejects_blank_first_duplicates_and_mixed_query_without_changing_query_only ... ok
+test extract::tests::form_access_token_accepts_one_value_and_content_type_parameters ... ok
+test extract::tests::form_access_token_ignores_unrelated_fields ... ok
+test extract::tests::form_access_token_rejects_duplicates_and_treats_blank_as_missing ... ok
+test extract::tests::form_access_token_requires_post_and_form_content_type ... ok
+test extract::tests::form_content_type_is_case_insensitive_and_accepts_parameters ... ok
+test extract::tests::query_access_token_is_not_a_supported_transport ... ok
+test fapi_resource::tests::bearer_dpop_and_mtls_protocol_errors_keep_exact_http_contracts ... ok
+test fapi_resource::tests::duplicate_dpop_header_preserves_invalid_dpop_contract_and_skips_core ... ok
+test fapi_resource::tests::fapi_resource_rejects_form_body_access_tokens_without_signature_module ... ok
+test fapi_resource::tests::handler_extracts_calls_core_and_preserves_success_contract ... ok
+test fapi_resource::tests::malformed_or_duplicate_signature_fields_fail_before_authorization_and_are_signed ... ok
+test fapi_resource::tests::missing_token_preserves_bearer_error_and_skips_core ... ok
+test fapi_resource::tests::nonce_challenge_and_nonce_dependency_failure_keep_exact_signed_http_contracts ... ok
+test fapi_resource::tests::response_signer_failure_returns_an_empty_unsigned_503 ... ok
+test fapi_resource::tests::response_signing_preserves_multiple_physical_header_values ... ok
+test fapi_resource::tests::signature_enabled_endpoint_rejects_form_body_access_tokens_before_core ... ok
+test fapi_resource::tests::signature_verification_failures_preserve_status_and_signed_error_contracts ... ok
+test fapi_resource::tests::signed_get_uses_one_authorization_call_and_signs_the_success_response ... ok
+test fapi_resource::tests::signed_post_binds_the_received_request_digest ... ok
+test local_registration::tests::development_code_is_exposed_only_when_enabled_and_newly_sent ... ok
+test local_registration::tests::error_mapping_preserves_status_and_oauth_code ... ok
+test local_registration::tests::rate_limit_runs_before_validation_and_preserves_retry_contract ... ok
+test local_registration::tests::register_trims_only_code_whitespace_and_returns_public_identity ... ok
+test local_registration::tests::route_methods_cors_cache_and_security_headers_remain_exact ... ok
+test local_registration::tests::transport_normalizes_email_and_preserves_raw_peer_cooldown_subject ... ok
+test local_registration::tests::trusted_proxy_header_controls_rate_limit_but_not_peer_cooldown ... ok
+test local_registration::tests::unavailable_rate_limit_fails_closed_before_registration ... ok
+test local_registration::tests::untrusted_forwarded_header_cannot_spoof_rate_limit_subject ... ok
+test metadata::tests::focused_metadata_routes_preserve_transport_and_snapshot_contracts ... ok
+test passkey::tests::login_finish_extracts_security_context_and_sets_only_bound_session_material ... ok
+test passkey::tests::login_routes_preserve_post_only_no_cors_surface ... ok
+test passkey::tests::missing_profile_session_clears_both_cookies_with_exact_protocol_error ... ok
+test passkey::tests::profile_routes_preserve_get_post_delete_options_preflight_contract ... ok
+test passkey::tests::profile_routes_preserve_wrong_method_cors_and_security_contract ... ok
+test passkey::tests::public_passkey_projection_excludes_tenant_user_and_credential_material ... ok
+test passkey::tests::rate_limit_response_preserves_retry_after_and_does_not_call_core ... ok
+test passkey::tests::write_rejects_invalid_csrf_before_session_or_core_lookup ... ok
+test password_login::tests::form_login_requires_exact_origin_and_redirects_only_to_authorize ... ok
+test password_login::tests::json_success_sets_session_and_csrf_together_and_rotates_previous_id ... ok
+test password_login::tests::malformed_requests_fail_before_rate_limit_and_authentication ... ok
+test password_login::tests::rate_limit_and_authentication_failures_set_no_cookies_and_no_store ... ok
+test password_login::tests::route_methods_cors_and_security_headers_are_locked ... ok
+test password_login::tests::trusted_proxy_is_honored_but_untrusted_forwarding_is_ignored ... ok
+test presenter::tests::forbidden_bytes_never_reach_body_or_challenge ... ok
+test presenter::tests::non_ascii_protocol_description_is_replaced ... ok
+test presenter::tests::oauth_error_description_allows_only_the_rfc_charset ... ok
+test presenter::tests::oauth_error_description_replaces_control_quote_backslash_and_unicode ... ok
+test presenter::tests::semantic_json_bearer_and_disabled_keep_their_distinct_header_contracts ... ok
+test presenter::tests::semantic_pre_authorized_error_keeps_token_nonce_and_cache_policy ... ok
+test presenter::tests::semantic_token_error_preserves_ascii_body_and_basic_challenge ... ok
+test presenter::tests::token_error_preserves_cache_and_challenge_contract ... ok
+test profile_account::tests::active_me_keeps_exact_profile_shape_without_csrf_token ... ok
+test profile_account::tests::missing_session_keeps_login_required_body_and_cookie_clearing ... ok
+test profile_account::tests::pending_mfa_me_returns_cookie_csrf_token_and_reduced_profile ... ok
+test profile_account::tests::update_and_applications_keep_success_contracts ... ok
+test profile_account::tests::update_rejects_missing_csrf_before_calling_operations ... ok
+test profile_account::tests::validation_and_dependency_errors_keep_status_and_oauth_codes ... ok
+test runtime_modules::tests::event_pagination_rejects_out_of_bounds_before_the_port ... ok
+test runtime_modules::tests::list_exposes_only_current_actions_and_disables_caching ... ok
+test runtime_modules::tests::module_identifiers_and_event_names_are_exhaustive ... ok
+test runtime_modules::tests::patch_changes_only_desired_state_and_returns_pending_revision ... ok
+test runtime_modules::tests::patch_checks_csrf_before_session_and_recent_mfa_policy ... ok
+test runtime_modules::tests::stale_revision_is_a_non_cacheable_conflict ... ok
+test runtime_modules::tests::static_routes_lock_cors_security_method_and_preflight_contracts ... ok
+test session::tests::login_required_contract_clears_both_cookies ... ok
+test session::tests::logout_deletes_the_cookie_session_and_preserves_response_contract ... ok
+test session::tests::logout_fails_closed_at_the_browser_boundary_when_store_is_unavailable ... ok
+test session_management::tests::disabled_enabled_and_draining_route_contracts_are_stable ... ok
+test session_management::tests::iframe_document_escapes_executable_string_context ... ok
+test session_management::tests::status_is_unchanged_only_for_the_bound_live_session ... ok
+test session_management::tests::status_rejects_an_origin_not_registered_for_the_client ... ok
+test token_management::tests::basic_invalid_client_keeps_challenge_and_oauth_error ... ok
+test token_management::tests::expensive_certificate_parsing_happens_after_rate_and_form_rejection ... ok
+test token_management::tests::inactive_introspection_is_exact_rfc7662_no_store_json ... ok
+test token_management::tests::introspection_route_has_no_browser_cors_and_rejects_get_and_options ... ok
+test token_management::tests::rate_limit_runs_before_form_parsing_and_keeps_retry_contract ... ok
+test token_management::tests::revocation_route_locks_post_get_options_cors_and_security_contracts ... ok
+test token_management::tests::revocation_success_is_empty_and_non_cacheable ... ok
+test token_management::tests::signed_introspection_keeps_media_type_and_cache_headers ... ok
+test userinfo::tests::error_mapping_preserves_bearer_status_and_code ... ok
+test userinfo::tests::json_success_is_no_store_and_returns_next_dpop_nonce ... ok
+test userinfo::tests::protected_success_keeps_jwt_media_type_and_cache_headers ... ok
+test userinfo::tests::use_dpop_nonce_keeps_challenge_and_nonce_headers ... ok
+
+test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/authorization_decision_transport.rs (target/debug/deps/authorization_decision_transport-b48b282f8c67f4d9)
+
+running 6 tests
+test approved_transport_forwards_typed_command_and_preserves_redirect ... ok
+test csrf_is_checked_before_decision_operations ... ok
+test domain_failures_keep_existing_status_and_oauth_error_contracts ... ok
+test form_post_decision_returns_no_store_auto_submit_document ... ok
+test invalid_decision_is_rejected_before_session_or_operations ... ok
+test missing_session_preserves_login_required_and_cookie_clearing ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/client_ip.rs (target/debug/deps/client_ip-b985dcea1a7e347e)
+
+running 9 tests
+test cidr_matches_ipv4_and_ipv6 ... ok
+test client_ip_configuration_rejects_unknown_modes_and_invalid_cidrs ... ok
+test forwarded_header_parser_accepts_ip_literals_with_ports ... ok
+test forwarded_header_uses_the_nearest_untrusted_hop ... ok
+test forwarded_headers_are_ignored_until_the_socket_peer_is_trusted ... ok
+test malformed_proxy_chains_fail_closed_to_the_socket_peer ... ok
+test missing_peer_address_is_unknown ... ok
+test prefix_zero_cidrs_match_only_their_ip_family ... ok
+test x_forwarded_for_uses_the_nearest_untrusted_hop ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/forbidden_dependencies.rs (target/debug/deps/forbidden_dependencies-a4abc51e53eea412)
+
+running 1 test
+test transport_crate_has_no_infrastructure_or_configuration_dependencies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/form_post_response.rs (target/debug/deps/form_post_response-834c78e768f15566)
+
+running 3 tests
+test form_post_csp_serializes_ipv6_redirect_origin_safely ... ok
+test form_post_response_does_not_put_protocol_values_in_the_action_uri ... ok
+test form_post_response_escapes_values_and_sets_hardening_headers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mfa_profile_transport.rs (target/debug/deps/mfa_profile_transport-9c98960ad95be406)
+
+running 5 tests
+test disabling_only_clears_remembered_device_cookie_when_state_changed ... ok
+test malformed_json_and_rate_limit_fail_closed_with_stable_http_contract ... ok
+test missing_mfa_challenge_does_not_clear_an_authenticated_session ... ok
+test static_mfa_routes_lock_methods_cors_security_headers_and_no_store ... ok
+test successful_step_up_rotates_session_and_csrf_as_a_no_store_pair ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/oidc_logout_transport.rs (target/debug/deps/oidc_logout_transport-c7899fa8cf18481b)
+
+running 7 tests
+test frontchannel_document_escapes_urls_and_redirect_and_clears_cookies ... ok
+test get_and_form_post_preserve_parser_cookie_and_no_store_contracts ... ok
+test invalid_rp_parameters_are_not_preserved_and_confirmation_errors_do_not_loop ... ok
+test malformed_posts_fail_before_operations_and_do_not_clear_retryable_cookies ... ok
+test options_remains_unhandled_and_never_invokes_logout_operations ... ok
+test unbound_logout_requires_explicit_csrf_bound_confirmation ... ok
+test valkey_delete_failure_is_retryable_and_never_clears_cookies ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/presenter_contract.rs (target/debug/deps/presenter_contract-244ee2e93b0cf942)
+
+running 11 tests
+test authorization_error_is_json_no_store_and_sanitized ... ok
+test bearer_challenge_never_serializes_non_ascii_descriptions ... ok
+test bearer_error_preserves_and_sanitizes_challenge_fields ... ok
+test form_detection_accepts_case_and_parameters_only ... ok
+test issued_token_keeps_cache_pragma_and_nonce ... ok
+test no_store_and_body_helpers_preserve_transport_shapes ... ok
+test oauth_descriptions_preserve_only_rfc_allowed_ascii ... ok
+test oauth_error_description_enforces_rfc_allowed_ascii ... ok
+test oauth_error_preserves_exact_body_and_existing_cache_contract ... ok
+test preauthorized_token_keeps_its_own_json_and_cache_policy ... ok
+test redirect_fails_closed_for_invalid_location_header ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/scim_transport.rs (target/debug/deps/scim_transport-b5f5647ab0c9ea83)
+
+running 8 tests
+test authorization_errors_preserve_scim_documents_and_bearer_challenge ... ok
+test authorization_extracts_only_bearer_source_ip_and_user_agent ... ok
+test discovery_cached_bodies_keep_per_request_authority_and_current_variants ... ok
+test empty_immediate_poll_also_rechecks_current_authority ... ok
+test event_poll_rechecks_authority_after_wait_without_replaying_dispositions ... ok
+test event_poll_requires_content_language_for_set_error_descriptions ... ok
+test event_poll_returns_rfc8936_shape_and_advertises_only_when_deliverable ... ok
+test provider_config_handler_preserves_http_contract ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.52s
+
+     Running tests/token_client_auth_transport.rs (target/debug/deps/token_client_auth_transport-88c09e3ed487c9f8)
+
+running 6 tests
+test assertion_basic_form_mtls_and_public_sources_have_fixed_precedence ... ok
+test assertion_fields_and_missing_form_client_mtls_are_preserved_as_facts ... ok
+test basic_credentials_are_parsed_once_and_secrets_are_redacted ... ok
+test basic_credentials_decode_each_form_urlencoded_component ... ok
+test malformed_basic_remains_present_for_challenge_and_conflict_policy ... ok
+test malformed_form_encoding_and_utf8_fail_closed_without_source_fallback ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/userinfo_transport.rs (target/debug/deps/userinfo_transport-119a2af54f6e0629)
+
+running 2 tests
+test invalid_token_precedes_malformed_dpop_and_certificate_extraction ... ok
+test missing_and_conflicting_token_transport_keep_exact_bearer_contract ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_http_signatures-114f3c6c23919f8e)
+
+running 8 tests
+test jwk::tests::accepts_supported_public_key_shapes_without_optional_alg ... ok
+test jwk::tests::rejects_incompatible_public_key_shapes ... ok
+test jwk::tests::rejects_private_material_and_non_verification_metadata ... ok
+test jwk::tests::requires_one_unique_kid_and_a_supported_algorithm ... ok
+test jwk::tests::rsa_policy_counts_unsigned_modulus_bits ... ok
+test jwk::tests::verifies_a_valid_ed25519_signature ... ok
+test jwk::tests::verifies_valid_es256_and_rejects_an_invalid_signature ... ok
+test jwk::tests::verifies_valid_rsa_and_rejects_an_invalid_signature ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/crate_identity.rs (target/debug/deps/crate_identity-56890302704067db)
+
+running 1 test
+test crate_identity_and_public_docs_are_protocol_generic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/request.rs (target/debug/deps/request-642c8bece63ae600)
+
+running 22 tests
+test accepts_the_profile_algorithm_allowlist ... ok
+test content_digest_encodes_sha256_as_a_structured_field_byte_sequence ... ok
+test content_digest_semantics_accept_outer_ows_and_additional_digest_members ... ok
+test digest_never_panics_for_arbitrary_bodies ... ok
+test explicitly_covers_safe_additional_headers_in_caller_order ... ok
+test finish_encodes_arbitrary_signature_bytes_as_an_sfv_byte_sequence ... ok
+test prepares_the_required_fapi_request_signature_components ... ok
+test preserves_custom_method_case_in_the_signature_base ... ok
+test rejects_body_and_content_digest_conflict ... ok
+test rejects_duplicate_covered_headers ... ok
+test rejects_empty_key_id ... ok
+test rejects_header_injection ... ok
+test rejects_invalid_method ... ok
+test rejects_invalid_target_uri ... ok
+test rejects_missing_authorization ... ok
+test rejects_non_ascii_covered_field_values ... ok
+test rejects_reserved_signature_fields_as_additional_components ... ok
+test rejects_target_uri_line_injection ... ok
+test rejects_target_uri_userinfo ... ok
+test rejects_unsupported_algorithm ... ok
+test signs_the_parsed_canonical_target_uri ... ok
+test strips_outer_whitespace_from_covered_field_values ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+
+     Running tests/response.rs (target/debug/deps/response-86cf1d0777ddb89f)
+
+running 24 tests
+test authenticated_context_changes_reconstruct_a_different_base ... ok
+test body_with_recomputed_digest_reconstructs_a_different_base ... ok
+test borrowed_digest_response_has_identical_wire_base_and_denies_stale_evidence ... ok
+test changed_body_with_stale_digest_is_rejected ... ok
+test client_preserves_the_received_digest_field_value_in_the_signature_base ... ok
+test client_reconstructs_exact_response_signature_base ... ok
+test client_rejects_a_digest_dictionary_with_a_non_digest_member ... ok
+test client_requires_status_created_tag_and_exact_req_component_parameters ... ok
+test covered_request_signature_fields_still_reject_non_ascii_values ... ok
+test prepares_response_signature_with_exact_request_linkage ... ok
+test request_body_and_recomputed_request_digest_reconstruct_a_different_base ... ok
+test request_components_are_never_sourced_from_response_headers ... ok
+test request_req_digest_accepts_and_preserves_valid_multi_algorithm_serialization ... ok
+test request_req_digest_requires_a_physical_strict_digest_field ... ok
+test response_extra_components_round_trip_from_their_exact_contexts ... ok
+test response_extra_header_tampering_reconstructs_a_different_base ... ok
+test response_signing_accepts_and_preserves_valid_multi_algorithm_digest_serialization ... ok
+test response_signing_rejects_invalid_physical_digest_fields ... ok
+test response_signing_rejects_reserved_signature_fields_as_explicit_extras ... ok
+test response_signing_requires_a_physical_content_digest_for_a_non_empty_body ... ok
+test response_verifier_reconstructs_required_components_in_received_order ... ok
+test response_verifier_rejects_a_present_reserved_response_signature_extra ... ok
+test response_verifier_rejects_unsafe_or_ambiguous_extra_components ... ok
+test unrelated_obs_text_headers_do_not_affect_response_signing ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/verify_request.rs (target/debug/deps/verify_request-ffa51d701246a872)
+
+running 46 tests
+test accepts_an_rfc_9530_digest_dictionary_with_other_algorithms_and_ows ... ok
+test accepts_and_reconstructs_a_safe_extra_covered_header ... ok
+test accepts_created_at_the_exact_future_skew_boundary ... ok
+test accepts_created_at_the_exact_max_age_boundary ... ok
+test accepts_expires_at_the_exact_current_time_boundary ... ok
+test digest_evidence_preserves_request_checks_and_rejects_body_or_field_substitution ... ok
+test extra_header_tampering_reconstructs_a_different_base ... ok
+test parses_a_valid_strict_request_signature ... ok
+test preserves_custom_method_case_when_reconstructing_the_base ... ok
+test reconstructs_a_different_base_for_an_altered_authorization ... ok
+test reconstructs_a_different_base_for_an_altered_dpop_proof ... ok
+test reconstructs_a_different_base_for_an_altered_method ... ok
+test reconstructs_a_different_base_for_an_altered_target_uri ... ok
+test reconstructs_required_components_in_received_order ... ok
+test rejects_a_duplicate_signature_label ... ok
+test rejects_a_duplicate_signature_parameter ... ok
+test rejects_a_non_empty_body_without_an_actual_content_digest_header ... ok
+test rejects_a_sha_256_digest_member_with_the_wrong_sfv_type ... ok
+test rejects_a_sha_256_digest_that_is_not_exactly_32_bytes ... ok
+test rejects_an_altered_body_without_a_matching_digest ... ok
+test rejects_created_too_far_in_the_future ... ok
+test rejects_duplicate_optional_profile_headers_even_when_not_covered ... ok
+test rejects_duplicate_raw_sha_256_digest_members ... ok
+test rejects_duplicated_covered_components ... ok
+test rejects_expires_before_created ... ok
+test rejects_expires_one_second_before_current_time ... ok
+test rejects_malformed_signature_input_structured_field ... ok
+test rejects_malformed_signature_structured_field ... ok
+test rejects_mismatched_labels ... ok
+test rejects_missing_authorization_coverage ... ok
+test rejects_missing_digest_coverage ... ok
+test rejects_missing_dpop_coverage ... ok
+test rejects_missing_method_coverage ... ok
+test rejects_missing_signature_label ... ok
+test rejects_missing_target_uri_coverage ... ok
+test rejects_multiple_signature_labels ... ok
+test rejects_stale_created_time ... ok
+test rejects_target_uri_userinfo_and_non_ascii_covered_values ... ok
+test rejects_unknown_algorithm ... ok
+test rejects_unsafe_or_ambiguous_extra_components ... ok
+test rejects_wrong_content_digest ... ok
+test rejects_wrong_tag ... ok
+test replay_fingerprint_changes_with_authenticated_request_context ... ok
+test replay_fingerprint_does_not_depend_on_malleable_signature_bytes ... ok
+test verified_input_debug_output_is_fully_redacted ... ok
+test verifier_rejects_a_present_reserved_signature_extra ... ok
+
+test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_identity-ae08a9c53a706d02)
+
+running 52 tests
+test avatar::tests::avatar_reference_rejects_extra_query_or_path_components ... ok
+test avatar::tests::content_detection_uses_file_signatures ... ok
+test avatar::tests::direct_avatar_read_and_delete_preserve_repository_and_storage_boundaries ... ok
+test avatar::tests::direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes ... ok
+test avatar::tests::direct_upload_begin_rejects_invalid_references_and_provider_failures ... ok
+test avatar::tests::direct_upload_claim_states_fail_closed_and_release_invalid_pending_claims ... ok
+test avatar::tests::direct_upload_fixes_validated_snapshot_before_database_cas ... ok
+test avatar::tests::direct_upload_handles_retries_repository_failures_and_overview_failures ... ok
+test avatar::tests::direct_upload_recognizes_completed_and_already_recorded_candidates ... ok
+test avatar::tests::direct_upload_rejects_empty_declared_length_before_storage_authorization ... ok
+test avatar::tests::direct_upload_rejects_oversized_declared_length_before_storage_authorization ... ok
+test avatar::tests::direct_upload_releases_pending_claim_after_invalid_staged_bytes ... ok
+test avatar::tests::direct_upload_retry_from_another_service_returns_the_selected_candidate ... ok
+test avatar::tests::direct_upload_validates_staged_snapshots_and_storage_transitions ... ok
+test avatar::tests::final_object_identifier_binds_upload_and_exact_bytes ... ok
+test avatar::tests::pending_reads_once_and_keeps_validated_mime_while_candidate_failures_never_publish ... ok
+test avatar::tests::pending_validates_and_hashes_once_and_drops_bytes_before_recording ... ok
+test federation::tests::browser_binding_digest_is_tenant_scoped_and_canonical_hex ... ok
+test federation::tests::every_account_result_passes_active_gate_before_link_audit_or_session_creation ... ok
+test federation::tests::legacy_state_deserializes_without_inventing_a_browser_binding ... ok
+test mfa_service::tests::disable_reuses_verified_generation_without_consuming_another_factor ... ok
+test mfa_service::tests::failed_or_replayed_confirmation_cannot_return_backup_code_secrets ... ok
+test mfa_service::tests::required_confirmation_has_no_bare_repository_fallback_or_backup_code_disclosure ... ok
+test model::tests::login_identity_debug_never_exposes_password_hash ... ok
+test model::tests::password_hash_accepts_argon2_0_5_phc_vector ... ok
+test model::tests::password_hash_verifies_candidates_without_exposing_the_verifier ... ok
+test profile::tests::applications_are_loaded_from_the_accounts_tenant ... ok
+test profile::tests::profile_text_trims_blanks_and_enforces_byte_limit ... ok
+test profile::tests::profile_update_normalizes_only_profile_fields_and_resets_changed_phone_verification ... ok
+test profile::tests::profile_url_accepts_only_absolute_http_urls ... ok
+test profile::tests::retry_is_idempotent_when_profile_write_succeeds_before_overview_failure ... ok
+test registration::tests::denied_email_reservation_releases_peer_and_skips_code_delivery ... ok
+test registration::tests::failed_delivery_deletes_code_and_releases_tenant_scoped_reservations ... ok
+test registration::tests::failed_email_reservation_releases_peer_and_skips_code_delivery ... ok
+test registration::tests::failed_hash_and_uncertain_code_store_release_only_this_attempt ... ok
+test registration::tests::registration_scopes_code_load_and_consumption_to_service_tenant ... ok
+test registration::tests::successful_send_scopes_code_and_cooldowns_to_service_tenant ... ok
+test registration::tests::verification_codes_are_fixed_width_decimal_values ... ok
+test session::tests::add_amr_deduplicates_methods_and_preserves_claim_order ... ok
+test session::tests::authentication_precision_is_owned_by_the_record_and_legacy_updates_clear_it ... ok
+test session::tests::binding_client_fails_closed_for_invalid_or_missing_sessions ... ok
+test session::tests::binding_client_rejects_repeated_compare_and_set_conflicts ... ok
+test session::tests::binding_clients_is_session_scoped_and_idempotent ... ok
+test session::tests::corrupt_session_is_deleted_and_resolves_as_missing ... ok
+test session::tests::current_session_exposes_exact_logged_in_clients ... ok
+test session::tests::invalid_authentication_metadata_is_deleted_fail_closed ... ok
+test session::tests::mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_dependency_failures ... ok
+test session::tests::mfa_resolution_reads_one_snapshot_and_one_account_for_either_session_state ... ok
+test session::tests::recent_interactive_mfa_has_one_strict_time_and_factor_policy ... ok
+test session::tests::step_up_builds_a_fresh_session_and_csrf_pair_for_atomic_rotation ... ok
+test session::tests::unavailable_session_store_is_not_downgraded_to_anonymous ... ok
+test tenancy::tests::tenant_host_has_one_canonical_form ... ok
+
+test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+
+     Running tests/access_request_validation.rs (target/debug/deps/access_request_validation-6ff09ddb1c96372e)
+
+running 3 tests
+test access_request_database_boundaries_are_enforced_before_persistence ... ok
+test access_request_fields_are_trimmed_and_https_site_is_accepted ... ok
+test access_request_rejects_empty_fields_and_unsafe_site_urls ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/admin_policy.rs (target/debug/deps/admin_policy-95920492b3b04de1)
+
+running 3 tests
+test admin_cannot_elevate_or_demote_disable_self ... ok
+test admin_cannot_modify_peer_superior_or_grant_own_level ... ok
+test admin_policy_rejects_cross_tenant_and_resolves_safe_update ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/authentication_method_authority.rs (target/debug/deps/authentication_method_authority-949030141f6525d9)
+
+running 3 tests
+test real_session_metadata_rejects_empty_evidence_and_invalid_time_or_sid ... ok
+test session_amr_preserves_unknown_evidence_without_inventing_federation ... ok
+test totp_credentials_do_not_expose_seeds_in_debug_output ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dependency_boundary.rs (target/debug/deps/dependency_boundary-26ef1c6445b81703)
+
+running 1 test
+test identity_has_no_auth_framework_or_storage_dependencies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/model.rs (target/debug/deps/model-d7a22b0e3a593e09)
+
+running 5 tests
+test identity_ids_reject_nil_uuid_during_deserialization ... ok
+test identity_ids_reject_nil_uuid_values ... ok
+test principal_and_tenant_context_do_not_require_database_rows ... ok
+test session_metadata_has_one_amr_source_and_rejects_invalid_time_or_sid ... ok
+test subject_claims_are_framework_and_storage_independent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/password_authentication.rs (target/debug/deps/password_authentication-6a9c219079c5613e)
+
+running 2 tests
+test missing_and_inactive_accounts_share_dummy_verification_and_failure_behavior ... ok
+test pending_mfa_login_uses_a_short_session_ttl ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/policy.rs (target/debug/deps/policy-0a840967d692cbd2)
+
+running 15 tests
+test backup_code_normalization_preserves_strict_display_contract ... ok
+test base32_decode_accepts_transport_whitespace_case_and_padding_only ... ok
+test email_policy_normalizes_addresses_and_renders_existing_template ... ok
+test email_policy_preserves_lettre_address_syntax_contract ... ok
+test federation_callback_token_policy_is_exact ... ok
+test generated_backup_code_uses_two_fixed_width_numeric_chunks ... ok
+test generated_totp_secret_is_base32_without_padding ... ok
+test mfa_policy_preserves_totp_and_backup_code_contracts ... ok
+test otpauth_uri_keeps_existing_encoding_contract ... ok
+test passkey_policy_binds_tenant_user_and_validates_user_input ... ok
+test scim_policy_normalizes_identity_filter_payload_and_patch ... ok
+test scim_policy_rejects_invalid_email_dot_placement ... ok
+test session_policy_validates_metadata_and_preserves_amr_order ... ok
+test totp_verification_rejects_replay_and_keeps_one_step_skew ... ok
+test totp_verifier_rejects_malformed_code_or_secret_without_fallback ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/port_arc_dispatch.rs (target/debug/deps/port_arc_dispatch-d4ab76654b2e204f)
+
+running 7 tests
+test authentication_audit_arc_dispatches_complete_event_once ... ok
+test delivery_arc_preserves_borrowed_fields_ttl_and_error ... ok
+test federation_audit_arc_dispatches_complete_event_once ... ok
+test federation_hasher_arc_preserves_generated_value ... ok
+test passkey_audit_arc_dispatches_complete_event_once ... ok
+test secret_hasher_arc_dispatches_both_operations_without_changing_results ... ok
+test secret_verifier_arc_preserves_arguments_and_busy_error ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/repository_ports.rs (target/debug/deps/repository_ports-d6880d98b7f79f64)
+
+running 8 tests
+test avatar_direct_upload_contract_keeps_storage_details_opaque ... ok
+test avatar_storage_errors_are_descriptive_without_exposing_unrelated_state ... ok
+test avatar_upload_claim_preserves_the_fixed_candidate_across_a_retry ... ok
+test fake_user_repository_is_a_minimal_test_substitute ... ok
+test fake_user_repository_round_trips_principals_and_subject_claims ... ok
+test identity_port_errors_and_secret_wrappers_preserve_safe_messages ... ok
+test public_account_is_composed_from_domain_concepts_not_a_flat_database_row ... ok
+test public_identity_api_has_no_catch_all_identity_user ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scim_core.rs (target/debug/deps/scim_core-6eef9c9d047238d5)
+
+running 10 tests
+test cursor_core_binds_tenant_actor_filter_count_and_lifetime ... ok
+test cursor_envelope_rejects_noncanonical_and_malformed_inputs ... ok
+test documents_preserve_public_wire_shape_and_hide_internal_identity_state ... ok
+test filter_and_identity_normalization_are_case_stable ... ok
+test list_query_parser_preserves_wire_names_and_exact_error_types ... ok
+test malformed_cursor_plaintext_is_rejected_without_panicking ... ok
+test pagination_is_total_and_bounded_across_boundary_values ... ok
+test patch_schema_and_operations_preserve_scim_error_semantics ... ok
+test repository_failures_delete_outcomes_and_scopes_are_typed ... ok
+test scim_json_models_deserialize_post_and_patch_inputs_without_extra_dtos ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scim_service.rs (target/debug/deps/scim_service-2d9c3f1ceb12bc01)
+
+running 3 tests
+test credential_lookup_is_delegated_to_the_credential_port ... ok
+test get_post_put_patch_and_delete_use_the_single_scim_repository_boundary ... ok
+test list_users_builds_a_tenant_scoped_repository_query ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_key_management-df22889049bcd268)
+
+running 88 tests
+test client_registration::tests::algorithm_specific_signing_key_selection_requires_matching_public_material ... ok
+test client_registration::tests::client_jwks_accept_supported_ecdh_encryption_keys ... ok
+test client_registration::tests::client_jwks_accepts_optional_key_ids_but_rejects_duplicate_values ... ok
+test client_registration::tests::client_jwks_reject_private_key_material ... ok
+test client_registration::tests::client_jwks_reject_symmetric_jwe_keys ... ok
+test client_registration::tests::client_jwks_reject_unsupported_ecdh_key_wrap_width ... ok
+test client_registration::tests::client_secret_digest_preserves_persisted_v1_format ... ok
+test client_registration::tests::policy_validation_crypto_has_no_keyset_and_exposes_compiled_algorithms ... ok
+test client_registration::tests::rfc4514_distinguished_names_are_parsed_and_compared_canonically ... ok
+test database::tests::active_database_external_key_signs_only_with_a_matching_public_signature ... ok
+test database::tests::bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner ... ok
+test database::tests::database_jwt_encoding_rejects_mismatched_kid_and_unsupported_algorithm ... ok
+test database::tests::database_rotation_selects_the_oldest_local_candidate_and_ignores_external_candidates ... ok
+test database::tests::decrypt_payload_rejects_invalid_revision_ciphertext_and_projection ... ok
+test database::tests::external_registration_rejects_unusable_verification_material_without_persisting ... ok
+test database::tests::load_payload_handles_external_keys_with_and_without_a_signer_capability ... ok
+test database::tests::load_payload_rejects_tampered_local_and_generation_metadata ... ok
+test database::tests::local_private_key_export_requires_a_local_database_key ... ok
+test database::tests::maintain_payload_prepublishes_rotates_and_repairs_protocol_keys ... ok
+test database::tests::openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation ... ok
+test database::tests::openid4vc_revision_conflict_does_not_publish_material ... ok
+test database::tests::openid4vc_revoked_active_leaf_cannot_prepare_signing ... ok
+test database::tests::openid4vc_wrong_leaf_is_rejected_before_cas ... ok
+test database::tests::records_report_each_persisted_key_lifecycle_state ... ok
+test database::tests::registration_validation_rejects_ambiguous_or_unsafe_inputs ... ok
+test external::tests::external_public_jwk_policy_is_algorithm_and_usage_bound ... ok
+test external::tests::external_signature_verification_accepts_signature_bound_to_active_public_jwk ... ok
+test external::tests::external_signature_verification_rejects_signature_that_does_not_match_input ... ok
+test external::tests::external_signer_output_is_verified_against_exact_message ... ok
+test jwks::tests::jwks_never_publishes_private_members ... ok
+test key_repository_tests::database_diagnostics_leave_due_old_wrapping_generation_unchanged_and_reject_tampering ... ok
+test key_repository_tests::database_diagnostics_reject_invalid_creation_times_without_writing ... ok
+test key_repository_tests::database_diagnostics_reject_missing_keys_without_initializing_them ... ok
+test key_repository_tests::database_registration_converges_and_survives_restart_without_files ... ok
+test key_repository_tests::database_startup_maintains_an_overdue_keyset_before_it_is_ready ... ok
+test key_repository_tests::database_update_retries_compare_and_swap_conflicts_before_applying ... ok
+test key_repository_tests::database_update_stops_after_the_cas_conflict_budget ... ok
+test key_repository_tests::encrypted_generation_rejects_swapped_public_metadata ... ok
+test key_repository_tests::encrypted_key_material_is_bound_to_its_tenant_and_purpose ... ok
+test key_repository_tests::expired_database_key_remains_encrypted_but_is_not_advertised_or_verifiable ... ok
+test key_repository_tests::refresh_reseals_an_old_generation_before_previous_wrapping_key_is_removed ... ok
+test key_repository_tests::two_managers_share_database_keyset_without_writing_key_files ... ok
+test key_repository_tests::wrapping_key_ring_rejects_invalid_ids_and_malformed_material ... ok
+test lifecycle::tests::database_refresh_failure_keeps_last_generation_and_recovers ... ok
+test model::tests::captured_jwks_uses_the_same_retirement_boundary_as_its_cache_deadline ... ok
+test model::tests::captured_snapshot_stops_exposing_a_key_after_its_retirement_deadline ... ok
+test model::tests::database_rotation_retains_old_public_key_for_grace_and_snapshot_bounds ... ok
+test model::tests::expired_database_generation_fails_closed_while_lifecycle_flag_is_still_healthy ... ok
+test model::tests::expired_http_lease_cannot_use_old_generation_after_newer_generation_is_current ... ok
+test model::tests::external_purpose_key_is_not_selected_as_a_local_signer ... ok
+test model::tests::external_signatures_use_the_selected_generation_prepared_public_key ... ok
+test model::tests::external_signing_failure_is_returned_without_successful_signature ... ok
+test model::tests::grace_key_verifies_but_does_not_sign ... ok
+test model::tests::http_signing_lease_fails_closed_when_identity_does_not_match_generation ... ok
+test model::tests::http_signing_lease_keeps_label_and_key_on_one_generation_during_rotation ... ok
+test model::tests::http_signing_rejects_wrong_purpose_grace_and_retired_keys ... ok
+test model::tests::id_token_key_rejects_http_message_signing ... ok
+test model::tests::jwt_encoding_preserves_compact_wire_bytes ... ok
+test model::tests::jwt_encoding_rejects_grace_and_retired_keys ... ok
+test model::tests::key_record_status_has_stable_operator_labels ... ok
+test model::tests::metadata_snapshot_does_not_advertise_jarm_only_keys_for_id_tokens ... ok
+test model::tests::openid4vc_lease_pins_material_and_restricts_signing_purposes ... ok
+test model::tests::openid4vc_lease_requires_healthy_complete_matching_material ... ok
+test model::tests::openid4vc_material_conversion_and_parsers_enforce_the_persisted_shape ... ok
+test model::tests::openid4vc_public_projection_and_revocation_index_are_shared_per_generation ... ok
+test model::tests::prepared_verification_accepts_only_absent_or_verify_only_key_ops ... ok
+test model::tests::prepared_verification_rejects_invalid_p256_public_points ... ok
+test model::tests::retired_key_neither_verifies_nor_signs ... ok
+test model::tests::signer_rejects_active_key_with_wrong_purpose ... ok
+test model::tests::snapshot_publication_rejects_a_managed_key_whose_jwk_cannot_verify ... ok
+test purpose_scoped_keys_tests::overlapping_purpose_scoped_keys_are_rejected ... ok
+test purpose_scoped_keys_tests::purpose_scoped_key_signs_only_declared_openid4vc_purposes ... ok
+test purpose_scoped_keys_tests::purpose_scoped_registration_rejects_oidc_signing_purposes ... ok
+test request_object_encryption::tests::dedicated_request_object_key_decrypts_authenticated_nested_jwt ... ok
+test request_object_encryption::tests::request_object_decryption_rejects_invalid_encrypted_key_before_aead ... ok
+test request_object_encryption::tests::request_object_decryption_rejects_tampered_ciphertext ... ok
+test request_object_encryption::tests::request_object_decryption_uses_the_current_generation_recipient_key ... ok
+test token::tests::access_token_header_and_signature_keep_one_generation_during_rotation ... ok
+test token::tests::decode_rejects_a_header_algorithm_outside_the_keys_prepared_algorithm ... ok
+test token::tests::id_token_and_introspection_keep_default_and_registered_keys_during_rotation ... ok
+test token::tests::introspection_response_uses_registered_algorithm ... ok
+test token::tests::logout_hint_malformed_claims_and_kid_match_original_decoder ... ok
+test token::tests::logout_hint_prepared_key_preserves_signature_issuer_type_and_expired_policy ... ok
+test token::tests::logout_hint_prepared_key_still_observes_retirement_and_algorithm ... ok
+test token::tests::logout_hint_supported_algorithms_match_original_claim_and_expiry_semantics ... ok
+test token::tests::ownership_introspection_envelope_preserves_fixed_time_payload_bytes ... ok
+test token::tests::ownership_signed_introspection_payload_matches_original_bytes_and_algorithm ... ok
+test token::tests::signing_preserves_each_single_sender_binding ... ok
+
+test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.60s
+
+     Running tests/mtls_trust.rs (target/debug/deps/mtls_trust-18f379f41fdf974f)
+
+running 3 tests
+test accepts_current_strong_ca_and_canonicalizes_pem ... ok
+test rejects_leaf_and_ca_without_key_cert_sign ... ok
+test rejects_multiple_certificates_and_oversized_input ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server-1fed0f0a5b9156a6)
+
+running 371 tests
+test authorization::consent::tests::consent_payload_is_bound_to_current_user ... ok
+test authorization::consent::tests::matching_consent_payload_user_is_preserved_for_response_building ... ok
+test authorization::consent::tests::missing_or_malformed_consent_state_has_original_error ... ok
+test authorization::jar::tests::encrypted_jar_without_outer_client_id_survives_par_preparation ... ok
+test authorization::jar::tests::policy_and_replay_errors_preserve_status_code_and_body ... ok
+test authorization::jar::tests::prepared_encrypted_jar_still_requires_registered_algorithms_signature_and_claims ... ok
+test authorization::jar::tests::protocol_jar_login_preserves_signed_envelope_and_consumes_replay_only_on_continuation ... ok
+test authorization::jar::tests::protocol_par_invalid_signed_scope_does_not_consume_request_object_replay ... ok
+test authorization::jar::tests::verification_errors_preserve_existing_oauth_contract ... ok
+test authorization::presentation::tests::append_query_preserves_invalid_base_and_skips_empty_values ... ok
+test authorization::presentation::tests::framework_boundary_transport_views_query_projection_semantics ... ok
+test authorization::presentation::tests::inactive_client_is_not_found_and_active_client_exposes_only_display_metadata ... ok
+test authorization::request::parameters::tests::claim_request_names_preserve_normalized_order ... ok
+test authorization::request::parameters::tests::duplicate_parameter_policy_covers_authorization_inputs_and_internal_reauth_nonce ... ok
+test authorization::request::parameters::tests::login_query_preserves_the_original_par_reference ... ok
+test authorization::request::parameters::tests::login_url_encodes_next_request_and_optional_reauth_nonce ... ok
+test authorization::request::parameters::tests::login_url_keeps_the_exact_single_parameter_encoding_contract ... ok
+test authorization::request::parameters::tests::outer_request_uri_parameters_must_match_pushed_values ... ok
+test authorization::request::parameters::tests::verified_dpop_binding_is_added_only_when_the_request_did_not_supply_one ... ok
+test authorization::request::prompt_none::tests::competing_prompt_none_requests_with_one_par_snapshot_write_one_code ... ok
+test authorization::request::prompt_none::tests::prompt_none_binding_conflict_reloads_and_preserves_another_rp ... ok
+test authorization::request::prompt_none::tests::prompt_none_cleanup_failure_preserves_success_and_durable_replay_fence ... ok
+test authorization::request::prompt_none::tests::prompt_none_commit_preserves_original_expiry_and_changed_cleanup_snapshot ... ok
+test authorization::request::prompt_none::tests::prompt_none_logout_between_resolution_and_binding_prevents_code_response_and_session_revival ... ok
+test authorization::request::prompt_none::tests::prompt_none_non_oidc_authorization_does_not_read_or_bind_the_browser_session ... ok
+test authorization::request::prompt_none::tests::prompt_none_oidc_without_session_id_does_not_return_a_code ... ok
+test authorization::request::prompt_none::tests::prompt_none_preserves_original_private_payload_claims_when_storing_code ... ok
+test authorization::request::prompt_none::tests::prompt_none_rejected_commit_never_writes_a_code_or_binds_a_session ... ok
+test authorization::request::prompt_none::tests::prompt_none_required_audit_failure_prevents_decision_code_and_session_mutation ... ok
+test authorization::request::prompt_none::tests::prompt_none_session_binding_failure_never_returns_a_code_or_compensates_the_decision ... ok
+test authorization::request::prompt_none::tests::prompt_none_success_binds_rp_in_persisted_session_after_durable_decision ... ok
+test authorization::request::prompt_none::tests::stored_grant_covers_prompt_none_request_when_scope_is_subset ... ok
+test authorization::request::prompt_none::tests::stored_grant_does_not_cover_new_or_malformed_scope_sets ... ok
+test authorization::request::prompt_none::tests::stored_grant_does_not_cover_new_resource_indicators ... ok
+test authorization::request::prompt_none::tests::stored_grant_never_silently_reuses_high_risk_authorization_details ... ok
+test authorization::request::prompt_none::tests::stored_grant_requires_exact_authorization_details_binding ... ok
+test authorization::request::prompt_none::tests::stored_grant_treats_empty_requested_authorization_details_as_already_covered ... ok
+test authorization::request::response::tests::authorization_response_crypto_failure_never_falls_back_to_plain_query ... ok
+test authorization::request::response::tests::authorization_response_policy_lookup_failure_never_emits_redirect_parameters ... ok
+test authorization::request::response::tests::authorization_response_redirect_emits_signed_jarm_response ... ok
+test authorization::request::response::tests::authorization_response_redirect_jarm_profile_signs_without_response_mode ... ok
+test authorization::request::response::tests::authorization_response_redirect_signs_then_encrypts_jarm_for_client_policy ... ok
+test authorization::request::response::tests::signed_response_with_precomputed_policy_still_requires_an_authoritative_client ... ok
+test authorization::request::tests::attested_clients_enforce_their_pushed_request_policy_before_login ... ok
+test authorization::request::tests::authorization_login_url_marks_reauthentication_start_once ... ok
+test authorization::request::tests::authorization_nonce_length_check_allows_long_state_but_rejects_long_nonce ... ok
+test authorization::request::tests::authorization_pkce_compatibility_keeps_oidc_nonce_optional ... ok
+test authorization::request::tests::authorization_policy_enforces_runtime_modules_and_extracts_credential_ids ... ok
+test authorization::request::tests::authorization_request_pkce_policy_preserves_effective_profile_boundary ... ok
+test authorization::request::tests::authorization_response_jwt_redirect_uses_only_response_parameter ... ok
+test authorization::request::tests::authorization_response_jwt_signing_failure_does_not_fallback_to_query ... ok
+test authorization::request::tests::authorization_response_query_omits_absent_state_and_inapplicable_result ... ok
+test authorization::request::tests::authorization_response_query_preserves_explicit_empty_state ... ok
+test authorization::request::tests::authorize_requires_outer_client_id_before_jar_or_par_lookup ... ok
+test authorization::request::tests::claims_parameter_accepts_value_values_and_null_requests ... ok
+test authorization::request::tests::claims_parameter_extracts_supported_user_claim_names ... ok
+test authorization::request::tests::claims_parameter_preserves_requested_acr_values ... ok
+test authorization::request::tests::malformed_claims_parameter_is_invalid ... ok
+test authorization::request::tests::max_age_zero_and_prompt_directives_require_reauthentication ... ok
+test authorization::request::tests::preserve_verified_dpop_binding_adds_missing_authorization_parameter ... ok
+test authorization::request::tests::preserve_verified_dpop_binding_keeps_explicit_authorization_parameter ... ok
+test authorization::request::tests::prompt_parsing_accepts_oidc_values_and_rejects_invalid_combinations ... ok
+test authorization::request::tests::protocol_max_age_zero_application_uses_existing_one_use_reauthentication_nonce ... ok
+test authorization::request::tests::protocol_same_second_old_session_cannot_complete_reauthentication ... ok
+test authorization::request::tests::reauth_nonce_consume_failure_removes_untrusted_nonce ... ok
+test authorization::request::tests::reauth_nonce_is_single_use_authorization_state ... ok
+test authorization::request::tests::reauth_nonce_store_failure_returns_server_error ... ok
+test authorization::request::tests::request_object_jwks_failure_is_server_error_without_using_persisted_fallback ... ok
+test authorization::request::tests::request_uri_allows_outer_parameters_only_when_equal_to_pushed_values ... ok
+test authorization::request::tests::requested_acr_ignores_unsupported_request_values ... ok
+test authorization::request::tests::requested_acr_selects_supported_request_value ... ok
+test authorization::request::tests::unverified_request_object_routing_extracts_only_parseable_signed_payloads ... ok
+test contracts::token_client_auth::tests::credential_view_borrows_secret_and_keeps_source_precedence ... ok
+test domain::client_jwe::tests::client_jwe_encrypts_with_supported_ecdh_key_management_algorithms ... ok
+test domain::client_jwe::tests::client_jwe_key_rejects_ambiguous_matching_keys ... ok
+test domain::client_jwe::tests::client_jwe_key_rejects_unsupported_ecdh_and_symmetric_algorithms ... ok
+test domain::client_jwe::tests::ownership_introspection_signs_then_encrypts_without_changing_inner_jwt ... ok
+test domain::client_policy::oauth_client_jwks_tests::client_jwks_accepts_encryption_keys_for_introspection_jwe ... ok
+test domain::client_policy::oauth_client_jwks_tests::client_jwks_accepts_supported_public_key_algorithms ... ok
+test domain::client_policy::oauth_client_jwks_tests::client_jwks_allows_one_unidentified_key_class_but_rejects_empty_or_duplicate_kids ... ok
+test domain::client_policy::oauth_client_jwks_tests::client_jwks_rejects_algorithm_key_type_mismatch ... ok
+test domain::client_policy::oauth_client_jwks_tests::client_jwks_rejects_encryption_algorithm_key_type_mismatch ... ok
+test domain::client_policy::oauth_client_jwks_tests::client_jwks_rejects_private_key_material ... ok
+test domain::client_policy::oauth_client_jwks_tests::client_jwks_requires_declared_algorithm ... ok
+test domain::client_policy::oauth_client_jwks_tests::encrypted_response_refresh_is_noop_without_policy_and_uses_remote_keys_with_policy ... ok
+test domain::client_policy::oauth_client_jwks_tests::refresh_client_jwks_does_not_replace_snapshot_when_resolution_fails ... ok
+test domain::client_policy::oauth_client_jwks_tests::refresh_client_jwks_uses_registered_uri_and_preserves_snapshot_without_one ... ok
+test domain::client_policy::oauth_client_jwks_tests::response_encryption_refresh_does_not_fetch_when_the_selected_response_is_plain ... ok
+test domain::client_policy::oauth_client_jwks_tests::self_signed_mtls_jwks_requires_a_current_parseable_x5c_certificate ... ok
+test domain::oauth::tests::authorization_code_state_survives_lua_empty_array_roundtrip_shape ... ok
+test domain::oauth::tests::code_payload_defaults_missing_authorization_details_to_empty_array ... ok
+test domain::oauth::tests::code_payload_normalizes_empty_internal_authorization_details_states ... ok
+test domain::oauth::tests::code_payload_rejects_non_array_authorization_details ... ok
+test domain::oidc_claims::tests::id_token_claim_values_filter_output_and_allow_matching_contact_claims ... ok
+test domain::oidc_claims::tests::id_token_user_claims_do_not_expose_email_scope_claims ... ok
+test domain::oidc_claims::tests::prompt_none_claims_require_their_authorizing_scope ... ok
+test domain::oidc_claims::tests::requested_contact_claims_allow_explicit_contact_claims_without_contact_scopes ... ok
+test domain::oidc_claims::tests::requested_userinfo_claim_values_filter_output_even_without_matching_scope ... ok
+test domain::oidc_claims::tests::requested_userinfo_claims_allow_explicit_profile_claims_without_profile_scope ... ok
+test domain::oidc_claims::tests::userinfo_claims_follow_authorized_scopes ... ok
+test domain::oidc_claims::tests::userinfo_claims_omit_unrequested_profile_and_email ... ok
+test domain::oidc_logout::orchestration_tests::id_token_hint_expires_at_the_exact_exp_boundary ... ok
+test domain::oidc_logout::orchestration_tests::postgres_outbox_failure_never_deletes_the_valkey_session ... ok
+test domain::oidc_logout::orchestration_tests::valkey_failure_keeps_the_committed_operation_retryable ... ok
+test domain::openid4vc::client_attestation::tests::client_attestation_configuration_and_unverified_subject_are_strict ... ok
+test domain::openid4vc::client_attestation::tests::client_attestation_draft_07_accepts_optional_time_claims_and_binds_instance_key ... ok
+test domain::openid4vc::client_attestation::tests::client_attestation_one_second_node_difference_does_not_change_owner_window ... ok
+test domain::openid4vc::client_attestation::tests::client_attestation_rejects_header_key_claim_and_replay_contract_violations ... ok
+test domain::openid4vc::client_attestation::tests::client_attestation_rejects_private_instance_key_material ... ok
+test domain::openid4vc::client_attestation::tests::client_attestation_replay_marker_outlives_every_accepted_iat_second ... ok
+test domain::openid4vc::client_attestation::tests::client_attestation_validate_for_client_uses_static_trust_when_client_is_unbound ... ok
+test domain::openid4vc::credential_crypto::tests::certificate_chain_at_checks_leaf_intermediates_anchor_and_time ... ok
+test domain::openid4vc::credential_crypto::tests::certificate_client_ids_bind_to_hash_and_dns_san ... ok
+test domain::openid4vc::credential_crypto::tests::constructor_fails_closed_without_managed_material ... ok
+test domain::openid4vc::credential_crypto::tests::current_revocation_policy_preserves_optional_and_required_snapshots ... ok
+test domain::openid4vc::credential_crypto::tests::expired_scoped_anchor_with_valid_global_path_cannot_exempt_required_unknown_status ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_assessment_and_holder_helpers_fail_closed ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_direct_scoped_trust_anchor_is_exact_self_signed_and_lease_scoped ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_mdl_binary_elements_require_base64url_and_encode_as_bstr ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_required_unknown_status_uses_authenticated_anchor_not_loaded_scope ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_signing_covers_holder_and_namespace_encoding_errors ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_signing_requires_the_issuing_country_from_the_leaf_certificate ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_signing_skips_mdl_country_validation_for_other_document_types ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_verification_accepts_signed_device_response_and_extracts_claims ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors ... ok
+test domain::openid4vc::credential_crypto::tests::mdoc_verification_rejects_signing_before_certificate_validity ... ok
+test domain::openid4vc::credential_crypto::tests::request_and_metadata_signing_emit_required_jose_headers ... ok
+test domain::openid4vc::credential_crypto::tests::request_and_metadata_signing_map_key_failures_to_errors ... ok
+test domain::openid4vc::credential_crypto::tests::scoped_trust_anchors_require_a_bounded_unique_current_ca_set ... ok
+test domain::openid4vc::credential_crypto::tests::sd_jwt_chain_and_combined_anchor_validation_fail_closed ... ok
+test domain::openid4vc::credential_crypto::tests::sd_jwt_key_binding_requires_type_and_matches_disclosure_hash ... ok
+test domain::openid4vc::credential_crypto::tests::sd_jwt_projects_aki_only_from_its_authenticated_issuer_chain ... ok
+test domain::openid4vc::credential_crypto::tests::sd_jwt_required_unknown_status_uses_authenticated_anchor_not_loaded_scope ... ok
+test domain::openid4vc::credential_crypto::tests::sd_jwt_signing_supports_disclosures_holder_binding_and_status ... ok
+test domain::openid4vc::credential_crypto::tests::sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering ... ok
+test domain::openid4vc::credential_crypto::tests::sd_jwt_verification_rejects_holder_and_issuer_policy_failures ... ok
+test domain::openid4vc::credential_crypto::tests::shared_signing_key_anchor_selection_prefers_actual_scoped_der_without_second_validation ... ok
+test domain::openid4vc::credential_crypto::tests::signed_holder_nonce_failure_is_distinct_from_other_holder_failures ... ok
+test domain::openid4vc::credential_crypto::tests::signed_issuer_time_policy_cannot_hide_optional_holder_nonce ... ok
+test domain::openid4vc::credential_crypto::tests::signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing ... ok
+test domain::openid4vc::credential_crypto::tests::signed_revoked_optional_nonce_is_fatal_and_stale_snapshot_is_unavailable ... ok
+test domain::openid4vc::credential_crypto::tests::signed_sd_jwt_aki_and_nonce_flow_through_real_presentation_service ... ok
+test domain::openid4vc::credential_crypto::tests::signed_unused_configured_anchor_cannot_supply_a_dcql_aki ... ok
+test domain::openid4vc::credential_crypto::tests::standard_device_authentication_bytes_is_deterministic_and_rejects_bad_inputs ... ok
+test domain::openid4vc::tests::attestation_proof_accepts_missing_expiration ... ok
+test domain::openid4vc::tests::attestation_proof_rejects_missing_nonce ... ok
+test domain::openid4vc::tests::credential_proofs::anonymous_credential_proof_origin_ignores_same_named_registered_client_trust ... ok
+test domain::openid4vc::tests::credential_proofs::credential_attestation_algorithm_obeys_selected_configuration_for_both_contexts ... ok
+test domain::openid4vc::tests::credential_proofs::credential_attestation_is_one_jwt_with_multiple_attested_keys ... ok
+test domain::openid4vc::tests::credential_proofs::credential_embedded_attestation_algorithm_is_checked_after_valid_eddsa_outer_proof ... ok
+test domain::openid4vc::tests::credential_proofs::credential_proof_binds_optional_attestation_and_requires_its_nonce ... ok
+test domain::openid4vc::tests::credential_proofs::credential_proof_issuer_uses_origin_even_for_a_registered_placeholder_name ... ok
+test domain::openid4vc::tests::credential_proofs::credential_proof_requires_scalar_audience_and_matching_present_issuer ... ok
+test domain::openid4vc::tests::crypto_helpers_cover_jwk_key_and_algorithm_boundaries ... ok
+test domain::openid4vc::tests::crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes ... ok
+test domain::openid4vc::tests::crypto_helpers_validate_pem_certificate_inputs ... ok
+test domain::openid4vc::tests::crypto_helpers_verify_openid4vc_certificate_chain_and_anchor_policy ... ok
+test domain::openid4vc::tests::jwt_proof_key_attestation_rejects_missing_nonce ... ok
+test domain::openid4vc::tests::jwt_proof_key_attestation_requires_expiration ... ok
+test domain::openid4vc::tests::key_attestation_rejects_expired_optional_expiration ... ok
+test domain::openid4vc::tests::key_attestation_rejects_missing_issued_at ... ok
+test domain::openid4vc::tests::key_attestation_rejects_out_of_window_issued_at ... ok
+test domain::openid4vc::tests::key_attestation_validates_header_nonce_expiry_and_component_requirements ... ok
+test domain::openid4vc::tests::mdoc_device_signature_uses_tagged_device_authentication_bytes ... ok
+test domain::openid4vc::tests::mdoc_fallback_accepts_only_independently_verified_checks ... ok
+test domain::openid4vc::tests::mdoc_holder_binding_rejects_rsa_attested_keys ... ok
+test domain::openid4vc::tests::one_attestation_can_expand_beyond_the_proof_array_batch_limit ... ok
+test domain::openid4vc::tests::proof_port_accepts_one_attestation_set_and_returns_each_attested_public_key ... ok
+test domain::openid4vc::tests::proof_validator_binds_required_key_attestation_to_the_jwt_key ... ok
+test domain::openid4vc::tests::proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts ... ok
+test domain::openid4vc::tests::proof_validator_rejects_ambiguous_and_malformed_proof_sets ... ok
+test domain::openid4vc::tests::verified_mdoc_holder_binding_preserves_the_device_cose_key ... ok
+test domain::openid4vc_endpoints::helpers::tests::authorization_details_filter_by_type_issuer_and_scope ... ok
+test domain::openid4vc_endpoints::helpers::tests::authorization_details_reject_empty_and_unknown_configurations ... ok
+test domain::openid4vc_endpoints::helpers::tests::credential_and_deferred_request_digest_preserve_exact_canonical_envelope ... ok
+test domain::openid4vc_endpoints::helpers::tests::issuance_errors_map_to_stable_http_contracts ... ok
+test domain::openid4vc_endpoints::helpers::tests::presentation_completion_dependency_errors_remain_server_errors ... ok
+test domain::openid4vc_endpoints::helpers::tests::presentation_verifier_dependency_errors_remain_server_errors ... ok
+test domain::openid4vc_endpoints::helpers::tests::proof_nonce_and_request_digest_are_stable_and_fail_closed ... ok
+test domain::openid4vc_endpoints::helpers::tests::resolve_configuration_id_enforces_exactly_one_identifier_and_access ... ok
+test domain::openid4vc_endpoints::helpers::tests::resolve_identifier_uses_only_the_authorized_identifier_namespace ... ok
+test domain::openid4vc_endpoints::helpers::tests::stored_and_recovered_responses_preserve_encoding_status_and_nonce ... ok
+test domain::openid4vc_endpoints::openid4vci::request_json_tests::request_json_accepts_json_and_rejects_invalid_encrypted_request ... ok
+test domain::openid4vc_endpoints::openid4vci::response_tests::deferred_response_status_survives_real_encryption_and_stored_replay ... ok
+test domain::openid4vc_endpoints::openid4vci::response_tests::dpop_nonce_generation_fails_closed_when_nonce_state_is_unavailable ... ok
+test domain::openid4vc_endpoints::openid4vci::response_tests::finish_response_supports_json_ecdh_and_deflate_and_rejects_unsupported_parameters ... ok
+test domain::openid4vc_endpoints::openid4vci::response_tests::response_encryption_requires_an_encrypted_request_before_any_issuance_effect ... ok
+test domain::openid4vc_endpoints::tests::managed_dataset_rejects_claim_names_and_json_shape_at_every_boundary ... ok
+test domain::openid4vc_endpoints::tests::managed_dataset_validity_must_end_after_start_and_now ... ok
+test domain::openid4vc_endpoints::tests::managed_mdoc_dataset_rejects_namespace_and_inner_claim_name_bounds ... ok
+test domain::openid4vc_endpoints::tests::managed_mdoc_dataset_requires_nonempty_namespace_objects ... ok
+test domain::openid4vc_endpoints::tests::managed_sd_jwt_dataset_rejects_reserved_claims_and_structural_abuse ... ok
+test domain::openid4vc_endpoints::tests::vci_authorization_detail_contains_final_credential_identifier ... ok
+test domain::profile_account::tests::active_and_pending_sessions_expose_their_distinct_profile_shapes ... ok
+test domain::profile_account::tests::auth_me_classifies_active_pending_missing_and_invalidated_from_one_session_read ... ok
+test domain::profile_account::tests::missing_and_unavailable_sessions_remain_distinct_errors ... ok
+test domain::profile_account::tests::update_validation_and_application_projection_stay_in_focused_services ... ok
+test domain::resource_server::tests::verifier_cache_expires_at_retirement_even_without_a_new_generation ... ok
+test domain::resource_server::tests::verifier_cache_hits_only_the_same_live_snapshot_generation ... ok
+test domain::resource_server::tests::verifier_cache_rebuilds_after_clock_rollback_with_or_without_a_future_retirement ... ok
+test domain::scim::tests::authorization_preserves_scope_tenant_and_live_credential_denials ... ok
+test domain::scim::tests::denied_authorization_fails_closed_if_required_audit_is_unavailable ... ok
+test domain::scim::tests::module_shutdown_during_live_credential_lookup_blocks_authorization ... ok
+test domain::scim::tests::scim_cursor_protection_round_trips_and_rejects_tampering_or_truncation ... ok
+test domain::scim::tests::successful_authorization_uses_one_live_lookup_and_one_unified_audit_event ... ok
+test domain::session_management::tests::client_origin_policy_requires_an_active_client_and_registered_redirect_origin ... ok
+test domain::tenancy::tests::tenant_context_rejects_cross_tenant_entities ... ok
+test domain::token_management::tests::authentication_store_failures_are_not_mapped_to_invalid_client ... ok
+test domain::token_management::tests::invalid_client_mapping_preserves_basic_challenge ... ok
+test security::mtls::tests::administrator_thumbprint_pin_can_only_narrow_registered_subject_match ... ok
+test security::mtls::tests::certificate_der_identity_extracts_full_subject_dn_names ... ok
+test security::mtls::tests::certificate_der_identity_extracts_san_values_and_escapes_subject_dn ... ok
+test security::mtls::tests::certificate_der_identity_rejects_future_and_expired_certificates ... ok
+test security::mtls::tests::certificate_der_identity_rejects_trailing_data ... ok
+test security::mtls::tests::client_certificate_matches_registered_san_dns ... ok
+test security::mtls::tests::client_certificate_matches_registered_san_uri_ip_and_email ... ok
+test security::mtls::tests::client_certificate_matches_registered_subject_dn ... ok
+test security::mtls::tests::client_certificate_rejects_legacy_rows_with_multiple_rfc8705_selectors ... ok
+test security::mtls::tests::client_certificate_rejects_unregistered_subject_and_san ... ok
+test security::mtls::tests::mtls_ipaddress_parser_rejects_invalid_san_lengths ... ok
+test security::mtls::tests::normalizes_colon_hex_sha256_to_x5t_s256 ... ok
+test security::mtls::tests::pki_certificate_requires_the_selected_trust_anchor_and_valid_chain ... ok
+test security::mtls::tests::rejects_invalid_sha256_thumbprints ... ok
+test security::mtls::tests::self_signed_client_certificate_ignores_non_leaf_x5c_entries ... ok
+test security::mtls::tests::self_signed_client_certificate_matches_registered_x5c ... ok
+test security::mtls::tests::self_signed_client_certificate_rejects_expired_x5c ... ok
+test security::mtls::tests::self_signed_client_certificate_rejects_subject_dn_and_thumbprint_shortcuts ... ok
+test security::mtls::tests::self_signed_client_certificate_rotation_accepts_only_registered_x5c_set ... ok
+test sessions::tests::administrator_policy_requires_a_positive_admin_level ... ok
+test sessions::tests::corrupt_session_snapshot_is_deleted_and_treated_as_anonymous_through_port ... ok
+test sessions::tests::deleted_and_inactive_accounts_invalidate_sessions ... ok
+test sessions::tests::invalid_authentication_metadata_is_cleared_before_pending_mfa_is_considered ... ok
+test sessions::tests::missing_and_pending_sessions_are_anonymous_without_account_lookup_or_deletion ... ok
+test sessions::tests::recent_admin_mfa_requires_a_fresh_interactive_factor ... ok
+test sessions::tests::resolved_session_preserves_account_authentication_and_logged_in_clients ... ok
+test sessions::tests::resolver_delete_delegates_to_the_existing_session_store ... ok
+test sessions::tests::session_payload_allows_only_small_clock_skew_for_auth_time ... ok
+test sessions::tests::session_payload_preserves_pending_mfa_as_metadata_not_validity ... ok
+test sessions::tests::session_payload_requires_authentication_metadata_and_oidc_sid ... ok
+test sessions::tests::session_payload_requires_non_blank_oidc_sid_after_trimming ... ok
+test sessions::tests::unavailable_accounts_fail_closed_without_invalidating_the_session ... ok
+test sessions::tests::unavailable_session_store_fails_closed_without_deleting_state ... ok
+test token::authorization_code::pkce_tests::authorization_code_audiences_allow_token_request_to_narrow_authorized_resources ... ok
+test token::authorization_code::pkce_tests::authorization_code_audiences_inherit_authorized_resources_when_token_request_omits_resource ... ok
+test token::authorization_code::pkce_tests::authorization_code_audiences_reject_token_request_resource_outside_authorization ... ok
+test token::authorization_code::pkce_tests::authorization_code_audiences_use_credential_issuer_for_openid4vci_scope ... ok
+test token::authorization_code::pkce_tests::baseline_confidential_oidc_compatibility_does_not_weaken_hardened_clients ... ok
+test token::authorization_code::pkce_tests::explicit_token_audience_overrides_openid4vci_default ... ok
+test token::authorization_code::tests::code_holder_evidence_ignores_only_additional_valid_proofs ... ok
+test token::authorization_code::tests::code_holder_evidence_requires_every_original_proof_and_version ... ok
+test token::authorization_code::tests::empty_public_code_holder_is_never_a_possession_wildcard ... ok
+test token::authorization_code::tests::fresh_verified_certificate_is_projected_by_original_receipt_requirements ... ok
+test token::ciba::decision::tests::ciba_audit_writer_failure_does_not_change_committed_response ... ok
+test token::ciba::decision::tests::ciba_decision_audit_is_emitted_only_for_committed_outcome ... ok
+test token::ciba::poll::tests::ciba_poll_failures_preserve_invalid_grant_and_contention_boundaries ... ok
+test token::ciba::poll::tests::ciba_poll_storage_failure_returns_503_and_never_protocol_progress ... ok
+test token::ciba::poll::tests::ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant ... ok
+test token::ciba::poll::tests::ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint ... ok
+test token::ciba::poll::tests::ciba_token_issue_transfers_approved_authentication_context ... ok
+test token::ciba::request::tests::ciba_lookup_hint_never_trusts_unsigned_request_object_or_mixed_auth ... ok
+test token::ciba::request::tests::ciba_mtls_lookup_may_use_signed_request_object_issuer_as_hint ... ok
+test token::ciba::request::tests::ciba_ping_requires_a_registered_endpoint_and_high_entropy_notification_token ... ok
+test token::ciba::request::tests::ciba_policy_covers_algorithm_names_and_delivery_rejections ... ok
+test token::ciba::request::tests::ciba_poll_rejects_ping_only_notification_credentials ... ok
+test token::ciba::request::tests::ciba_profile_does_not_apply_authorization_code_only_controls ... ok
+test token::ciba::request::tests::ciba_rejects_rs256_client_assertion_algorithm ... ok
+test token::ciba::request::tests::ciba_rejects_rs256_request_object_signing_algorithm ... ok
+test token::ciba::request::tests::ciba_request_object_helpers_cover_protocol_boundaries ... ok
+test token::ciba::request::tests::ciba_request_object_presence_enforces_client_policy ... ok
+test token::ciba::request::tests::ciba_request_object_rejects_invalid_compact_jwt_metadata ... ok
+test token::ciba::request::tests::ciba_request_object_rejects_invalid_or_conflicting_requested_expiry ... ok
+test token::ciba::request::tests::ciba_request_object_rejects_unsupported_binding_and_parameter_conflicts ... ok
+test token::ciba::request::tests::ciba_request_object_without_request_is_a_noop ... ok
+test token::ciba::request::tests::ciba_selected_acr_uses_supported_requested_value ... ok
+test token::ciba::request::tests::ciba_signed_binding_is_trimmed_and_outer_binding_is_rejected ... ok
+test token::ciba::request::tests::ciba_signed_request_object_claims_apply_to_backchannel_form ... ok
+test token::ciba::request::tests::ciba_signed_request_object_missing_audience_maps_to_invalid_request ... ok
+test token::ciba::request::tests::ciba_signed_request_object_missing_required_claim_maps_to_invalid_request ... ok
+test token::ciba::request::tests::ciba_start_audit_fields_are_redacted ... ok
+test token::ciba::request::tests::ciba_status_serializes_as_protocol_state ... ok
+test token::ciba::request::tests::ciba_token_profile_covers_fapi2_client_and_sender_constraints ... ok
+test token::ciba::request::tests::ciba_unverified_request_object_hint_rejects_none_and_empty_issuers ... ok
+test token::ciba::request::tests::fapi2_ciba_client_policy_rejects_public_weak_auth_and_bearer_tokens ... ok
+test token::ciba::request::tests::fapi2_ciba_private_key_jwt_requires_issuer_audience_only ... ok
+test token::ciba::request::tests::fapi2_ciba_profile_requires_signed_backchannel_authentication_request ... ok
+test token::ciba::request::tests::fapi_ciba_id1_accepts_both_private_key_jwt_and_mtls_client_authentication ... ok
+test token::ciba::request::tests::fapi_ciba_id1_requires_a_signed_backchannel_authentication_request ... ok
+test token::ciba::request::tests::protocol_ciba_signed_request_rejects_all_outer_authentication_fields ... ok
+test token::ciba::request::tests::protocol_ciba_signed_request_requires_op_issuer_audience ... ok
+test token::client_auth::tests::client_assertion_failures_keep_typed_security_classification ... ok
+test token::client_auth::tests::client_secret_match_result_preserves_true_and_false ... ok
+test token::client_auth::tests::confidential_client_secret_auth_fails_closed_when_store_is_unavailable ... ok
+test token::client_auth::tests::dummy_client_secret_salt_is_deterministic_but_not_global ... ok
+test token::device::tests::application::approval_and_denial_require_audit_before_mutation ... ok
+test token::device::tests::application::create_and_verify_preserve_authorization_payload ... ok
+test token::device::tests::application::create_rejects_client_and_storage_failures_before_issuing_codes ... ok
+test token::device::tests::application::decision_rejects_invalid_requests_and_maps_dependency_failures ... ok
+test token::device::tests::application::device_claim_success_still_reloads_before_any_durable_grant_write ... ok
+test token::device::tests::application::device_recorded_snapshot_is_version_fenced_and_unknown_writes_do_not_advance ... ok
+test token::device::tests::application::device_recorded_snapshot_rechecks_expiry_before_final_cas ... ok
+test token::device::tests::application::prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant ... ok
+test token::device::tests::application::prepared_device_conflict_reloads_poll_state_but_never_retargets_payload ... ok
+test token::device::tests::application::prepared_device_decisions_preserve_audit_order_and_remove_only_redundant_reads ... ok
+test token::device::tests::device_authorization_request_binds_scope_audience_ttl_and_poll_interval ... ok
+test token::device::tests::device_authorization_request_rejects_disabled_or_unregistered_client_grant ... ok
+test token::device::tests::device_client_authentication_accepts_registered_public_none_and_rejects_secret ... ok
+test token::device::tests::device_code_polling_enforces_pending_slow_down_denied_and_expired_results ... ok
+test token::device::tests::device_user_code_normalization_is_case_insensitive_and_separator_safe ... ok
+test token::device_issuance::tests::device_code_grant_requires_device_code_before_state_lookup ... ok
+test token::device_issuance::tests::device_grant_identity_only_depends_on_the_immutable_code ... ok
+test token::dispatch::policy_tests::active_client_with_registered_grant_is_allowed_to_dispatch ... ok
+test token::dispatch::policy_tests::attested_client_id_must_match_optional_token_request_client_id_hint ... ok
+test token::dispatch::policy_tests::ciba_dispatch_requires_the_client_registered_grant ... ok
+test token::dispatch::policy_tests::disabled_client_is_rejected_before_grant_dispatch ... ok
+test token::dispatch::policy_tests::grant_dispatch_rejects_unregistered_grant_without_panicking ... ok
+test token::dispatch::policy_tests::missing_client_authorization_code_holder_check_fails_closed_when_client_lookup_errors ... ok
+test token::dispatch::policy_tests::missing_client_authorization_code_holder_check_fails_closed_when_valkey_is_unavailable ... ok
+test token::dispatch::policy_tests::missing_client_authorization_code_holder_error_returns_none_when_client_is_not_sender_bound ... ok
+test token::dispatch::policy_tests::missing_client_authorization_code_holder_error_returns_none_when_code_missing ... ok
+test token::dispatch::policy_tests::missing_client_client_credentials_with_dpop_stays_client_auth_failure ... ok
+test token::dispatch::policy_tests::missing_client_client_credentials_without_dpop_uses_invalid_request ... ok
+test token::dispatch::policy_tests::missing_client_dpop_authorization_code_holder_uses_invalid_grant ... ok
+test token::dispatch::policy_tests::missing_client_holder_check_ignores_non_client_credentials_grants ... ok
+test token::dispatch::policy_tests::missing_client_mtls_authorization_code_holder_uses_invalid_request ... ok
+test token::dispatch::policy_tests::missing_client_mtls_client_credentials_uses_invalid_request ... ok
+test token::dispatch::policy_tests::missing_client_unbound_authorization_code_does_not_mask_client_auth_failure ... ok
+test token::dispatch::policy_tests::missing_grant_registration_is_rejected_before_grant_dispatch ... ok
+test token::dispatch::pre_authorized::tests::parses_required_code_and_optional_tx_code_once ... ok
+test token::dispatch::pre_authorized::tests::rejects_missing_empty_and_repeated_issuance_parameters ... ok
+test token::issue::refresh_persistence::tests::new_refresh_family_retains_full_code_grant_when_access_token_is_narrower ... ok
+test token::issue::refresh_persistence::tests::openid4vci_credential_authorization_still_requires_refresh_grant ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_borrowed_context_rejects_each_contract_field_difference ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_context_normalizes_nonce_and_keeps_generation_sid_separate ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_context_rejects_equal_but_malformed_issue_and_source ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_rejects_blank_generation_sid_after_lifecycle_separation ... ok
+test token::issue::refresh_persistence::tests::refresh_authentication_context_preserves_original_claim_contract_on_scope_narrowing ... ok
+test token::issue::refresh_persistence::tests::refresh_policy_requires_exact_source_shape_even_without_a_refresh_response ... ok
+test token::issue::refresh_persistence::tests::refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor ... ok
+test token::issue::refresh_persistence::tests::rotated_refresh_preserves_original_contract_while_selecting_current_audience ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_exact_grant_match_required ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_false_without_offline_access_scope ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_false_without_refresh_grant ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_for_openid4vci_credential_authorization ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_scope_case_sensitive ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_true_with_refresh_grant_and_offline_access ... ok
+test token::issue::refresh_persistence::tests::unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_token ... ok
+test token::issue::tests::essential_id_token_claim_requests_match_protocol_claim_values ... ok
+test token::issue::tests::failed_authorization_code_transition_is_idempotent_only_for_terminal_or_missing_states ... ok
+test token::issue::tests::id_token_sid_is_included_for_session_bound_logout_clients ... ok
+test token::issue::tests::id_token_sid_is_not_enabled_for_all_clients_by_logout_feature_flags ... ok
+test token::issue::tests::id_token_sid_is_omitted_unless_explicitly_requested ... ok
+test token::issue::tests::id_token_sid_request_object_also_allows_session_sid ... ok
+test token::issue::tests::id_token_signing_alg_uses_rs256_default_and_ps256_for_fapi_clients ... ok
+test token::issue::tests::refresh_id_token_sid_contract_distinguishes_presence_and_original_omission ... ok
+test token::issue::tests::refresh_token_grant_matching_is_exact_and_scope_case_sensitive ... ok
+test token::issue::tests::refresh_token_requires_authorized_use_case_and_client_grant ... ok
+test token::issue::tests::refresh_without_id_token_preserves_the_original_sid_contract ... ok
+test token::native_sso::tests::native_sso_device_secret_hash_is_stable_and_non_raw ... ok
+test token::native_sso::tests::native_sso_id_token_audience_requires_the_source_client ... ok
+test token::native_sso::tests::new_native_sso_token_binding_requires_session_id ... ok
+test token::refresh::tests::attested_refresh_token_requires_the_original_client_instance_key ... ok
+test token::refresh::tests::openid4vci_refresh_token_scope_may_narrow_to_credential_authorization ... ok
+test token::refresh::tests::refresh_subject_preparation_hint_respects_effective_scope_shape ... ok
+test token::refresh::tests::refresh_token_scope_request_defaults_to_original_authorization ... ok
+test token::refresh::tests::refresh_token_scope_request_may_narrow_original_authorization ... ok
+test token::refresh::tests::refresh_token_scope_request_rejects_privilege_expansion ... ok
+test token::token_exchange::tests::token_exchange_binding_claims_preserve_sender_constraint_type ... ok
+test workers::backchannel_logout::tests::backchannel_response_classification_retries_only_recoverable_statuses ... ok
+test workers::backchannel_logout::tests::delivery_failure_state_distinguishes_terminal_and_retryable_outcomes ... ok
+test workers::backchannel_logout::tests::persisted_delivery_errors_are_unicode_safe_and_bounded ... ok
+test workers::backchannel_logout::tests::retries_are_bounded_and_never_scheduled_after_expiry ... ok
+
+test result: ok. 371 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.78s
+
+     Running tests/application_boundaries.rs (target/debug/deps/application_boundaries-94d0d4bd6ed3be15)
+
+running 2 tests
+test client_display_projects_only_registered_public_metadata ... ok
+test consent_loads_authenticated_account_before_request_state ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running tests/authorization_application.rs (target/debug/deps/authorization_application-75465d00c528bbd2)
+
+running 13 tests
+test authorization_decision_application::decision_cleanup_cannot_change_committed_outcome_or_its_retention ... ok
+test authorize_unregistered_redirect_fails_before_session_or_state_access ... ok
+test authorize_unverified_client_never_returns_redirect ... ok
+test client_presentation_distinguishes_absence_and_repository_failure ... ok
+test consent_checks_session_before_missing_request_id ... ok
+test consent_reads_request_only_after_valid_session ... ok
+test par_application::par_attestation_requires_valid_proof_and_available_single_use_replay_state ... ok
+test par_application::par_client_lookup_and_attestation_errors_do_not_persist ... ok
+test par_application::par_parameter_and_rate_errors_fail_before_client_lookup ... ok
+test par_application::par_persists_bound_request_and_reports_write_failure ... ok
+test par_application::par_rejects_invalid_redirect_pkce_and_dpop_before_storage ... ok
+test par_application::protocol_par_dpop_header_requires_pkce_even_for_confidential_oidc_compatibility ... ok
+test par_application::protocol_par_rejects_non_executable_authorization_parameters_before_persistence ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.82s
+
+     Running tests/client_delivery_secret.rs (target/debug/deps/client_delivery_secret-9399d4704de4bb42)
+
+running 1 test
+test delivery_secret_binding_uses_the_issued_generation_and_rejects_malformed_hashes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/credential_execution_boundaries.rs (target/debug/deps/credential_execution_boundaries-a3e9d96ae3aab799)
+
+running 1 test
+test credential_execution_uses_completed_builder_and_pinned_lease_without_native_runtime ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/cross_device_application.rs (target/debug/deps/cross_device_application-9928ee35892066c7)
+
+running 13 tests
+test ciba_creation::ciba_creation_rejects_inactive_client_and_reports_account_repository_failure ... ok
+test ciba_creation::creation_persists_pending_state_and_audit_before_returning_poll_or_ping_handle ... ok
+test ciba_creation::creation_requires_active_user_and_durable_audit_and_reports_state_failure ... ok
+test ciba_creation::delayed_create_crossing_authorization_expiry_cannot_report_success_while_retention_is_live ... ok
+test ciba_creation::invalid_creation_is_rejected_before_audit_and_state_mutation ... ok
+test ciba_creation::short_creation_validity_starts_after_required_audit_and_request_replay_complete ... ok
+test ciba_decision_audit_failure_never_mutates_request_state ... ok
+test ciba_decision_binds_expected_user_to_current_session ... ok
+test ciba_decision_persists_audit_intent_before_state_transition_and_result_audit ... ok
+test ciba_invalid_decision_does_not_read_store_or_emit_audit ... ok
+test ciba_missing_credentials_fail_before_client_or_state_access ... ok
+test ciba_prepared_authentication_conflicts_fail_before_client_or_state_access ... ok
+test device_prepared_authentication_conflicts_and_missing_client_fail_before_io ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s
+
+     Running tests/delivery_batches.rs (target/debug/deps/delivery_batches-fef60ace1614d9a8)
+
+running 6 tests
+test ciba_batch_bounds_claim_and_concurrency_and_drains_before_first_error ... ok
+test ciba_finish_missing_and_conflict_preserve_fencing_and_are_nonfatal ... ok
+test ciba_sender_status_and_transport_errors_reach_retry_and_terminal_finishes ... ok
+test logout_batch_keeps_twenty_claims_eight_senders_and_drains_before_first_error ... ok
+test logout_retry_cannot_be_scheduled_at_or_after_expiry ... ok
+test logout_worker_routes_statuses_and_preserves_retry_fences_and_error_bounds ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dynamic_registration_application.rs (target/debug/deps/dynamic_registration_application-a4caca71f3531da7)
+
+running 7 tests
+test application_create_read_update_delete_preserves_credentials_and_audit_order ... ok
+test dynamic_registration_guard_fails_closed_for_unavailable_dependencies ... ok
+test dynamic_registration_guard_preserves_fixed_window_threshold ... ok
+test dynamic_registration_guard_rejects_new_requests_when_module_is_disabled ... ok
+test dynamic_registration_secret_port_hashes_and_compares_without_plaintext_reuse ... ok
+test limiter_precedes_initial_token_and_metadata_validation ... ok
+test stale_update_and_delete_fail_without_mutation_or_success_audit ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/host_replacement_contract.rs (target/debug/deps/host_replacement_contract-9eeac14acf95e289)
+
+running 3 tests
+test authorize_rejects_unregistered_redirect_before_session_access ... ok
+test oneshot_batch_delivers_records_result_and_returns_to_external_caller ... ok
+test security_facts_validate_signature_target_and_replay_without_host_state ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/security_facts.rs (target/debug/deps/security_facts-4f6f5f754545e4a6)
+
+running 3 tests
+test malformed_present_proof_fails_before_state_and_missing_bound_proof_is_distinct ... ok
+test token_prepare_rejects_grant_parameter_before_auth_source_conflict ... ok
+test unbound_request_without_proof_does_not_touch_dpop_state ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/token_outcome.rs (target/debug/deps/token_outcome-bb7c51ccda1c9554)
+
+running 4 tests
+test allowed_audience_still_rejects_conflicting_authentication_sources ... ok
+test audience_error_precedes_authentication_source_conflict ... ok
+test preflight_leaves_credential_validation_to_execution ... ok
+test token_results_are_send_without_a_framework_response_wrapper ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server_object_store-2df145f6377b0d27)
+
+running 2 tests
+test s3::url_tests::path_style_preserves_endpoint_prefix_without_double_slash ... ok
+test s3::url_tests::virtual_host_style_moves_bucket_into_host ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/s3.rs (target/debug/deps/s3-1b393da7091df8d6)
+
+running 1 test
+test s3_direct_target_fixes_the_staging_key_and_exact_length ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/s3_minio.rs (target/debug/deps/s3_minio-a8de74aac267a453)
+
+running 1 test
+test minio_presigned_put_publishes_an_immutable_candidate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/s3_read_final.rs (target/debug/deps/s3_read_final-16912910ed9a4029)
+
+running 3 tests
+test final_read_gets_mime_and_body_from_one_signed_response ... ok
+test final_read_preserves_status_mapping_and_rejects_unsafe_ids_without_io ... ok
+test final_read_rejects_missing_or_unknown_mime_without_an_extra_request ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/s3_read_staged.rs (target/debug/deps/s3_read_staged-22d6da1243ea9d80)
+
+running 2 tests
+test staged_read_rejects_oversize_or_unversioned_snapshots_without_another_request ... ok
+test staged_read_uses_one_get_snapshot_for_version_length_and_bounded_body ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/s3_tls.rs (target/debug/deps/s3_tls-bc995673d08322b6)
+
+running 2 tests
+test s3_platform_tls_child ... ignored, invoked by the parent test with an isolated platform trust environment
+test s3_platform_trust_requires_a_trusted_ca_and_matching_hostname ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server_postgres-8e22704a5b3aa12f)
+
+running 1 test
+test tests::provider_constructs_a_runtime_module_store_for_the_requested_tenant ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server_valkey-daf926df3fcd2477)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_openid4vc_http_actix-ca0a30f6fcf36893)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/transport_contract.rs (target/debug/deps/transport_contract-e3d138ec28ac3630)
+
+running 18 tests
+test bearer_success_does_not_emit_a_dpop_nonce ... ok
+test credential_endpoint_passes_injected_verified_certificate_thumbprint ... ok
+test credential_endpoint_preserves_dpop_authorization_scheme_and_proof ... ok
+test credential_endpoint_preserves_dpop_nonce_challenge_error ... ok
+test credential_endpoint_rejects_multiple_dpop_proof_headers ... ok
+test credential_endpoint_rejects_query_tokens_and_non_json_or_jwt_bodies ... ok
+test credential_success_returns_next_dpop_nonce_for_json_and_jwt_responses ... ok
+test deferred_and_notification_success_return_next_dpop_nonce ... ok
+test direct_post_preserves_json_vp_token_and_jwt_response_shapes ... ok
+test direct_post_rejects_duplicate_and_mixed_response_parameters ... ok
+test management_endpoints_fail_closed_without_exact_bearer_token ... ok
+test metadata_endpoint_returns_signed_jwt_when_requested ... ok
+test notification_endpoint_accepts_extension_members_without_relaxing_authentication ... ok
+test presentation_completion_page_does_not_claim_an_unknown_transaction_succeeded ... ok
+test presentation_completion_page_reflects_a_verified_transaction ... ok
+test presentation_create_echoes_the_typed_idempotency_binding ... ok
+test presentation_management_requires_nonempty_exact_bearer_token ... ok
+test presentation_request_accepts_only_the_generic_trust_policy_fence ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_openid4vci-83f536dd98aba24b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol_contract.rs (target/debug/deps/protocol_contract-8f28337982b67c0b)
+
+running 4 tests
+test credential_request_requires_exactly_one_identifier_form ... ok
+test deferred_wire_request_ignores_extensions_but_validates_known_field_types ... ok
+test metadata_rejects_algorithms_the_issuer_cannot_execute ... ok
+test metadata_rejects_single_item_batch_claim ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/service_contract.rs (target/debug/deps/service_contract-5b78ef1c4383c305)
+
+running 8 tests
+test batch_issuance_consumes_nonce_once_and_binds_each_credential ... ok
+test doctype_is_used_when_vct_is_absent ... ok
+test immediate_and_deferred_commit_variants_preserve_identity_and_rollback ... ok
+test invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_failure ... ok
+test persist_pre_authorized_access_forwards_arguments_and_errors ... ok
+test proof_dataset_claim_and_signing_failures_are_classified_and_released ... ok
+test request_and_access_validation_rejects_ambiguous_or_unsupported_inputs ... ok
+test unbound_issuance_requires_a_proof_free_configuration ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/state_machine_contract.rs (target/debug/deps/state_machine_contract-6cc301904eaa38c1)
+
+running 10 tests
+test deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once ... ok
+test deferred_nonce_commit_rolls_back_all_state_when_claim_is_invalid ... ok
+test nonce_claim_is_linearizable_under_concurrent_requests ... ok
+test nonce_claim_is_single_owner_until_lease_timeout_then_replay_is_rejected ... ok
+test nonce_notification_commit_is_atomic_and_rejects_wrong_claim_without_side_effects ... ok
+test notification_retains_one_event_accepts_identical_retries_and_expires_with_the_handle ... ok
+test pre_authorized_persist_forwards_arguments_and_errors ... ok
+test response_commit_rejects_duplicate_notification_atomically_and_can_retry ... ok
+test response_identity_conflict_is_keyed_by_token_and_digest_across_issuances ... ok
+test response_lookup_is_bound_to_issuance_identity_and_expiry ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_openid4vp-5374bb9de30e9e96)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol_contract.rs (target/debug/deps/protocol_contract-548a47e85f495d52)
+
+running 3 tests
+test haip_requires_signed_x509_hash_and_encrypted_direct_post ... ok
+test redirect_uri_scheme_cannot_be_combined_with_signed_request_object ... ok
+test response_mode_has_one_checked_wire_spelling ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/service_contract.rs (target/debug/deps/service_contract-33e67a8d49975a2f)
+
+running 9 tests
+test dcql_aki_matches_authenticated_chain_bytes_and_not_issuer_strings ... ok
+test dcql_checks_all_returned_cardinalities_before_verification_or_completion ... ok
+test dcql_optional_queries_may_be_absent_but_not_malformed_or_overfilled ... ok
+test discarded_presentations_are_removed_before_required_alternative_selection ... ok
+test final_mdoc_handover_binds_verifier_key_and_request_context ... ok
+test malformed_retained_dcql_never_verifies_or_completes_an_empty_response ... ok
+test optional_query_nonce_and_session_errors_reject_the_entire_response ... ok
+test optional_query_verifier_unavailability_remains_a_dependency_failure ... ok
+test presentation_transaction_debug_does_not_expose_decryption_material ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_operator_protocol-f95f7ecbcb297ca5)
+
+running 47 tests
+test tests::arbitrary_compact_input_never_panics ... ok
+test tests::control_operation_tests::arbitrary_text_kids_hashes_and_revisions_never_panic ... ok
+test tests::control_operation_tests::config_revision_fencing_compares_constant_time ... ok
+test tests::control_operation_tests::control_results_roundtrip_through_journal_and_stdout_shapes ... ok
+test tests::control_operation_tests::distinct_requests_never_share_a_request_hash ... ok
+test tests::control_operation_tests::golden_canonical_bytes_and_request_hash_are_stable ... ok
+test tests::control_operation_tests::kid_is_base64url_sha256_of_raw_public_key_bytes ... ok
+test tests::control_operation_tests::non_canonical_payload_encoding_is_rejected_even_when_correctly_signed ... ok
+test tests::control_operation_tests::oversize_canonical_payloads_are_refused ... ok
+test tests::control_operation_tests::prepared_control_operation_verifies_original_segments_and_reuses_canonical_hash ... ok
+test tests::control_operation_tests::recovery_invalidation_has_deployment_authority_and_strict_epoch_shape ... ok
+test tests::control_operation_tests::result_data_wire_validation_includes_the_complete_result_envelope ... ok
+test tests::control_operation_tests::revoke_result_manifest_describes_remaining_active_set_not_revoked_delta ... ok
+test tests::control_operation_tests::sign_verify_roundtrip_binds_header_kid_and_media_type ... ok
+test tests::control_operation_tests::tampered_compact_bytes_are_rejected ... ok
+test tests::control_operation_tests::tenant_key_generation_is_tenant_bound_and_returns_public_material_only ... ok
+test tests::control_operation_tests::tenant_resource_payloads_are_bounded_typed_and_unique ... ok
+test tests::control_operation_tests::two_encodings_of_one_logical_request_produce_identical_bytes ... ok
+test tests::control_operation_tests::typed_result_data_is_closed_and_outcome_coupled ... ok
+test tests::control_operation_tests::unknown_fields_are_denied_everywhere ... ok
+test tests::control_operation_tests::uuidv7_shape_is_enforced_for_ids ... ok
+test tests::control_operation_tests::wrong_kid_and_wrong_signer_are_rejected ... ok
+test tests::directory_control_tests::tenant_directory_payloads_reject_bad_identities_and_unknown_fields ... ok
+test tests::directory_control_tests::tenant_directory_payloads_roundtrip_and_validate ... ok
+test tests::directory_control_tests::tenant_directory_result_data_is_wire_valid_and_replay_decodable ... ok
+test tests::discovery_and_offline_identity_fail_closed_on_invalid_claims ... ok
+test tests::discovery_identity_and_identifier_boundaries_are_checked ... ok
+test tests::golden_control_discovery_vector_is_stable_and_nonce_bound ... ok
+test tests::offline_deployment_statement_is_identity_evidence_not_artifact_trust ... ok
+test tests::openid4vc_trust_policy_accepts_bounded_public_bundle_and_rejects_unknowns ... ok
+test tests::openid4vc_trust_policy_rejects_ambiguous_origins_certificates_and_jwks ... ok
+test tests::openid4vp_create_request_jti_requires_canonical_versioned_uuid ... ok
+test tests::openid4vp_normalized_create_request_canonicalizes_recursive_object_order ... ok
+test tests::openid4vp_normalized_create_request_hash_binds_every_field ... ok
+test tests::protected_header_rejects_untrusted_key_lookup_inputs ... ok
+test tests::recovery_tests::allocation_proof_binds_nonce_deployment_and_complete_proposal ... ok
+test tests::recovery_tests::challenge_message_binds_every_field_and_signature_verifies_only_against_the_right_key ... ok
+test tests::recovery_tests::derivation_is_deterministic_and_discriminates_secret_and_deployment ... ok
+test tests::recovery_tests::hkdf_matches_the_rfc_5869_sha256_vectors ... ok
+test tests::recovery_tests::kdf_identifier_is_stable_and_challenge_action_is_frozen ... ok
+test tests::recovery_tests::parsing_accepts_optional_prefix_grouping_whitespace_and_case ... ok
+test tests::recovery_tests::parsing_rejects_everything_that_is_not_exactly_thirtytwo_bytes ... ok
+test tests::recovery_tests::proposal_validation_rejects_unbound_kids_and_bad_shapes ... ok
+test tests::recovery_tests::recovery_secret_display_form_is_prefix_plus_sixtyfour_lowercase_hex ... ok
+test tests::recovery_tests::rotation_digests_are_deterministic_and_discriminate_every_field ... ok
+test tests::rejects_unknown_claims_and_algorithm_confusion ... ok
+test tests::trust_policy_parser_rejects_multi_authority_and_inter_certificate_junk ... ok
+
+test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_persistence-c510169dd12d46c1)
+
+running 8 tests
+test audit_wire::tests::escaped_payload_counts_match_final_json_and_maximum_singleton_bound ... ok
+test audit_wire::tests::payload_representation_is_opaque_and_never_recanonicalized_by_wire_encoder ... ok
+test audit_wire::tests::shared_encoder_matches_frozen_legacy_anchor_v2_wire_bytes ... ok
+test tenant_resources::tests::change_set_decoder_requires_the_exact_signed_identity_set ... ok
+test tenant_resources::tests::change_set_identity_is_unique_by_kind_and_resource_id ... ok
+test tenant_resources::tests::current_action_names_are_closed ... ok
+test tenant_resources::tests::executor_rejects_an_outcome_that_the_journal_cannot_publish ... ok
+test tenant_resources::tests::replay_outcome_json_is_closed ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_postgres-12fd93b2229eef66)
+
+running 78 tests
+test convert::identity::passkey_tests::malformed_owned_credential_keeps_the_existing_consistency_failure ... ok
+test convert::identity::passkey_tests::owned_credential_value_keeps_existing_webauthn_key_material_and_wire ... ok
+test convert::identity::tests::compact_passkey_material_has_one_id_and_counter_authority ... ok
+test convert::identity::tests::display_summaries_reject_corrupt_tenant_and_user_identifiers ... ok
+test convert::identity::tests::passkey_adapter_rejects_conflicting_credential_authorities ... ok
+test convert::identity::tests::persisted_blank_password_hash_is_rejected ... ok
+test convert::identity::tests::subject_claims_uses_full_persisted_user_invariant ... ok
+test repositories::access_requests::tests::search_pattern_trims_and_ignores_blank_queries ... ok
+test repositories::access_token_revocation::tests::deadline_adds_one_more_window_to_an_already_padded_input ... ok
+test repositories::access_token_revocation::tests::deadline_is_exp_plus_exactly_one_clock_skew_window ... ok
+test repositories::access_token_revocation::tests::deadline_rejects_an_unrepresentable_exp_instead_of_wrapping ... ok
+test repositories::access_token_revocation::tests::owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouched ... ok
+test repositories::access_token_revocation::tests::owner_batch_dedups_duplicate_keys_to_the_longest_deadline ... ok
+test repositories::access_token_revocation::tests::upsert_extends_only_forward_and_preserves_the_first_fact ... ok
+test repositories::access_token_revocation::tests::upsert_rejects_duplicate_authority_keys_inside_one_batch ... ok
+test repositories::admin_provision::tests::identifiers_use_the_file_identifier_contract ... ok
+test repositories::audit::tests::identity_event_rejects_a_real_cross_tenant_actor ... ok
+test repositories::audit_ledger::tests::audit_event_validation_rejects_non_object_and_invalid_names ... ok
+test repositories::audit_ledger::tests::audit_hash_is_domain_separated_and_chain_ordered ... ok
+test repositories::audit_ledger::tests::completed_single_mutation_preserves_insert_and_idempotent_replay_results ... ok
+test repositories::audit_ledger::tests::completed_single_mutation_rejects_missing_or_extra_rows ... ok
+test repositories::audit_ledger::tests::generic_audit_append_rejects_reserved_authorization_authority ... ok
+test repositories::audit_ledger::tests::payload_byte_count_matches_compact_json_and_exact_limit ... ok
+test repositories::authorization_flow::tests::authorization_repository_error_mapping_is_exhaustive ... ok
+test repositories::authorization_flow::tests::device_grant_repository_error_mapping_is_exhaustive ... ok
+test repositories::authorization_flow::tests::fixed_tenant_adapter_rejects_cross_tenant_grant_writes_before_database_access ... ok
+test repositories::clients::logout::tests::logout_projection_selects_only_its_eleven_facts ... ok
+test repositories::clients::tests::missing_client_rows_preserve_not_found_semantics ... ok
+test repositories::clients::tests::oauth_client_record_into_domain_validates_json_columns_after_decode ... ok
+test repositories::clients::tests::oauth_client_record_queryable_by_name_rejects_malformed_rows ... ok
+test repositories::clients::tests::persisted_client_string_arrays_reject_non_array_json ... ok
+test repositories::clients::tests::replace_registration_validates_the_record_before_audited_commit ... ok
+test repositories::controller_registry::approvals::tests::identity_action_catalog_is_closed ... ok
+test repositories::controller_registry::slots::tests::controller_id_requires_canonical_lowercase_uuidv7 ... ok
+test repositories::controller_registry::slots::tests::kid_must_bind_to_public_key_material ... ok
+test repositories::controller_registry::slots::tests::kid_shape_must_be_unpadded_base64url_sha256_length ... ok
+test repositories::controller_registry::slots::tests::label_bounds_are_enforced_before_storage ... ok
+test repositories::controller_registry::slots::tests::slot_index_selection_fills_lowest_free_and_stops_at_three ... ok
+test repositories::controller_registry::slots::tests::status_catalog_is_closed ... ok
+test repositories::controller_registry::slots::tests::summary_never_carries_public_key_bytes ... ok
+test repositories::mfa::tests::backup_hash_count_and_error_mappings_are_fail_closed ... ok
+test repositories::mfa::tests::enrollment_unique_violation_is_a_typed_conflict ... ok
+test repositories::mfa::tests::mfa_repository_key_requirement_precedes_database_access ... ok
+test repositories::mfa::tests::totp_envelope_authenticates_secret_and_identity_binding ... ok
+test repositories::mfa::tests::totp_secret_validation_rejects_malformed_rows_and_uses_previous_keys ... ok
+test repositories::openid4vc::issuance::store::payload_tests::retained_ciphertext_is_decoded_only_at_adapter_boundary ... ok
+test repositories::recovery_root::tests::failed_attempt_counter_refuses_open_and_broken_transaction_states ... ok
+test repositories::runtime_modules::tests::desired_revision_exhaustion_is_rejected_without_saturation ... ok
+test repositories::tenancy::tests::active_boundary_is_accepted ... ok
+test repositories::tenancy::tests::directory_revision_rejects_negative_storage_values ... ok
+test repositories::tenancy::tests::directory_snapshot_maps_active_bindings_and_empty_directory ... ok
+test repositories::tenancy::tests::directory_snapshot_rejects_incomplete_rows ... ok
+test repositories::tenancy::tests::inactive_organization_fails_closed_as_consistency_error ... ok
+test repositories::tenancy::tests::inactive_realm_fails_closed_as_consistency_error ... ok
+test repositories::tenancy::tests::inactive_tenant_fails_closed_as_consistency_error ... ok
+test repositories::tenancy::tests::missing_boundary_row_is_not_found ... ok
+test repositories::tenancy::tests::missing_tenant_or_realm_row_is_not_found ... ok
+test repositories::tenancy::tests::organization_from_another_tenant_fails_closed_as_consistency_error ... ok
+test repositories::tenancy::tests::query_errors_preserve_not_found_and_unexpected_semantics ... ok
+test repositories::tenancy::tests::realm_from_another_tenant_fails_closed_as_consistency_error ... ok
+test repositories::token_issuance::tests::audit_events_cover_issuance_rotation_and_reuse_shapes ... ok
+test repositories::token_issuance::tests::commit_input_validation_enforces_mode_ownership_and_expiry_contracts ... ok
+test repositories::token_issuance::tests::commit_transaction_conversion_preserves_diesel_errors ... ok
+test repositories::token_issuance::tests::owner_revocation_streams_large_sets_and_rolls_back_all_batches ... ok
+test repositories::token_issuance::tests::token_error_mappings_preserve_conflicts_and_corruption_boundaries ... ok
+test repositories::tokens::tests::current_refresh_audience_rejects_malformed_json_instead_of_dropping_values ... ok
+test repositories::tokens::tests::new_family_requires_current_encoding_and_nonblank_generation_sid ... ok
+test repositories::tokens::tests::ownership_current_moves_original_grant_and_spent_keeps_both_audience_views ... ok
+test repositories::tokens::tests::ownership_public_uuid_boundary_keeps_consistency_error_before_connection ... ok
+test repositories::tokens::tests::refresh_contract_preparation_excludes_response_only_facts ... ok
+test repositories::tokens::tests::refresh_contract_preparation_preserves_the_original_canonical_digest ... ok
+test repositories::tokens::tests::refresh_family_lock_key_is_the_shared_high_xor_low_formula ... ok
+test repositories::tokens::tests::refresh_token_validation_accepts_complete_current_context ... ok
+test repositories::tokens::tests::refresh_token_validation_rejects_malformed_context_and_audiences ... ok
+test unavailable::tests::actual_migration_harness_preserves_wrapped_query_type ... ok
+test unavailable::tests::direct_boxed_public_migration_errors_keep_typed_retry_and_original_cause ... ok
+test unavailable::tests::only_typed_query_and_pool_failures_are_unavailable ... ok
+test unavailable::tests::unlock_failure_preserves_primary_error_category ... ok
+
+test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.53s
+
+     Running tests/access_requests.rs (target/debug/deps/access_requests-1f8f5c118a7ec4d7)
+
+running 15 tests
+test approval_rejects_mismatched_actor_context ... ok
+test approved_delivery_matches_requires_every_predicate_to_hold ... ok
+test cancellation_discards_client_cas_and_access_rejection_connections_before_peer_lock_retry ... ok
+test client_cas_commit_error_after_returning_never_returns_a_success_view ... ok
+test concurrent_approval_has_one_cas_winner_and_rolls_back_losing_client ... ok
+test concurrent_rejection_has_one_cas_winner ... ok
+test create_list_cancel_and_detail_are_tenant_and_owner_scoped ... ok
+test create_rejects_user_from_a_different_tenant ... ok
+test decision_write_ports_return_acknowledged_views_without_a_display_reread ... ok
+test delivery_binding_requires_the_exact_approved_secret_generation ... ok
+test duplicate_client_conflict_does_not_report_request_as_processed ... ok
+test existence_predicates_return_booleans_while_page_keeps_count_semantics ... ok
+test metadata_patch_rejects_stale_semantic_snapshot_and_preserves_unrelated_updates ... ok
+test required_approval_rolls_back_client_and_decision_and_recovers_only_exact_audit_binding ... ok
+test required_rejection_ledger_failure_rolls_back_decision_and_has_one_acknowledged_outcome ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.43s
+
+     Running tests/access_token_retention.rs (target/debug/deps/access_token_retention-0849578b1bbbee51)
+
+running 6 tests
+test conflicting_owner_revocation_rolls_back_and_other_tenants_are_unaffected ... ok
+test maintenance_reclaims_revocation_facts_once_the_padded_deadline_passes ... ok
+test owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window ... ok
+test replay_compensation_writes_padded_deadline_and_missing_expiry_skips_the_access_fact ... ok
+test revocation_deadline_is_monotonic_across_writer_orderings ... ok
+test revoked_access_token_within_skew_survives_cleanup_until_its_padded_deadline ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.41s
+
+     Running tests/admin_provision.rs (target/debug/deps/admin_provision-5ed5b2e3fae3b199)
+
+running 3 tests
+test concurrent_provisioning_returns_one_receipt_and_one_admin_effect ... ok
+test operation_and_email_conflicts_are_rejected ... ok
+test provisioning_is_atomic_and_retries_return_the_same_receipt ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.68s
+
+     Running tests/audit_bounded_reads.rs (target/debug/deps/audit_bounded_reads-a4f7c7e8bcc08a03)
+
+running 1 test
+test exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.26s
+
+     Running tests/audit_chain_cutover.rs (target/debug/deps/audit_chain_cutover-0c61e694b1416e7c)
+
+running 1 test
+test audit_cutover_preserves_history_and_moves_chain_authority_to_exporter ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.43s
+
+     Running tests/audit_commit_boundary.rs (target/debug/deps/audit_commit_boundary-461b1d02a584f282)
+
+running 4 tests
+test committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint ... ok
+test every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect ... ok
+test first_data_row_is_not_a_commit_acknowledgement ... ok
+test fresh_audit_conflict_rolls_back_the_callers_business_transaction ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.83s
+
+     Running tests/audit_ledger.rs (target/debug/deps/audit_ledger-7cc2a1241f4588fe)
+
+running 19 tests
+test audit_claim_is_bounded_without_planner_statistics ... ok
+test audit_claim_survives_dead_prefix_and_autovacuum_recovers ... ok
+test audit_ledger_append_batch_commits_atomically ... ok
+test audit_ledger_append_is_chained_and_pending ... ok
+test audit_ledger_migration_is_append_only_and_has_durable_outbox ... ok
+test audit_ledger_rejects_invalid_events_and_enforces_batch_fencing ... ok
+test batch_delivery_migration_fences_one_batch_and_retires_per_event_state ... ok
+test bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans ... ok
+test bounded_claim_migration_materializes_identities_before_joining ... ok
+test delivery_scoped_retention_migration_reclaims_at_ack_and_drops_archive ... ok
+test each_successful_observation_refreshes_time_without_acknowledging_backlog ... ok
+test fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation ... ok
+test fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes ... ok
+test new_claim_budget_counts_escaped_json_wire_bytes_and_keeps_legal_singletons ... ok
+test new_claim_budget_exact_multi_event_fit_and_one_byte_overflow_have_no_chain_gap ... ok
+test pending_event_set_migration_moves_pending_identity_to_events ... ok
+test pending_set_cutover_guard_rejects_divergence_and_accepts_mirror ... ok
+test refresh_contract_ensure_migration_provides_single_call_reference ... ok
+test shared_anchor_migration_persists_checkpoint_without_a_local_file ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 289.04s
+
+     Running tests/audit_pending_upgrade.rs (target/debug/deps/audit_pending_upgrade-433147bcc5364cc6)
+
+running 5 tests
+test pending_set_upgrade_from_empty_state ... ok
+test pending_set_upgrade_from_inflight_batch ... ok
+test pending_set_upgrade_from_mixed_backlog ... ok
+test pending_set_upgrade_from_unchained_backlog ... ok
+test pending_set_upgrade_rolls_back_on_divergence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.62s
+
+     Running tests/audit_preflight_roles.rs (target/debug/deps/audit_preflight_roles-b8d25b052cab9c52)
+
+running 1 test
+test strict_preflight_checks_real_login_reachable_roles_and_columns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.14s
+
+     Running tests/auth_repositories.rs (target/debug/deps/auth_repositories-0f6f6a068cd03d9d)
+
+running 40 tests
+test access_token_revoked_exists_semantics_ignore_deadline_and_scope ... ok
+test admin_grant_required::grant_current_role_gate_preserves_separate_admitted_actor_home_tenant ... ok
+test admin_grant_required::grant_owner_rechecks_current_actor_after_real_demotion_lock_wait ... ok
+test admin_grant_required::grant_owner_rejects_missing_inactive_or_demoted_current_actor_without_effect_or_outcome ... ok
+test admin_grant_required::required_ledger_failure_rolls_back_exact_grant_and_refresh_family ... ok
+test audit_repository_reads_active_scim_credentials_and_drives_logout_outbox ... ok
+test authorization_code_replay_compensation_revokes_both_token_kinds ... ok
+test authorization_replay_waits_for_concurrent_refresh_rotation_before_compensation ... ok
+test backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid ... ok
+test client_deactivation_is_atomic_across_real_batches_and_repeated_owners ... ok
+test client_deactivation_waits_for_issuance_and_revokes_committed_credentials ... ok
+test concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compromise ... ok
+test family_active_exists_semantics_cover_cardinality_and_predicates ... ok
+test grant_revoke_skips_already_revoked_family_lock ... ok
+test grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_family ... ok
+test grants_upsert_cover_and_revoke_tokens_atomically ... ok
+test issuance_commits_complete_audit_payloads_and_pending_events_for_users_rotation_and_reuse ... ok
+test issuance_waits_for_principal_deactivation_and_rechecks_the_committed_state ... ok
+test lost_response_retry_rechecks_family_compromise_under_the_family_lock ... ok
+test lost_response_successor_requires_exactly_one_bound_unexpired_successor ... ok
+test new_family_collision_is_tenant_scoped_and_preserves_compromise_audit ... ok
+test oidc_subject_snapshot_reuses_statement_but_refreshes_epoch_and_binding ... ok
+test ordinary_rotation_context_compare_uses_serde_value_semantics ... ok
+test ordinary_rotation_context_mismatch_commits_compromise_and_reuse_audit ... ok
+test ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audit ... ok
+test principal_snapshot_reuses_authenticated_epoch_and_prepared_query ... ok
+test refresh_contract_ensure_rolls_back_with_caller_and_validates_args ... ok
+test refresh_contract_ensure_serializes_same_key_create_race ... ok
+test refresh_contract_reference_survives_last_reference_reclaim_race ... ok
+test refresh_family_requires_one_root_and_matching_direct_parent_context ... ok
+test refresh_rotation_reuse_compromises_the_whole_family ... ok
+test refresh_token_authentication_context_round_trips_and_rejects_invalid_values ... ok
+test refresh_token_client_attestation_binding_round_trips ... ok
+test required_revocation_event_failure_rolls_back_access_and_refresh_effects ... ok
+test rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflicting ... ok
+test server_auth_callers_do_not_query_diesel_or_auth_tables ... ok
+test single_use_grant_retry_is_rejected_without_reissuing_or_duplicating_audit ... ok
+test single_use_redemption_reads_back_committed_replay_evidence ... ok
+test stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery ... ok
+test token_management_revocation_is_client_scoped_idempotent_and_serializes_family ... ok
+
+test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.61s
+
+     Running tests/authorization_decisions.rs (target/debug/deps/authorization_decisions-c9af4465c1ad41c6)
+
+running 6 tests
+test audit_ack_samples_time_after_blocked_head_validation ... ok
+test authorization_decision_waits_for_implicit_commit_ack ... ok
+test authorization_decisions_commit_once_and_survive_export_ack ... ok
+test decision_ack_reclaims_payload_atomically_without_releasing_fences ... ok
+test decision_migration_has_independent_fences_and_safe_retention ... ok
+test decision_prepared_shape_preserves_distinct_facts_and_replay_fences ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.60s
+
+     Running tests/compact_claim_contract.rs (target/debug/deps/compact_claim_contract-4f7a53a282bea65f)
+
+running 1 test
+test compact_and_retained_contracts_have_distinct_checked_encodings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/control_plane_required.rs (target/debug/deps/control_plane_required-5ae428d1783162ad)
+
+running 7 tests
+test required_control_plane_all_six_ledger_failures_roll_back_exact_owners ... ok
+test required_control_plane_approvals_accept_submicrosecond_clocks_with_exact_stored_expiry ... ok
+test required_control_plane_cancelled_accepting_owner_releases_connection_and_deployment_lock ... ok
+test required_control_plane_current_actor_denies_inactive_demoted_and_moved_context ... ok
+test required_control_plane_defaults_never_invoke_bare_mutation ... ok
+test required_control_plane_hidden_real_commits_withhold_tokens_and_receipts ... ok
+test required_control_plane_rewritten_approval_expiry_is_rejected_and_rolled_back ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.74s
+
+     Running tests/controller_recovery.rs (target/debug/deps/controller_recovery-7ce215f056ca8a2a)
+
+running 13 tests
+test accepted_recovery_revokes_everything_installs_one_slot_and_rotates_the_root ... ok
+test challenges_are_refused_while_any_controller_is_admitted_and_single_pending ... ok
+test concurrent_rotations_cannot_install_one_recovery_key_twice ... ok
+test failed_rollback_does_not_reuse_a_connection_for_the_counter ... ok
+test generation_exhaustion_rolls_back_the_root_and_approval ... ok
+test history_failure_rolls_back_root_approval_and_pending_challenge ... ok
+test recovered_slots_count_toward_the_three_slot_bound ... ok
+test recovery_cannot_reinstall_a_historical_root_or_leave_a_slot ... ok
+test recovery_submission_waits_for_the_deployment_identity_lock ... ok
+test replay_expiry_and_wrong_signers_fail_closed_without_partial_state ... ok
+test root_enrollment_and_replacement_return_rows_in_six_data_queries ... ok
+test rotated_away_recovery_keys_can_never_be_installed_again ... ok
+test rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generation ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.80s
+
+     Running tests/controller_registry.rs (target/debug/deps/controller_registry-c4b788bca93960f7)
+
+running 11 tests
+test approvals_are_single_use_bound_to_action_hash_and_expire ... ok
+test atomic_first_bind_enrolls_root_and_refuses_a_second ... ok
+test concurrent_add_races_never_exceed_three_active_slots ... ok
+test concurrent_duplicate_kids_have_one_winner_for_insert_and_rotation ... ok
+test crud_negatives_are_typed_and_leave_no_partial_state ... ok
+test expiry_is_exactly_thirty_days_and_admission_fails_at_the_boundary ... ok
+test fourth_add_is_refused_in_transaction_with_non_secret_summaries ... ok
+test revocation_is_terminal_and_rotation_cannot_resurrect ... ok
+test rotate_keeps_count_and_identity_while_replacing_material ... ok
+test slot_mutations_return_the_stored_rows_in_three_data_queries ... ok
+test unrelated_unique_constraints_are_transport_errors_and_roll_back ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.21s
+
+     Running tests/directory_control.rs (target/debug/deps/directory_control-ff62fad48f9311c8)
+
+running 5 tests
+test audit_before_revision_is_the_locked_mutation_fact_after_a_concurrent_commit ... ok
+test create_commits_mutation_audit_and_ledger_atomically ... ok
+test replays_return_recorded_outcomes_without_new_effects ... ok
+test stale_revisions_are_rejected_without_ledger_side_effects ... ok
+test update_disable_finalize_and_describe_complete_the_lifecycle ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.37s
+
+     Running tests/hotpath_statement_cache.rs (target/debug/deps/hotpath_statement_cache-579d5abcc9474ed4)
+
+running 1 test
+test audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/identity_repositories.rs (target/debug/deps/identity_repositories-ca8bc8bb17f71b3a)
+
+running 61 tests
+test access_request_boundary_has_no_server_diesel_or_forwarding_support_layer ... ok
+test active_subject_id_by_tenant_id_returns_the_live_principal_subject ... ok
+test active_subject_id_fails_closed_on_corrupt_principal_rows ... ok
+test active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users ... ok
+test active_subject_id_read_projects_only_the_seven_principal_columns ... ok
+test admin_partial_update_validates_final_role_level_before_commit ... ok
+test admin_user_page_is_tenant_scoped_at_the_query_boundary ... ok
+test admin_user_required::admin_user_required_current_actor_context_and_hierarchy_denials_commit_no_success ... ok
+test admin_user_required::admin_user_required_hidden_committed_ack_returns_no_account_receipt ... ok
+test admin_user_required::admin_user_required_ledger_failure_rolls_back_create_patch_and_noop_outcome ... ok
+test admin_user_required::admin_user_required_ports_have_no_bare_mutation_fallback ... ok
+test application_projection_filters_mixed_scope_elements ... ok
+test authentication_snapshot_matches_the_split_client_and_salt_reads ... ok
+test authorized_admin_update_serializes_hierarchy_and_audit_in_one_transaction ... ok
+test backup_code_batch_replacement_clears_empty_and_rolls_back_invalid_batches ... ok
+test backup_code_is_consumed_once_atomically ... ok
+test client_registration_keeps_plaintext_out_of_protocol_core_and_postgres ... ok
+test client_secret_comparison_returns_only_salt_and_database_equality ... ok
+test concurrent_federated_create_is_idempotent_with_one_connection_and_tenant_scoped ... ok
+test concurrent_totp_enrollment_confirmation_has_one_audited_winner ... ok
+test failed_totp_enrollment_confirmation_is_durably_audited_without_state_change ... ok
+test federated_unique_conflict_recovery_returns_current_inactive_account ... ok
+test identity_claim_boundaries_use_narrow_single_snapshot_reads ... ok
+test identity_display_projections_preserve_metadata_and_tenant_user_scope ... ok
+test inactive_account_has_no_issuable_subject_claims ... ok
+test mfa_backup_code_bounds_and_enrollment_conflict_are_explicit ... ok
+test mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_device ... ok
+test mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe ... ok
+test mfa_generation::mfa_clear_committed_unknown_retry_cannot_clear_formal_g2 ... ok
+test mfa_generation::mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_field ... ok
+test mfa_generation::mfa_clear_generation_lock_orders_formal_g2_install_after_commit ... ok
+test mfa_generation::mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes ... ok
+test mfa_generation::mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_code_disclosure ... ok
+test mfa_generation::mfa_disable_required_ledger_failure_rolls_back_current_generation_and_dependents ... ok
+test mfa_generation::mfa_regeneration_required_ledger_and_inactive_actor_preserve_exact_old_backups ... ok
+test mfa_generation::mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier ... ok
+test mfa_generation_fences_late_remember_and_regeneration_after_clear_and_reenrollment ... ok
+test mfa_two_consumed_backup_proofs_regenerate_serially_without_generation_lock_cycle ... ok
+test oauth_client_persistence_contract_distinguishes_lifetimes_from_character_literals ... ok
+test oauth_client_persistence_contract_ignores_documentation_and_cfg_test_items ... ok
+test oauth_client_persistence_contract_keeps_scanning_after_cfg_test_items ... ok
+test oauth_client_persistence_contract_rejects_aliases_declarations_imports_and_raw_sql ... ok
+test oauth_client_persistence_contract_skips_cfg_test_items_with_const_generics ... ok
+test oauth_client_queries_cross_the_persistence_port_without_a_server_postgres_dependency ... ok
+test oauth_client_repository_keeps_records_private_and_returns_domain_clients ... ok
+test passkey_and_federation_uniqueness_are_typed_conflicts ... ok
+test passkey_counter_update_is_monotonic_compare_and_set ... ok
+test profile_update_cannot_restore_stale_phone_verification ... ok
+test profile_update_persists_only_the_typed_profile_projection ... ok
+test repositories_accept_validated_tenant_and_user_ids ... ok
+test scim_replace_returns_domain_claims_from_one_transaction ... ok
+test seed_upsert_is_atomic_and_preserves_unmanaged_client_state ... ok
+test seed_upsert_persists_jarm_algorithm_on_insert_and_conflict_update ... ok
+test server_has_no_identity_rows_or_identity_diesel_queries ... ok
+test server_mfa_verification_does_not_query_migrated_tables_directly ... ok
+test subject_claims_reject_invalid_persisted_role_invariant ... ok
+test system_tenant_admin_outcomes_preserve_cross_tenant_audit_and_rollback ... ok
+test totp_enrollment_orders_cross_store_changes_for_safe_recovery ... ok
+test totp_last_step_compare_and_set_has_one_concurrent_winner ... ok
+test totp_verification_classification_and_audit_are_atomic_and_replay_safe ... ok
+test user_lookup_is_tenant_scoped ... ok
+
+test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s
+
+     Running tests/mfa_key_ring.rs (target/debug/deps/mfa_key_ring-90e5a0fdc2d8daec)
+
+running 1 test
+test totp_key_ring_requires_distinct_non_empty_versioned_keys ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/migrations.rs (target/debug/deps/migrations-1c82217404698115)
+
+running 28 tests
+test access_token_revocation_retention_backfill_extends_only_live_windows ... ok
+test access_token_revocation_retention_sql_pins_the_verifier_skew_window ... ok
+test embedded_migration_head_tracks_latest_directory ... ok
+test empty_schema_migration_run_leaves_revocation_retention_applied_and_writable ... ok
+test identity_security_event_migration_is_additive_redacted_and_round_trips ... ok
+test issuance_cleanup_uses_expiry_as_an_index_bound ... ok
+test migration_versions_are_unique_across_merged_branches ... ok
+test oidc_logout_idempotency_migration_is_additive_partial_and_reversible ... ok
+test openid4vp_expiry_cleanup_query_is_indexable ... ok
+test pending_migrations_create_all_runtime_module_state_tables ... ok
+test pending_migrations_create_tenant_scoped_signing_keyset_storage ... ok
+test persisted_security_state_cut_executes_fail_closed_and_establishes_current_invariants ... ok
+test persisted_security_state_cut_removes_every_legacy_authority ... ok
+test pushed_requests_policy_downgrade_fails_closed_on_required_clients ... ok
+test recovery_allocation_proof_migration_hard_cuts_unsigned_pending_state ... ok
+test recovery_coverage_migration_preserves_old_receipts_and_writer_default ... ok
+test recovery_receipt_migration_binds_exact_retry_to_immutable_result ... ok
+test recovery_root_key_history_backfills_current_keys_and_refuses_downgrade ... ok
+test recovery_root_migration_pins_kdf_ttl_uniqueness_and_fail_closed_downgrade ... ok
+test refresh_state_minimal_migration_converges_family_cap_and_contracts ... ok
+test revoked_refresh_family_cleanup_index_is_partial_and_reversible ... ok
+test runtime_module_state_migration_enforces_catalogs_and_round_trips ... ok
+test security_state_cleanup_function_bounds_every_category ... ok
+test security_state_cleanup_has_versioned_definitions_and_no_runtime_call ... ok
+test social_provider_type_migration_preserves_existing_rows_and_has_safe_down_policy ... ok
+test tenant_resource_provenance_cut_keeps_one_deterministic_binding_and_rejects_ambiguity ... ok
+test token_principal_epochs_survive_reactivation_and_bindings_are_tenant_owned ... ok
+test totp_invalid_audit_migration_extends_and_restores_the_closed_catalog ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.03s
+
+     Running tests/mtls_trust.rs (target/debug/deps/mtls_trust-842c727656412703)
+
+running 5 tests
+test mtls_trust_lifecycle_is_owned_two_person_current_and_revocable ... ok
+test mtls_trust_required::cancelled_trust_required_owner_releases_peer_lock_without_pool_checkout ... ok
+test mtls_trust_required::required_trust_append_fault_restores_approve_reject_revoke_and_every_event ... ok
+test mtls_trust_required::trust_approval_samples_time_after_tenant_lock_wait_across_expiry ... ok
+test mtls_trust_required::trust_owner_rechecks_current_actor_and_approval_client_after_row_lock_wait ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.68s
+
+     Running tests/oauth_client_dcr.rs (target/debug/deps/oauth_client_dcr-5428921e83074f1f)
+
+running 16 tests
+test admin_client_required::admin_client_required_current_actor_denies_inactive_demoted_and_wrong_context ... ok
+test admin_client_required::admin_client_required_hidden_committed_ack_withholds_secret_and_updated_receipt ... ok
+test admin_client_required::admin_client_required_ledger_failure_rolls_back_insert_and_exact_cas ... ok
+test admin_client_required::admin_client_required_ports_have_no_bare_repository_fallback ... ok
+test concurrent_replace_registration_on_one_token_rotates_exactly_once ... ok
+test dcr_replace_cannot_resurrect_a_concurrently_deleted_client ... ok
+test dcr_required_event_failure_rolls_back_each_owned_effect ... ok
+test dynamic_profile_metadata_round_trips_through_postgres ... ok
+test dynamic_registration_store_maps_repository_failures_to_unavailable ... ok
+test dynamic_registration_store_preserves_atomic_credential_semantics ... ok
+test dynamic_registration_store_round_trips_registration_and_secret_material ... ok
+test oauth_client_reads_fail_closed_across_tenants ... ok
+test registration_token_rotation_rejects_a_stale_authenticated_token ... ok
+test replace_registration_rejects_stale_predicates_without_writing ... ok
+test replace_registration_returning_and_record_exclude_secret_columns ... ok
+test replace_registration_returns_the_committed_row ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.86s
+
+     Running tests/oidc_logout.rs (target/debug/deps/oidc_logout-11b5789c4a123b58)
+
+running 2 tests
+test logout_fanout_is_tenant_scoped_idempotent_and_atomic ... ok
+test logout_projection_reads_only_logout_facts_and_rejects_malformed_redirects ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running tests/openid4vc.rs (target/debug/deps/openid4vc-f340bf14f1b002db)
+
+running 37 tests
+test access_upsert_conflict_with_a_different_identity_is_a_noop ... ok
+test access_upsert_preserves_the_revocation_marker ... ok
+test access_upsert_updates_each_mutable_projection_column ... ok
+test anonymous_pre_authorized_persist_never_reads_client_rows ... ok
+test anonymous_pre_authorized_persist_writes_the_upsert_row_shape ... ok
+test concurrent_deferred_claims_lease_to_one_owner ... ok
+test concurrent_identical_access_upserts_are_noops ... ok
+test corrupt_deferred_payload_rolls_back_the_claim_lease ... ok
+test credential_dataset_mutations_require_an_active_admin_and_are_audited_atomically ... ok
+test credential_persistence_rejects_binding_conflicts_and_accepts_exact_retries ... ok
+test credential_proof_origin_migration_preserves_legacy_and_guards_anonymous_rollback ... ok
+test deferred_access_join_is_guaranteed_by_the_schema ... ok
+test deferred_claim_rejects_unclaimable_rows_without_leasing ... ok
+test deferred_claim_returns_joined_domain_state_and_writes_the_lease ... ok
+test deferred_claim_supports_grants_without_dpop_binding ... ok
+test deferred_locked_projection_rechecks_waited_facts_and_discards_cancelled_owner ... ok
+test deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transaction ... ok
+test deferred_reverse_grant_pairs_wait_on_the_sorted_first_lock_and_both_commit ... ok
+test identical_access_upsert_leaves_the_row_version_untouched ... ok
+test issuance_store_covers_atomic_recovery_and_terminal_error_boundaries ... ok
+test managed_dataset_required::cancelled_dataset_required_owner_releases_peer_row_lock_without_pool_checkout ... ok
+test managed_dataset_required::dataset_fault_contract_rejects_suppressed_effect_source_and_required_events ... ok
+test managed_dataset_required::dataset_owner_rechecks_actor_and_subject_after_real_row_lock_wait ... ok
+test managed_dataset_required::dataset_put_returns_actual_stored_validity_before_ack ... ok
+test managed_dataset_required::dataset_real_noop_does_not_append_accepting_evidence ... ok
+test managed_dataset_required::required_dataset_append_fault_rolls_back_exact_ciphertext_source_events_and_ledger ... ok
+test notification_identical_concurrent_retries_preserve_first_event_and_occurrence ... ok
+test openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and_encrypted_at_rest ... ok
+test pre_authorized_persist_distinguishes_mismatched_and_inactive_clients ... ok
+test pre_authorized_persist_holds_the_client_lock_until_deactivation_wins ... ok
+test pre_authorized_persist_rejects_a_client_deactivated_after_authentication ... ok
+test pre_authorized_verification_rechecks_snapshot_expiry_and_busy_result ... ok
+test pre_authorized_verification_releases_the_pool_and_has_one_consumer ... ok
+test presentation_completion_rechecks_owner_clock_after_pool_and_record_waits ... ok
+test recoverable_issuance_leases_commit_responses_and_deferred_credentials_once ... ok
+test refreshed_access_continues_only_its_original_credential_intent_after_source_expiry ... ok
+test revoked_access_grants_stay_revoked_through_every_persist_path ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 300.03s
+
+     Running tests/pool_async_contract.rs (target/debug/deps/pool_async_contract-76f46863f0472038)
+
+running 6 tests
+test concurrent_acquisitions_all_succeed ... ok
+test failed_pool_acquisition_returns_an_error ... ok
+test migrations_run_from_a_current_thread_runtime ... ok
+test pool_admin_operation_errors_remain_typed_across_runtime_boundaries ... ok
+test pool_admin_operations_keep_async_rustls_and_isolate_the_migration_harness ... ok
+test pool_health_and_connection_execute_real_async_round_trips ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests/pool_runtime_owner.rs (target/debug/deps/pool_runtime_owner-4fda61ff2dec0e83)
+
+running 2 tests
+test cancelling_pool_acquisition_aborts_pending_connection_setup ... ok
+test shared_pool_connection_outlives_the_borrowers_runtime ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/presentation_mode_migration.rs (target/debug/deps/presentation_mode_migration-f1f545d0c79dd4f1)
+
+running 1 test
+test presentation_mode_migration_preserves_requests_and_refuses_conflicting_history ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/query_counts.rs (target/debug/deps/query_counts-0a5773cb6b04a580)
+
+running 22 tests
+test ca01_authentication_snapshot_is_single_combined_read ... ok
+test dc01_replace_registration_is_single_update_returning ... ok
+test df01_deferred_claim_ready_uses_locked_projection_then_lease_update ... ok
+test exs04_existence_checks_are_single_statements ... ok
+test id01_active_subject_id_by_tenant_id_is_single_read ... ok
+test new_family_capacity_transition_has_bounded_round_trips_and_complete_evidence ... ok
+test oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes ... ok
+test oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads ... ok
+test oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_query ... ok
+test oidc_subject_preparation_reads_claims_epoch_and_binding_once ... ok
+test principal_fence_timeout_covers_later_locks_and_resets_at_transaction_end ... ok
+test refresh_contract_prepared_shape_preserves_distinct_contracts ... ok
+test refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds ... ok
+test rf00_malformed_refresh_contract_is_rejected_before_pool_checkout ... ok
+test rf01_ordinary_rotation_commit_has_exact_statement_count ... ok
+test rf06_lost_response_successor_is_single_read ... ok
+test rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert ... ok
+test rv09_revoke_issued_tokens_short_circuits_without_a_family ... ok
+test rv09_revoke_refresh_family_is_lookup_lock_and_single_update ... ok
+test ui01_userinfo_snapshot_is_single_read_for_both_subject_refs ... ok
+test up06_upsert_access_verifies_no_write_retries ... ok
+test vf01_pre_authorized_access_is_one_statement_per_path ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.80s
+
+     Running tests/read_connection_ownership.rs (target/debug/deps/read_connection_ownership-61417041f7578eb1)
+
+running 2 tests
+test cancelling_a_blocked_read_retires_its_backend_before_reuse ... ok
+test completed_reads_return_connections_before_request_resumes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+     Running tests/recovery_invalidation.rs (target/debug/deps/recovery_invalidation-ca77f4821633d6fe)
+
+running 2 tests
+test one_global_epoch_has_one_operation_winner ... ok
+test restore_covers_all_tenants_and_exact_receipt_never_revokes_new_families ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
+
+     Running tests/refresh_authority.rs (target/debug/deps/refresh_authority-9765e062874397b5)
+
+running 19 tests
+test authentication_class_downgrade_rolls_back_when_required_audit_fails ... ok
+test authentication_class_downgrade_serializes_with_rotation_in_both_orders ... ok
+test bound_delayed_rotation_uses_transition_clock_without_false_reuse ... ok
+test bound_retry_rechecks_exact_transition_window_at_commit ... ok
+test confidential_and_public_sender_bound_families_keep_64_proofs ... ok
+test contract_reference_reuses_equal_payload_and_rejects_same_key_different_payload ... ok
+test family_contract_lookup_preserves_per_family_lock_scope ... ok
+test legacy_full_migration_sql_key_rotates_without_rekeying_its_original_contract ... ok
+test preserve_commit_serializes_before_real_revocation_and_capacity_retirement ... ok
+test preserve_rechecks_source_expiry_contract_and_sender_binding ... ok
+test public_proof_cleanup_respects_original_expiry_without_ending_live_family ... ok
+test public_retention_upgrade_invalidates_unprovable_history_without_reviving_on_down ... ok
+test public_unbound_replay_after_65_rotations_revokes_only_its_family ... ok
+test r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit ... ok
+test rotation_narrows_and_reorders_current_audience_without_replacing_original_contract ... ok
+test rotation_rechecks_expiry_after_acquiring_the_source_row_lock ... ok
+test rotation_rejects_audience_expansion_without_compromising_the_family ... ok
+test source_snapshot_cannot_commit_after_real_revocation_or_capacity_retirement ... ok
+test two_legal_preserves_overlap_while_revocation_waits_for_both ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.04s
+
+     Running tests/refresh_family_capacity.rs (target/debug/deps/refresh_family_capacity-8c2a9fdb609e4579)
+
+running 10 tests
+test cap_grows_to_ten_then_retires_the_deterministic_oldest ... ok
+test cap_is_per_tenant_user_client_scope ... ok
+test capacity_retired_family_tokens_remain_revoked_tombstones ... ok
+test concurrent_authorizations_never_exceed_the_cap ... ok
+test fresh_retired_contract_is_reclaimed_without_touching_live_references ... FAILED
+test machine_issuance_without_user_skips_the_cap ... ok
+test public_family_retains_more_than_sixty_four_unexpired_rotation_proofs ... ok
+test required_capacity_audit_failure_rolls_back_retirement_and_issuance ... ok
+test rotation_never_consumes_a_family_slot ... ok
+test spent_proofs_stay_bounded_under_sustained_rotation ... ok
+
+failures:
+
+---- fresh_retired_contract_is_reclaimed_without_touching_live_references stdout ----
+
+thread 'fresh_retired_contract_is_reclaimed_without_touching_live_references' (136811) panicked at crates/persistence-postgres/tests/refresh_family_capacity.rs:1135:5:
+the unreferenced fresh contract must be reclaimed after its terminal parent
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    fresh_retired_contract_is_reclaimed_without_touching_live_references
+
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.13s
+
+error: test failed, to rerun pass `-p nazo-postgres --test refresh_family_capacity`

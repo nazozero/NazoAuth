@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--locked", "--all-features", "-p", "nazo-postgres", "--test", "security_state_maintenance", "large_family_reclaim_stays_bounded_per_batch", "--", "--exact", "--nocapture"], "exit": 0, "seconds": 3.2876309980638325}

@@ -1,0 +1,12 @@
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 35.80s
+     Running tests/openid4vc.rs (target/debug/deps/openid4vc-5476e2a6142da50f)
+
+running 2 tests
+test pre_authorized_verification_rechecks_snapshot_expiry_and_busy_result ... ok
+test pre_authorized_verification_releases_the_pool_and_has_one_consumer ... consumed_offer_logical_row_bytes before=360 after=184
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 0.30s
+

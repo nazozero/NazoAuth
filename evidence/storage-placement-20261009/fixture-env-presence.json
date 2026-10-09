@@ -1,0 +1,15 @@
+{
+  "DATABASE_URL": true,
+  "NAZO_AUDIT_TEST_DATABASE_URL": true,
+  "VALKEY_URL": true,
+  "VALKEY_STATE_EPOCH": true,
+  "VALKEY_COMMAND_TIMEOUT_MS": true,
+  "NAZO_TEST_S3_ENDPOINT": true,
+  "NAZO_TEST_S3_BUCKET": true,
+  "NAZO_TEST_S3_ACCESS_KEY": true,
+  "NAZO_TEST_S3_SECRET_KEY": true,
+  "NAZO_TEST_S3_REGION": true,
+  "NAZO_TEST_DATABASE_URL": true,
+  "CI": true,
+  "NAZO_TEST_VALKEY_URL": true
+}

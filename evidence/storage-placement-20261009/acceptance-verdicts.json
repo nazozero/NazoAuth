@@ -1,0 +1,28 @@
+{
+  "CODE": {
+    "status": "PASS",
+    "scope": "Final fmt, static/boundary, Clippy, real PG regressions, 3707-test workspace suite plus explicit ignored FAPI test"
+  },
+  "SECURITY": {
+    "status": "PASS",
+    "scope": "Changed consume/ACK/retention boundaries and existing replay/reference/tenant regressions; both sustained-point signed audit reconciliation PASS"
+  },
+  "RECOVERY": {
+    "status": "PASS",
+    "scope": "Real late commit failure, cancellation, disconnect, connection recycling and reference-lock races relevant to this revision; historical broad fault-load matrix not repeated"
+  },
+  "PERFORMANCE": {
+    "status": "FAIL",
+    "reason": "REV360 P95/P99 127/485 ms; MIX300 FAPI 157/432.02 ms and refresh drop 1192/225000=0.5298%; main throughput alone does not override gates"
+  },
+  "STORAGE": {
+    "status": "INVALID",
+    "reason": "Compaction and separate COHORT60 natural-reclaim proof PASS; original sustained REV360 lacks final full-cycle log and MIX300 retained 72 eligible rows at observation deadline. Do not substitute the shorter cohort for these end conditions."
+  },
+  "overall": "INCOMPLETE",
+  "source": {
+    "base_sha": "4b4fdc33b6a570aa270b17f5785e1f3188f3fc84",
+    "source_patch_sha256": "8057cd5e01e3f6a45ee7fdb239a77090ac73bcb98722d0d6ddf776bb7a59c744",
+    "source_modified": true
+  }
+}

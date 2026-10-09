@@ -1,0 +1,111 @@
+{
+  "verdict": "FAIL",
+  "ops_s": 960.017,
+  "latency": {
+    "p50": 37.0,
+    "p95": 135.0,
+    "p99": 236.0
+  },
+  "measure": {
+    "window_start_s": 1791555230.616,
+    "window_end_s": 1791555290.616,
+    "measure_started_exact": 57601,
+    "measure_completed_exact": 57601,
+    "measure_dropped_exact": 0,
+    "measure_scheduled_observed": 57601,
+    "measure_drop_fraction": 0.0,
+    "measure_outcomes": {
+      "success": 57601
+    },
+    "measure_outcome_sum": 57601,
+    "drops_pre_window": 0,
+    "drops_post_window": 0,
+    "drops_pending_unclassified": 0,
+    "pending_drops_overflow": false,
+    "valid": true,
+    "problems": [],
+    "rational_planned_arrivals": 57600,
+    "schedule_delta_vs_rational": 1,
+    "observed_schedule_rate": 960.017,
+    "cohort_source": "k6_stream_exact",
+    "late_vu_fraction": 0.0
+  },
+  "health": {
+    "app_affinity_verified": true,
+    "postgres_affinity_verified": true,
+    "valkey_affinity_verified": true,
+    "service_affinity_verified": true,
+    "generator_affinity_verified": true,
+    "point_completed": true,
+    "unexpected_zero": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "oom_none": true,
+    "no_restarts": true,
+    "queue_full_zero": true,
+    "dropped_required_zero": true,
+    "db_outbox_drained": true,
+    "audit_reconciled": true,
+    "journal_contiguous": true,
+    "local_no_request_zero": true,
+    "expected_rejection_zero": true,
+    "collector_copy_complete": true
+  },
+  "audit": {
+    "point": "nazo-model-cohort60-20261009",
+    "checks": {
+      "collected": true,
+      "fault_none": true,
+      "pending_zero": true,
+      "db_head_eq_anchor_seq": true,
+      "db_head_eq_anchor_hash": true,
+      "rcv_seq_eq_anchor": true,
+      "rcv_hash_eq_anchor": true,
+      "deployment_match": true,
+      "checkpoint_progress_valid": true,
+      "accepted_events_delta_eq": true,
+      "journal_collected": true,
+      "journal_clean": true,
+      "journal_range_eq_delta": true
+    },
+    "verdict": "PASS",
+    "checkpoint_advanced": true,
+    "empty_prefix_allowed": false,
+    "delta_events": 216000,
+    "accepted_events_delta": 216000,
+    "journal": {
+      "collected": true,
+      "journal_sha256": "aea571a081846ff55d83db41ea5e65e0280e2ad124e987af85382941e4af4861",
+      "journal_bytes": 216315611,
+      "batches": 2123,
+      "remote_path": "sis-rcv-nazo-model-cohort60-20261009:/data/journal.jsonl",
+      "events_in_range": 216000,
+      "expected_in_range": 216000,
+      "by_event_type": {
+        "authorization_decision_committed": 72000,
+        "token_issued": 72000,
+        "token_revoked": 72000
+      },
+      "token_issued_in_range": 72000,
+      "malformed_lines": 0,
+      "foreign_deployment_batches": 0,
+      "sequence_gaps": 0,
+      "duplicate_sequences": 0,
+      "range_contiguous": true
+    },
+    "token_issued_delta": 72000,
+    "expected_issuances": null,
+    "token_issued_scope": "reported_only_no_clean_denominator"
+  },
+  "cleanup": {
+    "label": "nazo-model-cohort60-20261009",
+    "key": "COHORT60",
+    "containers_remaining": [],
+    "cleanup_elapsed_s": 21.979,
+    "total_elapsed_s": 302.772,
+    "request_sha256_unchanged": true,
+    "verdict": "FAIL",
+    "error": null,
+    "cleanup_error": null
+  }
+}

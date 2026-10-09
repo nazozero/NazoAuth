@@ -1,0 +1,48 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 2.02s
+     Running tests/migrations.rs (target/debug/deps/migrations-f3a0c469a783916c)
+
+running 28 tests
+test access_token_revocation_retention_backfill_extends_only_live_windows ... ok
+test access_token_revocation_retention_sql_pins_the_verifier_skew_window ... ok
+test embedded_migration_head_tracks_latest_directory ... 
+thread 'embedded_migration_head_tracks_latest_directory' (125881) panicked at crates/persistence-postgres/tests/migrations.rs:107:5:
+assertion `left == right` failed: append-only migrations must advance migration-head.txt so cached builds re-embed them
+  left: "20261009000600"
+ right: "20261009000600_separate_audit_history_cleanup"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test empty_schema_migration_run_leaves_revocation_retention_applied_and_writable ... ok
+test identity_security_event_migration_is_additive_redacted_and_round_trips ... ok
+test issuance_cleanup_uses_expiry_as_an_index_bound ... ok
+test migration_versions_are_unique_across_merged_branches ... ok
+test oidc_logout_idempotency_migration_is_additive_partial_and_reversible ... ok
+test openid4vp_expiry_cleanup_query_is_indexable ... ok
+test pending_migrations_create_all_runtime_module_state_tables ... ok
+test pending_migrations_create_tenant_scoped_signing_keyset_storage ... ok
+test persisted_security_state_cut_executes_fail_closed_and_establishes_current_invariants ... ok
+test persisted_security_state_cut_removes_every_legacy_authority ... ok
+test pushed_requests_policy_downgrade_fails_closed_on_required_clients ... ok
+test recovery_allocation_proof_migration_hard_cuts_unsigned_pending_state ... ok
+test recovery_coverage_migration_preserves_old_receipts_and_writer_default ... ok
+test recovery_receipt_migration_binds_exact_retry_to_immutable_result ... ok
+test recovery_root_key_history_backfills_current_keys_and_refuses_downgrade ... ok
+test recovery_root_migration_pins_kdf_ttl_uniqueness_and_fail_closed_downgrade ... ok
+test refresh_state_minimal_migration_converges_family_cap_and_contracts ... ok
+test revoked_refresh_family_cleanup_index_is_partial_and_reversible ... ok
+test runtime_module_state_migration_enforces_catalogs_and_round_trips ... ok
+test security_state_cleanup_function_bounds_every_category ... ok
+test security_state_cleanup_has_versioned_definitions_and_no_runtime_call ... ok
+test social_provider_type_migration_preserves_existing_rows_and_has_safe_down_policy ... ok
+test tenant_resource_provenance_cut_keeps_one_deterministic_binding_and_rejects_ambiguity ... ok
+test token_principal_epochs_survive_reactivation_and_bindings_are_tenant_owned ... ok
+test totp_invalid_audit_migration_extends_and_restores_the_closed_catalog ... ok
+
+failures:
+
+failures:
+    embedded_migration_head_tracks_latest_directory
+
+test result: FAILED. 27 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.62s
+
+error: test failed, to rerun pass `-p nazo-postgres --test migrations`

@@ -1,0 +1,9 @@
+{
+  "baseline_source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+  "merged_head": "4b4fdc33b6a570aa270b17f5785e1f3188f3fc84",
+  "changed_paths": [
+    "crates/persistence-postgres/tests/identity_repositories.rs",
+    "crates/persistence-postgres/tests/unit/repositories/deferred_payload.rs",
+    "crates/persistence-postgres/tests/unit/repositories/mfa.rs"
+  ]
+}

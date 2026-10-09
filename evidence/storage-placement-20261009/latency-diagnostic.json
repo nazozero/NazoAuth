@@ -1,0 +1,197 @@
+{
+  "maintenance_association_not_causal_proof": {
+    "overlapping_maintenance_second": {
+      "n": 50436,
+      "p95_interval_ms": [
+        200,
+        500
+      ],
+      "p99_interval_ms": [
+        500,
+        1000
+      ]
+    },
+    "other_second": {
+      "n": 295164,
+      "p95_interval_ms": [
+        100,
+        200
+      ],
+      "p99_interval_ms": [
+        200,
+        500
+      ]
+    }
+  },
+  "role_wait_connection_samples": [
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "idle",
+      "wait_type": "Client",
+      "wait": "ClientRead",
+      "connection_samples": 842
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "active",
+      "wait_type": "LWLock",
+      "wait": "WALWrite",
+      "connection_samples": 264
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "active",
+      "wait_type": null,
+      "wait": null,
+      "connection_samples": 127
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "idle in transaction",
+      "wait_type": "Client",
+      "wait": "ClientRead",
+      "connection_samples": 109
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "active",
+      "wait_type": "Client",
+      "wait": "ClientRead",
+      "connection_samples": 63
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "idle in transaction",
+      "wait_type": null,
+      "wait": null,
+      "connection_samples": 35
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "active",
+      "wait_type": "IO",
+      "wait": "WalSync",
+      "connection_samples": 34
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "idle",
+      "wait_type": null,
+      "wait": null,
+      "connection_samples": 34
+    },
+    {
+      "role": "nazoauth_perf_exporter",
+      "application": "",
+      "state": "idle",
+      "wait_type": "Client",
+      "wait": "ClientRead",
+      "connection_samples": 25
+    },
+    {
+      "role": "nazoauth_perf_exporter",
+      "application": "",
+      "state": "active",
+      "wait_type": null,
+      "wait": null,
+      "connection_samples": 15
+    },
+    {
+      "role": "nazoauth_perf_exporter",
+      "application": "",
+      "state": "active",
+      "wait_type": "LWLock",
+      "wait": "WALWrite",
+      "connection_samples": 6
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "idle in transaction",
+      "wait_type": "LWLock",
+      "wait": "WALWrite",
+      "connection_samples": 6
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "active",
+      "wait_type": "IO",
+      "wait": "DataFileWrite",
+      "connection_samples": 4
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "active",
+      "wait_type": "IO",
+      "wait": "DataFileExtend",
+      "connection_samples": 1
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "idle in transaction",
+      "wait_type": "IO",
+      "wait": "WalSync",
+      "connection_samples": 1
+    },
+    {
+      "role": "postgres",
+      "application": "",
+      "state": "active",
+      "wait_type": null,
+      "wait": null,
+      "connection_samples": 1
+    },
+    {
+      "role": "nazoauth_perf_exporter",
+      "application": "",
+      "state": "idle in transaction",
+      "wait_type": null,
+      "wait": null,
+      "connection_samples": 1
+    },
+    {
+      "role": null,
+      "application": "",
+      "state": "active",
+      "wait_type": "Timeout",
+      "wait": "VacuumTruncate",
+      "connection_samples": 1
+    },
+    {
+      "role": "nazoauth_perf_exporter",
+      "application": "",
+      "state": "idle in transaction",
+      "wait_type": "Client",
+      "wait": "ClientRead",
+      "connection_samples": 1
+    },
+    {
+      "role": "nazoauth_perf_runtime",
+      "application": "",
+      "state": "active",
+      "wait_type": "IO",
+      "wait": "WalWrite",
+      "connection_samples": 1
+    },
+    {
+      "role": "postgres",
+      "application": "",
+      "state": "idle in transaction",
+      "wait_type": null,
+      "wait": null,
+      "connection_samples": 1
+    }
+  ],
+  "limits": "1-second buckets include completion timing and overlap, not exact per-request causal ownership; SQL role snapshots are sparse. No pool resizing or safety-lock removal justified."
+}
