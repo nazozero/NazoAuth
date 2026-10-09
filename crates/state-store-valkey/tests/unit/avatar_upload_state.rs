@@ -279,7 +279,10 @@ async fn generation_is_the_only_owner_state_and_completion_discards_preparation(
         )
         .await
         .unwrap();
-    assert_eq!(after, deadline, "no transition may renew the storage deadline");
+    assert_eq!(
+        after, deadline,
+        "no transition may renew the storage deadline"
+    );
     assert_eq!(
         store
             .claim(authorization.user_id, &authorization.upload_id, lease)
