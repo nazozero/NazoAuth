@@ -1,4 +1,6 @@
-use super::helpers::{all_same_host, sector_identifier_host_for_redirects, trim_optional_string};
+use super::helpers::{
+    all_same_host, sector_identifier_host_for_redirects, trim_optional_string, validate_subject_type,
+};
 use super::policy::{
     AdminClientPolicy, ClientSecurityPolicyContext, validate_composable_security_policy,
 };
@@ -161,6 +163,7 @@ where
     let new_subject_type = request
         .subject_type
         .unwrap_or_else(|| client.subject_type.clone());
+    validate_subject_type(&new_subject_type)?;
     let requested_sector_identifier_uri = match request.sector_identifier_uri {
         Some(_) if client.sector_identifier_uri.is_some() => {
             return Err(AdminClientError::InvalidRequest(

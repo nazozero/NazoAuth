@@ -148,7 +148,10 @@ fn initial_upload_state_contains_no_lease_or_future_stage_placeholders() {
         "staged_version",
         "final_object_id",
     ] {
-        assert!(value.get(field).is_none(), "unexpected initial field {field}");
+        assert!(
+            value.get(field).is_none(),
+            "unexpected initial field {field}"
+        );
     }
 }
 
@@ -186,7 +189,10 @@ async fn generation_is_the_only_owner_state_and_completion_discards_preparation(
     else {
         panic!("pending authorization expected");
     };
-    let raw = command::get(&connection, key.clone()).await.unwrap().unwrap();
+    let raw = command::get(&connection, key.clone())
+        .await
+        .unwrap()
+        .unwrap();
     let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
     assert!(value.get("ownership_token").is_none());
     assert_eq!(value["claim_generation"].to_string(), first);
@@ -259,7 +265,10 @@ async fn generation_is_the_only_owner_state_and_completion_discards_preparation(
         .await
         .unwrap()
     );
-    let raw = command::get(&connection, key.clone()).await.unwrap().unwrap();
+    let raw = command::get(&connection, key.clone())
+        .await
+        .unwrap()
+        .unwrap();
     let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(
         value,
