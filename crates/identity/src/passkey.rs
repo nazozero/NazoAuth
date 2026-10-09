@@ -296,8 +296,8 @@ where
         }
         let credentials = rows
             .into_iter()
-            .map(|row| decode_credential(row.credential))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|row| row.credential)
+            .collect::<Vec<_>>();
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
         let (mut challenge, state) = self
             .webauthn
@@ -365,12 +365,7 @@ where
             .await
             .map_err(PasskeyError::State)?
             .ok_or(PasskeyError::LoginFailed)?;
-        let mut credential = decode_credential(row.credential)?;
-        if i64::from(credential.counter) != row.sign_count {
-            return Err(PasskeyError::State(RepositoryError::Consistency(
-                "passkey counter columns disagree".to_owned(),
-            )));
-        }
+        let credential = row.credential;
         let outcome = self
             .webauthn
             .finish_authentication(&stored.state, &response, &credential)
@@ -386,20 +381,13 @@ where
                 });
                 PasskeyError::LoginFailed
             })?;
-        credential.counter = outcome.new_counter;
-        let credential_json = serde_json::to_value(&credential).map_err(|_| {
-            PasskeyError::State(RepositoryError::Consistency(
-                "passkey credential serialization failed".to_owned(),
-            ))
-        })?;
         self.credentials
             .update_counter(
                 stored.tenant_id,
                 stored.user_id,
-                &row.credential_id,
-                row.sign_count,
-                i64::from(outcome.new_counter),
-                credential_json,
+                &credential_id,
+                credential.counter,
+                outcome.new_counter,
             )
             .await
             .map_err(|error| match error {
@@ -430,9 +418,8 @@ where
             .map_err(PasskeyError::State)?;
         let existing_ids = rows
             .into_iter()
-            .map(|row| decode_credential(row.credential))
-            .map(|result| result.map(|credential| credential.id))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|row| row.credential.id)
+            .collect::<Vec<_>>();
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
         let (challenge, state) = self.webauthn.start_registration(
             &user_handle,
@@ -508,23 +495,9 @@ where
                 return Err(PasskeyError::RegistrationFailed);
             }
         };
-        let credential_id = credential.id.to_b64url();
-        let sign_count = i64::from(credential.counter);
-        let credential_json = serde_json::to_value(credential).map_err(|_| {
-            PasskeyError::State(RepositoryError::Consistency(
-                "passkey credential serialization failed".to_owned(),
-            ))
-        })?;
         let row = self
             .credentials
-            .insert(
-                stored.tenant_id,
-                stored.user_id,
-                credential_id,
-                credential_json,
-                stored.label,
-                sign_count,
-            )
+            .insert(stored.tenant_id, stored.user_id, credential, stored.label)
             .await
             .map_err(|error| match error {
                 RepositoryError::Conflict => PasskeyError::AlreadyRegistered,
@@ -683,14 +656,6 @@ where
     }
 }
 
-fn decode_credential(value: serde_json::Value) -> Result<WebauthnCredential, PasskeyError> {
-    serde_json::from_value(value).map_err(|_| {
-        PasskeyError::State(RepositoryError::Consistency(
-            "stored passkey credential is malformed".to_owned(),
-        ))
-    })
-}
-
 fn remove_authentication_transport_hints(challenge: &mut AuthenticationChallenge) {
     // Username-first responses are unauthenticated. Transport hints are optional
     // and can otherwise disclose account-specific authenticator characteristics.
@@ -713,7 +678,3 @@ fn ceremony_read_error(error: RepositoryError) -> PasskeyError {
         error => PasskeyError::CeremonyState(error),
     }
 }
-
-#[cfg(test)]
-#[path = "../tests/unit/passkey.rs"]
-mod tests;

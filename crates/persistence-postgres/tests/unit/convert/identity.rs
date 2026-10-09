@@ -159,3 +159,51 @@ fn display_summaries_reject_corrupt_tenant_and_user_identifiers() {
         assert!(federation_link_summary(link).is_err());
     }
 }
+
+fn passkey_row() -> PasskeyCredentialRow {
+    PasskeyCredentialRow {
+        id: Uuid::now_v7(),
+        tenant_id: Uuid::now_v7(),
+        user_id: Uuid::now_v7(),
+        credential_id: "AQID".into(),
+        label: "Laptop".into(),
+        sign_count: 12,
+        credential: serde_json::json!({"id": [1,2,3], "counter": 12,
+          "public_key_cose": [164,1,1,3,39,32,6,33], "transports": ["internal"], "aaguid": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}),
+        last_used_at: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    }
+}
+
+#[test]
+fn passkey_adapter_rejects_conflicting_credential_authorities() {
+    assert!(passkey(passkey_row()).is_ok());
+    let mut row = passkey_row();
+    row.sign_count = 13;
+    assert!(
+        passkey(row).is_err(),
+        "legacy JSON counter must agree with CAS column"
+    );
+    let mut row = passkey_row();
+    row.credential_id = "BAUG".into();
+    assert!(
+        passkey(row).is_err(),
+        "legacy JSON ID must agree with lookup column"
+    );
+}
+
+#[test]
+fn compact_passkey_material_has_one_id_and_counter_authority() {
+    let original = passkey(passkey_row()).unwrap();
+    let compact = encoded_passkey(&original.credential).unwrap();
+    assert!(compact.get("id").is_none());
+    assert!(compact.get("counter").is_none());
+    let decoded = passkey_material("AQID", 12, compact.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(decoded).unwrap(),
+        serde_json::to_value(original.credential).unwrap()
+    );
+    assert!(passkey_material("AQID", -1, compact.clone()).is_err());
+    assert!(passkey_material("AQID", i64::from(u32::MAX) + 1, compact).is_err());
+}

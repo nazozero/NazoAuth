@@ -317,6 +317,10 @@ pub(crate) fn registration_service(
 pub(crate) fn passkey_service(
     state: &TestInfrastructure,
 ) -> actix_web::web::Data<nazo_oauth_server::services::LocalPasskeyService> {
+    // This suite must not depend on another test installing Required audit.
+    if std::env::var_os("DATABASE_URL").is_some() {
+        initialize_audit_dependencies(&state.diesel_db);
+    }
     let passkey = &state.settings.identity.passkey;
     let session = &state.settings.session;
     actix_web::web::Data::new(nazo_oauth_server::services::LocalPasskeyService::new(

@@ -193,10 +193,8 @@ pub(crate) fn passkey(
         id: row.id,
         tenant_id: TenantId::new(row.tenant_id)?,
         user_id: UserId::new(row.user_id)?,
-        credential_id: row.credential_id,
-        credential: row.credential,
+        credential: passkey_material(&row.credential_id, row.sign_count, row.credential)?,
         label: row.label,
-        sign_count: row.sign_count,
         last_used_at: row.last_used_at,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -256,3 +254,47 @@ pub(crate) fn federation_link_summary(
 #[cfg(test)]
 #[path = "../../tests/unit/convert/identity.rs"]
 mod tests;
+
+/// Relational lookup/CAS columns are the stored authority. Legacy JSON copies
+/// must agree before decoding; new JSON contains only authenticator material.
+fn passkey_material(
+    credential_id: &str,
+    sign_count: i64,
+    mut value: serde_json::Value,
+) -> Result<passkey_auth::PasskeyCredential, ConversionError> {
+    let invalid = || ConversionError("stored passkey credential is malformed".into());
+    let id = passkey_auth::CredentialId::from_b64url(credential_id).map_err(|_| invalid())?;
+    let counter = u32::try_from(sign_count).map_err(|_| invalid())?;
+    let object = value.as_object_mut().ok_or_else(invalid)?;
+    let id_value = serde_json::to_value(&id).map_err(|_| invalid())?;
+    let counter_value = serde_json::json!(counter);
+    if object.get("id").is_some_and(|stored| stored != &id_value)
+        || object
+            .get("counter")
+            .is_some_and(|stored| stored != &counter_value)
+    {
+        return Err(ConversionError(
+            "passkey credential columns disagree".into(),
+        ));
+    }
+    object.insert("id".into(), id_value);
+    object.insert("counter".into(), counter_value);
+    serde_json::from_value(value).map_err(|_| invalid())
+}
+
+pub(crate) fn encoded_passkey(
+    credential: &passkey_auth::PasskeyCredential,
+) -> Result<serde_json::Value, ConversionError> {
+    let mut value = serde_json::to_value(credential)
+        .map_err(|_| ConversionError("passkey credential serialization failed".into()))?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| ConversionError("passkey credential serialization failed".into()))?;
+    object.remove("id");
+    object.remove("counter");
+    Ok(value)
+}
+
+#[cfg(test)]
+#[path = "../../tests/unit/convert/passkey_material.rs"]
+mod passkey_tests;

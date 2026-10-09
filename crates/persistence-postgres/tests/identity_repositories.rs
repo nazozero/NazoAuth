@@ -1295,10 +1295,8 @@ async fn passkey_and_federation_uniqueness_are_typed_conflicts() {
         .insert(
             tenant.tenant_id,
             user_id,
-            "credential".into(),
-            json!({}),
+            test_passkey(&[8; 32], 0),
             "test".into(),
-            0,
         )
         .await
         .unwrap();
@@ -1307,10 +1305,8 @@ async fn passkey_and_federation_uniqueness_are_typed_conflicts() {
             .insert(
                 tenant.tenant_id,
                 user_id,
-                "credential".into(),
-                json!({}),
+                test_passkey(&[8; 32], 0),
                 "test".into(),
-                0
             )
             .await
             .unwrap_err(),
@@ -1390,13 +1386,22 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
         .insert(
             tenant.tenant_id,
             user_id,
-            "display-credential".into(),
-            json!({"not_a_webauthn_credential": "display never decoded this payload"}),
+            test_passkey(&[7; 32], 7),
             "Laptop".into(),
-            7,
         )
         .await
         .unwrap();
+    // A damaged payload must not prevent the independent display projection.
+    let corrupt_payload =
+        json!({"not_a_webauthn_credential": "display never decoded this payload"});
+    let mut conn = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE user_passkey_credentials SET credential=$1 WHERE id=$2")
+        .bind::<diesel::sql_types::Jsonb, _>(corrupt_payload.clone())
+        .bind::<diesel::sql_types::Uuid, _>(credential.id)
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    drop(conn);
     let links = FederationRepository::new(pool.clone());
     let link = links
         .insert(NewFederationLink {
@@ -1427,10 +1432,20 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
         vec![FederationLinkSummary::from(link.clone())],
     );
     // Display reads do not mutate or replace the complete stored payload.
-    assert_eq!(
-        passkeys.list(tenant.tenant_id, user_id).await.unwrap(),
-        vec![credential]
-    );
+    assert!(passkeys.list(tenant.tenant_id, user_id).await.is_err());
+    let mut conn = get_conn(&pool).await.unwrap();
+    #[derive(diesel::QueryableByName)]
+    struct StoredPayload {
+        #[diesel(sql_type=diesel::sql_types::Jsonb)]
+        credential: serde_json::Value,
+    }
+    let stored = sql_query("SELECT credential FROM user_passkey_credentials WHERE id=$1")
+        .bind::<diesel::sql_types::Uuid, _>(credential.id)
+        .get_result::<StoredPayload>(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(stored.credential, corrupt_payload);
+    drop(conn);
     assert_eq!(
         links.list(tenant.tenant_id, user_id).await.unwrap(),
         vec![link]
@@ -1466,31 +1481,15 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
         .insert(
             tenant.tenant_id,
             user_id,
-            "counter-cas".into(),
-            json!({"counter": 0}),
+            test_passkey(&[1, 2, 3], 0),
             "counter test".into(),
-            0,
         )
         .await
         .unwrap();
 
     let (left, right) = tokio::join!(
-        repository.update_counter(
-            tenant.tenant_id,
-            user_id,
-            "counter-cas",
-            0,
-            1,
-            json!({"counter": 1})
-        ),
-        repository.update_counter(
-            tenant.tenant_id,
-            user_id,
-            "counter-cas",
-            0,
-            1,
-            json!({"counter": 1})
-        )
+        repository.update_counter(tenant.tenant_id, user_id, "AQID", 0, 1),
+        repository.update_counter(tenant.tenant_id, user_id, "AQID", 0, 1)
     );
     assert!(matches!(
         (&left, &right),
@@ -1498,28 +1497,14 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
     ));
     assert_eq!(
         repository
-            .update_counter(
-                tenant.tenant_id,
-                user_id,
-                "counter-cas",
-                0,
-                2,
-                json!({"counter": 2})
-            )
+            .update_counter(tenant.tenant_id, user_id, "AQID", 0, 2)
             .await
             .unwrap_err(),
         RepositoryError::Conflict
     );
     assert_eq!(
         repository
-            .update_counter(
-                tenant.tenant_id,
-                user_id,
-                "counter-cas",
-                1,
-                1,
-                json!({"counter": 1})
-            )
+            .update_counter(tenant.tenant_id, user_id, "AQID", 1, 1)
             .await
             .unwrap_err(),
         RepositoryError::Conflict
@@ -1529,22 +1514,13 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
         .insert(
             tenant.tenant_id,
             user_id,
-            "zero-counter".into(),
-            json!({"counter": 0}),
+            test_passkey(&[4, 5, 6], 0),
             "zero counter".into(),
-            0,
         )
         .await
         .unwrap();
     repository
-        .update_counter(
-            tenant.tenant_id,
-            user_id,
-            "zero-counter",
-            0,
-            0,
-            json!({"counter": 0}),
-        )
+        .update_counter(tenant.tenant_id, user_id, "BAUG", 0, 0)
         .await
         .unwrap();
     cleanup(&pool, user_id).await;
@@ -3746,3 +3722,13 @@ mod mfa_generation;
 
 #[path = "support/admin_user_required.rs"]
 mod admin_user_required;
+
+fn test_passkey(id: &[u8], counter: u32) -> passkey_auth::PasskeyCredential {
+    passkey_auth::PasskeyCredential {
+        id: passkey_auth::CredentialId(id.to_vec()),
+        counter,
+        public_key_cose: passkey_auth::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
+        transports: vec!["internal".into()],
+        aaguid: [0; 16],
+    }
+}

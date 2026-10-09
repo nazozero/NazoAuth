@@ -1,20 +1,18 @@
 use chrono::{DateTime, Utc};
-use serde_json::Value;
+use passkey_auth::PasskeyCredential as WebauthnCredential;
 use uuid::Uuid;
 
 use crate::{PublicAccount, TenantId, UserId};
 
 use super::common::RepositoryFuture;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct PasskeyCredential {
     pub id: Uuid,
     pub tenant_id: TenantId,
     pub user_id: UserId,
-    pub credential_id: String,
-    pub credential: Value,
+    pub credential: WebauthnCredential,
     pub label: String,
-    pub sign_count: i64,
     pub last_used_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -40,9 +38,9 @@ impl From<PasskeyCredential> for PasskeyCredentialSummary {
             id: row.id,
             tenant_id: row.tenant_id,
             user_id: row.user_id,
-            credential_id: row.credential_id,
+            credential_id: row.credential.id.to_b64url(),
             label: row.label,
-            sign_count: row.sign_count,
+            sign_count: i64::from(row.credential.counter),
             last_used_at: row.last_used_at,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -96,10 +94,8 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-        credential_id: String,
-        credential: Value,
+        credential: WebauthnCredential,
         label: String,
-        sign_count: i64,
     ) -> RepositoryFuture<'_, PasskeyCredential>;
 
     fn update_counter<'a>(
@@ -107,9 +103,8 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &'a str,
-        expected_sign_count: i64,
-        new_sign_count: i64,
-        credential: Value,
+        expected_sign_count: u32,
+        new_sign_count: u32,
     ) -> RepositoryFuture<'a, ()>;
 
     fn delete(&self, tenant_id: TenantId, user_id: UserId, id: Uuid) -> RepositoryFuture<'_, bool>;

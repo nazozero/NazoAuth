@@ -3146,6 +3146,7 @@ dependencies = [
  "nazo-persistence",
  "nazo-resource-server",
  "nazo-runtime-modules",
+ "passkey-auth",
  "nazo-scim-events",
  "rand 0.10.3",
  "rcgen",

@@ -1,4 +1,5 @@
 use super::*;
+use passkey_auth::{CosePublicKey, PasskeyCredential as WebauthnCredential};
 
 #[test]
 fn owned_credential_value_keeps_existing_webauthn_key_material_and_wire() {
@@ -15,7 +16,7 @@ fn owned_credential_value_keeps_existing_webauthn_key_material_and_wire() {
     };
     let wire = serde_json::to_value(&credential).unwrap();
     let expected_wire = wire.clone();
-    let decoded = decode_credential(wire).unwrap();
+    let decoded = passkey_material(&credential.id.to_b64url(), 12, wire).unwrap();
     assert_eq!(decoded.id.0, credential.id.0);
     assert_eq!(decoded.public_key_cose.0, cose);
     assert_eq!(decoded.counter, 12);
@@ -31,8 +32,8 @@ fn malformed_owned_credential_keeps_the_existing_consistency_failure() {
         serde_json::json!([]),
         serde_json::json!({}),
     ] {
-        match decode_credential(value) {
-            Err(PasskeyError::State(RepositoryError::Consistency(message))) => {
+        match passkey_material("AQID", 0, value) {
+            Err(ConversionError(message)) => {
                 assert_eq!(message, "stored passkey credential is malformed");
             }
             _ => panic!("malformed credential must remain a consistency failure"),

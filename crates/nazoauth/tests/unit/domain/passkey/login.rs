@@ -710,7 +710,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
         .iter()
         .find(|candidate| candidate.id == row.id)
         .expect("registered credential should remain stored");
-    assert_eq!(updated.sign_count, 1);
+    assert_eq!(updated.credential.counter, 1);
     assert!(updated.last_used_at.is_some());
 
     let replay_response = passkey_login_finish(
@@ -1184,7 +1184,7 @@ async fn passkey_login_finish_rejects_malformed_credential_id_before_credential_
         .await
         .expect("passkeys should load after rejected login");
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].sign_count, 0);
+    assert_eq!(rows[0].credential.counter, 0);
     assert!(rows[0].last_used_at.is_none());
 }
 

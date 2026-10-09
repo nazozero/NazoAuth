@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+passkey-auth.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 rand.workspace = true

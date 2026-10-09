@@ -15,7 +15,7 @@ use nazo_identity::{
     TenantId, UserId,
     ports::{PasskeyCredential, PasskeyCredentialSummary, RepositoryError},
 };
-use serde_json::Value;
+use passkey_auth::PasskeyCredential as WebauthnCredential;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -95,11 +95,13 @@ impl PasskeyRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-        credential_id: String,
-        credential: Value,
+        credential: WebauthnCredential,
         label: String,
-        sign_count: i64,
     ) -> Result<PasskeyCredential, RepositoryError> {
+        let credential_id = credential.id.to_b64url();
+        let sign_count = i64::from(credential.counter);
+        let credential = identity::encoded_passkey(&credential)
+            .map_err(|error| RepositoryError::Consistency(error.0))?;
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
@@ -123,12 +125,11 @@ impl PasskeyRepository {
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &str,
-        expected_sign_count: i64,
-        new_sign_count: i64,
-        credential: Value,
+        expected_sign_count: u32,
+        new_sign_count: u32,
     ) -> Result<(), RepositoryError> {
         let zero_counter = expected_sign_count == 0 && new_sign_count == 0;
-        if expected_sign_count < 0 || (!zero_counter && new_sign_count <= expected_sign_count) {
+        if !zero_counter && new_sign_count <= expected_sign_count {
             return Err(RepositoryError::Conflict);
         }
         let mut connection = get_conn(&self.pool)
@@ -139,11 +140,14 @@ impl PasskeyRepository {
                 .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
                 .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid()))
                 .filter(user_passkey_credentials::credential_id.eq(credential_id))
-                .filter(user_passkey_credentials::sign_count.eq(expected_sign_count)),
+                .filter(user_passkey_credentials::sign_count.eq(i64::from(expected_sign_count))),
         )
         .set((
-            user_passkey_credentials::credential.eq(credential),
-            user_passkey_credentials::sign_count.eq(new_sign_count),
+            // Legacy copies are removed atomically with the authoritative CAS.
+            user_passkey_credentials::credential.eq(diesel::dsl::sql::<diesel::sql_types::Jsonb>(
+                "credential - 'id' - 'counter'",
+            )),
+            user_passkey_credentials::sign_count.eq(i64::from(new_sign_count)),
             user_passkey_credentials::last_used_at.eq(now),
             user_passkey_credentials::updated_at.eq(now),
         ))
@@ -212,22 +216,11 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-        credential_id: String,
-        credential: Value,
+        credential: WebauthnCredential,
         label: String,
-        sign_count: i64,
     ) -> nazo_identity::ports::RepositoryFuture<'_, PasskeyCredential> {
         Box::pin(async move {
-            PasskeyRepository::insert(
-                self,
-                tenant_id,
-                user_id,
-                credential_id,
-                credential,
-                label,
-                sign_count,
-            )
-            .await
+            PasskeyRepository::insert(self, tenant_id, user_id, credential, label).await
         })
     }
 
@@ -236,9 +229,8 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &'a str,
-        expected_sign_count: i64,
-        new_sign_count: i64,
-        credential: Value,
+        expected_sign_count: u32,
+        new_sign_count: u32,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
             PasskeyRepository::update_counter(
@@ -248,7 +240,6 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
                 credential_id,
                 expected_sign_count,
                 new_sign_count,
-                credential,
             )
             .await
         })
