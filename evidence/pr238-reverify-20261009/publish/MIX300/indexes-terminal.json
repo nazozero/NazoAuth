@@ -1,0 +1,242 @@
+[
+  {
+    "relname": "security_audit_chain_entries",
+    "indexrelname": "security_audit_chain_entries_event_hash_key",
+    "bytes": 20856832,
+    "idx_scan": 4320,
+    "idx_tup_read": 4320,
+    "idx_tup_fetch": 4320
+  },
+  {
+    "relname": "security_audit_events",
+    "indexrelname": "security_audit_events_pkey",
+    "bytes": 16244736,
+    "idx_scan": 3580220,
+    "idx_tup_read": 4373715,
+    "idx_tup_fetch": 4131779
+  },
+  {
+    "relname": "oauth_token_issuances",
+    "indexrelname": "oauth_token_issuances_single_use_key_idx",
+    "bytes": 12541952,
+    "idx_scan": 101462,
+    "idx_tup_read": 0,
+    "idx_tup_fetch": 0
+  },
+  {
+    "relname": "security_audit_events",
+    "indexrelname": "idx_authorization_decision_par",
+    "bytes": 11272192,
+    "idx_scan": 101462,
+    "idx_tup_read": 0,
+    "idx_tup_fetch": 0
+  },
+  {
+    "relname": "oauth_refresh_families",
+    "indexrelname": "ux_oauth_refresh_families_current_digest",
+    "bytes": 11182080,
+    "idx_scan": 329560,
+    "idx_tup_read": 329564,
+    "idx_tup_fetch": 329560
+  },
+  {
+    "relname": "security_audit_chain_entries",
+    "indexrelname": "security_audit_chain_entries_pkey",
+    "bytes": 8601600,
+    "idx_scan": 830143,
+    "idx_tup_read": 764533,
+    "idx_tup_fetch": 19
+  },
+  {
+    "relname": "security_audit_events",
+    "indexrelname": "idx_authorization_decision_request",
+    "bytes": 8355840,
+    "idx_scan": 101484,
+    "idx_tup_read": 309570,
+    "idx_tup_fetch": 0
+  },
+  {
+    "relname": "oauth_token_issuances",
+    "indexrelname": "oauth_token_issuances_tenant_jti_idx",
+    "bytes": 7880704,
+    "idx_scan": 0,
+    "idx_tup_read": 0,
+    "idx_tup_fetch": 0
+  },
+  {
+    "relname": "oauth_refresh_spent_tokens",
+    "indexrelname": "pk_oauth_refresh_spent_tokens",
+    "bytes": 7618560,
+    "idx_scan": 521224,
+    "idx_tup_read": 191608,
+    "idx_tup_fetch": 191608
+  },
+  {
+    "relname": "oauth_refresh_families",
+    "indexrelname": "ix_orf_scope_active",
+    "bytes": 7225344,
+    "idx_scan": 90907,
+    "idx_tup_read": 1165843,
+    "idx_tup_fetch": 874465
+  },
+  {
+    "relname": "oauth_refresh_spent_tokens",
+    "indexrelname": "ix_orst_expires",
+    "bytes": 4489216,
+    "idx_scan": 1176,
+    "idx_tup_read": 151114,
+    "idx_tup_fetch": 398
+  },
+  {
+    "relname": "oauth_refresh_families",
+    "indexrelname": "ix_orf_expires",
+    "bytes": 4202496,
+    "idx_scan": 172469,
+    "idx_tup_read": 214994,
+    "idx_tup_fetch": 146769
+  },
+  {
+    "relname": "oauth_token_issuances",
+    "indexrelname": "oauth_token_issuances_retention_idx",
+    "bytes": 4136960,
+    "idx_scan": 1024,
+    "idx_tup_read": 2035402,
+    "idx_tup_fetch": 273172
+  },
+  {
+    "relname": "oauth_refresh_families",
+    "indexrelname": "pk_oauth_refresh_families",
+    "bytes": 4014080,
+    "idx_scan": 1482038,
+    "idx_tup_read": 1623985,
+    "idx_tup_fetch": 1380858
+  },
+  {
+    "relname": "oauth_token_issuances",
+    "indexrelname": "oauth_token_issuances_pkey",
+    "bytes": 3219456,
+    "idx_scan": 780,
+    "idx_tup_read": 780,
+    "idx_tup_fetch": 390
+  },
+  {
+    "relname": "security_audit_events",
+    "indexrelname": "idx_security_audit_events_pending_order",
+    "bytes": 3096576,
+    "idx_scan": 86378,
+    "idx_tup_read": 4064107,
+    "idx_tup_fetch": 1073138
+  },
+  {
+    "relname": "security_audit_events",
+    "indexrelname": "idx_authorization_decision_reclaim",
+    "bytes": 2547712,
+    "idx_scan": 460,
+    "idx_tup_read": 400710,
+    "idx_tup_fetch": 213896
+  },
+  {
+    "relname": "oauth_refresh_spent_tokens",
+    "indexrelname": "ix_orst_family",
+    "bytes": 1908736,
+    "idx_scan": 639737,
+    "idx_tup_read": 45572254,
+    "idx_tup_fetch": 19678586
+  },
+  {
+    "relname": "oauth_refresh_families",
+    "indexrelname": "ix_orf_revoked_cleanup",
+    "bytes": 1482752,
+    "idx_scan": 376,
+    "idx_tup_read": 186751,
+    "idx_tup_fetch": 90163
+  },
+  {
+    "relname": "user_client_grants",
+    "indexrelname": "ix_user_client_grants_user_last_authorized",
+    "bytes": 991232,
+    "idx_scan": 0,
+    "idx_tup_read": 0,
+    "idx_tup_fetch": 0
+  },
+  {
+    "relname": "user_client_grants",
+    "indexrelname": "ix_user_client_grants_last_authorized_at",
+    "bytes": 925696,
+    "idx_scan": 0,
+    "idx_tup_read": 0,
+    "idx_tup_fetch": 0
+  },
+  {
+    "relname": "oauth_refresh_families",
+    "indexrelname": "idx_oauth_refresh_families_contract",
+    "bytes": 581632,
+    "idx_scan": 375200,
+    "idx_tup_read": 5880447,
+    "idx_tup_fetch": 3278992
+  },
+  {
+    "relname": "oauth_refresh_families",
+    "indexrelname": "ix_orf_client_active",
+    "bytes": 450560,
+    "idx_scan": 18197,
+    "idx_tup_read": 261971150,
+    "idx_tup_fetch": 154572580
+  },
+  {
+    "relname": "security_audit_chain_entries",
+    "indexrelname": "security_audit_chain_entries_sequence_key",
+    "bytes": 425984,
+    "idx_scan": 235684,
+    "idx_tup_read": 3606145,
+    "idx_tup_fetch": 922531
+  },
+  {
+    "relname": "oauth_refresh_contracts",
+    "indexrelname": "ix_oauth_refresh_contract_scan",
+    "bytes": 319488,
+    "idx_scan": 840,
+    "idx_tup_read": 91794,
+    "idx_tup_fetch": 24172
+  },
+  {
+    "relname": "oauth_refresh_contracts",
+    "indexrelname": "pk_oauth_refresh_contracts",
+    "bytes": 253952,
+    "idx_scan": 960962,
+    "idx_tup_read": 1473758,
+    "idx_tup_fetch": 1050240
+  },
+  {
+    "relname": "user_client_grants",
+    "indexrelname": "uq_user_client_grants_tenant_user_client",
+    "bytes": 155648,
+    "idx_scan": 203916,
+    "idx_tup_read": 333085,
+    "idx_tup_fetch": 202860
+  },
+  {
+    "relname": "users",
+    "indexrelname": "ux_users_tenant_email",
+    "bytes": 122880,
+    "idx_scan": 2640,
+    "idx_tup_read": 2640,
+    "idx_tup_fetch": 2640
+  },
+  {
+    "relname": "users",
+    "indexrelname": "ux_users_tenant_email_lower",
+    "bytes": 122880,
+    "idx_scan": 994,
+    "idx_tup_read": 0,
+    "idx_tup_fetch": 0
+  },
+  {
+    "relname": "users",
+    "indexrelname": "ux_users_tenant_username",
+    "bytes": 98304,
+    "idx_scan": 0,
+    "idx_tup_read": 0,
+    "idx_tup_fetch": 0
+  }
+]

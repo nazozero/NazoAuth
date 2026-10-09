@@ -1,0 +1,56 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load remote build context
+#1 DONE 0.0s
+
+#2 copy /context /
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/nazoauth-reverify-load:20261009
+#3 DONE 0.0s
+
+#4 [1/2] FROM docker.io/library/nazoauth-reverify-load:20261009@sha256:f25de2323ea071dcb0a6ca55d8215a879541588b069a59cb25fbfffc3311b1b2
+#4 resolve docker.io/library/nazoauth-reverify-load:20261009@sha256:f25de2323ea071dcb0a6ca55d8215a879541588b069a59cb25fbfffc3311b1b2 0.0s done
+#4 DONE 0.1s
+
+#5 [2/2] RUN apk add --no-cache gcc musl-dev git docker-cli-compose
+#5 1.459 ( 1/25) Installing docker-cli-compose (5.1.4-r1)
+#5 3.254 ( 2/25) Installing libgcc (15.2.0-r5)
+#5 3.310 ( 3/25) Installing jansson (2.15.0-r0)
+#5 3.366 ( 4/25) Installing libstdc++ (15.2.0-r5)
+#5 3.556 ( 5/25) Installing binutils (2.45.1-r1)
+#5 4.119 ( 6/25) Installing libgcc-static (15.2.0-r5)
+#5 4.502 ( 7/25) Installing libgomp (15.2.0-r5)
+#5 4.570 ( 8/25) Installing libatomic (15.2.0-r5)
+#5 4.617 ( 9/25) Installing gmp (6.3.0-r4)
+#5 4.716 (10/25) Installing isl26 (0.26-r2)
+#5 4.900 (11/25) Installing mpfr4 (4.2.2-r0)
+#5 4.990 (12/25) Installing mpc1 (1.3.1-r1)
+#5 5.046 (13/25) Installing gcc (15.2.0-r5)
+#5 14.24 (14/25) Installing brotli-libs (1.2.0-r1)
+#5 14.35 (15/25) Installing c-ares (1.34.8-r0)
+#5 14.42 (16/25) Installing libunistring (1.4.2-r0)
+#5 14.57 (17/25) Installing libidn2 (2.3.8-r0)
+#5 14.63 (18/25) Installing nghttp2-libs (1.70.0-r0)
+#5 14.74 (19/25) Installing libpsl (0.21.5-r3)
+#5 14.80 (20/25) Installing libcurl (8.22.0-r0)
+#5 14.89 (21/25) Installing libexpat (2.8.5-r0)
+#5 14.95 (22/25) Installing pcre2 (10.49-r0)
+#5 15.04 (23/25) Installing git (2.54.0-r0)
+#5 15.62 (24/25) Installing git-init-template (2.54.0-r0)
+#5 15.67 (25/25) Installing musl-dev (1.2.6-r2)
+#5 16.23 Executing busybox-1.37.0-r31.trigger
+#5 16.23 OK: 276.4 MiB in 56 packages
+#5 DONE 16.4s
+
+#6 exporting to image
+#6 exporting layers
+#6 exporting layers 10.8s done
+#6 exporting manifest sha256:201813f9dff867917f4a5faec51f1520e210bfd10ac4949db26213a23813607d 0.0s done
+#6 exporting config sha256:2c5a762167ff49142a539896d2d2accf1e231c2d13255280c9581dc210a800c9 0.0s done
+#6 exporting attestation manifest sha256:a1e6c172f53b1540689ddd8134a1a9ca8ab5972f297e7b2d50df5609a84ef043 0.0s done
+#6 exporting manifest list sha256:81f3720043ebd9a18b85f6e27af9c17abb0c733b316d5f0bf30f146470d62692 0.0s done
+#6 naming to docker.io/library/nazoauth-reverify-controller:20261009 done
+#6 unpacking to docker.io/library/nazoauth-reverify-controller:20261009
+#6 unpacking to docker.io/library/nazoauth-reverify-controller:20261009 0.9s done
+#6 DONE 11.8s

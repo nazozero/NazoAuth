@@ -1,0 +1,3925 @@
+{
+  "key": "REV360",
+  "frozen_source": "e8242c44aab842e1828b471413905f74b4132325",
+  "request": {
+    "app_cpus": [
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126
+    ],
+    "app_env_overrides": {
+      "DATABASE_MAX_CONNECTIONS": 32,
+      "AUDIT_ANCHOR_MODE": "disabled",
+      "RUST_LOG": "warn,nazoauth::jobs::security_state=info"
+    },
+    "audit_mode": "required",
+    "capture_audit_journal": true,
+    "collection_contract": "blackbox-db-v1",
+    "confirmation": false,
+    "durability": {
+      "postgres_fsync": "on",
+      "postgres_full_page_writes": "on",
+      "postgres_synchronous_commit": "on",
+      "valkey_appendonly": "no",
+      "valkey_save": ""
+    },
+    "duration": "375s",
+    "effective_seconds": 360,
+    "executor": "constant-arrival-rate",
+    "formal_preflight": true,
+    "fresh_state": true,
+    "gate": {
+      "measurement_drop_fraction_max": 0.001,
+      "p95_ms_max": 100,
+      "p99_ms_max": 250,
+      "successful_ops_fraction_min": 0.995,
+      "unexpected_max": 0
+    },
+    "grace_s": 120,
+    "helpers": {
+      "keyset": "sha256:a7abf7f55519fe2474bcf04c72d10bbe8ce065bd67329455e0be0275dadf83ee",
+      "receiver": "sha256:818338b1cdb264a49d7df19b2c55b72df4b54264b50fcf44e7ddfe358bc4b210"
+    },
+    "infra_cpus": [
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174
+    ],
+    "infra_image_ids": {
+      "postgres": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+      "valkey": "sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
+    },
+    "infra_image_refs": {
+      "postgres": "docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+      "valkey": "docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
+    },
+    "issuance_max_expired_age_seconds": 120,
+    "issuance_retention_seconds": 360,
+    "load_authorized": true,
+    "max_vus": 992,
+    "phase": "multi",
+    "phase_budget_seconds": 590,
+    "pool_connections": 32,
+    "postgres_cpus": [
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142
+    ],
+    "pre_vus": 992,
+    "profile": "capacity",
+    "rate": 960,
+    "scenario": "cap_revoke",
+    "state_wait_s": 120,
+    "stream_evidence": true,
+    "stream_workers": 3,
+    "user_count": 992,
+    "valkey_cpus": [
+      143
+    ],
+    "vector_count": 48000,
+    "warmup_ms": 15000,
+    "name": "pr238-reverify-rev360-20261009",
+    "arm": "B",
+    "replicate": 2,
+    "request_key": "REV360",
+    "source_sha": "e8242c44aab842e1828b471413905f74b4132325",
+    "image": "sha256:80ebcfdf2e97cb5c05bc4fc53845691e7eb8f8be7cf15e75916154728ecad82d",
+    "runner_image": "sha256:f25de2323ea071dcb0a6ca55d8215a879541588b069a59cb25fbfffc3311b1b2",
+    "expected_binary_sha256": "54751a8fe9a7edc5cbac9d4826f8367d8a1a91d5044104b778f138de4e242a4b",
+    "harness_file_sha256": {
+      "docker-compose.perf.yml": "8a75dec17323822fd10c12f7a86547b19ca43dbb589d01a64aacbc6ce05522cb",
+      "perf/README.md": "96f2d1bcdbfdefb74b62d788857d1f54f6a524e84333093f36346955b549e3ee",
+      "perf/aggregate.py": "8296c1a1ed78207b075e87fff7a6c81513665cd885e8c6ec383b92b4552d9306",
+      "perf/aggregate_ab.py": "727115727edf08a7090330a811b423c79ac7bb392f89b8bc9aa35a493e00ecad",
+      "perf/aggregate_wait.py": "09177a7f7d3e919a2d5353e735d6b1505eeae0bda9d8c6191ba834fcac583c24",
+      "perf/app_cpu_capacity_smoke.sh": "ca1c44af334a4f6dd6edc9cf8f5d501fb94134ec4b96bafc4f00e4430a22e9fa",
+      "perf/audit-anchor-receiver/.gitignore": "b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d",
+      "perf/audit-anchor-receiver/Cargo.lock": "8ba6420d673e450a9465d5154b0ab056249f7c59c3893cedaf2f09f6beba44af",
+      "perf/audit-anchor-receiver/Cargo.toml": "38f28323df718e2cdc57cc3df2ae7afaa66d35928f69f934baea00fed54c6f97",
+      "perf/audit-anchor-receiver/Containerfile": "6c67fc665defc701d63d8a161e16c43cd566316f57ff15f086504cb6f61c2839",
+      "perf/audit-anchor-receiver/src/main.rs": "2bbee926d986dfacaf3cf93ba34f226c71179c1eb6d1a10b839235d3ad9101d1",
+      "perf/audit-anchor-receiver/src/store.rs": "5f4ab9c92fc00f45a8961041ec63984946ed545b7876e1eb9d516f3be9f90878",
+      "perf/audit-anchor-receiver/src/wire.rs": "5fe052fecfc1c89f6085cfc4c29bb258b413f0041a6c60a704107123325f06f6",
+      "perf/bootstrap.sh": "5660d4ab86a7db0e9f66bfd581c10075178ce7b7537233e6445e9ce9081e06f1",
+      "perf/cap_ladder.sh": "7fb394ba0a88ad3b8edd59d88e6dee6f4388c519f9c694724316f1c46bd77ffa",
+      "perf/cap_point.py": "ab0ac111c10d54755661a469d549e1c2c156898731c23ce8e17fd02186a20daf",
+      "perf/capacity.py": "fe61ad4ea99cdb92688ac611c0353b35aff2c81e11aecf82cb90e2b6715000d2",
+      "perf/capacity_preview.py": "8040c7314c126dc5a83adc0caca60b3496d3b2afa28d297c13646849379ad7c0",
+      "perf/cg_sampler.sh": "a727b1e8d76070f3d79267bc75106f4718a0fb0c560088b29d02afe73aefdd81",
+      "perf/dev_capacity_matrix.sh": "121ea0e7b84299ecba5ddc9a8a0ce28bc8419153e396462c0bbd5fb0c20e91d7",
+      "perf/docs/blackbox-evidence-contract.md": "3fac272130903e304dcb9f4e19e5d0e37376f0b1d6ad748a0230e7030fd4a805",
+      "perf/env.yaml": "51b86db0dfbcef044524b5a2bcbc69784bd8fd694801c841e2681fb04b5f93c0",
+      "perf/extended_capacity_matrix.sh": "ff78cd74722c098f7181afffca7db5cb0b07e1b553629815307bfbdd16ffd143",
+      "perf/failprobe.py": "54e3f3daa325372d4a6723af2e73932b8a6efab585a38ff47523f64b9241a247",
+      "perf/finalize_capacity_reports.py": "7329327e16aff262b9480e95db3d932d41a46d24165aac024df703f48f72b38b",
+      "perf/k6/checkpoint_clock_test.js": "ddcc4afeb07460efa880a633febdcec02b36906cbfcaa898c39285f8b4f87c6f",
+      "perf/k6/measurement_clock.js": "80e178b3424159cbf7a1640ee6621a250204d9a31ab09bfe50d126d247dfefdc",
+      "perf/k6/oauth.js": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+      "perf/k6/subject_state.js": "384ff18822c3cf9d948c33d92274fe25c87fc0369c60953d109cace0828c9725",
+      "perf/k6/subject_state_test.js": "9a922e9066365b4da8f9d253958e7ea013ddc1ef17816c0537d894ccb3b7292c",
+      "perf/keyset/Containerfile": "6fab87f7c4c4684897cee3fe1c23fe51780c48f24f6ef2435e4c30f997196136",
+      "perf/pgconn_sampler.sh": "3494077f752223062c5210a31e75efe30554e50f8d1808af97acb85404ac45e6",
+      "perf/results/README.md": "9e61810b0edecd3e0d5341dbf743e583a73906ef089b47c845507db6c4c5cf88",
+      "perf/results/data/capacity/current-capacity.json": "36961ea3274d2c55795c919b422fa1c41bb0747fcac32db08ad245fd6fbdadf2",
+      "perf/results/diagnostics/2026-09-28-ci-cost-60d.json": "2c1a9029aaf555dac33991622b27b7e74c53350510d82a84eb10c59d6ada4df5",
+      "perf/results/diagnostics/2026-09-28-ci-cost-d1e2.json": "0ae7452a8f0ddfe66005c01979a53c075e79af105d784a2f335ba10c7b50ae73",
+      "perf/results/diagnostics/2026-09-28-ci-cost-dd273.json": "ae449d59410167732f6bde017fd0e808976e50b2d3fb3500a381c861b059a748",
+      "perf/results/diagnostics/2026-09-28-ci-cost-ec638.json": "8e9e15209ae3f90e1ee5bc9e0c23ea3454eb5a30b742d7e5537da2d1af1ddec0",
+      "perf/results/diagnostics/2026-09-28-code-refresh-boundary-acceptance.json": "ce9effa00c0609a6661f3d0e2ee362603d649136fa7628b3479c0e64a9f45885",
+      "perf/results/diagnostics/2026-09-28-current-b-calibration.json": "3f582b3537be252c4c851a8148e8dabb554987763971f4495e5a7650115cd4e3",
+      "perf/results/diagnostics/2026-09-28-current-b-decoder-profile.json": "b096b6ebfbdef709b249f623db18de5f6e1d5fad13c3d205b2336a12ec9be2ae",
+      "perf/results/diagnostics/2026-09-28-current-b-reassessment.json": "49ffc63dc8ddb0c8c01f171c6f2de02730fd08e257a81d0a270ca7019d7afba4",
+      "perf/results/diagnostics/2026-09-28-current-b-selected.json": "962b721bb3f8722cd0b431ef5bb3b4cccab9ae708a75f793fd07874671806243",
+      "perf/results/diagnostics/2026-09-28-current-b-tester-diagnostics.json": "7fdcc5cc5cdee22e04858899cb709523d8eb71c3dc9a5ab8a9c2eed2040b6bc9",
+      "perf/results/diagnostics/2026-09-28-incremental-apparatus-controls.json": "94d24980ed71241f11a85c31e14bef2cd0b81397888051bef9253cc6d2cbff91",
+      "perf/results/diagnostics/2026-09-28-incremental-b-selected.json": "d540cbfaac91b723aab3f0fd958f9b6e143fe5222d434f500668ce17dfbf5bdd",
+      "perf/results/diagnostics/2026-09-28-incremental-code-cc-validation.json": "30055b378f3e34bd987787da7fb3bc62daff8b16799664e6bc092479693d9a25",
+      "perf/results/diagnostics/2026-09-28-incremental-evidence-archives.json": "91ae4fded5abb94e5a2a467bead90fdff856a1b0742720f713fccdc0aa7ed1dc",
+      "perf/results/diagnostics/2026-09-28-incremental-final-reassessment.json": "e1a8cf6927fe68426c73e3a7e22c0d394c3e14f4e6e72be4ce1f0aba3ee0c67a",
+      "perf/results/diagnostics/2026-09-28-incremental-mixed-cc-boundaries.json": "f81ceaee13befc271fb8bd61b5f54c8b59ae0b299236340c21fbda91d6416d4f",
+      "perf/results/diagnostics/2026-09-28-incremental-mixed-queue-burst.json": "37ebc1a7aaea7026c55780b150e54c516a5015b11096684bf007da00d0016d7d",
+      "perf/results/diagnostics/2026-09-28-incremental-reproduction-recipes.json": "aa9639563297d055999d053f119eb34ab8ef6fe462ccc274b270fe342d0b3e09",
+      "perf/results/diagnostics/2026-09-28-incremental-retained-archive.json": "43fe85f15a477091618f4eda99807b34841a8a31953a07ed91d43730525f886a",
+      "perf/results/diagnostics/2026-09-28-issuer-introspect-boundary-acceptance.json": "59fff535eb0e177253918bcf1c371773f7859223a6f61aa22a89387d7dd3cb4b",
+      "perf/results/diagnostics/2026-09-28-k6-output-profile.json": "4b27d1d3853aca445880a4a502cda92beb8e156c8ba95c4627a135033dfe1998",
+      "perf/results/diagnostics/2026-09-28-mixed-cold-boundary-acceptance.json": "ebb0dfca4aa05ad1363a38cea15a942b3e0a01b0df5c9e88609edb43aae3299b",
+      "perf/results/diagnostics/2026-09-28-mixed-duration-checkpoint.json": "b8e1855b5b6dc1433a367363d94d45e6eda735555b34a9516a5e1485f49aa511",
+      "perf/results/diagnostics/2026-09-28-mixed-incremental-acceptance.json": "3498da01e1387afb6a5b9a7e4f211e8f1e409656be52ef89db95811bc3d6aaa8",
+      "perf/results/diagnostics/2026-09-28-native-partition-probe.json": "4b24ab653ead31da6f127a891cfab4979ae0f08e798f42441bacf3123c665244",
+      "perf/results/diagnostics/2026-09-28-native-stdout-flush-proof.json": "357493bf9a605a54b7020bb5ca3b4b4b788edd09b99196ecdf7f9826b533bf83",
+      "perf/results/diagnostics/2026-09-28-retained-reassessment.json": "307abbde99eea50d55fd713b9c34029cabb82033d3b2817cf56f50ba291cd785",
+      "perf/results/diagnostics/2026-09-28-stream-consumer-calibration.json": "b8f94b8f8ab3af8d60b620a5e0f947270e7b8ae6a8f0704c1df99d945172a229",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_restart.jsonl": "f5db3641485d5d8687d9ce3b2d33a265446ded8968f7dd7170c01bb851eeb998",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_term.jsonl": "fa95fea899cba36bc3a4141eac719a9f1e49e4b553a6013dc94234865d9b5eaa",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_term2.jsonl": "a9db210102b3f19d386caf61e06a18048d426e114e14b23f7283fa32e1011b66",
+      "perf/results/diagnostics/failprobe-2026-09-16/ref_restart.jsonl": "91b91bc21575f4d528ac1ea7ec1eab89b1c1c417b2195f28b7a2aec232bb8766",
+      "perf/results/diagnostics/failprobe-2026-09-16/ref_term.jsonl": "ec646074bcd7065205c363278ab29f7f04b3be831bd0dbc9fe26f2ebf386db53",
+      "perf/results/diagnostics/pr222-2026-09-27/grant-sql-trace.json": "ed444df917dcb39afa196321af9911e594ef225a65cfe203e14c9a70c82200c0",
+      "perf/results/diagnostics/pr222-2026-09-27/grant-three-family-fixture.patch": "e9442b461dd736e66145b7fb3fecf8f018b7e5296d495f04e0cae8b149856f1a",
+      "perf/results/diagnostics/pr222-2026-09-27/sql-plans.json": "e9ccd3e59171ce03ec21f71eec1a7368301e8dfa9f2817669fde70c5d1108627",
+      "perf/results/diagnostics/pr222-2026-09-27/sql-probes.py": "762d2f3730879b41a2156f54c469a6845d93fefebc1853f489cbee6d05dd12f2",
+      "perf/results/diagnostics/pr222-2026-09-27/validation.json": "ede70292b54ba8c9b5c9506486c1e55926168d339425162482eb1a5944b65fbc",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/multi-mixed-abba.json": "3fbd7f91bd0b3cb331704e2e35d8053163826bf24db7681b084aab961587de06",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/resource-gate.json": "1e0e3d5f23e3c2c5e65ab6967de0616f147266e8f9bddd7c82dcd677fd0324c4",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/single-cc-abba.json": "5983a8dd3c3d7d4c62a12e23f908480428fdfef8282ab288905f533abedafa52",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/steady-common.json": "cc1bed41c4456ac16a4ff2965e89fea81994cebcda47954e67bda6d65be87148",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/aggregate.json": "b7c89e23a79aff0ef05249a8a49ab72fb941cf8825b6decbe06ee7b1cbaf64f3",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/meta.txt": "99f1ffa4f7cac25fb210465eb3a2fb137503284877e473a84443fc6474fff1d0",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/cc-c32.json": "fb9360a4aa8754da9896cbc9ca36c1bef49466e5e6f6e89d3f21f565a224fd5d",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/cc-c8.json": "1a45113dfb5edb0fa9e9caa715e40544d6955d7d220b43ea50c8ba631c18f815",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/refresh-c32.json": "e28c3d2ef837dfc60cbbc65ef8ff2eec79617bef59bbbd05933cf95e1a70beba",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/refresh-c8.json": "0be8579400e128a7e779c60741bd7f96a5c1c18579f2b2101c0cebe76b8853da",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/cc-c32.summary.json": "c9a7fecf5ad8f6a68bf2f98cf7752da76fa627545121d4f3658c841fa717f301",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/cc-c8.summary.json": "4618f4f5515d79dfef4bc6a5e90f49d08f9c10c0e5a74d72655d0d2a9cd7957c",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/refresh-c32.summary.json": "1126724cdb30fcba56e3e1bbb216eeae5924b64ead5037b42e375eaf89e91d3f",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/refresh-c8.summary.json": "62722995621c7cc2a279a69f8fbea070f242386afa74ce46cf85ab5e3e16944d",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/aggregate.json": "e064b333245f3e1a2cdb5d5e534c0ba51cbeeb43b738300f4dd3f9cbc943c50e",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/meta.txt": "884bb61b929829b08d487e788e2d65a243b740efcd17093692671252946a02f1",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/cc-c32.json": "3a98cf12eb00ef33554a04f19a8fd678c3524db779bd5c044aab91d79bc4d1e0",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/cc-c8.json": "214f1be1212bea7f26143f15372f4e69b66071d4d2f175982b26db0ee8b320c1",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/refresh-c32.json": "a06e3af17a8c116387fdd3ac55b3146d6996906b52cc984fc1a19f01a2473642",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/refresh-c8.json": "9ca80e61577ddd97429a6bb8736fdf1e1e3c6eec78ed85e48ed8944a900bf124",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/cc-c32.summary.json": "147e88d9fc1108dccefb6af346f8232e1089dab2ca7fc16c576a780d3f83e5f5",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/cc-c8.summary.json": "f550b678d7f005e632c1a574df4e450ce87cdee50a9bdfd89441f890a59a7199",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/refresh-c32.summary.json": "8655124470d78d7651ebd78df22c73a74a26d1da279d34a5880e973488ebc618",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/refresh-c8.summary.json": "59f4a64da1dee0d5b3859953db01e22e34c6b1dc746086396efde7b2343dbb8c",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/aggregate.json": "12bb4fb47f91269bd201f1e2263f18ed45cef6ba0fbf47d3f52d4cd6d1b7c5e9",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/meta.txt": "0dffd0b03502aed7aca24bae209970d9b7703d59a28f32f02b52d912d5a0262f",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c16.json": "eb408d74b5689a0d510f4b9bda558a967c03b5dd4ba2f723a2046d7404f71106",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c32.json": "b51ce0c54a9d2797c195919fbe8eb5fc80012ebed827b68b0b812d35cf5780ca",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c64.json": "2fc22dc7d3e6f31c5afc0ba99f236dbb1ac7d31eb5887d213836be5a00e15c6f",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c8.json": "8049a2da2a6d0ef34d7816141da5680f93062c61b9e89a9b5d74c890c72c70a1",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c16.json": "24aa709e493b5111fcad0f65fbd0f9433fef97762d2ab815d1c8ec24da4f0d65",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c32.json": "3dc40e123c0dd5d2fde1741a2837c7ea84190b73c2940ea600825fe363e4542b",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c64.json": "424759092f82ad3d79fdd887ad644fe8993c5f2238e606b93f7ebb7e11be3d6e",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c8.json": "8e7bed673c3f021e85c0da2e465c99e4b4be665bd418ba8cebf4f1cb165e66fd",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c16.summary.json": "5da652d91863f6c48ca0e3b1f53d00bed2694de21c819eae645f4243ea70fbd6",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c32.summary.json": "88ef908927b6535cc8d021453546d11e56bbc22a2c594a0f66be87c87153bd7c",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c64.summary.json": "26ec5274d0313f682a5f3e354c1b9f8efae880d6fb13f349847c0d5a0e3f90f8",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c8.summary.json": "c46bfdf1132da45010d4ba51fe92ed2c9f114478ccd47e3e952da6c2cde79ead",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c16.summary.json": "4b2e9d69dcffa81b6b6dd7f8c2ec686c58940cfddcc7be93166e7c1671a1aeb9",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c32.summary.json": "ea5a1b49adc9135779996c864cdc4e42322973361dd41012b00e64cbd46024c4",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c64.summary.json": "cacb565869f13bf014a2db1f911814491dabafc06683e85048499f6d9e736b86",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c8.summary.json": "01ed21367f6a088318917ac14a8fa13cfe7563ce0e1fd00d6ba7786d511db356",
+      "perf/results/environments/2026-09-28-current-b.md": "591ba9cd1de88bb9482b5879f1c68670c629d2aebe15ea27f825eb64f7378865",
+      "perf/run_capacity.sh": "817f2aa3c865a0a3a528281ac4f6cf86b7e7ace42c173b2c5a7771a735a1b16f",
+      "perf/runner.py": "42f01fa27903d952a122357b49ceb07e15a270d445776252eb673b9ac8144e1f",
+      "perf/runner/Containerfile": "aa6e89c2b966a126ee19fdb3d25308e61d78164d3f4b80ee08a36b193386b4ed",
+      "perf/runner/k6-json-throughput.patch": "90d42e40eb7ea30f23327c7d7736ed638d39eb5752ef716a9de83f3eac57d768",
+      "perf/seed.py": "392676fca9d8cfd747f1989fe35ab8aa9f8ea8db0673bd6eae3a81a88ec19006",
+      "perf/single_instance_full_flow_max.sh": "edd3b15a292e81b3928d23d2b2a08fd4398b52dc6042518eab7ef7cac0854ba3",
+      "perf/tests/test_audit_pending_schema.py": "f0ca117f3fa4f09340c9bedca0fcf142ecedb60da1144c91a3ac885d50db745c",
+      "perf/tests/test_audit_reconciliation.py": "d7a1657944fe3703e283fd03644a6220afabcf5efb047234b117c205051a25ae",
+      "perf/tests/test_blackbox_contract.py": "468946b728e17696b80bd490aa67fd80ee8d4859e0956cbc336cccd262e7fc58",
+      "perf/tests/test_capacity_producer.py": "74b82c0472fd554b98ff046f0d4e3f923f47823b99998b37ce35aa0072447b1b",
+      "perf/tests/test_capacity_window.py": "23d7c73baba23388f36f98dd6b1f5b8c64204919c6fd47002f7969f9dac892fe",
+      "perf/tests/test_checkpoint_measurement.py": "7b72fd48aa4cbc2cfe5f72388d99ddf06b2f8bff18c21c95c1f3e23fec9d7af4",
+      "perf/tests/test_cnb_controller.py": "83bf719e5a058834d9a58bf5bcf7ee71b984b50a191b4eac08a9c7d16716284d",
+      "perf/tests/test_current_capacity.py": "4e3710d3bdb60ecbfe84486c7b43aa351b6de44e2e1b01f39f314f852bcf4e8a",
+      "perf/tests/test_evidence_contract.py": "64dcd7b1e82862a2d32353d40b199077913d27882fec797436ceb4e1057416ee",
+      "perf/tests/test_issuance_maintenance.py": "93885e1ef5b26f0923164603701ceb75503df7e6a7eba3074f3ef45068548923",
+      "perf/tests/test_pool_size_ab.py": "4c7ed7d0801348e3ae83931dde04a31e74f514082851958851dd45c887503dac",
+      "perf/tests/test_residency_analyze.py": "df97612b162ed12c8fddf2c22c02d4026e81ffbad5a74d0d5836a5bacd5b8592",
+      "perf/tests/test_runtime_cpu_probe.py": "0ec0bc0582315196f82e336737f4c6038ec895e979f0c0514193c7b70be5461f",
+      "perf/tests/test_seed_jwk.py": "92aae73579f2f47405b2017cd26f1bc10d2730e98893c42a88d35fc01e3a689f",
+      "perf/tests/test_service_affinity.py": "8d83af3a7885bda9888cea81def1f2dd26657ce7c06293435ace32d75bc27ecb",
+      "perf/tests/test_short_baseline.py": "3f710d8634d9394f58f7eb7d1605cbb4c9a971ca1ffaf50e31ffb7c64ec391a3",
+      "perf/tests/test_single_instance_scaling.py": "23e20854b9d15730a9c62c2287bb3a9b2c0bd673bb9add7f53934a2302fbd696",
+      "perf/tests/test_stability_analyze.py": "1f176586a69ea3b9aaed426145f7bb5e07c1dc9a24ec7b2e4aa778446e845209",
+      "perf/tests/test_stream_cohort.py": "7ff8d8c2d90850f5465b66d6dacfdb2fcab65e7957603fb8a60564c0c83af611",
+      "perf/tools/aggregate_points.py": "3916e1a1557bd07d5ca8c9143d265f05470192891c297a635295cf0f2835d1dd",
+      "perf/tools/argon2_ladder.sh": "974f6f49a7ed5067a4e0b346bb83aadd1a97f2ae4c090926303776fff11e3d68",
+      "perf/tools/audit_anchor_fault_regression.sh": "636b6a00b9e117c49d91048d7330bbeac84e7824f6e6e5ea983d7d68289cf068",
+      "perf/tools/blackbox_contract.py": "b2fbe9b6422bce73e136f483095a9147a2ed61c10906d75fcfba18a814ed7fe3",
+      "perf/tools/build_matrix.py": "654f31d7f8af91ddcb19bb45f2b3697717f999a2c58d04af24df1dbfeba8506a",
+      "perf/tools/canonical_schema.sql": "28d62b903d708260a10f329207e9462c3537cc6541c22c2b3ef4b461db404a26",
+      "perf/tools/cap_point.py": "4106d93ce87d5e86fb5fd39489a55ff0d1441c26fe3142e27875c1d3af14e452",
+      "perf/tools/capacity_search.py": "799ad49b4927b1cba0d2a9d137c0df34a39b00368fc1751a414bea514341a76f",
+      "perf/tools/checkpoint_analyze.py": "636b866900f4506d247df3d66d2cc8ef07d24ff1fd0817f7cc984e5850035988",
+      "perf/tools/checkpoint_observer.py": "5118f45b50f7e1d7210e1529c30d5cfe09bfb0b055756a04e940d2e905791474",
+      "perf/tools/cnb_controller.py": "61254f34822c6a92c0582c30d2e0385ce0783f6692def60c779cf64542e726a5",
+      "perf/tools/current_capacity.py": "100c9a6e11fafd15448edf4bd8907b271aaa07797c468f99d144908d9e97013e",
+      "perf/tools/ladder_points.sh": "4e92d32b707ca27e6ec8bfdad5fd86533559f0381e74f701ee4c3f85c612d93d",
+      "perf/tools/ledger.sql": "e5d98b8f6bf8b5a9acf3990f1a34b17b7d9a82de186b7a237b2fa6780246a724",
+      "perf/tools/ledger_check.py": "58c1c8a6ca39d53d2fe8042452df475b5a365a0b00618113ec51e4c5344ca256",
+      "perf/tools/measure_schedule.py": "8fb287b13b32ed43ac08a4ce123963af50e90bd61c1f6dad78352da4f9f6140c",
+      "perf/tools/perf_state_ready.py": "bd3eb234b5aa9d7f48f2894cace87e991a5f43b61e1d6d8f1b67d1fc7264c3c7",
+      "perf/tools/point_resources.py": "81e1b941dd8ad2bea2b74521f452445d00938a4980e27e06f1604726eb01cb5e",
+      "perf/tools/point_runner.py": "f4cedce157d2a4b52254ab5feffad358d890200c95951e66a4258b0141e756d9",
+      "perf/tools/pool_size_ab.py": "1796210c61684a084b3ce70651243edad400ffaf679d51b02edee5478fb76a14",
+      "perf/tools/proc_detail_sampler.py": "9ef9fb303087b7bff05b16ba57267ab0bd668e3f0dbbc35337837ad0482fe1ad",
+      "perf/tools/proc_sampler.sh": "fe51232158a08255778463be92c99ac6186cbb3bb86958f110588bacf83b71b6",
+      "perf/tools/recount_argon2.py": "918c0bb37780bc1c767dd5be61915db26844984acc167189a99b6bed29d0d5f1",
+      "perf/tools/residency_analyze.py": "05625cf294685aa619a3e20a30c4c509e44cfce245032967b2a73e6002cc5085",
+      "perf/tools/residency_observer.py": "a0f4fd577ae12d42070145aeca6e19f3f7dbd82ffc008176e87021dc35ae8ca0",
+      "perf/tools/run_composites.sh": "5cda4afc87b59864a7a7489fcbc80600a8233940c7632a60e7d882237030c62e",
+      "perf/tools/runtime_cpu_probe.py": "6159cc2d3d0b775eadd9adf2e330371d5f01463ebc3beb08e81ba00a2afbbe25",
+      "perf/tools/short_baseline.py": "680d68fbc0e22d7d674acd34785889e5a9e7feb47b1eef2d16800373aaeaa5aa",
+      "perf/tools/single_instance_scaling.py": "181b9ced8fa33a75c10af4bf241ab55d295b376cf6fef9d3f1447005ee9bc160",
+      "perf/tools/smoke_endpoints.py": "a5fa2ddabc35e9d9672b4abfc4914e37e44ec60cd26664df7474693eead14a6b",
+      "perf/tools/soak_run.sh": "dc0ae9245994a905c7cdde032a094a1edc5647e0ae669d108f443249b1ebaba6",
+      "perf/tools/soak_sampler.py": "649f7f51c752fa1328c4bb59c29fa5eaf1867c0f091985b39a9becd4736e7a89",
+      "perf/tools/stability_analyze.py": "4047a75165cd6fc0cc17da1ff46c4b46090d2748633b760493f2b01545e428ea",
+      "perf/tools/vkledger.py": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f",
+      "perf/wait_ab.sh": "04500c9c85b2aee6e8ec6ee187231116e8cc45c26677fac911e0eefefc829b92",
+      "perf/wait_matrix.sh": "e342fa2bf6bd2181cd5824bc6b623147f0e5756048a3a68ca076666993e00169",
+      "perf/wait_sampler.py": "842860236eabea159862fe3a773fd79376520001109af3a2871415f054aa8858"
+    },
+    "status": "AUTHORIZED_SAME_CANDIDATE_REVERIFICATION",
+    "schema_profile": "pr230-revision",
+    "harness_source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": true,
+    "source_modified": false
+  },
+  "source_manifest": {
+    "source_sha": "e8242c44aab842e1828b471413905f74b4132325",
+    "binary_sha256": "54751a8fe9a7edc5cbac9d4826f8367d8a1a91d5044104b778f138de4e242a4b",
+    "images": {
+      "app": "sha256:80ebcfdf2e97cb5c05bc4fc53845691e7eb8f8be7cf15e75916154728ecad82d",
+      "receiver": "sha256:818338b1cdb264a49d7df19b2c55b72df4b54264b50fcf44e7ddfe358bc4b210",
+      "keyset": "sha256:a7abf7f55519fe2474bcf04c72d10bbe8ce065bd67329455e0be0275dadf83ee",
+      "load": "sha256:f25de2323ea071dcb0a6ca55d8215a879541588b069a59cb25fbfffc3311b1b2",
+      "controller": "sha256:81f3720043ebd9a18b85f6e27af9c17abb0c733b316d5f0bf30f146470d62692"
+    }
+  },
+  "natural_final": {
+    "ts": 1791559366.991615,
+    "locks": [
+      {
+        "n": 33,
+        "wait_event": "ClientRead",
+        "xact_age_s": null,
+        "wait_event_type": "Client"
+      }
+    ],
+    "anchor": 1080003,
+    "tables": [
+      {
+        "relname": "security_audit_events",
+        "n_tup_del": 1072172,
+        "n_tup_ins": 1080003,
+        "n_dead_tup": 24832,
+        "index_bytes": 101654528,
+        "table_bytes": 111017984,
+        "autovacuum_count": 8
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "n_tup_del": 95086,
+        "n_tup_ins": 360001,
+        "n_dead_tup": 86593,
+        "index_bytes": 98869248,
+        "table_bytes": 141025280,
+        "autovacuum_count": 6
+      },
+      {
+        "relname": "security_audit_chain_entries",
+        "n_tup_del": 1080003,
+        "n_tup_ins": 1080003,
+        "n_dead_tup": 0,
+        "index_bytes": 33202176,
+        "table_bytes": 24576,
+        "autovacuum_count": 7
+      },
+      {
+        "relname": "oauth_refresh_contracts",
+        "n_tup_del": 6695,
+        "n_tup_ins": 7687,
+        "n_dead_tup": 0,
+        "index_bytes": 679936,
+        "table_bytes": 720896,
+        "autovacuum_count": 7
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "n_tup_del": 360001,
+        "n_tup_ins": 360993,
+        "n_dead_tup": 0,
+        "index_bytes": 47628288,
+        "table_bytes": 286720,
+        "autovacuum_count": 8
+      },
+      {
+        "relname": "oauth_refresh_spent_tokens",
+        "n_tup_del": 0,
+        "n_tup_ins": 0,
+        "n_dead_tup": 0,
+        "index_bytes": 24576,
+        "table_bytes": 8192,
+        "autovacuum_count": 0
+      }
+    ],
+    "blocked": null,
+    "pending": 0,
+    "db_bytes": 555972287,
+    "family_live": 992,
+    "observed_at": 1791559366.437391,
+    "decision_bytes": {
+      "count": 0,
+      "row_bytes": 0,
+      "payload_bytes": 0
+    },
+    "spent_eligible": 0,
+    "spent_retained": 0,
+    "contract_orphan": 0,
+    "family_eligible": 0,
+    "issuance_counts": {
+      "total": 231507,
+      "eligible": 0,
+      "retained": 231507,
+      "oldest_due_s": 0,
+      "oldest_created_retention_remaining_s": 0.018239
+    },
+    "pending_by_type": {},
+    "oldest_pending_s": 0,
+    "decision_eligible": 0,
+    "decision_retained": 0,
+    "decision_retention": {
+      "unexported": 0,
+      "exported_full": 0,
+      "exported_compact": 0,
+      "last_remaining_s": null,
+      "last_business_retain_until": null
+    },
+    "family_oldest_due_s": 0,
+    "decision_oldest_due_s": 0,
+    "target_decisions": {
+      "count": 0,
+      "eligible": 0,
+      "retained": 0,
+      "unexported": 0,
+      "last_business_retain_until": null,
+      "last_remaining_s": null
+    },
+    "full_cycle_after_target_deadline": true
+  },
+  "verdict": "PASS",
+  "measure": {
+    "window_start_s": 1791558888.147,
+    "window_end_s": 1791559248.147,
+    "measure_started_exact": 345600,
+    "measure_completed_exact": 345600,
+    "measure_dropped_exact": 0,
+    "measure_scheduled_observed": 345600,
+    "measure_drop_fraction": 0.0,
+    "measure_outcomes": {
+      "success": 345600
+    },
+    "measure_outcome_sum": 345600,
+    "drops_pre_window": 0,
+    "drops_post_window": 0,
+    "drops_pending_unclassified": 0,
+    "pending_drops_overflow": false,
+    "valid": true,
+    "problems": [],
+    "rational_planned_arrivals": 345600,
+    "schedule_delta_vs_rational": 0,
+    "observed_schedule_rate": 960.0,
+    "cohort_source": "k6_stream_exact",
+    "late_vu_fraction": 0.0
+  },
+  "ops_s": 960.0,
+  "latency_ms": {
+    "p50": 12.0,
+    "p95": 20.0,
+    "p99": 33.0
+  },
+  "unexpected_errors": 0,
+  "expected_invalid_grant": 0,
+  "classified_errors": 0,
+  "sidecar_gates": null,
+  "health": {
+    "app_affinity_verified": true,
+    "postgres_affinity_verified": true,
+    "valkey_affinity_verified": true,
+    "service_affinity_verified": true,
+    "generator_affinity_verified": true,
+    "point_completed": true,
+    "unexpected_zero": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "oom_none": true,
+    "no_restarts": true,
+    "queue_full_zero": true,
+    "dropped_required_zero": true,
+    "db_outbox_drained": true,
+    "audit_reconciled": true,
+    "journal_contiguous": true,
+    "local_no_request_zero": true,
+    "expected_rejection_zero": true,
+    "collector_copy_complete": true
+  },
+  "audit": {
+    "point": "pr238-reverify-rev360-20261009",
+    "checks": {
+      "collected": true,
+      "fault_none": true,
+      "pending_zero": true,
+      "db_head_eq_anchor_seq": true,
+      "db_head_eq_anchor_hash": true,
+      "rcv_seq_eq_anchor": true,
+      "rcv_hash_eq_anchor": true,
+      "deployment_match": true,
+      "checkpoint_progress_valid": true,
+      "accepted_events_delta_eq": true,
+      "journal_collected": true,
+      "journal_clean": true,
+      "journal_range_eq_delta": true
+    },
+    "verdict": "PASS",
+    "checkpoint_advanced": true,
+    "empty_prefix_allowed": false,
+    "delta_events": 1080003,
+    "accepted_events_delta": 1080003,
+    "journal": {
+      "collected": true,
+      "journal_sha256": "9cec7b816378a9444ca346e0295d06fbd27682b2f142f6e12d6390f3bf0eafab",
+      "journal_bytes": 1087935693,
+      "batches": 25982,
+      "remote_path": "sis-rcv-pr238-reverify-rev360-20261009:/data/journal.jsonl",
+      "events_in_range": 1080003,
+      "expected_in_range": 1080003,
+      "by_event_type": {
+        "authorization_decision_committed": 360001,
+        "token_issued": 360001,
+        "token_revoked": 360001
+      },
+      "token_issued_in_range": 360001,
+      "malformed_lines": 0,
+      "foreign_deployment_batches": 0,
+      "sequence_gaps": 0,
+      "duplicate_sequences": 0,
+      "range_contiguous": true
+    },
+    "token_issued_delta": 360001,
+    "expected_issuances": null,
+    "token_issued_scope": "reported_only_no_clean_denominator"
+  },
+  "maintenance": null,
+  "forensic_diag": {
+    "status": "TRUNCATED",
+    "truncated": true,
+    "budget_exceeded_points": 10047144,
+    "overflow_dropped_points": 2342605,
+    "logical_bytes_cap": 536870912,
+    "file": "/src/evidence/pr238-reverify-20261009/REV360/results/multi/pr238-reverify-rev360-20261009/load/capacity-cap-revoke.diag.jsonl.gz"
+  },
+  "post_validation": {
+    "ts": 1791559289.243183,
+    "locks": [
+      {
+        "n": 33,
+        "wait_event": "ClientRead",
+        "xact_age_s": null,
+        "wait_event_type": "Client"
+      }
+    ],
+    "anchor": 1080003,
+    "tables": [
+      {
+        "relname": "security_audit_events",
+        "n_tup_del": 987021,
+        "n_tup_ins": 1080003,
+        "n_dead_tup": 111972,
+        "index_bytes": 101654528,
+        "table_bytes": 111017984,
+        "autovacuum_count": 6
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "n_tup_del": 8493,
+        "n_tup_ins": 360001,
+        "n_dead_tup": 8493,
+        "index_bytes": 98869248,
+        "table_bytes": 141025280,
+        "autovacuum_count": 5
+      },
+      {
+        "relname": "security_audit_chain_entries",
+        "n_tup_del": 1080003,
+        "n_tup_ins": 1080003,
+        "n_dead_tup": 43032,
+        "index_bytes": 33202176,
+        "table_bytes": 18874368,
+        "autovacuum_count": 6
+      },
+      {
+        "relname": "oauth_refresh_contracts",
+        "n_tup_del": 5703,
+        "n_tup_ins": 7687,
+        "n_dead_tup": 1009,
+        "index_bytes": 679936,
+        "table_bytes": 2056192,
+        "autovacuum_count": 5
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "n_tup_del": 353411,
+        "n_tup_ins": 360993,
+        "n_dead_tup": 78031,
+        "index_bytes": 47628288,
+        "table_bytes": 21602304,
+        "autovacuum_count": 6
+      },
+      {
+        "relname": "oauth_refresh_spent_tokens",
+        "n_tup_del": 0,
+        "n_tup_ins": 0,
+        "n_dead_tup": 0,
+        "index_bytes": 24576,
+        "table_bytes": 8192,
+        "autovacuum_count": 0
+      }
+    ],
+    "blocked": null,
+    "pending": 0,
+    "db_bytes": 597956287,
+    "family_live": 992,
+    "observed_at": 1791559288.258669,
+    "decision_bytes": {
+      "count": 92982,
+      "row_bytes": 26034960,
+      "payload_bytes": 464910
+    },
+    "spent_eligible": 0,
+    "spent_retained": 0,
+    "contract_orphan": 0,
+    "family_eligible": 6590,
+    "issuance_counts": {
+      "total": 351508,
+      "eligible": 46080,
+      "retained": 305428,
+      "oldest_due_s": 47.233694,
+      "oldest_created_retention_remaining_s": -47.233694
+    },
+    "pending_by_type": {},
+    "oldest_pending_s": 0,
+    "decision_eligible": 46023,
+    "decision_retained": 46959,
+    "decision_retention": {
+      "unexported": 0,
+      "exported_full": 0,
+      "exported_compact": 92982,
+      "last_remaining_s": 48.797006,
+      "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+    },
+    "family_oldest_due_s": 47.938238,
+    "decision_oldest_due_s": 47.939726,
+    "target_decisions": {
+      "count": 92982,
+      "eligible": 46217,
+      "retained": 46765,
+      "unexported": 0,
+      "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00",
+      "last_remaining_s": 48.705873
+    }
+  },
+  "wal_per_success": 10876.172,
+  "cpu_cores": {
+    "app": 2.34,
+    "postgres": 4.24
+  },
+  "latency_30s": [
+    {
+      "offset_s": 0,
+      "completed": 28647,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 144.0
+    },
+    {
+      "offset_s": 30,
+      "completed": 28802,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 56.0
+    },
+    {
+      "offset_s": 60,
+      "completed": 28800,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 60.0
+    },
+    {
+      "offset_s": 90,
+      "completed": 28797,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 90.0
+    },
+    {
+      "offset_s": 120,
+      "completed": 28802,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 42.0
+    },
+    {
+      "offset_s": 150,
+      "completed": 28757,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 48.0
+    },
+    {
+      "offset_s": 180,
+      "completed": 28843,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 83.0
+    },
+    {
+      "offset_s": 210,
+      "completed": 28798,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 79.0
+    },
+    {
+      "offset_s": 240,
+      "completed": 28797,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 52.0
+    },
+    {
+      "offset_s": 270,
+      "completed": 28805,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 51.0
+    },
+    {
+      "offset_s": 300,
+      "completed": 28800,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 88.0
+    },
+    {
+      "offset_s": 330,
+      "completed": 28798,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 48.0
+    },
+    {
+      "offset_s": 360,
+      "completed": 154,
+      "p95_interval_ms": [
+        10,
+        20
+      ],
+      "p99_interval_ms": [
+        10,
+        20
+      ],
+      "max_ms": 16.0
+    }
+  ],
+  "storage": [
+    {
+      "offset_s": 0.1,
+      "db_mib": 11.95,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 0,
+        "eligible": 0,
+        "retained": 0,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": null
+      },
+      "decision_bytes": {
+        "count": 0,
+        "row_bytes": 0,
+        "payload_bytes": 0
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 0,
+        "last_remaining_s": null,
+        "last_business_retain_until": null
+      }
+    },
+    {
+      "offset_s": 10.1,
+      "db_mib": 38.96,
+      "pending": 40,
+      "oldest_pending_s": 0.004855,
+      "decision_eligible": 0,
+      "decision_retained": 5267,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 5261,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 5264,
+        "eligible": 0,
+        "retained": 5264,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 354.371183
+      },
+      "decision_bytes": {
+        "count": 5267,
+        "row_bytes": 1486184,
+        "payload_bytes": 37877
+      },
+      "decision_retention": {
+        "unexported": 12,
+        "exported_full": 0,
+        "exported_compact": 5255,
+        "last_remaining_s": 89.980248,
+        "last_business_retain_until": "2026-10-09T15:16:08.635329+00:00"
+      }
+    },
+    {
+      "offset_s": 20.1,
+      "db_mib": 73.86,
+      "pending": 44,
+      "oldest_pending_s": 0.005022,
+      "decision_eligible": 0,
+      "decision_retained": 14870,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 14858,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 14865,
+        "eligible": 0,
+        "retained": 14865,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 344.369857
+      },
+      "decision_bytes": {
+        "count": 14870,
+        "row_bytes": 4177880,
+        "payload_bytes": 88777
+      },
+      "decision_retention": {
+        "unexported": 15,
+        "exported_full": 0,
+        "exported_compact": 14855,
+        "last_remaining_s": 89.952625,
+        "last_business_retain_until": "2026-10-09T15:16:18.637838+00:00"
+      }
+    },
+    {
+      "offset_s": 30.1,
+      "db_mib": 109.97,
+      "pending": 59,
+      "oldest_pending_s": 0.013474,
+      "decision_eligible": 0,
+      "decision_retained": 24469,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 24459,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 24465,
+        "eligible": 0,
+        "retained": 24465,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 334.369467
+      },
+      "decision_bytes": {
+        "count": 24469,
+        "row_bytes": 6871312,
+        "payload_bytes": 142541
+      },
+      "decision_retention": {
+        "unexported": 21,
+        "exported_full": 0,
+        "exported_compact": 24448,
+        "last_remaining_s": 89.933764,
+        "last_business_retain_until": "2026-10-09T15:16:28.637148+00:00"
+      }
+    },
+    {
+      "offset_s": 40.1,
+      "db_mib": 146.47,
+      "pending": 38,
+      "oldest_pending_s": 0.002162,
+      "decision_eligible": 0,
+      "decision_retained": 34071,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 34063,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 34067,
+        "eligible": 0,
+        "retained": 34067,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 324.370159
+      },
+      "decision_bytes": {
+        "count": 34071,
+        "row_bytes": 9552256,
+        "payload_bytes": 182859
+      },
+      "decision_retention": {
+        "unexported": 13,
+        "exported_full": 0,
+        "exported_compact": 34058,
+        "last_remaining_s": 89.897136,
+        "last_business_retain_until": "2026-10-09T15:16:38.639145+00:00"
+      }
+    },
+    {
+      "offset_s": 50.1,
+      "db_mib": 182.15,
+      "pending": 43,
+      "oldest_pending_s": 0.005775,
+      "decision_eligible": 0,
+      "decision_retained": 43667,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 1616,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 43663,
+        "eligible": 0,
+        "retained": 43663,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 314.371531
+      },
+      "decision_bytes": {
+        "count": 43667,
+        "row_bytes": 12240088,
+        "payload_bytes": 231799
+      },
+      "decision_retention": {
+        "unexported": 14,
+        "exported_full": 0,
+        "exported_compact": 43653,
+        "last_remaining_s": 89.86595,
+        "last_business_retain_until": "2026-10-09T15:16:48.634678+00:00"
+      }
+    },
+    {
+      "offset_s": 60.1,
+      "db_mib": 216.97,
+      "pending": 54,
+      "oldest_pending_s": 0.027103,
+      "decision_eligible": 0,
+      "decision_retained": 53266,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 11190,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 53240,
+        "eligible": 0,
+        "retained": 53240,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 304.37047
+      },
+      "decision_bytes": {
+        "count": 53266,
+        "row_bytes": 14944944,
+        "payload_bytes": 297107
+      },
+      "decision_retention": {
+        "unexported": 32,
+        "exported_full": 0,
+        "exported_compact": 53234,
+        "last_remaining_s": 89.861395,
+        "last_business_retain_until": "2026-10-09T15:16:58.633631+00:00"
+      }
+    },
+    {
+      "offset_s": 70.1,
+      "db_mib": 237.6,
+      "pending": 43,
+      "oldest_pending_s": 0.004566,
+      "decision_eligible": 0,
+      "decision_retained": 62872,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 20821,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 62868,
+        "eligible": 0,
+        "retained": 62868,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 294.36818
+      },
+      "decision_bytes": {
+        "count": 62872,
+        "row_bytes": 17617488,
+        "payload_bytes": 327823
+      },
+      "decision_retention": {
+        "unexported": 14,
+        "exported_full": 0,
+        "exported_compact": 62858,
+        "last_remaining_s": 89.91121,
+        "last_business_retain_until": "2026-10-09T15:17:08.640031+00:00"
+      }
+    },
+    {
+      "offset_s": 80.1,
+      "db_mib": 247.62,
+      "pending": 66,
+      "oldest_pending_s": 0.012048,
+      "decision_eligible": 0,
+      "decision_retained": 72472,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 30419,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 72467,
+        "eligible": 0,
+        "retained": 72467,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 284.3699
+      },
+      "decision_bytes": {
+        "count": 72472,
+        "row_bytes": 20314056,
+        "payload_bytes": 384479
+      },
+      "decision_retention": {
+        "unexported": 23,
+        "exported_full": 0,
+        "exported_compact": 72449,
+        "last_remaining_s": 89.89695,
+        "last_business_retain_until": "2026-10-09T15:17:18.639951+00:00"
+      }
+    },
+    {
+      "offset_s": 90.1,
+      "db_mib": 258.25,
+      "pending": 44,
+      "oldest_pending_s": 0.004051,
+      "decision_eligible": 0,
+      "decision_retained": 82074,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 40023,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 82070,
+        "eligible": 0,
+        "retained": 82070,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 274.367521
+      },
+      "decision_bytes": {
+        "count": 82074,
+        "row_bytes": 22995000,
+        "payload_bytes": 424798
+      },
+      "decision_retention": {
+        "unexported": 15,
+        "exported_full": 0,
+        "exported_compact": 82059,
+        "last_remaining_s": 89.898681,
+        "last_business_retain_until": "2026-10-09T15:17:28.641776+00:00"
+      }
+    },
+    {
+      "offset_s": 100.1,
+      "db_mib": 272.45,
+      "pending": 100,
+      "oldest_pending_s": 0.025119,
+      "decision_eligible": 5263,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 5.455012,
+      "family_eligible": 49618,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 91666,
+        "eligible": 0,
+        "retained": 91666,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 264.368412
+      },
+      "decision_bytes": {
+        "count": 91670,
+        "row_bytes": 25699016,
+        "payload_bytes": 490088
+      },
+      "decision_retention": {
+        "unexported": 33,
+        "exported_full": 0,
+        "exported_compact": 91637,
+        "last_remaining_s": 89.882123,
+        "last_business_retain_until": "2026-10-09T15:17:38.637779+00:00"
+      }
+    },
+    {
+      "offset_s": 110.1,
+      "db_mib": 297.84,
+      "pending": 90,
+      "oldest_pending_s": 0.022695,
+      "decision_eligible": 0,
+      "decision_retained": 86405,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 34129,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 101264,
+        "eligible": 0,
+        "retained": 101264,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 254.369315
+      },
+      "decision_bytes": {
+        "count": 86405,
+        "row_bytes": 24222912,
+        "payload_bytes": 461839
+      },
+      "decision_retention": {
+        "unexported": 31,
+        "exported_full": 0,
+        "exported_compact": 86374,
+        "last_remaining_s": 89.877464,
+        "last_business_retain_until": "2026-10-09T15:17:48.638121+00:00"
+      }
+    },
+    {
+      "offset_s": 120.1,
+      "db_mib": 327.47,
+      "pending": 60,
+      "oldest_pending_s": 0.014749,
+      "decision_eligible": 7584,
+      "decision_retained": 86405,
+      "decision_oldest_due_s": 7.898955,
+      "family_eligible": 7586,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 110865,
+        "eligible": 0,
+        "retained": 110865,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 244.367102
+      },
+      "decision_bytes": {
+        "count": 93989,
+        "row_bytes": 26336912,
+        "payload_bytes": 490144
+      },
+      "decision_retention": {
+        "unexported": 21,
+        "exported_full": 0,
+        "exported_compact": 93968,
+        "last_remaining_s": 89.896978,
+        "last_business_retain_until": "2026-10-09T15:17:58.637687+00:00"
+      }
+    },
+    {
+      "offset_s": 130.1,
+      "db_mib": 341.47,
+      "pending": 60,
+      "oldest_pending_s": 0.011615,
+      "decision_eligible": 17182,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 17.897098,
+      "family_eligible": 17189,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 120466,
+        "eligible": 0,
+        "retained": 120466,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 234.368959
+      },
+      "decision_bytes": {
+        "count": 103590,
+        "row_bytes": 29025192,
+        "payload_bytes": 538148
+      },
+      "decision_retention": {
+        "unexported": 21,
+        "exported_full": 0,
+        "exported_compact": 103569,
+        "last_remaining_s": 89.903025,
+        "last_business_retain_until": "2026-10-09T15:18:08.638799+00:00"
+      }
+    },
+    {
+      "offset_s": 140.1,
+      "db_mib": 347.79,
+      "pending": 53,
+      "oldest_pending_s": 0.01047,
+      "decision_eligible": 26824,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 27.941022,
+      "family_eligible": 26829,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 130107,
+        "eligible": 0,
+        "retained": 130107,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 224.325035
+      },
+      "decision_bytes": {
+        "count": 113231,
+        "row_bytes": 31721816,
+        "payload_bytes": 583466
+      },
+      "decision_retention": {
+        "unexported": 18,
+        "exported_full": 0,
+        "exported_compact": 113213,
+        "last_remaining_s": 89.877451,
+        "last_business_retain_until": "2026-10-09T15:18:18.681602+00:00"
+      }
+    },
+    {
+      "offset_s": 150.1,
+      "db_mib": 356.55,
+      "pending": 50,
+      "oldest_pending_s": 0.007699,
+      "decision_eligible": 36383,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 37.897644,
+      "family_eligible": 36390,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 139667,
+        "eligible": 0,
+        "retained": 139667,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 214.368413
+      },
+      "decision_bytes": {
+        "count": 122791,
+        "row_bytes": 34397664,
+        "payload_bytes": 630303
+      },
+      "decision_retention": {
+        "unexported": 17,
+        "exported_full": 0,
+        "exported_compact": 122774,
+        "last_remaining_s": 89.833857,
+        "last_business_retain_until": "2026-10-09T15:18:28.640362+00:00"
+      }
+    },
+    {
+      "offset_s": 160.1,
+      "db_mib": 366.51,
+      "pending": 59,
+      "oldest_pending_s": 0.011255,
+      "decision_eligible": 45981,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 47.895851,
+      "family_eligible": 45988,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 149266,
+        "eligible": 0,
+        "retained": 149266,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 204.370206
+      },
+      "decision_bytes": {
+        "count": 132388,
+        "row_bytes": 37087680,
+        "payload_bytes": 681175
+      },
+      "decision_retention": {
+        "unexported": 20,
+        "exported_full": 0,
+        "exported_compact": 132368,
+        "last_remaining_s": 89.798768,
+        "last_business_retain_until": "2026-10-09T15:18:38.63677+00:00"
+      }
+    },
+    {
+      "offset_s": 170.1,
+      "db_mib": 380.89,
+      "pending": 82,
+      "oldest_pending_s": 0.018192,
+      "decision_eligible": 55584,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 57.898788,
+      "family_eligible": 55590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 158868,
+        "eligible": 0,
+        "retained": 158868,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 194.367269
+      },
+      "decision_bytes": {
+        "count": 141992,
+        "row_bytes": 39783464,
+        "payload_bytes": 735927
+      },
+      "decision_retention": {
+        "unexported": 27,
+        "exported_full": 0,
+        "exported_compact": 141965,
+        "last_remaining_s": 89.775147,
+        "last_business_retain_until": "2026-10-09T15:18:48.641247+00:00"
+      }
+    },
+    {
+      "offset_s": 180.1,
+      "db_mib": 403.11,
+      "pending": 64,
+      "oldest_pending_s": 0.011266,
+      "decision_eligible": 2640,
+      "decision_retained": 86409,
+      "decision_oldest_due_s": 2.749697,
+      "family_eligible": 2647,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 168467,
+        "eligible": 0,
+        "retained": 168467,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 184.368165
+      },
+      "decision_bytes": {
+        "count": 89049,
+        "row_bytes": 24952760,
+        "payload_bytes": 464476
+      },
+      "decision_retention": {
+        "unexported": 20,
+        "exported_full": 0,
+        "exported_compact": 89029,
+        "last_remaining_s": 89.918073,
+        "last_business_retain_until": "2026-10-09T15:18:58.639808+00:00"
+      }
+    },
+    {
+      "offset_s": 190.1,
+      "db_mib": 412.45,
+      "pending": 60,
+      "oldest_pending_s": 0.006702,
+      "decision_eligible": 12240,
+      "decision_retained": 86410,
+      "decision_oldest_due_s": 12.749072,
+      "family_eligible": 12249,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 178069,
+        "eligible": 0,
+        "retained": 178069,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 174.36879
+      },
+      "decision_bytes": {
+        "count": 98650,
+        "row_bytes": 27638184,
+        "payload_bytes": 509599
+      },
+      "decision_retention": {
+        "unexported": 17,
+        "exported_full": 0,
+        "exported_compact": 98633,
+        "last_remaining_s": 89.911506,
+        "last_business_retain_until": "2026-10-09T15:19:08.641089+00:00"
+      }
+    },
+    {
+      "offset_s": 200.1,
+      "db_mib": 418.55,
+      "pending": 54,
+      "oldest_pending_s": 0.009479,
+      "decision_eligible": 21841,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 22.750124,
+      "family_eligible": 21849,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 187669,
+        "eligible": 0,
+        "retained": 187669,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 164.367738
+      },
+      "decision_bytes": {
+        "count": 108249,
+        "row_bytes": 30326856,
+        "payload_bytes": 558557
+      },
+      "decision_retention": {
+        "unexported": 18,
+        "exported_full": 0,
+        "exported_compact": 108231,
+        "last_remaining_s": 89.910353,
+        "last_business_retain_until": "2026-10-09T15:19:18.640273+00:00"
+      }
+    },
+    {
+      "offset_s": 210.1,
+      "db_mib": 424.54,
+      "pending": 60,
+      "oldest_pending_s": 0.012161,
+      "decision_eligible": 31440,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 32.749422,
+      "family_eligible": 31446,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 197266,
+        "eligible": 0,
+        "retained": 197266,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 154.36844
+      },
+      "decision_bytes": {
+        "count": 117848,
+        "row_bytes": 33017432,
+        "payload_bytes": 609437
+      },
+      "decision_retention": {
+        "unexported": 21,
+        "exported_full": 0,
+        "exported_compact": 117827,
+        "last_remaining_s": 89.89466,
+        "last_business_retain_until": "2026-10-09T15:19:28.638711+00:00"
+      }
+    },
+    {
+      "offset_s": 220.1,
+      "db_mib": 431.83,
+      "pending": 49,
+      "oldest_pending_s": 0.005617,
+      "decision_eligible": 41053,
+      "decision_retained": 86410,
+      "decision_oldest_due_s": 42.762394,
+      "family_eligible": 41062,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 206881,
+        "eligible": 0,
+        "retained": 206881,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 144.355468
+      },
+      "decision_bytes": {
+        "count": 127463,
+        "row_bytes": 35705824,
+        "payload_bytes": 653664
+      },
+      "decision_retention": {
+        "unexported": 17,
+        "exported_full": 0,
+        "exported_compact": 127446,
+        "last_remaining_s": 89.867512,
+        "last_business_retain_until": "2026-10-09T15:19:38.655274+00:00"
+      }
+    },
+    {
+      "offset_s": 230.1,
+      "db_mib": 440.39,
+      "pending": 44,
+      "oldest_pending_s": 0.00313,
+      "decision_eligible": 50640,
+      "decision_retained": 86410,
+      "decision_oldest_due_s": 52.749352,
+      "family_eligible": 50651,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 216471,
+        "eligible": 0,
+        "retained": 216471,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 134.36851
+      },
+      "decision_bytes": {
+        "count": 137050,
+        "row_bytes": 38387328,
+        "payload_bytes": 698716
+      },
+      "decision_retention": {
+        "unexported": 14,
+        "exported_full": 0,
+        "exported_compact": 137036,
+        "last_remaining_s": 89.797229,
+        "last_business_retain_until": "2026-10-09T15:19:48.64089+00:00"
+      }
+    },
+    {
+      "offset_s": 240.2,
+      "db_mib": 449.47,
+      "pending": 65,
+      "oldest_pending_s": 0.015535,
+      "decision_eligible": 24491,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 25.511228,
+      "family_eligible": 24496,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 226154,
+        "eligible": 0,
+        "retained": 226154,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 124.273966
+      },
+      "decision_bytes": {
+        "count": 110899,
+        "row_bytes": 31074568,
+        "payload_bytes": 577578
+      },
+      "decision_retention": {
+        "unexported": 24,
+        "exported_full": 0,
+        "exported_compact": 110875,
+        "last_remaining_s": 89.824167,
+        "last_business_retain_until": "2026-10-09T15:19:58.733753+00:00"
+      }
+    },
+    {
+      "offset_s": 250.1,
+      "db_mib": 455.84,
+      "pending": 83,
+      "oldest_pending_s": 0.021019,
+      "decision_eligible": 7370,
+      "decision_retained": 86406,
+      "decision_oldest_due_s": 7.675737,
+      "family_eligible": 7398,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 235672,
+        "eligible": 0,
+        "retained": 235672,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 114.360878
+      },
+      "decision_bytes": {
+        "count": 93776,
+        "row_bytes": 26283936,
+        "payload_bytes": 495812
+      },
+      "decision_retention": {
+        "unexported": 28,
+        "exported_full": 0,
+        "exported_compact": 93748,
+        "last_remaining_s": 89.911079,
+        "last_business_retain_until": "2026-10-09T15:20:08.645329+00:00"
+      }
+    },
+    {
+      "offset_s": 260.1,
+      "db_mib": 462.13,
+      "pending": 63,
+      "oldest_pending_s": 0.012219,
+      "decision_eligible": 16969,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 17.675309,
+      "family_eligible": 17000,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 245273,
+        "eligible": 0,
+        "retained": 245273,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 104.361306
+      },
+      "decision_bytes": {
+        "count": 103377,
+        "row_bytes": 28965552,
+        "payload_bytes": 537080
+      },
+      "decision_retention": {
+        "unexported": 21,
+        "exported_full": 0,
+        "exported_compact": 103356,
+        "last_remaining_s": 89.872932,
+        "last_business_retain_until": "2026-10-09T15:20:18.646166+00:00"
+      }
+    },
+    {
+      "offset_s": 270.1,
+      "db_mib": 468.33,
+      "pending": 65,
+      "oldest_pending_s": 0.013533,
+      "decision_eligible": 26567,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 27.673896,
+      "family_eligible": 26598,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 254873,
+        "eligible": 0,
+        "retained": 254873,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 94.362719
+      },
+      "decision_bytes": {
+        "count": 112975,
+        "row_bytes": 31652992,
+        "payload_bytes": 585076
+      },
+      "decision_retention": {
+        "unexported": 21,
+        "exported_full": 0,
+        "exported_compact": 112954,
+        "last_remaining_s": 89.880803,
+        "last_business_retain_until": "2026-10-09T15:20:28.644094+00:00"
+      }
+    },
+    {
+      "offset_s": 280.1,
+      "db_mib": 474.84,
+      "pending": 54,
+      "oldest_pending_s": 0.006865,
+      "decision_eligible": 36170,
+      "decision_retained": 86409,
+      "decision_oldest_due_s": 37.67564,
+      "family_eligible": 36204,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 264477,
+        "eligible": 0,
+        "retained": 264477,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 84.360975
+      },
+      "decision_bytes": {
+        "count": 122579,
+        "row_bytes": 34338304,
+        "payload_bytes": 629245
+      },
+      "decision_retention": {
+        "unexported": 17,
+        "exported_full": 0,
+        "exported_compact": 122562,
+        "last_remaining_s": 89.829618,
+        "last_business_retain_until": "2026-10-09T15:20:38.648325+00:00"
+      }
+    },
+    {
+      "offset_s": 290.1,
+      "db_mib": 481.4,
+      "pending": 43,
+      "oldest_pending_s": 0.005173,
+      "decision_eligible": 45769,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 47.674487,
+      "family_eligible": 45799,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 274073,
+        "eligible": 0,
+        "retained": 274073,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 74.362128
+      },
+      "decision_bytes": {
+        "count": 132177,
+        "row_bytes": 37023840,
+        "payload_bytes": 675311
+      },
+      "decision_retention": {
+        "unexported": 15,
+        "exported_full": 0,
+        "exported_compact": 132162,
+        "last_remaining_s": 89.811859,
+        "last_business_retain_until": "2026-10-09T15:20:48.645892+00:00"
+      }
+    },
+    {
+      "offset_s": 300.1,
+      "db_mib": 489.64,
+      "pending": 37,
+      "oldest_pending_s": 0.003891,
+      "decision_eligible": 55370,
+      "decision_retained": 86406,
+      "decision_oldest_due_s": 57.675381,
+      "family_eligible": 55400,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 283675,
+        "eligible": 0,
+        "retained": 283675,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 64.361234
+      },
+      "decision_bytes": {
+        "count": 141776,
+        "row_bytes": 39707752,
+        "payload_bytes": 719460
+      },
+      "decision_retention": {
+        "unexported": 11,
+        "exported_full": 0,
+        "exported_compact": 141765,
+        "last_remaining_s": 89.744731,
+        "last_business_retain_until": "2026-10-09T15:20:58.644959+00:00"
+      }
+    },
+    {
+      "offset_s": 310.1,
+      "db_mib": 500.44,
+      "pending": 62,
+      "oldest_pending_s": 0.011174,
+      "decision_eligible": 2355,
+      "decision_retained": 86409,
+      "decision_oldest_due_s": 2.452661,
+      "family_eligible": 2365,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 293272,
+        "eligible": 0,
+        "retained": 293272,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 54.363708
+      },
+      "decision_bytes": {
+        "count": 88764,
+        "row_bytes": 24873912,
+        "payload_bytes": 464017
+      },
+      "decision_retention": {
+        "unexported": 21,
+        "exported_full": 0,
+        "exported_compact": 88743,
+        "last_remaining_s": 89.914194,
+        "last_business_retain_until": "2026-10-09T15:21:08.645037+00:00"
+      }
+    },
+    {
+      "offset_s": 320.1,
+      "db_mib": 507.28,
+      "pending": 60,
+      "oldest_pending_s": 0.011636,
+      "decision_eligible": 11959,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 12.456398,
+      "family_eligible": 11966,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 302874,
+        "eligible": 0,
+        "retained": 302874,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 44.359971
+      },
+      "decision_bytes": {
+        "count": 98366,
+        "row_bytes": 27561520,
+        "payload_bytes": 511067
+      },
+      "decision_retention": {
+        "unexported": 20,
+        "exported_full": 0,
+        "exported_compact": 98346,
+        "last_remaining_s": 89.887717,
+        "last_business_retain_until": "2026-10-09T15:21:18.647208+00:00"
+      }
+    },
+    {
+      "offset_s": 330.1,
+      "db_mib": 515.31,
+      "pending": 75,
+      "oldest_pending_s": 0.016058,
+      "decision_eligible": 21557,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 22.454343,
+      "family_eligible": 21565,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 312473,
+        "eligible": 0,
+        "retained": 312473,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 34.362026
+      },
+      "decision_bytes": {
+        "count": 107964,
+        "row_bytes": 30252768,
+        "payload_bytes": 562906
+      },
+      "decision_retention": {
+        "unexported": 24,
+        "exported_full": 0,
+        "exported_compact": 107940,
+        "last_remaining_s": 89.844282,
+        "last_business_retain_until": "2026-10-09T15:21:28.64506+00:00"
+      }
+    },
+    {
+      "offset_s": 340.1,
+      "db_mib": 524.29,
+      "pending": 111,
+      "oldest_pending_s": 0.02921,
+      "decision_eligible": 31163,
+      "decision_retained": 86403,
+      "decision_oldest_due_s": 32.460499,
+      "family_eligible": 31168,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 322075,
+        "eligible": 0,
+        "retained": 322075,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 24.35587
+      },
+      "decision_bytes": {
+        "count": 117566,
+        "row_bytes": 32951800,
+        "payload_bytes": 621487
+      },
+      "decision_retention": {
+        "unexported": 35,
+        "exported_full": 0,
+        "exported_compact": 117531,
+        "last_remaining_s": 89.827698,
+        "last_business_retain_until": "2026-10-09T15:21:38.647179+00:00"
+      }
+    },
+    {
+      "offset_s": 350.1,
+      "db_mib": 536.98,
+      "pending": 42,
+      "oldest_pending_s": 0.00952,
+      "decision_eligible": 40759,
+      "decision_retained": 86405,
+      "decision_oldest_due_s": 42.457076,
+      "family_eligible": 40764,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 331670,
+        "eligible": 0,
+        "retained": 331670,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 14.359293
+      },
+      "decision_bytes": {
+        "count": 127164,
+        "row_bytes": 35620200,
+        "payload_bytes": 650248
+      },
+      "decision_retention": {
+        "unexported": 15,
+        "exported_full": 0,
+        "exported_compact": 127149,
+        "last_remaining_s": 89.79633,
+        "last_business_retain_until": "2026-10-09T15:21:48.644823+00:00"
+      }
+    },
+    {
+      "offset_s": 360.1,
+      "db_mib": 554.41,
+      "pending": 66,
+      "oldest_pending_s": 0.011112,
+      "decision_eligible": 50362,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 52.459784,
+      "family_eligible": 50373,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 341279,
+        "eligible": 0,
+        "retained": 341279,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 4.356585
+      },
+      "decision_bytes": {
+        "count": 136770,
+        "row_bytes": 38314640,
+        "payload_bytes": 703087
+      },
+      "decision_retention": {
+        "unexported": 20,
+        "exported_full": 0,
+        "exported_compact": 136750,
+        "last_remaining_s": 89.777844,
+        "last_business_retain_until": "2026-10-09T15:21:58.65131+00:00"
+      }
+    },
+    {
+      "offset_s": 370.1,
+      "db_mib": 564.63,
+      "pending": 52,
+      "oldest_pending_s": 0.005696,
+      "decision_eligible": 28476,
+      "decision_retained": 86410,
+      "decision_oldest_due_s": 29.66188,
+      "family_eligible": 28489,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 345270,
+        "eligible": 0,
+        "retained": 345270,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 0.354375
+      },
+      "decision_bytes": {
+        "count": 114886,
+        "row_bytes": 32184264,
+        "payload_bytes": 590778
+      },
+      "decision_retention": {
+        "unexported": 17,
+        "exported_full": 0,
+        "exported_compact": 114869,
+        "last_remaining_s": 89.871919,
+        "last_business_retain_until": "2026-10-09T15:22:08.65563+00:00"
+      }
+    },
+    {
+      "offset_s": 380.1,
+      "db_mib": 570.26,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 7055,
+      "decision_retained": 85927,
+      "decision_oldest_due_s": 7.348759,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 6720,
+        "retained": 344788,
+        "oldest_due_s": 6.642727,
+        "oldest_created_retention_remaining_s": -6.642727
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 89.387534,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 387.2,
+      "db_mib": 570.26,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 13866,
+      "decision_retained": 79116,
+      "decision_oldest_due_s": 14.443252,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 13440,
+        "retained": 338068,
+        "oldest_due_s": 13.73722,
+        "oldest_created_retention_remaining_s": -13.73722
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 82.31737,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 390.1,
+      "db_mib": 570.26,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 16653,
+      "decision_retained": 76329,
+      "decision_oldest_due_s": 17.346836,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 16320,
+        "retained": 335188,
+        "oldest_due_s": 16.640804,
+        "oldest_created_retention_remaining_s": -16.640804
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 79.410921,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 400.1,
+      "db_mib": 570.26,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 26255,
+      "decision_retained": 66727,
+      "decision_oldest_due_s": 27.348734,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 25919,
+        "retained": 325589,
+        "oldest_due_s": 26.642702,
+        "oldest_created_retention_remaining_s": -26.642702
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 69.395203,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 410.1,
+      "db_mib": 570.26,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 35930,
+      "decision_retained": 57052,
+      "decision_oldest_due_s": 37.42698,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 35521,
+        "retained": 315987,
+        "oldest_due_s": 36.720948,
+        "oldest_created_retention_remaining_s": -36.720948
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 59.311566,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 420.1,
+      "db_mib": 570.26,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 45453,
+      "decision_retained": 47529,
+      "decision_oldest_due_s": 47.346587,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 45122,
+        "retained": 306386,
+        "oldest_due_s": 46.640555,
+        "oldest_created_retention_remaining_s": -46.640555
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 49.397091,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 420.7,
+      "db_mib": 570.26,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 46023,
+      "decision_retained": 46959,
+      "decision_oldest_due_s": 47.939726,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 46080,
+        "retained": 305428,
+        "oldest_due_s": 47.233694,
+        "oldest_created_retention_remaining_s": -47.233694
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 48.797006,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 422.9,
+      "db_mib": 569.84,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 48189,
+      "decision_retained": 44793,
+      "decision_oldest_due_s": 50.196396,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 47983,
+        "retained": 303525,
+        "oldest_due_s": 49.490364,
+        "oldest_created_retention_remaining_s": -49.490364
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 46.531258,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 425.2,
+      "db_mib": 569.84,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 50373,
+      "decision_retained": 42609,
+      "decision_oldest_due_s": 52.47169,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 49920,
+        "retained": 301588,
+        "oldest_due_s": 51.765658,
+        "oldest_created_retention_remaining_s": -51.765658
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 44.290086,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 427.4,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 52509,
+      "decision_retained": 40473,
+      "decision_oldest_due_s": 54.69735,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 51840,
+        "retained": 299668,
+        "oldest_due_s": 53.991318,
+        "oldest_created_retention_remaining_s": -53.991318
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 42.070976,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 429.7,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 54675,
+      "decision_retained": 38307,
+      "decision_oldest_due_s": 56.953167,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 54721,
+        "retained": 296787,
+        "oldest_due_s": 56.247135,
+        "oldest_created_retention_remaining_s": -56.247135
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 39.817277,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 430.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 55054,
+      "decision_retained": 37928,
+      "decision_oldest_due_s": 57.3477,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 54721,
+        "retained": 296787,
+        "oldest_due_s": 56.641668,
+        "oldest_created_retention_remaining_s": -56.641668
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 39.405178,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 431.9,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 56809,
+      "decision_retained": 36173,
+      "decision_oldest_due_s": 59.17532,
+      "family_eligible": 6590,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 351508,
+        "eligible": 56640,
+        "retained": 294868,
+        "oldest_due_s": 58.469288,
+        "oldest_created_retention_remaining_s": -58.469288
+      },
+      "decision_bytes": {
+        "count": 92982,
+        "row_bytes": 26034960,
+        "payload_bytes": 464910
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 92982,
+        "last_remaining_s": 37.59362,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 434.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32319,
+      "decision_retained": 34039,
+      "decision_oldest_due_s": 33.664384,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 324628,
+        "eligible": 31681,
+        "retained": 292947,
+        "oldest_due_s": 32.692348,
+        "oldest_created_retention_remaining_s": -32.692348
+      },
+      "decision_bytes": {
+        "count": 66358,
+        "row_bytes": 18580240,
+        "payload_bytes": 331790
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 66358,
+        "last_remaining_s": 35.367499,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 436.3,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 756,
+      "decision_retained": 31907,
+      "decision_oldest_due_s": 0.786931,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 0,
+        "retained": 291027,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 0.086805
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 33.170594,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 438.5,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 2855,
+      "decision_retained": 29808,
+      "decision_oldest_due_s": 2.972973,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 2880,
+        "retained": 288147,
+        "oldest_due_s": 2.099237,
+        "oldest_created_retention_remaining_s": -2.099237
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 30.986685,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 440.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 4335,
+      "decision_retained": 28328,
+      "decision_oldest_due_s": 4.514454,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 3839,
+        "retained": 287188,
+        "oldest_due_s": 3.640718,
+        "oldest_created_retention_remaining_s": -3.640718
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 29.422727,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 440.7,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 4954,
+      "decision_retained": 27709,
+      "decision_oldest_due_s": 5.159771,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 4799,
+        "retained": 286228,
+        "oldest_due_s": 4.286035,
+        "oldest_created_retention_remaining_s": -4.286035
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 28.795375,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 442.9,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 7058,
+      "decision_retained": 25605,
+      "decision_oldest_due_s": 7.351288,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 6719,
+        "retained": 284308,
+        "oldest_due_s": 6.477552,
+        "oldest_created_retention_remaining_s": -6.477552
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 26.602136,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 445.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 9161,
+      "decision_retained": 23502,
+      "decision_oldest_due_s": 9.541738,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 8638,
+        "retained": 282389,
+        "oldest_due_s": 8.668002,
+        "oldest_created_retention_remaining_s": -8.668002
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 24.409924,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 447.3,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 11264,
+      "decision_retained": 21399,
+      "decision_oldest_due_s": 11.732932,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 10559,
+        "retained": 280468,
+        "oldest_due_s": 10.859196,
+        "oldest_created_retention_remaining_s": -10.859196
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 22.213985,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 449.5,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 13373,
+      "decision_retained": 19290,
+      "decision_oldest_due_s": 13.930566,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 13440,
+        "retained": 277587,
+        "oldest_due_s": 13.05683,
+        "oldest_created_retention_remaining_s": -13.05683
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 20.024987,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 450.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 13937,
+      "decision_retained": 18726,
+      "decision_oldest_due_s": 14.516805,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 13440,
+        "retained": 277587,
+        "oldest_due_s": 13.643069,
+        "oldest_created_retention_remaining_s": -13.643069
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 19.435872,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 451.7,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 15476,
+      "decision_retained": 17187,
+      "decision_oldest_due_s": 16.120559,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 15359,
+        "retained": 275668,
+        "oldest_due_s": 15.246823,
+        "oldest_created_retention_remaining_s": -15.246823
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 17.833733,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 454.0,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 17698,
+      "decision_retained": 14965,
+      "decision_oldest_due_s": 18.434903,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 17280,
+        "retained": 273747,
+        "oldest_due_s": 17.561167,
+        "oldest_created_retention_remaining_s": -17.561167
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 15.515892,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 456.2,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 19804,
+      "decision_retained": 12859,
+      "decision_oldest_due_s": 20.629219,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 19200,
+        "retained": 271827,
+        "oldest_due_s": 19.755483,
+        "oldest_created_retention_remaining_s": -19.755483
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 13.314945,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 458.4,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 21920,
+      "decision_retained": 10743,
+      "decision_oldest_due_s": 22.832674,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 21120,
+        "retained": 269907,
+        "oldest_due_s": 21.958938,
+        "oldest_created_retention_remaining_s": -21.958938
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 11.113587,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 460.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 23537,
+      "decision_retained": 9126,
+      "decision_oldest_due_s": 24.516931,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 23038,
+        "retained": 267989,
+        "oldest_due_s": 23.643195,
+        "oldest_created_retention_remaining_s": -23.643195
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 9.429825,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 460.6,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 24032,
+      "decision_retained": 8631,
+      "decision_oldest_due_s": 25.032492,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 24000,
+        "retained": 267027,
+        "oldest_due_s": 24.158756,
+        "oldest_created_retention_remaining_s": -24.158756
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 8.917469,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 462.8,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 26142,
+      "decision_retained": 6521,
+      "decision_oldest_due_s": 27.230812,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 25920,
+        "retained": 265107,
+        "oldest_due_s": 26.357076,
+        "oldest_created_retention_remaining_s": -26.357076
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 6.716817,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 465.0,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 28253,
+      "decision_retained": 4410,
+      "decision_oldest_due_s": 29.429484,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 27840,
+        "retained": 263187,
+        "oldest_due_s": 28.555748,
+        "oldest_created_retention_remaining_s": -28.555748
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 4.513216,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 467.2,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 30370,
+      "decision_retained": 2293,
+      "decision_oldest_due_s": 31.635169,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 29760,
+        "retained": 261267,
+        "oldest_due_s": 30.761433,
+        "oldest_created_retention_remaining_s": -30.761433
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 2.313435,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 469.4,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32482,
+      "decision_retained": 181,
+      "decision_oldest_due_s": 33.835431,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 31680,
+        "retained": 259347,
+        "oldest_due_s": 32.961695,
+        "oldest_created_retention_remaining_s": -32.961695
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": 0.109943,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 470.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 34.516615,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 32640,
+        "retained": 258387,
+        "oldest_due_s": 33.642879,
+        "oldest_created_retention_remaining_s": -33.642879
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -0.591374,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 471.6,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 36.040294,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 34557,
+        "retained": 256470,
+        "oldest_due_s": 35.166558,
+        "oldest_created_retention_remaining_s": -35.166558
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -2.092159,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 473.9,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 38.334718,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 36480,
+        "retained": 254547,
+        "oldest_due_s": 37.460982,
+        "oldest_created_retention_remaining_s": -37.460982
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -4.386235,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 476.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 40.531239,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 38400,
+        "retained": 252627,
+        "oldest_due_s": 39.657503,
+        "oldest_created_retention_remaining_s": -39.657503
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -6.585465,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 478.3,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 42.734692,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 40320,
+        "retained": 250707,
+        "oldest_due_s": 41.860956,
+        "oldest_created_retention_remaining_s": -41.860956
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -8.792085,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 480.1,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 44.516359,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 42237,
+        "retained": 248790,
+        "oldest_due_s": 43.642623,
+        "oldest_created_retention_remaining_s": -43.642623
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -10.570987,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 480.6,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 45.05701,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 43197,
+        "retained": 247830,
+        "oldest_due_s": 44.183274,
+        "oldest_created_retention_remaining_s": -44.183274
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -11.107991,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 482.9,
+      "db_mib": 542.23,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 47.378644,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 45120,
+        "retained": 245907,
+        "oldest_due_s": 46.504908,
+        "oldest_created_retention_remaining_s": -46.504908
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -13.43633,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 485.2,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 49.605532,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 47039,
+        "retained": 243988,
+        "oldest_due_s": 48.731796,
+        "oldest_created_retention_remaining_s": -48.731796
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -15.655913,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 487.4,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 51.816391,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 48960,
+        "retained": 242067,
+        "oldest_due_s": 50.942655,
+        "oldest_created_retention_remaining_s": -50.942655
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -17.857168,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 489.6,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 54.014137,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 51839,
+        "retained": 239188,
+        "oldest_due_s": 53.140401,
+        "oldest_created_retention_remaining_s": -53.140401
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -20.054487,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 490.1,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 54.516764,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 51839,
+        "retained": 239188,
+        "oldest_due_s": 53.643028,
+        "oldest_created_retention_remaining_s": -53.643028
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -20.558625,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 491.8,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 56.209684,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 53760,
+        "retained": 237267,
+        "oldest_due_s": 55.335948,
+        "oldest_created_retention_remaining_s": -55.335948
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -22.249448,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 494.0,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 32663,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 58.40548,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 291027,
+        "eligible": 55679,
+        "retained": 235348,
+        "oldest_due_s": 57.531744,
+        "oldest_created_retention_remaining_s": -57.531744
+      },
+      "decision_bytes": {
+        "count": 32663,
+        "row_bytes": 9145640,
+        "payload_bytes": 163315
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 32663,
+        "last_remaining_s": -24.447456,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 496.2,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 18071,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 45.463559,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 276179,
+        "eligible": 42749,
+        "retained": 233430,
+        "oldest_due_s": 44.789787,
+        "oldest_created_retention_remaining_s": -44.789787
+      },
+      "decision_bytes": {
+        "count": 18071,
+        "row_bytes": 5059880,
+        "payload_bytes": 90355
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 18071,
+        "last_remaining_s": -26.697945,
+        "last_business_retain_until": "2026-10-09T15:22:18.149328+00:00"
+      }
+    },
+    {
+      "offset_s": 498.4,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 231507,
+        "eligible": 0,
+        "retained": 231507,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 0.018239
+      },
+      "decision_bytes": {
+        "count": 0,
+        "row_bytes": 0,
+        "payload_bytes": 0
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 0,
+        "last_remaining_s": null,
+        "last_business_retain_until": null
+      }
+    },
+    {
+      "offset_s": 498.4,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 231507,
+        "eligible": 0,
+        "retained": 231507,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 0.018239
+      },
+      "decision_bytes": {
+        "count": 0,
+        "row_bytes": 0,
+        "payload_bytes": 0
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 0,
+        "last_remaining_s": null,
+        "last_business_retain_until": null
+      }
+    },
+    {
+      "offset_s": 500.1,
+      "db_mib": 530.22,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 231507,
+        "eligible": 1919,
+        "retained": 229588,
+        "oldest_due_s": 1.643998,
+        "oldest_created_retention_remaining_s": -1.643998
+      },
+      "decision_bytes": {
+        "count": 0,
+        "row_bytes": 0,
+        "payload_bytes": 0
+      },
+      "decision_retention": {
+        "unexported": 0,
+        "exported_full": 0,
+        "exported_compact": 0,
+        "last_remaining_s": null,
+        "last_business_retain_until": null
+      }
+    }
+  ],
+  "storage_errors": [
+    {
+      "ts": 1791559378.7724152,
+      "error": "task command failed rc=1: Error response from daemon: container 8441cedfa03c0c5c3611a216376cd2f03d8fe803aa4a6fb20df82a6c242a5671 is not running\n"
+    },
+    {
+      "ts": 1791559388.6183429,
+      "error": "task command failed rc=1: Error response from daemon: No such container: pr238-reverify-rev360-20261009-postgres-1\n"
+    }
+  ],
+  "valkey": [
+    {
+      "offset_s": 0.8,
+      "keys": {
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 1,
+        "evicted_keys": 0,
+        "expired_keys": 0,
+        "keyspace_hits": 18,
+        "keyspace_misses": 34,
+        "mem_fragmentation_ratio": 8.35,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 1300744,
+        "used_memory_rss": 10715136
+      },
+      "sample_memory": {
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 61.3,
+      "keys": {
+        "oauth:auth_code": 1,
+        "oauth:consent": 3,
+        "oauth:jar": 54092,
+        "oauth:par": 1,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 55186,
+        "evicted_keys": 0,
+        "expired_keys": 0,
+        "keyspace_hits": 868115,
+        "keyspace_misses": 162,
+        "mem_fragmentation_ratio": 1.49,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 21224472,
+        "used_memory_rss": 31522816
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 121.5,
+      "keys": {
+        "oauth:auth_code": 5,
+        "oauth:consent": 3,
+        "oauth:jar": 111895,
+        "oauth:par": 2,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 113058,
+        "evicted_keys": 0,
+        "expired_keys": 2,
+        "keyspace_hits": 1794280,
+        "keyspace_misses": 294,
+        "mem_fragmentation_ratio": 1.25,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 41809016,
+        "used_memory_rss": 52289536
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 181.6,
+      "keys": {
+        "oauth:auth_code": 5,
+        "oauth:consent": 3,
+        "oauth:jar": 169507,
+        "oauth:par": 2,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 170751,
+        "evicted_keys": 0,
+        "expired_keys": 4,
+        "keyspace_hits": 2717609,
+        "keyspace_misses": 426,
+        "mem_fragmentation_ratio": 1.17,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 62732040,
+        "used_memory_rss": 73502720
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 242.2,
+      "keys": {
+        "oauth:auth_code": 4,
+        "oauth:consent": 1,
+        "oauth:jar": 227471,
+        "oauth:par": 4,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 228813,
+        "evicted_keys": 0,
+        "expired_keys": 6,
+        "keyspace_hits": 3646791,
+        "keyspace_misses": 558,
+        "mem_fragmentation_ratio": 1.13,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 83022408,
+        "used_memory_rss": 93855744
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 302.2,
+      "keys": {
+        "oauth:auth_code": 6,
+        "oauth:consent": 1,
+        "oauth:jar": 229942,
+        "oauth:par": 7,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 231315,
+        "evicted_keys": 0,
+        "expired_keys": 55129,
+        "keyspace_hits": 4568864,
+        "keyspace_misses": 693,
+        "mem_fragmentation_ratio": 1.34,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 86141864,
+        "used_memory_rss": 115773440
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 362.0,
+      "keys": {
+        "oauth:auth_code": 3,
+        "oauth:jar": 229954,
+        "oauth:par": 3,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 231352,
+        "evicted_keys": 0,
+        "expired_keys": 112567,
+        "keyspace_hits": 5488727,
+        "keyspace_misses": 822,
+        "mem_fragmentation_ratio": 1.34,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 86143408,
+        "used_memory_rss": 116133888
+      },
+      "sample_memory": {
+        "oauth:jar": 25912,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 79,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 421.6,
+      "keys": {
+        "oauth:jar": 190222,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 191218,
+        "evicted_keys": 0,
+        "expired_keys": 169791,
+        "keyspace_hits": 5763525,
+        "keyspace_misses": 943,
+        "mem_fragmentation_ratio": 1.45,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 72769320,
+        "used_memory_rss": 106823680
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 481.6,
+      "keys": {
+        "oauth:jar": 132622,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 133616,
+        "evicted_keys": 0,
+        "expired_keys": 227393,
+        "keyspace_hits": 5763745,
+        "keyspace_misses": 1062,
+        "mem_fragmentation_ratio": 1.78,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 53767976,
+        "used_memory_rss": 98447360
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 388.8,
+      "keys": {
+        "oauth:jar": 221639,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 222635,
+        "evicted_keys": 0,
+        "expired_keys": 138374,
+        "keyspace_hits": 5762526,
+        "keyspace_misses": 877,
+        "mem_fragmentation_ratio": 1.37,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 83246976,
+        "used_memory_rss": 115347456
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    }
+  ],
+  "terminal_table_sizes": [
+    {
+      "relname": "security_audit_events",
+      "n_tup_del": 987021,
+      "n_tup_ins": 1079064,
+      "n_dead_tup": 111972,
+      "index_bytes": 101654528,
+      "table_bytes": 111017984,
+      "autovacuum_count": 6
+    },
+    {
+      "relname": "oauth_token_issuances",
+      "n_tup_del": 8493,
+      "n_tup_ins": 359676,
+      "n_dead_tup": 8493,
+      "index_bytes": 98869248,
+      "table_bytes": 141025280,
+      "autovacuum_count": 5
+    },
+    {
+      "relname": "security_audit_chain_entries",
+      "n_tup_del": 1080003,
+      "n_tup_ins": 1080003,
+      "n_dead_tup": 43032,
+      "index_bytes": 33202176,
+      "table_bytes": 18874368,
+      "autovacuum_count": 6
+    },
+    {
+      "relname": "oauth_refresh_contracts",
+      "n_tup_del": 5703,
+      "n_tup_ins": 7687,
+      "n_dead_tup": 1009,
+      "index_bytes": 679936,
+      "table_bytes": 2056192,
+      "autovacuum_count": 5
+    },
+    {
+      "relname": "oauth_refresh_families",
+      "n_tup_del": 353411,
+      "n_tup_ins": 360668,
+      "n_dead_tup": 77724,
+      "index_bytes": 47628288,
+      "table_bytes": 21602304,
+      "autovacuum_count": 6
+    },
+    {
+      "relname": "oauth_refresh_spent_tokens",
+      "n_tup_del": 0,
+      "n_tup_ins": 0,
+      "n_dead_tup": 0,
+      "index_bytes": 24576,
+      "table_bytes": 8192,
+      "autovacuum_count": 0
+    }
+  ],
+  "observer_peak_s": 0.3662467016838491,
+  "elapsed_s": 449.5,
+  "cleanup": null
+}

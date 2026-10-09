@@ -1,0 +1,1 @@
+{"command": ["docker", "run", "-d", "--name", "nazoauth-reverify-controller-20261009", "--workdir", "/src", "-v", "/workspace:/src", "-v", "/var/run/docker.sock:/var/run/docker.sock", "--entrypoint", "sh", "nazoauth-reverify-controller:20261009", "-c", "sleep infinity"], "exit": 0, "seconds": 0.3069218350574374}

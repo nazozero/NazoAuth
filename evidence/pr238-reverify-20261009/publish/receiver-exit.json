@@ -1,0 +1,1 @@
+{"command": ["docker", "exec", "-e", "CARGO_TARGET_DIR=/src/target", "nazoauth-perf-runner-20261009", "cargo", "build", "--release", "--locked", "--manifest-path", "perf/audit-anchor-receiver/Cargo.toml"], "exit": 0, "seconds": 10.740607065148652}

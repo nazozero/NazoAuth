@@ -1,0 +1,1 @@
+{"command": ["docker", "build", "-f", "perf/keyset/Containerfile", "-t", "nazoauth-reverify-keyset:20261009", "."], "exit": 0, "seconds": 2.537749382201582}
