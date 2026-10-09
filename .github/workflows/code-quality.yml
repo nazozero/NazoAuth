@@ -178,6 +178,14 @@ jobs:
           -v ON_ERROR_STOP=1
           -c 'CREATE DATABASE nazo_audit_test'
 
+      - name: Inventory declared model fields for the refactoring review
+        # Metadata only; no function bodies, source archive or database rows.
+        # Diagnostic parsing does not replace or disable any existing quality gate.
+        continue-on-error: true
+        run: |
+          python -m unittest discover -s scripts -p 'test_data_model_inventory.py'
+          python scripts/data_model_inventory.py
+
       - name: Verify compatibility contracts
         run: python scripts/verify_static_contracts.py --check
 
@@ -203,6 +211,10 @@ jobs:
         run: >-
           cargo test --all-features --locked -p nazo-postgres --test migrations
           pending_migrations_create_all_runtime_module_state_tables
+
+      - name: Inventory isolated test schema columns for the refactoring review
+        continue-on-error: true
+        run: python scripts/data_model_inventory.py --postgres
 
       - name: Test workspace with PostgreSQL and Valkey
         # Stream test progress so an interrupted job retains its actual wait boundary.

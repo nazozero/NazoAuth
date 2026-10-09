@@ -158,14 +158,8 @@ struct AccessTokenClaims {
     scope: String,
     #[serde(default)]
     authorization_details: Value,
-    /// Optional private compatibility assertion, not the token-type authority.
-    #[serde(default)]
-    token_use: Option<String>,
+    token_use: String,
     jti: String,
-    /// RFC 9068 requires an issuance NumericDate. It is checked on input, not
-    /// copied into the runtime projection or turned into an extra age policy.
-    #[serde(rename = "iat")]
-    _issued_at: serde_json::Number,
     #[serde(default)]
     nbf: Option<i64>,
     exp: i64,
@@ -218,7 +212,7 @@ impl ResourceServerVerifier {
     ) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
         let header = nazo_crypto::jwt::decode_header(token)
             .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
-        if !matches!(header.typ.as_deref(), Some("at+jwt" | "application/at+jwt")) {
+        if header.typ.as_deref() != Some("at+jwt") {
             return Err(ResourceServerVerifierError::WrongTokenType);
         }
         if !self.config.allowed_algs.contains(&header.alg) {
@@ -249,7 +243,7 @@ impl ResourceServerVerifier {
         claims: AccessTokenClaims,
         now: i64,
     ) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
-        if claims.token_use.as_deref().is_some_and(|value| value != "access") {
+        if claims.token_use != "access" {
             return Err(ResourceServerVerifierError::WrongTokenType);
         }
         if claims.iss != self.config.issuer {

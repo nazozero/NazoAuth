@@ -1,7 +1,6 @@
 use super::dpop::{access_token_hash, dpop_jwk_thumbprint};
 use super::*;
-#[path = "lib/access_token_profile.rs"]
-mod access_token_profile;
+
 #[path = "lib/dpop.rs"]
 mod dpop;
 #[path = "lib/fixtures.rs"]
