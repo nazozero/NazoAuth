@@ -177,6 +177,12 @@ async fn cancelling_a_blocked_read_retires_its_backend_before_reuse() {
     let pool = create_pool(format!("{url}{separator}application_name={application}"), 1).unwrap();
     let old_pid = {
         let mut connection = get_conn(&pool).await.unwrap();
+        // Exercise PostgreSQL's default disconnect detection even when the
+        // surrounding fixture enables more frequent connection checks.
+        connection
+            .batch_execute("SET client_connection_check_interval = 0")
+            .await
+            .unwrap();
         sql_query("SELECT pg_backend_pid() AS pid")
             .get_result::<BackendRow>(&mut connection)
             .await
@@ -198,8 +204,19 @@ async fn cancelling_a_blocked_read_retires_its_backend_before_reuse() {
         observed = tokio::time::timeout(Duration::from_secs(5), wait_for_state(&mut observer, &application, "blocked")) => observed.expect("real read must reach lock barrier"),
     }
     drop(read);
-    // Observe disposal independently while the table lock remains held. A new
-    // checkout succeeding alone cannot prove the old backend was retired.
+    // First prove the cancelled owner discarded the connection, rather than
+    // letting the query complete and returning it normally after barrier release.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while pool.status().size != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("cancelled owner must discard its pool connection while still blocked");
+    // With PostgreSQL's default connection checks, a backend waiting on our
+    // lock need not notice socket closure until it resumes. Release only the
+    // test-owned barrier, then observe retirement before any new checkout.
+    blocker.batch_execute("ROLLBACK").await.unwrap();
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let count =
@@ -217,7 +234,6 @@ async fn cancelling_a_blocked_read_retires_its_backend_before_reuse() {
     })
     .await
     .expect("cancelled read backend must disappear");
-    blocker.batch_execute("ROLLBACK").await.unwrap();
     let mut replacement = tokio::time::timeout(Duration::from_secs(5), get_conn(&pool))
         .await
         .unwrap()
