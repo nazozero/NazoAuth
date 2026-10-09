@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "-p", "nazo-postgres", "--lib", "--all-features", "--locked", "passkey_adapter_rejects_conflicting_credential_authorities"], "exit": 101, "seconds": 23.78943435801193}

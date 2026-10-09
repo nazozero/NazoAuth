@@ -1,0 +1,144 @@
+   Compiling nazo-crypto v0.2.16 (/src/crates/crypto)
+   Compiling nazo-resource-server v0.2.16 (/src/crates/resource-server)
+    Finished `test` profile [unoptimized] target(s) in 1.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_resource_server-e029befc18be0fca)
+
+running 122 tests
+test dpop::tests::cloned_replay_verifiers_have_one_atomic_winner ... ok
+test dpop::tests::proof_http_method_is_case_sensitive_before_replay_reservation ... ok
+test dpop::tests::replay_cache_expires_only_due_entries_after_clock_rollback ... ok
+test dpop::tests::supported_dpop_algorithm_rejects_unsupported_algs ... ok
+test jwk::tests::algorithm_name_allows_only_asymmetric_jwt_signing_algorithms ... ok
+test jwk::tests::decoding_key_accepts_only_matching_public_ec_key_metadata ... ok
+test jwk::tests::decoding_key_accepts_only_matching_public_eddsa_key_metadata ... ok
+test jwk::tests::decoding_key_accepts_only_matching_public_rsa_key_metadata ... ok
+test jwk::tests::decoding_key_rejects_unsupported_or_missing_algorithm_metadata ... ok
+test presentation::tests::dpop_scheme_cannot_reuse_a_matching_mtls_only_confirmation ... ok
+test presentation::tests::http_authorization_headers_accepts_multiple_headers ... ok
+test presentation::tests::http_authorization_headers_accepts_single_header ... ok
+test presentation::tests::http_authorization_headers_rejects_invalid_utf8 ... ok
+test presentation::tests::http_authorization_headers_returns_empty_for_no_headers ... ok
+test presentation::tests::http_dpop_headers_accepts_multiple_headers ... ok
+test presentation::tests::http_dpop_headers_accepts_single_header ... ok
+test presentation::tests::http_dpop_headers_rejects_invalid_utf8 ... ok
+test presentation::tests::http_dpop_headers_returns_empty_for_no_headers ... ok
+test presentation::tests::presented_authorization_token_accepts_bearer ... ok
+test presentation::tests::presented_authorization_token_accepts_dpop ... ok
+test presentation::tests::presented_authorization_token_case_insensitive_scheme ... ok
+test presentation::tests::presented_authorization_token_rejects_empty_values ... ok
+test presentation::tests::presented_authorization_token_rejects_extra_parts ... ok
+test presentation::tests::presented_authorization_token_rejects_missing_token ... ok
+test presentation::tests::presented_authorization_token_rejects_multiple_values ... ok
+test presentation::tests::presented_authorization_token_rejects_unknown_scheme ... ok
+test presentation::tests::query_has_access_token_detects_absent ... ok
+test presentation::tests::query_has_access_token_detects_present ... ok
+test presentation::tests::query_has_access_token_handles_url_encoded ... ok
+test presentation::tests::query_has_access_token_ignores_other_params ... ok
+test presentation::tests::single_dpop_header_accepts_one_value ... ok
+test presentation::tests::single_dpop_header_rejects_empty_slice ... ok
+test presentation::tests::single_dpop_header_rejects_multiple_values ... ok
+test presentation::tests::single_dpop_header_rejects_whitespace_only ... ok
+test presentation::tests::validate_presented_sender_constraint_cnf_jkt_dpop_jkt_mismatch ... ok
+test presentation::tests::validate_presented_sender_constraint_cnf_jkt_dpop_missing_proof ... ok
+test presentation::tests::validate_presented_sender_constraint_cnf_jkt_with_dpop_and_matching_proof ... ok
+test presentation::tests::validate_presented_sender_constraint_cnf_jkt_without_dpop_fails ... ok
+test presentation::tests::validate_presented_sender_constraint_cnf_without_jkt_or_x5t_fails ... ok
+test presentation::tests::validate_presented_sender_constraint_cnf_x5t_mismatch ... ok
+test presentation::tests::validate_presented_sender_constraint_cnf_x5t_missing_mtls_proof ... ok
+test presentation::tests::validate_presented_sender_constraint_cnf_x5t_with_mtls_matching ... ok
+test presentation::tests::validate_presented_sender_constraint_no_cnf_bearer_ok ... ok
+test presentation::tests::validate_presented_sender_constraint_no_cnf_dpop_fails ... ok
+test service::tests::bearer_authorization_returns_typed_verified_result ... ok
+test service::tests::concurrent_distinct_jti_proofs_can_share_a_valid_nonce ... ok
+test service::tests::concurrent_dpop_replay_has_exactly_one_winner ... ok
+test service::tests::dpop_accepts_any_explicit_transport_target_without_retrying_authorization ... ok
+test service::tests::dpop_authorization_consumes_replay_marker_atomically ... ok
+test service::tests::dpop_replay_dependency_failure_is_fail_closed ... ok
+test service::tests::missing_required_nonce_does_not_consume_replay_marker ... ok
+test service::tests::missing_tenant_boundary_is_rejected_before_revocation_lookup ... ok
+test service::tests::mtls_bound_bearer_requires_the_verified_certificate_thumbprint ... ok
+test service::tests::nonce_store_failure_is_fail_closed ... ok
+test service::tests::revocation_and_revocation_dependency_failure_are_fail_closed ... ok
+test service::tests::token_issuer_audience_and_use_are_enforced_before_dependencies ... ok
+test tests::access_token_profile::absent_private_marker_does_not_allow_other_token_types ... ok
+test tests::access_token_profile::access_token_issuance_time_is_required_and_must_be_numeric ... ok
+test tests::access_token_profile::standard_profile_does_not_require_a_private_token_use_claim ... ok
+test tests::dpop::dpop_authorizer_rejects_invalid_proof_before_token_binding ... ok
+test tests::dpop::dpop_authorizer_rejects_invalid_token_before_recording_replay ... ok
+test tests::dpop::dpop_http_authorizer_verifies_proof_and_inserts_extensions ... ok
+test tests::dpop::dpop_htu_normalizes_both_proof_and_configured_target ... ok
+test tests::dpop::dpop_htu_rejects_an_invalid_configured_target ... ok
+test tests::dpop::dpop_jwk_thumbprint_covers_ec_okp_and_rsa_public_members_only ... ok
+test tests::dpop::dpop_jwk_thumbprint_is_defined_only_for_supported_public_jwk_members ... ok
+test tests::dpop::dpop_low_level_decoder_rejects_malformed_compact_jws_parts ... ok
+test tests::dpop::dpop_low_level_decoder_rejects_valid_compact_jws_with_wrong_key ... ok
+test tests::dpop::dpop_proof_verifier_enforces_required_nonce ... ok
+test tests::dpop::dpop_proof_verifier_fails_closed_when_replay_cache_is_full ... ok
+test tests::dpop::dpop_proof_verifier_produces_verified_sender_context ... ok
+test tests::dpop::dpop_proof_verifier_rejects_empty_jti ... ok
+test tests::dpop::dpop_proof_verifier_rejects_expired_and_future_iat ... ok
+test tests::dpop::dpop_proof_verifier_rejects_invalid_signature ... ok
+test tests::dpop::dpop_proof_verifier_rejects_malformed_compact_jwt_parts ... ok
+test tests::dpop::dpop_proof_verifier_rejects_missing_or_private_header_jwk ... ok
+test tests::dpop::dpop_proof_verifier_rejects_replayed_jti ... ok
+test tests::dpop::dpop_proof_verifier_rejects_wrong_ath ... ok
+test tests::dpop::dpop_proof_verifier_rejects_wrong_method_and_uri ... ok
+test tests::dpop::dpop_proof_verifier_rejects_wrong_type_and_unsupported_algorithm ... ok
+test tests::dpop::dpop_public_jwk_decoder_accepts_supported_public_key_families ... ok
+test tests::dpop::dpop_public_jwk_decoder_rejects_algorithm_use_and_shape_mismatches ... ok
+test tests::request_authorization::access_token_query_detection_decodes_form_keys_only ... ok
+test tests::request_authorization::authorization_header_parser_accepts_bearer_and_dpop_case_insensitively ... ok
+test tests::request_authorization::authorization_header_parser_rejects_missing_duplicate_and_malformed_values ... ok
+test tests::request_authorization::dpop_header_parser_requires_exactly_one_non_empty_proof ... ok
+test tests::request_authorization::dpop_request_authorizer_rejects_bearer_scheme ... ok
+test tests::request_authorization::dpop_request_authorizer_rejects_query_access_tokens ... ok
+test tests::request_authorization::http_request_authorizer_inserts_verified_claims_into_extensions ... ok
+test tests::request_authorization::raw_http_header_extractors_fail_closed_on_non_utf8_values ... ok
+test tests::request_authorization::request_authorizer_rejects_duplicate_authorization_headers ... ok
+test tests::request_authorization::request_authorizer_rejects_query_access_tokens ... ok
+test tests::request_authorization::request_authorizer_requires_verified_dpop_binding_context ... ok
+test tests::request_authorization::request_authorizer_requires_verified_mtls_binding_context ... ok
+test tests::verifier::accepts_any_configured_audience_from_array ... ok
+test tests::verifier::accepts_jwk_without_optional_key_id ... ok
+test tests::verifier::enforces_dpop_jkt_binding ... ok
+test tests::verifier::enforces_require_any_sender_constraint_with_jkt ... ok
+test tests::verifier::enforces_require_any_sender_constraint_with_none_cnf ... ok
+test tests::verifier::enforces_require_any_sender_constraint_with_x5t ... ok
+test tests::verifier::enforces_require_dpop_jkt_with_none_cnf ... ok
+test tests::verifier::enforces_require_mtls_thumbprint_with_matching_cnf ... ok
+test tests::verifier::enforces_require_mtls_thumbprint_with_none_cnf ... ok
+test tests::verifier::enforces_require_mtls_with_none_cnf ... ok
+test tests::verifier::enforces_sender_constraint_policy_variants ... ok
+test tests::verifier::prepared_keys_preserve_unrelated_invalid_key_and_unknown_key_errors ... ok
+test tests::verifier::rejects_dpop_jkt_mismatch ... ok
+test tests::verifier::rejects_duplicate_jwk_key_ids_at_configuration_time ... ok
+test tests::verifier::rejects_expired_and_not_yet_valid_tokens_with_clock_skew ... ok
+test tests::verifier::rejects_id_token_typ ... ok
+test tests::verifier::rejects_missing_required_scope ... ok
+test tests::verifier::rejects_mixed_type_audience_and_ambiguous_confirmation_claims ... ok
+test tests::verifier::rejects_non_string_audience_values ... ok
+test tests::verifier::rejects_token_signed_with_disallowed_algorithm ... ok
+test tests::verifier::rejects_token_when_jwk_algorithm_does_not_match_header ... ok
+test tests::verifier::rejects_token_with_missing_kid_before_key_lookup ... ok
+test tests::verifier::rejects_token_with_non_access_token_use ... ok
+test tests::verifier::rejects_token_with_unknown_kid ... ok
+test tests::verifier::rejects_token_with_wrong_issuer ... ok
+test tests::verifier::rejects_verifier_configs_missing_trust_anchors ... ok
+test tests::verifier::rejects_wrong_audience ... ok
+test tests::verifier::verifies_jwt_access_token_with_required_scope ... ok
+
+test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.08s
+
+     Running tests/dependency_boundary.rs (target/debug/deps/dependency_boundary-e77be4046f0b94c8)
+
+running 1 test
+test resource_server_has_no_framework_or_authorization_server_dependencies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests nazo_resource_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

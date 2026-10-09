@@ -1,0 +1,10 @@
+{
+  "historical_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+  "candidate_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+  "lookup_identical": true,
+  "lookup_sha256": "79d22c6c4537dc730cd58db6135a34492ad4f4432ddcaa82201e1e89cbe5f56d",
+  "unique_index_migration_identical": true,
+  "migration": "migrations/20260926000100_refresh_state_minimal/up.sql",
+  "index_constraint": "UNIQUE (tenant_id, current_token_blake3)",
+  "finding": "The measured lookup wall-time increase is real, but its SQL, holder/tenant predicates and unique index did not change. Plans and I/O timing were not captured for these formal points; no causal attribution to shared CPU or model changes is established."
+}

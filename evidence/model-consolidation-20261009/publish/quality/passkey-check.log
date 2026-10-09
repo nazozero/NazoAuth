@@ -1,0 +1,3 @@
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `dev` profile [unoptimized] target(s) in 18.72s

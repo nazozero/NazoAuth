@@ -1,0 +1,133 @@
+{
+  "authorization-server-core/src/ciba.rs": [
+    "CibaPingNotification",
+    "CibaStateVersion"
+  ],
+  "authorization-server-core/src/device.rs": [
+    "DeviceStateVersion"
+  ],
+  "authorization-server-core/src/client_authentication.rs": [
+    "ClientAuthenticationRequirement"
+  ],
+  "authorization-server-core/src/logout_service.rs": [
+    "IdempotentBackchannelLogoutDelivery"
+  ],
+  "authorization-server-core/src/token_endpoint.rs": [
+    "TokenEndpointRequestInput",
+    "AuthorizationCodeTokenRequest",
+    "RefreshTokenRequest"
+  ],
+  "authorization-server-core/src/authorization_policy.rs": [
+    "AuthorizationResponsePolicyInput",
+    "JarmAuthorizationResponse"
+  ],
+  "authorization-server-core/src/dpop.rs": [
+    "DpopProofRequest"
+  ],
+  "authorization-server-core/src/extension_grants.rs": [
+    "TokenExchangeRequestInput",
+    "TokenExchangeAdmission"
+  ],
+  "authorization-server-core/src/token_service.rs": [
+    "IssuedAccessToken"
+  ],
+  "authorization-server-core/src/token.rs": [
+    "NewRefreshToken",
+    "BackchannelLogoutDelivery",
+    "PendingBackchannelLogoutDelivery"
+  ],
+  "authorization-server/src/domain/oauth.rs": [
+    "NativeSsoTokenBinding"
+  ],
+  "authorization-server/src/contracts/mfa_profile.rs": [
+    "MfaCodeCommand",
+    "MfaChallengeCommand",
+    "MfaSessionRotation",
+    "MfaTotpEnrollment",
+    "MfaChallengeSuccess"
+  ],
+  "authorization-server/src/contracts/oidc_logout.rs": [
+    "OidcLogoutRequest"
+  ],
+  "authorization-server/src/ports/transient_state.rs": [
+    "CibaPingDelivery"
+  ],
+  "http-actix/src/local_registration.rs": [
+    "RegisterRequest"
+  ],
+  "http-actix/src/password_login.rs": [
+    "LoginRequest"
+  ],
+  "http-actix/src/token_client_auth.rs": [
+    "TokenClientAuthForm"
+  ],
+  "identity/src/authentication.rs": [
+    "AuthenticatePasswordInput",
+    "LoginSuccess",
+    "PasswordLoginResult"
+  ],
+  "identity/src/federation.rs": [
+    "OidcFederationState",
+    "SocialFederationState",
+    "OidcFederationStart",
+    "SocialFederationStart"
+  ],
+  "identity/src/mfa_service.rs": [
+    "TotpEnrollmentStart",
+    "PreparedTotpConfirmation",
+    "TotpConfirmationOutcome"
+  ],
+  "identity/src/registration.rs": [
+    "SendVerificationCodeOutcome",
+    "RegisterLocalAccountInput"
+  ],
+  "identity/src/session.rs": [
+    "SessionId",
+    "SessionVersion",
+    "SessionRotation"
+  ],
+  "identity/src/ports/common.rs": [
+    "EncodedSecretHash"
+  ],
+  "identity/src/ports/mfa.rs": [
+    "TotpCredential",
+    "TotpEnrollment"
+  ],
+  "nazoauth/src/controller_registry.rs": [
+    "IssuedApprovalView"
+  ],
+  "nazoauth/src/recovery_root.rs": [
+    "IssuedRotationApprovalView"
+  ],
+  "nazoauth/src/http/auth/federation.rs": [
+    "OidcCallbackInput"
+  ],
+  "openid4vci/src/application.rs": [
+    "CredentialRequestContext",
+    "PreAuthorizedTokenResponse"
+  ],
+  "openid4vp/src/model.rs": [
+    "PresentationTransaction"
+  ],
+  "persistence-postgres/src/rows/identity.rs": [
+    "AuthenticationIdentityRow"
+  ],
+  "persistence-postgres/src/rows/auth.rs": [
+    "BackchannelLogoutDeliveryRow"
+  ],
+  "persistence-postgres/src/repositories/controller_registry/approvals.rs": [
+    "IssuedIdentityApproval"
+  ],
+  "persistence/src/control_plane.rs": [
+    "IssuedIdentityApproval"
+  ],
+  "resource-server/src/service.rs": [
+    "ProtectedResourceAuthorizationRequest"
+  ],
+  "state-store-valkey/src/ciba.rs": [
+    "CibaPingDelivery"
+  ],
+  "authorization-server-object-store/src/s3.rs": [
+    "S3AvatarObjectStoreConfig"
+  ]
+}

@@ -1,0 +1,92 @@
+   Compiling syn v2.0.119
+   Compiling syn v3.0.6
+   Compiling num-traits v0.2.19
+   Compiling serde_core v1.0.229
+   Compiling signature v2.2.0
+   Compiling chrono v0.4.45
+   Compiling synstructure v0.14.0
+   Compiling zerovec-derive v0.11.6
+   Compiling displaydoc v0.2.7
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling serde_json v1.0.151
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.3
+   Compiling zerotrie v0.2.5
+   Compiling zerovec v0.11.8
+   Compiling thiserror v2.0.21
+   Compiling zeroize_derive v1.5.0
+   Compiling der_derive v0.8.0
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.3.0
+   Compiling icu_locale_core v2.3.0
+   Compiling zeroize v1.9.0
+   Compiling hybrid-array v0.4.15
+   Compiling aws-lc-rs v1.18.1
+   Compiling der v0.8.2
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling crypto-bigint v0.7.5
+   Compiling serde v1.0.229
+   Compiling icu_provider v2.3.1
+   Compiling icu_properties v2.3.0
+   Compiling icu_normalizer v2.3.0
+   Compiling digest v0.11.3
+   Compiling signature v3.0.0
+   Compiling hmac v0.13.0
+   Compiling sha2 v0.11.0
+   Compiling curve25519-dalek v5.0.0
+   Compiling jsonwebtoken v11.1.0
+   Compiling ed25519 v3.0.0
+   Compiling spki v0.8.0
+   Compiling sec1 v0.8.1
+   Compiling pkcs8 v0.11.0
+   Compiling x509-cert v0.3.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling ed25519-dalek v3.0.0
+   Compiling url v2.5.8
+   Compiling primefield v0.14.0
+   Compiling elliptic-curve v0.14.1
+   Compiling rfc6979 v0.6.0
+   Compiling wnaf v0.14.1
+   Compiling primeorder v0.14.0
+   Compiling ecdsa v0.17.0
+   Compiling p256 v0.14.0
+   Compiling nazo-crypto v0.2.16 (/src/crates/crypto)
+   Compiling nazo-resource-server v0.2.16 (/src/crates/resource-server)
+    Finished `test` profile [unoptimized] target(s) in 5.41s
+     Running unittests src/lib.rs (target/debug/deps/nazo_resource_server-bb0fd074504f3d21)
+
+running 3 tests
+test tests::access_token_profile::absent_private_marker_does_not_allow_other_token_types ... ok
+test tests::access_token_profile::standard_profile_does_not_require_a_private_token_use_claim ... FAILED
+test tests::access_token_profile::access_token_issuance_time_is_required_and_must_be_numeric ... FAILED
+
+failures:
+
+---- tests::access_token_profile::standard_profile_does_not_require_a_private_token_use_claim stdout ----
+
+thread 'tests::access_token_profile::standard_profile_does_not_require_a_private_token_use_claim' (64201) panicked at crates/resource-server/src/../tests/unit/lib/access_token_profile.rs:32:9:
+assertion failed: fixture.verifier.verify_at(&token, now).is_ok()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tests::access_token_profile::access_token_issuance_time_is_required_and_must_be_numeric stdout ----
+
+thread 'tests::access_token_profile::access_token_issuance_time_is_required_and_must_be_numeric' (64200) panicked at crates/resource-server/src/../tests/unit/lib/access_token_profile.rs:44:5:
+assertion `left == right` failed
+  left: Ok(VerifiedAccessToken { client_epoch: None, user_epoch: None, user_id: None, subject_type: None, issuer: "https://issuer.example", subject: "subject-1", tenant_id: None, client_id: "client-1", audiences: ["resource://default"], scopes: ["read"], jti: "profile-test", exp: 1791526318, cnf: None, authorization_details: Null })
+ right: Err(InvalidToken)
+
+
+failures:
+    tests::access_token_profile::access_token_issuance_time_is_required_and_must_be_numeric
+    tests::access_token_profile::standard_profile_does_not_require_a_private_token_use_claim
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 119 filtered out; finished in 0.15s
+
+error: test failed, to rerun pass `-p nazo-resource-server --lib`

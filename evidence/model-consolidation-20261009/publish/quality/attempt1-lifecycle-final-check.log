@@ -1,0 +1,50 @@
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+error[E0599]: no method named `canonical_bytes` found for struct `RefreshContract` in the current scope
+   --> crates/authorization-server-core/src/../tests/unit/token.rs:116:28
+    |
+116 |         authority.contract.canonical_bytes(),
+    |                            ^^^^^^^^^^^^^^^ method not found in `RefreshContract`
+    |
+   ::: crates/authorization-server-core/src/token.rs:58:1
+    |
+ 58 | pub struct RefreshContract {
+    | -------------------------- method `canonical_bytes` not found for this struct
+
+error[E0599]: no method named `canonical_bytes` found for struct `RefreshContract` in the current scope
+   --> crates/authorization-server-core/src/../tests/unit/token.rs:117:18
+    |
+117 |         expected.canonical_bytes()
+    |                  ^^^^^^^^^^^^^^^ method not found in `RefreshContract`
+    |
+   ::: crates/authorization-server-core/src/token.rs:58:1
+    |
+ 58 | pub struct RefreshContract {
+    | -------------------------- method `canonical_bytes` not found for this struct
+
+    Checking nazo-key-management v0.2.16 (/src/crates/key-management)
+    Checking nazo-persistence v0.2.16 (/src/crates/persistence)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `nazo-auth` (lib test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error[E0599]: no method named `blake3_digest` found for struct `nazo_auth::RefreshContract` in the current scope
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:130:51
+    |
+130 |     assert_eq!(prepared.contract_blake3, expected.blake3_digest().to_vec());
+    |                                                   ^^^^^^^^^^^^^ method not found in `nazo_auth::RefreshContract`
+
+error[E0599]: no method named `canonical_bytes` found for reference `&nazo_auth::RefreshContract` in the current scope
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:131:25
+    |
+131 |     assert_eq!(contract.canonical_bytes(), expected.canonical_bytes());
+    |                         ^^^^^^^^^^^^^^^ method not found in `&nazo_auth::RefreshContract`
+
+error[E0599]: no method named `canonical_bytes` found for struct `nazo_auth::RefreshContract` in the current scope
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:131:53
+    |
+131 |     assert_eq!(contract.canonical_bytes(), expected.canonical_bytes());
+    |                                                     ^^^^^^^^^^^^^^^ method not found in `nazo_auth::RefreshContract`
+
+error: could not compile `nazo-postgres` (lib test) due to 3 previous errors

@@ -1,0 +1,19 @@
+error[E0753]: expected outer doc comment
+ --> /src/crates/nazoauth/src/http/../../tests/unit/http/profile/mfa_required.rs:3:1
+  |
+3 |   //! HTTP -> production profile -> actual PG commit with its ACK deliberately hidden.
+  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+4 | / use actix_web::{
+5 | |     App,
+6 | |     http::{StatusCode, header},
+7 | |     test, web,
+8 | | };
+  | |__- the inner doc comment doesn't annotate this `use` import
+  |
+help: to annotate the `use` import, change the doc comment from inner to outer style
+  |
+3 - //! HTTP -> production profile -> actual PG commit with its ACK deliberately hidden.
+3 + /// HTTP -> production profile -> actual PG commit with its ACK deliberately hidden.
+  |
+
+Error writing files: failed to resolve mod `mfa_required`: cannot parse /src/crates/nazoauth/src/http/../../tests/unit/http/profile/mfa_required.rs

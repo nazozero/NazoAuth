@@ -1,0 +1,1 @@
+{"command": ["docker", "exec", "-w", "/src", "nazoauth-perf-runner-20261009", "cargo", "test", "-p", "nazo-resource-server", "--lib", "access_token_profile", "--locked"], "exit": 101, "seconds": 5.638864963781089}

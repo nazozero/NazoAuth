@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    {
+      "pid": 1,
+      "tid": 1,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111",
+      "name": "nazoauth",
+      "starttime_ticks": 214384591
+    },
+    {
+      "pid": 1,
+      "tid": 7,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111",
+      "name": "tokio-rt-worker",
+      "starttime_ticks": 214384608
+    },
+    {
+      "pid": 1,
+      "tid": 11,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111",
+      "name": "actix-server",
+      "starttime_ticks": 214385202
+    },
+    {
+      "pid": 1,
+      "tid": 12,
+      "ppid": 0,
+      "uid": "10001",
+      "allowed": "111",
+      "name": "actix-server",
+      "starttime_ticks": 214385202
+    }
+  ],
+  "complete": true,
+  "read_errors": [],
+  "confirmed_gone": [],
+  "collector_exit": 0,
+  "round_trip_ms": 47.2309
+}

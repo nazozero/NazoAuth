@@ -1,0 +1,76 @@
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+    Checking nazo-key-management v0.2.16 (/src/crates/key-management)
+    Checking nazo-persistence v0.2.16 (/src/crates/persistence)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+warning: unused import: `BoolExpressionMethods`
+ --> crates/persistence-postgres/src/repositories/mfa/totp.rs:9:14
+  |
+9 | use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, dsl::now};
+  |              ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+    Checking nazo-http-actix v0.2.16 (/src/crates/http-actix)
+    Checking nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+error[E0277]: can't compare `Vec<std::string::String>` with `serde_json::Value`
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:191:5
+    |
+191 |     assert_eq!(current.audience, serde_json::json!(["resource://a"]));
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no implementation for `Vec<std::string::String> == serde_json::Value`
+    |
+    = help: the trait `PartialEq<serde_json::Value>` is not implemented for `Vec<std::string::String>`
+    = help: the following other types implement trait `PartialEq<Rhs>`:
+              `Vec<T, A1>` implements `PartialEq<Vec<U, A2>>`
+              `Vec<T, A>` implements `PartialEq<&[U; N]>`
+              `Vec<T, A>` implements `PartialEq<&[U]>`
+              `Vec<T, A>` implements `PartialEq<&mut [U]>`
+              `Vec<T, A>` implements `PartialEq<[U; N]>`
+              `Vec<T, A>` implements `PartialEq<[U]>`
+              `Vec<u8>` implements `PartialEq<ByteStr>`
+              `Vec<u8>` implements `PartialEq<ByteString>`
+            and 2 others
+
+error[E0277]: can't compare `Vec<std::string::String>` with `serde_json::Value`
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:204:5
+    |
+204 | /     assert_eq!(
+205 | |         restored.audience,
+206 | |         serde_json::json!(["resource://a", "resource://b"])
+207 | |     );
+    | |_____^ no implementation for `Vec<std::string::String> == serde_json::Value`
+    |
+    = help: the trait `PartialEq<serde_json::Value>` is not implemented for `Vec<std::string::String>`
+    = help: the following other types implement trait `PartialEq<Rhs>`:
+              `Vec<T, A1>` implements `PartialEq<Vec<U, A2>>`
+              `Vec<T, A>` implements `PartialEq<&[U; N]>`
+              `Vec<T, A>` implements `PartialEq<&[U]>`
+              `Vec<T, A>` implements `PartialEq<&mut [U]>`
+              `Vec<T, A>` implements `PartialEq<[U; N]>`
+              `Vec<T, A>` implements `PartialEq<[U]>`
+              `Vec<u8>` implements `PartialEq<ByteStr>`
+              `Vec<u8>` implements `PartialEq<ByteString>`
+            and 2 others
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:208:28
+    |
+208 |     restored.audience[0] = serde_json::json!("changed");
+    |     --------------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `String`, found `Value`
+    |     |
+    |     expected due to the type of this binding
+    |
+    = note: this error originates in the macro `$crate::json_internal` which comes from the expansion of the macro `serde_json::json` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: try using a conversion method
+   --> /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.151/src/macros.rs:279:43
+    |
+279 |         $crate::to_value(&$other).unwrap().to_string()
+    |                                           ++++++++++++
+
+Some errors have detailed explanations: E0277, E0308.
+For more information about an error, try `rustc --explain E0277`.
+warning: `nazo-postgres` (lib test) generated 1 warning (1 duplicate)
+error: could not compile `nazo-postgres` (lib test) due to 3 previous errors; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `nazo-postgres` (lib) generated 1 warning (run `cargo fix --lib -p nazo-postgres` to apply 1 suggestion)

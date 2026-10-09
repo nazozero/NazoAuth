@@ -1,0 +1,13 @@
+    Checking nazo-http-actix v0.2.16 (/src/crates/http-actix)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+error[E0433]: cannot find type `Utc` in this scope
+   --> crates/authorization-server/tests/support/authorization_decision_application.rs:120:32
+    |
+120 |                     issued_at: Utc::now(),
+    |                                ^^^ use of undeclared type `Utc`
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `nazo-oauth-server` (test "authorization_application") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

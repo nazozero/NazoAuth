@@ -1,0 +1,22 @@
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+    Checking nazo-key-management v0.2.16 (/src/crates/key-management)
+    Checking nazo-persistence v0.2.16 (/src/crates/persistence)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+error[E0432]: unresolved import `nazo_auth::ConsumedAuthorizationCode`
+ --> crates/authorization-server/src/domain/oauth.rs:8:58
+  |
+8 |     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
+  |                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^ no `ConsumedAuthorizationCode` in the root
+  |
+help: a similar name exists in the module
+  |
+8 -     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
+8 +     AuthorizationCodeState, CodePayload, ConsentPayload, PreparedAuthorizationCode,
+  |
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `nazo-oauth-server` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `nazo-oauth-server` (lib test) due to 1 previous error

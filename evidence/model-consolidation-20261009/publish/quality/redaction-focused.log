@@ -1,0 +1,300 @@
+   Compiling subtle v2.6.1
+   Compiling der v0.8.2
+   Compiling rand_chacha v0.3.1
+   Compiling nazo-scim-events v0.2.16 (/src/crates/scim-events)
+   Compiling x509-parser v0.18.1
+   Compiling hybrid-array v0.4.15
+   Compiling ctutils v0.4.2
+   Compiling ff v0.14.0
+   Compiling digest v0.10.7
+   Compiling ff v0.13.1
+   Compiling sec1 v0.7.3
+   Compiling crypto-bigint v0.5.5
+   Compiling rand v0.8.8
+   Compiling group v0.14.0
+   Compiling group v0.13.0
+   Compiling phc v0.6.1
+   Compiling signature v2.2.0
+   Compiling hmac v0.12.1
+   Compiling sha2 v0.10.9
+   Compiling curve25519-dalek v4.1.3
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling crypto-bigint v0.7.5
+   Compiling inout v0.2.2
+   Compiling ed25519 v2.2.3
+   Compiling rfc6979 v0.4.0
+   Compiling password-hash v0.6.1
+   Compiling spki v0.8.0
+   Compiling sec1 v0.8.1
+   Compiling digest v0.11.3
+   Compiling cipher v0.5.2
+   Compiling universal-hash v0.6.1
+   Compiling aead v0.6.1
+   Compiling pkcs8 v0.11.0
+   Compiling polyval v0.7.3
+   Compiling hmac v0.13.0
+   Compiling signature v3.0.0
+   Compiling sha2 v0.11.0
+   Compiling blake2 v0.11.0
+   Compiling curve25519-dalek v5.0.0
+   Compiling sha1 v0.11.0
+   Compiling elliptic-curve v0.13.8
+   Compiling ed25519-dalek v2.2.0
+   Compiling ghash v0.6.0
+   Compiling ed25519 v3.0.0
+   Compiling ctr v0.10.1
+   Compiling aes v0.9.3
+   Compiling hkdf v0.13.0
+   Compiling argon2 v0.6.0
+   Compiling primeorder v0.13.6
+   Compiling ecdsa v0.16.9
+   Compiling aes-gcm v0.11.1
+   Compiling p256 v0.13.2
+   Compiling ed25519-dalek v3.0.0
+   Compiling passkey-auth v0.1.3
+   Compiling elliptic-curve v0.14.1
+   Compiling primefield v0.14.0
+   Compiling rfc6979 v0.6.0
+   Compiling wnaf v0.14.1
+   Compiling primeorder v0.14.0
+   Compiling ecdsa v0.17.0
+   Compiling p256 v0.14.0
+   Compiling nazo-crypto v0.2.16 (/src/crates/crypto)
+   Compiling nazo-identity v0.2.16 (/src/crates/identity)
+   Compiling nazo-operator-protocol v0.2.16 (/src/crates/operator-protocol)
+   Compiling nazo-digital-credentials v0.2.16 (/src/crates/digital-credentials)
+   Compiling nazo-openid4vp v0.2.16 (/src/crates/openid4vp)
+    Finished `test` profile [unoptimized] target(s) in 4.18s
+     Running unittests src/lib.rs (target/debug/deps/nazo_identity-5f360c191da15e9b)
+
+running 54 tests
+test avatar::tests::avatar_reference_rejects_extra_query_or_path_components ... ok
+test avatar::tests::content_detection_uses_file_signatures ... ok
+test avatar::tests::direct_avatar_read_and_delete_preserve_repository_and_storage_boundaries ... ok
+test avatar::tests::direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes ... ok
+test avatar::tests::direct_upload_begin_rejects_invalid_references_and_provider_failures ... ok
+test avatar::tests::direct_upload_claim_states_fail_closed_and_release_invalid_pending_claims ... ok
+test avatar::tests::direct_upload_fixes_validated_snapshot_before_database_cas ... ok
+test avatar::tests::direct_upload_handles_retries_repository_failures_and_overview_failures ... ok
+test avatar::tests::direct_upload_recognizes_completed_and_already_recorded_candidates ... ok
+test avatar::tests::direct_upload_rejects_empty_declared_length_before_storage_authorization ... ok
+test avatar::tests::direct_upload_rejects_oversized_declared_length_before_storage_authorization ... ok
+test avatar::tests::direct_upload_releases_pending_claim_after_invalid_staged_bytes ... ok
+test avatar::tests::direct_upload_retry_from_another_service_returns_the_selected_candidate ... ok
+test avatar::tests::direct_upload_validates_staged_snapshots_and_storage_transitions ... ok
+test avatar::tests::final_object_identifier_binds_upload_and_exact_bytes ... ok
+test avatar::tests::pending_reads_once_and_keeps_validated_mime_while_candidate_failures_never_publish ... ok
+test avatar::tests::pending_validates_and_hashes_once_and_drops_bytes_before_recording ... ok
+test federation::tests::browser_binding_digest_is_tenant_scoped_and_canonical_hex ... ok
+test federation::tests::every_account_result_passes_active_gate_before_link_audit_or_session_creation ... ok
+test federation::tests::legacy_state_deserializes_without_inventing_a_browser_binding ... ok
+test mfa_service::tests::disable_reuses_verified_generation_without_consuming_another_factor ... ok
+test mfa_service::tests::failed_or_replayed_confirmation_cannot_return_backup_code_secrets ... ok
+test mfa_service::tests::required_confirmation_has_no_bare_repository_fallback_or_backup_code_disclosure ... ok
+test model::tests::login_identity_debug_never_exposes_password_hash ... ok
+test model::tests::password_hash_accepts_argon2_0_5_phc_vector ... ok
+test model::tests::password_hash_verifies_candidates_without_exposing_the_verifier ... ok
+test passkey::tests::malformed_owned_credential_keeps_the_existing_consistency_failure ... ok
+test passkey::tests::owned_credential_value_keeps_existing_webauthn_key_material_and_wire ... ok
+test profile::tests::applications_are_loaded_from_the_accounts_tenant ... ok
+test profile::tests::profile_text_trims_blanks_and_enforces_byte_limit ... ok
+test profile::tests::profile_update_normalizes_only_profile_fields_and_resets_changed_phone_verification ... ok
+test profile::tests::profile_url_accepts_only_absolute_http_urls ... ok
+test profile::tests::retry_is_idempotent_when_profile_write_succeeds_before_overview_failure ... ok
+test registration::tests::denied_email_reservation_releases_peer_and_skips_code_delivery ... ok
+test registration::tests::failed_delivery_deletes_code_and_releases_tenant_scoped_reservations ... ok
+test registration::tests::failed_email_reservation_releases_peer_and_skips_code_delivery ... ok
+test registration::tests::failed_hash_and_uncertain_code_store_release_only_this_attempt ... ok
+test registration::tests::registration_scopes_code_load_and_consumption_to_service_tenant ... ok
+test registration::tests::successful_send_scopes_code_and_cooldowns_to_service_tenant ... ok
+test registration::tests::verification_codes_are_fixed_width_decimal_values ... ok
+test session::tests::add_amr_deduplicates_methods_and_preserves_claim_order ... ok
+test session::tests::authentication_precision_is_owned_by_the_record_and_legacy_updates_clear_it ... ok
+test session::tests::binding_client_fails_closed_for_invalid_or_missing_sessions ... ok
+test session::tests::binding_client_rejects_repeated_compare_and_set_conflicts ... ok
+test session::tests::binding_clients_is_session_scoped_and_idempotent ... ok
+test session::tests::corrupt_session_is_deleted_and_resolves_as_missing ... ok
+test session::tests::current_session_exposes_exact_logged_in_clients ... ok
+test session::tests::invalid_authentication_metadata_is_deleted_fail_closed ... ok
+test session::tests::mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_dependency_failures ... ok
+test session::tests::mfa_resolution_reads_one_snapshot_and_one_account_for_either_session_state ... ok
+test session::tests::recent_interactive_mfa_has_one_strict_time_and_factor_policy ... ok
+test session::tests::step_up_builds_a_fresh_session_and_csrf_pair_for_atomic_rotation ... ok
+test session::tests::unavailable_session_store_is_not_downgraded_to_anonymous ... ok
+test tenancy::tests::tenant_host_has_one_canonical_form ... ok
+
+test result: ok. 54 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+
+     Running tests/access_request_validation.rs (target/debug/deps/access_request_validation-63945b817f0c73a7)
+
+running 3 tests
+test access_request_database_boundaries_are_enforced_before_persistence ... ok
+test access_request_fields_are_trimmed_and_https_site_is_accepted ... ok
+test access_request_rejects_empty_fields_and_unsafe_site_urls ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/admin_policy.rs (target/debug/deps/admin_policy-15aa9169b9aa0541)
+
+running 3 tests
+test admin_cannot_elevate_or_demote_disable_self ... ok
+test admin_cannot_modify_peer_superior_or_grant_own_level ... ok
+test admin_policy_rejects_cross_tenant_and_resolves_safe_update ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/authentication_method_authority.rs (target/debug/deps/authentication_method_authority-532a4d59f22e620a)
+
+running 3 tests
+test real_session_metadata_rejects_empty_evidence_and_invalid_time_or_sid ... ok
+test session_amr_preserves_unknown_evidence_without_inventing_federation ... ok
+test totp_credentials_do_not_expose_seeds_in_debug_output ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dependency_boundary.rs (target/debug/deps/dependency_boundary-b7ba14fa052677f1)
+
+running 1 test
+test identity_has_no_auth_framework_or_storage_dependencies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/model.rs (target/debug/deps/model-33da871e1bc4be19)
+
+running 5 tests
+test identity_ids_reject_nil_uuid_during_deserialization ... ok
+test identity_ids_reject_nil_uuid_values ... ok
+test principal_and_tenant_context_do_not_require_database_rows ... ok
+test session_metadata_has_one_amr_source_and_rejects_invalid_time_or_sid ... ok
+test subject_claims_are_framework_and_storage_independent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/password_authentication.rs (target/debug/deps/password_authentication-3186611819a914c5)
+
+running 2 tests
+test missing_and_inactive_accounts_share_dummy_verification_and_failure_behavior ... ok
+test pending_mfa_login_uses_a_short_session_ttl ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/policy.rs (target/debug/deps/policy-4cf0aa73dc4d6b09)
+
+running 15 tests
+test backup_code_normalization_preserves_strict_display_contract ... ok
+test base32_decode_accepts_transport_whitespace_case_and_padding_only ... ok
+test email_policy_normalizes_addresses_and_renders_existing_template ... ok
+test email_policy_preserves_lettre_address_syntax_contract ... ok
+test federation_callback_token_policy_is_exact ... ok
+test generated_backup_code_uses_two_fixed_width_numeric_chunks ... ok
+test generated_totp_secret_is_base32_without_padding ... ok
+test mfa_policy_preserves_totp_and_backup_code_contracts ... ok
+test otpauth_uri_keeps_existing_encoding_contract ... ok
+test passkey_policy_binds_tenant_user_and_validates_user_input ... ok
+test scim_policy_normalizes_identity_filter_payload_and_patch ... ok
+test scim_policy_rejects_invalid_email_dot_placement ... ok
+test session_policy_validates_metadata_and_preserves_amr_order ... ok
+test totp_verification_rejects_replay_and_keeps_one_step_skew ... ok
+test totp_verifier_rejects_malformed_code_or_secret_without_fallback ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/port_arc_dispatch.rs (target/debug/deps/port_arc_dispatch-54097dedd227dfa0)
+
+running 7 tests
+test authentication_audit_arc_dispatches_complete_event_once ... ok
+test delivery_arc_preserves_borrowed_fields_ttl_and_error ... ok
+test federation_audit_arc_dispatches_complete_event_once ... ok
+test federation_hasher_arc_preserves_generated_value ... ok
+test passkey_audit_arc_dispatches_complete_event_once ... ok
+test secret_hasher_arc_dispatches_both_operations_without_changing_results ... ok
+test secret_verifier_arc_preserves_arguments_and_busy_error ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/repository_ports.rs (target/debug/deps/repository_ports-ab24360d85fb79b4)
+
+running 9 tests
+test avatar_direct_upload_contract_keeps_storage_details_opaque ... ok
+test avatar_storage_errors_are_descriptive_without_exposing_unrelated_state ... ok
+test avatar_upload_claim_preserves_the_fixed_candidate_across_a_retry ... ok
+test fake_user_repository_is_a_minimal_test_substitute ... ok
+test fake_user_repository_round_trips_principals_and_subject_claims ... ok
+test identity_port_errors_and_secret_wrappers_preserve_safe_messages ... ok
+test public_account_is_composed_from_domain_concepts_not_a_flat_database_row ... ok
+test public_identity_api_has_no_catch_all_identity_user ... ok
+test totp_key_ring_requires_distinct_non_empty_versioned_keys ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scim_core.rs (target/debug/deps/scim_core-ef69f64f6eac055c)
+
+running 10 tests
+test cursor_core_binds_tenant_actor_filter_count_and_lifetime ... ok
+test cursor_envelope_rejects_noncanonical_and_malformed_inputs ... ok
+test documents_preserve_public_wire_shape_and_hide_internal_identity_state ... ok
+test filter_and_identity_normalization_are_case_stable ... ok
+test list_query_parser_preserves_wire_names_and_exact_error_types ... ok
+test malformed_cursor_plaintext_is_rejected_without_panicking ... ok
+test pagination_is_total_and_bounded_across_boundary_values ... ok
+test patch_schema_and_operations_preserve_scim_error_semantics ... ok
+test repository_failures_delete_outcomes_and_scopes_are_typed ... ok
+test scim_json_models_deserialize_post_and_patch_inputs_without_extra_dtos ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scim_service.rs (target/debug/deps/scim_service-fc2f1810cec90b25)
+
+running 3 tests
+test credential_lookup_is_delegated_to_the_credential_port ... ok
+test get_post_put_patch_and_delete_use_the_single_scim_repository_boundary ... ok
+test list_users_builds_a_tenant_scoped_repository_query ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/nazo_openid4vp-72328912b77fb4e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol_contract.rs (target/debug/deps/protocol_contract-001bd84bbba7f704)
+
+running 2 tests
+test haip_requires_signed_x509_hash_and_encrypted_direct_post ... ok
+test redirect_uri_scheme_cannot_be_combined_with_signed_request_object ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/service_contract.rs (target/debug/deps/service_contract-f92d5f9fa3f1e1d3)
+
+running 9 tests
+test dcql_aki_matches_authenticated_chain_bytes_and_not_issuer_strings ... ok
+test dcql_checks_all_returned_cardinalities_before_verification_or_completion ... ok
+test dcql_optional_queries_may_be_absent_but_not_malformed_or_overfilled ... ok
+test discarded_presentations_are_removed_before_required_alternative_selection ... ok
+test final_mdoc_handover_binds_verifier_key_and_request_context ... ok
+test malformed_retained_dcql_never_verifies_or_completes_an_empty_response ... ok
+test optional_query_nonce_and_session_errors_reject_the_entire_response ... ok
+test optional_query_verifier_unavailability_remains_a_dependency_failure ... ok
+test presentation_transaction_debug_does_not_expose_decryption_material ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests nazo_identity
+
+running 4 tests
+test crates/identity/src/model.rs - model::PasswordHash (line 137) - compile fail ... ok
+test crates/identity/src/model.rs - model::PasswordHash (line 142) - compile fail ... ok
+test crates/identity/src/model.rs - model::PasswordHash (line 149) - compile fail ... ok
+test crates/identity/src/model.rs - model::PasswordHash (line 154) - compile fail ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+   Doc-tests nazo_openid4vp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

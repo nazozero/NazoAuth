@@ -1,0 +1,1 @@
+{"command": ["cargo", "check", "--workspace", "--all-targets", "--all-features", "--locked"], "exit": 101, "seconds": 16.094222536776215}

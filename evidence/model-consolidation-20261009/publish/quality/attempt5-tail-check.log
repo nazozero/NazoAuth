@@ -1,0 +1,14 @@
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+error[E0560]: struct `ConsentPayload` has no field named `issued_at`
+   --> crates/authorization-server-core/src/../tests/unit/authorization_service.rs:413:9
+    |
+413 |         issued_at,
+    |         ^^^^^^^^^ `ConsentPayload` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `nazo-auth` (lib test) due to 1 previous error

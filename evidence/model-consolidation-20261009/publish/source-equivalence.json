@@ -1,0 +1,1 @@
+{"tested_source_sha": "705f28714c3d2e0509d801cd487775511ad07c76", "final_source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0", "changed_paths": ["tests/contracts/migrations.sha256"], "qualification": "Only append-only migration checksum manifest changed. All Rust, migrations, fixtures, test logic, Cargo inputs and runtime configuration are identical."}

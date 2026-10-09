@@ -1,0 +1,790 @@
+{
+  "baseline_declarations": 1715,
+  "baseline_members": 7305,
+  "removed": [
+    {
+      "model": "crates/authorization-server-core/src/authorization_policy.rs::NormalizedAuthorizationRequest",
+      "field": "code_challenge_method",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claims.rs::AccessTokenClaimsInput",
+      "field": "dpop_jkt",
+      "type": "Option<&'a str>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claims.rs::AccessTokenClaimsInput",
+      "field": "mtls_x5t_s256",
+      "type": "Option<&'a str>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claims.rs::AccessTokenClaimsInput",
+      "field": "userinfo_claims",
+      "type": "&'a [String]"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claims.rs::Claims",
+      "field": "userinfo_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/client_registration.rs::ValidatedClientRegistration",
+      "field": "backchannel_user_code_parameter",
+      "type": "bool"
+    },
+    {
+      "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::PreparedDynamicClientRegistration",
+      "field": "backchannel_user_code_parameter",
+      "type": "bool"
+    },
+    {
+      "model": "crates/authorization-server-core/src/metadata.rs::MetadataCapabilities",
+      "field": "http_message_signatures",
+      "type": "bool"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshTokenAuthenticationContext",
+      "field": "id_token_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshTokenAuthenticationContext",
+      "field": "id_token_sid",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshTokenAuthenticationContext",
+      "field": "nonce",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshTokenAuthenticationContext",
+      "field": "userinfo_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token_service.rs::AccessTokenSignInput",
+      "field": "dpop_jkt",
+      "type": "Option<&'a str>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token_service.rs::AccessTokenSignInput",
+      "field": "mtls_x5t_s256",
+      "type": "Option<&'a str>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token_service.rs::AccessTokenSignInput",
+      "field": "userinfo_claims",
+      "type": "&'a [String]"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::AuthorizationCodeState",
+      "field": "Consumed.marker",
+      "type": "ConsumedAuthorizationCode"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+      "field": "code_challenge",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+      "field": "code_challenge_method",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+      "field": "id_token_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+      "field": "issued_at",
+      "type": "DateTime<Utc>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+      "field": "userinfo_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsentPayload",
+      "field": "code_challenge",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsentPayload",
+      "field": "code_challenge_method",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsentPayload",
+      "field": "id_token_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsentPayload",
+      "field": "issued_at",
+      "type": "DateTime<Utc>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsentPayload",
+      "field": "userinfo_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsumedAuthorizationCode",
+      "field": "access_token_expires_at",
+      "type": "i64"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsumedAuthorizationCode",
+      "field": "access_token_jti",
+      "type": "String"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsumedAuthorizationCode",
+      "field": "client_id",
+      "type": "Uuid"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsumedAuthorizationCode",
+      "field": "redemption_binding",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsumedAuthorizationCode",
+      "field": "refresh_token_family_id",
+      "type": "Option<Uuid>"
+    },
+    {
+      "model": "crates/authorization-server/src/domain/oauth.rs::TokenIssue",
+      "field": "id_token_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server/src/domain/oauth.rs::TokenIssue",
+      "field": "userinfo_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server/src/token/authorization_code.rs::AuthorizationCodeConsumption",
+      "field": "Consumed.0",
+      "type": "ConsumedAuthorizationCode"
+    },
+    {
+      "model": "crates/digital-credentials/src/format.rs::CredentialPayload",
+      "field": "selectively_disclosable_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthMethod",
+      "field": "BackupCode",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthMethod",
+      "field": "Federated.0",
+      "type": "String"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthMethod",
+      "field": "Passkey",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthMethod",
+      "field": "Password",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthMethod",
+      "field": "RememberedMfa",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthMethod",
+      "field": "Totp",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthenticationContext",
+      "field": "amr",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthenticationContext",
+      "field": "auth_time",
+      "type": "i64"
+    },
+    {
+      "model": "crates/identity/src/model.rs::AuthenticationContext",
+      "field": "oidc_sid",
+      "type": "String"
+    },
+    {
+      "model": "crates/identity/src/model.rs::IdentityModelError",
+      "field": "EmptyAuthenticationMethods",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/model.rs::IdentityModelError",
+      "field": "EmptyOidcSid",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/model.rs::IdentityModelError",
+      "field": "FutureAuthenticationTime",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/model.rs::IdentityModelError",
+      "field": "InvalidAuthenticationTime",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::MfaTotpKey",
+      "field": "id",
+      "type": "String"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::MfaTotpKey",
+      "field": "key",
+      "type": "[u8; 32]"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::MfaTotpKeyError",
+      "field": "DuplicateId",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::MfaTotpKeyError",
+      "field": "EmptyId",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::MfaTotpKeyError",
+      "field": "IdTooLong",
+      "type": "variant"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::MfaTotpKeyRing",
+      "field": "current",
+      "type": "MfaTotpKey"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::MfaTotpKeyRing",
+      "field": "previous",
+      "type": "Option<MfaTotpKey>"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::TotpCredential",
+      "field": "last_used_step",
+      "type": "Option<i64>"
+    },
+    {
+      "model": "crates/identity/src/ports/mfa.rs::TotpCredential",
+      "field": "secret_base32",
+      "type": "String"
+    },
+    {
+      "model": "crates/identity/src/ports/passkey.rs::PasskeyCredential",
+      "field": "credential_id",
+      "type": "String"
+    },
+    {
+      "model": "crates/identity/src/ports/passkey.rs::PasskeyCredential",
+      "field": "sign_count",
+      "type": "i64"
+    },
+    {
+      "model": "crates/nazoauth/src/bootstrap/startup/configuration.rs::StartupConfiguration",
+      "field": "config",
+      "type": "ConfigSource"
+    },
+    {
+      "model": "crates/openid4vci/src/store.rs::DeferredCredential",
+      "field": "payload_ciphertext",
+      "type": "Vec<u8>"
+    },
+    {
+      "model": "crates/openid4vp/src/model.rs::PresentationTransaction",
+      "field": "response_mode",
+      "type": "ResponseMode"
+    },
+    {
+      "model": "crates/persistence-postgres/src/convert/identity.rs::Error#2",
+      "field": "target",
+      "type": "ConversionError"
+    },
+    {
+      "model": "crates/persistence-postgres/src/convert/identity.rs::Error#3",
+      "field": "target",
+      "type": "ConversionError"
+    },
+    {
+      "model": "crates/persistence-postgres/src/repositories/openid4vc_presentation.rs::PresentationRow",
+      "field": "response_mode",
+      "type": "String"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "address_country",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "address_formatted",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "address_locality",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "address_postal_code",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "address_region",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "address_street_address",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "admin_level",
+      "type": "i32"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "avatar_url",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "birthdate",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "created_at",
+      "type": "DateTime<Utc>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "display_name",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "email",
+      "type": "String"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "email_verified",
+      "type": "bool"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "family_name",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "gender",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "given_name",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "id",
+      "type": "Uuid"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "is_active",
+      "type": "bool"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "locale",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "mfa_enabled",
+      "type": "bool"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "middle_name",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "nickname",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "organization_id",
+      "type": "Uuid"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "password_hash",
+      "type": "String"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "phone_number",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "phone_number_verified",
+      "type": "bool"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "profile_url",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "realm_id",
+      "type": "Uuid"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "role",
+      "type": "String"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "tenant_id",
+      "type": "Uuid"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "updated_at",
+      "type": "DateTime<Utc>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "username",
+      "type": "String"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "website_url",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/persistence-postgres/src/rows/identity.rs::UserRow",
+      "field": "zoneinfo",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::ResourceServerVerifier",
+      "field": "config",
+      "type": "ResourceServerVerifierConfig"
+    },
+    {
+      "model": "crates/resource-server/src/presentation.rs::PresentedAccessTokenScheme",
+      "field": "Bearer",
+      "type": "variant"
+    },
+    {
+      "model": "crates/resource-server/src/presentation.rs::PresentedAccessTokenScheme",
+      "field": "Dpop",
+      "type": "variant"
+    }
+  ],
+  "added": [
+    {
+      "model": "crates/authorization-server-core/src/claim_selection.rs::IdTokenClaimRequests",
+      "field": "id_token_claim_requests",
+      "type": "Vec<OidcClaimRequest>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claim_selection.rs::LegacyIdTokenSelection",
+      "field": "id_token_claim_requests",
+      "type": "Vec<OidcClaimRequest>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claim_selection.rs::LegacyIdTokenSelection",
+      "field": "id_token_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claim_selection.rs::LegacyUserinfoSelection",
+      "field": "userinfo_claim_requests",
+      "type": "Vec<OidcClaimRequest>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claim_selection.rs::LegacyUserinfoSelection",
+      "field": "userinfo_claims",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claim_selection.rs::Target",
+      "field": "target",
+      "type": "Vec<OidcClaimRequest>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claim_selection.rs::Target#2",
+      "field": "target",
+      "type": "Vec<OidcClaimRequest>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claim_selection.rs::UserinfoClaimRequests",
+      "field": "userinfo_claim_requests",
+      "type": "Vec<OidcClaimRequest>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/claims.rs::AccessTokenClaimsInput",
+      "field": "sender_constraint",
+      "type": "crate::AppliedSenderConstraint<'a>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/pkce.rs::Error",
+      "field": "target",
+      "type": "&'static str"
+    },
+    {
+      "model": "crates/authorization-server-core/src/pkce.rs::S256Pkce",
+      "field": "s256_code_challenge",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/pkce.rs::StoredPkce",
+      "field": "code_challenge",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/pkce.rs::StoredPkce",
+      "field": "code_challenge_method",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/pkce.rs::StoredPkce",
+      "field": "s256_code_challenge",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshToken",
+      "field": "id_token_sid",
+      "type": "Option<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token_service.rs::AccessTokenSignInput",
+      "field": "sender_constraint",
+      "type": "crate::AppliedSenderConstraint<'a>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::AuthorizationCodeState",
+      "field": "Consumed",
+      "type": "variant"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+      "field": "pkce",
+      "type": "crate::S256Pkce"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsentPayload",
+      "field": "pkce",
+      "type": "crate::S256Pkce"
+    },
+    {
+      "model": "crates/authorization-server-postgres/src/lib.rs::PostgresProvider",
+      "field": "totp_keys",
+      "type": "Option<nazo_postgres::MfaTotpKeyRing>"
+    },
+    {
+      "model": "crates/authorization-server/src/token/authorization_code.rs::AuthorizationCodeConsumption",
+      "field": "Consumed",
+      "type": "variant"
+    },
+    {
+      "model": "crates/openid4vci/src/store.rs::DeferredCredential",
+      "field": "payload",
+      "type": "crate::DeferredPayload"
+    },
+    {
+      "model": "crates/persistence-postgres/src/mfa_keys.rs::MfaTotpKey",
+      "field": "id",
+      "type": "String"
+    },
+    {
+      "model": "crates/persistence-postgres/src/mfa_keys.rs::MfaTotpKey",
+      "field": "key",
+      "type": "[u8; 32]"
+    },
+    {
+      "model": "crates/persistence-postgres/src/mfa_keys.rs::MfaTotpKeyError",
+      "field": "DuplicateId",
+      "type": "variant"
+    },
+    {
+      "model": "crates/persistence-postgres/src/mfa_keys.rs::MfaTotpKeyError",
+      "field": "EmptyId",
+      "type": "variant"
+    },
+    {
+      "model": "crates/persistence-postgres/src/mfa_keys.rs::MfaTotpKeyError",
+      "field": "IdTooLong",
+      "type": "variant"
+    },
+    {
+      "model": "crates/persistence-postgres/src/mfa_keys.rs::MfaTotpKeyRing",
+      "field": "current",
+      "type": "MfaTotpKey"
+    },
+    {
+      "model": "crates/persistence-postgres/src/mfa_keys.rs::MfaTotpKeyRing",
+      "field": "previous",
+      "type": "Option<MfaTotpKey>"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::AccessTokenClaims",
+      "field": "_issued_at",
+      "type": "serde_json::Number"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::ResourceServerVerifier",
+      "field": "allowed_algs",
+      "type": "Vec<Algorithm>"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::ResourceServerVerifier",
+      "field": "audiences",
+      "type": "Vec<String>"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::ResourceServerVerifier",
+      "field": "clock_skew_seconds",
+      "type": "i64"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::ResourceServerVerifier",
+      "field": "confirmation",
+      "type": "ConfirmationPolicy"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::ResourceServerVerifier",
+      "field": "issuer",
+      "type": "String"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::ResourceServerVerifier",
+      "field": "required_scopes",
+      "type": "Vec<String>"
+    }
+  ],
+  "changed": [
+    {
+      "model": "crates/authorization-server-core/src/claims.rs::Claims",
+      "field": "userinfo_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "crate::UserinfoClaimRequests"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshToken",
+      "field": "audience",
+      "before": "Value",
+      "after": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshToken",
+      "field": "scopes",
+      "before": "Value",
+      "after": "Vec<String>"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshTokenAuthenticationContext",
+      "field": "id_token_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "crate::IdTokenClaimRequests"
+    },
+    {
+      "model": "crates/authorization-server-core/src/token.rs::RefreshTokenAuthenticationContext",
+      "field": "userinfo_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "crate::UserinfoClaimRequests"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+      "field": "id_token_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "crate::IdTokenClaimRequests"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+      "field": "userinfo_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "crate::UserinfoClaimRequests"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsentPayload",
+      "field": "id_token_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "crate::IdTokenClaimRequests"
+    },
+    {
+      "model": "crates/authorization-server-core/src/transaction.rs::ConsentPayload",
+      "field": "userinfo_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "crate::UserinfoClaimRequests"
+    },
+    {
+      "model": "crates/authorization-server/src/domain/oauth.rs::TokenIssue",
+      "field": "id_token_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "nazo_auth::IdTokenClaimRequests"
+    },
+    {
+      "model": "crates/authorization-server/src/domain/oauth.rs::TokenIssue",
+      "field": "userinfo_claim_requests",
+      "before": "Vec<OidcClaimRequest>",
+      "after": "nazo_auth::UserinfoClaimRequests"
+    },
+    {
+      "model": "crates/identity/src/ports/passkey.rs::PasskeyCredential",
+      "field": "credential",
+      "before": "Value",
+      "after": "WebauthnCredential"
+    },
+    {
+      "model": "crates/openid4vp/src/model.rs::AuthorizationRequest",
+      "field": "response_mode",
+      "before": "String",
+      "after": "ResponseMode"
+    },
+    {
+      "model": "crates/persistence-postgres/src/repositories/mfa/mod.rs::MfaRepository",
+      "field": "totp_keys",
+      "before": "Option<nazo_identity::ports::MfaTotpKeyRing>",
+      "after": "Option<crate::MfaTotpKeyRing>"
+    },
+    {
+      "model": "crates/resource-server/src/lib.rs::AccessTokenClaims",
+      "field": "token_use",
+      "before": "String",
+      "after": "Option<String>"
+    }
+  ]
+}

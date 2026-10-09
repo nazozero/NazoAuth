@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "-p", "nazo-valkey", "--all-features", "--locked", "--test", "authorization_contract"], "exit": 0, "seconds": 7.396641200874001}

@@ -1,0 +1,95 @@
+   Compiling getrandom v0.4.3
+   Compiling ff v0.13.1
+   Compiling signature v2.2.0
+   Compiling crypto-bigint v0.5.5
+   Compiling x509-parser v0.18.1
+   Compiling ref-cast-impl v1.0.27
+   Compiling coset v0.4.2
+   Compiling jsonwebtoken v11.1.0
+   Compiling ed25519 v2.2.3
+   Compiling group v0.13.0
+   Compiling crypto-common v0.2.2
+   Compiling crypto-bigint v0.7.5
+   Compiling phc v0.6.1
+   Compiling rand v0.10.3
+   Compiling uuid v1.27.0
+   Compiling ed25519-compact v2.6.0
+   Compiling ed25519-dalek v2.2.0
+   Compiling password-hash v0.6.1
+   Compiling ref-cast v1.0.27
+   Compiling sfv v0.15.0
+   Compiling nazo-scim-events v0.2.16 (/src/crates/scim-events)
+   Compiling nazo-runtime-modules v0.2.16 (/src/crates/runtime-capabilities)
+   Compiling digest v0.11.3
+   Compiling cipher v0.5.2
+   Compiling universal-hash v0.6.1
+   Compiling aead v0.6.1
+   Compiling polyval v0.7.3
+   Compiling hmac v0.13.0
+   Compiling signature v3.0.0
+   Compiling sha2 v0.11.0
+   Compiling curve25519-dalek v5.0.0
+   Compiling blake2 v0.11.0
+   Compiling sha1 v0.11.0
+   Compiling ghash v0.6.0
+   Compiling ed25519 v3.0.0
+   Compiling ctr v0.10.1
+   Compiling aes v0.9.3
+   Compiling hkdf v0.13.0
+   Compiling elliptic-curve v0.13.8
+   Compiling argon2 v0.6.0
+   Compiling rcgen v0.14.10
+   Compiling ecdsa v0.16.9
+   Compiling primeorder v0.13.6
+   Compiling aes-gcm v0.11.1
+   Compiling ed25519-dalek v3.0.0
+   Compiling p256 v0.13.2
+   Compiling p384 v0.13.1
+   Compiling p521 v0.13.3
+   Compiling passkey-auth v0.1.3
+   Compiling elliptic-curve v0.14.1
+   Compiling primefield v0.14.0
+   Compiling rfc6979 v0.6.0
+   Compiling wnaf v0.14.1
+   Compiling mdoc-rs v0.2.0 (https://github.com/nazozero/mdoc-rs?rev=40e5ac7e1739150870c41544219345c2b6de4c9b#40e5ac7e)
+   Compiling primeorder v0.14.0
+   Compiling ecdsa v0.17.0
+   Compiling p256 v0.14.0
+   Compiling p384 v0.14.0
+   Compiling nazo-crypto v0.2.16 (/src/crates/crypto)
+   Compiling nazo-digital-credentials v0.2.16 (/src/crates/digital-credentials)
+   Compiling nazo-identity v0.2.16 (/src/crates/identity)
+   Compiling nazo-operator-protocol v0.2.16 (/src/crates/operator-protocol)
+   Compiling nazo-resource-server v0.2.16 (/src/crates/resource-server)
+   Compiling nazo-openid4vci v0.2.16 (/src/crates/openid4vci)
+   Compiling nazo-openid4vp v0.2.16 (/src/crates/openid4vp)
+   Compiling httpsig v0.0.26
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-http-signatures v0.2.16 (/src/crates/http-signatures)
+   Compiling nazo-key-management v0.2.16 (/src/crates/key-management)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Finished `test` profile [unoptimized] target(s) in 11.18s
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server-031f8727fab3cdf7)
+
+running 17 tests
+test token::issue::refresh_persistence::tests::new_refresh_family_retains_full_code_grant_when_access_token_is_narrower ... ok
+test token::issue::refresh_persistence::tests::openid4vci_credential_authorization_still_requires_refresh_grant ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_borrowed_context_rejects_each_contract_field_difference ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_context_normalizes_nonce_and_keeps_generation_sid_separate ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_context_rejects_equal_but_malformed_issue_and_source ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_rejects_blank_generation_sid_after_lifecycle_separation ... ok
+test token::issue::refresh_persistence::tests::refresh_authentication_context_preserves_original_claim_contract_on_scope_narrowing ... ok
+test token::issue::refresh_persistence::tests::refresh_policy_requires_exact_source_shape_even_without_a_refresh_response ... ok
+test token::issue::refresh_persistence::tests::refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor ... ok
+test token::issue::refresh_persistence::tests::rotated_refresh_preserves_original_contract_while_selecting_current_audience ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_exact_grant_match_required ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_false_without_offline_access_scope ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_false_without_refresh_grant ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_for_openid4vci_credential_authorization ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_scope_case_sensitive ... ok
+test token::issue::refresh_persistence::tests::should_issue_refresh_token_true_with_refresh_grant_and_offline_access ... ok
+test token::issue::refresh_persistence::tests::unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_token ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 354 filtered out; finished in 0.00s
+

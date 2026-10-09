@@ -1,0 +1,18 @@
+{
+  "raw_evidence_diff_check_exit": 2,
+  "raw_evidence_qualification": "Preserved command stdout, truncated SQL samples and exact reproduction scripts contain whitespace/blank EOF. Their bytes and hashes are preserved; they are not production source edits.",
+  "reviewed_document_command": [
+    "git",
+    "diff",
+    "--cached",
+    "--check",
+    "--",
+    "docs/project/data-model-review-20261009.md",
+    "evidence/model-consolidation-20261009/publish/README.md",
+    "evidence/model-consolidation-20261009/publish/model-review.md"
+  ],
+  "reviewed_document_exit": 0,
+  "static_contracts_exit": 0,
+  "fixture_secret_scan": "PASS",
+  "private_key_scan": "PASS"
+}

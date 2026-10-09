@@ -1,0 +1,1 @@
+{"source_sha": "705f28714c3d2e0509d801cd487775511ad07c76", "command": ["cargo", "test", "--workspace", "--all-features", "--locked", "--no-fail-fast", "--", "--nocapture"], "exit": 0, "seconds": 865.643277907744, "applies_to_source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0", "equivalence": "source-equivalence.json"}

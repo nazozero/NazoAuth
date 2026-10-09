@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "-p", "nazoauth", "--all-features", "--locked", "passkey", "--", "--test-threads=4"], "exit": 101, "seconds": 39.9557320009917}

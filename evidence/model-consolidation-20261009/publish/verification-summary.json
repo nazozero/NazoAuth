@@ -1,0 +1,222 @@
+{
+  "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+  "workspace_tested_sha": "705f28714c3d2e0509d801cd487775511ad07c76",
+  "workspace_equivalence": "source-equivalence.json",
+  "workspace_targets": 188,
+  "workspace_passed": 3701,
+  "workspace_failed": 0,
+  "workspace_ignored": 4,
+  "ignored_cases": [
+    "test s3_platform_tls_child ... ignored, invoked by the parent test with an isolated platform trust environment",
+    "test bootstrap::ui_release::tests::official_ui_initialization_keeps_later_local_replacements ... ignored, downloads the current official UI from GitHub",
+    "test domain::openid4vc_endpoints_openid4vp_tests::canonicalize_controller_start_wire ... ignored, requires NAZO_VP_WIRE_INPUT and NAZO_VP_HASH_OUTPUT from the controller contract test",
+    "test http::authorization::par::tests::par_fapi2_rejects_shared_secret_client_auth_after_authentication ... ignored, requires DATABASE_URL and VALKEY_URL; run explicitly with --ignored"
+  ],
+  "explicit_fapi": {
+    "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--all-features",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "http::authorization::par::tests::par_fapi2_rejects_shared_secret_client_auth_after_authentication",
+      "--",
+      "--exact",
+      "--ignored",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 0.5964884092099965
+  },
+  "commands": {
+    "final-clippy-exit": {
+      "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.3472444023936987
+    },
+    "final-explicit-fapi-exit": {
+      "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-features",
+        "-p",
+        "nazoauth",
+        "--lib",
+        "http::authorization::par::tests::par_fapi2_rejects_shared_secret_client_auth_after_authentication",
+        "--",
+        "--exact",
+        "--ignored",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 0.5964884092099965
+    },
+    "final-fmt-exit": {
+      "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 2.2871167371049523
+    },
+    "final-release-exit": {
+      "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth"
+      ],
+      "exit": 0,
+      "seconds": 0.21897203102707863
+    },
+    "final-static-0-exit": {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "scripts/verify_static_contracts.py",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 6.274393955245614
+    },
+    "final-static-1-exit": {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "scripts/check_persistence_dependency_graph.py"
+      ],
+      "exit": 0,
+      "seconds": 2.8175359652377665
+    },
+    "final-static-2-exit": {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "scripts/check_crypto_boundary.py"
+      ],
+      "exit": 0,
+      "seconds": 1.0065666371956468
+    },
+    "final-static-3-exit": {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts",
+        "-p",
+        "test_crypto_boundary.py"
+      ],
+      "exit": 0,
+      "seconds": 0.21864027809351683
+    },
+    "final-static-4-exit": {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "scripts/check_perf_results_layout.py"
+      ],
+      "exit": 0,
+      "seconds": 0.06018693884834647
+    },
+    "final-static-5-exit": {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "PATH=/tmp/nazo-quality-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-w",
+        "/src",
+        "nazoauth-perf-controller-20261009",
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts",
+        "-p",
+        "test_data_model_inventory.py"
+      ],
+      "exit": 0,
+      "seconds": 0.09482650784775615
+    },
+    "final-workspace-exit": {
+      "source_sha": "705f28714c3d2e0509d801cd487775511ad07c76",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--all-features",
+        "--locked",
+        "--no-fail-fast",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 865.643277907744,
+      "applies_to_source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+      "equivalence": "source-equivalence.json"
+    }
+  },
+  "negative_proofs": {
+    "session-negative": "Real assertion failure after reverting only the new blank-AMR predicate; behavior-level negative, not a complete baseline checkout.",
+    "resource-profile-negative": "New signed-token assertions against the pre-repair resource verifier: standard token rejected, missing iat accepted.",
+    "passkey-negative": "Real old-mapper assertion failure for conflicting persisted counter; no missing fixture or compilation failure."
+  },
+  "implementation_failures": "attempt*-* logs, wrong package command, migration-number collision and pre-manifest static failure are retained separately; none count as negative behavior proof."
+}

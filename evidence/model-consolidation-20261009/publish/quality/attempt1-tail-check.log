@@ -1,0 +1,44 @@
+    Checking nazo-digital-credentials v0.2.16 (/src/crates/digital-credentials)
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+    Checking nazo-openid4vci v0.2.16 (/src/crates/openid4vci)
+    Checking nazo-openid4vp v0.2.16 (/src/crates/openid4vp)
+    Checking nazo-openid4vc-http-actix v0.2.16 (/src/crates/openid4vc-http-actix)
+error[E0560]: struct `ConsentPayload` has no field named `issued_at`
+   --> crates/authorization-server-core/src/../tests/unit/authorization_service.rs:413:9
+    |
+413 |         issued_at,
+    |         ^^^^^^^^^ `ConsentPayload` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0609]: no field `issued_at` on type `ConsentPayload`
+   --> crates/authorization-server-core/src/../tests/unit/authorization_service.rs:833:13
+    |
+833 |     payload.issued_at = now;
+    |             ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `request_id`, `user_id`, `client_id`, `client_name`, `redirect_uri` ... and 22 others
+
+error[E0609]: no field `issued_at` on type `CodePayload`
+   --> crates/authorization-server-core/src/../tests/unit/authorization_service.rs:981:42
+    |
+981 |         let issued_at = prepared.payload.issued_at;
+    |                                          ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `redemption_contract_version`, `code_id`, `user_id`, `client_id`, `redirect_uri` ... and 15 others
+
+error[E0609]: no field `issued_at` on type `CodePayload`
+    --> crates/authorization-server-core/src/../tests/unit/authorization_service.rs:1002:28
+     |
+1002 |         assert_eq!(payload.issued_at, issued_at);
+     |                            ^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `redemption_contract_version`, `code_id`, `user_id`, `client_id`, `redirect_uri` ... and 15 others
+
+    Checking nazo-key-management v0.2.16 (/src/crates/key-management)
+    Checking nazo-persistence v0.2.16 (/src/crates/persistence)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+Some errors have detailed explanations: E0560, E0609.
+For more information about an error, try `rustc --explain E0560`.
+error: could not compile `nazo-auth` (lib test) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...

@@ -1,0 +1,29 @@
+   Compiling nazo-identity v0.2.16 (/src/crates/identity)
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+    Finished `test` profile [unoptimized] target(s) in 4.85s
+     Running tests/authorization_contract.rs (target/debug/deps/authorization_contract-ef99b715933c5588)
+
+running 19 tests
+test authorization_code_begin_and_busy_retry_preserve_the_original_ttl ... ok
+test authorization_code_transitions_keep_begin_ttl_and_terminal_replay_semantics ... ok
+test concurrent_authorization_code_begin_has_one_consuming_winner ... ok
+test concurrent_consent_cleanup_has_exactly_one_winner ... ok
+test concurrent_preparation_writes_have_one_initial_winner ... ok
+test concurrent_reauthentication_nonce_consumption_has_exactly_one_winner ... ok
+test consent_rejects_replacement_and_retry_after_preview_without_refreshing_ttl ... ok
+test consent_snapshot_accepts_old_wire_but_rejects_rewritten_or_changed_state ... ok
+test decision_cleanup_keeps_tenant_deployment_and_epoch_boundaries ... ok
+test decision_cleanup_preserves_replacements_and_original_partial_cleanup_order ... ok
+test decision_cleanup_uses_raw_versions_and_supports_consent_without_par ... ok
+test decision_cleanup_wrong_type_is_an_error_at_the_confirmed_stage ... ok
+test invalid_preparation_ttl_remains_an_unexpected_dependency_error ... ok
+test malformed_snapshot_and_corrupt_replacement_fail_closed_without_deleting ... ok
+test par_preserves_exact_hashed_key_json_ttl_and_conditional_cleanup ... ok
+test par_rejects_replacement_and_retry_after_preview_without_refreshing_ttl ... ok
+test par_snapshot_cleanup_accepts_legacy_wire_with_reordered_multi_parameter_json ... ok
+test preparation_conflicts_and_cleanup_are_tenant_scoped ... ok
+test reauthentication_precision_is_versioned_and_legacy_nonce_is_consumed_fail_closed ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.15s
+

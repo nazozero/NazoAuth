@@ -1,0 +1,230 @@
+{
+  "historical": {
+    "top_by_time": [
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT outcome, retired_source FROM public.nazo_create_refresh_family($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
+        "calls": 72000,
+        "total_exec_ms": 54806.726545000056,
+        "ms_per_call": 0.761204535347223
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT public.nazo_commit_authorization_decision($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS outcome",
+        "calls": 72000,
+        "total_exec_ms": 41598.35312100022,
+        "ms_per_call": 0.5777549044583363
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "calls": 144000,
+        "total_exec_ms": 22321.750489999988,
+        "ms_per_call": 0.15501215618055547
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "calls": 72000,
+        "total_exec_ms": 13330.62535900007,
+        "ms_per_call": 0.18514757443055654
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"client_",
+        "calls": 72000,
+        "total_exec_ms": 12154.55340999984,
+        "ms_per_call": 0.16881324180555335
+      },
+      {
+        "role": "nazoauth_perf_exporter",
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "calls": 4567,
+        "total_exec_ms": 11223.890436000012,
+        "ms_per_call": 2.457606839500769
+      },
+      {
+        "role": "nazoauth_perf_exporter",
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "calls": 4567,
+        "total_exec_ms": 8664.994643999984,
+        "ms_per_call": 1.8973055931683784
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "calls": 72000,
+        "total_exec_ms": 8361.556505000002,
+        "ms_per_call": 0.11613272923611115
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT outcome, client_type FROM public.nazo_lock_token_principals($1, $2, $3, $4, $5)",
+        "calls": 72000,
+        "total_exec_ms": 8245.244185000012,
+        "ms_per_call": 0.11451728034722239
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "calls": 216000,
+        "total_exec_ms": 7223.643249999907,
+        "ms_per_call": 0.03344279282407364
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "calls": 144000,
+        "total_exec_ms": 5336.990663000065,
+        "ms_per_call": 0.03706243515972268
+      },
+      {
+        "role": "nazoauth_perf_exporter",
+        "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+        "calls": 4580,
+        "total_exec_ms": 4042.0084819999997,
+        "ms_per_call": 0.8825346030567685
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda",
+        "calls": 72000,
+        "total_exec_ms": 2987.562869000025,
+        "ms_per_call": 0.041493928736111456
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "calls": 72000,
+        "total_exec_ms": 2369.394517000004,
+        "ms_per_call": 0.03290825718055561
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_",
+        "calls": 216000,
+        "total_exec_ms": 2271.140809999946,
+        "ms_per_call": 0.010514540787036787
+      }
+    ],
+    "calls_by_role": {
+      "nazoauth_perf_exporter": 32047,
+      "postgres": 6832,
+      "nazoauth_perf_runtime": 1729996
+    }
+  },
+  "candidate": {
+    "top_by_time": [
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"oauth_refresh_families\".\"token_family_id\" FROM \"oauth_refresh_families\" WHERE (((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families",
+        "calls": 72001,
+        "total_exec_ms": 153318.970076,
+        "ms_per_call": 2.129400564936598
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT outcome, retired_source FROM public.nazo_create_refresh_family($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
+        "calls": 72001,
+        "total_exec_ms": 67398.37579000043,
+        "ms_per_call": 0.9360755515895672
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT public.nazo_commit_authorization_decision($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS outcome",
+        "calls": 72001,
+        "total_exec_ms": 44493.625804999756,
+        "ms_per_call": 0.6179584423132978
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "calls": 144002,
+        "total_exec_ms": 23644.096026999818,
+        "ms_per_call": 0.16419283084262593
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"client_",
+        "calls": 72001,
+        "total_exec_ms": 15470.664872000065,
+        "ms_per_call": 0.21486736117554012
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "calls": 72001,
+        "total_exec_ms": 14295.952214999934,
+        "ms_per_call": 0.19855213420646844
+      },
+      {
+        "role": "nazoauth_perf_exporter",
+        "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "calls": 3676,
+        "total_exec_ms": 11216.246988999997,
+        "ms_per_call": 3.0512097358541888
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT outcome, client_type FROM public.nazo_lock_token_principals($1, $2, $3, $4, $5)",
+        "calls": 72001,
+        "total_exec_ms": 9471.708123000033,
+        "ms_per_call": 0.1315496746295195
+      },
+      {
+        "role": "nazoauth_perf_exporter",
+        "query": "SELECT public.nazo_finalize_security_audit_claim($1, $2, $3, $4, $5, $6, $7, $8, $9) AS generation",
+        "calls": 3676,
+        "total_exec_ms": 8939.49089199999,
+        "ms_per_call": 2.43185279978237
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "calls": 72001,
+        "total_exec_ms": 8775.373189999988,
+        "ms_per_call": 0.12187849043763263
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "calls": 216003,
+        "total_exec_ms": 7849.215670999782,
+        "ms_per_call": 0.03633845673902576
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "calls": 144002,
+        "total_exec_ms": 7059.4120790001625,
+        "ms_per_call": 0.0490230141178606
+      },
+      {
+        "role": "nazoauth_perf_exporter",
+        "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+        "calls": 3684,
+        "total_exec_ms": 6055.416704000012,
+        "ms_per_call": 1.6437070314875168
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda",
+        "calls": 72001,
+        "total_exec_ms": 4015.4019750000266,
+        "ms_per_call": 0.05576869730975995
+      },
+      {
+        "role": "nazoauth_perf_runtime",
+        "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "calls": 72001,
+        "total_exec_ms": 2567.933561000009,
+        "ms_per_call": 0.03566524855210357
+      }
+    ],
+    "calls_by_role": {
+      "nazoauth_perf_exporter": 25780,
+      "postgres": 6771,
+      "nazoauth_perf_runtime": 1730693
+    }
+  }
+}

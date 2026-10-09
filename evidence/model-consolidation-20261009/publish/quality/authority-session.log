@@ -1,0 +1,18 @@
+   Compiling futures-executor v0.3.34
+   Compiling nazo-identity v0.2.16 (/src/crates/identity)
+   Compiling futures v0.3.34
+   Compiling fred v10.1.0
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+    Finished `test` profile [unoptimized] target(s) in 6.07s
+     Running tests/session_contract.rs (target/debug/deps/session_contract-c22a43f8b48538a1)
+
+running 5 tests
+test concurrent_session_rotation_has_exactly_one_winner_and_no_partial_state ... ok
+test session_authentication_precision_roundtrips_and_malformed_precision_is_rejected ... ok
+test session_compare_and_set_preserves_ttl_and_logged_in_rps ... ok
+test session_load_rejects_a_record_without_current_mfa_state ... ok
+test session_store_preserves_exact_key_payload_and_ttl ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

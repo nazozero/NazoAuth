@@ -1,0 +1,1 @@
+{"source_sha": "705f28714c3d2e0509d801cd487775511ad07c76", "command": ["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"], "exit": 0, "seconds": 39.42827997403219}

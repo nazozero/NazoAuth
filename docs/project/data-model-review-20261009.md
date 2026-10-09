@@ -1,5 +1,16 @@
 # Data-model review and refactoring
 
+## Final integrated review
+
+The model review and repairs are consolidated into PR #230. Final source: `b5b0f4246d8a443466a1c256429a76f88bf2c6e0`. PRs #236 and #237 are integrated; main is not merged.
+
+See the [complete review and evidence](../../evidence/model-consolidation-20261009/publish/README.md) and [model ownership analysis](../../evidence/model-consolidation-20261009/publish/model-review.md). The original four capacity points pass unchanged gates, and the target decision cohort naturally reaches zero after its final retention deadline and completed maintenance cycle. Historical cost increases and unmeasured long-term bounds remain explicit in the report. Final report-head CI is a separate PR gate.
+
+<details>
+<summary>Original branch tracking record (historical, not the current acceptance status)</summary>
+
+# Data-model review and refactoring
+
 ## Baseline and scope
 
 - Parent: PR #230, branch `refactor/authorization-decision-facts-20261001`.
@@ -45,3 +56,5 @@ The following groups are the required review surface. Listing a group here does 
 ## Validation
 
 No execution result is claimed by this initial tracking commit. Refactoring commits must add focused regressions and report their exact-source results separately from baseline CI. Existing performance failures in PR #230 remain outside any correctness claim made by this review.
+
+</details>

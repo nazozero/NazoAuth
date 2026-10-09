@@ -1,0 +1,61 @@
+   Compiling nazoauth v0.2.16 (/src/crates/nazoauth)
+    Finished `test` profile [unoptimized] target(s) in 38.19s
+     Running unittests src/lib.rs (target/debug/deps/nazoauth-21d781af2e3bd205)
+
+running 33 tests
+test domain::passkey::login_tests::passkey_login_begin_does_not_enumerate_account_or_credential_state ... ok
+test domain::passkey::login_tests::passkey_login_begin_reports_user_lookup_failure_before_challenge_issue ... ok
+test domain::passkey::login_tests::passkey_login_finish_rejects_credential_mismatch_uniformly_and_consumes_ceremony ... ok
+test domain::passkey::login_tests::passkey_login_begin_rejects_malformed_stored_credentials_before_challenge_issue ... ok
+test domain::passkey::login_tests::passkey_login_finish_rejects_inactive_users_and_consumes_ceremony ... ok
+test domain::passkey::login_tests::passkey_login_finish_rejects_invalid_ceremony_id_before_state_lookup ... ok
+test domain::passkey::login_tests::passkey_login_finish_creates_session_updates_counter_and_consumes_ceremony_once ... ok
+test domain::passkey::login_tests::passkey_login_finish_rejects_malformed_stored_credentials_before_webauthn_verification ... ok
+test domain::passkey::login_tests::passkey_login_finish_rejects_origin_mismatch_and_consumes_ceremony ... ok
+test domain::passkey::login_tests::passkey_login_finish_rejects_malformed_credential_id_before_credential_lookup ... ok
+test domain::passkey::login_tests::passkey_login_transport_has_no_identity_or_storage_orchestration ... ok
+test domain::passkey::login_tests::passkey_login_finish_reports_user_lookup_failure_after_consuming_ceremony ... ok
+test domain::passkey::profile_tests::delete_passkey_rejects_session_request_without_csrf_before_credential_delete ... ok
+test domain::passkey::profile_tests::delete_passkey_cannot_remove_another_users_credential ... FAILED
+test domain::passkey::profile_tests::delete_passkey_removes_authenticated_user_credential ... ok
+test domain::passkey::profile_tests::passkey_ceremony_id_normalization_accepts_only_bounded_urlsafe_identifiers ... ok
+test domain::passkey::profile_tests::passkey_label_normalization_defaults_trims_and_rejects_oversized_labels ... ok
+test domain::passkey::profile_tests::delete_passkey_requires_login_before_credential_delete ... ok
+test domain::passkey::login_tests::passkey_login_finish_skips_pending_mfa_for_remembered_device ... ok
+test domain::passkey::profile_tests::passkey_profile_transport_has_no_identity_or_storage_orchestration ... ok
+test domain::passkey::profile_tests::passkey_list_requires_login_before_loading_credentials ... ok
+test domain::passkey::profile_tests::registration_begin_rejects_malformed_stored_credential_before_new_ceremony ... ok
+test domain::passkey::profile_tests::passkey_list_returns_authenticated_user_credentials_from_database ... ok
+test domain::passkey::profile_tests::registration_begin_requires_login_before_ceremony_creation ... ok
+test domain::passkey::profile_tests::registration_begin_rejects_session_request_without_csrf_before_ceremony_creation ... ok
+test domain::passkey::profile_tests::registration_finish_rejects_ceremony_user_mismatch_without_inserting_credential ... ok
+test domain::passkey::profile_tests::registration_finish_projects_malformed_ceremony_state_as_expired ... ok
+test domain::passkey::profile_tests::registration_finish_rejects_session_request_without_csrf_before_ceremony_lookup ... ok
+test domain::passkey::profile_tests::registration_finish_rejects_invalid_authenticator_response_without_persisting_credential ... ok
+test domain::passkey::profile_tests::registration_finish_persists_credential_and_consumes_ceremony_once ... ok
+test domain::passkey::profile_tests::registration_finish_requires_login_before_ceremony_lookup ... ok
+test domain::passkey::profile_tests::registration_finish_returns_conflict_without_second_row_on_duplicate_credential ... ok
+test domain::passkey::login_tests::passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remembered_device ... ok
+
+failures:
+
+---- domain::passkey::profile_tests::delete_passkey_cannot_remove_another_users_credential stdout ----
+
+thread 'domain::passkey::profile_tests::delete_passkey_cannot_remove_another_users_credential' (73631) panicked at crates/nazoauth/src/../tests/unit/../support/domain/../../unit/domain/passkey/profile.rs:1098:10:
+owner passkeys should load: HttpResponse { error: None, res: 
+Response HTTP/1.1 503 Service Unavailable
+  headers:
+    "cache-control": "no-store"
+    "pragma": "no-cache"
+    "content-type": "application/json"
+  body: Sized(73)
+ }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    domain::passkey::profile_tests::delete_passkey_cannot_remove_another_users_credential
+
+test result: FAILED. 32 passed; 1 failed; 0 ignored; 0 measured; 1430 filtered out; finished in 1.70s
+
+error: test failed, to rerun pass `-p nazoauth --lib`

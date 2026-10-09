@@ -1,0 +1,188 @@
+    Checking nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+    Checking nazo-http-actix v0.2.16 (/src/crates/http-actix)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+error[E0603]: module `schema` is private
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1402:35
+     |
+1402 |     diesel::update(nazo_postgres::schema::user_passkey_credentials::table.find(credential.id))
+     |                                   ^^^^^^ private module             ----- unit struct `table` is not publicly re-exported
+     |
+note: the module `schema` is defined here
+    --> crates/persistence-postgres/src/lib.rs:21:1
+     |
+  21 | pub(crate) mod schema;
+     | ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `schema` is private
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1404:28
+     |
+1404 |             nazo_postgres::schema::user_passkey_credentials::credential.eq(corrupt_payload.clone()),
+     |                            ^^^^^^ private module             ---------- unit struct `credential` is not publicly re-exported
+     |
+note: the module `schema` is defined here
+    --> crates/persistence-postgres/src/lib.rs:21:1
+     |
+  21 | pub(crate) mod schema;
+     | ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `schema` is private
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1442:52
+     |
+1442 |     let stored: serde_json::Value = nazo_postgres::schema::user_passkey_credentials::table
+     |                                                    ^^^^^^ private module             ----- unit struct `table` is not publicly re-exported
+     |
+note: the module `schema` is defined here
+    --> crates/persistence-postgres/src/lib.rs:21:1
+     |
+  21 | pub(crate) mod schema;
+     | ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `schema` is private
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1444:32
+     |
+1444 |         .select(nazo_postgres::schema::user_passkey_credentials::credential)
+     |                                ^^^^^^ private module             ---------- unit struct `credential` is not publicly re-exported
+     |
+note: the module `schema` is defined here
+    --> crates/persistence-postgres/src/lib.rs:21:1
+     |
+  21 | pub(crate) mod schema;
+     | ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `passkey_auth::PasskeyCredential: From<&str>` is not satisfied
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1298:26
+     |
+1298 |             "credential".into(),
+     |                          ^^^^ the trait `From<&str>` is not implemented for `passkey_auth::PasskeyCredential`
+     |
+     = note: required for `&str` to implement `Into<passkey_auth::PasskeyCredential>`
+
+error[E0061]: this method takes 4 arguments but 6 arguments were supplied
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1295:10
+     |
+1295 |         .insert(
+     |          ^^^^^^
+...
+1299 |             json!({}),
+     |             --------- unexpected argument #4 of type `serde_json::Value`
+1300 |             "test".into(),
+1301 |             0,
+     |             - unexpected argument #6 of type `{integer}`
+     |
+note: method defined here
+    --> crates/persistence-postgres/src/repositories/passkeys.rs:94:18
+     |
+  94 |     pub async fn insert(
+     |                  ^^^^^^
+help: remove the extra arguments
+     |
+1298 ~             "credential".into(),
+1299 ~             "test".into(),
+     |
+
+error[E0277]: the trait bound `passkey_auth::PasskeyCredential: From<&str>` is not satisfied
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1310:30
+     |
+1310 |                 "credential".into(),
+     |                              ^^^^ the trait `From<&str>` is not implemented for `passkey_auth::PasskeyCredential`
+     |
+     = note: required for `&str` to implement `Into<passkey_auth::PasskeyCredential>`
+
+error[E0061]: this method takes 4 arguments but 6 arguments were supplied
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1307:14
+     |
+1307 |             .insert(
+     |              ^^^^^^
+...
+1311 |                 json!({}),
+     |                 --------- unexpected argument #4 of type `serde_json::Value`
+1312 |                 "test".into(),
+1313 |                 0
+     |                 - unexpected argument #6 of type `{integer}`
+     |
+note: method defined here
+    --> crates/persistence-postgres/src/repositories/passkeys.rs:94:18
+     |
+  94 |     pub async fn insert(
+     |                  ^^^^^^
+help: remove the extra arguments
+     |
+1310 ~                 "credential".into(),
+1311 ~                 "test".into()
+     |
+
+error[E0599]: no method named `find` found for struct `nazo_postgres::schema::user_passkey_credentials::table` in the current scope
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1402:75
+     |
+1402 |     diesel::update(nazo_postgres::schema::user_passkey_credentials::table.find(credential.id))
+     |                                                                           ^^^^ method not found in `nazo_postgres::schema::user_passkey_credentials::table`
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: the following traits which provide `find` are implemented but not in scope; perhaps you want to import one of them
+     |
+   1 + use diesel::QueryDsl;
+     |
+   1 + use diesel::query_dsl::methods::FindDsl;
+     |
+
+error[E0599]: `nazo_postgres::schema::user_passkey_credentials::columns::credential` is not an iterator
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1404:73
+     |
+1404 |             nazo_postgres::schema::user_passkey_credentials::credential.eq(corrupt_payload.clone()),
+     |                                                                         ^^ `nazo_postgres::schema::user_passkey_credentials::columns::credential` is not an iterator
+     |
+    ::: crates/persistence-postgres/src/schema.rs:208:9
+     |
+ 208 |         credential -> Jsonb, label -> Varchar, sign_count -> Int8,
+     |         ---------- doesn't satisfy `_: Iterator`
+     |
+     = note: the following trait bounds were not satisfied:
+             `nazo_postgres::schema::user_passkey_credentials::columns::credential: Iterator`
+             which is required by `&mut nazo_postgres::schema::user_passkey_credentials::columns::credential: Iterator`
+     = help: items from traits can only be used if the trait is in scope
+help: trait `ExpressionMethods` which provides `eq` is implemented but not in scope; perhaps you want to import it
+     |
+   1 + use diesel::ExpressionMethods;
+     |
+
+error[E0599]: no method named `find` found for struct `nazo_postgres::schema::user_passkey_credentials::table` in the current scope
+    --> crates/persistence-postgres/tests/identity_repositories.rs:1443:10
+     |
+1442 |       let stored: serde_json::Value = nazo_postgres::schema::user_passkey_credentials::table
+     |  _____________________________________-
+1443 | |         .find(credential.id)
+     | |         -^^^^ method not found in `nazo_postgres::schema::user_passkey_credentials::table`
+     | |_________|
+     |
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: the following traits which provide `find` are implemented but not in scope; perhaps you want to import one of them
+     |
+   1 + use diesel::QueryDsl;
+     |
+   1 + use diesel::query_dsl::methods::FindDsl;
+     |
+
+Some errors have detailed explanations: E0061, E0277, E0599, E0603.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `nazo-postgres` (test "identity_repositories") due to 11 previous errors
+warning: build failed, waiting for other jobs to finish...
+error[E0609]: no field `sign_count` on type `&nazo_identity::ports::PasskeyCredential`
+   --> crates/nazoauth/src/../tests/unit/../support/domain/../../unit/domain/passkey/login.rs:713:24
+    |
+713 |     assert_eq!(updated.sign_count, 1);
+    |                        ^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id`, `tenant_id`, `user_id`, `credential`, `label` ... and 3 others
+
+error[E0609]: no field `sign_count` on type `nazo_identity::ports::PasskeyCredential`
+    --> crates/nazoauth/src/../tests/unit/../support/domain/../../unit/domain/passkey/login.rs:1187:24
+     |
+1187 |     assert_eq!(rows[0].sign_count, 0);
+     |                        ^^^^^^^^^^ unknown field
+     |
+     = note: available fields are: `id`, `tenant_id`, `user_id`, `credential`, `label` ... and 3 others
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `nazoauth` (lib test) due to 2 previous errors

@@ -1,0 +1,1 @@
+{"source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0", "command": ["cargo", "test", "--locked", "--all-features", "-p", "nazoauth", "--lib", "http::authorization::par::tests::par_fapi2_rejects_shared_secret_client_auth_after_authentication", "--", "--exact", "--ignored", "--nocapture"], "exit": 0, "seconds": 0.5964884092099965}
