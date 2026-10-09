@@ -1,0 +1,114 @@
+    Blocking waiting for file lock on build directory
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 59.76s
+     Running tests/audit_commit_boundary.rs (target/debug/deps/audit_commit_boundary-ac6634436bdbcf27)
+
+running 4 tests
+test committed_ack_with_lost_ready_for_query_recovers_from_the_durable_checkpoint ... proxy dropped committed ACK ReadyForQuery(I): caller Err, original backend 2900 disposed, checkpoint recovered, stale generation rejected, next batch ACK succeeded
+ok
+test every_audit_mutation_rejects_late_commit_failure_cancel_and_disconnect ... Genesis: late commit error propagated: unexpected repository error: revision late commit failure; backend=2905
+Genesis/raise: backend gone, replacement=2906, durable_changed=false
+Genesis: cancel at deferred commit, no early success, backend=2910
+Genesis/cancel: backend gone, replacement=2911, durable_changed=true
+Genesis: disconnect at deferred commit, no early success, backend=2916
+Genesis/disconnect: backend gone, replacement=2917, durable_changed=false
+Observe: late commit error propagated: unexpected repository error: revision late commit failure; backend=2921
+Observe/raise: backend gone, replacement=2922, durable_changed=false
+Observe: cancel at deferred commit, no early success, backend=2926
+Observe/cancel: backend gone, replacement=2927, durable_changed=true
+Observe: disconnect at deferred commit, no early success, backend=2931
+Observe/disconnect: backend gone, replacement=2932, durable_changed=false
+Singleton: late commit error propagated: unexpected repository error: revision late commit failure; backend=2936
+Singleton/raise: backend gone, replacement=2937, durable_changed=false
+Singleton: cancel at deferred commit, no early success, backend=2941
+Singleton/cancel: backend gone, replacement=2942, durable_changed=true
+Singleton: disconnect at deferred commit, no early success, backend=2946
+Singleton/disconnect: backend gone, replacement=2947, durable_changed=false
+Batch: late commit error propagated: unexpected repository error: revision late commit failure; backend=2951
+Batch/raise: backend gone, replacement=2952, durable_changed=false
+Batch: cancel at deferred commit, no early success, backend=2956
+Batch/cancel: backend gone, replacement=2957, durable_changed=true
+Batch: disconnect at deferred commit, no early success, backend=2961
+Batch/disconnect: backend gone, replacement=2962, durable_changed=false
+Ack: late commit error propagated: unexpected repository error: revision late commit failure; backend=2966
+Ack/raise: backend gone, replacement=2967, durable_changed=false
+Ack: cancel at deferred commit, no early success, backend=2971
+Ack/cancel: backend gone, replacement=2972, durable_changed=true
+Ack: disconnect at deferred commit, no early success, backend=2977
+Ack/disconnect: backend gone, replacement=2978, durable_changed=false
+Fail: late commit error propagated: unexpected repository error: revision late commit failure; backend=2982
+Fail/raise: backend gone, replacement=2983, durable_changed=false
+Fail: cancel at deferred commit, no early success, backend=2987
+Fail/cancel: backend gone, replacement=2988, durable_changed=true
+Fail: disconnect at deferred commit, no early success, backend=2992
+Fail/disconnect: backend gone, replacement=2993, durable_changed=false
+ok
+test first_data_row_is_not_a_commit_acknowledgement ... first DataRow=true, next result=23514 revision late commit failure; no durable event
+ok
+test fresh_audit_conflict_rolls_back_the_callers_business_transaction ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 40.37s
+
+     Running tests/migrations.rs (target/debug/deps/migrations-dc1a764bf4051720)
+
+running 27 tests
+test access_token_revocation_retention_backfill_extends_only_live_windows ... ok
+test access_token_revocation_retention_sql_pins_the_verifier_skew_window ... ok
+test embedded_migration_head_tracks_latest_directory ... ok
+test empty_schema_migration_run_leaves_revocation_retention_applied_and_writable ... 
+thread 'empty_schema_migration_run_leaves_revocation_retention_applied_and_writable' (20758) panicked at crates/persistence-postgres/tests/migrations.rs:1801:10:
+runtime role fixture public baseline must be fully migrated: Failed to run 20260920000100_audit_anchor_batch_delivery with: function "nazo_ack_security_audit_batch" already exists with same argument types
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test identity_security_event_migration_is_additive_redacted_and_round_trips ... ok
+test issuance_cleanup_uses_expiry_as_an_index_bound ... 
+thread 'issuance_cleanup_uses_expiry_as_an_index_bound' (20776) panicked at crates/persistence-postgres/tests/migrations.rs:735:10:
+pending migrations should apply: Failed to run 20260920000100_audit_anchor_batch_delivery with: function "nazo_ack_security_audit_batch" already exists with same argument types
+FAILED
+test oidc_logout_idempotency_migration_is_additive_partial_and_reversible ... ok
+test openid4vp_expiry_cleanup_query_is_indexable ... 
+thread 'openid4vp_expiry_cleanup_query_is_indexable' (20786) panicked at crates/persistence-postgres/tests/migrations.rs:790:10:
+pending migrations should apply: Failed to run 20260920000100_audit_anchor_batch_delivery with: function "nazo_ack_security_audit_batch" already exists with same argument types
+FAILED
+test pending_migrations_create_all_runtime_module_state_tables ... 
+thread 'pending_migrations_create_all_runtime_module_state_tables' (20792) panicked at crates/persistence-postgres/tests/migrations.rs:926:10:
+public migrations needed by the isolated schema should apply: Failed to run 20260920000100_audit_anchor_batch_delivery with: function "nazo_ack_security_audit_batch" already exists with same argument types
+FAILED
+test pending_migrations_create_tenant_scoped_signing_keyset_storage ... 
+thread 'pending_migrations_create_tenant_scoped_signing_keyset_storage' (20798) panicked at crates/persistence-postgres/tests/migrations.rs:1039:10:
+pending migrations should apply: Failed to run 20260920000100_audit_anchor_batch_delivery with: function "nazo_ack_security_audit_batch" already exists with same argument types
+FAILED
+test persisted_security_state_cut_executes_fail_closed_and_establishes_current_invariants ... ok
+test persisted_security_state_cut_removes_every_legacy_authority ... ok
+test pushed_requests_policy_downgrade_fails_closed_on_required_clients ... ok
+test recovery_allocation_proof_migration_hard_cuts_unsigned_pending_state ... ok
+test recovery_coverage_migration_preserves_old_receipts_and_writer_default ... ok
+test recovery_receipt_migration_binds_exact_retry_to_immutable_result ... ok
+test recovery_root_key_history_backfills_current_keys_and_refuses_downgrade ... ok
+test recovery_root_migration_pins_kdf_ttl_uniqueness_and_fail_closed_downgrade ... ok
+test refresh_state_minimal_migration_converges_family_cap_and_contracts ... 
+thread 'refresh_state_minimal_migration_converges_family_cap_and_contracts' (20819) panicked at crates/persistence-postgres/tests/migrations.rs:1983:10:
+pending migrations should apply: Failed to run 20260920000100_audit_anchor_batch_delivery with: function "nazo_ack_security_audit_batch" already exists with same argument types
+FAILED
+test revoked_refresh_family_cleanup_index_is_partial_and_reversible ... ok
+test runtime_module_state_migration_enforces_catalogs_and_round_trips ... ok
+test security_state_cleanup_function_bounds_every_category ... ok
+test security_state_cleanup_has_versioned_definitions_and_no_runtime_call ... ok
+test social_provider_type_migration_preserves_existing_rows_and_has_safe_down_policy ... ok
+test tenant_resource_provenance_cut_keeps_one_deterministic_binding_and_rejects_ambiguity ... ok
+test token_principal_epochs_survive_reactivation_and_bindings_are_tenant_owned ... ok
+test totp_invalid_audit_migration_extends_and_restores_the_closed_catalog ... ok
+
+failures:
+
+failures:
+    empty_schema_migration_run_leaves_revocation_retention_applied_and_writable
+    issuance_cleanup_uses_expiry_as_an_index_bound
+    openid4vp_expiry_cleanup_query_is_indexable
+    pending_migrations_create_all_runtime_module_state_tables
+    pending_migrations_create_tenant_scoped_signing_keyset_storage
+    refresh_state_minimal_migration_converges_family_cap_and_contracts
+
+test result: FAILED. 21 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.04s
+
+error: test failed, to rerun pass `-p nazo-postgres --test migrations`

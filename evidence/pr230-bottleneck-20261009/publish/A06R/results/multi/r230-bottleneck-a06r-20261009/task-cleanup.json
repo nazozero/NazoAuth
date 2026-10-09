@@ -1,0 +1,11 @@
+{
+  "label": "r230-bottleneck-a06r-20261009",
+  "key": "A06R",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.474,
+  "total_elapsed_s": 183.741,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

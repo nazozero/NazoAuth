@@ -1,0 +1,8 @@
+{
+  "source_sha": "3da0734de491a380b315fc2fb2827f4043c04823",
+  "baseline_sha": "7d7ed5fddc5c91201bcac94553a6e72836d471d7",
+  "branch": "refactor/authorization-decision-facts-20261001",
+  "tree": "cafb605b7a5860d289ccba7fbfd18c3ae16562f8",
+  "diagnostic_overlay_removed": true,
+  "binary_sha256": "7b199250bb8fb82f8fee2b084d465081b9ddd8532c703f8216a2776ebebaa35d"
+}

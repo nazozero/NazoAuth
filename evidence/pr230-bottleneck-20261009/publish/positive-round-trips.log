@@ -1,0 +1,10 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 41.75s
+     Running tests/query_counts.rs (target/debug/deps/query_counts-34af96b8353a7654)
+
+running 1 test
+test new_family_capacity_transition_has_bounded_round_trips_and_complete_evidence ... NEW_FAMILY_ROUND_TRIPS counts=[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5] confirmed_commits=13 live=10 retired=3 issued_audit=13 retired_audit=3
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.62s
+

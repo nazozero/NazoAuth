@@ -1,0 +1,74 @@
+{
+ "census_exact": {
+  "oauth:client_assertion": 900,
+  "oauth:dpop": 1500,
+  "oauth:jar": 7802,
+  "oauth:rate": 7,
+  "oauth:session": 216,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 10426,
+  "evicted_keys": 0,
+  "expired_keys": 17,
+  "keyspace_hits": 175825,
+  "keyspace_misses": 771,
+  "mem_fragmentation_ratio": 2.93,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 5155856,
+  "used_memory_rss": 15106048
+ },
+ "keys_seen": 10426,
+ "mem_bytes_sampled": {
+  "oauth:client_assertion": 128000,
+  "oauth:dpop": 118272,
+  "oauth:jar": 131200,
+  "oauth:rate": 1792,
+  "oauth:session": 102592,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:rate": 7,
+  "oauth:session": 216,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "r230-bottleneck-b03-20261009",
+  "sample_per_cat": 400,
+  "sampled_at": 1791510493,
+  "scan_ms": 170,
+  "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+ },
+ "sampled_per_cat": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:rate": 7,
+  "oauth:session": 216,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 10426,
+ "ttl_buckets_sampled": {
+  "oauth:client_assertion|1m+": 137,
+  "oauth:client_assertion|2m+": 156,
+  "oauth:client_assertion|3m+": 107,
+  "oauth:dpop|2m+": 88,
+  "oauth:dpop|3m+": 168,
+  "oauth:dpop|4m+": 126,
+  "oauth:dpop|5m+": 18,
+  "oauth:jar|1m+": 190,
+  "oauth:jar|2m+": 206,
+  "oauth:jar|3m+": 4,
+  "oauth:rate|0m+": 7,
+  "oauth:session|476m+": 65,
+  "oauth:session|477m+": 55,
+  "oauth:session|478m+": 60,
+  "oauth:session|479m+": 36,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

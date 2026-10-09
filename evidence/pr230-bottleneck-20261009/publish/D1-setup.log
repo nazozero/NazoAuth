@@ -1,0 +1,2 @@
+968d889d93503c5447b5f81f5d55809b70ef8cf089ce7b5f6d1bc5c56243c01b  /src/evidence/pr230-bottleneck-20261009/D1/bin/pinset
+{"utc": "2026-10-09T01:07:04.739855+00:00", "stage": "task-environment-setup", "pinset_sha256": "968d889d93503c5447b5f81f5d55809b70ef8cf089ce7b5f6d1bc5c56243c01b", "isolated_pinset_output": "pinned_tasks=1 failed_procs=0", "scripts_volume": "r230-bottleneck-d1-20261009-scripts", "pinbin_volume": "r230-bottleneck-d1-20261009-pinbin", "tls_volume": "r230-bottleneck-d1-20261009-audit-tls"}

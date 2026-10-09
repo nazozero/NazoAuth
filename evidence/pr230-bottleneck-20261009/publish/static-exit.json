@@ -1,0 +1,1 @@
+{"command": ["python3", "scripts/verify_static_contracts.py", "--check"], "exit": 1, "seconds": 0.0675335698761046}

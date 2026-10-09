@@ -1,0 +1,103 @@
+diff --git a/crates/persistence-postgres/src/pool.rs b/crates/persistence-postgres/src/pool.rs
+index ba31eb5a..113ee57d 100644
+--- a/crates/persistence-postgres/src/pool.rs
++++ b/crates/persistence-postgres/src/pool.rs
+@@ -36,7 +36,9 @@ impl std::ops::Deref for DbPool {
+         &self.connections
+     }
+ }
+-pub type DbConnection = Object<AsyncPgConnection>;
++mod diagnostic;
++pub(crate) use diagnostic::profile;
++pub type DbConnection = diagnostic::ObservedConnection;
+ 
+ /// Discard the physical connection unless its transaction outcome is confirmed.
+ /// Dropping a transaction future alone does not end a diesel-async transaction.
+@@ -145,21 +147,29 @@ async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<As
+     AsyncPgConnection::try_from_client_and_connection(client, connection).await
+ }
+ 
+-pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {
+-    let observation = tracing::enabled!(target: "persistence.pool", tracing::Level::TRACE)
+-        .then(|| (std::time::Instant::now(), pool.status()));
+-    let connection = pool.get().await;
+-    if let Some((started, status)) = observation {
+-        tracing::trace!(
+-            target: "persistence.pool",
+-            acquire_us = started.elapsed().as_micros() as u64,
+-            available_before = status.available,
+-            waiting_before = status.waiting,
+-            success = connection.is_ok(),
+-            "PostgreSQL connection acquisition completed"
+-        );
++#[track_caller]
++pub fn get_conn(
++    pool: &DbPool,
++) -> impl std::future::Future<Output = anyhow::Result<DbConnection>> + Send + '_ {
++    let location = std::panic::Location::caller();
++    let phase = format!("{}:{}", location.file(), location.line());
++    async move {
++        static SAMPLES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++        if SAMPLES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 1024 == 0 {
++            let q = pool.status();
++            eprintln!(
++                "POOLSTATUS {}",
++                serde_json::json!({"ts": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64(), "phase":phase,"size":q.size,"max_size":q.max_size,"available":q.available,"waiting":q.waiting})
++            );
++        }
++        let started = std::time::Instant::now();
++        let connection = pool.get().await?;
++        Ok(diagnostic::ObservedConnection::new(
++            connection,
++            started.elapsed().as_micros() as u64,
++            phase,
++        ))
+     }
+-    Ok(connection?)
+ }
+ 
+ /// Performs a real database round trip used by readiness probes.
+diff --git a/crates/persistence-postgres/src/repositories/authorization_flow.rs b/crates/persistence-postgres/src/repositories/authorization_flow.rs
+index a4ad60e0..69776f97 100644
+--- a/crates/persistence-postgres/src/repositories/authorization_flow.rs
++++ b/crates/persistence-postgres/src/repositories/authorization_flow.rs
+@@ -54,7 +54,7 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
+             // cancellation is an unknown outcome, not a confirmed rollback.
+             let mut operation = tokio::task::JoinSet::new();
+             operation.spawn_on(
+-                async move {
++                crate::pool::profile("authorization_task", async move {
+                     let mut guard = DiscardOnDrop(Some(
+                         get_conn(&pool)
+                             .await
+@@ -138,7 +138,7 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
+                         guard.return_to_pool();
+                     }
+                     result.map_err(|_| AuthorizationPortError::Unexpected)
+-                },
++                }),
+                 &self.pool.runtime,
+             );
+             operation
+diff --git a/crates/persistence-postgres/src/repositories/token_issuance.rs b/crates/persistence-postgres/src/repositories/token_issuance.rs
+index ee04b59b..1a34601f 100644
+--- a/crates/persistence-postgres/src/repositories/token_issuance.rs
++++ b/crates/persistence-postgres/src/repositories/token_issuance.rs
+@@ -610,7 +610,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
+             let pool = self.pool.clone();
+             let mut operation = tokio::task::JoinSet::new();
+             operation.spawn_on(
+-                async move {
++                crate::pool::profile("issuance_task", async move {
+                     let mut guard = DiscardOnDrop(Some(
+                         get_conn(&pool)
+                             .await
+@@ -757,7 +757,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
+                         }
+                         Err(CommitTransactionError::Diesel(error)) => Err(map_diesel_error(error)),
+                     }
+-                },
++                }),
+                 &self.pool.runtime,
+             );
+             operation

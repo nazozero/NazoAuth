@@ -1,0 +1,65 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 2.03s
+     Running tests/migrations.rs (target/debug/deps/migrations-dc1a764bf4051720)
+
+running 27 tests
+test access_token_revocation_retention_backfill_extends_only_live_windows ... ok
+test access_token_revocation_retention_sql_pins_the_verifier_skew_window ... ok
+test embedded_migration_head_tracks_latest_directory ... ok
+test empty_schema_migration_run_leaves_revocation_retention_applied_and_writable ... ok
+test identity_security_event_migration_is_additive_redacted_and_round_trips ... ok
+test issuance_cleanup_uses_expiry_as_an_index_bound ... ok
+test oidc_logout_idempotency_migration_is_additive_partial_and_reversible ... ok
+test openid4vp_expiry_cleanup_query_is_indexable ... ok
+test pending_migrations_create_all_runtime_module_state_tables ... ok
+test pending_migrations_create_tenant_scoped_signing_keyset_storage ... ok
+test persisted_security_state_cut_executes_fail_closed_and_establishes_current_invariants ... ok
+test persisted_security_state_cut_removes_every_legacy_authority ... ok
+test pushed_requests_policy_downgrade_fails_closed_on_required_clients ... ok
+test recovery_allocation_proof_migration_hard_cuts_unsigned_pending_state ... ok
+test recovery_coverage_migration_preserves_old_receipts_and_writer_default ... ok
+test recovery_receipt_migration_binds_exact_retry_to_immutable_result ... ok
+test recovery_root_key_history_backfills_current_keys_and_refuses_downgrade ... ok
+test recovery_root_migration_pins_kdf_ttl_uniqueness_and_fail_closed_downgrade ... ok
+test refresh_state_minimal_migration_converges_family_cap_and_contracts ... ok
+test revoked_refresh_family_cleanup_index_is_partial_and_reversible ... ok
+test runtime_module_state_migration_enforces_catalogs_and_round_trips ... ok
+test security_state_cleanup_function_bounds_every_category ... ok
+test security_state_cleanup_has_versioned_definitions_and_no_runtime_call ... ok
+test social_provider_type_migration_preserves_existing_rows_and_has_safe_down_policy ... ok
+test tenant_resource_provenance_cut_keeps_one_deterministic_binding_and_rejects_ambiguity ... ok
+test token_principal_epochs_survive_reactivation_and_bindings_are_tenant_owned ... ok
+test totp_invalid_audit_migration_extends_and_restores_the_closed_catalog ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.20s
+
+     Running tests/security_state_commit_boundary.rs (target/debug/deps/security_state_commit_boundary-8ee755885b9914e5)
+
+running 1 test
+test cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded ... raise: no premature cleanup success, backend retired, recovery committed
+cancel: no premature cleanup success, backend retired, recovery committed
+disconnect: no premature cleanup success, backend retired, recovery committed
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.81s
+
+     Running tests/token_issuance_fresh.rs (target/debug/deps/token_issuance_fresh-c13ae26a6dc40323)
+
+running 14 tests
+test client_deactivation_waits_for_fresh_issuance_commit ... ok
+test client_reactivation_does_not_revive_tokens_or_stale_issuance ... ok
+test fresh_issuance_abort_during_lock_wait_discards_connection ... ok
+test fresh_issuance_audit_function_failure_rejects_commit ... ok
+test fresh_issuance_commits_only_required_audit ... ok
+test fresh_issuance_lock_timeout_discards_connection_cleanly ... ok
+test fresh_issuance_never_crosses_tenant_boundary ... ok
+test fresh_issuance_rejects_duplicate_pending_audit_identity ... ok
+test fresh_issuance_rejects_missing_or_inactive_client ... ok
+test fresh_issuance_rejects_oversized_audit_payload ... ok
+test fresh_issuance_runs_under_the_restricted_runtime_role ... ok
+test fresh_issuance_waits_for_client_deactivation_and_rechecks ... ok
+test repeated_pairwise_issuance_reuses_one_binding_and_honors_user_epoch ... ok
+test revoked_audit_append_execute_fails_the_fresh_commit ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.08s
+

@@ -1,0 +1,12 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-r230-bottleneck-d2-20261009",
+    "sis-proc-r230-bottleneck-d2-20261009",
+    "sis-sampler-r230-bottleneck-d2-20261009"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

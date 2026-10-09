@@ -1,0 +1,11 @@
+{
+  "label": "r230-bottleneck-q32-20261009",
+  "key": "Q32",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 23.16,
+  "total_elapsed_s": 213.876,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

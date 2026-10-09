@@ -1,0 +1,299 @@
+{
+  "source_sha": "7d7ed5fddc5c91201bcac94553a6e72836d471d7",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791505963.9221253,
+      "container": "sis-sampler-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505963.9535167,
+      "container": "sis-proc-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505969.096828,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505969.2282462,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505974.579871,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505974.7810113,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505980.0973907,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505980.2098668,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505985.6672404,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505985.7660341,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505991.138706,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505991.2378235,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505996.633373,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791505996.7565315,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506002.1930451,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506002.3729255,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506008.0175338,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506008.2243698,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506013.7350037,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506013.9719737,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506019.577146,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506020.1620903,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506025.7079947,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506025.950867,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506031.8215818,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506032.1729581,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506037.850279,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506038.0541399,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506043.6809988,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506043.9820046,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506050.3899179,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506051.287162,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506051.4014955,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506051.4491372,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506052.381033,
+      "container": "sis-load-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506063.4180646,
+      "container": "sis-sampler-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506063.4880772,
+      "container": "sis-sampler-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506074.2817736,
+      "container": "sis-proc-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506074.3292887,
+      "container": "sis-proc-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506085.6810377,
+      "container": "sis-sampler-r230-bottleneck-a06r-20261009"
+    },
+    {
+      "ts": 1791506085.7677364,
+      "container": "sis-proc-r230-bottleneck-a06r-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791505963.8282537,
+      "ts_end": 1791505963.8634653,
+      "elapsed_ms": 35.2126,
+      "container": "sis-sampler-r230-bottleneck-a06r-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791505963.8634975,
+      "ts_end": 1791505963.8967946,
+      "elapsed_ms": 33.2983,
+      "container": "sis-proc-r230-bottleneck-a06r-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791505963.9539323,
+      "ts_end": 1791505963.9911184,
+      "elapsed_ms": 37.1859,
+      "container": "sis-sampler-r230-bottleneck-a06r-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791505963.99114,
+      "ts_end": 1791505964.0290835,
+      "elapsed_ms": 37.9436,
+      "container": "sis-proc-r230-bottleneck-a06r-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791506051.49053,
+      "ts_end": 1791506051.6169136,
+      "elapsed_ms": 126.3837,
+      "container": "sis-load-r230-bottleneck-a06r-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "3d15895d838db3f88c9e56032fb14cdde5df47801bda58874397fe8a52ad745e",
+        "owner": "r230-bottleneck-a06r-20261009",
+        "running": false,
+        "checked_at": 1791506051.5404146,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791506052.823079,
+      "ts_end": 1791506052.8970754,
+      "elapsed_ms": 73.9964,
+      "container": "sis-sampler-r230-bottleneck-a06r-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791506052.897102,
+      "ts_end": 1791506053.0070307,
+      "elapsed_ms": 109.9293,
+      "container": "sis-proc-r230-bottleneck-a06r-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791506073.9581223,
+      "ts_end": 1791506074.11694,
+      "elapsed_ms": 158.8181,
+      "container": "sis-sampler-r230-bottleneck-a06r-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "58c106e234a673d191fa3ed5d5ef75d2b15aa272e61a7adbecfc65cb6b59e530",
+        "owner": "r230-bottleneck-a06r-20261009",
+        "running": false,
+        "checked_at": 1791506074.0450444,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791506084.8022254,
+      "ts_end": 1791506084.9816344,
+      "elapsed_ms": 179.4088,
+      "container": "sis-proc-r230-bottleneck-a06r-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "1c68d2d7b00d9fa6242e3151178989c1e3a2e015e240cfb2ea07ba1e31ab763b",
+        "owner": "r230-bottleneck-a06r-20261009",
+        "running": false,
+        "checked_at": 1791506084.8901622,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-r230-bottleneck-a06r-20261009",
+    "sis-proc-r230-bottleneck-a06r-20261009",
+    "sis-sampler-r230-bottleneck-a06r-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-r230-bottleneck-a06r-20261009",
+      "sis-proc-r230-bottleneck-a06r-20261009",
+      "sis-sampler-r230-bottleneck-a06r-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

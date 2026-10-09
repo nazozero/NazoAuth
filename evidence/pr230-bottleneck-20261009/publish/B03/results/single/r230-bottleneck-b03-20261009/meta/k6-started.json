@@ -1,0 +1,9 @@
+{
+  "ts": 1791510319.8404307,
+  "scenario": "metadata_jwks",
+  "profile": "capacity",
+  "run_id": "r230-bottleneck-b03-20261009",
+  "k6_json_omit_unused_http_timings": true,
+  "state_ready_ts": 1791510319.823,
+  "state_ready_run_id": "r230-bottleneck-b03-20261009"
+}

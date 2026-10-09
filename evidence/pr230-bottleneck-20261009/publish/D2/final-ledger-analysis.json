@@ -1,0 +1,3318 @@
+{
+  "key": "D2",
+  "window": {
+    "window_start_s": 1791509683.895,
+    "window_end_s": 1791509743.895,
+    "measure_started_exact": 33678,
+    "measure_completed_exact": 33678,
+    "measure_dropped_exact": 14322,
+    "measure_scheduled_observed": 48000,
+    "measure_drop_fraction": 0.298375,
+    "measure_outcomes": {
+      "success": 33678
+    },
+    "measure_outcome_sum": 33678,
+    "drops_pre_window": 1490,
+    "drops_post_window": 0,
+    "drops_pending_unclassified": 0,
+    "pending_drops_overflow": false,
+    "valid": true,
+    "problems": [],
+    "rational_planned_arrivals": 48000,
+    "schedule_delta_vs_rational": 0,
+    "observed_schedule_rate": 800.0,
+    "cohort_source": "k6_stream_exact",
+    "late_vu_fraction": 0.0
+  },
+  "phases": [
+    {
+      "phase": "authorization_task",
+      "n": 1092,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 0.0,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.5018049450549451,
+      "poll_ms": 0.0739514652014652
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/audit.rs:305",
+      "n": 12,
+      "samples": 1,
+      "borrow_per_complete": 0.0003563156957063959,
+      "acquire_ms": 154.20166666666665,
+      "hold_ms": 4.041083333333334,
+      "driver_calls": 1.0,
+      "sample_hold_ms": 3.406,
+      "sql_ms": 3.4,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "n": 33498,
+      "samples": 1038,
+      "borrow_per_complete": 0.994655264564404,
+      "acquire_ms": 140.61152149382053,
+      "hold_ms": 2.9174838796346054,
+      "driver_calls": 1.0,
+      "sample_hold_ms": 2.8816666666666664,
+      "sql_ms": 2.8788526011560696,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336:sql0",
+      "n": 1038,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 2.8788526011560696,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "n": 33644,
+      "samples": 1004,
+      "borrow_per_complete": 0.9989904388621652,
+      "acquire_ms": 145.30002743431223,
+      "hold_ms": 8.062288580430389,
+      "driver_calls": 1.0,
+      "sample_hold_ms": 7.906861553784861,
+      "sql_ms": 7.90251593625498,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59:sql0",
+      "n": 1004,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 7.90251593625498,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "n": 168579,
+      "samples": 5285,
+      "borrow_per_complete": 5.005611972207376,
+      "acquire_ms": 143.34604695721293,
+      "hold_ms": 2.3813263455116,
+      "driver_calls": 1.0,
+      "sample_hold_ms": 2.4213017975402082,
+      "sql_ms": 2.4042272469252604,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19:sql0",
+      "n": 5285,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 2.4042272469252604,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/runtime_modules.rs:41",
+      "n": 60,
+      "samples": 3,
+      "borrow_per_complete": 0.0017815784785319793,
+      "acquire_ms": 150.9776,
+      "hold_ms": 3.1943,
+      "driver_calls": 1.0,
+      "sample_hold_ms": 3.3913333333333333,
+      "sql_ms": 3.3603333333333336,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/tenancy.rs:149",
+      "n": 12,
+      "samples": 1,
+      "borrow_per_complete": 0.0003563156957063959,
+      "acquire_ms": 140.74,
+      "hold_ms": 2.92325,
+      "driver_calls": 1.0,
+      "sample_hold_ms": 3.284,
+      "sql_ms": 3.28,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "n": 33368,
+      "samples": 1015,
+      "borrow_per_complete": 0.9907951778609181,
+      "acquire_ms": 146.60534868736514,
+      "hold_ms": 21.248727343562695,
+      "driver_calls": 6.0,
+      "sample_hold_ms": 22.290976354679803,
+      "sql_ms": 13.457070935960592,
+      "commit_ms": 7.29935763546798,
+      "begin_ms": 1.4282128078817735,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615:sql0",
+      "n": 1015,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 1.4282128078817735,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615:sql1",
+      "n": 1015,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 1.6154374384236454,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615:sql2",
+      "n": 1015,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 3.0438285714285715,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615:sql3",
+      "n": 1015,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 6.094475862068966,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615:sql4",
+      "n": 1015,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 2.703329064039409,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615:sql5",
+      "n": 1015,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 7.29935763546798,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "n": 33632,
+      "samples": 1083,
+      "borrow_per_complete": 0.9986341231664588,
+      "acquire_ms": 140.00790952069457,
+      "hold_ms": 2.656619469552807,
+      "driver_calls": 1.0,
+      "sample_hold_ms": 2.6627848568790395,
+      "sql_ms": 2.6563905817174516,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108:sql0",
+      "n": 1083,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 2.6563905817174516,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "n": 67530,
+      "samples": 2129,
+      "borrow_per_complete": 2.0051665775877425,
+      "acquire_ms": 142.09659709758625,
+      "hold_ms": 2.29662669924478,
+      "driver_calls": 1.0,
+      "sample_hold_ms": 2.38261766087365,
+      "sql_ms": 2.3728529826209486,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65:sql0",
+      "n": 2129,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 2.3728529826209486,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "issuance_task",
+      "n": 1016,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 0.0,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.5723159448818897,
+      "poll_ms": 0.21305708661417322
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/runtime_modules.rs:41:sql0",
+      "n": 3,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 3.3603333333333336,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/tenancy.rs:149:sql0",
+      "n": 1,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 3.28,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/security_state.rs:658",
+      "n": 15,
+      "samples": 0,
+      "borrow_per_complete": 0.0004453946196329948,
+      "acquire_ms": 115.68526666666666,
+      "hold_ms": 93.35873333333333,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 0.0,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    },
+    {
+      "phase": "crates/persistence-postgres/src/repositories/audit.rs:305:sql0",
+      "n": 1,
+      "samples": 0,
+      "borrow_per_complete": null,
+      "acquire_ms": 0.0,
+      "hold_ms": 0.0,
+      "driver_calls": null,
+      "sample_hold_ms": null,
+      "sql_ms": 3.4,
+      "commit_ms": 0.0,
+      "begin_ms": 0.0,
+      "ready_ms": 0.0,
+      "poll_ms": 0.0
+    }
+  ],
+  "pool_status": [
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509683.9000587,
+      "waiting": 601
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509684.0492673,
+      "waiting": 594
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509684.130879,
+      "waiting": 556
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509684.2886539,
+      "waiting": 735
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509684.442021,
+      "waiting": 747
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509684.664794,
+      "waiting": 879
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509684.805443,
+      "waiting": 872
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509684.9981663,
+      "waiting": 912
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509685.1530776,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509685.4208348,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509685.6364074,
+      "waiting": 931
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509685.8553069,
+      "waiting": 931
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509685.9464905,
+      "waiting": 893
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509686.0832398,
+      "waiting": 934
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509686.2999277,
+      "waiting": 915
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509686.6265333,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509686.8648925,
+      "waiting": 902
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509687.0594566,
+      "waiting": 837
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509687.1887484,
+      "waiting": 908
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509687.4348946,
+      "waiting": 928
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509687.7548623,
+      "waiting": 948
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509688.08517,
+      "waiting": 929
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509688.224746,
+      "waiting": 926
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509688.4322548,
+      "waiting": 920
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509688.613298,
+      "waiting": 923
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509688.8980265,
+      "waiting": 934
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509689.1674078,
+      "waiting": 817
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509689.2652428,
+      "waiting": 876
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509689.436498,
+      "waiting": 930
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509689.6141717,
+      "waiting": 907
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509689.851764,
+      "waiting": 836
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509689.97021,
+      "waiting": 799
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509690.1473956,
+      "waiting": 926
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509690.3184936,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509690.5072002,
+      "waiting": 942
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509690.6860762,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509690.958027,
+      "waiting": 940
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509691.1800237,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509691.3475134,
+      "waiting": 924
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509691.4788787,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509691.7409892,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509692.0341294,
+      "waiting": 908
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509692.2519717,
+      "waiting": 907
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509692.5132601,
+      "waiting": 906
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509692.6400814,
+      "waiting": 939
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509692.80543,
+      "waiting": 928
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509693.0906825,
+      "waiting": 941
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509693.4198601,
+      "waiting": 887
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509693.577433,
+      "waiting": 893
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509693.7884185,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509693.8959792,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509694.0545254,
+      "waiting": 831
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509694.1783612,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509694.2748091,
+      "waiting": 776
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509694.3428667,
+      "waiting": 775
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509694.4541512,
+      "waiting": 756
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509694.6494474,
+      "waiting": 835
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509694.8017325,
+      "waiting": 765
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509694.9498067,
+      "waiting": 852
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509695.0679421,
+      "waiting": 887
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509695.2599895,
+      "waiting": 875
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509695.4575458,
+      "waiting": 901
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509695.6540408,
+      "waiting": 912
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509695.8984358,
+      "waiting": 881
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509696.0837421,
+      "waiting": 914
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509696.2087324,
+      "waiting": 898
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509696.4509962,
+      "waiting": 867
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509696.6718502,
+      "waiting": 898
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509696.7912061,
+      "waiting": 874
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509697.0235205,
+      "waiting": 891
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509697.1044292,
+      "waiting": 881
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509697.2823374,
+      "waiting": 922
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509697.5035944,
+      "waiting": 910
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509697.6930504,
+      "waiting": 900
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509697.820131,
+      "waiting": 893
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509698.0090704,
+      "waiting": 930
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509698.1864285,
+      "waiting": 900
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509698.4935648,
+      "waiting": 862
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509698.6281526,
+      "waiting": 905
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509698.9212592,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509699.0651755,
+      "waiting": 922
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509699.2491844,
+      "waiting": 849
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509699.3756096,
+      "waiting": 810
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509699.5349164,
+      "waiting": 927
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509699.7542522,
+      "waiting": 897
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509699.9569707,
+      "waiting": 926
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509700.0761313,
+      "waiting": 922
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509700.19148,
+      "waiting": 921
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509700.3288841,
+      "waiting": 871
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509700.4772153,
+      "waiting": 883
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509700.6421819,
+      "waiting": 844
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509700.7978628,
+      "waiting": 922
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509701.0099096,
+      "waiting": 897
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509701.3069599,
+      "waiting": 841
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509701.4383698,
+      "waiting": 822
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509701.5311484,
+      "waiting": 856
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509701.7209797,
+      "waiting": 896
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509701.9019482,
+      "waiting": 896
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509702.0539773,
+      "waiting": 900
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509702.2182949,
+      "waiting": 839
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509702.4580488,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509702.6635275,
+      "waiting": 893
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509702.8517356,
+      "waiting": 912
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509703.015412,
+      "waiting": 938
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509703.2647662,
+      "waiting": 879
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509703.475667,
+      "waiting": 864
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509703.5766907,
+      "waiting": 908
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509703.754623,
+      "waiting": 894
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509703.908646,
+      "waiting": 940
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509704.0909276,
+      "waiting": 927
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509704.2448924,
+      "waiting": 898
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509704.4418757,
+      "waiting": 917
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509704.694617,
+      "waiting": 925
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509704.8675778,
+      "waiting": 928
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509705.0579448,
+      "waiting": 922
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509705.2894862,
+      "waiting": 887
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509705.390236,
+      "waiting": 793
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509705.4640539,
+      "waiting": 772
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509705.5186615,
+      "waiting": 773
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509705.6434996,
+      "waiting": 808
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509705.841888,
+      "waiting": 908
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509705.9839973,
+      "waiting": 883
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509706.0895193,
+      "waiting": 820
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509706.178288,
+      "waiting": 796
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509706.285299,
+      "waiting": 821
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509706.4872131,
+      "waiting": 831
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509706.6194358,
+      "waiting": 888
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509706.7640095,
+      "waiting": 800
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509706.8937984,
+      "waiting": 852
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509707.060316,
+      "waiting": 887
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509707.2466009,
+      "waiting": 930
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509707.4286032,
+      "waiting": 861
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509707.525549,
+      "waiting": 767
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509707.6103973,
+      "waiting": 854
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509707.7118187,
+      "waiting": 930
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509707.941366,
+      "waiting": 896
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509708.0544844,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509708.2307713,
+      "waiting": 898
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509708.3761487,
+      "waiting": 909
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509708.5598133,
+      "waiting": 908
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509708.7641013,
+      "waiting": 925
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509708.928341,
+      "waiting": 906
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509709.0687275,
+      "waiting": 915
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509709.2482743,
+      "waiting": 915
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509709.4767332,
+      "waiting": 891
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509709.594369,
+      "waiting": 899
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509709.808869,
+      "waiting": 926
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509710.0343668,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509710.1647546,
+      "waiting": 909
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509710.3059516,
+      "waiting": 750
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509710.5120692,
+      "waiting": 887
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509710.7428908,
+      "waiting": 891
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509710.9339108,
+      "waiting": 892
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509711.0216286,
+      "waiting": 876
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509711.1659174,
+      "waiting": 935
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509711.354394,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509711.5640588,
+      "waiting": 880
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509711.713752,
+      "waiting": 867
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509711.9160428,
+      "waiting": 924
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509712.1192043,
+      "waiting": 912
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509712.2805808,
+      "waiting": 910
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509712.4841497,
+      "waiting": 929
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509712.6106377,
+      "waiting": 842
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509712.7746727,
+      "waiting": 914
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509712.96977,
+      "waiting": 778
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509713.1236277,
+      "waiting": 918
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509713.23122,
+      "waiting": 860
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509713.337146,
+      "waiting": 878
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509713.4760332,
+      "waiting": 866
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509713.6480727,
+      "waiting": 872
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509713.8034801,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509714.0051262,
+      "waiting": 889
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509714.189806,
+      "waiting": 908
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509714.2798297,
+      "waiting": 847
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509714.4244838,
+      "waiting": 910
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509714.5900578,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509714.8027062,
+      "waiting": 924
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509714.9735246,
+      "waiting": 884
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509715.1930509,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509715.3580713,
+      "waiting": 926
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509715.5554264,
+      "waiting": 882
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509715.7455144,
+      "waiting": 910
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509715.980141,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509716.1011648,
+      "waiting": 825
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509716.2228487,
+      "waiting": 889
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509716.397134,
+      "waiting": 928
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509716.54021,
+      "waiting": 887
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509716.682567,
+      "waiting": 907
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509716.802376,
+      "waiting": 862
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509716.9677098,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509717.1366599,
+      "waiting": 888
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509717.3000586,
+      "waiting": 924
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509717.4365027,
+      "waiting": 788
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509717.5728006,
+      "waiting": 843
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509717.6436532,
+      "waiting": 880
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509717.784361,
+      "waiting": 818
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509717.8960447,
+      "waiting": 879
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509718.047847,
+      "waiting": 909
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509718.186564,
+      "waiting": 879
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509718.3437698,
+      "waiting": 900
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509718.5545557,
+      "waiting": 909
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509718.8080401,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509719.0288181,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509719.2351546,
+      "waiting": 898
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509719.4370918,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509719.6269283,
+      "waiting": 915
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509719.8700147,
+      "waiting": 920
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509720.020364,
+      "waiting": 895
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509720.1997676,
+      "waiting": 930
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509720.3748703,
+      "waiting": 910
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509720.5565376,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509720.7167115,
+      "waiting": 889
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509720.9212053,
+      "waiting": 933
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509721.1083617,
+      "waiting": 912
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509721.2304983,
+      "waiting": 837
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509721.362477,
+      "waiting": 906
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509721.579818,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509721.788308,
+      "waiting": 917
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509721.9432871,
+      "waiting": 835
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509722.0599267,
+      "waiting": 938
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509722.2197216,
+      "waiting": 914
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509722.4424515,
+      "waiting": 928
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509722.6611722,
+      "waiting": 934
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509722.8709514,
+      "waiting": 895
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509723.0396626,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509723.260396,
+      "waiting": 907
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509723.4767604,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509723.6538718,
+      "waiting": 934
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509723.8621714,
+      "waiting": 884
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509724.025019,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509724.1759589,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509724.328112,
+      "waiting": 907
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509724.5633347,
+      "waiting": 917
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509724.7352836,
+      "waiting": 917
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509724.9452899,
+      "waiting": 908
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509725.127462,
+      "waiting": 923
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509725.3390596,
+      "waiting": 901
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509725.4730284,
+      "waiting": 908
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509725.6986184,
+      "waiting": 916
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509725.9099953,
+      "waiting": 909
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509726.0819466,
+      "waiting": 939
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509726.2316086,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509726.478156,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509726.7201092,
+      "waiting": 918
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509726.9229653,
+      "waiting": 897
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509727.0889635,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509727.2841015,
+      "waiting": 860
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509727.510579,
+      "waiting": 875
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509727.6598547,
+      "waiting": 856
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509727.7880905,
+      "waiting": 822
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509727.8965178,
+      "waiting": 893
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509728.0406618,
+      "waiting": 914
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509728.2193487,
+      "waiting": 934
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509728.477517,
+      "waiting": 898
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509728.5969098,
+      "waiting": 910
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509728.7546449,
+      "waiting": 914
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509728.9307742,
+      "waiting": 929
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509729.0994332,
+      "waiting": 923
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509729.2273192,
+      "waiting": 900
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509729.3716738,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509729.5128462,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509729.7217526,
+      "waiting": 897
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509729.8935184,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509730.0601306,
+      "waiting": 896
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509730.2077143,
+      "waiting": 924
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509730.355997,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509730.5546236,
+      "waiting": 874
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509730.6153414,
+      "waiting": 809
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509730.6989558,
+      "waiting": 793
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509730.896965,
+      "waiting": 853
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509731.1071162,
+      "waiting": 904
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509731.2041337,
+      "waiting": 857
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509731.2790713,
+      "waiting": 786
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509731.4153876,
+      "waiting": 880
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509731.622209,
+      "waiting": 906
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509731.8341274,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509731.9580872,
+      "waiting": 883
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509732.038084,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509732.1776946,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509732.3950965,
+      "waiting": 913
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509732.6349325,
+      "waiting": 891
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509732.7703948,
+      "waiting": 870
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509732.890615,
+      "waiting": 933
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509733.0268118,
+      "waiting": 929
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509733.1651306,
+      "waiting": 830
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509733.3453562,
+      "waiting": 848
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509733.499775,
+      "waiting": 932
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509733.7121756,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509733.9078834,
+      "waiting": 941
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509734.1008627,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509734.309537,
+      "waiting": 884
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509734.517835,
+      "waiting": 926
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509734.6776624,
+      "waiting": 868
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509734.7726674,
+      "waiting": 884
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509734.9086173,
+      "waiting": 893
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509735.11672,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509735.319858,
+      "waiting": 894
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509735.410216,
+      "waiting": 824
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509735.5352178,
+      "waiting": 925
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509735.6598036,
+      "waiting": 911
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509735.8870697,
+      "waiting": 925
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509736.0616264,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509736.1741393,
+      "waiting": 825
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509736.2566144,
+      "waiting": 773
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509736.3683193,
+      "waiting": 918
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509736.47869,
+      "waiting": 806
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509736.629025,
+      "waiting": 775
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509736.739342,
+      "waiting": 823
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509736.8753595,
+      "waiting": 834
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509736.973085,
+      "waiting": 826
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509737.0672088,
+      "waiting": 793
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509737.155898,
+      "waiting": 784
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509737.231507,
+      "waiting": 764
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509737.3658574,
+      "waiting": 777
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509737.4717014,
+      "waiting": 746
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509737.6134434,
+      "waiting": 743
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509737.7864368,
+      "waiting": 789
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509737.98483,
+      "waiting": 830
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509738.1331794,
+      "waiting": 816
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509738.3130915,
+      "waiting": 921
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509738.389719,
+      "waiting": 698
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509738.4425988,
+      "waiting": 636
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/authorization_flow.rs:59",
+      "size": 32,
+      "ts": 1791509738.508997,
+      "waiting": 812
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509738.599138,
+      "waiting": 823
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509738.6848452,
+      "waiting": 832
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509738.7723677,
+      "waiting": 845
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509738.9017103,
+      "waiting": 790
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509739.0518355,
+      "waiting": 721
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509739.2148988,
+      "waiting": 670
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509739.2813115,
+      "waiting": 504
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509739.3314087,
+      "waiting": 586
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509739.4317362,
+      "waiting": 414
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509739.5389519,
+      "waiting": 592
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509739.6208212,
+      "waiting": 671
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509739.7689335,
+      "waiting": 556
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509739.9315119,
+      "waiting": 570
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509740.1002011,
+      "waiting": 592
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509740.172104,
+      "waiting": 550
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509740.2417488,
+      "waiting": 548
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509740.3946984,
+      "waiting": 625
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509740.5333202,
+      "waiting": 675
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509740.7220488,
+      "waiting": 759
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509740.9119835,
+      "waiting": 749
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509741.0817158,
+      "waiting": 836
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509741.2498348,
+      "waiting": 899
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509741.3559012,
+      "waiting": 708
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/token_issuance.rs:615",
+      "size": 32,
+      "ts": 1791509741.4930494,
+      "waiting": 410
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509741.6668837,
+      "waiting": 792
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509741.853917,
+      "waiting": 840
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/audit_ledger.rs:336",
+      "size": 32,
+      "ts": 1791509741.962708,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509742.1273978,
+      "waiting": 919
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509742.2973254,
+      "waiting": 898
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509742.450387,
+      "waiting": 828
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509742.6489246,
+      "waiting": 854
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509742.861913,
+      "waiting": 880
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509742.9659028,
+      "waiting": 849
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509743.0733364,
+      "waiting": 903
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509743.1794176,
+      "waiting": 883
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:108",
+      "size": 32,
+      "ts": 1791509743.370969,
+      "waiting": 887
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/clients/base.rs:19",
+      "size": 32,
+      "ts": 1791509743.5319622,
+      "waiting": 856
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509743.658969,
+      "waiting": 922
+    },
+    {
+      "available": 0,
+      "max_size": 32,
+      "phase": "crates/persistence-postgres/src/repositories/users.rs:65",
+      "size": 32,
+      "ts": 1791509743.7556958,
+      "waiting": 916
+    }
+  ],
+  "boundary": "Timestamp-second aggregate approximation; sampled query cohorts. SQL await includes server, wire, driver and task wait. Task ready time overlaps SQL await; poll wall includes OS preemption. Driver calls are not TCP packet or precise wire round-trip counts."
+}

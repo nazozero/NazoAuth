@@ -1,0 +1,11 @@
+{
+  "source_sha": "3da0734de491a380b315fc2fb2827f4043c04823",
+  "command": [
+    "python3",
+    "scripts/verify_static_contracts.py",
+    "--check"
+  ],
+  "exit": 0,
+  "elapsed_s": 9.247750682756305,
+  "started": "2026-10-09T02:02:38.670619+00:00"
+}
