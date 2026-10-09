@@ -157,8 +157,10 @@ impl SecurityStateMaintenanceRepository {
     async fn generic_cleanup(
         &self,
         connection: &mut AsyncPgConnection,
+        scope: nazo_persistence::CleanupScope,
     ) -> Result<GenericCleanupCounts, RepositoryError> {
-        sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
+        sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state($1)")
+            .bind::<sql_types::Bool, _>(scope == nazo_persistence::CleanupScope::IncludingHistory)
             .load::<GenericCleanupCounts>(connection)
             .await
             .and_then(single_cleanup_row)
@@ -662,7 +664,10 @@ impl SecurityStateMaintenanceRepository {
 }
 
 impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
-    fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+    fn cleanup_batch(
+        &self,
+        scope: nazo_persistence::CleanupScope,
+    ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
         Box::pin(async move {
             // One bounded batch owns one lease, while each category keeps its
             // existing commit boundary. Requeueing between categories makes
@@ -672,7 +677,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             let mut guard = DiscardOnDrop(Some(self.connection().await?));
             let result = async {
                 let connection = &mut **guard.connection();
-                let generic = self.generic_cleanup(connection).await?;
+                let generic = self.generic_cleanup(connection, scope).await?;
                 let authorization_decisions = self.decision_cleanup(connection).await?;
                 let (expired_proofs, expired_saturated) =
                     self.delete_expired_spent_proofs(connection).await?;

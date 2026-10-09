@@ -1301,3 +1301,45 @@ async fn reauthentication_precision_is_versioned_and_legacy_nonce_is_consumed_fa
     assert!(store.take_reauth_nonce(&nonce).await.is_err());
     assert_eq!(store.take_reauth_nonce(&nonce).await.unwrap(), None);
 }
+
+#[tokio::test]
+async fn abandoned_preparation_expires_without_an_application_cleanup_worker() {
+    let (store, inspector) = setup()
+        .await
+        .expect("TTL lifecycle validation requires a real isolated Valkey");
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let consent = consent_payload(&request_id, uuid::Uuid::now_v7());
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+    let live_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+    assert_eq!(
+        store.store_consent(&request_id, &consent, 2).await.unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
+    assert_eq!(
+        store
+            .store_par(&request_uri, &par_payload(), 2)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
+    assert_eq!(
+        store
+            .store_par(&live_uri, &par_payload(), 30)
+            .await
+            .unwrap(),
+        AuthorizationPreparationWrite::Stored
+    );
+    let consent_key = nazo_valkey::test_support::consent_storage_key(&request_id);
+    let par_key = nazo_valkey::test_support::par_storage_key(&request_uri);
+    for key in [&consent_key, &par_key] {
+        assert!((1..=2_000).contains(&inspector.pttl::<i64, _>(key).await.unwrap()));
+    }
+    // No application host, PostgreSQL maintenance, delete, TTL rewrite or
+    // access to these abandoned records runs during their remaining lifetime.
+    tokio::time::sleep(Duration::from_millis(2_100)).await;
+    assert!(store.load_consent(&request_id).await.unwrap().is_none());
+    assert!(store.load_par(&request_uri).await.unwrap().is_none());
+    assert_eq!(inspector.pttl::<i64, _>(&consent_key).await.unwrap(), -2);
+    assert_eq!(inspector.pttl::<i64, _>(&par_key).await.unwrap(), -2);
+    assert!(store.load_par(&live_uri).await.unwrap().is_some());
+}

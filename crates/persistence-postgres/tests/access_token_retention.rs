@@ -424,7 +424,7 @@ async fn revoked_access_token_within_skew_survives_cleanup_until_its_padded_dead
     // The real maintenance batch must not reclaim a row whose padded deadline
     // is still open.
     SecurityStateMaintenanceRepository::new(pool.clone())
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     let after = revocation_row(&mut connection, SYSTEM_TENANT, &jti)
@@ -1148,7 +1148,7 @@ async fn maintenance_reclaims_revocation_facts_once_the_padded_deadline_passes()
     let expired_jtis = [passed_jti.clone(), bare_jti.clone()];
     for round in 0..8 {
         let result = maintenance
-            .cleanup_batch()
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
             .await
             .expect("cleanup batch should succeed");
         assert!(result.revocations <= 256, "one batch stays bounded");

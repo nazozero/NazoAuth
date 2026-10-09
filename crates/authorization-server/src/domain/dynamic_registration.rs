@@ -388,16 +388,20 @@ impl DynamicRegistrationApplication {
         registration_access_token: &str,
         security_policy_override: Option<&nazo_auth::ClientSecurityPolicy>,
     ) -> Result<PreparedClientRegistration, AdminClientError> {
-        if let Some(uri) = registration.jwks_uri.as_deref() {
-            registration.jwks = Some(self.security.remote_jwks.resolve(uri, None).await.map_err(
-                |error| {
-                    AdminClientError::InvalidRequest(format!(
-                        "jwks_uri could not be resolved: {error}"
-                    ))
-                },
-            )?);
+        if let Some(uri) = registration.request.jwks_uri.as_deref() {
+            registration.request.jwks = Some(
+                self.security
+                    .remote_jwks
+                    .resolve(uri, None)
+                    .await
+                    .map_err(|error| {
+                        AdminClientError::InvalidRequest(format!(
+                            "jwks_uri could not be resolved: {error}"
+                        ))
+                    })?,
+            );
         }
-        let mut request = registration.into_create_client_request();
+        let mut request = registration.request;
         if let Some(security_policy) = security_policy_override {
             request.security_policy = security_policy.clone();
         }

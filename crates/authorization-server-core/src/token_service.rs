@@ -1067,11 +1067,11 @@ where
             return Ok(TokenInspection::Inactive);
         }
         Ok(TokenInspection::ActiveRefresh {
-            scope: token.scopes.join(" "),
+            scope: token.contract.scopes.join(" "),
             client_id: resource_server.client_id.clone(),
             expires_at: token.expires_at.timestamp(),
             issued_at: token.issued_at.timestamp(),
-            subject: token.subject,
+            subject: token.contract.subject,
         })
     }
 

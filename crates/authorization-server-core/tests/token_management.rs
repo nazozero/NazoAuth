@@ -491,29 +491,32 @@ fn ownership_refresh_introspection_preserves_scope_output() {
             client_id: client.id,
             user_id: None,
             contract_key: [2; 32],
-            contract_audiences: vec!["resource".into()],
-            scopes: parsed.unwrap(),
             audience: serde_json::from_value(serde_json::json!(["resource"])).unwrap(),
-            authorization_details: serde_json::json!([]),
             issued_at: now - chrono::Duration::minutes(1),
             expires_at: now + chrono::Duration::hours(1),
             revoked_at: None,
-            subject: "subject".into(),
             dpop_jkt: None,
             mtls_x5t_s256: None,
             client_attestation_jkt: None,
-            authentication_context: RefreshTokenAuthenticationContext {
-                version: 1,
-                issuer: "https://issuer.example".into(),
-                audience: client.client_id.clone(),
-                auth_time: now.timestamp(),
-                amr: vec!["pwd".into()],
-                oidc_sid: None,
 
-                acr: None,
+            contract: nazo_auth::RefreshContract {
+                audiences: vec!["resource".into()],
+                scopes: parsed.unwrap(),
+                authorization_details: serde_json::json!([]),
+                subject: "subject".into(),
+                authentication_context: RefreshTokenAuthenticationContext {
+                    version: 1,
+                    issuer: "https://issuer.example".into(),
+                    audience: client.client_id.clone(),
+                    auth_time: now.timestamp(),
+                    amr: vec!["pwd".into()],
+                    oidc_sid: None,
 
-                userinfo_claim_requests: (Vec::new()).into(),
-                id_token_claim_requests: (Vec::new()).into(),
+                    acr: None,
+
+                    userinfo_claim_requests: (Vec::new()).into(),
+                    id_token_claim_requests: (Vec::new()).into(),
+                },
             },
         };
         let ports = Ports {

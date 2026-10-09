@@ -43,11 +43,23 @@ pub struct CleanupBatchResult {
     pub saturated: bool,
 }
 
+/// Retention classes selected by the host's existing maintenance worker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CleanupScope {
+    /// Bounded protocol receipts and delivery/issuance state.
+    ProtocolState,
+    /// Protocol state plus long-retained audit history.
+    IncludingHistory,
+}
+
 /// The single security-state maintenance boundary.
 ///
 /// Implementations must bound every category (no drain-until-empty loops) and
 /// coordinate with writers through the existing refresh-family advisory key —
 /// never by taking a second family lock or a global lock.
 pub trait SecurityStateMaintenancePort: Send + Sync {
-    fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult>;
+    fn cleanup_batch(
+        &self,
+        scope: CleanupScope,
+    ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult>;
 }

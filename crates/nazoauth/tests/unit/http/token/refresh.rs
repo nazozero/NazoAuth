@@ -276,7 +276,7 @@ async fn insert_refresh_token_row(
     predecessor: Option<SpentEdge>,
     reuse_detected_at: Option<DateTime<Utc>>,
 ) {
-    let authentication_context = &token.authentication_context;
+    let authentication_context = &token.contract.authentication_context;
     assert!(
         authentication_context.is_well_formed(),
         "refresh fixture authentication context must be a complete v1 value"
@@ -286,10 +286,10 @@ async fn insert_refresh_token_row(
         "refresh fixture must carry an explicit non-empty audience"
     );
     let persisted = nazo_auth::RefreshContract {
-        subject: token.subject.clone(),
-        scopes: token.scopes.clone(),
+        subject: token.contract.subject.clone(),
+        scopes: token.contract.scopes.clone(),
         audiences: token.audience.clone(),
-        authorization_details: token.authorization_details.clone(),
+        authorization_details: token.contract.authorization_details.clone(),
         authentication_context: authentication_context.clone(),
     }
     .clone();
@@ -701,18 +701,24 @@ fn token_row_with_refresh_context(
         client_id,
         user_id: Some(Uuid::now_v7()),
         contract_key: [0; 32],
-        contract_audiences: vec!["resource://default".to_owned()],
-        scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
+        contract: nazo_auth::RefreshContract {
+            audiences: vec!["resource://default".to_owned()],
+            scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
+            authorization_details: json!([]),
+            subject: "subject-1".to_owned(),
+            authentication_context: refresh_authentication_context(
+                issuer,
+                client_audience,
+                issued_at,
+            ),
+        },
         audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
-        authorization_details: json!([]),
         issued_at,
         expires_at: issued_at + Duration::days(30),
         revoked_at: None,
-        subject: "subject-1".to_owned(),
         dpop_jkt: Some("dpop-jkt".to_owned()),
         mtls_x5t_s256: None,
         client_attestation_jkt: None,
-        authentication_context: refresh_authentication_context(issuer, client_audience, issued_at),
     }
 }
 
@@ -870,8 +876,8 @@ async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_const
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    token.subject = client.client_id.clone();
+    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    token.contract.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
@@ -1098,8 +1104,9 @@ async fn refresh_grant_rejects_unknown_expired_and_wrong_client_tokens() {
 
     let mut expired = token_row_for_client(&state, &client);
     expired.client_id = client.id;
-    expired.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    expired.subject = client.client_id.clone();
+    expired.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    expired.contract.subject = client.client_id.clone();
     expired.user_id = None;
     expired.issued_at = Utc::now() - Duration::minutes(5);
     expired.expires_at = Utc::now() - Duration::seconds(5);
@@ -1132,8 +1139,8 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     let mut reused = token_row_for_client(&state, &client);
     reused.client_id = client.id;
     reused.token_family_id = family_id;
-    reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    reused.subject = client.client_id.clone();
+    reused.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    reused.contract.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
     reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
@@ -1142,8 +1149,9 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
     active_sibling.token_family_id = family_id;
-    active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    active_sibling.subject = client.client_id.clone();
+    active_sibling.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    active_sibling.contract.subject = client.client_id.clone();
     active_sibling.user_id = None;
     active_sibling.dpop_jkt = None;
     let active_raw = format!("refresh-token-active-sibling-{suffix}");
@@ -1213,8 +1221,8 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     let mut reused = token_row_for_client(&state, &client);
     reused.client_id = client.id;
     reused.token_family_id = family_id;
-    reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    reused.subject = client.client_id.clone();
+    reused.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    reused.contract.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
     reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
@@ -1222,8 +1230,9 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
     active_sibling.token_family_id = family_id;
-    active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    active_sibling.subject = client.client_id.clone();
+    active_sibling.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    active_sibling.contract.subject = client.client_id.clone();
     active_sibling.user_id = None;
     active_sibling.dpop_jkt = None;
     insert_refresh_token_row(
@@ -1302,8 +1311,9 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    revoked.subject = client.client_id.clone();
+    revoked.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    revoked.contract.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
     revoked.revoked_at = Some(Utc::now() - Duration::seconds(35));
@@ -1313,11 +1323,12 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
     successor.token_family_id = family_id;
-    successor.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    successor.subject = client.client_id.clone();
+    successor.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    successor.contract.subject = client.client_id.clone();
     successor.user_id = None;
     successor.dpop_jkt = None;
-    successor.authentication_context = revoked.authentication_context.clone();
+    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
     let successor_raw = format!("refresh-token-retry-successor-{suffix}");
     insert_refresh_token_row(
         &state,
@@ -1375,8 +1386,9 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    revoked.subject = client.client_id.clone();
+    revoked.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    revoked.contract.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
@@ -1386,12 +1398,12 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
     successor.token_family_id = family_id;
-    successor.scopes = revoked.scopes.clone();
-    successor.subject = revoked.subject.clone();
+    successor.contract.scopes = revoked.contract.scopes.clone();
+    successor.contract.subject = revoked.contract.subject.clone();
     successor.user_id = None;
     successor.dpop_jkt = None;
     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
-    successor.authentication_context = revoked.authentication_context.clone();
+    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
     let successor_raw = format!("refresh-token-mtls-retry-successor-{suffix}");
     insert_refresh_token_row(
         &state,
@@ -1445,8 +1457,9 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
 
     let mut original = token_row_for_client(&state, &client);
     original.token_family_id = family_id;
-    original.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    original.subject = client.client_id.clone();
+    original.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    original.contract.subject = client.client_id.clone();
     original.user_id = None;
     original.dpop_jkt = None;
     original.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
@@ -1454,12 +1467,12 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
     let original_raw = format!("refresh-candidate-original-{suffix}");
     let mut child = token_row_for_client(&state, &client);
     child.token_family_id = family_id;
-    child.scopes = original.scopes.clone();
-    child.subject = original.subject.clone();
+    child.contract.scopes = original.contract.scopes.clone();
+    child.contract.subject = original.contract.subject.clone();
     child.user_id = None;
     child.dpop_jkt = None;
     child.mtls_x5t_s256 = original.mtls_x5t_s256.clone();
-    child.authentication_context = original.authentication_context.clone();
+    child.contract.authentication_context = original.contract.authentication_context.clone();
     let child_raw = format!("refresh-candidate-child-{suffix}");
     insert_refresh_token_row(
         &state,
@@ -1598,8 +1611,8 @@ async fn sequential_unbound_replay_after_first_commit_fails_closed() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    token.subject = client.client_id.clone();
+    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    token.contract.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw, &token, None, None).await;
@@ -1664,7 +1677,7 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     revoked.expires_at = now + Duration::hours(1);
     // The member rotated out at `now`, which is the spent proof's spent_at.
     revoked.revoked_at = Some(now);
-    revoked.authentication_context = refresh_authentication_context(
+    revoked.contract.authentication_context = refresh_authentication_context(
         state.settings.endpoint.issuer.as_str(),
         "refresh-fixed-window-client",
         revoked.issued_at,
@@ -1679,7 +1692,7 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     successor.dpop_jkt = revoked.dpop_jkt.clone();
     successor.issued_at = now;
     successor.expires_at = now + Duration::hours(1);
-    successor.authentication_context = revoked.authentication_context.clone();
+    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
     insert_refresh_token_row(
         &state,
         &format!("refresh-lost-window-successor-{}", Uuid::now_v7()),
@@ -1750,8 +1763,9 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
         let mut revoked = token_row_for_client(&state, &client);
         revoked.client_id = client.id;
         revoked.token_family_id = family_id;
-        revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-        revoked.subject = client.client_id.clone();
+        revoked.contract.scopes =
+            serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+        revoked.contract.subject = client.client_id.clone();
         revoked.user_id = None;
         revoked.dpop_jkt = Some(format!("lost-shape-{shape}-dpop-jkt"));
         revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
@@ -1765,11 +1779,12 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
             let mut successor = token_row_for_client(&state, &client);
             successor.client_id = client.id;
             successor.token_family_id = family_id;
-            successor.scopes = revoked.scopes.clone();
-            successor.subject = revoked.subject.clone();
+            successor.contract.scopes = revoked.contract.scopes.clone();
+            successor.contract.subject = revoked.contract.subject.clone();
             successor.user_id = None;
             successor.dpop_jkt = revoked.dpop_jkt.clone();
-            successor.authentication_context = revoked.authentication_context.clone();
+            successor.contract.authentication_context =
+                revoked.contract.authentication_context.clone();
             if shape == "expired" {
                 successor.issued_at = Utc::now() - Duration::seconds(30);
                 successor.expires_at = Utc::now() - Duration::seconds(1);
@@ -1850,8 +1865,9 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    revoked.subject = client.client_id.clone();
+    revoked.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    revoked.contract.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = Some("expected-jkt".to_owned());
     revoked.mtls_x5t_s256 = Some("expected-x5t".to_owned());
@@ -1867,11 +1883,11 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     successor.client_id = client.id;
     successor.token_family_id = family_id;
     successor.user_id = None;
-    successor.subject = revoked.subject.clone();
-    successor.scopes = revoked.scopes.clone();
+    successor.contract.subject = revoked.contract.subject.clone();
+    successor.contract.scopes = revoked.contract.scopes.clone();
     successor.dpop_jkt = revoked.dpop_jkt.clone();
     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
-    successor.authentication_context = revoked.authentication_context.clone();
+    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
     insert_refresh_token_row(
         &state,
         &format!("refresh-lost-successor-{}", Uuid::now_v7()),
@@ -1884,8 +1900,8 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     let mut wrong_family = token_row_for_client(&state, &client);
     wrong_family.client_id = client.id;
     wrong_family.user_id = None;
-    wrong_family.subject = revoked.subject.clone();
-    wrong_family.scopes = revoked.scopes.clone();
+    wrong_family.contract.subject = revoked.contract.subject.clone();
+    wrong_family.contract.scopes = revoked.contract.scopes.clone();
     wrong_family.dpop_jkt = revoked.dpop_jkt.clone();
     wrong_family.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
     let wrong_family_id = wrong_family.token_family_id;
@@ -2047,8 +2063,9 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    revoked.subject = client.client_id.clone();
+    revoked.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    revoked.contract.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
@@ -2057,12 +2074,12 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
     successor.token_family_id = family_id;
-    successor.scopes = revoked.scopes.clone();
-    successor.subject = revoked.subject.clone();
+    successor.contract.scopes = revoked.contract.scopes.clone();
+    successor.contract.subject = revoked.contract.subject.clone();
     successor.user_id = None;
     successor.dpop_jkt = None;
     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
-    successor.authentication_context = revoked.authentication_context.clone();
+    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
     insert_refresh_token_row(
         &state,
         "refresh-lost-insert-failure-successor",
@@ -2146,8 +2163,9 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
         let mut revoked = token_row_for_client(&state, &client);
         revoked.client_id = client.id;
         revoked.token_family_id = family_id;
-        revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-        revoked.subject = client.client_id.clone();
+        revoked.contract.scopes =
+            serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+        revoked.contract.subject = client.client_id.clone();
         revoked.user_id = None;
         revoked.dpop_jkt = Some(format!("lost-{label}-dpop-jkt"));
         revoked.revoked_at = Some(revoked_at);
@@ -2158,11 +2176,11 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
         let mut successor = token_row_for_client(&state, &client);
         successor.client_id = client.id;
         successor.token_family_id = family_id;
-        successor.scopes = revoked.scopes.clone();
-        successor.subject = revoked.subject.clone();
+        successor.contract.scopes = revoked.contract.scopes.clone();
+        successor.contract.subject = revoked.contract.subject.clone();
         successor.user_id = None;
         successor.dpop_jkt = revoked.dpop_jkt.clone();
-        successor.authentication_context = revoked.authentication_context.clone();
+        successor.contract.authentication_context = revoked.contract.authentication_context.clone();
         insert_refresh_token_row(
             &state,
             &format!("refresh-lost-{label}-successor-{}", Uuid::now_v7()),
@@ -2207,8 +2225,9 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;
     revoked.token_family_id = family_id;
-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    revoked.subject = client.client_id.clone();
+    revoked.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    revoked.contract.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
@@ -2218,12 +2237,12 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
     successor.token_family_id = family_id;
-    successor.scopes = revoked.scopes.clone();
-    successor.subject = revoked.subject.clone();
+    successor.contract.scopes = revoked.contract.scopes.clone();
+    successor.contract.subject = revoked.contract.subject.clone();
     successor.user_id = None;
     successor.dpop_jkt = None;
     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
-    successor.authentication_context = revoked.authentication_context.clone();
+    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
     insert_refresh_token_row(
         &state,
         &format!("refresh-concurrent-lost-successor-{}", Uuid::now_v7()),
@@ -2267,8 +2286,8 @@ async fn concurrent_refresh_replay_yields_one_success_and_one_invalid_grant() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.token_family_id = family_id;
-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
-    token.subject = client.client_id.clone();
+    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    token.contract.subject = client.client_id.clone();
     token.user_id = None;
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw, &token, None, None).await;
@@ -2320,8 +2339,8 @@ async fn refresh_grant_rejects_tokens_for_inactive_users_without_openid_scope() 
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = Some(user_id);
-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
-    token.subject = user_id.to_string();
+    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+    token.contract.subject = user_id.to_string();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
     let mut form = refresh_form_without_token();
@@ -2356,8 +2375,8 @@ async fn refresh_grant_accepts_tokens_for_active_users_without_openid_scope() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = Some(user_id);
-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
-    token.subject = user_id.to_string();
+    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+    token.contract.subject = user_id.to_string();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
     let mut form = refresh_form_without_token();
@@ -2395,8 +2414,8 @@ async fn refresh_grant_rejects_unbound_refresh_tokens_for_dpop_required_clients(
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = None;
-    token.subject = client.client_id.clone();
-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+    token.contract.subject = client.client_id.clone();
+    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2433,8 +2452,8 @@ async fn refresh_grant_rejects_public_dpop_required_clients_with_unbound_refresh
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = None;
-    token.subject = client.client_id.clone();
-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+    token.contract.subject = client.client_id.clone();
+    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2469,8 +2488,8 @@ async fn refresh_grant_rejects_dpop_bound_refresh_token_without_proof() {
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
     token.user_id = None;
-    token.subject = client.client_id.clone();
-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+    token.contract.subject = client.client_id.clone();
+    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
     token.dpop_jkt = Some("stored-dpop-jkt".to_owned());
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
@@ -2503,9 +2522,9 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
     insert_refresh_client(&state, &client).await;
     let mut no_offline = token_row_for_client(&state, &client);
     no_offline.client_id = client.id;
-    no_offline.subject = client.client_id.clone();
+    no_offline.contract.subject = client.client_id.clone();
     no_offline.user_id = None;
-    no_offline.scopes = serde_json::from_value(json!(["accounts"])).unwrap();
+    no_offline.contract.scopes = serde_json::from_value(json!(["accounts"])).unwrap();
     no_offline.dpop_jkt = None;
     let no_offline_raw = "refresh-token-no-offline-access";
     insert_refresh_token_row(&state, no_offline_raw, &no_offline, None, None).await;
@@ -2519,9 +2538,10 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
 
     let mut scope_token = token_row_for_client(&state, &client);
     scope_token.client_id = client.id;
-    scope_token.subject = client.client_id.clone();
+    scope_token.contract.subject = client.client_id.clone();
     scope_token.user_id = None;
-    scope_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    scope_token.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     scope_token.dpop_jkt = None;
     let scope_raw = "refresh-token-invalid-scope";
     insert_refresh_token_row(&state, scope_raw, &scope_token, None, None).await;
@@ -2537,9 +2557,10 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
     let audience_raw = "refresh-token-invalid-audience";
     let mut audience_token = token_row_for_client(&state, &client);
     audience_token.client_id = client.id;
-    audience_token.subject = client.client_id.clone();
+    audience_token.contract.subject = client.client_id.clone();
     audience_token.user_id = None;
-    audience_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    audience_token.contract.scopes =
+        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     audience_token.dpop_jkt = None;
     insert_refresh_token_row(&state, audience_raw, &audience_token, None, None).await;
     let mut audience_form = refresh_form_without_token();
@@ -2564,9 +2585,9 @@ async fn refresh_grant_rejects_mtls_bound_tokens_without_matching_verified_certi
 
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
-    token.subject = client.client_id.clone();
+    token.contract.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = Some("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_owned());
 
@@ -2622,9 +2643,9 @@ async fn refresh_grant_requires_verified_certificate_when_client_policy_demands_
     let raw_refresh_token = format!("refresh-policy-mtls-{}", Uuid::now_v7());
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
-    token.subject = client.client_id.clone();
+    token.contract.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2657,9 +2678,9 @@ async fn refresh_grant_accepts_existing_mtls_bound_token_with_matching_certifica
     let raw_refresh_token = format!("refresh-token-mtls-bound-{}", Uuid::now_v7());
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
-    token.subject = client.client_id.clone();
+    token.contract.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = Some(thumbprint.to_owned());
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2716,9 +2737,9 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
     let raw_refresh_token = format!("refresh-policy-mtls-success-{}", Uuid::now_v7());
     let mut token = token_row_for_client(&state, &client);
     token.client_id = client.id;
-    token.subject = client.client_id.clone();
+    token.contract.subject = client.client_id.clone();
     token.user_id = None;
-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
@@ -2907,21 +2928,22 @@ async fn ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_
         let raw = format!("oidc-prepared-{}", Uuid::now_v7());
         let mut token = token_row_for_client(&state, &client);
         token.user_id = Some(user);
-        token.subject = if private {
+        token.contract.subject = if private {
             format!("private-{}", Uuid::now_v7())
         } else {
             user.to_string()
         };
         token.dpop_jkt = None;
         token.mtls_x5t_s256 = None;
-        token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+        token.contract.scopes =
+            serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
         if private {
             let mut c = get_conn(&state.diesel_db).await.unwrap();
             sql_query(
                 "INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)",
             )
             .bind::<SqlUuid, _>(client.tenant_id)
-            .bind::<diesel::sql_types::Text, _>(&token.subject)
+            .bind::<diesel::sql_types::Text, _>(&token.contract.subject)
             .bind::<SqlUuid, _>(user)
             .execute(&mut c)
             .await
@@ -2971,10 +2993,10 @@ async fn oidc_refresh_fixture(state: &TestInfrastructure) -> (ClientRow, TokenRo
     insert_refresh_user(state, user, true).await;
     let mut token = token_row_for_client(state, &client);
     token.user_id = Some(user);
-    token.subject = user.to_string();
+    token.contract.subject = user.to_string();
     token.dpop_jkt = None;
     token.mtls_x5t_s256 = None;
-    token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+    token.contract.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
     let raw = format!("oidc-refresh-review-{}", Uuid::now_v7());
     insert_refresh_token_row(state, &raw, &token, None, None).await;
     (client, token, raw)
@@ -3062,13 +3084,13 @@ async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_prior
             "binding collision" => {
                 let other = Uuid::now_v7();
                 insert_refresh_user(state, other, true).await;
-                token.subject = format!("oidc-collision-{}", Uuid::now_v7());
+                token.contract.subject = format!("oidc-collision-{}", Uuid::now_v7());
                 let mut c = get_conn(&state.diesel_db).await.unwrap();
                 sql_query(
                     "INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)",
                 )
                 .bind::<SqlUuid, _>(client.tenant_id)
-                .bind::<Text, _>(&token.subject)
+                .bind::<Text, _>(&token.contract.subject)
                 .bind::<SqlUuid, _>(other)
                 .execute(&mut c)
                 .await

@@ -33,6 +33,11 @@ const ACK_CLOCK_UP: &str =
 const ACK_CLOCK_DOWN: &str =
     include_str!("../../../migrations/20261006000100_audit_ack_observation_clock/down.sql");
 
+const COMPACT_UP: &str =
+    include_str!("../../../migrations/20261009000500_compact_exported_decision_payload/up.sql");
+const COMPACT_DOWN: &str =
+    include_str!("../../../migrations/20261009000500_compact_exported_decision_payload/down.sql");
+
 #[test]
 fn decision_migration_has_independent_fences_and_safe_retention() {
     for required in [
@@ -274,6 +279,7 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
         .batch_execute(STATEMENT_TIMEOUT_UP)
         .await
         .unwrap();
+    connection.batch_execute(COMPACT_UP).await.unwrap();
     let configured_timeout = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM pg_proc \
          WHERE oid = 'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)'::regprocedure \
@@ -831,9 +837,6 @@ async fn verify_audit_lifetime(
         .batch_execute("RESET nazo.audit_ack")
         .await
         .unwrap();
-    acknowledge_all(&audit).await;
-    assert_eq!(fact_count(connection, ordinary.event_id).await, 0);
-    assert_eq!(fact_count(connection, retained.event_id).await, 1);
     let safe_payload = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM public.security_audit_events \
          WHERE event_id = $1 AND payload ? 'request_id_hash' \
@@ -844,6 +847,9 @@ async fn verify_audit_lifetime(
         safe_payload.count, 1,
         "export payload contains hashes, never raw private preparation"
     );
+    acknowledge_all(&audit).await;
+    assert_eq!(fact_count(connection, ordinary.event_id).await, 0);
+    assert_eq!(fact_count(connection, retained.event_id).await, 1);
     assert_eq!(fact_count(connection, short.event_id).await, 1);
     assert!(!audit.anchor_health().await.unwrap().pending_exists);
     assert!(matches!(
@@ -1291,6 +1297,8 @@ async fn audit_ack_samples_time_after_blocked_head_validation() {
         .unwrap();
     let identity = audit_ack_function_identity(&mut connection).await;
 
+    connection.batch_execute(COMPACT_DOWN).await.unwrap();
+
     // The down definition is a negative control, not a second ACK implementation.
     // It must reproduce the freshness invariant failure before the up definition passes.
     for (definition, fixed) in [(ACK_CLOCK_DOWN, false), (ACK_CLOCK_UP, true)] {
@@ -1508,4 +1516,133 @@ async fn decision_prepared_shape_preserves_distinct_facts_and_replay_fences() {
         cached, 1,
         "one cached shape, four executions with distinct decision binds"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn decision_ack_reclaims_payload_atomically_without_releasing_fences() {
+    let base_url = database_url().expect("payload reclamation requires real isolated PostgreSQL");
+    let name = format!("decision_payload_{}", Uuid::now_v7().simple());
+    let mut coordinator = AsyncPgConnection::establish(&base_url).await.unwrap();
+    coordinator
+        .batch_execute(&format!("CREATE DATABASE \"{name}\""))
+        .await
+        .unwrap();
+    let mut isolated = url::Url::parse(&base_url).unwrap();
+    isolated.set_path(&format!("/{name}"));
+    let url = isolated.to_string();
+    nazo_postgres::run_pending_migrations(&url).await.unwrap();
+    let pool = create_pool(url.clone(), 2).unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let actor = fixture(&mut connection).await;
+    let repository = AuthorizationFlowRepository::new(pool.clone(), actor.tenant_id);
+    let audit = AuditLedgerRepository::new(pool.clone());
+    let initial = audit.anchor_health().await.unwrap();
+    audit
+        .record_genesis("decision-test", &initial.head_hash)
+        .await
+        .unwrap();
+    let input = decision(&actor, Kind::Approve);
+    assert_eq!(
+        repository.commit_decision(input.clone()).await.unwrap(),
+        Outcome::Committed
+    );
+    let before = retained_decision_contents(&mut connection, input.event_id).await;
+    let SecurityAuditBatchClaim::Claimed(batch) = audit
+        .claim_batch("decision-test", 256, 1024 * 1024, 30)
+        .await
+        .unwrap()
+    else {
+        panic!("a committed decision must be exported before its payload is reclaimed");
+    };
+    assert_eq!(batch.event_count(), 1);
+    let ack = SecurityAuditBatchAck {
+        generation: batch.generation,
+        deployment_id: "decision-test".to_owned(),
+        first_sequence: batch.first_sequence,
+        last_sequence: batch.last_sequence,
+        event_count: batch.event_count(),
+        last_hash: batch.last_hash.clone(),
+        batch_digest: batch.digest,
+    };
+    let pending = audit_ack_contents(&mut connection).await;
+    let mut stale = ack.clone();
+    stale.generation += 1;
+    assert!(audit.ack_batch(stale).await.is_err());
+    assert_eq!(audit_ack_contents(&mut connection).await, pending);
+    // A real deferred trigger rejects the transaction after its ACK function
+    // has updated the event and checkpoint. No partial reclamation may escape.
+    connection
+        .batch_execute(
+            "CREATE FUNCTION public.reject_payload_ack() RETURNS trigger LANGUAGE plpgsql AS $$ \
+         BEGIN RAISE EXCEPTION 'injected late ACK failure'; END $$; \
+         CREATE CONSTRAINT TRIGGER reject_payload_ack AFTER UPDATE ON public.security_audit_events \
+         DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.reject_payload_ack()",
+        )
+        .await
+        .unwrap();
+    assert!(audit.ack_batch(ack.clone()).await.is_err());
+    assert_eq!(
+        audit_ack_contents(&mut connection).await,
+        pending,
+        "late ACK failure must preserve original payload, prefix and checkpoint"
+    );
+    connection.batch_execute("DROP TRIGGER reject_payload_ack ON public.security_audit_events; DROP FUNCTION public.reject_payload_ack()").await.unwrap();
+    audit.ack_batch(ack.clone()).await.unwrap();
+    let after = retained_decision_contents(&mut connection, input.event_id).await;
+    assert_eq!(
+        after.contents["payload"],
+        json!({}),
+        "delivered payload must no longer occupy the business fence row"
+    );
+    let mut expected = before.contents;
+    assert_ne!(
+        expected["payload"],
+        json!({}),
+        "the original export must contain real evidence"
+    );
+    expected["payload"] = json!({});
+    assert_eq!(
+        after.contents, expected,
+        "ACK preserves every non-delivery business field"
+    );
+    assert_eq!(cleanup(&mut connection).await, 0);
+    assert_eq!(
+        repository.commit_decision(input.clone()).await.unwrap(),
+        Outcome::Conflict
+    );
+    let mut same_par = input.clone();
+    same_par.event_id = Uuid::now_v7();
+    same_par.request_id = Uuid::now_v7().to_string();
+    assert_eq!(
+        repository.commit_decision(same_par).await.unwrap(),
+        Outcome::Conflict
+    );
+    let mut same_request = input;
+    same_request.event_id = Uuid::now_v7();
+    same_request.pushed_request_uri = Some(format!(
+        "urn:ietf:params:oauth:request_uri:{}",
+        Uuid::now_v7()
+    ));
+    assert_eq!(
+        repository.commit_decision(same_request).await.unwrap(),
+        Outcome::Conflict
+    );
+    assert!(audit.ack_batch(ack).await.is_err());
+    assert!(!audit.anchor_health().await.unwrap().pending_exists);
+    assert!(matches!(
+        audit
+            .claim_batch("decision-test", 256, 1024 * 1024, 30)
+            .await
+            .unwrap(),
+        SecurityAuditBatchClaim::Empty
+    ));
+    assert_eq!(grant_count(&mut connection, &actor).await, 1);
+    drop(repository);
+    drop(audit);
+    drop(connection);
+    drop(pool);
+    coordinator
+        .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
+        .await
+        .unwrap();
 }

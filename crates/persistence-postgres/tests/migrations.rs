@@ -762,7 +762,7 @@ async fn issuance_cleanup_uses_expiry_as_an_index_bound() {
     }
     let body = sql_query(
         "SELECT prosrc AS body FROM pg_proc \
-         WHERE oid = 'nazo_oauth_cleanup_expired_security_state()'::regprocedure",
+         WHERE oid = 'nazo_oauth_cleanup_expired_security_state(boolean)'::regprocedure",
     )
     .get_result::<FunctionBody>(&mut connection)
     .await

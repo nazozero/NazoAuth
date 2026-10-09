@@ -184,7 +184,7 @@ pub async fn token_refresh_with_service(
     // Keep the original token's authentication context independent from the
     // optional lost-response successor replacement below.  Borrowing the
     // context through `token` would prevent assigning the successor in place.
-    let authentication_context = token.authentication_context.clone();
+    let authentication_context = token.contract.authentication_context.clone();
     if !authentication_context.is_well_formed()
         || token
             .id_token_sid
@@ -200,7 +200,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let original_scopes = token.scopes.clone();
+    let original_scopes = token.contract.scopes.clone();
     if client.client_type == "public"
         && client.require_dpop_bound_tokens
         && !client.require_mtls_bound_tokens
@@ -286,7 +286,7 @@ pub async fn token_refresh_with_service(
     }
     let openid4vci_credential_authorization = issuance
         .config
-        .openid4vci_audience(&original_scopes, &token.authorization_details)
+        .openid4vci_audience(&original_scopes, &token.contract.authorization_details)
         .is_some();
     if !should_issue_refresh_token(
         client,
@@ -369,9 +369,9 @@ pub async fn token_refresh_with_service(
             native_sso_source: None,
             user_id: token.user_id,
             prepared_subject,
-            subject: token.subject,
+            subject: token.contract.subject,
             scopes,
-            authorization_details: token.authorization_details,
+            authorization_details: token.contract.authorization_details,
             audiences,
             // A refreshed ID Token omits the original nonce; the immutable
             // source contract also strips this first-response-only value.

@@ -295,7 +295,7 @@ async fn rotation_narrows_and_reorders_current_audience_without_replacing_origin
         );
         source = lookup(&url, &raw).await;
         assert_eq!(source.contract_key, original_key);
-        assert_eq!(source.contract_audiences, vec![A, B]);
+        assert_eq!(source.contract.audiences, vec![A, B]);
         assert_eq!(source.audience, audiences);
         let after = state(&mut connection, source.token_family_id).await;
         assert_eq!(after.contract, original.contract);
@@ -1003,8 +1003,8 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
         *blake3::hash(&serde_json::to_vec(&original_contract).unwrap()).as_bytes(),
         "this source must use the genuine migration key, not a fabricated Rust key"
     );
-    assert_eq!(source.contract_audiences, vec![A, B]);
-    let context_wire = serde_json::to_value(&source.authentication_context).unwrap();
+    assert_eq!(source.contract.audiences, vec![A, B]);
+    let context_wire = serde_json::to_value(&source.contract.authentication_context).unwrap();
     assert!(context_wire.get("nonce").is_none());
     assert!(context_wire.get("id_token_sid").is_none());
     assert_eq!(source.id_token_sid, token.id_token_sid);
@@ -1021,7 +1021,7 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
     let current = lookup(&url, &raw).await;
     let after = state(&mut connection, source.token_family_id).await;
     assert_eq!(current.contract_key, source.contract_key);
-    assert_eq!(current.contract_audiences, vec![A, B]);
+    assert_eq!(current.contract.audiences, vec![A, B]);
     assert_eq!(current.audience, [A]);
     assert_eq!(after.contract, before.contract);
     assert_eq!(
@@ -1244,7 +1244,10 @@ async fn public_proof_cleanup_respects_original_expiry_without_ending_live_famil
     // own proof after bounded batches rather than asserting global counters.
     let tokens = TokenRepository::new(create_pool(&url, 1).unwrap());
     for _ in 0..64 {
-        maintenance.cleanup_batch().await.unwrap();
+        maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
         if tokens
             .by_raw_refresh_token(tenant(), &first_raw)
             .await

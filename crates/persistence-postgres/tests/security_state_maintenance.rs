@@ -388,7 +388,7 @@ async fn expired_issuances_are_reclaimed_in_bounded_batches() {
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     for round in 0..8 {
         let result = maintenance
-            .cleanup_batch()
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
             .await
             .expect("cleanup batch should succeed");
         assert!(
@@ -430,7 +430,7 @@ async fn natural_expiry_refresh_leaf_reclaimed_without_revocation() {
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     assert_eq!(
@@ -472,7 +472,7 @@ async fn active_successor_blocks_ancestor_reclaim() {
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     assert_eq!(
@@ -512,7 +512,7 @@ async fn three_generation_family_reclaims_whole_chain_in_one_batch() {
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     let result = maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     assert!(
@@ -588,7 +588,7 @@ async fn terminal_refresh_proofs_drain_with_one_global_budget_before_parent_dele
     // Both sweeps must share one allowance: 20 expired and 600 live proofs.
     for (round, expected_deleted) in [256_u64, 256, 108].into_iter().enumerate() {
         let result = maintenance
-            .cleanup_batch()
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
             .await
             .expect("terminal-family cleanup should succeed");
         assert_eq!(
@@ -658,7 +658,7 @@ async fn live_public_family_keeps_more_than_sixty_four_unexpired_proofs() {
     .expect("public proof history should insert");
 
     SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap())
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("maintenance should leave live public proofs alone");
     assert_eq!(
@@ -726,7 +726,7 @@ async fn preserve_shared_family_lock_skips_terminal_cleanup() {
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        maintenance.cleanup_batch(),
+        maintenance.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory),
     )
     .await
     .expect("exclusive try-lock must not wait for PreserveExisting")
@@ -736,7 +736,7 @@ async fn preserve_shared_family_lock_skips_terminal_cleanup() {
     preserve_existing.batch_execute("COMMIT").await.unwrap();
 
     maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("terminal family should drain after shared lock releases");
     assert_eq!(family_row_count(&mut connection, family_id).await, 0);
@@ -775,7 +775,7 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     let first = maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("first cleanup batch should succeed");
     assert!(
@@ -793,7 +793,7 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
         "the live family row plus the undrained spent proofs remain"
     );
     let second = maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("second cleanup batch should succeed");
     assert_eq!(
@@ -841,7 +841,7 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed without waiting on the family lock");
     assert_eq!(
@@ -872,7 +872,7 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
         .await
         .expect("writer transaction should commit");
     maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     assert_eq!(
@@ -927,8 +927,14 @@ async fn family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        let first = maintenance.cleanup_batch().await.unwrap();
-        let second = maintenance.cleanup_batch().await.unwrap();
+        let first = maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
+        let second = maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
         (first, second)
     })
     .await
@@ -938,7 +944,10 @@ async fn family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate
     assert_eq!(second.refresh_tokens, 44);
     assert_eq!(family_row_count(&mut connection, locked_family).await, 1);
     connection.batch_execute("COMMIT").await.unwrap();
-    let final_batch = maintenance.cleanup_batch().await.unwrap();
+    let final_batch = maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
     assert_eq!(final_batch.refresh_tokens, 1);
     assert_eq!(family_row_count(&mut connection, locked_family).await, 0);
 }
@@ -962,7 +971,10 @@ async fn concurrent_batches_do_not_deadlock_or_double_count() {
     }
     let first = SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     let second = SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
-    let (a, b) = tokio::join!(first.cleanup_batch(), second.cleanup_batch());
+    let (a, b) = tokio::join!(
+        first.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory),
+        second.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+    );
     a.expect("first maintenance batch should succeed");
     b.expect("second maintenance batch should succeed");
     for family_id in families {
@@ -1028,7 +1040,11 @@ async fn cancelled_batch_leaves_no_open_transaction_on_pooled_connection() {
         if database_url.contains('?') { '&' } else { '?' }
     );
     let maintenance = SecurityStateMaintenanceRepository::new(create_pool(&tagged_url, 2).unwrap());
-    let task = tokio::spawn(async move { maintenance.cleanup_batch().await });
+    let task = tokio::spawn(async move {
+        maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+    });
 
     // Wait until the maintenance transaction is blocked on the gate.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -1245,7 +1261,7 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
     // The global sweep belongs to the maintenance worker alone.
     let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
     let result = maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     assert!(result.presentations >= 1);
@@ -1369,7 +1385,7 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     let result = maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     assert!(
@@ -1672,7 +1688,7 @@ async fn reclaim_scopes_family_authority_to_tenant() {
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
 
@@ -1797,12 +1813,19 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
     .await
     .expect("dead-family spent fixture should insert");
 
+    // Other categories may legitimately need more than this test's 64 batches.
+    // The refresh cohort must converge independently of their global signal.
+    let history_tag = Uuid::now_v7().to_string();
+    sql_query("INSERT INTO scim_audit_events (id, tenant_id, scim_token_id, event_type, scopes, created_at) SELECT md5($1 || '-' || g)::uuid, $2, NULL, 'scim_token_used', '[]'::jsonb, CURRENT_TIMESTAMP - INTERVAL '181 days' FROM generate_series(1, 17000) AS g")
+        .bind::<Text, _>(&history_tag)
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .execute(&mut connection).await.unwrap();
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 4).unwrap());
     let mut spent_total = 0_u64;
     for round in 0..64_u32 {
         let result = maintenance
-            .cleanup_batch()
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
             .await
             .expect("cleanup batch should succeed");
         assert!(
@@ -1814,10 +1837,22 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
             "the family sweep is bounded per batch too"
         );
         spent_total += result.spent_refresh_proofs;
-        if !result.saturated && result.spent_refresh_proofs == 0 && result.refresh_tokens == 0 {
+        assert!(result.scim_audit_events <= 256);
+        if spent_total == 11_000 && result.spent_refresh_proofs == 0 && result.refresh_tokens == 0 {
+            assert!(
+                result.saturated,
+                "unrelated history is still pending; this is not global drain"
+            );
+            eprintln!(
+                "refresh cohort drained after {} batches; 11000 proofs reclaimed while unrelated history remains",
+                round + 1
+            );
             break;
         }
-        assert!(round < 63, "refresh-state reclaim must converge, not stall");
+        assert!(
+            round < 63,
+            "refresh-state reclaim must converge: proofs={spent_total}, last={result:?}"
+        );
     }
     assert_eq!(
         spent_total, 11_000,
@@ -1834,6 +1869,8 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
         1,
         "the live family keeps its row; all expired proofs are swept"
     );
+    sql_query("DELETE FROM scim_audit_events WHERE id IN (SELECT md5($1 || '-' || g)::uuid FROM generate_series(1, 17000) AS g)")
+        .bind::<Text, _>(&history_tag).execute(&mut connection).await.unwrap();
 }
 
 /// A spent proof expires on its own `expires_at` — the sweep deletes expired
@@ -1889,7 +1926,7 @@ async fn expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive
         create_pool(&database_url, 2).expect("pool should build"),
     );
     let batch = repository
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     assert_eq!(
@@ -2192,7 +2229,10 @@ async fn credential_state_cleanup_is_bounded_and_preserves_live_ownership() {
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
     for round in 0..8 {
-        let result = maintenance.cleanup_batch().await.unwrap();
+        let result = maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
         for count in [
             result.credential_offers,
             result.credential_nonces,
@@ -2345,7 +2385,10 @@ async fn concurrent_credential_sweepers_skip_an_uncommitted_child_parent() {
     let second = SecurityStateMaintenanceRepository::new(pool.clone());
     let (first_result, second_result) =
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::join!(first.cleanup_batch(), second.cleanup_batch())
+            tokio::join!(
+                first.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory),
+                second.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            )
         })
         .await
         .expect("both sweepers must skip the FK-locked parent without waiting for its writer");
@@ -2373,7 +2416,10 @@ async fn concurrent_credential_sweepers_skip_an_uncommitted_child_parent() {
         "the unlocked expired control proves reclaim still makes progress"
     );
     writer.batch_execute("COMMIT").await.unwrap();
-    first.cleanup_batch().await.unwrap();
+    first
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
     let retained_child = sql_query(
         "SELECT COUNT(*)::bigint AS count \
          FROM openid4vci_notifications AS child \
@@ -2468,14 +2514,21 @@ async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap() 
         .unwrap();
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
-    let first = maintenance.cleanup_batch().await.unwrap();
+    let first = maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
     assert_eq!(first.refresh_contracts, 0);
     assert!(
         first.saturated,
         "a referenced full page still advances the scan"
     );
     // A clone must continue the same scan, not restart at its referenced head.
-    maintenance.clone().cleanup_batch().await.unwrap();
+    maintenance
+        .clone()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
     let orphan_count = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract_blake3 = $2",
     )
@@ -2501,7 +2554,10 @@ async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap() 
     .unwrap()
     .contract_blake3;
     for round in 0..8 {
-        maintenance.cleanup_batch().await.unwrap();
+        maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
         let count = sql_query(
             "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract_blake3 = $2",
         )
@@ -2598,10 +2654,17 @@ async fn grant_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
     .unwrap();
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
-    let first = maintenance.cleanup_batch().await.unwrap();
+    let first = maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
     assert_eq!(first.credential_access_grants, 0);
     assert!(first.saturated);
-    maintenance.clone().cleanup_batch().await.unwrap();
+    maintenance
+        .clone()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+        .await
+        .unwrap();
     let count = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
     )
@@ -2629,7 +2692,10 @@ async fn grant_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
     .unwrap()
     .token_id;
     for round in 0..8 {
-        maintenance.cleanup_batch().await.unwrap();
+        maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
         let count = sql_query(
             "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
         )
@@ -2755,7 +2821,10 @@ async fn contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconn
         writer.batch_execute("BEGIN").await.unwrap();
         ensure_race_contract(&mut writer, &row).await;
         for _ in 0..3 {
-            maintenance.cleanup_batch().await.unwrap();
+            maintenance
+                .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+                .await
+                .unwrap();
         }
         assert_eq!(
             race_contract_count(&mut observer, &row).await,
@@ -2771,7 +2840,10 @@ async fn contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconn
         drop(writer);
         wait_contract_backend(&mut observer, &name, false).await;
         for _ in 0..4 {
-            maintenance.cleanup_batch().await.unwrap();
+            maintenance
+                .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+                .await
+                .unwrap();
         }
         assert_eq!(
             race_contract_count(&mut observer, &row).await,
@@ -2780,7 +2852,10 @@ async fn contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconn
         if outcome == "commit" {
             sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=($1->>'token_family_id')::uuid").bind::<sql_types::Jsonb,_>(&row.family).execute(&mut observer).await.unwrap();
             for _ in 0..4 {
-                maintenance.cleanup_batch().await.unwrap();
+                maintenance
+                    .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+                    .await
+                    .unwrap();
             }
             assert_eq!(race_contract_count(&mut observer, &row).await, 0);
         }
@@ -2827,7 +2902,11 @@ async fn contract_cleaner_first_fences_writer_and_cancelled_sweeper_discards_con
             .append_pair("application_name", &cleaner_name);
         let pool = create_pool(url.as_str(), 1).unwrap();
         let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
-        let cleanup = tokio::spawn(async move { maintenance.cleanup_batch().await });
+        let cleanup = tokio::spawn(async move {
+            maintenance
+                .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+                .await
+        });
         wait_contract_backend(&mut observer, &cleaner_name, true).await;
         let writer_name = format!("contract-writer-{suffix}");
         let mut url = url::Url::parse(&database_url).unwrap();
@@ -2925,7 +3004,10 @@ async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_ato
             0,
             "uncommitted parent is invisible"
         );
-        maintenance.cleanup_batch().await.unwrap();
+        maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
         insert_race_family(&mut writer, &row).await;
         writer
             .batch_execute(if commit { "COMMIT" } else { "ROLLBACK" })
@@ -2937,7 +3019,10 @@ async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_ato
         );
         if commit {
             for _ in 0..3 {
-                maintenance.cleanup_batch().await.unwrap();
+                maintenance
+                    .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+                    .await
+                    .unwrap();
             }
             assert_eq!(
                 race_contract_count(&mut observer, &row).await,
@@ -2948,7 +3033,10 @@ async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_ato
             // No timestamp backdating or shortened security TTL: this parent
             // was created moments ago and has no remaining owner.
             for _ in 0..4 {
-                maintenance.cleanup_batch().await.unwrap();
+                maintenance
+                    .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+                    .await
+                    .unwrap();
             }
             assert_eq!(
                 race_contract_count(&mut observer, &row).await,
@@ -2981,7 +3069,11 @@ async fn bounded_batch_finishes_before_a_queued_connection_borrower() {
     let pool = create_pool(&database_url, 1).unwrap();
     let held = get_conn(&pool).await.unwrap();
     let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
-    let mut cleanup = tokio::spawn(async move { maintenance.cleanup_batch().await });
+    let mut cleanup = tokio::spawn(async move {
+        maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+    });
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         while pool.status().waiting != 1 {
             tokio::task::yield_now().await;
@@ -3021,4 +3113,61 @@ async fn bounded_batch_finishes_before_a_queued_connection_borrower() {
         .expect("an admitted bounded batch must not requeue between cleanup categories")
         .expect("maintenance task must finish")
         .expect("maintenance database work must succeed");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn protocol_cleanup_leaves_history_until_history_scope_and_preserves_retention() {
+    let database_url = database_url().expect("real PostgreSQL fixture required");
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (_fixture, mut connection) = fixture(&database_url).await;
+    let expired = Uuid::now_v7();
+    let retained = Uuid::now_v7();
+    sql_query("INSERT INTO scim_audit_events (id, tenant_id, scim_token_id, event_type, scopes, created_at) VALUES ($1, $2, NULL, 'scim_token_used', '[]'::jsonb, CURRENT_TIMESTAMP - INTERVAL '181 days'), ($3, $2, NULL, 'scim_token_used', '[]'::jsonb, CURRENT_TIMESTAMP - INTERVAL '179 days')")
+        .bind::<SqlUuid, _>(expired)
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(retained)
+        .execute(&mut connection).await.unwrap();
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let result = maintenance
+        .cleanup_batch(nazo_persistence::CleanupScope::ProtocolState)
+        .await
+        .unwrap();
+    assert_eq!(result.scim_audit_events, 0);
+    let count = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM scim_audit_events WHERE id = $1 OR id = $2",
+    )
+    .bind::<SqlUuid, _>(expired)
+    .bind::<SqlUuid, _>(retained)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap()
+    .count;
+    assert_eq!(
+        count, 2,
+        "protocol-only cleanup must not remove even expired history"
+    );
+    for _ in 0..16 {
+        let result = maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
+        assert!(result.scim_audit_events <= 256);
+        if result.scim_audit_events < 256 {
+            break;
+        }
+    }
+    for (id, expected) in [(expired, 0), (retained, 1)] {
+        let count =
+            sql_query("SELECT COUNT(*)::bigint AS count FROM scim_audit_events WHERE id = $1")
+                .bind::<SqlUuid, _>(id)
+                .get_result::<CountRow>(&mut connection)
+                .await
+                .unwrap()
+                .count;
+        assert_eq!(
+            count, expected,
+            "history scope must keep the full 180 day retention"
+        );
+    }
 }

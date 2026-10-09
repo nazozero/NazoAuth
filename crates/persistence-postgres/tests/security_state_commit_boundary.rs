@@ -127,7 +127,9 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
             .await
             .unwrap();
         if fault == "raise" {
-            let result = maintenance.cleanup_batch().await;
+            let result = maintenance
+                .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+                .await;
             assert!(
                 result.is_err(),
                 "a result row is not a committed cleanup count"
@@ -145,7 +147,11 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
                 .await
                 .unwrap();
             let task_repository = maintenance.clone();
-            let task = tokio::spawn(async move { task_repository.cleanup_batch().await });
+            let task = tokio::spawn(async move {
+                task_repository
+                    .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+                    .await
+            });
             wait_backend(&mut observer, pid, true).await;
             assert!(
                 !task.is_finished(),
@@ -178,7 +184,10 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
             .batch_execute("UPDATE cleanup_commit_fault SET mode = 'off'")
             .await
             .unwrap();
-        let result = maintenance.cleanup_batch().await.unwrap();
+        let result = maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .unwrap();
         if fault == "cancel" {
             // Cancellation is not rollback. The old operation may have committed.
             assert!(result.credential_nonces <= 1);
