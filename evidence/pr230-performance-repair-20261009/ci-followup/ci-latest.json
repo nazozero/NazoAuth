@@ -1,0 +1,219 @@
+{
+  "utc": "2026-10-09T04:45:27.393102+00:00",
+  "head": "7ccf7c8eb4cd2e94a0aff526de10a013ab03dee9",
+  "mergeable": true,
+  "mergeable_state": "unstable",
+  "draft": false,
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/runs/113669798632"
+    },
+    {
+      "name": "real-http-security-matrix",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891049/job/113668268545"
+    },
+    {
+      "name": "Verify official primary sources",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891002/job/113666418204"
+    },
+    {
+      "name": "Rust advisory audit",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882890994/job/113666357775"
+    },
+    {
+      "name": "performance runner image",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891120/job/113666357137"
+    },
+    {
+      "name": "CodeQL Rust analysis",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891157/job/113666357098"
+    },
+    {
+      "name": "Release policy gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891129/job/113666356754"
+    },
+    {
+      "name": "Operator JWS parser fuzz gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891119/job/113666356748"
+    },
+    {
+      "name": "Python script syntax gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882890990/job/113666356685"
+    },
+    {
+      "name": "supply-chain-gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891049/job/113666356681"
+    },
+    {
+      "name": "Validate inventory and active pins",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891002/job/113666356511"
+    },
+    {
+      "name": "source-policy-gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891049/job/113666356500"
+    },
+    {
+      "name": "Dependency vulnerability review",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882890994/job/113666356490"
+    },
+    {
+      "name": "Rust quality gate",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882890990/job/113666356480"
+    }
+  ],
+  "status_state": "pending",
+  "statuses": [],
+  "reviews": [
+    {
+      "id": 5395603744,
+      "state": "COMMENTED",
+      "commit_id": "5691916669ba1ed1f221580f714ec65f490e1f92"
+    },
+    {
+      "id": 5395811502,
+      "state": "COMMENTED",
+      "commit_id": "5c9334acc862014ac65e91eb519c0b4857bdb5a9"
+    },
+    {
+      "id": 5396389807,
+      "state": "COMMENTED",
+      "commit_id": "2bb0444e1f0a614b9f34c04d0bbf65f2dd6ce12e"
+    },
+    {
+      "id": 5397601962,
+      "state": "COMMENTED",
+      "commit_id": "d9efeae49ba0dcddd1dad9c608a693dccd6de2eb"
+    },
+    {
+      "id": 5399119538,
+      "state": "COMMENTED",
+      "commit_id": "036eddca486bb78e972cc1a0465748b10ab5a5b0"
+    },
+    {
+      "id": 5399273973,
+      "state": "COMMENTED",
+      "commit_id": "98f68066fe2375f621db24537db66c1d956b282b"
+    },
+    {
+      "id": 5399615692,
+      "state": "COMMENTED",
+      "commit_id": "5f51b9bac60e598eb50e085e4f6676516a1989a0"
+    },
+    {
+      "id": 5400100485,
+      "state": "COMMENTED",
+      "commit_id": "4970908c4b54188833c97a7068be07d0be3a0adc"
+    },
+    {
+      "id": 5401556023,
+      "state": "COMMENTED",
+      "commit_id": "6b8329e157c6c2cea4f4b9cd95f9471ac852a694"
+    },
+    {
+      "id": 5403683126,
+      "state": "COMMENTED",
+      "commit_id": "33d0daa115b02c666ca18e1d418a8fe6661875a8"
+    },
+    {
+      "id": 5403764060,
+      "state": "COMMENTED",
+      "commit_id": "de559710b20b98c8fef1184cd753bbeea5d585e9"
+    }
+  ],
+  "running_steps": {},
+  "workflow_runs": [
+    {
+      "id": 37882890994,
+      "name": "dependency-review",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882890994"
+    },
+    {
+      "id": 37882891129,
+      "name": "release-policy",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891129"
+    },
+    {
+      "id": 37882891002,
+      "name": "specification-freshness",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891002"
+    },
+    {
+      "id": 37882891120,
+      "name": "performance-images",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891120"
+    },
+    {
+      "id": 37882891119,
+      "name": "operator-fuzz",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891119"
+    },
+    {
+      "id": 37882891049,
+      "name": "conformance-security",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891049"
+    },
+    {
+      "id": 37882891157,
+      "name": "codeql",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882891157"
+    },
+    {
+      "id": 37882890990,
+      "name": "code-quality",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/nazozero/NazoAuth/actions/runs/37882890990"
+    }
+  ]
+}

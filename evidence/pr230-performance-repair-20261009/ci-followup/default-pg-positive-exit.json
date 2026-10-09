@@ -1,0 +1,1 @@
+{"head": "7646b82c9e8d5954cd3065846a28f312ed5c9d18", "command": ["cargo", "test", "--locked", "--all-features", "-p", "nazo-postgres", "--test", "read_connection_ownership", "--", "--nocapture"], "fixture_override": "client_connection_check_interval=0 (PostgreSQL default), for connections made by the test", "exit": 0, "seconds": 0.5263361409306526}

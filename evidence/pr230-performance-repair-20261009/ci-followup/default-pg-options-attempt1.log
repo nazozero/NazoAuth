@@ -1,0 +1,24 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.18s
+     Running tests/read_connection_ownership.rs (target/debug/deps/read_connection_ownership-f5bd71db4a5e7cd0)
+
+running 2 tests
+test cancelling_a_blocked_read_retires_its_backend_before_reuse ... 
+thread 'cancelling_a_blocked_read_retires_its_backend_before_reuse' (38929) panicked at crates/persistence-postgres/tests/read_connection_ownership.rs:174:40:
+called `Result::unwrap()` on an `Err` value: db error
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test completed_reads_return_connections_before_request_resumes ... 
+thread 'completed_reads_return_connections_before_request_resumes' (38937) panicked at crates/persistence-postgres/tests/read_connection_ownership.rs:74:40:
+called `Result::unwrap()` on an `Err` value: db error
+FAILED
+
+failures:
+
+failures:
+    cancelling_a_blocked_read_retires_its_backend_before_reuse
+    completed_reads_return_connections_before_request_resumes
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p nazo-postgres --test read_connection_ownership`

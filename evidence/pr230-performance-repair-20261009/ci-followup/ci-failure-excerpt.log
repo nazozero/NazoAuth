@@ -1,0 +1,48 @@
+2026-10-09T04:34:32.9071215Z 
+2026-10-09T04:34:32.9071450Z running 2 tests
+2026-10-09T04:34:43.2708259Z 
+2026-10-09T04:34:43.2709739Z thread 'cancelling_a_blocked_read_retires_its_backend_before_reuse' (31844) panicked at crates/persistence-postgres/tests/read_connection_ownership.rs:219:6:
+2026-10-09T04:34:43.2710346Z cancelled read backend must disappear: Elapsed(())
+2026-10-09T04:34:43.2710703Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-09T04:34:43.2728394Z test cancelling_a_blocked_read_retires_its_backend_before_reuse ... FAILED
+2026-10-09T04:34:43.5897213Z test completed_reads_return_connections_before_request_resumes ... client lookup: real query completed and pool slot returned before caller resumed
+2026-10-09T04:34:43.5931211Z client identity: real query completed and pool slot returned before caller resumed
+2026-10-09T04:34:43.5964937Z client authentication snapshot: real query completed and pool slot returned before caller resumed
+2026-10-09T04:34:43.5998055Z client secret match: real query completed and pool slot returned before caller resumed
+2026-10-09T04:34:43.6045779Z public account: real query completed and pool slot returned before caller resumed
+2026-10-09T04:34:43.6077488Z principal: real query completed and pool slot returned before caller resumed
+2026-10-09T04:34:43.6111880Z subject claims: real query completed and pool slot returned before caller resumed
+2026-10-09T04:34:43.6125121Z ok
+2026-10-09T04:34:43.6125574Z 
+2026-10-09T04:34:43.6126879Z 
+2026-10-09T04:34:43.6127191Z failures:
+2026-10-09T04:34:43.6128073Z     cancelling_a_blocked_read_retires_its_backend_before_reuse
+2026-10-09T04:34:43.6139967Z 
+2026-10-09T04:34:43.6140675Z test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.71s
+2026-10-09T04:34:43.6141933Z 
+2026-10-09T04:34:43.6150470Z error: test failed, to rerun pass `-p nazo-postgres --test read_connection_ownership`
+2026-10-09T04:34:43.6151270Z      Running tests/recovery_invalidation.rs (target/debug/deps/recovery_invalidation-e98e47cd8f745ca0)
+2026-10-09T04:34:43.6216713Z 
+2026-10-09T04:34:43.6216909Z running 2 tests
+2026-10-09T04:34:45.4038527Z test one_global_epoch_has_one_operation_winner ... ok
+2026-10-09T04:34:48.0298252Z test restore_covers_all_tenants_and_exact_receipt_never_revokes_new_families ... ok
+2026-10-09T04:34:48.0299169Z 
+2026-10-09T04:34:48.0299864Z test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.41s
+2026-10-09T04:34:48.0300570Z 
+2026-10-09T04:34:48.0316725Z      Running tests/refresh_authority.rs (target/debug/deps/refresh_authority-9b946e81273578b6)
+2026-10-09T04:44:15.5835805Z running 0 tests
+2026-10-09T04:44:15.5836025Z 
+2026-10-09T04:44:15.5836375Z test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-10-09T04:44:15.5836682Z 
+2026-10-09T04:44:15.7040961Z error: 1 target failed:
+2026-10-09T04:44:15.7041349Z     `-p nazo-postgres --test read_connection_ownership`
+2026-10-09T04:44:15.7386452Z ##[error]Process completed with exit code 101.
+2026-10-09T04:44:15.8167717Z Post job cleanup.
+2026-10-09T04:44:16.0112984Z [command]/usr/bin/git version
+2026-10-09T04:44:16.0163043Z git version 2.55.0
+2026-10-09T04:44:16.0197595Z Temporarily overriding HOME='/home/runner/work/_temp/021314ab-bb08-4476-964c-0d632cf1e90c' before making global git config changes
+2026-10-09T04:44:16.0198335Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-09T04:44:16.0199416Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/NazoAuth/NazoAuth
+2026-10-09T04:44:16.0230087Z Removing SSH command configuration
+2026-10-09T04:44:16.0235185Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-09T04:44:16.0265658Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"

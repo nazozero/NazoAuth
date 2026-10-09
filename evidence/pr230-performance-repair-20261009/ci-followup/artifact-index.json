@@ -1,0 +1,70 @@
+[
+  {
+    "published": "production-equivalence.json",
+    "published_sha256": "71434008b356df5b8ab73998766c2fce3ef9d6b3e75613f22c2eda61de1f9b2d"
+  },
+  {
+    "published": "ci-failure-excerpt.log",
+    "published_sha256": "89b2ba3be80376e0e63400865174dbf82bc93d2b774e20857a143d7cc94da026"
+  },
+  {
+    "published": "ci-followup-source.json",
+    "published_sha256": "c96234bc6f3c31af93a68bec8fd1cbd3633d9c5d7f462ccf5842f60c7b770525"
+  },
+  {
+    "published": "ci-latest.json",
+    "published_sha256": "97be6eae16bd7d28571fc476e269fb45c05b3321fa45155d663d274d2228e961"
+  },
+  {
+    "published": "default-pg-options-attempt1.log",
+    "published_sha256": "7b097160f428d3db51dce8e21e6d074129d7e4097571c2b40acade6f4dea3543"
+  },
+  {
+    "published": "default-pg-options-attempt1-exit.json",
+    "published_sha256": "30adac2e5fae368001991ab2173ac08a88d9cb61ea987dca75834095007977e9"
+  },
+  {
+    "published": "default-pg-negative.log",
+    "published_sha256": "197eb9fbb134561439d4172d62be81d600a464c18bebf517617fbdb65510f58a"
+  },
+  {
+    "published": "default-pg-negative-exit.json",
+    "published_sha256": "335788d318999e0ed6ab7ee7dfc7a464ec61c5dcfe0ed5719f54d2d73182e6de"
+  },
+  {
+    "published": "default-pg-positive.log",
+    "published_sha256": "6ad640483bc61c1579e8c3093a88fa636c91f78d905d80cf20f032d64784e5f0"
+  },
+  {
+    "published": "default-pg-positive-exit.json",
+    "published_sha256": "fc444ae69aa4fc01ef49650f6290356ae12989496bf1696fcaf236a6cb793391"
+  },
+  {
+    "published": "fixture-fmt.log",
+    "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "published": "fixture-fmt-exit.json",
+    "published_sha256": "88a091e9c53bb4fda26ce5ecb5c33b5180b62f2ccd677afccad8b8cd63a50bb8"
+  },
+  {
+    "published": "fixture-clippy.log",
+    "published_sha256": "de27533f75b636c54d4eca81fea69476bf22f9ba8e8d6520b1bec4d42d8b7563"
+  },
+  {
+    "published": "fixture-clippy-exit.json",
+    "published_sha256": "52c56f3580354d0cfbfefe7207809342f6949c9d37bcffc069a6600d5ac45a7c"
+  },
+  {
+    "published": "fixture-boundaries.log",
+    "published_sha256": "9f3b5d0bb573587ddee5b20b4a45eff437789f42d2bf5eb7af9d272899cf9122"
+  },
+  {
+    "published": "fixture-boundaries-exit.json",
+    "published_sha256": "ee989423aaee4dae116ba8aae9bc30eadca4cf8c4b4d1e125dcfa75c1d4e0fc5"
+  },
+  {
+    "published": "README.md",
+    "published_sha256": "ce60f4645f5d7a4f13cb33fb6267eeac0726b490204db3472842641c5fcf89ff"
+  }
+]

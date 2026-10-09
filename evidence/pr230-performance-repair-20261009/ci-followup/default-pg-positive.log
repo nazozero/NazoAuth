@@ -1,0 +1,17 @@
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/read_connection_ownership.rs (target/debug/deps/read_connection_ownership-f5bd71db4a5e7cd0)
+
+running 2 tests
+test cancelling_a_blocked_read_retires_its_backend_before_reuse ... cancelled read backend 5263 independently disappeared; replacement 5266 executes SQL
+ok
+test completed_reads_return_connections_before_request_resumes ... client lookup: real query completed and pool slot returned before caller resumed
+client identity: real query completed and pool slot returned before caller resumed
+client authentication snapshot: real query completed and pool slot returned before caller resumed
+client secret match: real query completed and pool slot returned before caller resumed
+public account: real query completed and pool slot returned before caller resumed
+principal: real query completed and pool slot returned before caller resumed
+subject claims: real query completed and pool slot returned before caller resumed
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+

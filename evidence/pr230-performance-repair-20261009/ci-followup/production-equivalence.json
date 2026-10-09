@@ -1,0 +1,10 @@
+{
+  "final_source_sha": "7646b82c9e8d5954cd3065846a28f312ed5c9d18",
+  "measured_runtime_source_sha": "ef89417c9377ea765878b24d7b034a189638dee3",
+  "non_evidence_changes": [
+    "crates/persistence-postgres/tests/read_connection_ownership.rs"
+  ],
+  "production_files_unchanged": true,
+  "binary_evidence": "1511cd33e1f3ea8586fce9e29109e8107048e9e9ef5b8b114155fbe60f873fd7",
+  "boundary": "Performance and natural-reclamation measurements belong to the ef89417c binary. The final source changes only its test, not production files; evidence is carried forward by this explicit file-tree comparison, not relabeled as a new measurement."
+}
