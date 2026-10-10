@@ -1,13 +1,16 @@
-# Main upgrade preflight, 2026-10-10
+# Main upgrade and official OIDF, 2026-10-10
 
 Base main: `c9e9468f5ec5729acea6f1d53e3feb73e4774f34`.
-Final source: `bad5174d5f6609ef4d43aec54aacb1e3b8688cad`.
-Candidate binary SHA-256: `e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91`.
-This is an explicitly authorized repair-branch build, not a new signed release.
-Preflight is complete. Production cutover and official OIDF execution are blocked
-on recovery of the existing expired production controller key. The previous
-artifact is running again and public checks pass.
-No official Suite plan has been started at this checkpoint.
+Upgrade-regression source: `bad5174d5f6609ef4d43aec54aacb1e3b8688cad`.
+Final deployed server source: `8abe4fe33891621ce2659f78d6bc2c224f042e17`.
+Running binary SHA-256: `cf97faf9b6e8f0639aff031ebef2d7870dce5a7f2e2824150d8a1c11e78a0817`.
+Current validation controller source: `dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee`.
+These are authorized repair-branch builds, not new signed releases.
+Production deployment, snapshot/restore rehearsal, doctor and public verify pass.
+The initial official suite and one interrupted correction run remain recorded
+below. The final OpenID4VC correction run is complete with zero failures/incomplete
+modules. Official acceptance still requires human review; no certification PASS
+is claimed.
 
 ## Upgrade failures and repairs
 
@@ -96,15 +99,15 @@ attempt at the existing role-creation test lacked CREATEROLE and failed; it was
 rerun successfully on the CI-pinned independent PostgreSQL fixture without
 expanding production role privileges.
 
-Focused CODE and upgrade-data preservation: **PASS**. Full workspace CI is
-pending publication. Deployment: **BLOCKED** (existing controller key expired). Official OIDF: **BLOCKED**;
-its configured full scope is 11 groups and 44 plans, with none executed yet.
+Focused CODE and upgrade-data preservation: **PASS**. Exact-head CI is reported on the PR after
+evidence publication. Deployment: **PASS**. Official OIDF initial run: **FAIL**;
+its configured full scope is 11 groups, 44 plans and 1,173 modules.
 No performance conclusion is added by this migration repair.
 
 ## Authorized deployment attempts
 
-The selected candidate is `v0.2.16+repair.bad5174d`, built from the final source
-above. First update exited 1 before the migration process started: candidate
+The original upgrade candidate was `v0.2.16+repair.bad5174d`, built from the
+upgrade-regression source above. First update exited 1 before the migration process started: candidate
 packaging incorrectly used the image configuration digest as the registry
 manifest digest. This was corrected without changing server code or image bytes;
 the digest-pinned image reports protocol 3 and release v0.2.16.
@@ -119,7 +122,156 @@ schema, the unchanged runtime was restarted (exit 0). Doctor and public verify
 both exit 0; discovery is HTTP 200 with the expected issuer. Pending operation
 journals are preserved, not erased or replaced to manufacture success.
 
-The user has been asked for the private offline recovery-secret file path or
-to perform the formal controller recovery. No key expiry, registry authority,
-MFA, signature or replay check is bypassed. Official OIDF remains unexecuted
-(0/44 plans), rather than being reported as a suite failure or success.
+That checkpoint was superseded after the user authorized autonomous recovery.
+The existing offline recovery secret was not available. The documented host-root
+`admin create` operation provisioned one dedicated recovery administrator, followed
+by real TOTP enrollment and the official MFA-authorized `controller rotate` flow
+(exit 0). Existing accounts were not reset. The new recovery account remains
+provisioned; its credentials and MFA recovery material are retained root-private.
+No expiry, MFA, signature, replay or registry-authority check was bypassed.
+The replacement controller slot expires on `2026-11-09T15:33:35.96822Z`.
+
+Before retrying update, the definitively unaccepted old signed client intent was
+archived under both controller and server task locks. The exact real admission
+rejection, absence of both accepted and temporary server records, and changed
+active key were checked. The original journal and host operation history remain
+retained. No accepted operation was discarded.
+
+The next `nazoauthctl-selected --json --instance production update --to
+v0.2.16+repair.bad5174d` completed in 6.919 seconds (exit 0): migration accepted
+once and completed, configuration revision 8, local health verified. A fresh
+backup snapshot and restore-test both exited 0 before cutover. Post-update doctor
+and public verify exited 0; discovery returns HTTP 200 with the expected issuer.
+The running executable SHA-256 equals the built candidate. The requested pinned
+registry manifest resolves to the same image configuration as the container.
+The image revision is the final source SHA; the container revision label is old
+metadata inherited by ctl replacement and is not used as deployment evidence.
+
+The official run uses `nazoauthctl-selected --instance production oidf run --json
+--jobs 4 --poll-timeout 1800` against `https://www.certification.openid.net`.
+All 44 plans were created, with 1,173 defined modules and no plan exclusions.
+The temporary tenant, browser workers and Suite resources belong to this run.
+Final outcomes are recorded below; subsequent correction runs retain separate identities and evidence.
+
+## Initial official-suite outcome and necessary follow-up
+
+The official service reported version **5.3.2**. The controller bundled matrix
+labels its original source as v5.2.2; these are distinct identities. The executed
+matrix digest is recorded in `oidf-initial-summary.json`.
+
+The initial run exited 1: **1,013 PASS, 17 REVIEW, 10 WARNING, 11 SKIPPED,
+67 FAIL**, plus **7 created incomplete modules and 48 modules not instantiated**.
+The run retained all 44 official plans for review. Run-owned tenant cleanup and
+Suite resource settlement succeeded; this does not make incomplete modules pass.
+The exact module ledger is `oidf-initial-modules.csv`.
+
+Root causes independently established from official logs and code:
+
+- 61 failing modules encounter an mdoc MSO `signed` timestamp before the document
+  signer certificate's `notBefore`. Privacy rounding to midnight can predate a
+  certificate generated later that day. Source
+  `8abe4fe33891621ce2659f78d6bc2c224f042e17` clamps the privacy timestamp to the
+  public certificate validity boundary, preserves credential expiry, and rejects
+  impossible intervals. It does not weaken verification or extend safety TTLs.
+- Two HAIP multiple-client modules failed PAR after the old controller stalled
+  waiting for a second offer, allowing the five-minute wallet attestation to
+  expire. Controller offer tracking must distinguish the bounded second client.
+- Four HAIP negative modules accepted authorization without PAR because the
+  bundled attested-client registrations did not enable the existing required-PAR
+  policy. The fixture must explicitly enable that policy; wallet attestation
+  authentication is retained. [HAIP 1.0 section 4](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#name-openid-for-verifiable-credent) requires PAR when the authorization endpoint is used.
+- All seven VP plans stopped on their first module because the official wallet
+  now displays a result page instead of redirecting. The target accepted the
+  direct POST. The controller must visit the transaction-bound completion URL
+  and require the target's actual verified result, retaining signed evidence and
+  official human-review outcomes.
+
+Four second offers were supplied through the normal issuer API during the first
+run to unblock observation. Their module IDs are recorded in the summary. This
+is an **assisted run**, not proof of corrected automatic orchestration. Later
+runs must use the corrected controller without this assistance.
+
+A fresh post-upgrade backup attempt failed before deployment because the old
+controller sentinel queried the retired `oauth_tokens` table. The repair probes
+the schema and counts durable `oauth_token_issuances` when the old table is absent.
+Legacy snapshots keep their exact original sentinel format. Twenty backup tests
+and a real isolated PostgreSQL legacy/current-schema check pass. A new complete
+snapshot and restore rehearsal are still required before the next cutover.
+
+Warnings remain official warnings, including unadvertised requested scopes.
+REVIEW remains human review; neither exit status nor temporary-resource cleanup
+can promote these outcomes to PASS. No performance conclusion follows from this run.
+
+The first automatic correction run used server `8abe4fe3` and ctl `4b4984b5`.
+Backup snapshot, real restore-test, deployment, doctor and public verify all
+exited 0. The running executable and pinned image were independently matched.
+This run was deliberately interrupted (exit 130) after 149 PASS, 3 WARNING,
+2 SKIPPED and 3 interrupted modules: two-client issuer-initiated modules still
+waited for an offer. It did not receive manual assistance. Run-owned resources
+were cleaned. The local completed-browser cache was insufficient as a phase
+authority; the next controller revision follows explicit official Offer-wait
+transitions, including completion performed by other registered browser workers.
+
+One fresh-certificate batch raised official `VCIEnsureBatchTimeClaimsNotLinkable`
+WARNING: clamping to certificate notBefore produces a precise shared timestamp
+near creation time. The certificate boundary is shared public material, not a
+per-holder timestamp. The warning is retained for review, not relabeled PASS;
+certificate validity is not backdated to suppress it.
+
+## Final result
+
+Server source: `8abe4fe33891621ce2659f78d6bc2c224f042e17`.
+Controller source: `dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee`.
+Both repair branches remain unmerged at publication time.
+
+The final command was:
+
+```sh
+nazoauthctl-selected --instance production oidf run openid4vc --json --jobs 4 --poll-timeout 1800
+```
+
+It exited **0** after **671.742 seconds**. All **397 modules in 17 plans** were
+created and settled: **364 PASS, 24 REVIEW, 6 WARNING, 3 expected SKIPPED,
+0 FAIL, 0 incomplete**. No manual offers, excluded plans, extended lifetimes,
+threshold relaxation or verifier bypass was used. All ordinary and HAIP
+multiple-client issuer flows passed. Two recorded second offers arrived 415 ms
+and 314 ms after their official second wait, with exactly two delivered offers
+per module. All four HAIP non-PAR negative tests passed.
+
+The 24 REVIEW results are VP screenshot review obligations. All 24 real
+WebDriver screenshot files and all 397 module evidence files were hash-checked
+against the final evidence manifest. Two warnings concern precise shared mdoc
+certificate-boundary timestamps in newly created signer batches; four concern
+requested scopes omitted from discovery. They retain their official outcomes.
+`local_success=true` and `matrix_expectations_satisfied=true`, but
+`suite_pass=false` and `acceptance_pass=false`: **execution complete is not
+certification acceptance**.
+
+Run-owned tenant cleanup succeeded, run/material journals are absent, all
+Suite resources are settled, and retention and evidence manifest hashes match.
+The 17 official plans remain retained for review; the report's generic
+`cleanup_complete=false` reflects retention, not a leaked temporary tenant.
+Post-suite doctor and public verification both exit 0.
+
+The combined coverage ledger contains the 776 unaffected OIDC/FAPI/CIBA modules
+from the first run and these 397 corrected OpenID4VC modules: **1,107 PASS,
+41 REVIEW, 14 WARNING, 11 expected SKIPPED, 0 FAIL, 0 incomplete** across the
+original 1,173 definitions. This is explicitly composite evidence with source
+and run identities per row, not a second full-matrix run on the final SHA.
+
+- [Final outcomes and retained plans](../../../evidence/deployment-upgrade-20261010/oidf-final-summary.json)
+- [Composite module ledger](../../../evidence/deployment-upgrade-20261010/oidf-final-composite-modules.csv)
+- [Commands, negative proofs and deployment verification](../../../evidence/deployment-upgrade-20261010/current-repair-validation.json)
+- [Actual second-offer delivery timing](../../../evidence/deployment-upgrade-20261010/second-offer-delivery-proof.json)
+
+The validated controller is retained root-private on the deployment host under
+`/var/lib/nazoauthctl/evidence/main-oidf-20261010/offer-phase-fix/nazoauthctl-selected`.
+The globally installed released v0.2.30 controller was not overwritten; use the
+validated controller for upgraded-schema backups until the controller repair is
+released. The formally provisioned recovery administrator, MFA recovery material
+and controller keys remain root-private; existing accounts were not reset.
+
+No new performance or long-term storage conclusion is made. Remaining work for
+formal certification is official human review of REVIEW/WARNING records, not
+hidden failed or unexecuted protocol modules. CI is checked only after execution
+and evidence publication, as requested.

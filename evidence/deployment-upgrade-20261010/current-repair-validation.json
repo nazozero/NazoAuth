@@ -1,0 +1,462 @@
+{
+  "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+  "ctl_source": "4b4984b59b22dfcea0fc26498a4e1aaa1e24f36a",
+  "validation": {
+    "mdoc-before-result.json": {
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-oauth-server",
+        "--lib",
+        "mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 101,
+      "seconds": 157.1514208316803
+    },
+    "mdoc-after-results.json": [
+      {
+        "name": "crypto",
+        "command": [
+          "cargo",
+          "+1.99.0",
+          "test",
+          "--release",
+          "--locked",
+          "-p",
+          "nazo-oauth-server",
+          "--lib",
+          "domain::openid4vc::credential_crypto::tests",
+          "--",
+          "--nocapture"
+        ],
+        "exit_code": 0,
+        "seconds": 73.9278712272644
+      },
+      {
+        "name": "vci",
+        "command": [
+          "cargo",
+          "+1.99.0",
+          "test",
+          "--release",
+          "--locked",
+          "-p",
+          "nazo-openid4vci",
+          "--test",
+          "service_contract",
+          "--",
+          "--nocapture"
+        ],
+        "exit_code": 0,
+        "seconds": 27.71438217163086
+      },
+      {
+        "name": "fmt",
+        "command": [
+          "cargo",
+          "+1.99.0",
+          "fmt",
+          "--check"
+        ],
+        "exit_code": 0,
+        "seconds": 3.045459508895874
+      },
+      {
+        "name": "static",
+        "command": [
+          "python3",
+          "scripts/verify_static_contracts.py",
+          "--check"
+        ],
+        "exit_code": 0,
+        "seconds": 7.8253257274627686
+      },
+      {
+        "name": "dependencies",
+        "command": [
+          "python3",
+          "scripts/check_persistence_dependency_graph.py"
+        ],
+        "exit_code": 0,
+        "seconds": 3.450362205505371
+      },
+      {
+        "name": "clippy",
+        "command": [
+          "cargo",
+          "+1.99.0",
+          "clippy",
+          "--release",
+          "--locked",
+          "-p",
+          "nazo-oauth-server",
+          "--lib",
+          "--tests",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit_code": 0,
+        "seconds": 74.5534656047821
+      }
+    ],
+    "mdoc-build-result.json": {
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth"
+      ],
+      "exit_code": 0,
+      "seconds": 200.7731909751892,
+      "source_sha": "8abe4fe33891621ce2659f78d6bc2c224f042e17"
+    },
+    "ctl-offer-before-result.json": {
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauthctl-conformance",
+        "--lib",
+        "authorization_code_multiple_clients_gets_a_fresh_offer_after_first_browser_flow",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 101,
+      "seconds": 81.39862728118896
+    },
+    "ctl-vp-before-result.json": {
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauthctl-conformance",
+        "--lib",
+        "completes_redirect_or_result_page_only_after_target_transaction_success",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 101
+    },
+    "ctl-haip-before-result.json": {
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauthctl-conformance",
+        "--lib",
+        "bundled_haip_clients_require_pushed_authorization",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 101
+    },
+    "ctl-final-gates.json": [
+      {
+        "name": "fmt",
+        "command": [
+          "cargo",
+          "+1.97.1",
+          "fmt",
+          "--all"
+        ],
+        "exit_code": 0,
+        "seconds": 1.1917672157287598
+      },
+      {
+        "name": "conformance",
+        "command": [
+          "cargo",
+          "+1.97.1",
+          "test",
+          "--release",
+          "--locked",
+          "-p",
+          "nazoauthctl-conformance",
+          "--lib"
+        ],
+        "exit_code": 0,
+        "seconds": 83.62809634208679
+      },
+      {
+        "name": "backup",
+        "command": [
+          "cargo",
+          "+1.97.1",
+          "test",
+          "--release",
+          "--locked",
+          "-p",
+          "nazoauthctl-core",
+          "--lib",
+          "target::backup_exec::tests"
+        ],
+        "exit_code": 0,
+        "seconds": 0.21390700340270996
+      },
+      {
+        "name": "clippy",
+        "command": [
+          "cargo",
+          "+1.97.1",
+          "clippy",
+          "--locked",
+          "-p",
+          "nazoauthctl-conformance",
+          "-p",
+          "nazoauthctl-core",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit_code": 0,
+        "seconds": 53.69484186172485
+      }
+    ],
+    "ctl-offer-cross-library-result.json": {
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauthctl-conformance",
+        "--lib",
+        "start_accepts_server_typed_dcql_digest",
+        "--",
+        "--ignored",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 52.45250105857849
+    },
+    "ctl-backup-real-pg-result.json": {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-Atq"
+      ],
+      "exit_code": 0,
+      "isolated_port": 43193,
+      "transaction_rolled_back": true
+    },
+    "ctl-offer-phase-before-result.json": {
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauthctl-conformance",
+        "--lib",
+        "authorization_code_multiple_clients_follows_official_offer_wait_phases",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 101
+    },
+    "ctl-phase-final-gates.json": [
+      {
+        "name": "fmt",
+        "command": [
+          "cargo",
+          "+1.97.1",
+          "fmt",
+          "--all"
+        ],
+        "exit_code": 0,
+        "seconds": 1.1414673328399658
+      },
+      {
+        "name": "conformance",
+        "command": [
+          "cargo",
+          "+1.97.1",
+          "test",
+          "--release",
+          "--locked",
+          "-p",
+          "nazoauthctl-conformance",
+          "--lib"
+        ],
+        "exit_code": 0,
+        "seconds": 88.17337369918823
+      },
+      {
+        "name": "backup",
+        "command": [
+          "cargo",
+          "+1.97.1",
+          "test",
+          "--release",
+          "--locked",
+          "-p",
+          "nazoauthctl-core",
+          "--lib",
+          "target::backup_exec::tests"
+        ],
+        "exit_code": 0,
+        "seconds": 0.22029781341552734
+      },
+      {
+        "name": "clippy",
+        "command": [
+          "cargo",
+          "+1.97.1",
+          "clippy",
+          "--locked",
+          "-p",
+          "nazoauthctl-conformance",
+          "-p",
+          "nazoauthctl-core",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit_code": 0,
+        "seconds": 4.8111302852630615
+      }
+    ],
+    "ctl-final-build": {
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauthctl",
+        "--features",
+        "pre-release-validation"
+      ],
+      "exit_code": 0,
+      "seconds": 96.65301656723022,
+      "source_sha": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee"
+    }
+  },
+  "deployment": [
+    {
+      "name": "backup-snapshot",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-fix/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "backup",
+        "snapshot"
+      ],
+      "exit_code": 0,
+      "seconds": 1.1907436847686768
+    },
+    {
+      "name": "backup-restore-test",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-fix/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "backup",
+        "restore-test"
+      ],
+      "exit_code": 0,
+      "seconds": 5.421720504760742
+    },
+    {
+      "name": "update",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-fix/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "update",
+        "--to",
+        "v0.2.16+repair.8abe4fe3"
+      ],
+      "exit_code": 0,
+      "seconds": 2.078178882598877
+    },
+    {
+      "name": "doctor",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-fix/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "doctor"
+      ],
+      "exit_code": 0,
+      "seconds": 0.016057491302490234
+    },
+    {
+      "name": "verify",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-fix/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "verify"
+      ],
+      "exit_code": 0,
+      "seconds": 0.05895376205444336
+    }
+  ],
+  "deployment_proof": {
+    "source_sha": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+    "ctl_source_sha": "4b4984b59b22dfcea0fc26498a4e1aaa1e24f36a",
+    "binary_sha256": "cf97faf9b6e8f0639aff031ebef2d7870dce5a7f2e2824150d8a1c11e78a0817",
+    "requested_image": "localhost:5001/nazoauth-main-20261010@sha256:019874a63a3ab07d05808479ceb6015f9275e2c78be981fbe4b3f8ae19f7bfee",
+    "image_config_id": "17492cce998208d98f012e23619571480be1f65e427a56aa34b833e1f64bfb9f",
+    "image_revision": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+    "running": true,
+    "discovery_status": 200,
+    "issuer": "https://auth.nazo.run"
+  },
+  "cross_repo_fixture_note": "Earlier attempts selected the wrong test target and ran zero server helper tests; they are INVALID fixture attempts, not behavioral failures. The host library executable runs the real helper and passes.",
+  "ctl_final_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+  "post_suite_checks": [
+    {
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/offer-phase-fix/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "doctor"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/offer-phase-fix/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "verify"
+      ],
+      "exit_code": 0
+    }
+  ]
+}
