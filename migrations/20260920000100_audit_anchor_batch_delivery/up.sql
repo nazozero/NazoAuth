@@ -51,16 +51,23 @@ ALTER TABLE public.security_audit_chain_state
     ),
     ADD CONSTRAINT ck_security_audit_batch_attempts_non_negative CHECK (batch_attempts >= 0);
 
--- Chained-but-unacknowledged deliveries from the retired protocol become the
--- initial in-flight batch. The digest is recomputed and stored on re-claim.
-WITH chained AS (
-    SELECT MIN(chain.sequence) AS first_sequence, MAX(chain.sequence) AS last_sequence,
-           COUNT(*)::INTEGER AS event_count
+-- The retired per-event protocol has no committed batch membership. Import
+-- only its earliest bounded prefix into the initial batch; all later chained
+-- deliveries remain pending for subsequent claims. No event is acknowledged
+-- or rewritten here. The digest is recomputed and stored on first re-claim.
+WITH pending_prefix AS (
+    SELECT chain.sequence
     FROM public.security_audit_event_outbox AS outbox
     JOIN public.security_audit_chain_entries AS chain ON chain.event_id = outbox.event_id
     WHERE chain.sequence > COALESCE(
         (SELECT state.anchor_sequence FROM public.security_audit_chain_state AS state
          WHERE state.singleton), 0)
+    ORDER BY chain.sequence
+    LIMIT 256
+), chained AS (
+    SELECT MIN(sequence) AS first_sequence, MAX(sequence) AS last_sequence,
+           COUNT(*)::INTEGER AS event_count
+    FROM pending_prefix
 )
 UPDATE public.security_audit_chain_state AS state
 SET batch_first_sequence = chained.first_sequence,

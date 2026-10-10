@@ -601,3 +601,140 @@ async fn cancellation_and_lost_result(
     );
     ack(&exporter, &reclaimed).await;
 }
+
+#[tokio::test]
+async fn legacy_chained_backlog_spans_batches_without_losing_evidence() {
+    use nazo_persistence::audit_chain::security_audit_event_hash;
+
+    let base = std::env::var("NAZO_AUDIT_TEST_DATABASE_URL")
+        .expect("this migration regression requires an isolated PostgreSQL fixture");
+    let database = format!("audit_legacy_batches_{}", Uuid::now_v7().simple());
+    let mut admin = AsyncPgConnection::establish(&base).await.unwrap();
+    admin
+        .batch_execute(&format!("CREATE DATABASE {database}"))
+        .await
+        .unwrap();
+    let mut url = url::Url::parse(&base).unwrap();
+    url.set_path(&database);
+    let mut owner = AsyncPgConnection::establish(url.as_str()).await.unwrap();
+    owner.batch_execute(ORIGINAL).await.unwrap();
+    owner.batch_execute(SHARED).await.unwrap();
+    sql_query("SELECT public.nazo_record_security_audit_genesis($1, $2)")
+        .bind::<Text, _>("cutover-test")
+        .bind::<Binary, _>(vec![0_u8; 32])
+        .execute(&mut owner)
+        .await
+        .unwrap();
+    let occurred_at = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let mut previous_hash = vec![0_u8; 32];
+    let mut expected = Vec::new();
+    for sequence in 1..=513 {
+        let id = Uuid::now_v7();
+        let hash = security_audit_event_hash(
+            sequence,
+            &previous_hash,
+            id,
+            "token_issued",
+            "token_lifecycle",
+            occurred_at,
+            b"{}",
+        )
+        .to_vec();
+        sql_query("SELECT * FROM public.nazo_append_security_audit_event($1, 'token_issued', 'token_lifecycle', '{}'::jsonb, $2, $3, $4)")
+            .bind::<SqlUuid, _>(id)
+            .bind::<diesel::sql_types::Timestamptz, _>(occurred_at)
+            .bind::<Binary, _>(&previous_hash)
+            .bind::<Binary, _>(&hash)
+            .execute(&mut owner).await.unwrap();
+        expected.push((id, previous_hash.clone(), hash.clone()));
+        previous_hash = hash;
+    }
+    for migration in [CUTOVER, EXPORTED_RETENTION, ACK_DELETE, BATCH_DELIVERY] {
+        owner
+            .transaction::<_, diesel::result::Error, _>(async |connection| {
+                connection.batch_execute(migration).await
+            })
+            .await
+            .expect("legacy pending evidence must survive the batch protocol upgrade");
+    }
+    let batch_count = sql_query("SELECT batch_event_count::bigint AS value FROM public.security_audit_chain_state WHERE singleton")
+        .get_result::<Count>(&mut owner).await.unwrap().value;
+    assert_eq!(batch_count, 256);
+    let remaining =
+        sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox")
+            .get_result::<Count>(&mut owner)
+            .await
+            .unwrap()
+            .value;
+    assert_eq!(
+        remaining, 513,
+        "forming the initial batch must not acknowledge any event"
+    );
+    for migration in [DELIVERY_RETENTION, BOUNDED_CLAIM, PENDING_SET] {
+        owner
+            .transaction::<_, diesel::result::Error, _>(async |connection| {
+                connection.batch_execute(migration).await
+            })
+            .await
+            .unwrap();
+    }
+    audit_upgrade::upgrade_to_current_audit_schema(&mut owner).await;
+    let repository = AuditLedgerRepository::new(create_pool(url.as_str(), 2).unwrap());
+    let mut delivered = 0;
+    for (first, last) in [(1, 256), (257, 512), (513, 513)] {
+        let batch = claim_or_panic(&repository).await;
+        assert_eq!((batch.first_sequence, batch.last_sequence), (first, last));
+        for event in &batch.deliveries {
+            let (id, previous, hash) = &expected[delivered];
+            assert_eq!(event.event_id, *id);
+            assert_eq!(event.sequence, delivered as i64 + 1);
+            assert_eq!(event.previous_hash, *previous);
+            assert_eq!(event.event_hash, *hash);
+            assert_eq!(event.occurred_at, occurred_at);
+            assert_eq!(event.payload_canonical, "{}");
+            delivered += 1;
+        }
+        let before_ack =
+            sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_events")
+                .get_result::<Count>(&mut owner)
+                .await
+                .unwrap()
+                .value;
+        assert_eq!(
+            before_ack,
+            513 - (first - 1),
+            "claim must retain unconfirmed evidence"
+        );
+        ack(&repository, &batch).await;
+    }
+    assert_eq!(delivered, expected.len());
+    assert!(matches!(
+        claim_batch(&repository).await,
+        SecurityAuditBatchClaim::Empty
+    ));
+    let health = repository.anchor_health().await.unwrap();
+    assert_eq!(health.head_sequence, 513);
+    assert_eq!(health.head_hash, previous_hash);
+    let anchor = sql_query(
+        "SELECT anchor_sequence AS value FROM public.security_audit_chain_state WHERE singleton",
+    )
+    .get_result::<MaybeBigInt>(&mut owner)
+    .await
+    .unwrap()
+    .value;
+    assert_eq!(anchor, Some(513));
+    let remaining = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_events")
+        .get_result::<Count>(&mut owner)
+        .await
+        .unwrap()
+        .value;
+    assert_eq!(remaining, 0, "only complete ACKs retire evidence");
+    drop(repository);
+    drop(owner);
+    admin
+        .batch_execute(&format!("DROP DATABASE {database} WITH (FORCE)"))
+        .await
+        .unwrap();
+}
