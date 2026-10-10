@@ -16,7 +16,7 @@ use nazo_persistence::audit_chain::{security_audit_batch_digest, security_audit_
 /// makes a programming mistake.
 pub use nazo_persistence::{
     MAX_SECURITY_AUDIT_PAYLOAD_BYTES, SecurityAuditAnchorHealth, SecurityAuditBatch,
-    SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditBatchLease, SecurityAuditEvent,
+    SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditEvent,
     SecurityAuditPendingDelivery,
 };
 
@@ -87,7 +87,7 @@ impl AuditLedgerRepository {
         Ok(())
     }
 
-    /// Return the exporter checkpoint, the committed batch lease and a cheap
+    /// Return the exporter checkpoint, batch health and a cheap
     /// backlog projection without granting the exporter direct table access.
     pub async fn anchor_health(&self) -> Result<SecurityAuditAnchorHealth, RepositoryError> {
         let mut connection = self.connection().await?;
@@ -101,9 +101,8 @@ impl AuditLedgerRepository {
                     anchor_accepted_at AS last_exported_at, \
                     anchor_deployment_id AS deployment_id, \
                     anchor_observed_at AS observed_at, \
-                    batch_first_sequence, batch_last_sequence, batch_event_count, \
-                    batch_generation, batch_attempts, batch_available_at, batch_locked_until, \
-                    batch_last_error, batch_blocked_reason \
+                    CASE WHEN batch_last_sequence IS NULL THEN NULL \
+                         ELSE batch_blocked_reason IS NOT NULL END AS batch_blocked \
              FROM public.nazo_security_audit_shared_anchor_health() \
              WHERE chain_valid",
         )
@@ -700,41 +699,12 @@ struct SecurityAuditAnchorHealthRow {
     deployment_id: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
     observed_at: Option<DateTime<Utc>>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
-    batch_first_sequence: Option<i64>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
-    batch_last_sequence: Option<i64>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
-    batch_event_count: Option<i32>,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    batch_generation: i64,
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    batch_attempts: i32,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    batch_available_at: Option<DateTime<Utc>>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    batch_locked_until: Option<DateTime<Utc>>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    batch_last_error: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    batch_blocked_reason: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Bool>)]
+    batch_blocked: Option<bool>,
 }
 
 impl From<SecurityAuditAnchorHealthRow> for SecurityAuditAnchorHealth {
     fn from(row: SecurityAuditAnchorHealthRow) -> Self {
-        let batch = row
-            .batch_last_sequence
-            .map(|last_sequence| SecurityAuditBatchLease {
-                first_sequence: row.batch_first_sequence.unwrap_or_default(),
-                last_sequence,
-                event_count: i64::from(row.batch_event_count.unwrap_or_default()),
-                generation: row.batch_generation,
-                attempts: row.batch_attempts,
-                available_at: row.batch_available_at,
-                locked_until: row.batch_locked_until,
-                last_error: row.batch_last_error,
-                blocked_reason: row.batch_blocked_reason,
-            });
         Self {
             head_sequence: row.head_sequence,
             head_hash: row.head_hash,
@@ -748,7 +718,7 @@ impl From<SecurityAuditAnchorHealthRow> for SecurityAuditAnchorHealth {
             last_exported_at: row.last_exported_at,
             deployment_id: row.deployment_id,
             observed_at: row.observed_at,
-            batch,
+            batch_blocked: row.batch_blocked,
         }
     }
 }

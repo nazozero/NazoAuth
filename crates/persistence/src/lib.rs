@@ -84,21 +84,9 @@ pub struct SecurityAuditAnchorHealth {
     pub last_exported_at: Option<chrono::DateTime<chrono::Utc>>,
     pub deployment_id: Option<String>,
     pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub batch: Option<SecurityAuditBatchLease>,
-}
-
-/// Read-only projection of the committed in-flight batch lease.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SecurityAuditBatchLease {
-    pub first_sequence: i64,
-    pub last_sequence: i64,
-    pub event_count: i64,
-    pub generation: i64,
-    pub attempts: i32,
-    pub available_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub locked_until: Option<chrono::DateTime<chrono::Utc>>,
-    pub last_error: Option<String>,
-    pub blocked_reason: Option<String>,
+    /// None: no committed batch. Some(false): active/retryable. Some(true): permanently blocked.
+    /// Lease ownership and retry metadata stay in the exporter claim boundary.
+    pub batch_blocked: Option<bool>,
 }
 
 #[derive(Clone, Debug)]

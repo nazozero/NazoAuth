@@ -293,63 +293,73 @@ pub fn prepare_dynamic_client_registration(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "Dynamic OAuth Client".to_owned());
 
+    // Preserve the dynamic-registration policy at the normalization boundary;
+    // later consumers use this same request rather than copying its metadata.
+    let allow_client_assertion_endpoint_audience = token_endpoint_auth_method == "private_key_jwt";
     Ok(PreparedDynamicClientRegistration {
-        client_name,
-        client_type,
-        redirect_uris: request.redirect_uris.unwrap_or_default(),
-        post_logout_redirect_uris: request.post_logout_redirect_uris,
-        scopes,
-        allowed_audiences: vec![policy.default_audience.to_owned()],
-        grant_types,
         response_types,
-        token_endpoint_auth_method,
-        subject_type: request.subject_type,
-        sector_identifier_uri: request.sector_identifier_uri,
-        require_dpop_bound_tokens: request.dpop_bound_access_tokens,
-        require_mtls_bound_tokens: request.tls_client_certificate_bound_access_tokens,
-        backchannel_token_delivery_mode,
-        backchannel_client_notification_endpoint,
-        backchannel_authentication_request_signing_alg: request
-            .backchannel_authentication_request_signing_alg,
-        backchannel_logout_uri: request.backchannel_logout_uri,
-        backchannel_logout_session_required: request
-            .backchannel_logout_session_required
-            .unwrap_or(false),
-        frontchannel_logout_uri: request.frontchannel_logout_uri,
-        frontchannel_logout_session_required: request
-            .frontchannel_logout_session_required
-            .unwrap_or(false),
-        tls_client_auth_subject_dn: request.tls_client_auth_subject_dn,
-        // RFC 8705 defines each PKI subject selector as a single string and
-        // requires exactly one selector for tls_client_auth. The internal
-        // client model stores selectors as vectors, but RFC 8705 dynamic
-        // registration accepts exactly one value for each selector.
-        tls_client_auth_cert_sha256: None,
-        tls_client_auth_san_dns: request.tls_client_auth_san_dns.into_iter().collect(),
-        tls_client_auth_san_uri: request.tls_client_auth_san_uri.into_iter().collect(),
-        tls_client_auth_san_ip: request.tls_client_auth_san_ip.into_iter().collect(),
-        tls_client_auth_san_email: request.tls_client_auth_san_email.into_iter().collect(),
-        jwks_uri,
-        jwks: request.jwks,
-        request_uris,
-        initiate_login_uri,
-        presentation,
-        id_token_signed_response_alg: request.id_token_signed_response_alg,
-        id_token_encrypted_response_alg: request.id_token_encrypted_response_alg,
-        id_token_encrypted_response_enc: request.id_token_encrypted_response_enc,
-        request_object_signing_alg: request.request_object_signing_alg,
-        request_object_encryption_alg: request.request_object_encryption_alg,
-        request_object_encryption_enc: request.request_object_encryption_enc,
-        token_endpoint_auth_signing_alg: request.token_endpoint_auth_signing_alg,
-        introspection_signed_response_alg: request.introspection_signed_response_alg,
-        introspection_encrypted_response_alg: request.introspection_encrypted_response_alg,
-        introspection_encrypted_response_enc: request.introspection_encrypted_response_enc,
-        userinfo_signed_response_alg: request.userinfo_signed_response_alg,
-        userinfo_encrypted_response_alg: request.userinfo_encrypted_response_alg,
-        userinfo_encrypted_response_enc: request.userinfo_encrypted_response_enc,
-        authorization_signed_response_alg: request.authorization_signed_response_alg,
-        authorization_encrypted_response_alg: request.authorization_encrypted_response_alg,
-        authorization_encrypted_response_enc: request.authorization_encrypted_response_enc,
+        request: crate::CreateClientRequest {
+            client_name,
+            client_type,
+            redirect_uris: request.redirect_uris.unwrap_or_default(),
+            post_logout_redirect_uris: request.post_logout_redirect_uris,
+            scopes,
+            allowed_audiences: vec![policy.default_audience.to_owned()],
+            grant_types,
+            token_endpoint_auth_method,
+            subject_type: request.subject_type,
+            sector_identifier_uri: request.sector_identifier_uri,
+            require_dpop_bound_tokens: request.dpop_bound_access_tokens,
+            require_mtls_bound_tokens: request.tls_client_certificate_bound_access_tokens,
+            backchannel_token_delivery_mode,
+            backchannel_client_notification_endpoint,
+            backchannel_authentication_request_signing_alg: request
+                .backchannel_authentication_request_signing_alg,
+            backchannel_logout_uri: request.backchannel_logout_uri,
+            backchannel_logout_session_required: request
+                .backchannel_logout_session_required
+                .unwrap_or(false),
+            frontchannel_logout_uri: request.frontchannel_logout_uri,
+            frontchannel_logout_session_required: request
+                .frontchannel_logout_session_required
+                .unwrap_or(false),
+            tls_client_auth_subject_dn: request.tls_client_auth_subject_dn,
+            // RFC 8705 defines each PKI subject selector as a single string and
+            // requires exactly one selector for tls_client_auth. The internal
+            // client model stores selectors as vectors, but RFC 8705 dynamic
+            // registration accepts exactly one value for each selector.
+            tls_client_auth_cert_sha256: None,
+            tls_client_auth_san_dns: request.tls_client_auth_san_dns.into_iter().collect(),
+            tls_client_auth_san_uri: request.tls_client_auth_san_uri.into_iter().collect(),
+            tls_client_auth_san_ip: request.tls_client_auth_san_ip.into_iter().collect(),
+            tls_client_auth_san_email: request.tls_client_auth_san_email.into_iter().collect(),
+            jwks_uri,
+            jwks: request.jwks,
+            request_uris,
+            initiate_login_uri,
+            presentation,
+            id_token_signed_response_alg: request.id_token_signed_response_alg,
+            id_token_encrypted_response_alg: request.id_token_encrypted_response_alg,
+            id_token_encrypted_response_enc: request.id_token_encrypted_response_enc,
+            request_object_signing_alg: request.request_object_signing_alg,
+            request_object_encryption_alg: request.request_object_encryption_alg,
+            request_object_encryption_enc: request.request_object_encryption_enc,
+            token_endpoint_auth_signing_alg: request.token_endpoint_auth_signing_alg,
+            introspection_signed_response_alg: request.introspection_signed_response_alg,
+            introspection_encrypted_response_alg: request.introspection_encrypted_response_alg,
+            introspection_encrypted_response_enc: request.introspection_encrypted_response_enc,
+            userinfo_signed_response_alg: request.userinfo_signed_response_alg,
+            userinfo_encrypted_response_alg: request.userinfo_encrypted_response_alg,
+            userinfo_encrypted_response_enc: request.userinfo_encrypted_response_enc,
+            authorization_signed_response_alg: request.authorization_signed_response_alg,
+            authorization_encrypted_response_alg: request.authorization_encrypted_response_alg,
+            authorization_encrypted_response_enc: request.authorization_encrypted_response_enc,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience,
+            require_par_request_object: false,
+            backchannel_user_code_parameter: false,
+            security_policy: crate::ClientSecurityPolicy::default(),
+        },
     })
 }
 pub(super) fn negotiate_metadata_choice(

@@ -62,7 +62,6 @@ pub trait MfaRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
         secret: String,
-        label: String,
     ) -> RepositoryFuture<'_, ()>;
 
     fn verify_and_confirm_totp<'a>(

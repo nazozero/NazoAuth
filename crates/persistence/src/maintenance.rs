@@ -26,6 +26,10 @@ pub struct CleanupBatchResult {
     pub refresh_contracts: u64,
     pub revocations: u64,
     pub scim_audit_events: u64,
+    /// Expired remembered-device credentials, reclaimed with low-frequency history.
+    pub remembered_mfa_devices: u64,
+    /// Expired controller approvals; live one-use fences are retained.
+    pub identity_approvals: u64,
     pub logout_deliveries: u64,
     pub scim_security_events: u64,
     pub presentations: u64,
@@ -43,11 +47,23 @@ pub struct CleanupBatchResult {
     pub saturated: bool,
 }
 
+/// Retention classes selected by the host's existing maintenance worker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CleanupScope {
+    /// Bounded protocol receipts and delivery/issuance state.
+    ProtocolState,
+    /// Protocol state plus long-retained history and expired remembered devices.
+    IncludingHistory,
+}
+
 /// The single security-state maintenance boundary.
 ///
 /// Implementations must bound every category (no drain-until-empty loops) and
 /// coordinate with writers through the existing refresh-family advisory key —
 /// never by taking a second family lock or a global lock.
 pub trait SecurityStateMaintenancePort: Send + Sync {
-    fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult>;
+    fn cleanup_batch(
+        &self,
+        scope: CleanupScope,
+    ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult>;
 }

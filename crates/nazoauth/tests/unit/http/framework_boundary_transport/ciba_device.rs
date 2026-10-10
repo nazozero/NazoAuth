@@ -699,7 +699,7 @@ mod ciba_device_contract {
             acr: None,
             userinfo_claim_requests: (Vec::new()).into(),
             id_token_claim_requests: (Vec::new()).into(),
-            refresh_id_token_sid: None,
+
             include_refresh: false,
             refresh_token_policy: nazo_oauth_server::domain::oauth::RefreshTokenPolicy::NoRefresh,
             dpop_jkt: None,

@@ -145,7 +145,6 @@ impl MfaService {
                 account.tenant().tenant_id,
                 account.user_id(),
                 secret.clone(),
-                format!("{} ({issuer})", account.account.email),
             )
             .await
             .map_err(MfaServiceError::repository)?;

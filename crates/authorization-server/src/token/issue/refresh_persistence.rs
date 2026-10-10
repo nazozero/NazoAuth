@@ -90,7 +90,6 @@ pub(super) fn refresh_issue_matches_source(
         && nazo_auth::is_subset(&issue.scopes, &source.contract.scopes)
         && !issue.audiences.is_empty()
         && nazo_auth::is_subset(&issue.audiences, &source.current_audiences)
-        && issue.refresh_id_token_sid.as_ref() == Some(&source.id_token_sid)
         && issue.actor.is_none()
         && source
             .dpop_jkt

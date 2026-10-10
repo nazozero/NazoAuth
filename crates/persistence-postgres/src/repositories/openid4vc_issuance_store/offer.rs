@@ -103,9 +103,12 @@ impl Openid4vciRepository {
             // rechecks this predicate after a concurrent updater wins; only one
             // caller can consume the offer. Use the database clock here because
             // the offer may expire while password verification is queued.
+            // Consumed offers are never decoded again. Keep the compact replay
+            // identity and authorization-code metadata, not the redeemed secret.
             let consumed = sql_query(
                 "UPDATE openid4vci_offers \
-                 SET consumed_at = GREATEST($3, clock_timestamp(), created_at) \
+                 SET consumed_at = GREATEST($3, clock_timestamp(), created_at), \
+                     grants_ciphertext = ''::bytea, tx_code_hash = NULL \
                  WHERE tenant_id = $1 AND id = $2 AND consumed_at IS NULL \
                    AND expires_at > GREATEST($3, clock_timestamp()) \
                    AND pre_authorized_code_hash = $4 \

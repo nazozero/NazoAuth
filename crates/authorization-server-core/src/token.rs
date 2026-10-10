@@ -107,19 +107,15 @@ pub struct RefreshToken {
     /// Stable persisted reference. Legacy families may use the migration's
     /// SQL content key; this value is not recomputed when rotating.
     pub contract_key: [u8; 32],
-    /// Original grant resources, independent of this member's current audience.
-    pub contract_audiences: Vec<String>,
-    pub scopes: Vec<String>,
+    /// Immutable grant facts, distinct from this presented generation.
+    pub contract: RefreshContract,
     pub audience: Vec<String>,
-    pub authorization_details: Value,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
-    pub subject: String,
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
     pub client_attestation_jkt: Option<String>,
-    pub authentication_context: RefreshTokenAuthenticationContext,
 }
 
 /// The source facts read before signing and revalidated at the durable commit.
@@ -145,7 +141,6 @@ pub struct RefreshTokenAuthority {
 impl RefreshToken {
     #[must_use]
     pub fn authority(&self) -> RefreshTokenAuthority {
-        let authentication_context = self.authentication_context.clone();
         RefreshTokenAuthority {
             tenant_id: self.tenant_id,
             client_id: self.client_id,
@@ -154,13 +149,7 @@ impl RefreshToken {
             member_id: self.id,
             token_blake3: self.token_blake3,
             contract_key: self.contract_key,
-            contract: RefreshContract {
-                subject: self.subject.clone(),
-                scopes: self.scopes.clone(),
-                audiences: self.contract_audiences.clone(),
-                authorization_details: self.authorization_details.clone(),
-                authentication_context,
-            },
+            contract: self.contract.clone(),
             current_audiences: self.audience.clone(),
             id_token_sid: self.id_token_sid.clone(),
             dpop_jkt: self.dpop_jkt.clone(),

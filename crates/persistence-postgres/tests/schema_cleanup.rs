@@ -342,3 +342,210 @@ async fn retained_composite_fks_reject_cross_tenant_children_and_parent_mutation
     }
     connection.batch_execute("ROLLBACK").await.unwrap();
 }
+
+#[tokio::test]
+async fn remembered_device_compaction_roundtrip_preserves_security_facts() {
+    let url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("isolated PostgreSQL required");
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("remembered_compaction_{}", Uuid::now_v7().simple());
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema},pg_catalog;"
+        ))
+        .await
+        .unwrap();
+    connection.batch_execute(r#"
+        CREATE TABLE users (id UUID NOT NULL, tenant_id UUID NOT NULL, PRIMARY KEY(id,tenant_id));
+        CREATE TABLE user_mfa_remembered_devices (
+            id UUID PRIMARY KEY DEFAULT uuidv7(), tenant_id UUID NOT NULL, user_id UUID NOT NULL,
+            token_hash VARCHAR(64) NOT NULL, user_agent_hash VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            CONSTRAINT fk_user_mfa_remembered_devices_user_tenant FOREIGN KEY(user_id,tenant_id) REFERENCES users(id,tenant_id));
+        CREATE UNIQUE INDEX ux_user_mfa_remembered_devices_tenant_token ON user_mfa_remembered_devices(tenant_id,token_hash);
+        CREATE INDEX ix_user_mfa_remembered_devices_tenant_user_active ON user_mfa_remembered_devices(tenant_id,user_id,expires_at);
+        CREATE FUNCTION nazo_oauth_cleanup_expired_security_state(boolean) RETURNS void LANGUAGE sql AS 'SELECT';
+        INSERT INTO users VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002');
+        INSERT INTO user_mfa_remembered_devices(tenant_id,user_id,token_hash,user_agent_hash,expires_at)
+        SELECT tenant_id,id,repeat('a',64),repeat('b',64),now()+interval '1 day' FROM users;
+    "#).await.unwrap();
+    #[derive(diesel::QueryableByName)]
+    struct Facts {
+        #[diesel(sql_type=diesel::sql_types::Jsonb)]
+        value: serde_json::Value,
+    }
+    let before = sql_query(
+        "SELECT to_jsonb(d)-'id'-'created_at' AS value FROM user_mfa_remembered_devices d",
+    )
+    .get_result::<Facts>(&mut connection)
+    .await
+    .unwrap()
+    .value;
+    let up = include_str!(
+        "../../../migrations/20261010000100_compact_remembered_device_retention/up.sql"
+    );
+    let down = include_str!(
+        "../../../migrations/20261010000100_compact_remembered_device_retention/down.sql"
+    );
+    connection.batch_execute(up).await.unwrap();
+    let after = sql_query("SELECT to_jsonb(d) AS value FROM user_mfa_remembered_devices d")
+        .get_result::<Facts>(&mut connection)
+        .await
+        .unwrap()
+        .value;
+    assert_eq!(
+        before, after,
+        "migration preserves every retained security fact and original expiry"
+    );
+    for statement in [
+        "INSERT INTO user_mfa_remembered_devices SELECT * FROM user_mfa_remembered_devices",
+        "INSERT INTO user_mfa_remembered_devices(tenant_id,user_id,token_hash,expires_at) VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001',repeat('c',64),now()+interval '1 day')",
+    ] {
+        connection
+            .batch_execute("SAVEPOINT rejected")
+            .await
+            .unwrap();
+        assert!(
+            connection.batch_execute(statement).await.is_err(),
+            "uniqueness and tenant FK remain enforced"
+        );
+        connection
+            .batch_execute("ROLLBACK TO SAVEPOINT rejected")
+            .await
+            .unwrap();
+    }
+    connection.batch_execute(down).await.unwrap();
+    connection.batch_execute(up).await.unwrap();
+    let roundtrip = sql_query("SELECT to_jsonb(d) AS value FROM user_mfa_remembered_devices d")
+        .get_result::<Facts>(&mut connection)
+        .await
+        .unwrap()
+        .value;
+    assert_eq!(
+        before, roundtrip,
+        "rollback must preserve usable credentials rather than require deleting them"
+    );
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
+#[tokio::test]
+async fn backup_verifier_compaction_preserves_live_credentials_and_never_revives_spent_codes() {
+    let url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("isolated PostgreSQL required");
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let schema = format!("backup_compaction_{}", Uuid::now_v7().simple());
+    connection
+        .batch_execute(&format!(
+            "BEGIN; CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema},pg_catalog;"
+        ))
+        .await
+        .unwrap();
+    connection.batch_execute("CREATE TABLE user_totp_credentials(id UUID PRIMARY KEY,tenant_id UUID,user_id UUID,secret_ciphertext BYTEA,secret_key_id TEXT,confirmed_at TIMESTAMPTZ,last_used_step BIGINT,label VARCHAR(200) NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now()); INSERT INTO user_totp_credentials SELECT uuidv7(),uuidv7(),uuidv7(),decode('012345','hex'),'fixture-key',now(),123,'unused-label',now(),now(); CREATE TABLE user_mfa_backup_codes (id UUID PRIMARY KEY,tenant_id UUID NOT NULL,user_id UUID NOT NULL,code_hash VARCHAR(255) NOT NULL,used_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now()); CREATE INDEX ix_user_mfa_backup_codes_tenant_user_active ON user_mfa_backup_codes(tenant_id,user_id) WHERE used_at IS NULL; INSERT INTO user_mfa_backup_codes SELECT uuidv7(),uuidv7(),uuidv7(),'retained-verifier',NULL,now(); INSERT INTO user_mfa_backup_codes SELECT uuidv7(),uuidv7(),uuidv7(),'spent-verifier',now(),now();").await.unwrap();
+    #[derive(diesel::QueryableByName)]
+    struct Facts {
+        #[diesel(sql_type=diesel::sql_types::Jsonb)]
+        value: serde_json::Value,
+    }
+    let before=sql_query("SELECT to_jsonb(b)-'used_at'-'created_at' AS value FROM user_mfa_backup_codes b WHERE used_at IS NULL").get_result::<Facts>(&mut connection).await.unwrap().value;
+    let original_totp=sql_query("SELECT to_jsonb(t)-'label'-'created_at'-'updated_at' AS value FROM user_totp_credentials t").get_result::<Facts>(&mut connection).await.unwrap().value;
+    let up = include_str!("../../../migrations/20261010000300_compact_mfa_credentials/up.sql");
+    let down = include_str!("../../../migrations/20261010000300_compact_mfa_credentials/down.sql");
+    for statement in [up, down, up] {
+        connection.batch_execute(statement).await.unwrap();
+        let retained_totp=sql_query("SELECT to_jsonb(t)-'label'-'created_at'-'updated_at' AS value FROM user_totp_credentials t").get_result::<Facts>(&mut connection).await.unwrap().value;
+        assert_eq!(
+            original_totp, retained_totp,
+            "generation, owner, protected secret, confirmation and replay step survive every migration direction"
+        );
+        let rows = sql_query(
+            "SELECT to_jsonb(b)-'used_at'-'created_at' AS value FROM user_mfa_backup_codes b",
+        )
+        .load::<Facts>(&mut connection)
+        .await
+        .unwrap();
+        assert_eq!(
+            rows.len(),
+            1,
+            "spent credentials must never be reconstructed on downgrade"
+        );
+        assert_eq!(
+            rows[0].value, before,
+            "live identity, verifier and owner stay exact across upgrade and downgrade"
+        );
+    }
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
+#[tokio::test]
+async fn control_receipt_compaction_preserves_replay_identities_across_round_trip() {
+    let Some(mut connection) = fixture().await else {
+        return;
+    };
+    connection.batch_execute("CREATE TABLE admin_provision_receipts(operation_id VARCHAR(128) PRIMARY KEY,deployment_id VARCHAR(128) NOT NULL,tenant_id UUID NOT NULL,user_id UUID NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now()); CREATE TABLE controller_recovery_root_key_history(deployment_id VARCHAR(128) NOT NULL,recovery_public_key BYTEA NOT NULL,first_seen_at TIMESTAMPTZ NOT NULL,PRIMARY KEY(deployment_id,recovery_public_key)); INSERT INTO admin_provision_receipts VALUES('retained-operation','retained-deployment',uuidv7(),uuidv7(),'2000-01-01'); INSERT INTO controller_recovery_root_key_history VALUES('retained-deployment',decode(repeat('12',32),'hex'),'2000-01-01');").await.unwrap();
+    let query = "SELECT jsonb_build_object('receipt',(SELECT to_jsonb(r)-'created_at' FROM admin_provision_receipts r),'used_key',(SELECT to_jsonb(h)-'first_seen_at' FROM controller_recovery_root_key_history h))::text AS value";
+    let before = sql_query(query)
+        .get_result::<Snapshot>(&mut connection)
+        .await
+        .unwrap()
+        .value;
+    let up =
+        include_str!("../../../migrations/20261010000400_compact_control_receipt_metadata/up.sql");
+    let down = include_str!(
+        "../../../migrations/20261010000400_compact_control_receipt_metadata/down.sql"
+    );
+    for statement in [up, down, up] {
+        connection.batch_execute(statement).await.unwrap();
+        assert_eq!(
+            sql_query(query)
+                .get_result::<Snapshot>(&mut connection)
+                .await
+                .unwrap()
+                .value,
+            before
+        );
+        if statement == up {
+            assert_eq!(sql_query("INSERT INTO controller_recovery_root_key_history(deployment_id,recovery_public_key) SELECT deployment_id,recovery_public_key FROM controller_recovery_root_key_history ON CONFLICT DO NOTHING").execute(&mut connection).await.unwrap(), 0, "a used key remains fenced");
+        }
+    }
+    let absent = sql_query("SELECT NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND ((table_name='admin_provision_receipts' AND column_name='created_at') OR (table_name='controller_recovery_root_key_history' AND column_name='first_seen_at'))) AS value").get_result::<Flag>(&mut connection).await.unwrap();
+    assert!(absent.value);
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
+#[tokio::test]
+async fn revocation_identity_compaction_preserves_tenant_fences_and_deadlines() {
+    let Some(mut connection) = fixture().await else {
+        return;
+    };
+    connection.batch_execute("CREATE TABLE access_token_revocations(id UUID PRIMARY KEY DEFAULT uuidv7(),tenant_id UUID NOT NULL,access_token_jti_blake3 VARCHAR(64) NOT NULL,client_id UUID NOT NULL,revoked_at TIMESTAMPTZ NOT NULL,expires_at TIMESTAMPTZ NOT NULL); CREATE UNIQUE INDEX ux_access_token_revocations_tenant_jti_blake3 ON access_token_revocations(tenant_id,access_token_jti_blake3); INSERT INTO access_token_revocations(tenant_id,access_token_jti_blake3,client_id,revoked_at,expires_at) SELECT uuidv7(),repeat('a',64),uuidv7(),'2000-01-01','2100-01-01' FROM generate_series(1,2);").await.unwrap();
+    let query = "SELECT jsonb_agg(to_jsonb(r)-'id' ORDER BY tenant_id)::text AS value FROM access_token_revocations r";
+    let before = sql_query(query)
+        .get_result::<Snapshot>(&mut connection)
+        .await
+        .unwrap()
+        .value;
+    let up = include_str!("../../../migrations/20261010000500_compact_revocation_identity/up.sql");
+    let down =
+        include_str!("../../../migrations/20261010000500_compact_revocation_identity/down.sql");
+    for statement in [up, down, up] {
+        connection.batch_execute(statement).await.unwrap();
+        assert_eq!(
+            sql_query(query)
+                .get_result::<Snapshot>(&mut connection)
+                .await
+                .unwrap()
+                .value,
+            before,
+            "both tenants, first revocation times, owners and original maximum deadlines must remain exact"
+        );
+        let inserted=sql_query("INSERT INTO access_token_revocations(tenant_id,access_token_jti_blake3,client_id,revoked_at,expires_at) SELECT tenant_id,access_token_jti_blake3,client_id,revoked_at,expires_at FROM access_token_revocations ON CONFLICT(tenant_id,access_token_jti_blake3) DO NOTHING").execute(&mut connection).await.unwrap();
+        assert_eq!(
+            inserted, 0,
+            "one authority fact per tenant/JTI survives both schema directions"
+        );
+    }
+    assert!(sql_query("SELECT NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='access_token_revocations' AND column_name='id') AS value").get_result::<Flag>(&mut connection).await.unwrap().value);
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}

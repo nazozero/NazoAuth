@@ -4816,6 +4816,16 @@ async fn pre_authorized_verification_releases_the_pool_and_has_one_consumer() {
     let pool = create_pool(&database_url, 1).unwrap();
     let (repository, verifier, offer, code_hash) =
         paused_pre_authorized_offer(&pool, Ok(true)).await;
+    let mut connection = get_conn(&pool).await.unwrap();
+    let before = sql_query(
+        "SELECT pg_column_size(o)::bigint AS count FROM openid4vci_offers o WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(offer.id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap()
+    .count;
+    drop(connection);
     let mut attempts = Vec::new();
     for client_id in ["wallet-a", "wallet-b"] {
         let repository = repository.clone();
@@ -4865,6 +4875,40 @@ async fn pre_authorized_verification_releases_the_pool_and_has_one_consumer() {
     assert_eq!(
         successes, 1,
         "the conditional write must preserve single-use consumption"
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    let compacted = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_offers WHERE id = $1 AND consumed_at IS NOT NULL AND octet_length(grants_ciphertext) = 0 AND tx_code_hash IS NULL AND expires_at = $2 AND pre_authorized_code_hash = $3")
+        .bind::<SqlUuid, _>(offer.id)
+        .bind::<diesel::sql_types::Timestamptz, _>(offer.expires_at)
+        .bind::<Text, _>(&code_hash)
+        .get_result::<CountRow>(&mut connection).await.unwrap().count;
+    let after = sql_query(
+        "SELECT pg_column_size(o)::bigint AS count FROM openid4vci_offers o WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(offer.id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap()
+    .count;
+    drop(connection);
+    eprintln!("consumed_offer_logical_row_bytes before={before} after={after}");
+    assert_eq!(
+        compacted, 1,
+        "consumption must discard unread grants and verifier while preserving its replay fence and deadline"
+    );
+    assert!(after < before);
+    assert!(
+        repository
+            .consume_pre_authorized_offer(
+                offer.tenant_id,
+                &code_hash,
+                Some("2468"),
+                "wallet-c",
+                Utc::now()
+            )
+            .await
+            .unwrap()
+            .is_none()
     );
     delete_openid4vc_subject_and_client(&pool, offer.subject_id.unwrap(), None).await;
 }

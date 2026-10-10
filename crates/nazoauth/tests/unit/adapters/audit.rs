@@ -759,19 +759,7 @@ mod queue_persistence {
                         health.oldest_pending_occurred_at =
                             Some(Utc::now() - chrono::Duration::seconds(3600));
                     }
-                    "blocked" => {
-                        health.batch = Some(nazo_persistence::SecurityAuditBatchLease {
-                            first_sequence: 1,
-                            last_sequence: 3,
-                            event_count: 3,
-                            generation: 1,
-                            attempts: 1,
-                            available_at: None,
-                            locked_until: None,
-                            last_error: None,
-                            blocked_reason: Some("receiver rejected event".to_owned()),
-                        })
-                    }
+                    "blocked" => health.batch_blocked = Some(true),
                     "deployment" => health.deployment_id = Some("foreign".into()),
                     "checkpoint" => health.last_exported_hash = Some(vec![0xBB; 32]),
                     _ => unreachable!(),
@@ -1106,7 +1094,7 @@ mod transactional_readiness {
             last_exported_at: Some(Utc::now()),
             deployment_id: Some("test-deployment".to_owned()),
             observed_at: Some(Utc::now()),
-            batch: None,
+            batch_blocked: None,
         }
     }
 
@@ -1198,17 +1186,7 @@ mod transactional_readiness {
     async fn transactional_ready_fails_closed_on_blocked_anchor_batch() {
         let ledger = Arc::new(CountingLedger::new(healthy_anchor()));
         let required = required_repo(ledger.clone(), AuditAnchorMode::Required);
-        ledger.health.lock().unwrap().batch = Some(nazo_persistence::SecurityAuditBatchLease {
-            first_sequence: 1,
-            last_sequence: 3,
-            event_count: 3,
-            generation: 1,
-            attempts: 1,
-            available_at: None,
-            locked_until: None,
-            last_error: None,
-            blocked_reason: Some("receiver rejected event".to_owned()),
-        });
+        ledger.health.lock().unwrap().batch_blocked = Some(true);
         ensure_transactional_audit_ready_via(&required)
             .await
             .expect_err("a permanently blocked export batch must reject issuance");

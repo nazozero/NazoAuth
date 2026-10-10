@@ -45,7 +45,6 @@ diesel::table! {
     controller_recovery_root_key_history (deployment_id, recovery_public_key) {
         deployment_id -> Varchar,
         recovery_public_key -> Binary,
-        first_seen_at -> Timestamptz,
     }
 }
 
@@ -165,7 +164,6 @@ diesel::table! {
         deployment_id -> Varchar,
         tenant_id -> Uuid,
         user_id -> Uuid,
-        created_at -> Timestamptz,
     }
 }
 
@@ -173,22 +171,20 @@ diesel::table! {
     user_totp_credentials (id) {
         id -> Uuid, tenant_id -> Uuid, user_id -> Uuid,
         secret_ciphertext -> Binary, secret_key_id -> Varchar,
-        label -> Varchar, confirmed_at -> Nullable<Timestamptz>, last_used_step -> Nullable<Int8>,
-        created_at -> Timestamptz, updated_at -> Timestamptz,
+        confirmed_at -> Nullable<Timestamptz>, last_used_step -> Nullable<Int8>,
     }
 }
 
 diesel::table! {
     user_mfa_backup_codes (id) {
         id -> Uuid, tenant_id -> Uuid, user_id -> Uuid, code_hash -> Varchar,
-        used_at -> Nullable<Timestamptz>, created_at -> Timestamptz,
     }
 }
 
 diesel::table! {
-    user_mfa_remembered_devices (id) {
-        id -> Uuid, tenant_id -> Uuid, user_id -> Uuid, token_hash -> Varchar,
-        user_agent_hash -> Nullable<Varchar>, created_at -> Timestamptz,
+    user_mfa_remembered_devices (tenant_id, token_hash) {
+        tenant_id -> Uuid, user_id -> Uuid, token_hash -> Varchar,
+        user_agent_hash -> Nullable<Varchar>,
         expires_at -> Timestamptz,
     }
 }
@@ -287,8 +283,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    access_token_revocations (id) {
-        id -> Uuid,
+    access_token_revocations (tenant_id, access_token_jti_blake3) {
         access_token_jti_blake3 -> Varchar,
         client_id -> Uuid,
         tenant_id -> Uuid,

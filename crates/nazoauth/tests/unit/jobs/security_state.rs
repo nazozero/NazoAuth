@@ -36,7 +36,10 @@ impl Store {
 }
 
 impl SecurityStateMaintenancePort for Store {
-    fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+    fn cleanup_batch(
+        &self,
+        _scope: CleanupScope,
+    ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
         Box::pin(async move {
             self.cleanup().await;
             Ok(CleanupBatchResult::default())
@@ -78,7 +81,10 @@ async fn failed_batch_does_not_stop_the_interval() {
         calls: AtomicUsize,
     }
     impl SecurityStateMaintenancePort for Failing {
-        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+        fn cleanup_batch(
+            &self,
+            _scope: CleanupScope,
+        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
             Box::pin(async move {
                 self.calls.fetch_add(1, Ordering::SeqCst);
                 Err(RepositoryError::Unavailable)
@@ -123,7 +129,10 @@ async fn saturated_batches_drain_immediately_until_unsaturated() {
         rounds: usize,
     }
     impl SecurityStateMaintenancePort for Saturating {
-        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+        fn cleanup_batch(
+            &self,
+            _scope: CleanupScope,
+        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
             Box::pin(async move {
                 let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
                 Ok(CleanupBatchResult {
@@ -164,7 +173,10 @@ async fn saturated_batches_drain_immediately_until_unsaturated() {
 async fn saturated_cycle_can_drain_more_than_512_batches() {
     struct LargeBacklog(AtomicUsize);
     impl SecurityStateMaintenancePort for LargeBacklog {
-        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+        fn cleanup_batch(
+            &self,
+            _scope: CleanupScope,
+        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
             Box::pin(async move {
                 let call = self.0.fetch_add(1, Ordering::SeqCst) + 1;
                 Ok(CleanupBatchResult {
@@ -189,7 +201,10 @@ async fn saturated_cycle_can_drain_more_than_512_batches() {
 async fn budget_exhaustion_rests_for_elapsed_work_before_resuming() {
     struct TimedBacklog(AtomicUsize);
     impl SecurityStateMaintenancePort for TimedBacklog {
-        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+        fn cleanup_batch(
+            &self,
+            _scope: CleanupScope,
+        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
             Box::pin(async move {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 // A single batch may cross the scheduling budget; it must
@@ -215,6 +230,84 @@ async fn budget_exhaustion_rests_for_elapsed_work_before_resuming() {
     tokio::time::advance(StdDuration::from_millis(1)).await;
     tokio::task::yield_now().await;
     assert_eq!(store.0.load(Ordering::SeqCst), 2);
+    handle.abort();
+    assert!(handle.await.unwrap_err().is_cancelled());
+}
+
+#[tokio::test(start_paused = true)]
+async fn history_waits_an_hour_while_protocol_cleanup_continues() {
+    struct Recording(std::sync::Mutex<Vec<CleanupScope>>);
+    impl SecurityStateMaintenancePort for Recording {
+        fn cleanup_batch(
+            &self,
+            scope: CleanupScope,
+        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+            Box::pin(async move {
+                self.0.lock().unwrap().push(scope);
+                Ok(CleanupBatchResult::default())
+            })
+        }
+    }
+    let store = Arc::new(Recording(std::sync::Mutex::new(Vec::new())));
+    let handle = spawn_security_state_maintenance_worker(store.clone());
+    tokio::task::yield_now().await;
+    for _ in 0..59 {
+        tokio::time::advance(INTERVAL).await;
+        tokio::task::yield_now().await;
+    }
+    {
+        let calls = store.0.lock().unwrap();
+        assert_eq!(calls.len(), 60);
+        assert_eq!(calls[0], CleanupScope::IncludingHistory);
+        assert!(
+            calls[1..]
+                .iter()
+                .all(|scope| *scope == CleanupScope::ProtocolState)
+        );
+    }
+    tokio::time::advance(INTERVAL).await;
+    tokio::task::yield_now().await;
+    assert_eq!(store.0.lock().unwrap()[60], CleanupScope::IncludingHistory);
+    handle.abort();
+    assert!(handle.await.unwrap_err().is_cancelled());
+}
+
+#[tokio::test(start_paused = true)]
+async fn failed_history_remains_due_and_saturated_history_finishes_before_rest() {
+    struct Retrying(std::sync::Mutex<Vec<CleanupScope>>);
+    impl SecurityStateMaintenancePort for Retrying {
+        fn cleanup_batch(
+            &self,
+            scope: CleanupScope,
+        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+            Box::pin(async move {
+                let mut calls = self.0.lock().unwrap();
+                calls.push(scope);
+                match calls.len() {
+                    1 => Err(RepositoryError::Unavailable),
+                    2 => Ok(CleanupBatchResult {
+                        saturated: true,
+                        ..Default::default()
+                    }),
+                    _ => Ok(CleanupBatchResult::default()),
+                }
+            })
+        }
+    }
+    let store = Arc::new(Retrying(std::sync::Mutex::new(Vec::new())));
+    let handle = spawn_security_state_maintenance_worker(store.clone());
+    tokio::task::yield_now().await;
+    tokio::time::advance(INTERVAL).await;
+    for _ in 0..4 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        *store.0.lock().unwrap(),
+        vec![CleanupScope::IncludingHistory; 3]
+    );
+    tokio::time::advance(INTERVAL).await;
+    tokio::task::yield_now().await;
+    assert_eq!(store.0.lock().unwrap()[3], CleanupScope::ProtocolState);
     handle.abort();
     assert!(handle.await.unwrap_err().is_cancelled());
 }

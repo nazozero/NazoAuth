@@ -12,7 +12,6 @@ use crate::schema::access_token_revocations;
 #[derive(diesel::Insertable)]
 #[diesel(table_name = access_token_revocations)]
 pub(super) struct NewAccessTokenRevocation {
-    pub id: Uuid,
     pub access_token_jti_blake3: String,
     pub client_id: Uuid,
     pub tenant_id: Uuid,

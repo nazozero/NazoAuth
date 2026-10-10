@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::{ClientPresentationMetadata, ClientSecurityPolicy};
 
-#[derive(Clone, Debug, Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateClientRequest {
     pub client_name: String,

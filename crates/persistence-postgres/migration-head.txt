@@ -1,1 +1,1 @@
-20261009000400_single_presentation_response_mode
+20261010000600_compact_single_use_key

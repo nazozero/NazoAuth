@@ -186,8 +186,8 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() 
     let spent_contract = contract.clone();
     let original_allocation = contract.audiences.as_ptr();
     let current = token_from_current(family.clone(), contract).unwrap();
-    assert_eq!(current.contract_audiences, ["resource://a", "resource://b"]);
-    assert_eq!(current.contract_audiences.as_ptr(), original_allocation);
+    assert_eq!(current.contract.audiences, ["resource://a", "resource://b"]);
+    assert_eq!(current.contract.audiences.as_ptr(), original_allocation);
     assert_eq!(current.audience, ["resource://a"]);
     assert_eq!(current.id_token_sid.as_deref(), Some("generation-sid"));
     let spent = SpentRefreshTokenRow {
@@ -198,13 +198,13 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() 
     };
     let mut restored = token_from_spent(spent, family, spent_contract).unwrap();
     assert_eq!(
-        restored.contract_audiences,
+        restored.contract.audiences,
         ["resource://a", "resource://b"]
     );
     assert_eq!(restored.audience, ["resource://a", "resource://b"]);
     restored.audience[0] = "changed".into();
     assert_eq!(
-        restored.contract_audiences,
+        restored.contract.audiences,
         ["resource://a", "resource://b"]
     );
     assert_eq!(restored.id_token_sid.as_deref(), Some("generation-sid"));

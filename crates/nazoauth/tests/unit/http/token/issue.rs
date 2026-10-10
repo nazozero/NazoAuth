@@ -580,7 +580,7 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
             .map(nazo_auth::OidcClaimRequest::named)
             .collect::<Vec<_>>())
         .into(),
-        refresh_id_token_sid: None,
+
         include_refresh: false,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
         dpop_jkt: None,
@@ -613,7 +613,7 @@ pub(in crate::http::token) fn token_issue_without_openid() -> TokenIssue {
         acr: None,
         userinfo_claim_requests: (Vec::new()).into(),
         id_token_claim_requests: (Vec::new()).into(),
-        refresh_id_token_sid: None,
+
         include_refresh: true,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
         dpop_jkt: None,
@@ -669,7 +669,6 @@ fn set_refresh_authority_for_issue(
         },
     }
     .clone();
-    issue.refresh_id_token_sid.get_or_insert(None);
     issue.refresh_authority = Some(nazo_auth::RefreshTokenAuthority {
         tenant_id: client.tenant_id,
         client_id: client.id,
@@ -679,7 +678,10 @@ fn set_refresh_authority_for_issue(
         token_blake3: [0; 32],
         contract_key: (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes()),
         current_audiences: issue.audiences.clone(),
-        id_token_sid: issue.refresh_id_token_sid.clone().flatten(),
+        id_token_sid: issue
+            .refresh_authority
+            .as_ref()
+            .and_then(|source| source.id_token_sid.clone()),
         dpop_jkt: issue.refresh_token_dpop_jkt.clone(),
         mtls_x5t_s256: issue.refresh_token_mtls_x5t_s256.clone(),
         client_attestation_jkt: issue.refresh_token_client_attestation_jkt.clone(),

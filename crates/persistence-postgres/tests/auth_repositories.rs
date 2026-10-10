@@ -1086,7 +1086,7 @@ async fn refresh_token_authentication_context_round_trips_and_rejects_invalid_va
         .await
         .expect("refresh token should load with its authentication context")
         .expect("the persisted refresh token should exist");
-    assert_eq!(loaded.authentication_context, expected_context);
+    assert_eq!(loaded.contract.authentication_context, expected_context);
 
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
@@ -1094,8 +1094,8 @@ async fn refresh_token_authentication_context_round_trips_and_rejects_invalid_va
     let invalid_contracts = [
         json!("not-a-refresh-contract"),
         json!({
-            "subject": loaded.subject,
-            "scopes": loaded.scopes,
+            "subject": loaded.contract.subject,
+            "scopes": loaded.contract.scopes,
             "audiences": loaded.audience,
             "authorization_details": [],
             "authentication_context": {

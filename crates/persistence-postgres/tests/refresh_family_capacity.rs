@@ -1114,10 +1114,33 @@ async fn fresh_retired_contract_is_reclaimed_without_touching_live_references() 
     );
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
-    maintenance
-        .cleanup_batch()
+    // The cursor scans at most 256 contracts, including live references, per
+    // batch. Other suites may leave more than one page before this fresh row.
+    let contract_count = sql_query("SELECT count(*)::bigint AS count FROM oauth_refresh_contracts")
+        .get_result::<CountRow>(&mut connection)
         .await
-        .expect("fresh-contract sweep should succeed");
+        .unwrap()
+        .count;
+    let max_batches = contract_count / 256 + 1;
+    for batch in 0..max_batches {
+        let result = maintenance
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+            .await
+            .expect("fresh-contract sweep should succeed");
+        assert!(result.refresh_contracts <= 256);
+        assert!(
+            contract_exists(&mut connection, tenant_id, &live_digest).await,
+            "each bounded batch must preserve the referenced contract"
+        );
+        if !contract_exists(&mut connection, tenant_id, &orphan_digest).await {
+            eprintln!(
+                "fresh orphan reclaimed after {} batches over {} initial contracts",
+                batch + 1,
+                contract_count
+            );
+            break;
+        }
+    }
     let retired_parent = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
          WHERE tenant_id = $1 AND token_family_id = $2",
@@ -1153,7 +1176,7 @@ async fn fresh_retired_contract_is_reclaimed_without_touching_live_references() 
         .unwrap();
     }
     maintenance
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("aged-contract sweep should succeed");
     assert!(!contract_exists(&mut connection, tenant_id, &orphan_digest).await);

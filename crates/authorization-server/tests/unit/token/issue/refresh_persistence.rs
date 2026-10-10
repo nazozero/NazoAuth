@@ -25,7 +25,7 @@ fn openid_issue() -> TokenIssue {
             .map(nazo_auth::OidcClaimRequest::named)
             .collect::<Vec<_>>())
         .into(),
-        refresh_id_token_sid: None,
+
         include_refresh: true,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
         dpop_jkt: None,
@@ -166,7 +166,7 @@ fn rotated_refresh_preserves_original_contract_while_selecting_current_audience(
         expires_at: now + chrono::Duration::hours(1),
     };
     issue.audiences = vec!["resource://a".to_owned()];
-    issue.refresh_id_token_sid = Some(None);
+
     issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
         family_id: source.family_id,
         rotated_from_id: source.member_id,
@@ -225,7 +225,7 @@ fn refresh_signing_input_preserves_sender_binding_and_cannot_add_an_actor() {
     let client = client_with_grants(&["authorization_code", "refresh_token"]);
     let mut issue = openid_issue();
     issue.audiences = vec!["resource://a".to_owned()];
-    issue.refresh_id_token_sid = Some(None);
+
     let mut source = source_for_issue(&issue, &client);
     source.dpop_jkt = Some("original-key".to_owned());
     issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
@@ -286,7 +286,7 @@ fn refresh_policy_requires_exact_source_shape_even_without_a_refresh_response() 
     let mut issue = openid_issue();
     let source = source_for_issue(&issue, &client);
     issue.audiences = vec!["resource://a".to_owned()];
-    issue.refresh_id_token_sid = Some(None);
+
     issue.include_refresh = false;
     let matches =
         |issue: &TokenIssue| refresh_issue_matches_source(issue, &client, "https://issuer.example");
@@ -341,7 +341,7 @@ fn unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_t
     let mut issue = openid_issue();
     let source = source_for_issue(&issue, &client);
     issue.audiences = vec!["resource://a".to_owned()];
-    issue.refresh_id_token_sid = Some(None);
+
     issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
     issue.refresh_authority = Some(source.clone());
     issue.dpop_jkt = Some("new-proof-key".to_owned());
@@ -386,7 +386,7 @@ fn ownership_preserved_issue(client: &ClientRow) -> TokenIssue {
     let mut issue = openid_issue();
     issue.refresh_authority = Some(source_for_issue(&issue, client));
     issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
-    issue.refresh_id_token_sid = Some(None);
+
     issue.audiences = vec!["resource://a".into()];
     issue
 }
@@ -444,13 +444,21 @@ fn ownership_refresh_context_normalizes_nonce_and_keeps_generation_sid_separate(
     let mut issue = ownership_preserved_issue(&client);
     issue.nonce = Some("different-response-nonce".into());
     issue.refresh_authority.as_mut().unwrap().id_token_sid = Some("generation-sid".into());
-    issue.refresh_id_token_sid = Some(Some("generation-sid".into()));
     assert!(refresh_issue_matches_source(
         &issue,
         &client,
         "https://issuer.example"
     ));
-    issue.refresh_id_token_sid = Some(Some("other-sid".into()));
+    assert_eq!(
+        id_token_session_sid(&client, &issue, false),
+        Some("generation-sid")
+    );
+    // The current login session cannot overwrite the original generation SID.
+    issue.oidc_sid = Some("other-sid".into());
+    assert_eq!(
+        id_token_session_sid(&client, &issue, false),
+        Some("generation-sid")
+    );
     assert!(!refresh_issue_matches_source(
         &issue,
         &client,
@@ -510,11 +518,37 @@ fn ownership_refresh_rejects_blank_generation_sid_after_lifecycle_separation() {
     for sid in ["", " "] {
         let mut issue = ownership_preserved_issue(&client);
         issue.refresh_authority.as_mut().unwrap().id_token_sid = Some(sid.into());
-        issue.refresh_id_token_sid = Some(Some(sid.into()));
         assert!(!refresh_issue_matches_source(
             &issue,
             &client,
             "https://issuer.example"
         ));
     }
+}
+
+#[test]
+fn refresh_id_token_sid_contract_distinguishes_presence_and_original_omission() {
+    let client = client_with_grants(&["authorization_code"]);
+    let mut issue = ownership_preserved_issue(&client);
+    issue.refresh_authority.as_mut().unwrap().id_token_sid = Some("native-sso-sid".to_owned());
+    assert_eq!(
+        id_token_session_sid(&client, &issue, false),
+        Some("native-sso-sid")
+    );
+
+    issue.refresh_authority.as_mut().unwrap().id_token_sid = None;
+    assert_eq!(id_token_session_sid(&client, &issue, false), None);
+}
+
+#[test]
+fn refresh_without_id_token_preserves_the_original_sid_contract() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = ownership_preserved_issue(&client);
+    issue.refresh_authority.as_mut().unwrap().id_token_sid = Some("original-sid".to_owned());
+
+    assert_eq!(persisted_id_token_sid(&issue, None), Some("original-sid"));
+    assert_eq!(
+        persisted_id_token_sid(&issue, Some("new-sid")),
+        Some("new-sid")
+    );
 }

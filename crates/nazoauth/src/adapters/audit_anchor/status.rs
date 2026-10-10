@@ -9,42 +9,28 @@ use super::protocol::encode_hash;
 pub(super) struct AnchorCheckpoint {
     pub(super) sequence: i64,
     pub(super) hash: String,
-    pub(super) occurred_at: DateTime<Utc>,
-    pub(super) anchored_at: DateTime<Utc>,
 }
 
 impl AnchorCheckpoint {
     pub(super) fn from_snapshot(snapshot: &SecurityAuditAnchorHealth) -> Option<Self> {
+        // Completeness is checked here; local checkpoint identity needs no timestamp copy.
+        snapshot.last_exported_occurred_at?;
+        snapshot.last_exported_at?;
         Some(Self {
             sequence: snapshot.last_exported_sequence?,
             hash: encode_hash(snapshot.last_exported_hash.as_deref()?),
-            occurred_at: snapshot.last_exported_occurred_at?,
-            anchored_at: snapshot.last_exported_at?,
         })
     }
 
     pub(super) fn from_batch(batch: &SecurityAuditBatch) -> Self {
-        let occurred_at = batch
-            .deliveries
-            .last()
-            .map(|delivery| delivery.occurred_at)
-            .unwrap_or_else(Utc::now);
         Self {
             sequence: batch.last_sequence,
             hash: encode_hash(&batch.last_hash),
-            occurred_at,
-            anchored_at: Utc::now(),
         }
     }
 
     pub(super) fn genesis(hash: String) -> Self {
-        let now = Utc::now();
-        Self {
-            sequence: 0,
-            hash,
-            occurred_at: DateTime::<Utc>::UNIX_EPOCH,
-            anchored_at: now,
-        }
+        Self { sequence: 0, hash }
     }
 }
 

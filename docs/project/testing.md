@@ -186,8 +186,23 @@ Targeted suites with their own entry points:
   including the retained physical marker and cross-endpoint rejection. These
   host cases need both isolated PostgreSQL and Valkey; semantic ACK injection
   does not substitute for physical failover evidence.
+- `crates/persistence-postgres/tests/receipt_key_scope.rs` verifies the compact
+  one-use index against real PostgreSQL: populated upgrade/downgrade preserves
+  receipt facts, distinct clients retain independent keys, same-client reuse is
+  rejected, and the tenant composite foreign key rejects mismatched ownership.
+  The application and migration must advance together: old three-column conflict
+  targets fail closed after the index changes. No receipt TTL or tenant predicate
+  changes. The holder serialization tests additionally cover sparse and historical
+  explicit-null proof encodings through the same checked restoration boundary.
 - `crates/persistence-postgres/tests/security_state_maintenance.rs` covers
-  the bounded maintenance pass against the same isolated database.
+  the bounded maintenance pass against the same isolated database, including
+  multi-batch expiry of idle remembered devices, an independently locked row,
+  expired consumed/unconsumed controller approvals and live-state preservation.
+  `schema_cleanup` additionally checks remembered-device fact preservation,
+  natural-key uniqueness, tenant FK retention and populated rollback preserving
+  credential facts. MFA compaction checks that live verifiers survive upgrade/
+  downgrade, spent codes never revive, and audit failure restores the verifier
+  deleted by a failed consumption transaction.
 - `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real
   spawned `nazoauth server` dispatcher against isolated PostgreSQL and Valkey.
 - `crates/nazoauth/tests/token_hotpath_perf.rs` is the opt-in hot-path
@@ -301,3 +316,16 @@ and delivered-chain statistics. It asserts bounded logical buffer reads for a
 256-event batch and exact checkpoint/reclamation, independently of shared CPU
 scheduling. All seed rows and table options are transaction-local; it requires
 the isolated `NAZO_AUDIT_TEST_DATABASE_URL` like other audit integration tests.
+
+
+## Model and revocation identity compaction
+
+`schema_cleanup` covers upgrade/down/upgrade preservation of administrator
+provisioning receipts, used recovery keys and tenant/JTI revocation identities.
+`access_token_retention` and the revocation unit suite retain monotonic deadlines,
+clock-skew coverage, no-op updates, ownership conflict rollback and tenant isolation
+checks; fixture identity assertions use the actual tenant/JTI key.
+`audit_health_distinguishes_absent_retryable_and_blocked_batch` exercises the real
+PG health projection and stale ACK rejection. The host checkpoint test retains
+all four committed-checkpoint presence checks after removing unused local copies.
+Existing mTLS tests still reject future/expired DER and validate current trust.

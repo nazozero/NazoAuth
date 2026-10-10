@@ -83,7 +83,6 @@ impl MfaRepository {
         tenant_id: TenantId,
         user_id: UserId,
         secret: String,
-        label: String,
     ) -> Result<(), RepositoryError> {
         let (secret_ciphertext, secret_key_id) =
             self.protect_totp_secret(tenant_id, user_id, &secret)?;
@@ -110,9 +109,7 @@ impl MfaRepository {
                             .set((
                                 user_totp_credentials::secret_ciphertext.eq(secret_ciphertext),
                                 user_totp_credentials::secret_key_id.eq(secret_key_id),
-                                user_totp_credentials::label.eq(label),
                                 user_totp_credentials::last_used_step.eq::<Option<i64>>(None),
-                                user_totp_credentials::updated_at.eq(now),
                             ))
                             .execute(connection)
                             .await?;
@@ -125,7 +122,6 @@ impl MfaRepository {
                                 user_totp_credentials::user_id.eq(user_id.as_uuid()),
                                 user_totp_credentials::secret_ciphertext.eq(secret_ciphertext),
                                 user_totp_credentials::secret_key_id.eq(secret_key_id),
-                                user_totp_credentials::label.eq(label),
                             ))
                             .execute(connection)
                             .await?;
@@ -244,7 +240,6 @@ impl MfaRepository {
                 .set((
                     user_totp_credentials::confirmed_at.eq(now),
                     user_totp_credentials::last_used_step.eq(step),
-                    user_totp_credentials::updated_at.eq(now),
                 ))
                 .execute(connection)
                 .await?;
@@ -390,10 +385,7 @@ impl MfaRepository {
                                             user_totp_credentials::user_id.eq(user_id.as_uuid()),
                                         ),
                                 )
-                                .set((
-                                    user_totp_credentials::last_used_step.eq(step),
-                                    user_totp_credentials::updated_at.eq(now),
-                                ))
+                                .set((user_totp_credentials::last_used_step.eq(step),))
                                 .execute(connection)
                                 .await?;
                                 TotpVerificationOutcome::Accepted(credential_id)

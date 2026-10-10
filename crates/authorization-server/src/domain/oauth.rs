@@ -47,10 +47,6 @@ pub struct TokenIssue {
     pub acr: Option<String>,
     pub userinfo_claim_requests: nazo_auth::UserinfoClaimRequests,
     pub id_token_claim_requests: nazo_auth::IdTokenClaimRequests,
-    /// `None` means this is not a refresh issuance. `Some(None)` records that
-    /// the original ID Token omitted `sid`; `Some(Some(value))` preserves the
-    /// exact SID emitted by the original ID Token (including Native SSO).
-    pub refresh_id_token_sid: Option<Option<String>>,
     /// Whether this issuance permits a refresh-token response, subject to the
     /// client and scope policy. NoRefresh requires false; disabling a response
     /// never removes an existing refresh authority from the final commit.

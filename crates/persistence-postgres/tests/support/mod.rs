@@ -5,7 +5,7 @@ use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
 
-const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 21] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 23] = [
     "20260805000100",
     "20260905000100",
     "20260909000100",
@@ -29,8 +29,10 @@ const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 21] = [
     "20261003000500",
     "20261006000100",
     "20261006000200",
+    "20261008000100",
+    "20261009000500",
 ];
-const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 21] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 23] = [
     include_str!("../../../../migrations/20260805000100_security_audit_ledger/up.sql"),
     include_str!("../../../../migrations/20260905000100_shared_audit_anchor_state/up.sql"),
     include_str!("../../../../migrations/20260909000100_exporter_owned_audit_chain/up.sql"),
@@ -56,6 +58,10 @@ const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 21] = [
     include_str!("../../../../migrations/20261003000500_audit_observation_freshness/up.sql"),
     include_str!("../../../../migrations/20261006000100_audit_ack_observation_clock/up.sql"),
     include_str!("../../../../migrations/20261006000200_audit_fresh_claim_finalization/up.sql"),
+    include_str!(
+        "../../../../migrations/20261008000100_audit_exporter_bounded_identity_reads/up.sql"
+    ),
+    include_str!("../../../../migrations/20261009000500_compact_exported_decision_payload/up.sql"),
 ];
 
 pub fn schema_database_url(base: &str, schema: &str) -> String {

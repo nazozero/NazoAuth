@@ -64,6 +64,13 @@ async fn exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale(
     connection.batch_execute("BEGIN").await.unwrap();
     connection
         .batch_execute(include_str!(
+            "../../../migrations/20261009000500_compact_exported_decision_payload/down.sql"
+        ))
+        .await
+        .unwrap();
+
+    connection
+        .batch_execute(include_str!(
             "../../../migrations/20261008000100_audit_exporter_bounded_identity_reads/down.sql"
         ))
         .await
@@ -71,6 +78,12 @@ async fn exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale(
     connection
         .batch_execute(include_str!(
             "../../../migrations/20261008000100_audit_exporter_bounded_identity_reads/up.sql"
+        ))
+        .await
+        .unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261009000500_compact_exported_decision_payload/up.sql"
         ))
         .await
         .unwrap();

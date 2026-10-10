@@ -222,6 +222,13 @@ The event type is reserved: ordinary audit append cannot create a business
 authority fact. Export and chain construction may happen later, but export
 acknowledgement does not erase a still-needed business fence. The exporter
 projects only audit-safe fact fields, not raw code or full code payload.
+After the validated batch ACK, the same transaction replaces the delivered
+payload with an empty object while retaining all business fields and independent
+request/PAR fences. Pending payloads and their chain bytes remain immutable.
+The externally acknowledged ledger retains the original audit evidence. A
+failed ACK leaves the original payload, prefix and checkpoint together; a
+compacted row cannot be exported again or reclaimed before business retention.
+Downgrading restores future ACK behavior but does not recreate delivered payload.
 
 
 ### DCR and endpoint revocation transaction ownership

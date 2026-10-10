@@ -77,7 +77,7 @@ async fn snapshot(
         'credential',(SELECT to_jsonb(t) FROM user_totp_credentials t WHERE tenant_id=$1 AND user_id=$2), \
         'enabled',(SELECT mfa_enabled FROM users WHERE tenant_id=$1 AND id=$2), \
         'backups',(SELECT COALESCE(jsonb_agg(to_jsonb(b) ORDER BY id),'[]'::jsonb) FROM user_mfa_backup_codes b WHERE tenant_id=$1 AND user_id=$2), \
-        'remembered',(SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY id),'[]'::jsonb) FROM user_mfa_remembered_devices d WHERE tenant_id=$1 AND user_id=$2)) AS value")
+        'remembered',(SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY token_hash),'[]'::jsonb) FROM user_mfa_remembered_devices d WHERE tenant_id=$1 AND user_id=$2)) AS value")
         .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
         .bind::<SqlUuid, _>(user.as_uuid())
         .get_result::<Snapshot>(&mut connection).await.unwrap().value
@@ -91,12 +91,7 @@ async fn install_generation(
     step: i64,
 ) -> (Uuid, String) {
     repository
-        .begin_totp_enrollment(
-            tenant.tenant_id,
-            user,
-            SECRET.to_owned(),
-            "formal fixture".to_owned(),
-        )
+        .begin_totp_enrollment(tenant.tenant_id, user, SECRET.to_owned())
         .await
         .unwrap();
     let account = account(pool, tenant, user).await;
@@ -459,9 +454,8 @@ impl MfaRepositoryPort for UnknownMfaCommitAck {
         tenant_id: TenantId,
         user_id: UserId,
         secret: String,
-        label: String,
     ) -> RepositoryFuture<'_, ()> {
-        MfaRepositoryPort::begin_totp_enrollment(&self.inner, tenant_id, user_id, secret, label)
+        MfaRepositoryPort::begin_totp_enrollment(&self.inner, tenant_id, user_id, secret)
     }
 
     fn verify_and_confirm_totp<'a>(
@@ -900,12 +894,7 @@ async fn mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_co
     };
     let repository = mfa_repository(pool.clone());
     repository
-        .begin_totp_enrollment(
-            tenant.tenant_id,
-            user,
-            SECRET.to_owned(),
-            "required fixture".to_owned(),
-        )
+        .begin_totp_enrollment(tenant.tenant_id, user, SECRET.to_owned())
         .await
         .unwrap();
     let admitted = account(&pool, tenant, user).await;
@@ -1141,12 +1130,7 @@ async fn mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes(
     let repository = mfa_repository(pool.clone());
     let body = std::panic::AssertUnwindSafe(async {
         repository
-            .begin_totp_enrollment(
-                tenant.tenant_id,
-                user,
-                SECRET.to_owned(),
-                "unknown fixture".to_owned(),
-            )
+            .begin_totp_enrollment(tenant.tenant_id, user, SECRET.to_owned())
             .await
             .unwrap();
         let admitted = account(&pool, tenant, user).await;

@@ -514,24 +514,22 @@ pub(crate) async fn enroll_initial_root_on_connection(
         )));
     }
     let row = rows.pop().expect("one fully received initial root row");
-    record_fresh_root_key_on_connection(connection, root, now).await?;
+    record_fresh_root_key_on_connection(connection, root).await?;
     StoredRecoveryRoot::try_from(row).map_err(transport)
 }
 
 async fn record_fresh_root_key_on_connection(
     connection: &mut AsyncPgConnection,
     root: &NewRecoveryRoot,
-    now: DateTime<Utc>,
 ) -> Result<(), RecoveryRootError> {
     let inserted = sql_query(
         "INSERT INTO controller_recovery_root_key_history
-            (deployment_id, recovery_public_key, first_seen_at)
-         VALUES ($1, $2, $3)
+            (deployment_id, recovery_public_key)
+         VALUES ($1, $2)
          ON CONFLICT (deployment_id, recovery_public_key) DO NOTHING",
     )
     .bind::<Varchar, _>(&root.deployment_id)
     .bind::<Binary, _>(&root.public_key[..])
-    .bind::<Timestamptz, _>(now)
     .execute(connection)
     .await
     .map_err(transport)?;
@@ -585,7 +583,7 @@ async fn replace_root_on_connection(
     let row = rows.pop().expect("one fully received root row");
     // The caller holds the deployment lock and transaction. A reused key
     // rejects this replacement and rolls back its generation and approval.
-    record_fresh_root_key_on_connection(connection, root, now).await?;
+    record_fresh_root_key_on_connection(connection, root).await?;
     // A root replacement invalidates every proof made by the old root. Close
     // in-flight challenges atomically; recovery fills its exact receipt next.
     sql_query(

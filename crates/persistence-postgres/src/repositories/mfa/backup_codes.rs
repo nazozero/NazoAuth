@@ -23,7 +23,6 @@ impl MfaRepository {
         let rows = user_mfa_backup_codes::table
             .filter(user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()))
             .filter(user_mfa_backup_codes::user_id.eq(user_id.as_uuid()))
-            .filter(user_mfa_backup_codes::used_at.is_null())
             .select((user_mfa_backup_codes::id, user_mfa_backup_codes::code_hash))
             .limit(i64::try_from(MFA_BACKUP_CODE_COUNT + 1).expect("backup-code limit fits i64"))
             .load::<(uuid::Uuid, String)>(&mut connection)
@@ -60,7 +59,7 @@ impl MfaRepository {
             .transaction::<Option<uuid::Uuid>, MfaAuditError, _>(async |connection| {
                 #[derive(diesel::QueryableByName)]
                 struct Generation { #[diesel(sql_type = diesel::sql_types::Uuid)] id: uuid::Uuid }
-                let generation = diesel::sql_query("UPDATE user_mfa_backup_codes AS backup SET used_at=CURRENT_TIMESTAMP FROM user_totp_credentials AS totp WHERE backup.id=$1 AND backup.tenant_id=$2 AND backup.user_id=$3 AND backup.used_at IS NULL AND totp.tenant_id=backup.tenant_id AND totp.user_id=backup.user_id AND totp.confirmed_at IS NOT NULL RETURNING totp.id")
+                let generation = diesel::sql_query("DELETE FROM user_mfa_backup_codes AS backup USING user_totp_credentials AS totp WHERE backup.id=$1 AND backup.tenant_id=$2 AND backup.user_id=$3 AND totp.tenant_id=backup.tenant_id AND totp.user_id=backup.user_id AND totp.confirmed_at IS NOT NULL RETURNING totp.id")
                     .bind::<diesel::sql_types::Uuid,_>(candidate_id).bind::<diesel::sql_types::Uuid,_>(tenant_id.as_uuid()).bind::<diesel::sql_types::Uuid,_>(user_id.as_uuid())
                     .get_result::<Generation>(connection).await.optional()?.map(|row| row.id);
                 let changed = generation.is_some();

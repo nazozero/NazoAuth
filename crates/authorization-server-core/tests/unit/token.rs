@@ -69,45 +69,49 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
         client_id: uuid::Uuid::now_v7(),
         user_id: Some(uuid::Uuid::now_v7()),
         contract_key: [2; 32],
-        contract_audiences: vec!["original-resource".to_owned()],
-        scopes: serde_json::from_value(serde_json::json!(["openid", "offline_access"])).unwrap(),
         audience: serde_json::from_value(serde_json::json!(["narrowed-resource"])).unwrap(),
-        authorization_details: serde_json::json!([{"type": "account_information"}]),
         issued_at: now,
         expires_at: now + chrono::Duration::minutes(5),
         revoked_at: None,
-        subject: "pairwise-subject".to_owned(),
         dpop_jkt: Some("source-jkt".to_owned()),
         mtls_x5t_s256: None,
         client_attestation_jkt: None,
-        authentication_context: RefreshTokenAuthenticationContext {
-            version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
-            issuer: "https://issuer.example".to_owned(),
-            audience: "client".to_owned(),
-            auth_time: now.timestamp(),
-            amr: vec!["pwd".to_owned()],
-            oidc_sid: Some("oidc-sid".to_owned()),
 
-            acr: Some("1".to_owned()),
+        contract: crate::RefreshContract {
+            audiences: vec!["original-resource".to_owned()],
+            scopes: serde_json::from_value(serde_json::json!(["openid", "offline_access"]))
+                .unwrap(),
+            authorization_details: serde_json::json!([{"type": "account_information"}]),
+            subject: "pairwise-subject".to_owned(),
+            authentication_context: RefreshTokenAuthenticationContext {
+                version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
+                issuer: "https://issuer.example".to_owned(),
+                audience: "client".to_owned(),
+                auth_time: now.timestamp(),
+                amr: vec!["pwd".to_owned()],
+                oidc_sid: Some("oidc-sid".to_owned()),
 
-            userinfo_claim_requests: ((vec!["email".to_owned()])
-                .into_iter()
-                .map(crate::OidcClaimRequest::named)
-                .collect::<Vec<_>>())
-            .into(),
-            id_token_claim_requests: ((vec!["email".to_owned()])
-                .into_iter()
-                .map(crate::OidcClaimRequest::named)
-                .collect::<Vec<_>>())
-            .into(),
+                acr: Some("1".to_owned()),
+
+                userinfo_claim_requests: ((vec!["email".to_owned()])
+                    .into_iter()
+                    .map(crate::OidcClaimRequest::named)
+                    .collect::<Vec<_>>())
+                .into(),
+                id_token_claim_requests: ((vec!["email".to_owned()])
+                    .into_iter()
+                    .map(crate::OidcClaimRequest::named)
+                    .collect::<Vec<_>>())
+                .into(),
+            },
         },
     };
     let expected = RefreshContract {
-        subject: token.subject.clone(),
-        scopes: token.scopes.clone(),
-        audiences: token.contract_audiences.clone(),
-        authorization_details: token.authorization_details.clone(),
-        authentication_context: token.authentication_context.clone(),
+        subject: token.contract.subject.clone(),
+        scopes: token.contract.scopes.clone(),
+        audiences: token.contract.audiences.clone(),
+        authorization_details: token.contract.authorization_details.clone(),
+        authentication_context: token.contract.authentication_context.clone(),
     }
     .clone();
     let authority = token.authority();
@@ -119,7 +123,7 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
         authority.id_token_sid.as_deref(),
         Some("current-id-token-sid")
     );
-    let wire = serde_json::to_value(&token.authentication_context).unwrap();
+    let wire = serde_json::to_value(&token.contract.authentication_context).unwrap();
     assert!(wire.get("nonce").is_none());
     assert!(wire.get("id_token_sid").is_none());
     assert_eq!(token.id_token_sid.as_deref(), Some("current-id-token-sid"));

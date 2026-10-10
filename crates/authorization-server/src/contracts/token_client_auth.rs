@@ -33,7 +33,6 @@ pub struct ClientCertificateFacts {
     pub san_uri: Vec<String>,
     pub san_ip: Vec<String>,
     pub san_email: Vec<String>,
-    pub verified_certificate_expiry: bool,
     /// Public certificates presented by the TLS peer, leaf first. A trusted
     /// forwarding adapter may supply the same RFC 9440 certificate chain.
     // Cloning request facts shares immutable DER storage. This does not cache

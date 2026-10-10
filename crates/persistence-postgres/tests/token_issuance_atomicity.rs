@@ -1070,7 +1070,7 @@ async fn native_source_cross_client_capacity_and_maintenance_complete_without_de
         tokio::join!(
             repo.commit_token_issuance(into_two.clone()),
             repo.commit_token_issuance(into_one.clone()),
-            maintenance.cleanup_batch()
+            maintenance.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         )
     })
     .await
@@ -1166,6 +1166,22 @@ async fn authorization_code_identity_fences_concurrent_holders_and_refresh_famil
         .unwrap()
         .unwrap();
     assert_eq!(receipt.authorization_code_holder, winner);
+    let mut receipt_connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let null_members = sql_query(
+        "SELECT count(*) FROM oauth_token_issuances AS receipt \
+         CROSS JOIN LATERAL jsonb_each(receipt.authorization_code_holder) AS member \
+         WHERE receipt.tenant_id=$1 AND receipt.client_id=$2 AND member.value='null'::jsonb",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Uuid, _>(fixture.client_id)
+    .get_result::<CountRow>(&mut receipt_connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        null_members.count, 0,
+        "committed proof requirements must omit absent members"
+    );
+
     assert!(receipt.refresh_token_family_id.is_some());
     assert!(
         repository
@@ -1337,4 +1353,68 @@ async fn authorization_code_receipt_migration_preserves_legacy_and_rejects_old_w
     assert_eq!(legacy.receipt_contract_version, 0);
     assert!(legacy.authorization_code_holder.is_none());
     connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
+#[tokio::test]
+async fn expired_redemption_receipt_is_invisible_before_physical_reclamation() {
+    let url = database_url().expect("receipt expiry validation requires real isolated PostgreSQL");
+    let fixture = fixture(&url).await;
+    let tenant_id = Uuid::from_u128(1);
+    let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
+    let grant_key = format!("receipt-expiry-{}", Uuid::now_v7());
+    let input = issuance(
+        &fixture,
+        tenant_id,
+        TokenIssuanceMode::SingleUse {
+            grant_key: grant_key.clone(),
+            grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(1),
+        },
+        None,
+    )
+    .await;
+    let id = input.issuance_id;
+    assert_eq!(
+        repository.commit_token_issuance(input).await.unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert!(
+        repository
+            .single_use_redemption(tenant_id, fixture.client_id, &grant_key)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    // Fixture clocks represent an expired token still inside its safety
+    // retention window. Access-token expiry alone cannot release the receipt.
+    sql_query("UPDATE oauth_token_issuances SET access_token_expires_at = clock_timestamp() - interval '1 second', retain_until = clock_timestamp() + interval '1 minute' WHERE issuance_id = $1")
+        .bind::<sql_types::Uuid, _>(id).execute(&mut connection).await.unwrap();
+    assert!(
+        repository
+            .single_use_redemption(tenant_id, fixture.client_id, &grant_key)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    sql_query("UPDATE oauth_token_issuances SET access_token_expires_at = clock_timestamp() - interval '2 minutes', retain_until = clock_timestamp() - interval '1 second' WHERE issuance_id = $1")
+        .bind::<sql_types::Uuid, _>(id).execute(&mut connection).await.unwrap();
+    assert!(
+        repository
+            .single_use_redemption(tenant_id, fixture.client_id, &grant_key)
+            .await
+            .unwrap()
+            .is_none(),
+        "an expired receipt must not remain replay authority until the physical sweep"
+    );
+    let count = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
+    )
+    .bind::<sql_types::Uuid, _>(id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        count.count, 1,
+        "reading expiry must not delete persistent rows"
+    );
 }
