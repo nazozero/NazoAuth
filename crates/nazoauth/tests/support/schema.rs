@@ -198,8 +198,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    access_token_revocations (id) {
-        id -> Uuid,
+    access_token_revocations (tenant_id, access_token_jti_blake3) {
         access_token_jti_blake3 -> Varchar,
         client_id -> Uuid,
         tenant_id -> Uuid,

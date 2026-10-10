@@ -353,7 +353,6 @@ fn self_signed_client_certificate_matches_registered_x5c() {
     client.jwks = Some(json!({"keys": [{"kid": "cert-1", "x5c": [registered.x5c]}]}));
     let certificate = ClientCertificateFacts {
         thumbprint: Some(registered.thumbprint),
-        verified_certificate_expiry: true,
         ..ClientCertificateFacts::default()
     };
 
@@ -374,7 +373,6 @@ fn self_signed_client_certificate_ignores_non_leaf_x5c_entries() {
     }));
     let certificate = ClientCertificateFacts {
         thumbprint: Some(leaf.thumbprint),
-        verified_certificate_expiry: true,
         ..ClientCertificateFacts::default()
     };
 
@@ -395,12 +393,10 @@ fn self_signed_client_certificate_rotation_accepts_only_registered_x5c_set() {
     }));
     let old_certificate = ClientCertificateFacts {
         thumbprint: Some(old.thumbprint.clone()),
-        verified_certificate_expiry: true,
         ..ClientCertificateFacts::default()
     };
     let new_certificate = ClientCertificateFacts {
         thumbprint: Some(new.thumbprint.clone()),
-        verified_certificate_expiry: true,
         ..ClientCertificateFacts::default()
     };
     assert!(client_mtls_certificate_matches(&client, &old_certificate));
@@ -419,7 +415,6 @@ fn self_signed_client_certificate_rejects_expired_x5c() {
     client.jwks = Some(json!({"keys": [{"kid": "expired", "x5c": [expired.x5c]}]}));
     let certificate = ClientCertificateFacts {
         thumbprint: Some(expired.thumbprint),
-        verified_certificate_expiry: true,
         ..ClientCertificateFacts::default()
     };
 

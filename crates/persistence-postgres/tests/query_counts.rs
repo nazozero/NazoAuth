@@ -478,12 +478,11 @@ async fn seed_access_revocation(
 ) {
     sql_query(
         "INSERT INTO access_token_revocations (\
-            id, access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at\
+            access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at\
          ) VALUES (\
-            $1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour'\
+            $1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour'\
          )",
     )
-    .bind::<sql_types::Uuid, _>(Uuid::now_v7())
     .bind::<sql_types::Text, _>(blake3_hex(jti))
     .bind::<sql_types::Uuid, _>(seed.client.id)
     .bind::<sql_types::Uuid, _>(tenant.tenant_id.as_uuid())

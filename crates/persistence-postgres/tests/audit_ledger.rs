@@ -311,7 +311,7 @@ async fn audit_ledger_append_is_chained_and_pending() {
     assert_eq!(health.head_hash.len(), 32);
     assert!(!health.pending_exists);
     assert!(!health.pending_orphan_exists);
-    assert!(health.batch.is_none());
+    assert!(health.batch_blocked.is_none());
     assert_eq!(health.last_exported_sequence, Some(health.head_sequence));
     assert_eq!(
         health.last_exported_hash.as_deref(),
@@ -466,7 +466,7 @@ async fn each_successful_observation_refreshes_time_without_acknowledging_backlo
         acknowledged.last_exported_occurred_at
     );
     assert_eq!(health.deployment_id, acknowledged.deployment_id);
-    assert!(health.batch.is_none());
+    assert!(health.batch_blocked.is_none());
     drain_pending(&repository).await;
 }
 
@@ -645,7 +645,7 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
         Err(RepositoryError::Consistency(_))
     ));
     let health = repository.anchor_health().await.unwrap();
-    assert!(health.batch.is_none());
+    assert!(health.batch_blocked.is_none());
     assert!(!health.pending_exists);
     let freshness = repository
         .anchor_health()
@@ -2350,4 +2350,74 @@ async fn fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes() {
             .unwrap(),
         SecurityAuditBatchClaim::Empty
     ));
+}
+
+#[tokio::test]
+async fn audit_health_distinguishes_absent_retryable_and_blocked_batch() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url).await.unwrap();
+    let repository = AuditLedgerRepository::new(create_pool(database_url, 2).unwrap());
+    drain_pending(&repository).await;
+    assert_eq!(
+        repository.anchor_health().await.unwrap().batch_blocked,
+        None
+    );
+    repository
+        .append(SecurityAuditEvent {
+            event_id: Uuid::now_v7(),
+            event_type: "token_issued".to_owned(),
+            event_category: "token_lifecycle".to_owned(),
+            payload: json!({"fixture":"batch-health-projection"}),
+            occurred_at: Utc::now(),
+        })
+        .await
+        .unwrap();
+    let SecurityAuditBatchClaim::Claimed(batch) = repository
+        .claim_batch("test-deployment", 256, 1024 * 1024, 60)
+        .await
+        .unwrap()
+    else {
+        panic!("expected committed batch")
+    };
+    assert_eq!(
+        repository.anchor_health().await.unwrap().batch_blocked,
+        Some(false)
+    );
+    repository
+        .fail_batch(
+            batch.generation,
+            Utc::now(),
+            "permanent-test-rejection",
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        repository.anchor_health().await.unwrap().batch_blocked,
+        Some(true)
+    );
+    assert!(matches!(
+        repository
+            .claim_batch("test-deployment", 256, 1024 * 1024, 60)
+            .await
+            .unwrap(),
+        SecurityAuditBatchClaim::Blocked { .. }
+    ));
+    // Health projection must not mutate or bypass the committed batch fence.
+    let mut stale = batch_ack(&batch);
+    stale.generation += 1;
+    assert!(repository.ack_batch(stale).await.is_err());
+    assert_eq!(
+        repository.anchor_health().await.unwrap().batch_blocked,
+        Some(true)
+    );
+    repository.ack_batch(batch_ack(&batch)).await.unwrap();
+    assert_eq!(
+        repository.anchor_health().await.unwrap().batch_blocked,
+        None
+    );
+    assert!(!repository.anchor_health().await.unwrap().pending_exists);
 }

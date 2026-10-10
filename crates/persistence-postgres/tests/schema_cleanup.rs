@@ -477,3 +477,75 @@ async fn backup_verifier_compaction_preserves_live_credentials_and_never_revives
     }
     connection.batch_execute("ROLLBACK").await.unwrap();
 }
+
+#[tokio::test]
+async fn control_receipt_compaction_preserves_replay_identities_across_round_trip() {
+    let Some(mut connection) = fixture().await else {
+        return;
+    };
+    connection.batch_execute("CREATE TABLE admin_provision_receipts(operation_id VARCHAR(128) PRIMARY KEY,deployment_id VARCHAR(128) NOT NULL,tenant_id UUID NOT NULL,user_id UUID NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now()); CREATE TABLE controller_recovery_root_key_history(deployment_id VARCHAR(128) NOT NULL,recovery_public_key BYTEA NOT NULL,first_seen_at TIMESTAMPTZ NOT NULL,PRIMARY KEY(deployment_id,recovery_public_key)); INSERT INTO admin_provision_receipts VALUES('retained-operation','retained-deployment',uuidv7(),uuidv7(),'2000-01-01'); INSERT INTO controller_recovery_root_key_history VALUES('retained-deployment',decode(repeat('12',32),'hex'),'2000-01-01');").await.unwrap();
+    let query = "SELECT jsonb_build_object('receipt',(SELECT to_jsonb(r)-'created_at' FROM admin_provision_receipts r),'used_key',(SELECT to_jsonb(h)-'first_seen_at' FROM controller_recovery_root_key_history h))::text AS value";
+    let before = sql_query(query)
+        .get_result::<Snapshot>(&mut connection)
+        .await
+        .unwrap()
+        .value;
+    let up =
+        include_str!("../../../migrations/20261010000400_compact_control_receipt_metadata/up.sql");
+    let down = include_str!(
+        "../../../migrations/20261010000400_compact_control_receipt_metadata/down.sql"
+    );
+    for statement in [up, down, up] {
+        connection.batch_execute(statement).await.unwrap();
+        assert_eq!(
+            sql_query(query)
+                .get_result::<Snapshot>(&mut connection)
+                .await
+                .unwrap()
+                .value,
+            before
+        );
+        if statement == up {
+            assert_eq!(sql_query("INSERT INTO controller_recovery_root_key_history(deployment_id,recovery_public_key) SELECT deployment_id,recovery_public_key FROM controller_recovery_root_key_history ON CONFLICT DO NOTHING").execute(&mut connection).await.unwrap(), 0, "a used key remains fenced");
+        }
+    }
+    let absent = sql_query("SELECT NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND ((table_name='admin_provision_receipts' AND column_name='created_at') OR (table_name='controller_recovery_root_key_history' AND column_name='first_seen_at'))) AS value").get_result::<Flag>(&mut connection).await.unwrap();
+    assert!(absent.value);
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}
+
+#[tokio::test]
+async fn revocation_identity_compaction_preserves_tenant_fences_and_deadlines() {
+    let Some(mut connection) = fixture().await else {
+        return;
+    };
+    connection.batch_execute("CREATE TABLE access_token_revocations(id UUID PRIMARY KEY DEFAULT uuidv7(),tenant_id UUID NOT NULL,access_token_jti_blake3 VARCHAR(64) NOT NULL,client_id UUID NOT NULL,revoked_at TIMESTAMPTZ NOT NULL,expires_at TIMESTAMPTZ NOT NULL); CREATE UNIQUE INDEX ux_access_token_revocations_tenant_jti_blake3 ON access_token_revocations(tenant_id,access_token_jti_blake3); INSERT INTO access_token_revocations(tenant_id,access_token_jti_blake3,client_id,revoked_at,expires_at) SELECT uuidv7(),repeat('a',64),uuidv7(),'2000-01-01','2100-01-01' FROM generate_series(1,2);").await.unwrap();
+    let query = "SELECT jsonb_agg(to_jsonb(r)-'id' ORDER BY tenant_id)::text AS value FROM access_token_revocations r";
+    let before = sql_query(query)
+        .get_result::<Snapshot>(&mut connection)
+        .await
+        .unwrap()
+        .value;
+    let up = include_str!("../../../migrations/20261010000500_compact_revocation_identity/up.sql");
+    let down =
+        include_str!("../../../migrations/20261010000500_compact_revocation_identity/down.sql");
+    for statement in [up, down, up] {
+        connection.batch_execute(statement).await.unwrap();
+        assert_eq!(
+            sql_query(query)
+                .get_result::<Snapshot>(&mut connection)
+                .await
+                .unwrap()
+                .value,
+            before,
+            "both tenants, first revocation times, owners and original maximum deadlines must remain exact"
+        );
+        let inserted=sql_query("INSERT INTO access_token_revocations(tenant_id,access_token_jti_blake3,client_id,revoked_at,expires_at) SELECT tenant_id,access_token_jti_blake3,client_id,revoked_at,expires_at FROM access_token_revocations ON CONFLICT(tenant_id,access_token_jti_blake3) DO NOTHING").execute(&mut connection).await.unwrap();
+        assert_eq!(
+            inserted, 0,
+            "one authority fact per tenant/JTI survives both schema directions"
+        );
+    }
+    assert!(sql_query("SELECT NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='access_token_revocations' AND column_name='id') AS value").get_result::<Flag>(&mut connection).await.unwrap().value);
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}

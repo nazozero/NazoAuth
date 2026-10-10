@@ -35,8 +35,8 @@ struct CountRow {
 
 #[derive(QueryableByName)]
 struct StoredRevocation {
-    #[diesel(sql_type = sql_types::Uuid)]
-    id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    access_token_jti_blake3: String,
     #[diesel(sql_type = sql_types::Uuid)]
     client_id: Uuid,
     #[diesel(sql_type = sql_types::Uuid)]
@@ -53,7 +53,7 @@ async fn stored_revocation(
     jti: &str,
 ) -> Option<StoredRevocation> {
     sql_query(
-        "SELECT id, client_id, tenant_id, revoked_at, expires_at \
+        "SELECT access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at \
          FROM access_token_revocations \
          WHERE tenant_id = $1 AND access_token_jti_blake3 = $2",
     )
@@ -87,7 +87,7 @@ async fn temp_connection() -> Option<AsyncPgConnection> {
                 tenant_id uuid, client_id text, subject_id uuid, token_id uuid,
                 expires_at timestamptz, revoked_at timestamptz);
              CREATE TEMP TABLE access_token_revocations (
-                id uuid, access_token_jti_blake3 text, client_id uuid, tenant_id uuid,
+                access_token_jti_blake3 text, client_id uuid, tenant_id uuid,
                 revoked_at timestamptz, expires_at timestamptz,
                 UNIQUE (tenant_id, access_token_jti_blake3));",
         )
@@ -104,7 +104,6 @@ fn revocation(
     expires_at: DateTime<Utc>,
 ) -> NewAccessTokenRevocation {
     NewAccessTokenRevocation {
-        id: Uuid::now_v7(),
         access_token_jti_blake3: blake3_hex(jti),
         client_id,
         tenant_id,
@@ -181,7 +180,7 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
         first_revoked_at,
         base + chrono::Duration::seconds(60),
     );
-    let first_id = first.id;
+    let first_id = first.access_token_jti_blake3.clone();
     assert_eq!(
         upsert_access_token_revocations(&mut connection, &[first])
             .await
@@ -212,7 +211,10 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
     let stored = stored_revocation(&mut connection, tenant, &jti)
         .await
         .expect("the revocation fact should exist");
-    assert_eq!(stored.id, first_id, "the fact id is never rewritten");
+    assert_eq!(
+        stored.access_token_jti_blake3, first_id,
+        "the authority identity is never rewritten"
+    );
     assert_eq!(
         stored.client_id, first_client,
         "ownership is never rewritten"
@@ -243,7 +245,7 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
     let stored = stored_revocation(&mut connection, tenant, &jti)
         .await
         .expect("the revocation fact should exist");
-    assert_eq!(stored.id, first_id);
+    assert_eq!(stored.access_token_jti_blake3, first_id);
     assert_eq!(stored.client_id, first_client);
     assert_eq!(stored.revoked_at, first_revoked_at);
     assert_eq!(
@@ -377,7 +379,7 @@ async fn owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouch
         micros(Utc::now()),
         micros(Utc::now() + chrono::Duration::seconds(90)),
     );
-    let foreign_id = foreign.id;
+    let foreign_id = foreign.access_token_jti_blake3.clone();
     let foreign_expires_at = foreign.expires_at;
     upsert_access_token_revocations(&mut connection, &[foreign])
         .await
@@ -451,7 +453,7 @@ async fn owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouch
     let foreign = stored_revocation(&mut connection, other_tenant, &jti)
         .await
         .expect("the other tenant's fact is a separate authority key");
-    assert_eq!(foreign.id, foreign_id);
+    assert_eq!(foreign.access_token_jti_blake3, foreign_id);
     assert_eq!(
         foreign.expires_at, foreign_expires_at,
         "the conflicting tenant-scoped batch must not touch other tenants"

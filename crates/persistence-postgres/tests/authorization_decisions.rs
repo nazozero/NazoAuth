@@ -1451,7 +1451,7 @@ async fn audit_ack_samples_time_after_blocked_head_validation() {
         assert_eq!(health.head_hash, batch.last_hash);
         assert_eq!(health.deployment_id.as_deref(), Some("decision-test"));
         assert!(!health.pending_exists && !health.pending_orphan_exists);
-        assert!(health.batch.is_none());
+        assert!(health.batch_blocked.is_none());
         assert_eq!(fact_count(&mut connection, ordinary.event_id).await, 0);
         assert_eq!(fact_count(&mut connection, retained.event_id).await, 1);
         assert_eq!(

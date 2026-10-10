@@ -95,7 +95,6 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
             match deduplicated.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(NewAccessTokenRevocation {
-                        id: Uuid::now_v7(),
                         access_token_jti_blake3: jti_digest,
                         client_id: row.client_id,
                         tenant_id,

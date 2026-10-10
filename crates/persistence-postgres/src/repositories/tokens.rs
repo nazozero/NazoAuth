@@ -418,7 +418,6 @@ impl TokenRepository {
             access_token
                 .zip(revocation_deadline)
                 .map(|(access_token, deadline)| NewAccessTokenRevocation {
-                    id: Uuid::now_v7(),
                     access_token_jti_blake3: blake3_hex(&access_token.jti),
                     client_id,
                     tenant_id,

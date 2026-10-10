@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, Queryable, Selectable, SelectableHelper,
     sql_query, sql_types::BigInt,
@@ -158,7 +158,6 @@ impl AdminProvisionRepository {
                         admin_provision_receipts::deployment_id.eq(&deployment_id),
                         admin_provision_receipts::tenant_id.eq(tenant.tenant_id.as_uuid()),
                         admin_provision_receipts::user_id.eq(user_id),
-                        admin_provision_receipts::created_at.eq(now),
                     ))
                     .execute(connection)
                     .await?;
@@ -238,7 +237,6 @@ struct AdminProvisionReceiptRow {
     deployment_id: String,
     tenant_id: Uuid,
     user_id: Uuid,
-    created_at: DateTime<Utc>,
 }
 
 impl AdminProvisionReceiptRow {
@@ -248,9 +246,7 @@ impl AdminProvisionReceiptRow {
             deployment_id,
             tenant_id: _,
             user_id,
-            created_at,
         } = self;
-        let _ = created_at;
         AdminProvisionReceipt {
             operation_id,
             deployment_id,

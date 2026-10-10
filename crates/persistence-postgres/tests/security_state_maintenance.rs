@@ -1307,13 +1307,12 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
     let kept_revocation = Uuid::now_v7();
     sql_query(
         "INSERT INTO access_token_revocations \
-             (id, access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at) \
-         VALUES ($1, $4, $2, $3, $5, $6), ($7, $4 || '-keep', $2, $3, $5, $8)",
+             (access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at) \
+         VALUES ($1::uuid::text, $2, $3, $4, $5), ($6::uuid::text, $2, $3, $4, $7)",
     )
     .bind::<SqlUuid, _>(expired_revocation)
     .bind::<SqlUuid, _>(fixture.client_id)
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
-    .bind::<Text, _>(format!("jti-blake3-{}", Uuid::now_v7().simple()))
     .bind::<Timestamptz, _>(past)
     .bind::<Timestamptz, _>(past)
     .bind::<SqlUuid, _>(kept_revocation)
@@ -1402,8 +1401,13 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
         ("backchannel_logout_deliveries", kept_delivery),
         ("scim_audit_events", kept_audit),
     ] {
+        let identity = if table == "access_token_revocations" {
+            "access_token_jti_blake3 = $1::uuid::text AND tenant_id = '00000000-0000-0000-0000-000000000001'"
+        } else {
+            "id = $1"
+        };
         let kept = sql_query(format!(
-            "SELECT COUNT(*)::bigint AS count FROM {table} WHERE id = $1"
+            "SELECT COUNT(*)::bigint AS count FROM {table} WHERE {identity}"
         ))
         .bind::<SqlUuid, _>(kept_id)
         .get_result::<CountRow>(&mut connection)
@@ -1420,8 +1424,13 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
         ("backchannel_logout_deliveries", expired_delivery),
         ("scim_audit_events", expired_audit),
     ] {
+        let identity = if table == "access_token_revocations" {
+            "access_token_jti_blake3 = $1::uuid::text AND tenant_id = '00000000-0000-0000-0000-000000000001'"
+        } else {
+            "id = $1"
+        };
         let gone = sql_query(format!(
-            "SELECT COUNT(*)::bigint AS count FROM {table} WHERE id = $1"
+            "SELECT COUNT(*)::bigint AS count FROM {table} WHERE {identity}"
         ))
         .bind::<SqlUuid, _>(expired_id)
         .get_result::<CountRow>(&mut connection)

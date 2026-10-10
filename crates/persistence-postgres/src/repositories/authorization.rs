@@ -38,7 +38,6 @@ impl AuthorizationRepository {
             .map(access_token_revocation_deadline)
             .transpose()?;
         let new_revocation = revocation_deadline.map(|deadline| NewAccessTokenRevocation {
-            id: Uuid::now_v7(),
             access_token_jti_blake3: blake3_hex(access_token_jti),
             client_id,
             tenant_id,

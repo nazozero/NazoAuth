@@ -308,3 +308,16 @@ and delivered-chain statistics. It asserts bounded logical buffer reads for a
 256-event batch and exact checkpoint/reclamation, independently of shared CPU
 scheduling. All seed rows and table options are transaction-local; it requires
 the isolated `NAZO_AUDIT_TEST_DATABASE_URL` like other audit integration tests.
+
+
+## Model and revocation identity compaction
+
+`schema_cleanup` covers upgrade/down/upgrade preservation of administrator
+provisioning receipts, used recovery keys and tenant/JTI revocation identities.
+`access_token_retention` and the revocation unit suite retain monotonic deadlines,
+clock-skew coverage, no-op updates, ownership conflict rollback and tenant isolation
+checks; fixture identity assertions use the actual tenant/JTI key.
+`audit_health_distinguishes_absent_retryable_and_blocked_batch` exercises the real
+PG health projection and stale ACK rejection. The host checkpoint test retains
+all four committed-checkpoint presence checks after removing unused local copies.
+Existing mTLS tests still reject future/expired DER and validate current trust.

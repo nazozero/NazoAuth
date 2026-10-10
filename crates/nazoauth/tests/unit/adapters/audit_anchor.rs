@@ -18,8 +18,7 @@ use nazo_crypto::ed25519::VerifyingKey;
 use nazo_identity::ports::{RepositoryError, RepositoryFuture};
 use nazo_persistence::{
     SecurityAuditAnchorHealth, SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim,
-    SecurityAuditBatchLease, SecurityAuditPendingDelivery,
-    audit_chain::security_audit_batch_digest,
+    SecurityAuditPendingDelivery, audit_chain::security_audit_batch_digest,
 };
 use nazo_postgres::AuditLedgerRepository;
 use serde_json::{Value, json};
@@ -65,7 +64,7 @@ fn health_snapshot() -> SecurityAuditAnchorHealth {
         last_exported_at: Some(Utc::now() - ChronoDuration::seconds(1)),
         deployment_id: Some("deployment-1".to_owned()),
         observed_at: Some(Utc::now()),
-        batch: None,
+        batch_blocked: None,
     }
 }
 
@@ -1449,17 +1448,7 @@ fn preflight_accepts_shared_health_and_rejects_stale_or_unanchored_state() {
     assert!(validate_health(&config, &orphan, now).is_err());
 
     let mut blocked = current.clone();
-    blocked.batch = Some(SecurityAuditBatchLease {
-        first_sequence: 8,
-        last_sequence: 9,
-        event_count: 2,
-        generation: 4,
-        attempts: 3,
-        available_at: None,
-        locked_until: None,
-        last_error: Some("chain_digest_mismatch".to_owned()),
-        blocked_reason: Some("chain_digest_mismatch".to_owned()),
-    });
+    blocked.batch_blocked = Some(true);
     assert!(validate_health(&config, &blocked, now).is_err());
 
     let mut behind = current;
@@ -1962,7 +1951,7 @@ async fn required_ten_second_freshness_stays_ready_across_five_second_idle_pg_po
     let repository = AuditLedgerRepository::new(pool.clone());
     let initial = repository.anchor_health().await.unwrap();
     assert!(
-        !initial.pending_exists && initial.batch.is_none(),
+        !initial.pending_exists && initial.batch_blocked.is_none(),
         "idle fixture must have no undelivered events"
     );
     let mut config = iteration_config(Url::parse("http://127.0.0.1:1/").unwrap());
@@ -2040,7 +2029,7 @@ async fn required_ten_second_freshness_stays_ready_across_five_second_idle_pg_po
         preflight
             .ensure_fresh(&observed)
             .expect("healthy idle worker remains ready");
-        assert!(!observed.pending_exists && observed.batch.is_none());
+        assert!(!observed.pending_exists && observed.batch_blocked.is_none());
         assert_eq!(observed.head_sequence, acknowledged.head_sequence);
         assert_eq!(
             observed.last_exported_sequence,
@@ -2168,5 +2157,21 @@ async fn iteration_observes_missing_stale_future_and_foreign_bindings_before_eve
                 assert_eq!(repository.claim_calls.load(Relaxed), 1);
             }
         }
+    }
+}
+
+#[test]
+fn local_checkpoint_identity_requires_complete_committed_timestamps() {
+    let complete = health_snapshot();
+    assert!(AnchorCheckpoint::from_snapshot(&complete).is_some());
+    for missing in 0..4 {
+        let mut partial = complete.clone();
+        match missing {
+            0 => partial.last_exported_sequence = None,
+            1 => partial.last_exported_hash = None,
+            2 => partial.last_exported_occurred_at = None,
+            _ => partial.last_exported_at = None,
+        }
+        assert!(AnchorCheckpoint::from_snapshot(&partial).is_none());
     }
 }

@@ -36,7 +36,7 @@ Counts below describe the pre-change direct fields, not bytes or database column
 | `PublicAccountRow` / `SubjectClaimsRow` | 33 / 31 | Adapter projections for different read consumers. Keep decoding boundaries and tenant predicates; do not introduce joins merely to make each Rust struct smaller. |
 | `UserInsert` | 25 | Adapter insert shape for account creation, not a universal mutable user aggregate. Domain identity/profile structures remain separate. |
 | `UserProfileFields` | 20 | Desired resource profile command; keep desired-state reconciliation distinct from the observed user projection and preserve address/verification semantics. No duplicate runtime cache is added. |
-| `SecurityAuditAnchorHealthRow` | 21 | One query projection of chain/checkpoint and in-flight lease. Domain already composes a separate `SecurityAuditBatchLease`. Splitting the query can lose the single-observation relationship and add round trips. |
+| `SecurityAuditAnchorHealthRow` | 21 → 13 | One query projection of chain/checkpoint, pending state and absent/active/blocked batch health. Remove lease details with no health consumer; the claim boundary retains the full lease. Keep one observation and one query. |
 | `ProviderConfig` | 22 | Startup input only. It is immediately converted into typed OIDC/social provider variants; the broad optional configuration is not used during request execution. |
 | `CoreServices` / `IdentityServices` | 23 / 35 | Bootstrap dependency bundles, not persisted business records. Do not apply database normalization or TTL rules to service handles. |
 
@@ -82,3 +82,36 @@ Completed challenges additionally carry an idempotent recovery result. These are
 actual callers of retained state, unlike expired random approval tokens, whose
 absence always rejects. Reworking that protocol would require the independently
 owned controller contract and cannot be inferred from the shared word “challenge”.
+
+
+## Closure review: live consumers rather than declaration counts
+
+The follow-up removes the request-local `verified_certificate_expiry` flag: only
+`certificate_der_identity` wrote it, and no policy read it. DER validity parsing,
+current approved-chain verification and registered-key matching remain unchanged.
+The local exporter checkpoint retains sequence/hash identity; timestamps are
+still required from the durable snapshot but are not copied into unused fields.
+
+Anchor health now projects only the three batch states its callers need: absent,
+retryable/active, or permanently blocked. The exporter claim still owns the full
+persisted lease, generation, retry time, attempts and error reason. Narrowing the
+health read does not discard these facts or change Required admission, ACK or
+heartbeat semantics. The diagnostic pending estimate remains distinct from the
+exact pending predicate and is checked against retained decision rows.
+
+The write-only creation time in administrator provisioning receipts and first-seen
+time in recovery used-key history are removed. Operation/tenant/user identity,
+every used recovery key, and all unique constraints remain. Repeated provisioning
+and recovery A-to-B-to-A rejection still consume those exact identities. These
+are not expiring histories, and this change introduces no purge or shortened TTL.
+
+
+Revocation rows use their existing `(tenant_id, access_token_jti_blake3)`
+authority key as the primary key. The unread independent UUID and its index are
+removed by `20261010000500_compact_revocation_identity`; no foreign key points
+to that UUID. Lookup, conflict handling and bounded cleanup already use the
+composite identity. Tenant/client binding, first revocation time and monotonic
+retention through the original verifier skew remain unchanged. Upgrade/down/up
+tests preserve these facts for the same JTI in different tenants; downgrade
+regenerates only unused adapter UUIDs. This removes one index write per newly
+revoked token without changing the transaction or acknowledgement boundary.

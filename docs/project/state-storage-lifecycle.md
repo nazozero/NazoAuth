@@ -89,3 +89,24 @@ the enrollment response still renders its label directly from issuer/account.
 Protected secret, key identity, credential generation, confirmation and replay
 step remain. Rollback reconstructs only unused metadata and never resurrects
 consumed backup verifiers.
+
+
+`20261010000400_compact_control_receipt_metadata` removes the unread creation
+time from administrator provisioning receipts and unread first-seen time from
+recovery used-key history. Neither timestamp participates in validity, retention,
+ordering, a wire response, a foreign key or replay rejection. The operation and
+used-key identities retain their original lifetime. Downgrade recreates only
+unused timestamp metadata, not its original historical values. No data row is
+removed. Apply the schema with the matching adapter; existing heap tuples may
+retain dropped-column space until normal row replacement.
+
+
+Revocation rows use their existing `(tenant_id, access_token_jti_blake3)`
+authority key as the primary key. The unread independent UUID and its index are
+removed by `20261010000500_compact_revocation_identity`; no foreign key points
+to that UUID. Lookup, conflict handling and bounded cleanup already use the
+composite identity. Tenant/client binding, first revocation time and monotonic
+retention through the original verifier skew remain unchanged. Upgrade/down/up
+tests preserve these facts for the same JTI in different tenants; downgrade
+regenerates only unused adapter UUIDs. This removes one index write per newly
+revoked token without changing the transaction or acknowledgement boundary.

@@ -1,1 +1,1 @@
-20261010000300_compact_mfa_credentials
+20261010000500_compact_revocation_identity
