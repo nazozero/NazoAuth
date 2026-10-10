@@ -1,6 +1,9 @@
 # Main upgrade preflight, 2026-10-10
 
-Base main: `c9e9468f5ec5729acea6f1d53e3feb73e4774f34`. Validated source: `b2de42abcde74f4ababeab3bdde91e79823ec1ab`.
+Base main: `c9e9468f5ec5729acea6f1d53e3feb73e4774f34`. Final source: `651cc50ceece66004800c400867f41f43968dbbf`.
+Rust, SQL and dependencies are identical to the validated runtime source
+`b2de42abcde74f4ababeab3bdde91e79823ec1ab`; the later source change adds the
+manifest to the standard image build inputs.
 Candidate binary SHA-256: `fa57b2d3486889f2b21a5d5d7af9a854066350f8708b8baba1cb4a19caea1139`.
 This is a source build, not a new signed release. Production remains on the
 previous v0.2.16 artifact; deployment and official OIDF execution are **BLOCKED**
@@ -37,6 +40,10 @@ A cached build initially omitted the newly inserted migration because only the
 latest-directory marker invalidated the embedded list. The existing complete
 checksum manifest now owns invalidation; the obsolete separate marker is
 removed. A regression checks every migration file against that manifest.
+The standard Containerfile explicitly copies this manifest. Its actual
+`build-base` stage was built successfully, and the copied manifest's SHA-256
+matches the repository. This validates the input stage; it does not claim a
+second full OCI build or create a second Cargo target cache.
 
 ## Real restored-data rehearsal
 

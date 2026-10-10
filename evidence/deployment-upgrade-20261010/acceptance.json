@@ -1,6 +1,6 @@
 {
   "base_sha": "c9e9468f5ec5729acea6f1d53e3feb73e4774f34",
-  "source_sha": "b2de42abcde74f4ababeab3bdde91e79823ec1ab",
+  "source_sha": "651cc50ceece66004800c400867f41f43968dbbf",
   "binary_sha256": "fa57b2d3486889f2b21a5d5d7af9a854066350f8708b8baba1cb4a19caea1139",
   "negative_regression": {
     "command": [
@@ -225,5 +225,71 @@
     "plans": 44,
     "plans_started": 0
   },
-  "scope": "focused upgrade gates; full workspace CI pending publication; no new performance claim"
+  "scope": "focused upgrade gates; full workspace CI pending publication; no new performance claim",
+  "runtime_source_equivalent_to": "b2de42abcde74f4ababeab3bdde91e79823ec1ab",
+  "runtime_source_equivalence": {
+    "command": [
+      "git",
+      "diff",
+      "--exit-code",
+      "b2de42abcde74f4ababeab3bdde91e79823ec1ab",
+      "HEAD",
+      "--",
+      "crates",
+      "migrations",
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain.toml",
+      "tests/contracts"
+    ],
+    "exit_code": 0
+  },
+  "standard_image_build_inputs": {
+    "command": [
+      "podman",
+      "build",
+      "--target",
+      "build-base",
+      "--tag",
+      "localhost/nazoauth-upgrade-build-inputs:20261010",
+      "--file",
+      "Containerfile",
+      "."
+    ],
+    "exit_code": 0,
+    "seconds": 37.886,
+    "copied_manifest_sha256": "72c71350d3cef33ab20dcb29576a4b64d75b76530159b17944cc636c360eb8ab",
+    "manifest_matches": true,
+    "compile_target_created": false
+  },
+  "final_packaging_source_checks": [
+    {
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "python3",
+        "scripts/verify_static_contracts.py",
+        "--check"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0
+    }
+  ]
 }
